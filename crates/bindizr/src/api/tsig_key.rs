@@ -11,7 +11,7 @@ use bindizr_service::{
     Context, tsig_key,
     types::{
         CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetTsigKeyResponse,
-        MessageResponse, PageRequest, PaginatedResponse, TsigKeyResponse,
+        MessageResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
     },
 };
 
@@ -38,9 +38,9 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         get,
         path = "/tsig-keys",
         tag = "TSIG",
-        summary = "List all TSIG keys",
-        params(PageRequest),
-        description = "Lists every TSIG key without its secret. Fetch a single key to read the secret.",
+        summary = "List TSIG keys",
+        params(TsigKeyFilter),
+        description = "Lists TSIG keys without their secrets, every one or only those authenticating into `role_name`. Fetch a single key to read the secret.",
         responses(
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<GetTsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -51,10 +51,10 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_tsig_keys(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageRequest>,
+    Query(mut filter): Query<TsigKeyFilter>,
 ) -> Result<Response, ApiError> {
-    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = tsig_key::list(&cx, &caller, page).await?;
+    filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = tsig_key::list(&cx, &caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

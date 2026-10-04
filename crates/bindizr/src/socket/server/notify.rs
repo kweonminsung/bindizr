@@ -19,7 +19,7 @@ pub(crate) async fn notify_zone(
     notify(cx, NotifyTarget::Zone(&zone_name), serial).await
 }
 
-/// Request NOTIFY delivery for every zone.
+/// Request NOTIFY delivery for all zones.
 pub(crate) async fn notify_all_zones(
     cx: &Context,
     serial: NotifySerial,

@@ -278,7 +278,7 @@ pub(crate) fn admin_role_seed() -> &'static str {
     "#
 }
 
-/// Give the built-in role its one grant, every action in every zone, unless it
+/// Give the built-in role its one grant, every action in all zones, unless it
 /// holds one. Binds the action list, the creation time and the role's name.
 pub(crate) fn admin_grant_seed() -> &'static str {
     r#"

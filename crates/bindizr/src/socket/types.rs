@@ -8,8 +8,8 @@ use bindizr_service::types::{
     CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck, EnableDnssecRequest,
     GetRecordsFilter, GetSecondaryTransfersFilter, GetZonesFilter, Holddown,
     ImportDnssecKeyRequest, ImportZoneRequest, NotifyCheckResponse, NotifySerial, PageRequest,
-    RolloverDnssecRequest, Run, SecondaryStatusResponse, SecondaryTransferSummary,
-    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    RolloverDnssecRequest, Run, SecondaryStatusResponse, SecondaryTransferSummary, TokenFilter,
+    TsigKeyFilter, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneView,
 };
 use serde::{Deserialize, Serialize};
@@ -26,12 +26,12 @@ pub(crate) enum DaemonCommand {
     Shutdown,
     Restart,
     CreateToken(CreateTokenRequest),
-    ListTokens(PageRequest),
+    ListTokens(TokenFilter),
     DeleteToken {
         name: String,
     },
     CreateTsigKey(CreateTsigKeyRequest),
-    ListTsigKeys(PageRequest),
+    ListTsigKeys(TsigKeyFilter),
     GetTsigKey {
         name: String,
     },

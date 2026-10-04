@@ -325,8 +325,13 @@ each rule says which spelling is this project's.
   exact relative name; `*` or comma-separated types) constrain `record:*`
   actions only. A role's rights are the union of its grants: an operation is
   allowed when one grant covers its action, zone, name and type. There are no
-  deny rules.
-- **Objects no zone owns need an `All` grant**: `zone:create`, `secondary:*`,
+  deny rules. The `All` scope is spelled *all zones* wherever it appears —
+  `RoleZoneScope::All`, the `all_zones` payload field, the `*_all_zones*`
+  methods, and the prose of messages, docs and the UI — never "every zone"
+  or "everywhere". `RoleGrants` answers every such question; the listing SQL
+  repeats its name and type match for paging and is held to it by test.
+- **Objects no zone owns need an `All` grant**: `zone:create` (a rename
+  too, since a new name is one), `secondary:*`,
   DNSSEC policies under `dnssec:manage`, and `access:manage`, which
   administers tokens, TSIG keys and roles — and so is equivalent to admin,
   since its holder can grant itself anything. The built-in `admin` role (every
@@ -334,10 +339,50 @@ each rule says which spelling is this project's.
   the first token is issued over the socket with `token create --role admin`.
 - **Visibility**: a zone is visible when any grant of the role reaches it,
   whatever its actions (404 otherwise, so a scope cannot probe existence; a
-  visible zone's denied operation is 403). Reading records needs `record:read`
-  covering them. A view the zone is rebuilt from — export, a stored version,
+  visible zone's denied operation is 403), and its details — SOA and
+  settings, no records — read with visibility alone; `zone:read` adds
+  status and the version list. Reading records needs `record:read`
+  covering them; an update or delete finds its target by that or by its own
+  write action, so a write-only grant reaches what it may change and no more.
+  An update fills omitted fields from the stored record, so without
+  `record:read` on it the update must give every field.
+  Actions stay independent: a write or manage action never implies its read.
+  A role holding one without the other works through the API, as automation
+  wants; a client listing things to act on needs the read as well.
+  A view the zone is rebuilt from — export, a stored version,
   a diff, a zone-file import — needs a grant with no name or type constraint,
-  since half a zone re-applied deletes what it left out.
+  since half a zone re-applied deletes what it left out; a rollback reads
+  the version it restores, so it needs the whole-zone read too.
+- **A response shows only what the caller may read.** Existing rows reach a
+  response — a write's diff, a delete's listing, a version — only as
+  `authorization::ReadableRecords`, built by `Caller::readable_records`
+  (dropping what no `record:read` grant covers) or a `WholeZoneRead` from
+  `authorize_whole_zone_read`; `push_written` adds the caller's own writes.
+  A new response carrying rows takes a `ReadableRecords`, not a filter at
+  its site.
+  Every record response carries the caller's `actions` on it, so a client
+  offers what the service allows without re-implementing grant matching.
+  The e2e `no_response_reveals_a_record_the_role_cannot_read` sweeps every
+  route as restricted roles; a new route that returns records joins it.
+- **A write-only grant learns what its write touches, never a value.** Write
+  and read stay independent, with the boundary SQL, S3, Route 53 and Vault
+  draw: a write that takes its material from the stored row needs
+  `record:read` (a partial update, as `SET c = c + 1` needs `SELECT`); a
+  conflict within the grant's scope may say what it hit — a record exists,
+  the TTL its set holds, how many a delete matched — since a role that may
+  overwrite a record holds more than knowing it is there; a value is never
+  returned without `record:read`. What a write touches is what its request
+  named: a stored record behind an id, or met by a whole-zone check, is
+  named only to a caller who may read it; others hear the constraint broken.
+  The leak sweep marks names and values across each role shape a write
+  outruns its read in, which is this boundary as a test. Bot findings
+  that a conflict or a count reveals existence or a TTL to a write-only role
+  are declined.
+- **What an operation needs is written in five places**, which change together:
+  the operations table in `docs/cli/advanced.md`, the action table in
+  `docs/cli/access-control.md`, the `Action` doc (the OpenAPI schema, so
+  regenerate `docs/openapi.yaml`), `role grant --help`, and the UI's
+  `ACTION_DESCRIPTIONS`; the route's own OpenAPI description when it states one.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
@@ -354,19 +399,34 @@ One locking model covers the service layer; keep new code on it:
   `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it, `FOR UPDATE`) **before** any
   record rows — that order is the deadlock rule. Authorization, validation, and conflict
   checks decide on rows loaded inside that transaction, never on an earlier unlocked
-  read. `lookup_by_name_tx` is the unchecked tx lookup (record writes authorize through
-  `authorize_record_writes_tx`); the caller-gated tx read is `get_by_name_tx`, with its
-  `Caller` argument as in the non-tx form. - Outside the transaction belong: pure input
-  parsing/normalization, non-locking pre-reads done only to learn the lock target
-  (commented at each site), friendly duplicate pre-checks that a UNIQUE/FK constraint
-  backstops, and NOTIFY/logging after commit.
+  read, the credential included (next item). `lookup_by_name_tx` is the unchecked tx
+  lookup; the caller-gated tx
+  read is `get_by_name_tx`, with its `Caller` argument as in the non-tx form. - Outside
+  the transaction belong: pure input parsing/normalization, non-locking pre-reads done
+  only to learn the lock target (commented at each site), friendly duplicate pre-checks
+  that a UNIQUE/FK constraint backstops, authorization pre-checks the transaction
+  repeats, and NOTIFY/logging after commit.
+- **Every transaction that acts for a caller re-authenticates it**, reads included:
+  right after its zone row (first, where it has none), `Caller::reauthenticate_tx`
+  re-reads the token and its role's grants and every later check runs on them. A
+  revocation — deleting a credential, revoking a grant — waits for the writes in
+  flight (row locks on MySQL/PostgreSQL, the writer reservation on SQLite) and refuses
+  every later one; a read authorizes and loads its content in one snapshot, so on
+  SQLite, where a read holds no lock, it may finish after a revocation but serves only
+  what it could read before. Every write therefore runs in a transaction, management
+  writes included; a TSIG transfer or update re-reads its key and grants the same way,
+  and a transfer loads what it serves (AXFR records, IXFR delta, catalog members, SOA)
+  in that transaction, a cached AXFR serving its serial's content. A read without a
+  transaction, an outbound NOTIFY or probe, and an unsigned transfer (the address list
+  as the request finds it) decide on the request's credential.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and
   page as plain statements; drift between the two is accepted.
-- **Single-statement management writes** (tokens, TSIG keys, policies) take
-  no transaction: UNIQUE/FK constraints backstop their check-then-act races,
-  read as friendly conflicts where the service calls the statement.
+- **Management writes** (tokens, TSIG keys, roles, grants, policies,
+  secondaries) are one statement in a transaction that re-authenticates the
+  caller: UNIQUE/FK constraints backstop their check-then-act races, read as
+  friendly conflicts where the service calls the statement.
 - MySQL and PostgreSQL use READ COMMITTED with row locks and constraints.
   SQLite uses WAL: mutations begin IMMEDIATE to reserve the database writer,
   and read-only transactions begin DEFERRED to read a consistent snapshot.

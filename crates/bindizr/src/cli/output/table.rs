@@ -525,6 +525,12 @@ pub(crate) struct RoleRow {
     pub(crate) name: String,
     #[tabled(rename = "BUILTIN")]
     pub(crate) builtin: String,
+    #[tabled(rename = "GRANTS")]
+    pub(crate) grant_count: u64,
+    #[tabled(rename = "TOKENS")]
+    pub(crate) token_count: u64,
+    #[tabled(rename = "TSIG-KEYS")]
+    pub(crate) tsig_key_count: u64,
     #[tabled(rename = "DESCRIPTION")]
     pub(crate) description: String,
     #[tabled(rename = "CREATED-AT")]
@@ -538,13 +544,16 @@ impl From<&GetRoleResponse> for RoleRow {
             id: role.id,
             name: role.name.clone(),
             builtin: display_yes_no(&role.builtin),
+            grant_count: role.grant_count,
+            token_count: role.token_count,
+            tsig_key_count: role.tsig_key_count,
             description: display_option(&role.description),
             created_at: display_time(role.created_at),
         }
     }
 }
 
-/// ZONE reads `*` for a grant covering every zone.
+/// ZONE reads `*` for a grant covering all zones.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct RoleGrantRow {
     #[tabled(rename = "ID")]

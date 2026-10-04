@@ -3,7 +3,7 @@
 use bindizr_core::{
     dns::name::ZoneName,
     model::{
-        role::{Role, RoleId},
+        role::RoleId,
         role_grant::{Action, RoleGrant, RoleGrantId},
     },
 };
@@ -34,20 +34,16 @@ pub struct GetRoleResponse {
     /// Whether this is the built-in `admin` role, which can be neither changed nor deleted.
     #[schema(example = false)]
     pub builtin: bool,
+    /// The grants the role holds.
+    #[schema(example = 2)]
+    pub grant_count: u64,
+    /// The API tokens authenticating into the role.
+    #[schema(example = 3)]
+    pub token_count: u64,
+    /// The TSIG keys authenticating into the role.
+    #[schema(example = 0)]
+    pub tsig_key_count: u64,
     pub created_at: DateTime<Utc>,
-}
-
-impl From<&Role> for GetRoleResponse {
-    /// Build a role response from the stored role.
-    fn from(role: &Role) -> Self {
-        GetRoleResponse {
-            id: role.id,
-            name: role.name.clone(),
-            description: role.description.clone(),
-            builtin: role.is_builtin(),
-            created_at: role.created_at,
-        }
-    }
 }
 
 /// A single role wrapped in a response envelope.
@@ -56,12 +52,12 @@ pub struct RoleResponse {
     pub role: GetRoleResponse,
 }
 
-/// Request body for granting a role actions in one zone or every zone.
+/// Request body for granting a role actions in one zone or all zones.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRoleGrantRequest {
-    /// Name of an existing zone; omit to cover every zone, including later ones.
-    /// `zone:create`, `secondary:*` and `access:manage` need every zone.
+    /// Name of an existing zone; omit to cover all zones, including later ones.
+    /// `zone:create`, `secondary:*` and `access:manage` need all zones.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     /// The actions the grant permits, as `<resource>:<action>`.
@@ -84,7 +80,7 @@ pub struct GetRoleGrantResponse {
     pub id: RoleGrantId,
     #[schema(example = "external-dns-prod")]
     pub role_name: String,
-    /// The zone the grant covers; `null` covers every zone.
+    /// The zone the grant covers; `null` covers all zones.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     pub actions: Vec<Action>,
@@ -96,7 +92,7 @@ pub struct GetRoleGrantResponse {
 }
 
 impl GetRoleGrantResponse {
-    /// Build a grant response with its role and zone names; no zone means every zone.
+    /// Build a grant response with its role and zone names; no zone means all zones.
     pub(crate) fn from_grant(
         grant: &RoleGrant,
         role_name: &str,

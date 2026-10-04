@@ -62,17 +62,20 @@ pub(crate) async fn advance_serial_tx(
 
 /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
 /// zone's key (RFC 4034, Section 5).
+///
+/// The owner goes unnamed, as a delete by id may orphan it for a caller who
+/// cannot read it; bulk and import name the owners they touch first.
 async fn validate_delegations_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
 ) -> Result<(), ServiceError> {
-    let orphaned = bindizr_db::record::find_name_ds_without_ns_tx(tx, zone_id).await?;
-    if let Some(name) = orphaned.as_deref() {
-        let name = if name.is_empty() { "@" } else { name };
-        return Err(ServiceError::record_conflict(format!(
-            "DS records at '{}' require delegation NS records at the same name",
-            name
-        )));
+    if bindizr_db::record::find_name_ds_without_ns_tx(tx, zone_id)
+        .await?
+        .is_some()
+    {
+        return Err(ServiceError::record_conflict(
+            "DS records require delegation NS records at the same name",
+        ));
     }
     Ok(())
 }
@@ -119,26 +122,4 @@ pub(crate) async fn save_version_tx(
     cx.metrics().track_serial_bump();
 
     Ok(())
-}
-
-/// Fetch the SOA version recorded for a zone at the given serial, if any.
-pub async fn find_version_by_serial(
-    cx: &Context,
-    zone_id: ZoneId,
-    serial: Serial,
-) -> Result<Option<ZoneVersion>, ServiceError> {
-    Ok(bindizr_db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
-}
-
-/// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
-pub async fn list_versions_in_serial_range(
-    cx: &Context,
-    zone_id: ZoneId,
-    from_serial: Serial,
-    to_serial: Serial,
-) -> Result<Vec<ZoneVersion>, ServiceError> {
-    Ok(
-        bindizr_db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial)
-            .await?,
-    )
 }

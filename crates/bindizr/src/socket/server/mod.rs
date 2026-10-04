@@ -269,7 +269,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::CreateToken(request) => {
             encode_response(token::create_token(cx, &request).await)
         }
-        DaemonCommand::ListTokens(page) => encode_response(token::list_tokens(cx, page).await),
+        DaemonCommand::ListTokens(filter) => encode_response(token::list_tokens(cx, &filter).await),
         DaemonCommand::DeleteToken { name } => {
             encode_response(token::delete_token(cx, &name).await)
         }
@@ -291,8 +291,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::CreateTsigKey(request) => {
             encode_response(tsig_key::create_tsig_key(cx, &request).await)
         }
-        DaemonCommand::ListTsigKeys(page) => {
-            encode_response(tsig_key::list_tsig_keys(cx, page).await)
+        DaemonCommand::ListTsigKeys(filter) => {
+            encode_response(tsig_key::list_tsig_keys(cx, &filter).await)
         }
         DaemonCommand::GetTsigKey { name } => {
             encode_response(tsig_key::get_tsig_key(cx, &name).await)

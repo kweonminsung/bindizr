@@ -66,4 +66,20 @@ async fn role_grant_grants_revoke() {
     let delete_args = ["role", "delete", &role_name];
     let refused = app.run_cli(&delete_args).await;
     assert_cli_failure_contains(&delete_args, &refused, "still held");
+    assert_cli_failure_contains(&delete_args, &refused, &format!("API token {role_name}"));
+
+    // The role's own listing holds its token and no other.
+    let listed = app
+        .run_cli_success(&["token", "list", "--role", &role_name])
+        .await;
+    assert!(listed.contains(&role_name), "{listed}");
+    let listed = app
+        .run_cli_success(&["tsig-key", "list", "--role", &role_name])
+        .await;
+    assert!(!listed.contains(&role_name), "{listed}");
+    let roles = app.run_cli_success(&["role", "list"]).await;
+    assert!(
+        roles.contains("TOKENS") && roles.contains("TSIG-KEYS"),
+        "{roles}"
+    );
 }

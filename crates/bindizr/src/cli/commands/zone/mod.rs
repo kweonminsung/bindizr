@@ -280,12 +280,12 @@ bindizr generates rather than stores as editable records.")]
         output: OutputFormat,
     },
 
-    /// Send NOTIFY messages to secondary servers for a zone, or for every zone
+    /// Send NOTIFY messages to secondary servers for a zone, or for all zones
     #[command(after_help = "\
 Examples:
   bindizr zone notify example.com
-  bindizr zone notify                 # every zone
-  bindizr zone notify --bump-serial   # every zone, transferring even where nothing changed")]
+  bindizr zone notify                 # all zones
+  bindizr zone notify --bump-serial   # all zones, transferring even where nothing changed")]
     Notify(NotifyArgs),
 
     /// Inspect or roll back a zone's versions (serial history)
@@ -322,7 +322,7 @@ impl From<ImportMode> for types::ImportMode {
 /// Arguments for the `zone notify` subcommand.
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotifyArgs {
-    /// The name of the zone; omit it to notify every zone
+    /// The name of the zone; omit it to notify all zones
     #[arg(value_name = "ZONE_NAME")]
     name: Option<String>,
 

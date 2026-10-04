@@ -80,10 +80,17 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
                 .unwrap();
         assert_eq!(columns.0.as_deref(), expected_kind);
         assert_eq!(columns.1.as_deref(), expected_name);
-        let read = get_by_serial(&pool, version.zone_id, version.serial)
-            .await
-            .unwrap()
-            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let read = get_by_serial_tx(
+            &mut tx,
+            version.zone_id,
+            version.serial,
+            LockLevel::Unlocked,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        tx.commit().await.unwrap();
         assert_eq!(read.changed_by, actor);
     }
 }

@@ -140,7 +140,7 @@ async fn external_dns_domain_listing_reflects_role_grants() {
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &granted_zone, &scoped_name).await;
 
-    // The built-in role sees every zone.
+    // The built-in role sees all zones.
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
@@ -156,6 +156,63 @@ async fn external_dns_domain_listing_reflects_role_grants() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["domains"], json!([granted_zone]));
+}
+
+/// Verify that the domain filter unions a role's grants, so sync actions split
+/// across grants still qualify a name while a missing one keeps it out.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn external_dns_domain_listing_unions_split_grants() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    let split_zone = app.zone_name("split.com");
+    let partial_zone = app.zone_name("partial.com");
+    app.create_named_zone(&split_zone).await;
+    app.create_named_zone(&partial_zone).await;
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    let grant = |zone: String, actions: &'static str, pattern: &'static str| {
+        let role = scoped_name.clone();
+        let app = &app;
+        async move {
+            app.run_cli_success(&[
+                "role",
+                "grant",
+                &role,
+                "--zone",
+                &zone,
+                "--actions",
+                actions,
+                "--pattern",
+                pattern,
+            ])
+            .await;
+        }
+    };
+    // Reading in all zones and writing in a subtree syncs that subtree.
+    grant(split_zone.clone(), "record:read", "*").await;
+    grant(split_zone.clone(), "record:create,record:delete", "*.k8s").await;
+    // Without record:delete no sync can finish, so the zone stays out.
+    grant(partial_zone.clone(), "record:read", "*").await;
+    grant(partial_zone.clone(), "record:create", "*").await;
+
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .send_request(Method::GET, "/external-dns/domains", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["domains"],
+        json!([format!("k8s.{split_zone}")]),
+        "{body}"
+    );
 }
 
 /// Verify that a grant narrowed to a subtree narrows the domain filter.
@@ -220,6 +277,21 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
         ])
         .await;
     }
+    // So does one holding them only for a type the provider never writes.
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &scoped_name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        RECORD_ACTIONS,
+        "--pattern",
+        "*.mail",
+        "--types",
+        "MX",
+    ])
+    .await;
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;

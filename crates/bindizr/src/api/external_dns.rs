@@ -69,13 +69,13 @@ pub(crate) async fn list_external_dns_domains(
     Ok((StatusCode::OK, Json(ExternalDnsDomainsResponse { domains })).into_response())
 }
 
-/// List the records of every zone the ExternalDNS caller may manage.
+/// List the records of all zones the ExternalDNS caller may manage.
 #[utoipa::path(
         get,
         path = "/external-dns/records",
         tag = "ExternalDNS",
         summary = "List the records of every ExternalDNS-managed zone",
-        description = "Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.",
+        description = "Records of all zones the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.",
         responses(
             (status = 200, description = "Records of the allowed zones", body = ExternalDnsRecordsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

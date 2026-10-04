@@ -15,3 +15,6 @@ pub(crate) mod tsig_key;
 pub(crate) mod zone;
 pub(crate) mod zone_change;
 pub(crate) mod zone_version;
+
+#[cfg(test)]
+mod tests;

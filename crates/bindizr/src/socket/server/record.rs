@@ -19,12 +19,10 @@ pub(crate) async fn get_record(
     cx: &Context,
     id: RecordId,
 ) -> Result<DaemonResponse<RecordResponse>, ServiceError> {
-    let record = record::get_with_zone(cx, &Caller::socket(), id).await?;
+    let record = record::get(cx, &Caller::socket(), id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
-        data: RecordResponse {
-            record: GetRecordResponse::from(&record),
-        },
+        data: RecordResponse { record },
     })
 }
 

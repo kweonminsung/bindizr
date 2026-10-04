@@ -9,6 +9,7 @@ mod metrics;
 mod middleware;
 mod notify;
 mod openapi;
+mod permission;
 mod query;
 mod record;
 mod role;

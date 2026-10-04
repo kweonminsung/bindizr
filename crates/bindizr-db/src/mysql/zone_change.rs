@@ -1,6 +1,6 @@
 use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use chrono::Utc;
-use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
+use sqlx::{AssertSqlSafe, MySql, Transaction};
 
 use crate::{LockLevel, error::DatabaseError, model::zone_change::ZoneChange};
 
@@ -43,32 +43,9 @@ pub(crate) async fn create_many_tx(
     Ok(())
 }
 
-/// List journal entries in the interval `(from_serial, to_serial]`.
-pub(crate) async fn list_between_serials(
-    pool: &Pool<MySql>,
-    zone_id: ZoneId,
-    from_serial: Serial,
-    to_serial: Serial,
-) -> Result<Vec<ZoneChange>, DatabaseError> {
-    sqlx::query_as::<_, ZoneChange>(
-        r#"
-        SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
-        FROM zone_journal
-        WHERE zone_id = ? AND serial > ? AND serial <= ?
-        ORDER BY serial, id
-        "#
-    )
-    .bind(zone_id)
-    .bind(from_serial)
-    .bind(to_serial)
-    .fetch_all(pool)
-    .await
-    .map_err(DatabaseError::from)
-}
-
 /// Count journal entries in the interval `(from_serial, to_serial]`.
-pub(crate) async fn count_between_serials(
-    pool: &Pool<MySql>,
+pub(crate) async fn count_between_serials_tx(
+    tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
@@ -83,7 +60,7 @@ pub(crate) async fn count_between_serials(
     .bind(zone_id)
     .bind(from_serial)
     .bind(to_serial)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
 
     Ok(count as u64)

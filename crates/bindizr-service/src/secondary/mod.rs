@@ -69,29 +69,38 @@ pub async fn create(
         )));
     }
 
-    let secondary = bindizr_db::secondary::create(
-        cx.db(),
-        Secondary {
-            id: SecondaryId::UNWRITTEN,
-            name: name.clone(),
-            address: address.clone(),
-            enabled: true,
-            notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| {
-        // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
-        if e.is_unique_violation() {
-            ServiceError::secondary_conflict(format!(
-                "secondary with name '{}' or address '{}' already exists",
-                name, address
-            ))
-        } else {
-            e.into()
-        }
-    })?;
+    let mut tx = transaction::begin_tx(cx, "failed to create secondary").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
+        bindizr_db::secondary::create_tx(
+            &mut tx,
+            Secondary {
+                id: SecondaryId::UNWRITTEN,
+                name: name.clone(),
+                address: address.clone(),
+                enabled: true,
+                notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
+                created_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|e| {
+            // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
+            if e.is_unique_violation() {
+                ServiceError::secondary_conflict(format!(
+                    "secondary with name '{}' or address '{}' already exists",
+                    name, address
+                ))
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
     Ok(GetSecondaryResponse::from_secondary(
         &secondary,
         notify_key.as_ref().map(|key| key.name.as_str()),
@@ -184,6 +193,10 @@ pub async fn update(
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
     let result: Result<_, ServiceError> = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
         let secondary = bindizr_db::secondary::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
@@ -328,7 +341,16 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     caller.authorize_action(Action::SecondaryManage)?;
 
     let secondary = lookup_by_name(cx, name).await?;
-    Ok(bindizr_db::secondary::delete(cx.db(), secondary.id).await?)
+    let mut tx = transaction::begin_tx(cx, "failed to delete secondary").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
+        Ok(bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await?)
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to delete secondary").await
 }
 
 /// The enabled secondaries, for the DNS plane, which takes no caller.

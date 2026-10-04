@@ -33,12 +33,18 @@ pub(crate) async fn handle_axfr(
     );
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
+        let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
+            TransferAccess::Granted(zones) => zones,
+            TransferAccess::NotAuth => return Err(XfrError::NotAuth(zone_name_str.to_string())),
+            TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
+        };
         return catalog::handle_catalog_axfr(
             dns_cx,
             stream,
             query,
             response_qtype,
             identity.signer.take(),
+            zones,
         )
         .await;
     }

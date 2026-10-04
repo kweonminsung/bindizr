@@ -26,8 +26,9 @@ external_dns_enabled = true
 
 ## 2. Create a role and a token
 
-Create the target zones first. Give the adapter one grant containing all
-three required actions: `record:read`, `record:create`, and `record:delete`.
+Create the target zones first. Grant the adapter's role the three actions
+ExternalDNS needs, `record:read`, `record:create`, and `record:delete`, in one
+grant or several.
 ExternalDNS manages records in existing zones; it does not create zones.
 
 ```bash
@@ -41,7 +42,7 @@ kubectl -n external-dns create secret generic bindizr-external-dns \
 ```
 
 The role's qualifying grants become the ExternalDNS domain filter
-automatically; a grant without `--zone` covers every zone. One role can serve
+automatically; a grant without `--zone` covers all zones. One role can serve
 several clusters, each with a token of its own. See
 [Access Control](cli/access-control.md#externaldns).
 
@@ -123,6 +124,6 @@ is in [What to expect](external-dns/advanced.md#what-to-expect).
 | `403` every sync; allowed changes never apply | The grant is restricted by record type, to the apex, or to one exact name — narrowings the domain filter cannot express — and a sync is all-or-nothing. Widen the grant, or narrow external-dns's own `--domain-filter` to what it covers |
 | `404 No zone is authoritative for '<name>'` | Either no zone covers the name, or the token's role has no grant reaching the zone that does; the two read alike so a token cannot probe for zones. Create the zone if it is missing (ExternalDNS never creates zones), otherwise grant it: `bindizr role grant <ROLE_NAME> --zone <zone> --actions record:read,record:create,record:delete` |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
-| `503 no manageable names` at startup | The token's role has no grant holding all of `record:read`, `record:create`, and `record:delete` in an existing zone (or no zones exist yet). Grant one: `bindizr role grant <ROLE_NAME> --zone <zone> --actions record:read,record:create,record:delete`; negotiation recovers on its own |
+| `503 no manageable names` at startup | The token's role has no grant holding all of `record:read`, `record:create`, and `record:delete` for a type ExternalDNS writes (A, AAAA, CNAME, TXT) in an existing zone (or no zones exist yet). Grant one: `bindizr role grant <ROLE_NAME> --zone <zone> --actions record:read,record:create,record:delete`; negotiation recovers on its own |
 | `502` although the records were applied | With `dns.notify.batch_ms = 0`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set a `dns.notify.batch_ms` window so the write is answered at commit, or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |

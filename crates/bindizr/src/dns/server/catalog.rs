@@ -9,16 +9,18 @@ use tokio::net::TcpStream;
 
 use crate::dns::{error::XfrError, server::DnsContext};
 
-/// Generates the catalog zone and its member zone list.
+/// Generates the catalog zone and its member zone list from `zones`, the
+/// served zones loaded where the transfer was authorized.
 pub(crate) async fn generate_catalog_zone(
     dns_cx: &DnsContext,
+    zones: Vec<Zone>,
 ) -> Result<(Zone, Vec<String>), XfrError> {
     let cx = dns_cx.daemon();
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {}", catalog_zone_name);
 
-    let all_zones = zone::list(cx).await?;
+    let all_zones = zones;
 
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
@@ -83,6 +85,7 @@ pub(crate) async fn handle_catalog_axfr(
     query: &message::ParsedQuery,
     response_qtype: Rtype,
     signer: Option<TransferSigner>,
+    zones: Vec<Zone>,
 ) -> Result<(), XfrError> {
     log::info!(
         "AXFR request for catalog zone: {}",
@@ -90,7 +93,7 @@ pub(crate) async fn handle_catalog_axfr(
     );
 
     // Materialize the virtual catalog from the current member zones.
-    let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx).await?;
+    let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx, zones).await?;
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     if let Some(signer) = signer {

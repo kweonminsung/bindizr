@@ -207,7 +207,7 @@ pub(crate) async fn get_zone_version(
         path = "/zones/{name}/versions/{serial}/rollback",
         tag = "Zone",
         summary = "Roll a zone back to a version serial",
-        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.",
+        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. It needs `zone:update`, and `record:read`, `record:create` and `record:delete` with no name or type narrowing, since it reads the version it restores. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back."),
             ("serial" = u32, Path, description = "The version serial to roll back to."),
@@ -394,7 +394,7 @@ pub(crate) async fn create_zone(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Update a specific DNS zone",
-        description = "Applies the given fields and keeps the rest; a different `name` renames the zone. The serial advances by itself and cannot be set here.",
+        description = "Applies the given fields and keeps the rest; a different `name` renames the zone, which also needs `zone:create` in all zones. The serial advances by itself and cannot be set here.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to update.")
         ),

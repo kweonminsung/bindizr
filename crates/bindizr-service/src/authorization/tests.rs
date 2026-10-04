@@ -6,7 +6,7 @@ use bindizr_core::{
     model::{
         api_token::{ApiToken, TokenId},
         role::RoleId,
-        role_grant::{Action, RoleGrant, RoleGrantId, RoleZoneScope},
+        role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope},
         zone::ZoneId,
     },
 };
@@ -52,7 +52,7 @@ fn grant(actions: &[Action], pattern: &str, types: &str) -> RoleGrant {
     }
 }
 
-/// Build a grant reaching every zone with the given actions.
+/// Build a grant reaching all zones with the given actions.
 fn all_zones(actions: &[Action]) -> RoleGrant {
     RoleGrant {
         zone_scope: RoleZoneScope::All,
@@ -62,7 +62,7 @@ fn all_zones(actions: &[Action]) -> RoleGrant {
 
 /// Check fixture record writes against the supplied grants.
 fn authorize(grants: &[RoleGrant], writes: &[RecordWrite<'_>]) -> Result<(), ServiceError> {
-    authorize_with_grants(grants, &test_zone(), writes)
+    authorize_with_grants(&RoleGrants::from(grants.to_vec()), &test_zone(), writes)
 }
 
 /// Build a record-create authorization target for the test.
@@ -93,7 +93,7 @@ fn token(grants: Vec<RoleGrant>) -> Caller {
     Caller::from_token(&token_record(), grants)
 }
 
-/// Verify that actions on objects no zone owns need a grant covering every zone.
+/// Verify that actions on objects no zone owns need a grant covering all zones.
 #[test]
 fn authorize_action_needs_an_all_zones_grant() {
     assert!(
@@ -183,6 +183,44 @@ fn visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> boo
     caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
 }
 
+/// Verify that `reaches_record` lets a write-only grant find the records it
+/// may change, and nothing else.
+#[test]
+fn reaches_record_admits_the_write_action_under_its_constraints() {
+    let caller = token(vec![grant(
+        &[Action::RecordDelete],
+        "_acme-challenge",
+        "TXT",
+    )]);
+    let reaches = |action, name: &str, record_type: &RecordType| {
+        caller.reaches_record(
+            action,
+            ZoneId::from(1),
+            &OwnerName::from_row(name),
+            Some(record_type),
+        )
+    };
+
+    assert!(reaches(
+        Action::RecordDelete,
+        "_acme-challenge",
+        &RecordType::Txt
+    ));
+    // Nothing beyond the grant's own targets, so ids stay unprobeable.
+    assert!(!reaches(
+        Action::RecordUpdate,
+        "_acme-challenge",
+        &RecordType::Txt
+    ));
+    assert!(!reaches(Action::RecordDelete, "www", &RecordType::Txt));
+    assert!(!reaches(
+        Action::RecordDelete,
+        "_acme-challenge",
+        &RecordType::A
+    ));
+    assert!(!visible(&caller, "_acme-challenge", Some(&RecordType::Txt)));
+}
+
 /// Verify that `sees_record` needs `record:read` and narrows like writes.
 #[test]
 fn sees_record_needs_record_read_under_matching_constraints() {
@@ -202,32 +240,26 @@ fn sees_record_needs_record_read_under_matching_constraints() {
     assert!(!visible(&write_only, "app", Some(&RecordType::A)));
 }
 
-/// Verify that `authorize_zone_unrestricted` rejects a constrained grant.
+/// Verify that `authorize_whole_zone` rejects a constrained grant.
 #[test]
-fn authorize_zone_unrestricted_rejects_a_constrained_grant() {
+fn authorize_whole_zone_rejects_a_constrained_grant() {
     let zone = test_zone();
     let read = Action::RecordRead;
 
-    assert!(
-        Caller::socket()
-            .authorize_zone_unrestricted(read, &zone)
-            .is_ok()
-    );
+    assert!(Caller::socket().authorize_whole_zone(read, &zone).is_ok());
     assert!(
         token(vec![grant(&[read], "*", "*")])
-            .authorize_zone_unrestricted(read, &zone)
+            .authorize_whole_zone(read, &zone)
             .is_ok()
     );
 
     let err = token(vec![grant(&[read], "*.dyn", "*")])
-        .authorize_zone_unrestricted(read, &zone)
+        .authorize_whole_zone(read, &zone)
         .unwrap_err();
     assert_eq!(err.code(), ErrorCode::Forbidden);
 
     // A zone with no grant at all keeps reading as absent.
-    let err = token(vec![])
-        .authorize_zone_unrestricted(read, &zone)
-        .unwrap_err();
+    let err = token(vec![]).authorize_whole_zone(read, &zone).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 

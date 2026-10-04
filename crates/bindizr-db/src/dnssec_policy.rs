@@ -6,11 +6,14 @@ use crate::{
 };
 
 /// Insert a DNSSEC policy.
-pub async fn create(db: &Db, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::dnssec_policy::create(pool, policy).await,
-        Backend::Postgres(pool) => postgres::dnssec_policy::create(pool, policy).await,
-        Backend::Sqlite(pool) => sqlite::dnssec_policy::create(pool, policy).await,
+pub async fn create_tx(
+    tx: &mut Transaction<'_>,
+    policy: DnssecPolicy,
+) -> Result<DnssecPolicy, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::dnssec_policy::create_tx(tx, policy).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_policy::create_tx(tx, policy).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::create_tx(tx, policy).await,
     }
 }
 
@@ -78,10 +81,10 @@ pub async fn update_tx(
 }
 
 /// Delete a DNSSEC policy by ID.
-pub async fn delete(db: &Db, id: PolicyId) -> Result<(), DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::dnssec_policy::delete(pool, id).await,
-        Backend::Postgres(pool) => postgres::dnssec_policy::delete(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::dnssec_policy::delete(pool, id).await,
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: PolicyId) -> Result<(), DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::dnssec_policy::delete_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_policy::delete_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_policy::delete_tx(tx, id).await,
     }
 }

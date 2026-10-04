@@ -97,4 +97,4 @@ secondary with `--notify-key`. See
 [Signed NOTIFY](../cli/secondaries.md#signed-notify).
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
-for creating the key in a role that holds `zone:transfer` in every zone.
+for creating the key in a role that holds `zone:transfer` in all zones.

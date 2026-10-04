@@ -428,14 +428,28 @@ impl ServiceError {
     }
 
     /// Build an error explaining that credentials still authenticate into a role.
-    pub fn role_in_use(name: impl fmt::Display, tokens: u64, keys: u64) -> Self {
+    pub fn role_in_use(name: impl fmt::Display, tokens: &[String], keys: &[String]) -> Self {
+        let mut holders = Vec::new();
+        if !tokens.is_empty() {
+            let noun = if tokens.len() == 1 {
+                "API token"
+            } else {
+                "API tokens"
+            };
+            holders.push(format!("{} {}", noun, tokens.join(", ")));
+        }
+        if !keys.is_empty() {
+            let noun = if keys.len() == 1 {
+                "TSIG key"
+            } else {
+                "TSIG keys"
+            };
+            holders.push(format!("{} {}", noun, keys.join(", ")));
+        }
         ServiceError::RoleInUse(format!(
-            "role '{}' is still held by {} API token{} and {} TSIG key{}",
+            "role '{}' is still held by {}",
             name,
-            tokens,
-            if tokens == 1 { "" } else { "s" },
-            keys,
-            if keys == 1 { "" } else { "s" }
+            holders.join(" and ")
         ))
     }
 

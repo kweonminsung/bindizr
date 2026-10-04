@@ -1,16 +1,14 @@
 use bindizr_core::model::{role::RoleId, tsig_key::TsigKeyId};
 use chrono::Utc;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::{error::DatabaseError, model::tsig_key::TsigKey};
+use crate::{LockLevel, error::DatabaseError, model::tsig_key::TsigKey};
 
 /// Insert a TSIG key.
-pub(crate) async fn create(
-    pool: &Pool<Sqlite>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Sqlite>,
     mut key: TsigKey,
 ) -> Result<TsigKey, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -23,7 +21,7 @@ pub(crate) async fn create(
     .bind(&key.secret)
     .bind(key.role_id)
     .bind(now)
-    .execute(&mut *conn)
+    .execute(&mut **tx)
     .await?;
 
     key.id = TsigKeyId::from(result.last_insert_rowid() as i32);
@@ -46,6 +44,23 @@ pub(crate) async fn get(
     .await?;
 
     Ok(key)
+}
+
+/// A TSIG key by id in the current transaction; SQLite's writer
+/// reservation stands in for a row lock.
+pub(crate) async fn get_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: TsigKeyId,
+    _lock_level: LockLevel,
+) -> Result<Option<TsigKey>, DatabaseError> {
+    let row = sqlx::query_as::<_, TsigKey>(
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row)
 }
 
 /// Find a TSIG key by name.
@@ -79,28 +94,31 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<TsigKey>, Databa
 }
 
 /// Delete a TSIG key by ID.
-pub(crate) async fn delete(pool: &Pool<Sqlite>, id: TsigKeyId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: TsigKeyId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM tsig_keys WHERE id = ?")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())
 }
 
-/// Count the TSIG keys authenticating into a role: the in-use check before a role delete.
-pub(crate) async fn count_by_role_id(
+/// List the TSIG keys authenticating into a role.
+pub(crate) async fn list_by_role_id(
     pool: &Pool<Sqlite>,
     role_id: RoleId,
-) -> Result<u64, DatabaseError> {
+) -> Result<Vec<TsigKey>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tsig_keys WHERE role_id = ?")
-        .bind(role_id)
-        .fetch_one(&mut *conn)
-        .await?;
+    let rows = sqlx::query_as::<_, TsigKey>(
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE role_id = ? ORDER BY name",
+    )
+    .bind(role_id)
+    .fetch_all(&mut *conn)
+    .await?;
 
-    Ok(count as u64)
+    Ok(rows)
 }

@@ -8,12 +8,10 @@ use sqlx::{Pool, Sqlite, Transaction};
 use crate::{LockLevel, error::DatabaseError, model::secondary::Secondary};
 
 /// Insert a secondary.
-pub(crate) async fn create(
-    pool: &Pool<Sqlite>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Sqlite>,
     mut secondary: Secondary,
 ) -> Result<Secondary, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -26,7 +24,7 @@ pub(crate) async fn create(
     .bind(secondary.enabled)
     .bind(secondary.notify_tsig_key_id)
     .bind(now)
-    .execute(&mut *conn)
+    .execute(&mut **tx)
     .await?;
 
     secondary.id = SecondaryId::from(result.last_insert_rowid() as i32);
@@ -134,12 +132,13 @@ pub(crate) async fn count_by_notify_tsig_key_id(
 }
 
 /// Delete a secondary by ID.
-pub(crate) async fn delete(pool: &Pool<Sqlite>, id: SecondaryId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: SecondaryId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM secondaries WHERE id = ?")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

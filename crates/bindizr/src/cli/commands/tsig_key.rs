@@ -1,6 +1,6 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateTsigKeyRequest, GetTsigKeyResponse, MessageResponse, PageRequest, PaginatedResponse,
+    CreateTsigKeyRequest, GetTsigKeyResponse, MessageResponse, PaginatedResponse, TsigKeyFilter,
     TsigKeyResponse,
 };
 use clap::Subcommand;
@@ -38,9 +38,12 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// List all TSIG keys (secrets are not shown; use `get`)
+    /// List TSIG keys, every one or one role's (secrets are not shown; use `get`)
     #[command(alias = "ls")]
     List {
+        /// Only the TSIG keys authenticating into this role
+        #[arg(long, value_name = "ROLE_NAME")]
+        role: Option<String>,
         /// Maximum number of keys to return
         #[arg(long)]
         limit: Option<u32>,
@@ -102,12 +105,17 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             print_response(&res.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::List {
+            role,
             limit,
             offset,
             output,
         } => {
             let res = client::send_command::<PaginatedResponse<GetTsigKeyResponse>>(
-                DaemonCommand::ListTsigKeys(PageRequest { limit, offset }),
+                DaemonCommand::ListTsigKeys(TsigKeyFilter {
+                    role_name: role,
+                    limit,
+                    offset,
+                }),
             )
             .await?;
             log::debug!("TSIG key list result: {:?}", res);
