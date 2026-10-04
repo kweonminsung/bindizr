@@ -99,7 +99,10 @@ pub async fn get_version(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        let read = caller.authorize_whole_zone_read(&zone)?;
+        let read = caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_whole_zone_read(&zone)?;
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
             zone.id,
@@ -145,7 +148,10 @@ pub async fn diff_versions(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        let read = caller.authorize_whole_zone_read(&zone)?;
+        let read = caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_whole_zone_read(&zone)?;
         let to = to.unwrap_or(zone.serial);
 
         validate_serial_diffable_tx(&mut tx, &zone, from).await?;

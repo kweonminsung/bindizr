@@ -27,20 +27,22 @@ give it only where you would give `admin`.
 
 | Operation | Needs |
 | --- | --- |
-| Seeing a zone at all | Any grant reaching it, whatever its actions |
+| Seeing a zone and its details | Any grant reaching it, whatever its actions |
 | Reading records | `record:read` covering their name and type |
 | Creating, updating, deleting a record | The matching `record:` action at its name and type, per record in a bulk change |
+| Updating a record without `record:read` on it | Every field given: an omitted one would be read from the record |
 | Zone export, version detail, version diff | `record:read` with no name or type narrowing |
 | `zone import --mode append` | `record:create` with no narrowing |
 | `zone import --mode upsert` / `replace` | `record:create` and `record:delete`, with no narrowing |
-| `zone import --create` | `zone:create` as well |
-| Rollback | `zone:update`, plus `record:create` and `record:delete` with no narrowing |
+| `zone import --create` | `zone:create`, and the mode's record actions in a grant without `--zone` |
+| Renaming a zone | `zone:update`, and `zone:create` in all zones |
+| Rollback | `zone:update`, plus `record:read`, `record:create` and `record:delete` with no narrowing |
 | `zone notify` | `zone:update`; for the catalog zone or all zones, `zone:update` in all zones |
 | DNSSEC policies | `dnssec:read` to list or show, `dnssec:manage` to change, both in all zones |
 
 A view the zone is rebuilt from — an export, a stored version, a diff, an
-import — needs a grant with no name or type narrowing: half a zone re-applied
-deletes what it left out.
+import, a rollback — needs a grant with no name or type narrowing: half a zone
+re-applied deletes what it left out.
 
 ## Not found or forbidden
 

@@ -68,6 +68,8 @@ pub(crate) async fn authenticate_transfer(
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
+            // An address is no credential the content transaction re-reads:
+            // removing a secondary refuses later transfers, not one admitted.
             return match acl::is_client_allowed(dns_cx, client_ip).await {
                 Ok(true) => Ok(TransferIdentity {
                     key: None,

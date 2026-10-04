@@ -44,8 +44,9 @@ pub struct ImportZoneRequest {
     /// file; they are counted as skipped and listed in `skipped_records`.
     #[serde(default)]
     pub skip_unsupported: bool,
-    /// Create the zone from the file's SOA when it does not exist yet.
-    /// Without this a missing zone is an error, so a typo creates nothing.
+    /// Create the zone from the file's SOA when it does not exist yet, which
+    /// needs `zone:create` and the mode's record actions in all zones. Without
+    /// this a missing zone is an error, so a typo creates nothing.
     #[serde(default)]
     pub create: bool,
 }

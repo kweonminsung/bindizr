@@ -378,6 +378,11 @@ each rule says which spelling is this project's.
   outruns its read in, which is this boundary as a test. Bot findings
   that a conflict or a count reveals existence or a TTL to a write-only role
   are declined.
+- **What an operation needs is written in five places**, which change together:
+  the operations table in `docs/cli/advanced.md`, the action table in
+  `docs/cli/access-control.md`, the `Action` doc (the OpenAPI schema, so
+  regenerate `docs/openapi.yaml`), `role grant --help`, and the UI's
+  `ACTION_DESCRIPTIONS`; the route's own OpenAPI description when it states one.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
@@ -394,18 +399,22 @@ One locking model covers the service layer; keep new code on it:
   `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it, `FOR UPDATE`) **before** any
   record rows — that order is the deadlock rule. Authorization, validation, and conflict
   checks decide on rows loaded inside that transaction, never on an earlier unlocked
-  read — the credential included: right after the zone row, `Caller::reauthenticate_tx`
-  re-reads the token and its role's grants share-locked for every later check, so
-  deleting a credential or revoking a grant waits for work in flight and refuses all
-  after it. Every write runs in a transaction, management writes included; a TSIG
-  transfer or update re-reads its key and grants the same way, the catalog's included.
-  A read without a transaction, or an outbound NOTIFY or probe, decides on the
-  request's credential. `lookup_by_name_tx` is the unchecked tx lookup; the caller-gated tx
+  read, the credential included (next item). `lookup_by_name_tx` is the unchecked tx
+  lookup; the caller-gated tx
   read is `get_by_name_tx`, with its `Caller` argument as in the non-tx form. - Outside
   the transaction belong: pure input parsing/normalization, non-locking pre-reads done
   only to learn the lock target (commented at each site), friendly duplicate pre-checks
   that a UNIQUE/FK constraint backstops, authorization pre-checks the transaction
   repeats, and NOTIFY/logging after commit.
+- **Every transaction that acts for a caller re-authenticates it**, reads included:
+  right after its zone row (first, where it has none), `Caller::reauthenticate_tx`
+  re-reads the token and its role's grants share-locked and every later check runs on
+  them, so deleting a credential or revoking a grant waits for the work in flight and
+  refuses all after it. Every write therefore runs in a transaction, management writes
+  included; a TSIG transfer or update re-reads its key and grants the same way, the
+  catalog's included. A read without a transaction, an outbound NOTIFY or probe, and
+  an unsigned transfer (the address list as the request finds it) decide on the
+  request's credential.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and

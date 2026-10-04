@@ -35,7 +35,10 @@ pub async fn get_status(
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
     let result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_action(Action::DnssecRead, &zone)?;
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
         build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await

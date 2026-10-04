@@ -77,14 +77,16 @@ Examples:
 
 Actions:
   zone:read         read a zone's status and version history
-  zone:create       create zones (all zones only)
-  zone:update       change a zone's settings, send NOTIFY, roll back a version
+  zone:create       create zones, and with zone:update rename one (all zones only)
+  zone:update       change a zone's settings and send NOTIFY; with unnarrowed
+                    record:read, record:create and record:delete, roll back a version
   zone:delete       delete zones
   zone:transfer     answer a TSIG-signed AXFR/IXFR (TSIG keys only)
   record:read       list and read records; with no --pattern or --types, also
                     export the zone and read its versions and diffs
   record:create     add records, including by import, nsupdate and ExternalDNS
-  record:update     change a record in place
+  record:update     change a record in place; without record:read on it, every
+                    field must be given
   record:delete     delete records, including by nsupdate and ExternalDNS
   dnssec:read       read DNSSEC status and check the parent DS; in all zones,
                     also read signing policies
