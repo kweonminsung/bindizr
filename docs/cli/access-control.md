@@ -78,7 +78,8 @@ bindizr role revoke challenge-txt <GRANT_ID>
 
 Revoking a grant, or deleting a token or TSIG key, waits for changes already
 under way and refuses every one after it, a long import from another server
-included.
+included. A read or zone transfer already under way finishes with what it could
+read when it began.
 
 `--pattern` is `*` (any name, the default), `@` (the apex), `*.sub` (`sub`
 and every name under it), or an exact name relative to the zone. `--types` is

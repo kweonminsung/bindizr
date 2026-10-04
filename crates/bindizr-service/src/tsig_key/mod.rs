@@ -262,7 +262,8 @@ fn generate_secret() -> String {
 }
 
 /// Whether `key` still exists and its role permits `zone:transfer` in `zone`,
-/// share-locking both so deleting either waits for the read they gate.
+/// read in the transfer's own snapshot (share-locked where the backend locks
+/// rows), so the content it serves is what the key could read then.
 pub(crate) async fn authorize_transfer_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

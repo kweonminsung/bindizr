@@ -246,8 +246,9 @@ impl Caller {
     }
 
     /// This caller authenticated again in `tx`: its token and its role's grants
-    /// re-read share-locked, so deleting the token or revoking a grant waits for
-    /// the transaction; a write takes it right after its zone row.
+    /// re-read, share-locked where the backend locks rows. A revocation waits
+    /// for a write (SQLite's writer reservation serializes them too); a read
+    /// decides on what its own snapshot holds. Taken right after the zone row.
     pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
