@@ -277,6 +277,21 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
         ])
         .await;
     }
+    // So does one holding them only for a type the provider never writes.
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &scoped_name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        RECORD_ACTIONS,
+        "--pattern",
+        "*.mail",
+        "--types",
+        "MX",
+    ])
+    .await;
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;

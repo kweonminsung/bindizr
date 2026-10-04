@@ -2,6 +2,7 @@ use chrono::Utc;
 use serde_json::json;
 
 use super::*;
+use crate::model::record::EXTERNAL_DNS_RECORD_TYPES;
 
 /// Verify that `Action` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
@@ -112,12 +113,16 @@ fn patterns_holding_unions_grants_per_pattern() {
 
     assert_eq!(
         grants
-            .patterns_holding(zone, &sync)
+            .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["*.k8s"]
     );
-    assert!(grants.patterns_holding(ZoneId::from(2), &sync).is_empty());
+    assert!(
+        grants
+            .patterns_holding(ZoneId::from(2), &sync, EXTERNAL_DNS_RECORD_TYPES)
+            .is_empty()
+    );
 
     // Split across grants, the actions must still share a record type.
     let disjoint = RoleGrants::from(vec![
@@ -148,7 +153,7 @@ fn patterns_holding_unions_grants_per_pattern() {
     ]);
     assert_eq!(
         disjoint
-            .patterns_holding(zone, &sync)
+            .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["*.b"]
@@ -171,9 +176,27 @@ fn patterns_holding_unions_grants_per_pattern() {
     ]);
     assert_eq!(
         nested
-            .patterns_holding(zone, &sync)
+            .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["api.apps"]
+    );
+
+    // A type the actions share counts only among the types asked about.
+    let mail = RoleGrants::from(vec![grant(
+        RoleZoneScope::Zone(zone),
+        &sync,
+        "*.mail",
+        "MX",
+    )]);
+    assert!(
+        mail.patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
+            .is_empty()
+    );
+    assert_eq!(
+        mail.patterns_holding(zone, &sync, &[RecordType::Mx])
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec!["*.mail"]
     );
 }

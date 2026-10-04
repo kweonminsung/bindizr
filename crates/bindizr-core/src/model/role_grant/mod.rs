@@ -322,6 +322,12 @@ impl RoleGrant {
             && matches_types(&self.record_types, record_type)
     }
 
+    /// Whether this grant covers every name `pattern` matches, for `record_type`.
+    fn covers_pattern(&self, pattern: &str, record_type: &RecordType) -> bool {
+        pattern_covers(&self.record_name_pattern, pattern)
+            && matches_types(&self.record_types, Some(record_type))
+    }
+
     /// Whether this grant constrains no name or type.
     fn is_unrestricted(&self) -> bool {
         self.record_name_pattern == MATCH_ANY && self.record_types == MATCH_ANY
@@ -409,53 +415,28 @@ impl RoleGrants {
             .any(|grant| grant.permits(action, zone_id) && grant.is_unrestricted())
     }
 
-    /// The grant patterns in `zone_id` where the grants covering them hold all
-    /// `actions` for at least one record type in common.
-    pub fn patterns_holding(&self, zone_id: ZoneId, actions: &[Action]) -> BTreeSet<&str> {
-        let reaching: Vec<&RoleGrant> = self
-            .0
+    /// The grant patterns in `zone_id` where the role's grants together hold
+    /// every one of `actions` for one of `record_types`.
+    pub fn patterns_holding(
+        &self,
+        zone_id: ZoneId,
+        actions: &[Action],
+        record_types: &[RecordType],
+    ) -> BTreeSet<&str> {
+        // Patterns nest or are disjoint, so grants meet only on their own patterns.
+        self.0
             .iter()
             .filter(|grant| grant.zone_scope.covers(zone_id))
-            .collect();
-        reaching
-            .iter()
             .map(|grant| grant.record_name_pattern.as_str())
             .filter(|pattern| {
-                // `None` is every type; each action's types narrow it.
-                let mut common: Option<BTreeSet<&str>> = None;
-                for &action in actions {
-                    let granting: Vec<&&RoleGrant> = reaching
-                        .iter()
-                        .filter(|grant| {
-                            grant.actions.contains(action)
-                                && pattern_covers(&grant.record_name_pattern, pattern)
+                record_types.iter().any(|record_type| {
+                    actions.iter().all(|&action| {
+                        self.0.iter().any(|grant| {
+                            grant.permits(action, zone_id)
+                                && grant.covers_pattern(pattern, record_type)
                         })
-                        .collect();
-                    if granting.is_empty() {
-                        return false;
-                    }
-                    let types = if granting.iter().any(|grant| grant.record_types == MATCH_ANY) {
-                        None
-                    } else {
-                        Some(
-                            granting
-                                .iter()
-                                .flat_map(|grant| grant.record_types.split(','))
-                                .collect(),
-                        )
-                    };
-                    common = match (common, types) {
-                        (None, types) => types,
-                        (common, None) => common,
-                        (Some(common), Some(types)) => {
-                            Some(common.intersection(&types).copied().collect())
-                        }
-                    };
-                    if common.as_ref().is_some_and(BTreeSet::is_empty) {
-                        return false;
-                    }
-                }
-                true
+                    })
+                })
             })
             .collect()
     }
