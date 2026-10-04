@@ -8,6 +8,7 @@
 use bindizr_core::{
     dns::name::OwnerName,
     model::{
+        api_token::TokenId,
         role::RoleId,
         role_grant::{Action, RoleGrant, RoleGrants},
         zone::ZoneId,
@@ -40,7 +41,12 @@ pub struct Caller {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CallerScope {
     Global,
-    Role { id: RoleId, grants: RoleGrants },
+    /// A role's caller, through the token that authenticated it.
+    Role {
+        id: RoleId,
+        token_id: TokenId,
+        grants: RoleGrants,
+    },
 }
 
 /// One record write to authorize, its owner relative to the zone (stored form).
@@ -145,6 +151,7 @@ impl Caller {
         Self {
             scope: CallerScope::Role {
                 id: token.role_id,
+                token_id: token.id,
                 grants: grants.into(),
             },
             attribution: ChangeAttribution {
@@ -238,21 +245,34 @@ impl Caller {
         }
     }
 
-    /// This caller with its role's grants reloaded in `tx`, share-locked so a
-    /// revocation waits for the transaction; a mutation takes it right after
-    /// its zone row and authorizes on it.
-    pub(crate) async fn lock_grants_tx(
+    /// This caller authenticated again in `tx`: its token and its role's grants
+    /// re-read share-locked, so deleting the token or revoking a grant waits for
+    /// the transaction; a write takes it right after its zone row.
+    pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
     ) -> Result<Caller, ServiceError> {
         match &self.scope {
             CallerScope::Global => Ok(self.clone()),
-            CallerScope::Role { id, .. } => {
-                let grants =
-                    bindizr_db::role_grant::list_by_role_id_tx(tx, *id, LockLevel::Shared).await?;
+            CallerScope::Role { token_id, .. } => {
+                let token = bindizr_db::api_token::get_tx(tx, *token_id, LockLevel::Shared)
+                    .await?
+                    .filter(|token| {
+                        token
+                            .expires_at
+                            .is_none_or(|expires_at| Utc::now() < expires_at)
+                    })
+                    .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
+                let grants = bindizr_db::role_grant::list_by_role_id_tx(
+                    tx,
+                    token.role_id,
+                    LockLevel::Shared,
+                )
+                .await?;
                 Ok(Caller {
                     scope: CallerScope::Role {
-                        id: *id,
+                        id: token.role_id,
+                        token_id: token.id,
                         grants: grants.into(),
                     },
                     attribution: self.attribution.clone(),

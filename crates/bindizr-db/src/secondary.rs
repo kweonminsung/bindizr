@@ -9,11 +9,14 @@ use crate::{
 };
 
 /// Insert a secondary.
-pub async fn create(db: &Db, secondary: Secondary) -> Result<Secondary, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::secondary::create(pool, secondary).await,
-        Backend::Postgres(pool) => postgres::secondary::create(pool, secondary).await,
-        Backend::Sqlite(pool) => sqlite::secondary::create(pool, secondary).await,
+pub async fn create_tx(
+    tx: &mut Transaction<'_>,
+    secondary: Secondary,
+) -> Result<Secondary, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::secondary::create_tx(tx, secondary).await,
+        TransactionKind::Postgres(tx) => postgres::secondary::create_tx(tx, secondary).await,
+        TransactionKind::Sqlite(tx) => sqlite::secondary::create_tx(tx, secondary).await,
     }
 }
 
@@ -96,10 +99,10 @@ pub async fn count_by_notify_tsig_key_id(
 }
 
 /// Delete a secondary by ID.
-pub async fn delete(db: &Db, id: SecondaryId) -> Result<(), DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::secondary::delete(pool, id).await,
-        Backend::Postgres(pool) => postgres::secondary::delete(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::secondary::delete(pool, id).await,
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: SecondaryId) -> Result<(), DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::secondary::delete_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::secondary::delete_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::secondary::delete_tx(tx, id).await,
     }
 }

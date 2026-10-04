@@ -212,7 +212,7 @@ pub async fn create_bulk(
     let apply_result = async {
         let t = Instant::now();
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        let caller = &caller.lock_grants_tx(&mut tx).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         timings.load_zone_ms = elapsed_ms(t);
 
         // Authorize before loading existing record rows so an ungranted caller

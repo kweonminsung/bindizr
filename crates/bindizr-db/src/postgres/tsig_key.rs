@@ -1,16 +1,14 @@
 use bindizr_core::model::{role::RoleId, tsig_key::TsigKeyId};
 use chrono::Utc;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
-use crate::{error::DatabaseError, model::tsig_key::TsigKey};
+use crate::{LockLevel, error::DatabaseError, model::tsig_key::TsigKey};
 
 /// Insert a TSIG key.
-pub(crate) async fn create(
-    pool: &Pool<Postgres>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Postgres>,
     mut key: TsigKey,
 ) -> Result<TsigKey, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -24,7 +22,7 @@ pub(crate) async fn create(
     .bind(&key.secret)
     .bind(key.role_id)
     .bind(now)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut **tx)
     .await?;
 
     key.id = TsigKeyId::from(result.get::<i32, _>(0));
@@ -48,6 +46,23 @@ pub(crate) async fn get(
     .await?;
 
     Ok(key)
+}
+
+/// A TSIG key by id in the current transaction.
+pub(crate) async fn get_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: TsigKeyId,
+    lock_level: LockLevel,
+) -> Result<Option<TsigKey>, DatabaseError> {
+    let row = sqlx::query_as::<_, TsigKey>(AssertSqlSafe(format!(
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = $1{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row)
 }
 
 /// Find a TSIG key by name.
@@ -81,12 +96,13 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<TsigKey>, Data
 }
 
 /// Delete a TSIG key by ID.
-pub(crate) async fn delete(pool: &Pool<Postgres>, id: TsigKeyId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: TsigKeyId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM tsig_keys WHERE id = $1")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

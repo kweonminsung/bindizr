@@ -6,11 +6,14 @@ use crate::{
 };
 
 /// Insert a role grant.
-pub async fn create(db: &Db, grant: RoleGrant) -> Result<RoleGrant, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::role_grant::create(pool, grant).await,
-        Backend::Postgres(pool) => postgres::role_grant::create(pool, grant).await,
-        Backend::Sqlite(pool) => sqlite::role_grant::create(pool, grant).await,
+pub async fn create_tx(
+    tx: &mut Transaction<'_>,
+    grant: RoleGrant,
+) -> Result<RoleGrant, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::role_grant::create_tx(tx, grant).await,
+        TransactionKind::Postgres(tx) => postgres::role_grant::create_tx(tx, grant).await,
+        TransactionKind::Sqlite(tx) => sqlite::role_grant::create_tx(tx, grant).await,
     }
 }
 
@@ -87,10 +90,10 @@ pub async fn list_by_role_id_covering_zone_tx(
 }
 
 /// Delete a role grant by ID.
-pub async fn delete(db: &Db, id: RoleGrantId) -> Result<(), DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::role_grant::delete(pool, id).await,
-        Backend::Postgres(pool) => postgres::role_grant::delete(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::role_grant::delete(pool, id).await,
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: RoleGrantId) -> Result<(), DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::role_grant::delete_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::role_grant::delete_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::role_grant::delete_tx(tx, id).await,
     }
 }

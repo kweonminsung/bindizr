@@ -1,13 +1,16 @@
 use bindizr_core::model::role::RoleId;
 
-use crate::{Backend, Db, error::DatabaseError, model::role::Role, mysql, postgres, sqlite};
+use crate::{
+    Backend, Db, Transaction, error::DatabaseError, model::role::Role, mysql, postgres, sqlite,
+    tx::TransactionKind,
+};
 
 /// Insert a role.
-pub async fn create(db: &Db, role: Role) -> Result<Role, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::role::create(pool, role).await,
-        Backend::Postgres(pool) => postgres::role::create(pool, role).await,
-        Backend::Sqlite(pool) => sqlite::role::create(pool, role).await,
+pub async fn create_tx(tx: &mut Transaction<'_>, role: Role) -> Result<Role, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::role::create_tx(tx, role).await,
+        TransactionKind::Postgres(tx) => postgres::role::create_tx(tx, role).await,
+        TransactionKind::Sqlite(tx) => sqlite::role::create_tx(tx, role).await,
     }
 }
 
@@ -39,10 +42,10 @@ pub async fn list_all(db: &Db) -> Result<Vec<Role>, DatabaseError> {
 }
 
 /// Delete a role by ID; its grants go with it.
-pub async fn delete(db: &Db, id: RoleId) -> Result<(), DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::role::delete(pool, id).await,
-        Backend::Postgres(pool) => postgres::role::delete(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::role::delete(pool, id).await,
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: RoleId) -> Result<(), DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::role::delete_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::role::delete_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::role::delete_tx(tx, id).await,
     }
 }

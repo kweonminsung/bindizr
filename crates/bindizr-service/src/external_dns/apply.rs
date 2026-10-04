@@ -72,7 +72,7 @@ pub async fn apply_changes(
                 })
                 .collect();
             caller
-                .lock_grants_tx(&mut tx)
+                .reauthenticate_tx(&mut tx)
                 .await?
                 .authorize_record_writes(&zone, &writes)?;
 

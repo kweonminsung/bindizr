@@ -53,7 +53,7 @@ pub async fn create(
 
     let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
-        let caller = &caller.lock_grants_tx(&mut tx).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
         caller.authorize_record_writes(
             &zone,
