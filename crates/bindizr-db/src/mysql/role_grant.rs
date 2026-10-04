@@ -79,6 +79,23 @@ pub(crate) async fn list_by_role_id(
     Ok(grants)
 }
 
+/// List every grant of a role in the current transaction.
+pub(crate) async fn list_by_role_id_tx(
+    tx: &mut Transaction<'_, MySql>,
+    role_id: RoleId,
+    lock_level: LockLevel,
+) -> Result<Vec<RoleGrant>, DatabaseError> {
+    let grants = sqlx::query_as::<_, RoleGrant>(AssertSqlSafe(format!(
+        "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE role_id = ? ORDER BY id{}",
+        lock_level.clause(),
+    )))
+    .bind(role_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(grants)
+}
+
 /// List a role's grants that reach a zone, its all-zones grants included, in
 /// the current transaction.
 pub(crate) async fn list_by_role_id_covering_zone_tx(

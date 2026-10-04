@@ -33,12 +33,32 @@ pub async fn list_all(db: &Db) -> Result<Vec<RoleGrant>, DatabaseError> {
     }
 }
 
-/// see.
+/// Every grant of a role, which bounds what a credential of it may see.
 pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<RoleGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::role_grant::list_by_role_id(pool, role_id).await,
         Backend::Postgres(pool) => postgres::role_grant::list_by_role_id(pool, role_id).await,
         Backend::Sqlite(pool) => sqlite::role_grant::list_by_role_id(pool, role_id).await,
+    }
+}
+
+/// Every grant of a role inside the caller's transaction, locked at
+/// `lock_level`, for a mutation to authorize against.
+pub async fn list_by_role_id_tx(
+    tx: &mut Transaction<'_>,
+    role_id: RoleId,
+    lock_level: LockLevel,
+) -> Result<Vec<RoleGrant>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
+        }
     }
 }
 

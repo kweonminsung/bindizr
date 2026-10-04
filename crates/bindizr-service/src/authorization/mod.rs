@@ -238,32 +238,45 @@ impl Caller {
         }
     }
 
-    /// Authorize record writes, share-locking the role's grants so revocation
-    /// waits for the mutation; zones no grant reaches read as `NotFound`.
-    pub(crate) async fn authorize_record_writes_tx(
+    /// This caller with its role's grants reloaded in `tx`, share-locked so a
+    /// revocation waits for the transaction; a mutation takes it right after
+    /// its zone row and authorizes on it.
+    pub(crate) async fn lock_grants_tx(
         &self,
         tx: &mut Transaction<'_>,
+    ) -> Result<Caller, ServiceError> {
+        match &self.scope {
+            CallerScope::Global => Ok(self.clone()),
+            CallerScope::Role { id, .. } => {
+                let grants =
+                    bindizr_db::role_grant::list_by_role_id_tx(tx, *id, LockLevel::Shared).await?;
+                Ok(Caller {
+                    scope: CallerScope::Role {
+                        id: *id,
+                        grants: grants.into(),
+                    },
+                    attribution: self.attribution.clone(),
+                })
+            }
+        }
+    }
+
+    /// Authorize record writes in `zone`; a zone no grant reaches reads as
+    /// `NotFound`.
+    pub(crate) fn authorize_record_writes(
+        &self,
         zone: &Zone,
         writes: &[RecordWrite<'_>],
     ) -> Result<(), ServiceError> {
-        match &self.scope {
-            CallerScope::Global => Ok(()),
-            CallerScope::Role { id, .. } => {
-                let grants = bindizr_db::role_grant::list_by_role_id_covering_zone_tx(
-                    tx,
-                    *id,
-                    zone.id,
-                    LockLevel::Shared,
-                )
-                .await?;
-                // Ahead of the per-write loop, which a batch resolving to no
-                // writes would otherwise pass vacuously.
-                if grants.is_empty() {
-                    return Err(ServiceError::zone_not_found(zone.name.as_str()));
-                }
-                authorize_with_grants(&RoleGrants::from(grants), zone, writes)
-            }
+        let Some(grants) = self.grants() else {
+            return Ok(());
+        };
+        // Ahead of the per-write loop, which a batch resolving to no writes
+        // would otherwise pass vacuously.
+        if !grants.reaches_zone(zone.id) {
+            return Err(ServiceError::zone_not_found(zone.name.as_str()));
         }
+        authorize_with_grants(grants, zone, writes)
     }
 
     /// Whether `record:read` or the write `action` covers a record of this

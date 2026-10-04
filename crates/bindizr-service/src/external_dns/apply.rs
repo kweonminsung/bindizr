@@ -72,8 +72,9 @@ pub async fn apply_changes(
                 })
                 .collect();
             caller
-                .authorize_record_writes_tx(&mut tx, &zone, &writes)
-                .await?;
+                .lock_grants_tx(&mut tx)
+                .await?
+                .authorize_record_writes(&zone, &writes)?;
 
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.

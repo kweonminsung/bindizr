@@ -201,7 +201,7 @@ async fn update_locked(
     let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
     let apply_result = async {
-        let (zone, existing_record) = match target {
+        let (zone, existing_record, caller) = match target {
             LockTarget::Id { record_id, zone_id } => {
                 let zone =
                     match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
@@ -220,6 +220,7 @@ async fn update_locked(
                             ));
                         }
                     };
+                let caller = caller.lock_grants_tx(&mut tx).await?;
 
                 let existing_record = match bindizr_db::record::get_tx(
                     &mut tx,
@@ -252,11 +253,12 @@ async fn update_locked(
                     return Err(ServiceError::record_not_found(record_id));
                 }
 
-                (zone, existing_record)
+                (zone, existing_record, caller)
             }
             LockTarget::Name { zone_name, name } => {
                 let zone =
                     zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
+                let caller = caller.lock_grants_tx(&mut tx).await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.
@@ -279,7 +281,7 @@ async fn update_locked(
                 .collect();
 
                 match matched.len() {
-                    1 => (zone, matched.remove(0)),
+                    1 => (zone, matched.remove(0), caller),
                     0 => {
                         return Err(ServiceError::record_not_found_at_name(&zone.name, &owner));
                     }
@@ -291,6 +293,8 @@ async fn update_locked(
                 }
             }
         };
+
+        let caller = &caller;
 
         // Inheriting an omitted field reads the record.
         let inherit = caller
@@ -304,24 +308,21 @@ async fn update_locked(
 
         // An update moves a record from its stored identity to the requested
         // one, so `record:update` must reach both.
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[
-                    RecordWrite {
-                        action: Action::RecordUpdate,
-                        relative_name: existing_record.name.clone(),
-                        record_type: Some(&existing_record.record_type),
-                    },
-                    RecordWrite {
-                        action: Action::RecordUpdate,
-                        relative_name: resolved.owner_name.clone(),
-                        record_type: Some(&resolved.record_type),
-                    },
-                ],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[
+                RecordWrite {
+                    action: Action::RecordUpdate,
+                    relative_name: existing_record.name.clone(),
+                    record_type: Some(&existing_record.record_type),
+                },
+                RecordWrite {
+                    action: Action::RecordUpdate,
+                    relative_name: resolved.owner_name.clone(),
+                    record_type: Some(&resolved.record_type),
+                },
+            ],
+        )?;
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
         let records_at_name = match bindizr_db::record::list_by_name_tx(

@@ -147,6 +147,10 @@ pub async fn update(
     // each restore the fields the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC policy").await?;
     let result: Result<_, ServiceError> = async {
+        caller
+            .lock_grants_tx(&mut tx)
+            .await?
+            .authorize_action(Action::DnssecManage)?;
         let policy =
             bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
                 .await?
