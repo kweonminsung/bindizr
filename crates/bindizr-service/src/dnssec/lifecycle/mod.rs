@@ -70,6 +70,7 @@ pub async fn enable(
     let result = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.lock_grants_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
         let existing_keys =
             bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
@@ -178,6 +179,7 @@ pub async fn update_settings(
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
     let result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.lock_grants_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
         let zone = match parent_ns_addrs {
             Some(parent_ns_addrs) => {

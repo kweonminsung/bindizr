@@ -64,6 +64,8 @@ pub async fn delete(
             }
         };
 
+        let caller = &caller.lock_grants_tx(&mut tx).await?;
+
         let existing_record =
             match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
@@ -89,17 +91,14 @@ pub async fn delete(
         ) {
             return Err(ServiceError::record_not_found(record_id));
         }
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[RecordWrite {
-                    action: Action::RecordDelete,
-                    relative_name: existing_record.name.clone(),
-                    record_type: Some(&existing_record.record_type),
-                }],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[RecordWrite {
+                action: Action::RecordDelete,
+                relative_name: existing_record.name.clone(),
+                record_type: Some(&existing_record.record_type),
+            }],
+        )?;
 
         // The owner's rows frame the diff, as they do for every change.
         let records_at_name = bindizr_db::record::list_by_name_tx(
@@ -215,21 +214,19 @@ pub async fn delete_matching(
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::get_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.lock_grants_tx(&mut tx).await?;
         let owner = normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
         // depended on the match would reveal what lies outside the grant.
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[RecordWrite {
-                    action: Action::RecordDelete,
-                    relative_name: owner.clone(),
-                    record_type: record_type.as_ref(),
-                }],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[RecordWrite {
+                action: Action::RecordDelete,
+                relative_name: owner.clone(),
+                record_type: record_type.as_ref(),
+            }],
+        )?;
 
         let records_at_name =
             bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)

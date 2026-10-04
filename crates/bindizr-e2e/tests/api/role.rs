@@ -1818,3 +1818,81 @@ async fn renaming_a_zone_needs_zone_create() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
+
+/// Verify that an import decides on the grants as they stand once its
+/// transaction begins, so a grant revoked during a slow transfer stops it.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn an_import_stops_when_its_grant_is_revoked_mid_transfer() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+    // The transfer ACL must admit the loopback AXFR the relay passes on.
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let zone_name = app.zone_name("example.com");
+    app.create_named_zone(&zone_name).await;
+
+    // `zone:read` keeps the zone visible, so the refusal reads as 403.
+    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &role_name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "zone:read",
+    ])
+    .await;
+    let granted: serde_json::Value = serde_json::from_str(
+        &app.run_cli_success(&[
+            "role",
+            "grant",
+            &role_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:create",
+            "--output",
+            "json",
+        ])
+        .await,
+    )
+    .unwrap();
+    let grant_id = granted["role_grant"]["id"].as_i64().unwrap().to_string();
+
+    // A relay that holds the transfer until the grant is gone.
+    let relay = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let relay_addr = relay.local_addr().unwrap();
+    let upstream = format!("127.0.0.1:{}", app.dns_port());
+    let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+    let relaying = tokio::spawn(async move {
+        let (mut client, _) = relay.accept().await.unwrap();
+        accepted_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+        let mut server = tokio::net::TcpStream::connect(upstream).await.unwrap();
+        let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+    });
+
+    app.set_auth_token(scoped_token);
+    let path = format!("/zones/{zone_name}/import");
+    let import = app.send_request(
+        Method::POST,
+        &path,
+        Some(json!({ "from_server": relay_addr.to_string(), "mode": "append" })),
+    );
+    let revoke = async {
+        accepted_rx.await.unwrap();
+        app.run_cli_success(&["role", "revoke", &role_name, &grant_id])
+            .await;
+        release_tx.send(()).unwrap();
+    };
+    let ((status, body), ()) = tokio::join!(import, revoke);
+    relaying.await.unwrap();
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}

@@ -53,18 +53,16 @@ pub async fn create(
 
     let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.lock_grants_tx(&mut tx).await?;
 
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[RecordWrite {
-                    action: Action::RecordCreate,
-                    relative_name: owner_name.clone(),
-                    record_type: Some(&record_type),
-                }],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[RecordWrite {
+                action: Action::RecordCreate,
+                relative_name: owner_name.clone(),
+                record_type: Some(&record_type),
+            }],
+        )?;
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.

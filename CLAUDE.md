@@ -394,12 +394,16 @@ One locking model covers the service layer; keep new code on it:
   `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it, `FOR UPDATE`) **before** any
   record rows — that order is the deadlock rule. Authorization, validation, and conflict
   checks decide on rows loaded inside that transaction, never on an earlier unlocked
-  read. `lookup_by_name_tx` is the unchecked tx lookup (record writes authorize through
-  `authorize_record_writes_tx`); the caller-gated tx read is `get_by_name_tx`, with its
-  `Caller` argument as in the non-tx form. - Outside the transaction belong: pure input
-  parsing/normalization, non-locking pre-reads done only to learn the lock target
-  (commented at each site), friendly duplicate pre-checks that a UNIQUE/FK constraint
-  backstops, and NOTIFY/logging after commit.
+  read — grants included: right after the zone row, `Caller::lock_grants_tx` reloads
+  the role's grants share-locked, so a revocation waits for the mutation, and every
+  later check runs on them. A management update with a transaction (a policy, a
+  secondary) does the same; a single-statement management write decides on the
+  request's grants. `lookup_by_name_tx` is the unchecked tx lookup; the caller-gated tx
+  read is `get_by_name_tx`, with its `Caller` argument as in the non-tx form. - Outside
+  the transaction belong: pure input parsing/normalization, non-locking pre-reads done
+  only to learn the lock target (commented at each site), friendly duplicate pre-checks
+  that a UNIQUE/FK constraint backstops, authorization pre-checks the transaction
+  repeats, and NOTIFY/logging after commit.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and

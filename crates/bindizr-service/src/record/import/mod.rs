@@ -195,10 +195,10 @@ async fn reconcile_zone_file(
     let apply_result: Result<AppliedImport, ServiceError> = async {
         let t = Instant::now();
         let mut created = false;
-        let zone = match (
-            zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?,
-            request.create,
-        ) {
+        let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        // The fetch above may have run long; the grants decide as they stand now.
+        let caller = &caller.lock_grants_tx(&mut tx).await?;
+        let zone = match (existing, request.create) {
             (Some(zone), _) => zone,
             // Created in this transaction, so a dry run rolls it back with
             // the records and an apply commits both at once.

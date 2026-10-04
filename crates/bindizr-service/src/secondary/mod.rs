@@ -184,6 +184,10 @@ pub async fn update(
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
     let result: Result<_, ServiceError> = async {
+        caller
+            .lock_grants_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
         let secondary = bindizr_db::secondary::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
