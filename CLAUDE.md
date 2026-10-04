@@ -408,10 +408,13 @@ One locking model covers the service layer; keep new code on it:
   repeats, and NOTIFY/logging after commit.
 - **Every transaction that acts for a caller re-authenticates it**, reads included:
   right after its zone row (first, where it has none), `Caller::reauthenticate_tx`
-  re-reads the token and its role's grants share-locked and every later check runs on
-  them, so deleting a credential or revoking a grant waits for the work in flight and
-  refuses all after it. Every write therefore runs in a transaction, management writes
-  included; a TSIG transfer or update re-reads its key and grants the same way, the
+  re-reads the token and its role's grants and every later check runs on them. A
+  revocation — deleting a credential, revoking a grant — waits for the writes in
+  flight (row locks on MySQL/PostgreSQL, the writer reservation on SQLite) and refuses
+  every later one; a read authorizes and loads its content in one snapshot, so on
+  SQLite, where a read holds no lock, it may finish after a revocation but serves only
+  what it could read before. Every write therefore runs in a transaction, management
+  writes included; a TSIG transfer or update re-reads its key and grants the same way, the
   catalog's included. A read without a transaction, an outbound NOTIFY or probe, and
   an unsigned transfer (the address list as the request finds it) decide on the
   request's credential.
