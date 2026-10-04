@@ -15,7 +15,7 @@ pub async fn notify(
     serial: NotifySerial,
 ) -> Result<(), ServiceError> {
     match target {
-        // The virtual catalog zone has no row to bump and lists every zone.
+        // The virtual catalog zone has no row to bump and lists all zones.
         NotifyTarget::Zone(name) if cx.config().dns.is_catalog_zone(name.as_str()) => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
@@ -26,13 +26,13 @@ pub async fn notify(
             let zone = super::lookup_by_name(cx, name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, target, caller.change_attribution()).await?;
+                super::force_increment_serial(cx, caller, target).await?;
             }
         }
         NotifyTarget::All => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, target, caller.change_attribution()).await?;
+                super::force_increment_serial(cx, caller, target).await?;
             }
         }
     }

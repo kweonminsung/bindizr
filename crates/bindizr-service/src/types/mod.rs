@@ -7,6 +7,7 @@ mod dnssec_policy;
 mod external_dns;
 mod import;
 mod pagination;
+mod permission;
 mod record;
 mod role;
 mod secondary;
@@ -35,11 +36,12 @@ pub use import::{
     ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, ParseImportModeError,
 };
 pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, Pagination};
+pub use permission::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 pub(crate) use record::build_display_value;
 pub use record::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
-    DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
-    RecordTypeResponse, RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
+    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
+    DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter,
+    RecordResponse, RecordValue, RecordWriteResponse, ServedRecordType, UpdateRecordRequest,
 };
 pub use role::{
     CreateRoleGrantRequest, CreateRoleRequest, GetRoleGrantResponse, GetRoleResponse,
@@ -50,8 +52,10 @@ pub use secondary::{
     SecondaryCheckResponse, SecondaryResponse, SecondaryTransferSummary,
     SecondaryTransfersResponse, TransferResponse, TransferSummary, UpdateSecondaryRequest,
 };
-pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
-pub use tsig::{CreateTsigKeyRequest, GetTsigKeyResponse, TsigKeyResponse};
+pub use token::{
+    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenFilter, TokenResponse,
+};
+pub use tsig::{CreateTsigKeyRequest, GetTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
 pub use version::{
     RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
     RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,

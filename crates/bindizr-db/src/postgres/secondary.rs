@@ -8,12 +8,10 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 use crate::{LockLevel, error::DatabaseError, model::secondary::Secondary};
 
 /// Insert a secondary.
-pub(crate) async fn create(
-    pool: &Pool<Postgres>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Postgres>,
     mut secondary: Secondary,
 ) -> Result<Secondary, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -27,7 +25,7 @@ pub(crate) async fn create(
     .bind(secondary.enabled)
     .bind(secondary.notify_tsig_key_id)
     .bind(now)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut **tx)
     .await?;
 
     secondary.id = SecondaryId::from(result.get::<i32, _>(0));
@@ -136,12 +134,13 @@ pub(crate) async fn count_by_notify_tsig_key_id(
 }
 
 /// Delete a secondary by ID.
-pub(crate) async fn delete(pool: &Pool<Postgres>, id: SecondaryId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: SecondaryId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM secondaries WHERE id = $1")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

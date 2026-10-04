@@ -57,18 +57,19 @@ pub(crate) struct TransferIdentity {
 }
 
 /// Authenticate a transfer request: verify its TSIG under the key it names, or
-/// admit an unsigned one by the address ACL. The catalog zone is virtual, so
-/// only the ACL or an all-zones `zone:transfer` grant reaches it.
+/// admit an unsigned one by the address ACL. What the key may read is decided
+/// where the content is loaded, the catalog's included.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
     query_data: &[u8],
     client_ip: IpAddr,
-    zone_name: &str,
 ) -> Result<TransferIdentity, TransferRefusal> {
     let cx = dns_cx.daemon();
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
+            // An address is no credential the content transaction re-reads:
+            // removing a secondary refuses later transfers, not one admitted.
             return match acl::is_client_allowed(dns_cx, client_ip).await {
                 Ok(true) => Ok(TransferIdentity {
                     key: None,
@@ -110,22 +111,6 @@ pub(crate) async fn authenticate_transfer(
     let signer =
         verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
 
-    if cx.config().dns.is_catalog_zone(zone_name) {
-        let granted = tsig_key::authorize_catalog_transfer(cx, &key)
-            .await
-            .map_err(|e| {
-                TransferRefusal::refused(format!("failed to load TSIG grants: {}", e), None)
-            })?;
-        if !granted {
-            return Err(TransferRefusal::refused(
-                format!(
-                    "TSIG key '{}' is not granted 'zone:transfer' in every zone",
-                    key.name
-                ),
-                Some(signer),
-            ));
-        }
-    }
     Ok(TransferIdentity {
         key: Some(key),
         signer: Some(signer),

@@ -155,7 +155,10 @@ async fn get_signed_zone_tx(
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
     let zone = zone::lookup_by_name_tx(tx, zone_name, lock_level).await?;
-    caller.authorize_zone_action(action, &zone)?;
+    caller
+        .reauthenticate_tx(tx)
+        .await?
+        .authorize_zone_action(action, &zone)?;
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));

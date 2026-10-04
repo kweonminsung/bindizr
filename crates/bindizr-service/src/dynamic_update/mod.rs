@@ -11,7 +11,10 @@ use bindizr_core::{
         Serial, Ttl,
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
     },
-    model::{record::RecordId, role_grant::Action},
+    model::{
+        record::RecordId,
+        role_grant::{Action, RoleGrants},
+    },
 };
 use chrono::Utc;
 use prerequisite::evaluate_prerequisites_tx;
@@ -249,20 +252,28 @@ async fn authorize_key_tx(
     let Some(key) = key else {
         return Ok(());
     };
+    // The key that signed may have been deleted since; locked, a deletion
+    // waits for this transaction.
+    let Some(key) = bindizr_db::tsig_key::get_tx(tx, key.id, LockLevel::Shared).await? else {
+        return Err(DynamicUpdateError::Refused(format!(
+            "TSIG key '{}' no longer exists",
+            key.name
+        )));
+    };
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let grants = bindizr_db::role_grant::list_by_role_id_covering_zone_tx(
-        tx,
-        key.role_id,
-        zone.id,
-        LockLevel::Shared,
-    )
-    .await?;
+    let grants = RoleGrants::from(
+        bindizr_db::role_grant::list_by_role_id_covering_zone_tx(
+            tx,
+            key.role_id,
+            zone.id,
+            LockLevel::Shared,
+        )
+        .await?,
+    );
     let permits = |action: Action, owner: &OwnerName, record_type: Option<&RecordType>| {
-        grants
-            .iter()
-            .any(|grant| grant.permits(action, zone.id) && grant.matches(owner, record_type))
+        grants.covers_record(action, zone.id, owner, record_type)
     };
 
     if grants.is_empty() {

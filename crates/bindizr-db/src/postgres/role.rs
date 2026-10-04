@@ -1,13 +1,14 @@
 use bindizr_core::model::role::RoleId;
 use chrono::Utc;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres, Row, Transaction};
 
 use crate::{error::DatabaseError, model::role::Role};
 
 /// Insert a role.
-pub(crate) async fn create(pool: &Pool<Postgres>, mut role: Role) -> Result<Role, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    mut role: Role,
+) -> Result<Role, DatabaseError> {
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -19,7 +20,7 @@ pub(crate) async fn create(pool: &Pool<Postgres>, mut role: Role) -> Result<Role
     .bind(&role.name)
     .bind(&role.description)
     .bind(now)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut **tx)
     .await?;
 
     role.id = RoleId::from(result.get::<i32, _>(0));
@@ -72,12 +73,13 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<Role>, Databas
 }
 
 /// Delete a role by ID.
-pub(crate) async fn delete(pool: &Pool<Postgres>, id: RoleId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: RoleId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM roles WHERE id = $1")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

@@ -87,10 +87,8 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
 ) -> Result<Response, ApiError> {
-    let raw_record = record::get_with_zone(&cx, &caller, params.id).await?;
-
     let response = RecordResponse {
-        record: GetRecordResponse::from(&raw_record),
+        record: record::get(&cx, &caller, params.id).await?,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -135,7 +133,7 @@ pub(crate) async fn create_record(
         path = "/records/{id}",
         tag = "Record",
         summary = "Update a specific DNS record",
-        description = "Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.",
+        description = "Applies the given fields and keeps the rest; without `record:read` on the record every field must be given, since an omitted one would be read from it. `value` is required when `type` changes, since a stored value is encoded per type.",
         params(
             ("id" = i32, Path, description = "The ID of the DNS record to update.")
         ),

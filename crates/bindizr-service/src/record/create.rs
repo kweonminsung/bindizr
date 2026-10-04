@@ -53,18 +53,16 @@ pub async fn create(
 
     let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[RecordWrite {
-                    action: Action::RecordCreate,
-                    relative_name: owner_name.clone(),
-                    record_type: Some(&record_type),
-                }],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[RecordWrite {
+                action: Action::RecordCreate,
+                relative_name: owner_name.clone(),
+                record_type: Some(&record_type),
+            }],
+        )?;
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.
@@ -100,11 +98,10 @@ pub async fn create(
         )?;
 
         // The owner's rows frame the diff, as they do for every change.
-        let before: Vec<RecordData> = records_at_name
-            .iter()
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let before = caller.readable_records(
+            zone.id,
+            records_at_name.iter().cloned().map(RecordData::from),
+        );
         let candidate = Record {
             id: RecordId::UNWRITTEN,
             name: owner_name,
@@ -116,7 +113,7 @@ pub async fn create(
             created_at: Utc::now(),
         };
         let mut after = before.clone();
-        after.push(RecordData::from(candidate.clone()));
+        after.push_written(RecordData::from(candidate.clone()));
         let diff = build_record_diff(&zone, &before, &after);
 
         // The record is validated and authorized, so a dry run stops here.
@@ -175,7 +172,15 @@ pub async fn create(
     Ok(RecordWriteResponse {
         applied: !create_record_request.dry_run,
         dry_run: create_record_request.dry_run,
-        record: GetRecordResponse::from_record_and_zone_name(&created_record, &zone_name),
+        record: GetRecordResponse::from_record(
+            &created_record,
+            &zone_name,
+            caller.record_actions(
+                created_record.zone_id,
+                &created_record.name,
+                &created_record.record_type,
+            ),
+        ),
         diff,
     })
 }

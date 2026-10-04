@@ -18,7 +18,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     grant_pattern::pattern_domain,
-    model::record::RecordSetKey,
+    model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey},
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
 
@@ -69,26 +69,21 @@ pub async fn list_managed_domains(
             .collect());
     };
 
-    // Deduplicated and ordered: two grants can name one domain. A grant
-    // missing a sync action would only fail every sync it reaches.
+    // Deduplicated and ordered: two grants can name one domain. A pattern
+    // lacking a sync action for every type the provider writes would fail
+    // every sync it reaches.
     let mut domains = BTreeSet::new();
     for zone in &zones {
-        for grant in grants.iter().filter(|grant| {
-            grant.zone_scope.covers(zone.id)
-                && SYNC_ACTIONS
-                    .iter()
-                    .all(|action| grant.actions.contains(*action))
-        }) {
+        for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, EXTERNAL_DNS_RECORD_TYPES) {
             domains.insert(policy::normalize_lookup_name(&pattern_domain(
-                &grant.record_name_pattern,
-                &zone.name,
+                pattern, &zone.name,
             ))?);
         }
     }
     Ok(domains.into_iter().collect())
 }
 
-/// Records of every zone the caller may manage, restricted to the
+/// Records of all zones the caller may manage, restricted to the
 /// ExternalDNS-supported record types: one per name and type, with absolute
 /// owner names and sorted presentation-form values.
 pub async fn list_records(

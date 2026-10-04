@@ -34,17 +34,21 @@ bindizr tsig-key create legacy-rfc2136 --role external-dns-prod
 # Create a role; it holds no grants yet
 bindizr role create dns-admins --description 'Operators of the public zones'
 
-# List roles, or show one
+# List roles with how many grants, tokens, and keys each has, or show one
 bindizr role list
 bindizr role get dns-admins
+
+# The tokens and keys in one role
+bindizr token list --role dns-admins
+bindizr tsig-key list --role dns-admins
 ```
 
 Delete an unused role with `bindizr role delete <name>`. Deletion is refused
-while a token or TSIG key still belongs to it.
+while a token or TSIG key still belongs to it, and the refusal names them.
 
 ### The built-in admin role
 
-The `admin` role exists from the first start: every action, in every zone,
+The `admin` role exists from the first start: every action, in all zones,
 including zones created later. It can be neither changed nor deleted. The
 first token is created with it on the daemon host:
 
@@ -58,7 +62,7 @@ A grant is a zone scope, a set of actions, and, for record actions, a name
 pattern and a type list:
 
 ```bash
-# Every zone, including zones created later: leave out --zone
+# All zones, including zones created later: leave out --zone
 bindizr role grant dns-admins --actions zone:read,zone:update,record:read
 
 # One zone, narrowed to TXT records at _acme-challenge
@@ -71,6 +75,11 @@ bindizr role grant challenge-txt --zone example.com \
 bindizr role grants challenge-txt
 bindizr role revoke challenge-txt <GRANT_ID>
 ```
+
+Revoking a grant, or deleting a token or TSIG key, waits for changes already
+under way and refuses every one after it, a long import from another server
+included. A read or zone transfer already under way finishes with what it could
+read when it began.
 
 `--pattern` is `*` (any name, the default), `@` (the apex), `*.sub` (`sub`
 and every name under it), or an exact name relative to the zone. `--types` is
@@ -86,24 +95,32 @@ deny rules. How grants combine, and what each operation needs, is in
 
 | Action | Allows |
 | --- | --- |
-| `zone:read` | Zone details, `zone status`, the version list |
-| `zone:create` | Creating zones, including `zone import --create` — needs every zone |
-| `zone:update` | Zone settings, rollback (with the record actions below), NOTIFY |
+| `zone:read` | `zone status` and the version list; a zone's details come with any grant reaching it |
+| `zone:create` | Creating zones, including `zone import --create`, and with `zone:update` renaming one — needs all zones |
+| `zone:update` | Zone settings, rollback (with whole-zone `record:read`, `record:create` and `record:delete`), NOTIFY; a rename also needs `zone:create` |
 | `zone:delete` | Deleting zones |
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
-| `record:read` | Listing and reading records; export, version detail, and diffs |
+| `record:read` | Listing and reading records; export, version detail, diffs, and rollback |
 | `record:create` | Adding records |
-| `record:update` | Changing records in place |
-| `record:delete` | Deleting records |
+| `record:update` | Changing records in place, found by id or name without `record:read`; without it every field must be given, since an omitted one is read from the record |
+| `record:delete` | Deleting records, found by id without `record:read` |
 | `dnssec:read` | DNSSEC status, `dnssec check-ds`; listing DNSSEC policies |
 | `dnssec:manage` | Every other DNSSEC operation; changing DNSSEC policies |
-| `secondary:read` | Listing secondaries, their details and transfers — needs every zone |
-| `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs every zone |
-| `access:manage` | Tokens, TSIG keys, and roles — needs every zone |
+| `secondary:read` | Listing secondaries, their details and transfers — needs all zones |
+| `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs all zones |
+| `access:manage` | Tokens, TSIG keys, and roles — needs all zones |
 
-Actions marked "needs every zone" are carried only by a grant without
+A response never carries a record the role cannot read: a write's preview
+shows the records it changes and the readable ones beside them, and every
+record in a response lists the record `actions` the token may take on it.
+A grant that writes without reading still learns what its write runs into
+— that a record exists, the TTL its name and type share, how many a delete
+matches — but never a value, and a change made by record id never names
+the record behind it.
+
+Actions marked "needs all zones" are carried only by a grant without
 `--zone`. `access:manage` amounts to `admin` — see
-[Actions that need every zone](advanced.md#actions-that-need-every-zone).
+[Actions that need all zones](advanced.md#actions-that-need-all-zones).
 
 ## API tokens
 
@@ -118,8 +135,9 @@ bindizr token create cluster-b --role external-dns-prod
 # Create a token that expires
 bindizr token create temp --role external-dns-prod --expires-in-days 30
 
-# List tokens (with their roles), or delete one
+# List tokens (with their roles), only one role's, or delete one
 bindizr token list
+bindizr token list --role external-dns-prod
 bindizr token delete cluster-b
 ```
 
@@ -129,7 +147,8 @@ daemon host.
 
 Over HTTP, a token with `access:manage` can manage roles and tokens.
 Any token can inspect itself with `GET /tokens/self` and its grants with
-`GET /tokens/self/grants`. See the
+`GET /tokens/self/grants`; `GET /permissions` answers what those grants come
+to, per zone, as a client deciding what to offer needs. See the
 [API Reference](https://kweonminsung.github.io/bindizr/api/) for the endpoints.
 
 ## TSIG keys
@@ -147,8 +166,9 @@ bindizr tsig-key create update-key --role external-dns-prod
 bindizr tsig-key create legacy-key --role external-dns-prod --algorithm hmac-sha512 \
     --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
 
-# List keys (secrets are not shown), or show one with its secret
+# List keys (secrets are not shown), only one role's, or show one with its secret
 bindizr tsig-key list
+bindizr tsig-key list --role external-dns-prod
 bindizr tsig-key get update-key
 
 # Print the key as a BIND `key` block, to paste into a secondary's named.conf
@@ -196,7 +216,7 @@ prerequisites check what is there.
 
 ### Secondaries pulling over TSIG
 
-A secondary that signs its transfers needs `zone:transfer` in every zone, so
+A secondary that signs its transfers needs `zone:transfer` in all zones, so
 it can pull the catalog zone and every member zone the catalog lists:
 
 ```bash

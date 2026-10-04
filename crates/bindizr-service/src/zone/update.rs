@@ -143,11 +143,18 @@ async fn update_locked(
         // concurrent record mutations and nsupdate on the same zone.
         let existing_zone =
             super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneUpdate, &existing_zone)?;
         let zone_id = existing_zone.id;
 
         let request = build(&existing_zone);
         let validated = normalize_create_zone_request(cx, &request)?;
+
+        // A new name is `zone:create`'s to give, and its all-zones grant sees
+        // all zones, so the conflict below reveals nothing.
+        if validated.name != existing_zone.name {
+            caller.authorize_action(Action::ZoneCreate)?;
+        }
 
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
@@ -155,7 +162,16 @@ async fn update_locked(
             let records =
                 bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
             for record in &records {
-                validate_record_name_in_zone(&record.name, &validated.name)?;
+                validate_record_name_in_zone(&record.name, &validated.name).map_err(|e| {
+                    if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
+                        e
+                    } else {
+                        ServiceError::invalid_record_name(format!(
+                            "a record of the zone would not fit under zone '{}'",
+                            validated.name
+                        ))
+                    }
+                })?;
             }
         }
 

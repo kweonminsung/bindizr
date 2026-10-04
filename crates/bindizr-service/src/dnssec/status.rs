@@ -35,7 +35,10 @@ pub async fn get_status(
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
     let result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_action(Action::DnssecRead, &zone)?;
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
         build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
@@ -49,7 +52,7 @@ pub async fn count_signed_zones(cx: &Context) -> Result<u64, ServiceError> {
     Ok(bindizr_db::dnssec_record::count_zone_ids(cx.db()).await?)
 }
 
-/// Keys in `state` across every zone, for the metrics endpoint.
+/// Keys in `state` across all zones, for the metrics endpoint.
 pub async fn count_keys_by_state(cx: &Context, state: DnssecKeyState) -> Result<u64, ServiceError> {
     Ok(bindizr_db::dnssec_key::count_by_state(cx.db(), state).await?)
 }
@@ -63,7 +66,7 @@ pub async fn count_rrsigs_expiring_within_refresh(
     Ok(bindizr_db::dnssec_record::count_expiring_within_refresh(cx.db(), now).await?)
 }
 
-/// Signatures already past their expiration across every zone; any at all
+/// Signatures already past their expiration across all zones; any at all
 /// mean resolvers are failing part of one right now.
 pub async fn count_rrsigs_expired(cx: &Context, now: DateTime<Utc>) -> Result<u64, ServiceError> {
     Ok(bindizr_db::dnssec_record::count_expired_before(cx.db(), now).await?)

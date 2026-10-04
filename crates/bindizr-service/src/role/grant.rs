@@ -1,4 +1,4 @@
-//! A role's grants: actions in one zone or every zone.
+//! A role's grants: actions in one zone or all zones.
 
 use std::collections::HashMap;
 
@@ -20,11 +20,12 @@ use crate::{
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
     pagination::build_page,
+    transaction,
     types::{CreateRoleGrantRequest, GetRoleGrantResponse, PageRequest, PaginatedResponse},
     zone,
 };
 
-/// Grant `role_name` the request's actions in its zone, or in every zone
+/// Grant `role_name` the request's actions in its zone, or in all zones
 /// when it names none.
 pub async fn create(
     cx: &Context,
@@ -62,7 +63,7 @@ pub async fn create(
         Some(zone_name) => {
             if let Some(action) = actions.iter().find(|action| action.needs_all_zones()) {
                 return Err(ServiceError::invalid_input(format!(
-                    "'{}' acts on no zone, so its grant must cover every zone: omit zone_name",
+                    "'{}' acts on no zone, so its grant must cover all zones: omit zone_name",
                     action
                 )));
             }
@@ -70,30 +71,39 @@ pub async fn create(
         }
     };
 
-    let grant = bindizr_db::role_grant::create(
-        cx.db(),
-        RoleGrant {
-            id: RoleGrantId::UNWRITTEN,
-            role_id: role.id,
-            zone_scope: zone
-                .as_ref()
-                .map_or(RoleZoneScope::All, |zone| RoleZoneScope::Zone(zone.id)),
-            actions,
-            record_name_pattern,
-            record_types,
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| {
-        // The zone or role can go between the lookups above and this insert;
-        // the FK reports it.
-        if e.is_foreign_key_violation() {
-            ServiceError::ZoneNotFound("zone or role no longer exists".to_string())
-        } else {
-            e.into()
-        }
-    })?;
+    let mut tx = transaction::begin_tx(cx, "failed to create role grant").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        bindizr_db::role_grant::create_tx(
+            &mut tx,
+            RoleGrant {
+                id: RoleGrantId::UNWRITTEN,
+                role_id: role.id,
+                zone_scope: zone
+                    .as_ref()
+                    .map_or(RoleZoneScope::All, |zone| RoleZoneScope::Zone(zone.id)),
+                actions,
+                record_name_pattern,
+                record_types,
+                created_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|e| {
+            // The zone or role can go between the lookups above and this insert;
+            // the FK reports it.
+            if e.is_foreign_key_violation() {
+                ServiceError::ZoneNotFound("zone or role no longer exists".to_string())
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    let grant = transaction::finish_tx(tx, result, "failed to create role grant").await?;
 
     Ok(GetRoleGrantResponse::from_grant(
         &grant,
@@ -144,7 +154,16 @@ pub async fn revoke(
         .filter(|grant| grant.role_id == role.id)
         .ok_or_else(|| ServiceError::role_grant_not_found(grant_id))?;
 
-    Ok(bindizr_db::role_grant::delete(cx.db(), grant.id).await?)
+    let mut tx = transaction::begin_tx(cx, "failed to revoke role grant").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        Ok(bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await?)
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to revoke role grant").await
 }
 
 /// A role's grants as responses, each with the name of the zone it covers.

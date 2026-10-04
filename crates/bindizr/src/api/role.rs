@@ -89,9 +89,8 @@ pub(crate) async fn create_role(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRoleRequest>,
 ) -> Result<Response, ApiError> {
-    let role = role::create(&cx, &caller, &body).await?;
     let response = RoleResponse {
-        role: GetRoleResponse::from(&role),
+        role: role::create(&cx, &caller, &body).await?,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -118,9 +117,8 @@ pub(crate) async fn get_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let role = role::get(&cx, &caller, &params.name).await?;
     let response = RoleResponse {
-        role: GetRoleResponse::from(&role),
+        role: role::get(&cx, &caller, &params.name).await?,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -187,13 +185,13 @@ pub(crate) async fn list_role_grants(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// Grant a role actions in one zone or every zone.
+/// Grant a role actions in one zone or all zones.
 #[utoipa::path(
         post,
         path = "/roles/{name}/grants",
         tag = "Role",
         summary = "Grant a role actions",
-        description = "Grants the role actions in the named zone, or in every zone when `zone_name` is omitted. The record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list) narrow its `record:*` actions only. The built-in `admin` role cannot be changed.",
+        description = "Grants the role actions in the named zone, or in all zones when `zone_name` is omitted. The record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list) narrow its `record:*` actions only. The built-in `admin` role cannot be changed.",
         params(
             ("name" = String, Path, description = "The name of the role.")
         ),

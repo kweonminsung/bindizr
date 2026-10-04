@@ -73,30 +73,39 @@ pub async fn create(
         return Err(ServiceError::dnssec_policy_conflict(&name));
     }
 
-    bindizr_db::dnssec_policy::create(
-        cx.db(),
-        DnssecPolicy {
-            id: PolicyId::UNWRITTEN,
-            name: name.clone(),
-            algorithm,
-            denial,
-            split_keys: request.split_keys,
-            signature_validity_days,
-            signature_refresh_days,
-            zsk_lifetime_days,
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| {
-        // A create that raced past the pre-check trips UNIQUE(name); the
-        // backstop reads as the same conflict.
-        if e.is_unique_violation() {
-            ServiceError::dnssec_policy_conflict(&name)
-        } else {
-            e.into()
-        }
-    })
+    let mut tx = transaction::begin_tx(cx, "failed to create DNSSEC policy").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::DnssecManage)?;
+        bindizr_db::dnssec_policy::create_tx(
+            &mut tx,
+            DnssecPolicy {
+                id: PolicyId::UNWRITTEN,
+                name: name.clone(),
+                algorithm,
+                denial,
+                split_keys: request.split_keys,
+                signature_validity_days,
+                signature_refresh_days,
+                zsk_lifetime_days,
+                created_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|e| {
+            // A create that raced past the pre-check trips UNIQUE(name); the
+            // backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::dnssec_policy_conflict(&name)
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to create DNSSEC policy").await
 }
 
 /// List DNSSEC policies visible to an authorized caller.
@@ -147,6 +156,10 @@ pub async fn update(
     // each restore the fields the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC policy").await?;
     let result: Result<_, ServiceError> = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::DnssecManage)?;
         let policy =
             bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
                 .await?
@@ -188,7 +201,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let policy = lookup_by_name(cx, name).await?;
     // `enable` and `keys import` fall back to it by name.
-    if policy.name == DEFAULT_DNSSEC_POLICY_NAME {
+    if policy.is_builtin() {
         return Err(ServiceError::invalid_input(format!(
             "the built-in '{}' policy cannot be deleted; edit it instead",
             DEFAULT_DNSSEC_POLICY_NAME
@@ -200,19 +213,28 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         return Err(ServiceError::dnssec_policy_in_use(&policy.name, zone_count));
     }
 
-    bindizr_db::dnssec_policy::delete(cx.db(), policy.id)
-        .await
-        .map_err(|e| {
-            // A zone enabled between the count above and this delete trips
-            // the FK; it reads as the in-use conflict.
-            if e.is_foreign_key_violation() {
-                ServiceError::DnssecPolicyInUse(
-                    "DNSSEC policy is still used by signed zones".to_string(),
-                )
-            } else {
-                e.into()
-            }
-        })
+    let mut tx = transaction::begin_tx(cx, "failed to delete DNSSEC policy").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::DnssecManage)?;
+        bindizr_db::dnssec_policy::delete_tx(&mut tx, policy.id)
+            .await
+            .map_err(|e| {
+                // A zone enabled between the count above and this delete trips
+                // the FK; it reads as the in-use conflict.
+                if e.is_foreign_key_violation() {
+                    ServiceError::DnssecPolicyInUse(
+                        "DNSSEC policy is still used by signed zones".to_string(),
+                    )
+                } else {
+                    e.into()
+                }
+            })
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to delete DNSSEC policy").await
 }
 
 /// Lowercased so one name means one policy on every backend (MySQL compares

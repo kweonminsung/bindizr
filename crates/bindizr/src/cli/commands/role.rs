@@ -67,7 +67,7 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Grant a role actions in one zone, or in every zone without --zone
+    /// Grant a role actions in one zone, or in all zones without --zone
     #[command(after_help = "\
 Examples:
   bindizr role grant dns-admins --actions zone:read,zone:update,record:read
@@ -77,22 +77,24 @@ Examples:
 
 Actions:
   zone:read         read a zone's status and version history
-  zone:create       create zones (every zone only)
-  zone:update       change a zone's settings, send NOTIFY, roll back a version
+  zone:create       create zones, and with zone:update rename one (all zones only)
+  zone:update       change a zone's settings and send NOTIFY; with unnarrowed
+                    record:read, record:create and record:delete, roll back a version
   zone:delete       delete zones
   zone:transfer     answer a TSIG-signed AXFR/IXFR (TSIG keys only)
   record:read       list and read records; with no --pattern or --types, also
                     export the zone and read its versions and diffs
   record:create     add records, including by import, nsupdate and ExternalDNS
-  record:update     change a record in place
+  record:update     change a record in place; without record:read on it, every
+                    field must be given
   record:delete     delete records, including by nsupdate and ExternalDNS
-  dnssec:read       read DNSSEC status and check the parent DS; in every zone,
+  dnssec:read       read DNSSEC status and check the parent DS; in all zones,
                     also read signing policies
   dnssec:manage     enable, disable and re-sign, manage keys and rollovers; in
-                    every zone, also change signing policies
-  secondary:read    list secondaries and their transfers (every zone only)
-  secondary:manage  register, change, check and remove secondaries (every zone only)
-  access:manage     manage roles, API tokens and TSIG keys (every zone only);
+                    all zones, also change signing policies
+  secondary:read    list secondaries and their transfers (all zones only)
+  secondary:manage  register, change, check and remove secondaries (all zones only)
+  access:manage     manage roles, API tokens and TSIG keys (all zones only);
                     equivalent to admin, since its holder can grant itself anything
 
 --pattern and --types narrow the record:* actions only. A grant permits its
@@ -101,7 +103,7 @@ actions together; a role permits what any one of its grants does.")]
         /// Name of the role
         #[arg(value_name = "ROLE_NAME")]
         name: String,
-        /// Zone the grant covers (default: every zone, including later ones)
+        /// Zone the grant covers (default: all zones, including later ones)
         #[arg(long, value_name = "ZONE_NAME")]
         zone: Option<String>,
         /// Comma-separated actions the grant permits

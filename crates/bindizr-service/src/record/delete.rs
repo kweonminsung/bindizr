@@ -64,6 +64,8 @@ pub async fn delete(
             }
         };
 
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
         let existing_record =
             match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
@@ -79,26 +81,24 @@ pub async fn delete(
                 }
             };
 
-        // A record the caller's grants do not reach reads as 404, as it
-        // does on GET, so ids cannot be probed.
-        if !caller.sees_record(
+        // A record the caller may neither read nor delete reads as 404, as
+        // it does on GET, so ids cannot be probed.
+        if !caller.reaches_record(
+            Action::RecordDelete,
             zone.id,
             &existing_record.name,
             Some(&existing_record.record_type),
         ) {
             return Err(ServiceError::record_not_found(record_id));
         }
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[RecordWrite {
-                    action: Action::RecordDelete,
-                    relative_name: existing_record.name.clone(),
-                    record_type: Some(&existing_record.record_type),
-                }],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[RecordWrite {
+                action: Action::RecordDelete,
+                relative_name: existing_record.name.clone(),
+                record_type: Some(&existing_record.record_type),
+            }],
+        )?;
 
         // The owner's rows frame the diff, as they do for every change.
         let records_at_name = bindizr_db::record::list_by_name_tx(
@@ -108,26 +108,36 @@ pub async fn delete(
             LockLevel::Exclusive,
         )
         .await?;
-        let before: Vec<RecordData> = records_at_name
-            .iter()
-            .cloned()
-            .map(RecordData::from)
-            .collect();
-        let after: Vec<RecordData> = records_at_name
-            .iter()
-            .filter(|record| record.id != existing_record.id)
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let before = caller.readable_records(
+            zone.id,
+            records_at_name.iter().cloned().map(RecordData::from),
+        );
+        let after = caller.readable_records(
+            zone.id,
+            records_at_name
+                .iter()
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
+                .map(RecordData::from),
+        );
 
         let response = DeleteRecordsResponse {
             applied: !run.is_dry_run(),
             dry_run: run.is_dry_run(),
             deleted: 1,
-            records: vec![GetRecordResponse::from_record_and_zone_name(
-                &existing_record,
-                &zone.name,
-            )],
+            // Only what the caller may read is listed back.
+            records: caller
+                .readable_records(zone.id, [existing_record.clone()])
+                .as_slice()
+                .iter()
+                .map(|record| {
+                    GetRecordResponse::from_record(
+                        record,
+                        &zone.name,
+                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                    )
+                })
+                .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
         if run.is_dry_run() {
@@ -204,21 +214,19 @@ pub async fn delete_matching(
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::get_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         let owner = normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
         // depended on the match would reveal what lies outside the grant.
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[RecordWrite {
-                    action: Action::RecordDelete,
-                    relative_name: owner.clone(),
-                    record_type: record_type.as_ref(),
-                }],
-            )
-            .await?;
+        caller.authorize_record_writes(
+            &zone,
+            &[RecordWrite {
+                action: Action::RecordDelete,
+                relative_name: owner.clone(),
+                record_type: record_type.as_ref(),
+            }],
+        )?;
 
         let records_at_name =
             bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
@@ -237,26 +245,35 @@ pub async fn delete_matching(
 
         // Build the preview from the validated rows; dry runs and empty matches
         // return it before any records or serials are written.
-        let before: Vec<RecordData> = records_at_name
-            .iter()
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let before = caller.readable_records(
+            zone.id,
+            records_at_name.iter().cloned().map(RecordData::from),
+        );
         let removed: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
-        let after: Vec<RecordData> = records_at_name
-            .iter()
-            .filter(|record| !removed.contains(&record.id))
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let after = caller.readable_records(
+            zone.id,
+            records_at_name
+                .iter()
+                .filter(|record| !removed.contains(&record.id))
+                .cloned()
+                .map(RecordData::from),
+        );
 
         let response = DeleteRecordsResponse {
             applied: !request.dry_run,
             dry_run: request.dry_run,
             deleted: matched.len() as u64,
-            records: matched
+            records: caller
+                .readable_records(zone.id, matched.iter().cloned())
+                .as_slice()
                 .iter()
-                .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone.name))
+                .map(|record| {
+                    GetRecordResponse::from_record(
+                        record,
+                        &zone.name,
+                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                    )
+                })
                 .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };

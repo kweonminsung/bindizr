@@ -17,11 +17,10 @@ pub(crate) async fn create_role(
     cx: &Context,
     request: &CreateRoleRequest,
 ) -> Result<DaemonResponse<RoleResponse>, ServiceError> {
-    let role = role::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "Role created successfully".to_string(),
         data: RoleResponse {
-            role: GetRoleResponse::from(&role),
+            role: role::create(cx, &Caller::socket(), request).await?,
         },
     })
 }
@@ -43,11 +42,10 @@ pub(crate) async fn get_role(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<RoleResponse>, ServiceError> {
-    let role = role::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "Role retrieved successfully".to_string(),
         data: RoleResponse {
-            role: GetRoleResponse::from(&role),
+            role: role::get(cx, &Caller::socket(), name).await?,
         },
     })
 }

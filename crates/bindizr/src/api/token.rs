@@ -14,7 +14,7 @@ use bindizr_service::{
     types::{
         CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT, ErrorResponse,
         GetRoleGrantResponse, GetTokenResponse, MessageResponse, PageRequest, PaginatedResponse,
-        TokenResponse,
+        TokenFilter, TokenResponse,
     },
 };
 
@@ -42,9 +42,9 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         get,
         path = "/tokens",
         tag = "Token",
-        summary = "List all API tokens",
-        params(PageRequest),
-        description = "Lists every API token without its secret; a secret is shown once, in the create response.",
+        summary = "List API tokens",
+        params(TokenFilter),
+        description = "Lists API tokens without their secrets, every one or only those authenticating into `role_name`; a secret is shown once, in the create response.",
         responses(
             (status = 200, description = "All API tokens", body = PaginatedResponse<GetTokenResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -55,10 +55,10 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_tokens(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageRequest>,
+    Query(mut filter): Query<TokenFilter>,
 ) -> Result<Response, ApiError> {
-    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = token::list(&cx, &caller, page).await?;
+    filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = token::list(&cx, &caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

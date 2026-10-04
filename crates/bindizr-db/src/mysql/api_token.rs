@@ -1,16 +1,14 @@
 use bindizr_core::model::{api_token::TokenId, role::RoleId};
 use chrono::Utc;
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-use crate::{error::DatabaseError, model::api_token::ApiToken};
+use crate::{LockLevel, error::DatabaseError, model::api_token::ApiToken};
 
 /// Insert an API token.
-pub(crate) async fn create(
-    pool: &Pool<MySql>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, MySql>,
     mut token: ApiToken,
 ) -> Result<ApiToken, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -24,13 +22,30 @@ pub(crate) async fn create(
     .bind(token.role_id)
     .bind(token.expires_at)
     .bind(now)
-    .execute(&mut *conn)
+    .execute(&mut **tx)
     .await?;
 
     token.id = TokenId::from(result.last_insert_id() as i32);
     token.created_at = now;
 
     Ok(token)
+}
+
+/// An API token by id in the current transaction.
+pub(crate) async fn get_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: TokenId,
+    lock_level: LockLevel,
+) -> Result<Option<ApiToken>, DatabaseError> {
+    let row = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row)
 }
 
 /// Find an API token by name.
@@ -105,28 +120,31 @@ pub(crate) async fn update(pool: &Pool<MySql>, token: ApiToken) -> Result<ApiTok
 }
 
 /// Delete an API token by ID.
-pub(crate) async fn delete(pool: &Pool<MySql>, id: TokenId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: TokenId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM api_tokens WHERE id = ?")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())
 }
 
-/// Count the API tokens authenticating into a role: the in-use check before a role delete.
-pub(crate) async fn count_by_role_id(
+/// List the API tokens authenticating into a role.
+pub(crate) async fn list_by_role_id(
     pool: &Pool<MySql>,
     role_id: RoleId,
-) -> Result<u64, DatabaseError> {
+) -> Result<Vec<ApiToken>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM api_tokens WHERE role_id = ?")
-        .bind(role_id)
-        .fetch_one(&mut *conn)
-        .await?;
+    let rows = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE role_id = ? ORDER BY created_at DESC, id DESC",
+    )
+    .bind(role_id)
+    .fetch_all(&mut *conn)
+    .await?;
 
-    Ok(count as u64)
+    Ok(rows)
 }

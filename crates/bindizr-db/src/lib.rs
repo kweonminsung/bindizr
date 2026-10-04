@@ -49,7 +49,7 @@ use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
 
 /// What the built-in role is described as.
-const ADMIN_ROLE_DESCRIPTION: &str = "every action in every zone";
+const ADMIN_ROLE_DESCRIPTION: &str = "every action in all zones";
 
 /// One backend connection pool, passed to entity functions such as
 /// `zone::get_by_name` that dispatch to backend-specific SQL.
