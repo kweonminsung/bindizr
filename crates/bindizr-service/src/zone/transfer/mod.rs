@@ -4,6 +4,10 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
+mod delta;
+
+pub use delta::{TransferDelta, authorize_transfer_delta_by_name};
+
 use crate::{
     Context, Transaction,
     error::ServiceError,
@@ -54,8 +58,6 @@ pub async fn authorize_transfer_by_name(
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
-/// Both record planes of the zone `zone_name` names, read under the share
-/// lock that decides whether `key` may transfer it, so the serial, the
 /// Authorize a catalog transfer and load its member zones in one read
 /// transaction; a TSIG key needs `zone:transfer` in all zones, while the ACL
 /// alone admits an unsigned one.
@@ -82,6 +84,8 @@ pub async fn authorize_catalog_content(
     transaction::finish_tx(tx, result, "failed to load catalog content").await
 }
 
+/// Both record planes of the zone `zone_name` names, read under the share
+/// lock that decides whether `key` may transfer it, so the serial, the
 /// signatures, and the grant all describe one row.
 pub async fn authorize_transfer_content_by_name(
     cx: &Context,

@@ -167,6 +167,15 @@ pub async fn list_by_filter_with_zone(
     }
 }
 
+/// How many records a zone holds, in the caller's transaction.
+pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::record::count_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::record::count_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::count_tx(tx, zone_id).await,
+    }
+}
+
 /// Count records matching the filter.
 pub async fn count_by_filter(db: &Db, filter: RecordFilter) -> Result<u64, DatabaseError> {
     match &db.0 {

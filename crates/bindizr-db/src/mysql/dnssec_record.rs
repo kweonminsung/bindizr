@@ -293,6 +293,20 @@ pub(crate) async fn list_by_filter_with_zone(
     Ok(records)
 }
 
+/// Count a zone's derived DNSSEC records in the current transaction.
+pub(crate) async fn count_tx(
+    tx: &mut Transaction<'_, MySql>,
+    zone_id: ZoneId,
+) -> Result<u64, DatabaseError> {
+    let count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM dnssec_records WHERE zone_id = ?")
+            .bind(zone_id)
+            .fetch_one(&mut **tx)
+            .await?;
+
+    Ok(count as u64)
+}
+
 /// Count derived DNSSEC records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,

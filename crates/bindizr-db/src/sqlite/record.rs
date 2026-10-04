@@ -303,6 +303,19 @@ pub(crate) async fn list_by_filter_with_zone(
     Ok(records)
 }
 
+/// Count a zone's records in the current transaction.
+pub(crate) async fn count_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    zone_id: ZoneId,
+) -> Result<u64, DatabaseError> {
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM records WHERE zone_id = ?")
+        .bind(zone_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+    Ok(count as u64)
+}
+
 /// Count records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Sqlite>,

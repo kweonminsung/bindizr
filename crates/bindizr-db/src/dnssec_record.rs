@@ -169,6 +169,15 @@ pub async fn list_by_filter_with_zone(
     }
 }
 
+/// How many derived DNSSEC records a zone holds, in the caller's transaction.
+pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::dnssec_record::count_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_record::count_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_record::count_tx(tx, zone_id).await,
+    }
+}
+
 /// Count derived DNSSEC records matching the filter.
 pub async fn count_by_filter(db: &Db, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
