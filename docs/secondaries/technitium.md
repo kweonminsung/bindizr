@@ -21,11 +21,16 @@ primary, so nothing further is needed for the zones themselves. Through
 Technitium's HTTP API on port 5380:
 
 ```bash
-TOKEN=$(curl -s "http://localhost:5380/api/user/login?user=admin&pass=<password>" | jq -r .token)
+TOKEN=$(curl -s -G http://localhost:5380/api/user/login \
+  --data-urlencode user=admin --data-urlencode 'pass=<password>' | jq -r .token)
 
-curl -s "http://localhost:5380/api/zones/create?token=$TOKEN&zone=catalog.bindizr\
-&type=SecondaryCatalog&primaryNameServerAddresses=127.0.0.1:5300&zoneTransferProtocol=Tcp"
+curl -s -G http://localhost:5380/api/zones/create --data-urlencode "token=$TOKEN" \
+  -d zone=catalog.bindizr -d type=SecondaryCatalog \
+  -d primaryNameServerAddresses=127.0.0.1:5300 -d zoneTransferProtocol=Tcp
 ```
+
+`--data-urlencode` keeps a `+` in the password, or in the key's secret below,
+from arriving as a space.
 
 ## 3. Check a zone it learned
 
@@ -48,16 +53,17 @@ Add the key to Technitium's TSIG keys, then name it when creating the catalog
 zone. Technitium signs the catalog transfer and every member transfer with it:
 
 ```bash
-curl -s "http://localhost:5380/api/settings/set?token=$TOKEN\
-&tsigKeys=xfr-key|<base64 secret from bindizr tsig-key create>|hmac-sha256"
+curl -s -G http://localhost:5380/api/settings/set --data-urlencode "token=$TOKEN" \
+  --data-urlencode 'tsigKeys=xfr-key|<base64 secret from bindizr tsig-key create>|hmac-sha256'
 
-curl -s "http://localhost:5380/api/zones/create?token=$TOKEN&zone=catalog.bindizr\
-&type=SecondaryCatalog&primaryNameServerAddresses=10.0.0.5:5300&zoneTransferProtocol=Tcp\
-&tsigKeyName=xfr-key"
+curl -s -G http://localhost:5380/api/zones/create --data-urlencode "token=$TOKEN" \
+  -d zone=catalog.bindizr -d type=SecondaryCatalog \
+  -d primaryNameServerAddresses=10.0.0.5:5300 -d zoneTransferProtocol=Tcp \
+  -d tsigKeyName=xfr-key
 ```
 
 `tsigKeys` sets the server's whole key list, so include any keys it already
 holds, each as `name|secret|algorithm`.
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
-for creating the key in a role that holds `zone:transfer` in every zone.
+for creating the key in a role that holds `zone:transfer` in all zones.

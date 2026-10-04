@@ -46,7 +46,8 @@ BIND primary as well, so the crash is not Bindizr's. Use 2.6 until it is fixed.
 
 ## Sign the transfers
 
-Declare the key, then name it on `master`:
+Declare the key, then name it on `master`, at the address and port where
+Bindizr listens:
 
 ```text
 <key>
@@ -56,10 +57,13 @@ Declare the key, then name it on `master`:
 </key>
 
 <zone>
-    ...
-    master    10.0.0.5 key xfr-key
+    type         slave
+    domain       example.com
+    file-name    example.com.zone
+    master       10.0.0.5 port 5300 key xfr-key
+    allow-notify 10.0.0.5
 </zone>
 ```
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
-for creating the key in a role that holds `zone:transfer` in every zone.
+for creating the key in a role that holds `zone:transfer` in all zones.
