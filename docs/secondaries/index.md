@@ -23,6 +23,7 @@ appears on them, delete it and it goes away.
 | [NSD](nsd.md) | 4.9 or newer | 4.14 | |
 | [PowerDNS](powerdns.md) | 4.7 or newer | 4.7, 4.8, 4.9, 5.0, 5.1 | AXFR only; [does not sign member transfers](powerdns.md#tsig-does-not-reach-member-zones) |
 | [Technitium DNS](technitium.md) | Secondary Catalog zone | 15.5 | |
+| [CoreDNS](coredns.md) | 1.14.6 or newer | 1.14.6, 1.14.7 | AXFR only, no TSIG; [NSEC3-signed zones refused](coredns.md#nsec3-signed-zones-are-refused) |
 
 ## Per-zone secondaries
 
@@ -35,7 +36,7 @@ read the catalog, so each zone Bindizr serves is added on the server.
 | [YADIFA](yadifa.md) | 2.6 | |
 | [NSD before 4.9](nsd.md#nsd-before-49) | 4.6 | |
 | [Unbound](unbound.md) | 1.25 | No TSIG; [changes arrive on SOA refresh](unbound.md#changes-arrive-on-the-soa-refresh) |
-| [CoreDNS](coredns.md) | 1.14 | AXFR only, no TSIG; [NSEC3-signed zones refused](coredns.md#nsec3-signed-zones-are-refused) |
+| [CoreDNS before 1.14.6](coredns.md#coredns-before-1146) | 1.14.4 | AXFR only, no TSIG; [NSEC3-signed zones refused](coredns.md#nsec3-signed-zones-are-refused) |
 
 "Verified on" is the version Bindizr's own interoperability run covers:
 initial transfer of a zone spanning several messages, NOTIFY-driven updates
