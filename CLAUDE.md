@@ -357,6 +357,16 @@ each rule says which spelling is this project's.
   offers what the service allows without re-implementing grant matching.
   The e2e `no_response_reveals_a_record_the_role_cannot_read` sweeps every
   route as restricted roles; a new route that returns records joins it.
+- **A write-only grant learns what its write touches, never a value.** Write
+  and read stay independent, with the boundary SQL, S3, Route 53 and Vault
+  draw: a write that takes its material from the stored row needs
+  `record:read` (a partial update, as `SET c = c + 1` needs `SELECT`); a
+  conflict within the grant's scope may say what it hit — a record exists,
+  the TTL its set holds, how many a delete matched — since a role that may
+  overwrite a record holds more than knowing it is there; a value is never
+  returned without `record:read`. The leak sweep marks values, which is this
+  boundary as a test. Bot findings that a conflict or a count reveals
+  existence or a TTL to a write-only role are declined.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs

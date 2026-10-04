@@ -108,6 +108,9 @@ deny rules. How grants combine, and what each operation needs, is in
 A response never carries a record the role cannot read: a write's preview
 shows the records it changes and the readable ones beside them, and every
 record in a response lists the record `actions` the token may take on it.
+A grant that writes without reading still learns what its write runs into
+— that a record exists, the TTL its name and type share, how many a delete
+matches — but never a value.
 
 Actions marked "needs every zone" are carried only by a grant without
 `--zone`. `access:manage` amounts to `admin` — see
