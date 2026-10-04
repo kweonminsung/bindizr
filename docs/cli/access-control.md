@@ -95,7 +95,7 @@ deny rules. How grants combine, and what each operation needs, is in
 | Action | Allows |
 | --- | --- |
 | `zone:read` | `zone status` and the version list; a zone's details come with any grant reaching it |
-| `zone:create` | Creating zones, including `zone import --create` — needs all zones |
+| `zone:create` | Creating zones, including `zone import --create`, and with `zone:update` renaming one — needs all zones |
 | `zone:update` | Zone settings, rollback (with whole-zone `record:read`, `record:create` and `record:delete`), NOTIFY; a rename also needs `zone:create` |
 | `zone:delete` | Deleting zones |
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
