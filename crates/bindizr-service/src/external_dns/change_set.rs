@@ -205,7 +205,7 @@ pub(crate) fn group_ops_by_zone(
     let mut grouped: BTreeMap<ZoneName, ZoneOps> = BTreeMap::new();
 
     for pending in ops {
-        // From every zone, so a hidden subzone still shadows a granted parent.
+        // From all zones, so a hidden subzone still shadows a granted parent.
         let (zone, name) = authoritative_zone(zones, &pending.op.name)
             .filter(|(zone, _)| caller.sees_zone(zone.id))
             .ok_or_else(|| {

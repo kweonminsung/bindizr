@@ -42,7 +42,7 @@ kubectl -n external-dns create secret generic bindizr-external-dns \
 ```
 
 The role's qualifying grants become the ExternalDNS domain filter
-automatically; a grant without `--zone` covers every zone. One role can serve
+automatically; a grant without `--zone` covers all zones. One role can serve
 several clusters, each with a token of its own. See
 [Access Control](cli/access-control.md#externaldns).
 

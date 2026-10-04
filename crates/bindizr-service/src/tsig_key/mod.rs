@@ -262,7 +262,7 @@ pub(crate) async fn authorize_transfer_tx(
 /// Whether `key` may transfer the catalog zone, which needs an all-zones `zone:transfer`.
 pub async fn authorize_catalog_transfer(cx: &Context, key: &TsigKey) -> Result<bool, ServiceError> {
     let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), key.role_id).await?;
-    Ok(RoleGrants::from(grants).permits_everywhere(Action::ZoneTransfer))
+    Ok(RoleGrants::from(grants).permits_all_zones(Action::ZoneTransfer))
 }
 
 #[cfg(test)]

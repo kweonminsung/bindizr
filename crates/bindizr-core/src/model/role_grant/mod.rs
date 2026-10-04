@@ -29,7 +29,7 @@ pub struct ParseActionError {
 /// One operation a grant permits, spelled `<resource>:<action>`:
 ///
 /// - `zone:read` — read a zone's status and version history
-/// - `zone:create` — create zones; every zone only
+/// - `zone:create` — create zones; all zones only
 /// - `zone:update` — change a zone's settings, send NOTIFY, roll back a version
 /// - `zone:delete` — delete zones
 /// - `zone:transfer` — answer a TSIG-signed AXFR/IXFR; TSIG keys only
@@ -38,13 +38,13 @@ pub struct ParseActionError {
 /// - `record:create` — add records, including by import, nsupdate and ExternalDNS
 /// - `record:update` — change a record in place
 /// - `record:delete` — delete records, including by nsupdate and ExternalDNS
-/// - `dnssec:read` — read DNSSEC status and check the parent DS; in every zone,
+/// - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
 ///   also read signing policies
 /// - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
-///   in every zone, also change signing policies
-/// - `secondary:read` — list secondaries and the transfers served them; every zone only
-/// - `secondary:manage` — register, change, check and remove secondaries; every zone only
-/// - `access:manage` — manage roles, API tokens and TSIG keys; every zone only,
+///   in all zones, also change signing policies
+/// - `secondary:read` — list secondaries and the transfers served them; all zones only
+/// - `secondary:manage` — register, change, check and remove secondaries; all zones only
+/// - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
 ///   and equivalent to admin since its holder can grant itself anything
 #[derive(
     Debug,
@@ -259,7 +259,7 @@ where
     }
 }
 
-/// Which zones a grant reaches: every zone, including ones created later
+/// Which zones a grant reaches: all zones, including ones created later
 /// (row `zone_id` NULL), or one zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoleZoneScope {
@@ -268,7 +268,7 @@ pub enum RoleZoneScope {
 }
 
 impl RoleZoneScope {
-    /// The row form: `None` for every zone.
+    /// The row form: `None` for all zones.
     pub fn zone_id(self) -> Option<ZoneId> {
         match self {
             RoleZoneScope::All => None,
@@ -286,7 +286,7 @@ impl RoleZoneScope {
 }
 
 impl From<Option<ZoneId>> for RoleZoneScope {
-    /// Read the row form, where NULL means every zone.
+    /// Read the row form, where NULL means all zones.
     fn from(zone_id: Option<ZoneId>) -> Self {
         zone_id.map_or(RoleZoneScope::All, RoleZoneScope::Zone)
     }
@@ -351,14 +351,14 @@ impl RoleGrants {
     }
 
     /// Whether an all-zones grant carries `action`, as what no zone owns needs.
-    pub fn permits_everywhere(&self, action: Action) -> bool {
+    pub fn permits_all_zones(&self, action: Action) -> bool {
         self.0
             .iter()
             .any(|grant| grant.zone_scope == RoleZoneScope::All && grant.actions.contains(action))
     }
 
     /// Whether an all-zones grant carries `action` with no name or type limit.
-    pub fn covers_every_zone_whole(&self, action: Action) -> bool {
+    pub fn covers_all_whole_zones(&self, action: Action) -> bool {
         self.0.iter().any(|grant| {
             grant.zone_scope == RoleZoneScope::All
                 && grant.actions.contains(action)

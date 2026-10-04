@@ -36,7 +36,7 @@ EOF
 ## Unsigned requests
 
 With `dns.nsupdate_tsig_required = true`, the default, an unsigned update is
-refused for every zone.
+refused for all zones.
 
 !!! warning "Unsigned updates are for testing only"
 

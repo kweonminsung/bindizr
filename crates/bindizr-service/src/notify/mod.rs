@@ -23,7 +23,7 @@ pub enum NotifyError {
     Service(#[from] ServiceError),
     #[error(transparent)]
     Zone(#[from] NotifyZoneError),
-    /// Every zone whose NOTIFY failed, when all were sent.
+    /// All zones whose NOTIFY failed, when all were sent.
     #[error("NOTIFY failed for {}", failures.iter().map(|(zone, error)| format!("{zone}: {error}")).collect::<Vec<_>>().join("; "))]
     Zones {
         failures: Vec<(String, NotifyZoneError)>,
@@ -45,7 +45,7 @@ impl From<NotifyError> for ServiceError {
     }
 }
 
-/// Send a DNS NOTIFY for one zone, or for every zone, aggregating per-zone
+/// Send a DNS NOTIFY for one zone, or for all zones, aggregating per-zone
 /// failures. Enumerating the zones is this layer's call, not the client's.
 pub(crate) async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), NotifyError> {
     let NotifyTarget::Zone(zone_name) = target else {

@@ -41,7 +41,7 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 
 The algorithm, denial mode, and key layout are fixed once a policy exists
 (move a zone to another policy to change them);
-the timing fields can be edited in place and apply to every zone under the
+the timing fields can be edited in place and apply to all zones under the
 policy from its next signing pass or scheduler scan. A policy in use
 cannot be deleted, and neither can `default`: edit it to change the
 installation's defaults.

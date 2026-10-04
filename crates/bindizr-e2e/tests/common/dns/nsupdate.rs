@@ -213,7 +213,7 @@ fn sign(builder: &mut AdditionalBuilder<Vec<u8>>, key: &SigningKey) -> Result<()
 /// The role a test TSIG key authenticates into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyRole {
-    /// The built-in `admin` role, reaching every zone.
+    /// The built-in `admin` role, reaching all zones.
     Admin,
     /// A fresh role named after the key, holding no grants until the test adds them.
     Own,

@@ -73,7 +73,7 @@ bindizr zone update example.com --enabled true
 # Export BIND master-file text; --signed includes generated DNSSEC records
 bindizr zone export example.com > db.example.com
 
-# Send NOTIFY for one zone, or for every zone
+# Send NOTIFY for one zone, or for all zones
 bindizr zone notify example.com
 bindizr zone notify
 

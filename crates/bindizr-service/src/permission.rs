@@ -10,11 +10,11 @@ use crate::{
     types::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse},
 };
 
-/// The caller's actions across every zone and where zone grants add to them;
+/// The caller's actions across all zones and where zone grants add to them;
 /// reading its own rights needs no grant.
 pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, ServiceError> {
     let Some(grants) = caller.grants() else {
-        // Nothing bounds the caller, so every zone is covered whole.
+        // Nothing bounds the caller, so all zones are covered whole.
         return Ok(PermissionsResponse {
             all_zones: PermittedActionsResponse {
                 actions: Action::ALL.to_vec(),
@@ -27,10 +27,10 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
     let all_zones = PermittedActionsResponse {
         actions: Action::ALL
             .into_iter()
-            .filter(|&action| grants.permits_everywhere(action))
+            .filter(|&action| grants.permits_all_zones(action))
             .collect(),
         whole_zone: record_actions()
-            .filter(|&action| grants.covers_every_zone_whole(action))
+            .filter(|&action| grants.covers_all_whole_zones(action))
             .collect(),
     };
     let zones = bindizr_db::zone::list_by_filter(

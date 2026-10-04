@@ -48,7 +48,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         tag = "Secondary",
         summary = "List all secondaries",
         params(PageRequest),
-        description = "Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for every zone, may pull zones unsigned from its address, and is probed for the serial it serves.",
+        description = "Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for all zones, may pull zones unsigned from its address, and is probed for the serial it serves.",
         responses(
             (status = 200, description = "All secondaries", body = PaginatedResponse<GetSecondaryResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

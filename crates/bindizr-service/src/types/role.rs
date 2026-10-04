@@ -52,12 +52,12 @@ pub struct RoleResponse {
     pub role: GetRoleResponse,
 }
 
-/// Request body for granting a role actions in one zone or every zone.
+/// Request body for granting a role actions in one zone or all zones.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRoleGrantRequest {
-    /// Name of an existing zone; omit to cover every zone, including later ones.
-    /// `zone:create`, `secondary:*` and `access:manage` need every zone.
+    /// Name of an existing zone; omit to cover all zones, including later ones.
+    /// `zone:create`, `secondary:*` and `access:manage` need all zones.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     /// The actions the grant permits, as `<resource>:<action>`.
@@ -80,7 +80,7 @@ pub struct GetRoleGrantResponse {
     pub id: RoleGrantId,
     #[schema(example = "external-dns-prod")]
     pub role_name: String,
-    /// The zone the grant covers; `null` covers every zone.
+    /// The zone the grant covers; `null` covers all zones.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
     pub actions: Vec<Action>,
@@ -92,7 +92,7 @@ pub struct GetRoleGrantResponse {
 }
 
 impl GetRoleGrantResponse {
-    /// Build a grant response with its role and zone names; no zone means every zone.
+    /// Build a grant response with its role and zone names; no zone means all zones.
     pub(crate) fn from_grant(
         grant: &RoleGrant,
         role_name: &str,

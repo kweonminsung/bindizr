@@ -85,7 +85,7 @@ async fn fixture() -> Pool<Sqlite> {
     pool
 }
 
-/// A grant of `actions` in `zone` (every zone when `None`).
+/// A grant of `actions` in `zone` (all zones when `None`).
 fn grant(zone: Option<i32>, actions: &[Action], pattern: &str, types: &str) -> RoleGrant {
     RoleGrant {
         id: RoleGrantId::UNWRITTEN,

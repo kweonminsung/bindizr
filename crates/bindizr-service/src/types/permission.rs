@@ -14,7 +14,7 @@ pub struct PermittedActionsResponse {
     pub whole_zone: Vec<Action>,
 }
 
-/// The caller's actions in one zone that differ from its every-zone actions.
+/// The caller's actions in one zone that differ from its all-zones actions.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZonePermissionsResponse {
     #[schema(example = "example.com")]
@@ -23,7 +23,7 @@ pub struct ZonePermissionsResponse {
     pub whole_zone: Vec<Action>,
 }
 
-/// What the caller may do across every zone, and where zone grants add to it.
+/// What the caller may do across all zones, and where zone grants add to it.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct PermissionsResponse {
     /// Applies to any zone not listed in `zones`, and to what no zone owns.
