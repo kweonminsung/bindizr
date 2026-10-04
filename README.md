@@ -44,7 +44,7 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 
 ## Supported DNS Servers
 
-<img src="docs/assets/secondaries.svg" width="720px" alt="BIND, Knot DNS, NSD, PowerDNS, and Technitium follow Bindizr's catalog zone; Windows Server DNS, YADIFA, Unbound, and CoreDNS take its zones one by one">
+<img src="docs/assets/secondaries.svg" width="720px" alt="BIND, Knot DNS, NSD, PowerDNS, Technitium, and CoreDNS follow Bindizr's catalog zone; Windows Server DNS, YADIFA, and Unbound take its zones one by one">
 
 Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven updates, and DNSSEC-signed zones. The left column learns zones from the catalog zone; the right one is given each zone by hand. Versions, TSIG support, and each server's configuration are in [Secondary Servers](https://kweonminsung.github.io/bindizr/secondaries/).
 

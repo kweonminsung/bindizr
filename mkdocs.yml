@@ -109,11 +109,11 @@ nav:
           - NSD: secondaries/nsd.md
           - PowerDNS: secondaries/powerdns.md
           - Technitium DNS: secondaries/technitium.md
+          - CoreDNS: secondaries/coredns.md
       - Per-Zone:
           - Windows Server DNS: secondaries/windows.md
           - YADIFA: secondaries/yadifa.md
           - Unbound: secondaries/unbound.md
-          - CoreDNS: secondaries/coredns.md
   - Configuration:
       - Overview: configuration.md
       - Advanced: configuration/advanced.md
