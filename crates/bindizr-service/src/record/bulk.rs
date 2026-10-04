@@ -319,21 +319,20 @@ pub async fn create_bulk(
         }
         timings.build_records_ms = elapsed_ms(t);
 
-        if run.is_dry_run() {
-            // Mirror `validate_delegations_tx` against the simulated final
-            // state: an insert-only batch can only violate it at names it
-            // touches, and those are all indexed here.
-            for (name, rows) in &records_by_name {
-                if rows.iter().any(|r| r.record_type == RecordType::Ds)
-                    && !rows.iter().any(|r| r.record_type == RecordType::Ns)
-                {
-                    return Err(ServiceError::record_conflict(format!(
-                        "DS records at '{}' require delegation NS records at the same name",
-                        name
-                    )));
-                }
+        // Mirror `validate_delegations_tx`, naming the owner it leaves
+        // unnamed: an insert-only batch breaks it only at names it touches.
+        for (name, rows) in &records_by_name {
+            if rows.iter().any(|r| r.record_type == RecordType::Ds)
+                && !rows.iter().any(|r| r.record_type == RecordType::Ns)
+            {
+                return Err(ServiceError::record_conflict(format!(
+                    "DS records at '{}' require delegation NS records at the same name",
+                    name
+                )));
             }
+        }
 
+        if run.is_dry_run() {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
             let before =

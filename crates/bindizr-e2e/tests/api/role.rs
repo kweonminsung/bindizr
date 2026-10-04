@@ -1385,9 +1385,19 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify that no response a restricted role can get, from any record,
-/// zone, version, import or ExternalDNS route, carries a record it cannot
-/// read: the oracle for the whole class, not one response at a time.
+/// Create role `name` and a token in it, returning the token's secret.
+async fn create_role_with_token(app: &TestApp, name: &str) -> String {
+    app.run_cli_success(&["role", "create", name]).await;
+    let created: serde_json::Value = serde_json::from_str(
+        &app.run_cli_success(&["token", "create", name, "--role", name, "--output", "json"])
+            .await,
+    )
+    .unwrap();
+    created["secret"].as_str().unwrap().to_string()
+}
+
+/// Verify that no response or refusal a restricted role gets, on any record,
+/// zone, version, import or ExternalDNS route, carries a record it cannot read.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn no_response_reveals_a_record_the_role_cannot_read() {
@@ -1402,13 +1412,39 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
 
     let zone_name = app.zone_name("example.com");
     app.create_named_zone(&zone_name).await;
+    let first_serial = app.read_zone_serial(&zone_name).await;
+
+    // Little room left under the zone, so a longer zone name no longer fits.
+    let zone_wire = zone_name
+        .split('.')
+        .map(|label| label.len() + 1)
+        .sum::<usize>()
+        + 1;
+    let mut long_name = String::from("leak-marker-long");
+    let mut room = 250 - zone_wire - (long_name.len() + 1);
+    while room >= 2 {
+        let label = (room - 1).min(63);
+        long_name.push('.');
+        long_name.push_str(&"a".repeat(label));
+        room -= label + 1;
+    }
+
     // Every unreadable record carries a marker in its name or value; the
-    // readable `www` proves the sweep reads something.
+    // readable `www` proves the sweep reads something. The NS goes first so
+    // its DS has a delegation.
     let mut secret_ids = Vec::new();
+    let mut delegation_ns_id = None;
     for (name, record_type, value) in [
         ("_acme-challenge", "TXT", "leak-marker-challenge"),
         ("_acme-challenge", "A", "192.0.2.201"),
         ("leak-marker-vault", "TXT", "kept"),
+        ("leak-marker-delegation", "NS", "ns1.example.net."),
+        (
+            "leak-marker-delegation",
+            "DS",
+            "12345 13 2 abababababababababababababababababababababababababababababababab",
+        ),
+        (long_name.as_str(), "TXT", "kept"),
         ("www", "A", "192.0.2.10"),
     ] {
         let (status, body) = app
@@ -1419,14 +1455,19 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
             )
             .await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
+        let id = body["record"]["id"].as_i64().unwrap();
+        if record_type == "NS" {
+            delegation_ns_id = Some(id);
+        }
         if name != "www" {
-            secret_ids.push(body["record"]["id"].as_i64().unwrap());
+            secret_ids.push(id);
         }
     }
+    let delegation_ns_id = delegation_ns_id.unwrap();
     let serial = app.read_zone_serial(&zone_name).await;
 
-    // A challenge writer that reads only `www`, and a whole-zone creator
-    // that reads nothing: the two shapes a write outruns its read in.
+    // The shapes a write outruns its read in: a challenge writer reading only
+    // `www`, a whole-zone creator, a whole-zone writer, and a zone renamer.
     let (challenge_role, challenge_token) = app.create_scoped_api_token().await;
     for (actions, pattern, types) in [
         (
@@ -1452,34 +1493,41 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
         .await;
     }
     let creator_role = format!("{}-creator", app.namespace());
-    app.run_cli_success(&["role", "create", &creator_role])
+    let creator_token = create_role_with_token(&app, &creator_role).await;
+    let writer_role = format!("{}-writer", app.namespace());
+    let writer_token = create_role_with_token(&app, &writer_role).await;
+    for (role, actions) in [
+        (&creator_role, "zone:read,record:create"),
+        (
+            &writer_role,
+            "zone:update,record:create,record:update,record:delete",
+        ),
+    ] {
+        app.run_cli_success(&[
+            "role",
+            "grant",
+            role,
+            "--zone",
+            &zone_name,
+            "--actions",
+            actions,
+        ])
         .await;
+    }
+    let renamer_role = format!("{}-renamer", app.namespace());
+    let renamer_token = create_role_with_token(&app, &renamer_role).await;
     app.run_cli_success(&[
         "role",
         "grant",
-        &creator_role,
-        "--zone",
-        &zone_name,
+        &renamer_role,
         "--actions",
-        "zone:read,record:create",
+        "zone:update,zone:create",
     ])
     .await;
-    let created: serde_json::Value = serde_json::from_str(
-        &app.run_cli_success(&[
-            "token",
-            "create",
-            &creator_role,
-            "--role",
-            &creator_role,
-            "--output",
-            "json",
-        ])
-        .await,
-    )
-    .unwrap();
-    let creator_token = created["secret"].as_str().unwrap().to_string();
 
     let zone = &zone_name;
+    let rename = json!({ "name": format!("renamed.{zone}"), "dry_run": true });
+    let rollback = format!("/zones/{zone}/versions/{first_serial}/rollback?dry_run=true");
     let mut requests: Vec<(Method, String, Option<serde_json::Value>)> = vec![
         (Method::GET, "/zones".into(), None),
         (Method::GET, format!("/zones/{zone}"), None),
@@ -1492,7 +1540,7 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
         ),
         (
             Method::GET,
-            format!("/zones/{zone}/versions/diff?from=1"),
+            format!("/zones/{zone}/versions/diff?from={first_serial}"),
             None,
         ),
         (Method::GET, format!("/zones/{zone}/dnssec"), None),
@@ -1557,6 +1605,8 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
                 }],
             })),
         ),
+        (Method::PUT, format!("/zones/{zone}"), Some(rename.clone())),
+        (Method::POST, rollback.clone(), None),
     ];
     for id in &secret_ids {
         requests.push((Method::GET, format!("/records/{id}"), None));
@@ -1566,27 +1616,33 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
             json!({ "ttl": 60 }),
             json!({ "value": "overwrite" }),
             json!({
-                "name": "_acme-challenge", "type": "TXT", "value": "overwrite", "ttl": 60,
+                "name": "_acme-challenge", "type": "TXT", "value": "overwrite", "ttl": 3600,
                 "dry_run": true,
             }),
         ] {
             requests.push((Method::PUT, format!("/records/{id}"), Some(body)));
         }
-        requests.push((Method::DELETE, format!("/records/{id}"), None));
+        // Previewed, so every role meets every record.
+        requests.push((Method::DELETE, format!("/records/{id}?dry_run=true"), None));
     }
 
+    let leaks = |body: &serde_json::Value| {
+        let text = body.to_string();
+        text.contains("leak-marker") || text.contains("192.0.2.201")
+    };
     for (role, token) in [
-        (&challenge_role, challenge_token),
-        (&creator_role, creator_token),
+        (&challenge_role, &challenge_token),
+        (&creator_role, &creator_token),
+        (&writer_role, &writer_token),
+        (&renamer_role, &renamer_token),
     ] {
-        app.set_auth_token(token);
+        app.set_auth_token(token.clone());
         let mut succeeded = 0;
         for (method, path, body) in &requests {
             let (status, response) = app.send_request(method.clone(), path, body.clone()).await;
-            let text = response.to_string();
             assert!(
-                !text.contains("leak-marker") && !text.contains("192.0.2.201"),
-                "{role}: {method} {path} answered {status} with an unreadable record: {text}"
+                !leaks(&response),
+                "{role}: {method} {path} answered {status} with an unreadable record: {response}"
             );
             succeeded += usize::from(status.is_success());
         }
@@ -1596,6 +1652,34 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
             "{role}: only {succeeded} requests succeeded"
         );
     }
+
+    // Refusals the previews cannot reach: the DS check a delete by id trips.
+    app.set_auth_token(writer_token);
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!("/records/{delegation_ns_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(!leaks(&body), "a delete by id named its record: {body}");
+    // A rollback reads the version it restores.
+    let (status, body) = app.send_request(Method::POST, &rollback, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|message| message.contains("'record:read'")),
+        "{body}"
+    );
+    // A rename refused over a record the renamer cannot read leaves it unnamed.
+    app.set_auth_token(renamer_token);
+    let (status, body) = app
+        .send_request(Method::PUT, &format!("/zones/{zone}"), Some(rename))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(!leaks(&body), "a rename named a record: {body}");
 }
 
 /// Verify that an import creating its zone from a server needs the mode's
