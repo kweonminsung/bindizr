@@ -1319,7 +1319,11 @@ section above.
   manual. New prose belongs in `docs/`.
 - `docs/changelog.md` indexes the version files in `docs/changelog/`; the root
   `CHANGELOG.md` points readers to that index. A release's optional notes live
-  in `docs/changelog/<version>.md`, without the `v` tag prefix.
+  in `docs/changelog/<version>.md`, without the `v` tag prefix. The file is the
+  GitHub release body verbatim, so it keeps that body's form: the title
+  `# 🚀 Release: <version>` and the emoji section headings (`📦 Distribution`,
+  `📌 Installation (…)`, `⚠️ Breaking Changes`, `✨ New Features`,
+  `🧹 Fixes & Improvements`); the date lives in the index alone.
 
 ### Web UI — a companion repository
 
