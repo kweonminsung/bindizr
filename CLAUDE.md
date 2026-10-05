@@ -89,7 +89,11 @@ each rule says which spelling is this project's.
   here: `bindizr_service::zone` is a module of functions, and a front end
   imports the module and calls `zone::create(&cx, &caller, &request)`. The
   entity is the module's name, so a function omits it (`zone::get_by_name`,
-  never `zone::get_zone_by_name`). A module that spreads over files by verb
+  never `zone::get_zone_by_name`). That elision is the service's and the
+  db's; a front end's handler names the operation whole (`get_zone`,
+  `list_records`), since the HTTP one is its OpenAPI operationId, unique
+  across the API, and the socket one carries the same name. A module that
+  spreads over files by verb
   (`zone/create.rs`, `zone/get.rs`) declares them in `mod.rs` and
   re-exports their functions flat (`pub use create::create;`), so the path
   a caller writes is `zone::create` — the shape of `tokio::fs::read` — and
@@ -223,8 +227,10 @@ each rule says which spelling is this project's.
   change sign on purpose.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type derives `Debug`;
   `Clone` when its fields support cloning and it does not own a resource;
-  `PartialEq, Eq` when its fields allow; `Copy` for a fieldless enum or a small plain struct; `Hash`
-  and `Ord` when it keys a map or sorts; `Default` when the empty value means something
+  `PartialEq, Eq` when its fields allow; `Copy` for a fieldless enum and for any struct
+  whose fields are all `Copy`, whatever its size — nothing here is hot enough for an
+  implicit copy to matter; `Hash` and `Ord` when it keys a map or sorts; `Default` when
+  the empty value means something
   (a filter); `Serialize` / `Deserialize` on every process-boundary payload, including
   adapter-local HTTP shapes — a row carries neither, since nothing serializes one and
   two hold secrets. Query extractors and final CLI presentation structs need only the
@@ -854,7 +860,9 @@ is created, updated, or deleted. `convert_` does not exist: a conversion is
   and report reachability or state), `fetch_` (pull a whole artifact, such as
   an AXFR), `resolve_` / `discover_` (names to addresses, the parent zone),
   `load_` / `read_` / `write_` (disk and streams), `print_` (stdout; CLI only).
-- Flow: `handle_<thing>` — the entry point of one request or command;
+- Flow: `handle_<thing>` — an entry point that dispatches (`handle_client`,
+  `handle_command`) or a route with no entity (`handle_health`); a handler
+  for one entity operation is `<verb>_<entity>`, as *Rust idioms* says;
   `apply_<thing>` — write a computed change set; `authenticate_` (who the
   caller is) / `authorize_` (what they may do).
 
@@ -1011,9 +1019,11 @@ the API guidelines reject: an acronym is one word (`MySql`, `Sqlite`;
 ### No dead code, no `#[allow(dead_code)]`
 
 The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep
-it that way. `bindizr-db` carries only functions with a live caller in the
-service — do **not** add one "for symmetry" with an existing `_tx`/non-`_tx`
-pair or to round out an entity's surface.
+it that way. `bindizr-db` carries only functions with a live caller — the
+service for every entity query, the offline `doctor` for `probe_connection`,
+a lifecycle operation outside the entity grammar — do **not** add one "for
+symmetry" with an existing `_tx`/non-`_tx` pair or to round out an entity's
+surface.
 
 Its root functions are `pub` and consumed across crates, so rustc cannot see
 when deleting a service call orphans one. After deleting a call, re-check the
@@ -1328,8 +1338,8 @@ fixed.
 - Do **not** add Claude (or any AI assistant) as a `Co-Authored-By` trailer or
   otherwise attribute co-authorship in commit messages. Commits are authored by
   the repository owner only.
-- Commit/push only when explicitly asked. Branch off `main` before committing if
-  currently on `main`.
+- Commit/push only when explicitly asked. Branch off `develop` before committing
+  if currently on `main` or `develop`; pull requests target `develop`.
 
 ## Benchmarks
 
