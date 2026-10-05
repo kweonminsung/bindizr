@@ -175,10 +175,10 @@ each rule says which spelling is this project's.
   Combining independent inputs or classifying an outcome is an assembly;
   *Methods and free functions* decides who owns it, not the argument count.
   `Into` and `TryInto` are never implemented.
-  The prefix says the cost: `as_` borrows for free, `to_` does work and
-  returns an owned value, `into_` consumes `self`. A conversion trait is
-  implemented for a type, never for a `Result` — the caller writes `?`
-  first.
+  The prefix says the cost: `as_` exposes a borrowed view or a `Copy` scalar
+  without allocation, `to_` does work and returns an owned value, and
+  `into_` consumes `self`. A conversion trait is implemented for a type,
+  never for a `Result` — the caller writes `?` first.
 - **A constructor is an associated function named by how the value comes
   to be** (`C-CTOR`): `new` for the plain case, with `Default` beside an
   infallible no-argument `new() -> Self`, producing the same value. A
@@ -263,7 +263,7 @@ each rule says which spelling is this project's.
   state it uses, in the order *Service functions* defines. A stateful entry
   point starts with `Context` (`zone::create(&cx, &caller, &request)`);
   an axum handler receives it as `State<Arc<Context>>`, a spawned task holds
-  an `Arc<Context>`. No
+  an `Arc<Context>`. No production
   function reaches for a `static` to find the configuration, the pool, the
   metrics, or a cache: *State is a value* says what the `Context` holds,
   what a front end holds for itself, and which two globals remain. A test
@@ -580,14 +580,16 @@ fills a `static`, with a `stop` beside it where the daemon must drain it.
 The daemon socket keeps its split — `bind` first, so a second daemon is
 refused before anything else is built, then `serve`.
 
-Two process globals remain, because the process is their receiver: the
-`log` facade (`Logger::init` once, `set_level` on reload — the level and
-format atomics are the logger's own state) and the stdout/stderr write
-state behind `outln!`. A pure fact about the environment (colour
-detection) may memoize in a function-local `OnceLock`. Nothing else is a
-`static` — not the configuration, not a pool, not a metrics registry, not
-a cache: a `static` hides a dependency the signature should show, and
-forbids a second instance in one process, which is what a test wants.
+Two production process globals remain, because the process is their
+receiver: the `log` facade (`Logger::init` once, `set_level` on reload — the
+level and format atomics are the logger's own state) and the stdout/stderr
+write state behind `outln!`. A pure fact about the environment (colour
+detection) may memoize in a function-local `OnceLock`. Nothing else in
+production is a `static` — not the configuration, a pool, a metrics registry,
+or a cache: a `static` hides a dependency the signature should show, and
+forbids a second instance in one process, which is what a test wants. The e2e
+harness uses globals for process-wide coordination: its test sequence, run
+ID, and shared Compose stack. Production code has no dependency on them.
 
 ### `--output` renders a result, so a command that is its output has none
 
@@ -787,7 +789,9 @@ equality selector the name must carry as `_by_state`.
   changing it. The same distinction applies with `_tx`: `get_by_name_tx`
   takes a `Caller`, `lookup_by_name_tx` does not. `find_*` returns `Option`
   when absence is an ordinary outcome, `list_*` a collection, `count_*` a
-  count. Their authorization follows *Who decides what* and their contract;
+  count. A `get_*` read may assemble current state from rows and read-only
+  probes (`zone::get_status`); a pure calculation is not a read entry point.
+  Their authorization follows *Who decides what* and their contract;
   an optional return does not imply authorization. A domain verb is preferred
   where it says more (`advance_catalog_serial`, `sign_zone_tx`).
 - A record mutation that also writes IXFR journal rows says so in the name:
@@ -819,10 +823,13 @@ contracts, not a claim that every check mutates state.
 
 ### Free-function helpers
 
-The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data
-access; their layer-specific error and authorization contracts are defined
-above. A free helper that computes a value never takes `get_`, and a metrics counter is
-`track_`, never `count_`. The verb says what is read, not where: a stored
+The `get_*`/`find_*`/`list_*`/`count_*` verbs above name read operations.
+The db layer performs row queries. A service read may assemble a read-only
+report, and a front end delegates that read to the service, as *Service
+functions* and *Diagnostics* define. Their layer-specific error and
+authorization contracts are defined above. A free helper that computes a
+value never takes `get_`, and a metrics counter is `track_`, never `count_`.
+The verb says what is read, not where: a stored
 row is `get`/`list` in `bindizr-db`, the service, and a front end alike; a
 value the `Context` holds — the configuration snapshot, the metrics, the
 start time — is read by a noun (`cx.config()`, `cx.metrics()`,
@@ -831,11 +838,12 @@ start time — is read by a noun (`cx.config()`, `cx.metrics()`,
 is created, updated, or deleted. `convert_` does not exist: a conversion is
 `to_`, a parse `parse_`. Every other helper starts with one of these verbs:
 
-- Conversion: the prefix says the cost (`C-CONV`) — `as_` a free borrow,
-  `to_` work returning an owned value, `into_` consuming `self` — and a
-  name says only what the call site cannot see. `to_<form>` when the
-  source is evident there — a method's receiver, or the one argument
-  (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
+- Conversion: the prefix says the cost (`C-CONV`) — `as_` a borrowed view or
+  `Copy` scalar without allocation, `to_` work returning an owned value,
+  `into_` consuming `self`. The name says only what the call site cannot see.
+  `to_<form>` when the source is evident there — a method's receiver, or the
+  one argument (`to_fqdn(name)`, `to_sqlite_url(path)`,
+  `to_response_data(status)`).
   `<source>_to_<form>` only when the source carries the meaning: several
   sources reach the same form (`labels_to_wire` beside `encode_name`), or
   the source is the point (`zone_name_to_member_id`). A conversion from
@@ -1141,9 +1149,9 @@ does not by itself make the operation belong to that type.
    representation (`Config::load`), starts work the returned handle controls,
    or authenticates a `Caller`. Reading unrelated application state to
    assemble a response remains a service flow.
-2. **A conversion or accessor**: `as_` a free borrow, `to_` an owned
-   derivation, `into_` consuming `self`, and the `From`/`TryFrom`, sqlx,
-   serde and `Display` impls beside them.
+2. **A conversion or accessor**: `as_` a borrowed view or `Copy` scalar
+   without allocation, `to_` an owned derivation, `into_` consuming `self`,
+   and the `From`/`TryFrom`, sqlx, serde and `Display` impls beside them.
 3. **A derivation or predicate about the receiver**: `is_`/`has_`/`matches_`
    or another verb phrase read as a sentence (`key.wants_parent_ds()`),
    computed from the fields and plain arguments; a peer of the same type may be an
