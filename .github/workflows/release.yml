@@ -200,12 +200,31 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build, licenses, manifest]
+    needs: [version, build, licenses, manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare release notes
+        id: notes
+        run: |
+          notes="docs/changelog/${VERSION}.md"
+          if [ -f "$notes" ] && [ -s "$notes" ]; then
+            cp "$notes" RELEASE_NOTES.md
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            : > RELEASE_NOTES.md
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+
       - name: Download packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -218,11 +237,21 @@ jobs:
           name: licenses
 
       - name: Create Release and Upload Assets
+        id: publish
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          body_path: RELEASE_NOTES.md
           files: |
             bindizr_*.deb
             bindizr-*.rpm
             THIRD_PARTY_LICENSES.html
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The release action keeps an existing body's text when body_path is empty.
+      - name: Clear release notes when no changelog exists
+        if: steps.notes.outputs.has_notes == 'false'
+        run: gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --raw-field body= >/dev/null
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.publish.outputs.id }}

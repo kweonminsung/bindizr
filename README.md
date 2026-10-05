@@ -63,10 +63,12 @@ Pick one. Each is walked through in full on the
 
 The chart can bring its own PostgreSQL for a first look; in production, point it
 at your database instead.
+The default BIND image is amd64-only. On arm64, use the image override in the
+[Kubernetes guide](docs/deployment/kubernetes.md#1-install).
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 --set postgresql.enabled=true
+  --version 0.1.0-rc.2 --set postgresql.enabled=true
 ```
 
 ### Docker Compose
@@ -74,13 +76,24 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 Builds the image from the working tree and brings up Bindizr, PostgreSQL, and
 two BIND secondaries on one host.
 
+On amd64:
+
 ```bash
 $ docker compose -f examples/compose/docker-compose.yml up -d --build
+```
+
+On arm64, add the BIND image overlay:
+
+```bash
+$ docker compose -f examples/compose/docker-compose.yml \
+  -f examples/compose/docker-compose.arm.yml up -d --build
 ```
 
 ### Docker Swarm
 
 Brings up Bindizr, PostgreSQL, and BIND on an overlay network.
+The example's BIND image is amd64-only; choose an arm64 BIND image before
+deploying it on arm64 nodes.
 
 ```bash
 $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
@@ -100,25 +113,15 @@ has the configuration for each supported server — then start.
 
 ```bash
 $ sudo systemctl start bindizr
-```
-
----
-
-However you installed it, this checks the whole path end to end:
-
-```bash
 $ sudo bindizr doctor
-```
-
-The CLI runs as the user the daemon runs as: `sudo` for a package install,
-`docker exec` / `kubectl exec` into the container for Compose and Kubernetes.
-
-API authentication is on by default for Kubernetes and package installs — the Compose
-stack ships with it off. Create a token before calling the HTTP API:
-
-```bash
 $ sudo bindizr token create admin --role admin
 ```
+
+For container installs, run `doctor` through `docker compose exec` or
+`kubectl exec` as shown in the [Docker Compose](docs/deployment/docker-compose.md)
+and [Kubernetes](docs/deployment/kubernetes.md) walkthroughs. Kubernetes also
+needs its first API token created in the pod; the Compose example disables API
+authentication.
 
 ## Documentation
 
