@@ -220,6 +220,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Take the release notes from the changelog
+        run: |
+          # The section headed by the version, up to the next version's heading.
+          awk -v heading="## [${VERSION#v}]" '
+            index($0, heading) == 1 { printing = 1; next }
+            /^## \[/ { printing = 0 }
+            printing' CHANGELOG.md > RELEASE_NOTES.md
+          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then
+            echo "CHANGELOG.md has no section for $VERSION" >&2
+            exit 1
+          fi
+
       - name: Download packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -253,6 +265,6 @@ jobs:
             bindizr_*.deb
             bindizr-*.rpm
             THIRD_PARTY_LICENSES.html
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

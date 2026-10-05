@@ -69,9 +69,9 @@ spec:
             - --publish-internal-services
             - --interval=15s
         - name: bindizr-external-dns
-          # On arm64 the Docker Hub image is unusable (amd64-only): build and
-          # load bindizr:local as in values.arm.yaml and set pullPolicy Never.
-          image: kweonminsung/bindizr:0.1.0-rc.1
+          # For an unpublished Bindizr build, use the locally loaded
+          # bindizr:local image and set imagePullPolicy to Never.
+          image: kweonminsung/bindizr:0.1.0-rc.2
           command: ["bindizr-external-dns"]
           args:
             - --bindizr-url=http://bindizr-api:8000

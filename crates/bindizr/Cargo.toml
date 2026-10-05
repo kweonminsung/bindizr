@@ -22,9 +22,9 @@ name = "bindizr"
 path = "src/main.rs"
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.1" }
-bindizr-db = { path = "../bindizr-db", version = "0.1.0-rc.1" }
-bindizr-service = { path = "../bindizr-service", version = "0.1.0-rc.1" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.2" }
+bindizr-db = { path = "../bindizr-db", version = "0.1.0-rc.2" }
+bindizr-service = { path = "../bindizr-service", version = "0.1.0-rc.2" }
 axum.workspace = true
 axum-server.workspace = true
 chrono.workspace = true

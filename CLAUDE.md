@@ -1317,6 +1317,9 @@ section above.
   `docs/api/` directory — it would collide.
 - README.md is a landing page (pitch, quickstart, links into the site), not a
   manual. New prose belongs in `docs/`.
+- `docs/changelog.md` is the root `CHANGELOG.md`, included through
+  `pymdownx.snippets`; release notes are written in the root file, never on
+  the page.
 
 ### Web UI — a companion repository
 
@@ -1328,8 +1331,9 @@ git-ignored `openapi.yaml`, a copy of `docs/openapi.yaml` that
 picker's `ACTION_DESCRIPTIONS` in `types.ts`. A change here that touches
 either — a route, a payload, an action's meaning — is finished by a pull
 request there, after copying the regenerated spec over. The two repositories
-release independently; the chart's `bindizrUi.image.tag` names an image the
-UI repository must already have pushed.
+release independently; enabling the chart's optional UI requires setting
+`bindizrUi.image.tag` to a compatible image the UI repository has already
+pushed.
 
 ## Release workflows — the tag and the inputs are the whole truth
 
@@ -1339,8 +1343,10 @@ image tag typed in. Release and Manual Release validate SemVer before building:
 check every prerelease identifier, forbid build metadata, and cap the version at 128
 characters so a Docker tag can carry it. Publish Image accepts any valid
 Docker tag of at most 128 characters, including non-version labels such as
-`dev`. These format checks are the only version/tag gates. Build checks and
-the third-party license gate still apply. `latest` follows the version in the release workflows, as
+`dev`. Both release workflows take the release body from `CHANGELOG.md`: the
+section headed by the version, which the release pull request writes beside
+the version bump. These format checks and that section are the only
+version/tag gates. Build checks and the third-party license gate still apply. `latest` follows the version in the release workflows, as
 `packaging/scripts/build_image.sh` does; Publish Image has a checkbox for it.
 
 Do not add guards against a release overwriting an earlier one, and remove

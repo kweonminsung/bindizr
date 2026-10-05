@@ -22,11 +22,13 @@ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
-Install the released OCI chart from Docker Hub:
+Install the released OCI chart from Docker Hub. Its default BIND image is
+amd64-only; the [Kubernetes guide](../docs/deployment/kubernetes.md#1-install)
+shows the tested arm64 image settings:
 
 ```sh
 helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 \
+  --version 0.1.0-rc.2 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
@@ -53,12 +55,19 @@ helm install bindizr ./charts \
   --set mysql.enabled=true
 ```
 
-To enable bindizr-ui:
+Bindizr UI releases independently. Once its compatible
+[`0.1.0-rc.2` image](https://github.com/kweonminsung/bindizr-ui/releases)
+is published, enable it on an existing release:
 
 ```sh
-helm install bindizr ./charts \
-  --set bindizrUi.enabled=true
+helm upgrade bindizr ./charts --reuse-values \
+  --set bindizrUi.enabled=true \
+  --set bindizrUi.image.tag=0.1.0-rc.2
 ```
+
+For a new installation, add both UI settings to one of the database-backed
+`helm install` commands above. The chart requires an explicit UI tag when the
+UI is enabled.
 
 To try the chart in a local kind cluster, see [`examples/kind/`](../examples/kind/).
 
