@@ -79,7 +79,7 @@ impl ImportZoneResponse {
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped
 /// during import. `updated` is a TTL-only reconcile and is never also counted
 /// as `unchanged`.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct ImportSummary {
     #[schema(example = 12)]
     pub parsed: u64,

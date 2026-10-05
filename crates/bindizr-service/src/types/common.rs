@@ -42,7 +42,7 @@ pub enum HealthStatus {
 }
 
 /// Health probe response.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct HealthResponse {
     pub status: HealthStatus,
 }

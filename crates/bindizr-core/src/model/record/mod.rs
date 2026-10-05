@@ -154,21 +154,6 @@ pub struct RecordWithZone {
 }
 
 impl RecordWithZone {
-    /// Combine a stored record with its zone metadata.
-    pub fn new(record: Record, zone_name: ZoneName) -> Self {
-        Self {
-            id: record.id,
-            name: record.name,
-            record_type: record.record_type,
-            value: record.value,
-            ttl: record.ttl,
-            priority: record.priority,
-            created_at: record.created_at,
-            zone_id: record.zone_id,
-            zone_name,
-        }
-    }
-
     /// Return the underlying [`Record`], dropping the zone name.
     pub fn record(&self) -> Record {
         Record {

@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 /// The preview switch every endpoint that offers one reads, so they all spell
 /// it the same way and an absent one is the same as `false`.
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DryRunQuery {
     #[serde(default)]
