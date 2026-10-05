@@ -286,7 +286,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateE
 }
 
 /// A deletion whose shape RFC 2136, Section 2.5 does not allow.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum DeleteShapeError {
     #[error("delete update TTL must be 0")]
     NonzeroTtl,

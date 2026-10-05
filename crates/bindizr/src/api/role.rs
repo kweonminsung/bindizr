@@ -7,7 +7,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::role_grant::RoleGrantId;
 use bindizr_service::{
     Context,
     role::{self, grant},
@@ -241,7 +240,7 @@ pub(crate) async fn delete_role_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
-    grant::revoke(&cx, &caller, &params.name, RoleGrantId::from(params.id)).await?;
+    grant::revoke(&cx, &caller, &params.name, params.id).await?;
     let response = MessageResponse {
         message: "Role grant revoked successfully".to_string(),
     };

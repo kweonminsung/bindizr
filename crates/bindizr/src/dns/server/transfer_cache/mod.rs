@@ -64,7 +64,7 @@ pub(crate) struct TransferCache {
 
 /// Transfer-cache entries, record budget, and recency clock; the enclosing
 /// cache owns the lock so eviction can be tested independently.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct Entries {
     zones: HashMap<ZoneId, CachedTransfer>,
     records: usize,

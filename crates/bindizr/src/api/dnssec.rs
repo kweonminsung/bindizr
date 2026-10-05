@@ -111,7 +111,7 @@ pub(crate) async fn enable_dnssec(
     Ok((StatusCode::CREATED, Json(status)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DisableDnssecQuery {
     skip_ds_check: Option<bool>,
@@ -220,7 +220,7 @@ pub(crate) async fn start_dnssec_rollover(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DsSeenQuery {
     skip_ds_check: Option<bool>,

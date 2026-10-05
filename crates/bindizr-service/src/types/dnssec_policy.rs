@@ -46,7 +46,7 @@ pub struct CreateDnssecPolicyRequest {
 
 /// Request body for editing a DNSSEC policy's timing; an omitted field keeps
 /// its value. Takes effect on the next signing pass or scheduler scan.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecPolicyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]

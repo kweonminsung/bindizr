@@ -303,7 +303,7 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Tabled)]
 pub(crate) struct RollbackSummaryRow {
     #[tabled(rename = "TARGET-SERIAL")]
     pub(crate) target_serial: u32,
@@ -388,7 +388,7 @@ impl SecondaryStatusRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Tabled)]
 pub(crate) struct ImportSummaryRow {
     /// The counts describe the plan, which a rejected file never applies.
     #[tabled(rename = "APPLIED", display = "display_yes_no")]

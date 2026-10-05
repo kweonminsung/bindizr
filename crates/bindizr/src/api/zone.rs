@@ -85,7 +85,7 @@ pub(crate) async fn get_zone_status(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneQuery {
     signed: Option<bool>,
@@ -240,7 +240,7 @@ pub(crate) async fn rollback_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionListQuery {
     limit: Option<u32>,
@@ -256,7 +256,7 @@ pub(crate) struct ZoneVersionParams {
     serial: Serial,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionDiffQuery {
     from: Serial,

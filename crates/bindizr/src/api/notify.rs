@@ -30,7 +30,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         .route("/zones/{name}/notify", routing::post(notify_zone))
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotifyQuery {
     bump_serial: Option<bool>,
