@@ -162,8 +162,7 @@ pub(crate) async fn delete_role(
         summary = "List a role's grants",
         params(
             ("name" = String, Path, description = "The name of the role."),
-            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Grants per page; defaults to 50."),
-            ("offset" = Option<u64>, Query, description = "Number of grants to skip.")
+            PageRequest
         ),
         responses(
             (status = 200, description = "The role's grants", body = PaginatedResponse<GetRoleGrantResponse>),

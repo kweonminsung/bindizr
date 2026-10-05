@@ -14,6 +14,7 @@ use bindizr_service::{
     zone,
 };
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use crate::{
     api::{
@@ -30,9 +31,12 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         .route("/zones/{name}/notify", routing::post(notify_zone))
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The serial switch of a NOTIFY request.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotifyQuery {
+    /// Bump the serial first, so secondaries transfer even when nothing changed.
     bump_serial: Option<bool>,
 }
 
@@ -42,9 +46,7 @@ pub(crate) struct NotifyQuery {
         path = "/notify",
         tag = "Notify",
         summary = "Send DNS NOTIFY messages for all zones",
-        params(
-            ("bump_serial" = Option<bool>, Query, description = "Bump all zones' serials first, so secondaries transfer even when nothing changed.")
-        ),
+        params(NotifyQuery),
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -73,7 +75,7 @@ pub(crate) async fn notify_all_zones(
         summary = "Send DNS NOTIFY messages for a zone",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to notify secondaries about."),
-            ("bump_serial" = Option<bool>, Query, description = "Bump the zone's serial first, so secondaries transfer even when nothing changed.")
+            NotifyQuery
         ),
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),

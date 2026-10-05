@@ -50,12 +50,27 @@ const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
 /// Why the control socket could not be bound.
 #[derive(Debug, Error)]
 pub(crate) enum BindSocketError {
-    /// Another daemon answers on the socket; its message is the io error's.
-    #[error("{0}")]
-    InUse(#[source] io::Error),
+    /// Another daemon answers on the socket.
+    #[error("Bindizr is already running")]
+    InUse,
     /// Every candidate path failed, each with its reason.
     #[error("failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
-    Unavailable { failures: Vec<(String, io::Error)> },
+    Unavailable {
+        failures: Vec<(String, BindSocketPathError)>,
+    },
+}
+
+/// Why one candidate path could not be bound.
+#[derive(Debug, Error)]
+pub(crate) enum BindSocketPathError {
+    /// A daemon answers on the socket at this path.
+    #[error("Bindizr is already running")]
+    AlreadyRunning,
+    /// Something other than a Unix socket sits at the path.
+    #[error("socket path exists and is not a Unix socket: {path}")]
+    NotASocket { path: String },
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 /// Why the bound socket could not be served.
@@ -191,9 +206,7 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
             Ok(listener) => return Ok(((*path).to_string(), listener)),
             // Another daemon already owns this socket. Trying the next candidate
             // would start a second daemon instead of reporting the conflict.
-            Err(err) if err.kind() == io::ErrorKind::AddrInUse => {
-                return Err(BindSocketError::InUse(err));
-            }
+            Err(BindSocketPathError::AlreadyRunning) => return Err(BindSocketError::InUse),
             Err(err) => err,
         };
 
@@ -211,7 +224,7 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
 }
 
 /// Bind a Unix listener at the requested path.
-async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
+async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathError> {
     prepare_socket_path(socket_path).await?;
     let listener = UnixListener::bind(socket_path)?;
     // Owner-only refuses strangers at connect; the peer check in `serve` is the boundary.
@@ -220,7 +233,7 @@ async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
 }
 
 /// Prepare the control socket path and remove a stale socket if needed.
-async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
+async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
     if let Some(parent) = Path::new(socket_path).parent() {
         fs::create_dir_all(parent).await?;
     }
@@ -228,31 +241,24 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     match fs::symlink_metadata(socket_path).await {
         Ok(metadata) => {
             if !metadata.file_type().is_socket() {
-                return Err(io::Error::new(
-                    io::ErrorKind::AlreadyExists,
-                    format!(
-                        "socket path exists and is not a Unix socket: {}",
-                        socket_path
-                    ),
-                ));
+                return Err(BindSocketPathError::NotASocket {
+                    path: socket_path.to_string(),
+                });
             }
 
             match UnixStream::connect(socket_path).await {
-                Ok(_) => Err(io::Error::new(
-                    io::ErrorKind::AddrInUse,
-                    "Bindizr is already running.",
-                )),
+                Ok(_) => Err(BindSocketPathError::AlreadyRunning),
                 // Socket file exists but no process is listening, so it is safe to remove.
                 Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
-                    fs::remove_file(socket_path).await
+                    Ok(fs::remove_file(socket_path).await?)
                 }
                 // Socket disappeared after metadata lookup, so there is nothing to remove.
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(e),
+                Err(e) => Err(e.into()),
             }
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -419,12 +425,12 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::StartDnssecRollover { zone_name, request } => {
             encode_response(dnssec::start_dnssec_rollover(cx, &zone_name, &request).await)
         }
-        DaemonCommand::AdvanceDnssecRollover {
+        DaemonCommand::DsSeenDnssecRollover {
             zone_name,
             ds_check,
             holddown,
         } => encode_response(
-            dnssec::advance_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
+            dnssec::ds_seen_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
         ),
         DaemonCommand::WithdrawDnssec { name } => {
             encode_response(dnssec::withdraw_dnssec(cx, &name).await)

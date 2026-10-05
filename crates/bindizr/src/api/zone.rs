@@ -19,6 +19,7 @@ use bindizr_service::{
     zone,
 };
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use crate::{
     api::{
@@ -85,9 +86,12 @@ pub(crate) async fn get_zone_status(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The view switch of a zone export.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneQuery {
+    /// Append the derived DNSSEC records.
     signed: Option<bool>,
 }
 
@@ -100,7 +104,7 @@ pub(crate) struct ExportZoneQuery {
         description = "Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint. With `signed`, the derived DNSSEC records (DNSKEY, RRSIG, the denial chain, CDS/CDNSKEY) are appended in presentation form — an inspection artifact, not an import input.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to export."),
-            ("signed" = Option<bool>, Query, description = "Append the derived DNSSEC records.")
+            ExportZoneQuery
         ),
         responses(
             (status = 200, description = "The zone as master-file text", content_type = "text/plain", body = String),
@@ -139,9 +143,7 @@ pub(crate) async fn export_zone(
         description = "Every zone mutation records a version of the zone's SOA metadata keyed by serial. Versions are returned newest serial first.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Versions per page; defaults to 50."),
-            ("offset" = Option<u64>, Query, description = "Number of versions to skip."),
-            ("include_signer_serials" = Option<bool>, Query, description = "Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.")
+            VersionListQuery
         ),
         responses(
             (status = 200, description = "A list of zone versions", body = PaginatedResponse<ZoneVersionResponse>),
@@ -211,7 +213,7 @@ pub(crate) async fn get_zone_version(
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back."),
             ("serial" = u32, Path, description = "The version serial to roll back to."),
-            ("dry_run" = Option<bool>, Query, description = "Compute and report the rollback without applying it.")
+            DryRunQuery
         ),
         responses(
             (status = 200, description = "Rollback result", body = RollbackZoneResponse),
@@ -240,13 +242,19 @@ pub(crate) async fn rollback_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The page and content filter of a version listing.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionListQuery {
+    /// Versions per page; defaults to 50.
+    #[param(minimum = 1, maximum = 1000)]
     limit: Option<u32>,
+    /// Number of versions to skip.
+    offset: Option<u64>,
+    /// Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.
     #[serde(default)]
     include_signer_serials: bool,
-    offset: Option<u64>,
 }
 
 /// One of a zone's versions, by name and serial.
@@ -256,10 +264,16 @@ pub(crate) struct ZoneVersionParams {
     serial: Serial,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+/// The two serials of a version diff.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionDiffQuery {
+    /// The serial to diff from.
+    #[param(value_type = u32)]
     from: Serial,
+    /// The serial to diff to; defaults to the current serial.
+    #[param(value_type = Option<u32>)]
     to: Option<Serial>,
 }
 
@@ -272,8 +286,7 @@ pub(crate) struct VersionDiffQuery {
         description = "Reports the records added, removed, and changed between `from` and `to`, grouped by name and type. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("from" = u32, Query, description = "The serial to diff from."),
-            ("to" = Option<u32>, Query, description = "The serial to diff to; defaults to the current serial.")
+            VersionDiffQuery
         ),
         responses(
             (status = 200, description = "The record differences between the two serials", body = VersionDiffResponse),
@@ -429,7 +442,7 @@ pub(crate) async fn update_zone(
         description = "Deletes the zone with its records and saved versions, and answers with what went. With `dry_run=true` the counts are reported and nothing is removed.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to delete."),
-            ("dry_run" = Option<bool>, Query, description = "Report what would go without removing it.")
+            DryRunQuery
         ),
         responses(
             (status = 200, description = "DNS zone deleted successfully", body = DeleteZoneResponse),

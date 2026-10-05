@@ -37,7 +37,6 @@ fn fixed_now() -> DateTime<Utc> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-
 struct ComputeArgs<'a> {
     zone: &'a Zone,
     records: &'a [Record],
