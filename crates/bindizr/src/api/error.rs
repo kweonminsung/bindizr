@@ -108,7 +108,7 @@ impl From<JsonRejection> for ApiError {
                     MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
                 ))
             }
-            _ => ServiceError::internal("failed to read request body"),
+            _ => ServiceError::internal_with_source("failed to read request body", rejection),
         };
 
         ApiError(error)
