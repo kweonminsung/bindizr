@@ -23,7 +23,8 @@ mod verify;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
-    FakeParent, ServedDs, TransferOutcome, axfr, probe_zone_soa, wait_for_any_dns_record,
+    FakeParent, ServedDs, TransferOutcome, axfr, exchange_dns_query, probe_zone_soa,
+    wait_for_any_dns_record,
 };
 use verify::{PreviousDnsKey, to_fqdn};
 

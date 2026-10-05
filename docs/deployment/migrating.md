@@ -77,8 +77,8 @@ made during verification are included in the cutover.
 Only now do the secondaries change. Each one drops its old `zone` statements
 and takes Bindizr's catalog zone instead, after which created and deleted
 zones reach it without further configuration.
-[Secondary Servers](../secondaries/index.md) has the configuration for BIND,
-Knot DNS, NSD, and PowerDNS; use `<bindizr-host>` port 5300 in place of the
+[Secondary Servers](../secondaries/index.md) has the configuration for each
+verified server; use `<bindizr-host>` port 5300 in place of the
 loopback address there, then restart the secondary.
 
 Then confirm every secondary is serving Bindizr's serial:

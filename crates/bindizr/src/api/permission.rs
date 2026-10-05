@@ -25,7 +25,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/permissions",
         tag = "Role",
         summary = "Get the caller's permissions",
-        description = "What the calling token's role permits, computed from its grants: the actions held in all zones, including zones created later, and per zone where a zone-scoped grant adds to them. `whole_zone` lists the record actions held with no name or type limit, as export, versions, diffs, import and rollback need. With authentication disabled every action is permitted everywhere.",
+        description = "What the calling token's role permits, computed from its grants: the actions held in all zones, including zones created later, and per zone where a zone-scoped grant adds to them. `whole_zone` lists the record actions held with no name or type limit, as export, versions, diffs, import and rollback need. With authentication disabled every action is permitted in all zones.",
         responses(
             (status = 200, description = "The caller's permissions", body = PermissionsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

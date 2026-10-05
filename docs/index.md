@@ -13,7 +13,9 @@ Open-source control plane for authoritative DNS
 
 **Bindizr** manages DNS zones and records through an HTTP API or CLI.
 It stores them in MySQL, PostgreSQL, or SQLite and sends changes to BIND,
-Knot DNS, NSD, or PowerDNS. Those servers answer your clients' DNS queries.
+Knot DNS, NSD, PowerDNS, Technitium, Windows Server DNS, and
+[other secondaries](secondaries/index.md). Those servers answer your clients'
+DNS queries.
 
 <div class="grid cards" markdown>
 

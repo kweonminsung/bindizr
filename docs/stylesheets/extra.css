@@ -63,3 +63,11 @@
   display: block;
   margin: 0 auto;
 }
+
+/* A rule above each server group in a section's sidebar, so the catalog zone
+   and per-zone secondaries read as two lists. */
+.md-nav--primary .md-nav__item--section > .md-nav > .md-nav__list > .md-nav__item--nested {
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  margin-top: 0.6em;
+  padding-top: 0.6em;
+}
