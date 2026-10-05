@@ -126,6 +126,10 @@ each rule says which spelling is this project's.
   implementing `std::error::Error` with its `source()` intact and `Send + Sync`. An
   impl of a foreign trait returns the error that trait fixes (`fmt::Result`, sqlx's
   `BoxDynError`, serde's `D::Error`); the rule is for signatures this project writes.
+  A helper that performs standard-library I/O and names no failure of its own returns
+  `io::Result` (`read_own_uid`), kept as a `source` by its caller's type; the moment a
+  function chooses a kind or writes a message, that is a variant of its own type, never
+  an `io::Error::new`.
   Project-authored error prose starts lowercase without a trailing period; protocol
   tokens, proper names, and wrapped errors retain their original spelling. Name it `<Verb><Object>Error`
   (`ParseNameError`, `C-WORD-ORDER`) or `<Layer>Error` for a layer's whole surface
@@ -226,11 +230,12 @@ each rule says which spelling is this project's.
   is a `From` (`i64::from(count)`); the `as` casts that remain truncate or
   change sign on purpose.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type derives `Debug`;
-  `Clone` when its fields support cloning and it does not own a resource;
-  `PartialEq, Eq` when its fields allow; `Copy` for a fieldless enum and for any struct
-  whose fields are all `Copy`, whatever its size — nothing here is hot enough for an
-  implicit copy to matter; `Hash` and `Ord` when it keys a map or sorts; `Default` when
-  the empty value means something
+  `Clone` and `PartialEq, Eq` when its fields allow and it does not own a resource — a
+  handle that shares one (`Shutdown`) clones, since cloning shares it, and compares to
+  nothing; `Copy` for a fieldless enum and for any struct whose fields are all `Copy`,
+  whatever its size — nothing here is hot enough for an implicit copy to matter; a
+  generic wrapper (`Query<T>`) derives them all conditionally, `Copy` included; `Hash`
+  and `Ord` when it keys a map or sorts; `Default` when the empty value means something
   (a filter); `Serialize` / `Deserialize` on every process-boundary payload, including
   adapter-local HTTP shapes — a row carries neither, since nothing serializes one and
   two hold secrets. Query extractors and final CLI presentation structs need only the
@@ -310,8 +315,9 @@ each rule says which spelling is this project's.
   `Error` or `Fail`, so that `error` stays the text beside it, and a response's `Option`
   is emitted as `null`, never skipped, so clients read one shape. One entity travels in
   an envelope keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
-  rollback, the DNSSEC status) travels bare. A listing's query parameters come from its
-  filter struct (`IntoParams`), never a hand-written list.
+  rollback, the DNSSEC status) travels bare. A handler's `Query<T>` is its OpenAPI
+  `params(T)` (`IntoParams`), a listing's filter and a single switch alike, never a
+  hand-written list beside the struct.
 
 ### Access control — a role holds rights, a credential authenticates
 
