@@ -6,10 +6,10 @@ use std::net::{IpAddr, SocketAddr};
 use bindizr_core::{
     dns::{
         message,
-        message::Rcode,
+        message::{Rcode, Rtype},
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
-    metrics::SoaResult,
+    metrics::{SoaResult, XfrResult},
 };
 use bindizr_service::zone::{self, TransferAccess};
 use tokio::net::{TcpStream, UdpSocket};
@@ -44,8 +44,7 @@ pub(crate) async fn handle_tcp_soa(
     Ok(())
 }
 
-/// Answer an SOA query or an IXFR over UDP with the zone's SOA, counted as
-/// the TCP SOA query is.
+/// Answer an SOA query over UDP, counted as the TCP one is.
 pub(crate) async fn handle_udp_soa(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
@@ -62,6 +61,33 @@ pub(crate) async fn handle_udp_soa(
         .await
         .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     cx.metrics().track_soa(outcome);
+    Ok(())
+}
+
+/// Answer an IXFR over UDP with the zone's SOA alone, counted as a
+/// `truncated` transfer since the transfer itself follows over TCP.
+pub(crate) async fn handle_udp_ixfr(
+    dns_cx: &DnsContext,
+    socket: &UdpSocket,
+    client_addr: SocketAddr,
+    query: &message::ParsedQuery,
+    query_data: &[u8],
+) -> Result<(), XfrError> {
+    let cx = dns_cx.daemon();
+    let (response, outcome) = handle_soa_request(dns_cx, query, client_addr.ip(), query_data)
+        .await
+        .inspect_err(|_| cx.metrics().track_xfr(Rtype::IXFR, XfrResult::Failed))?;
+    socket
+        .send_to(&response, client_addr)
+        .await
+        .inspect_err(|_| cx.metrics().track_xfr(Rtype::IXFR, XfrResult::Failed))?;
+    let result = match outcome {
+        SoaResult::Ok => XfrResult::Truncated,
+        SoaResult::Refused => XfrResult::Refused,
+        SoaResult::NotAuth => XfrResult::NotAuth,
+        SoaResult::Failed => XfrResult::Failed,
+    };
+    cx.metrics().track_xfr(Rtype::IXFR, result);
     Ok(())
 }
 
@@ -87,7 +113,8 @@ async fn handle_soa_request(
         Ok(identity) => identity,
         Err(refusal) => {
             log::warn!(
-                "Refused SOA query for {:?} from {}: {}",
+                "Refused {} query for {:?} from {}: {}",
+                query.qtype,
                 zone_name_str,
                 client_ip,
                 refusal.reason
@@ -116,7 +143,8 @@ async fn handle_soa_request(
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
         log::info!(
-            "SOA query for catalog zone: {}",
+            "{} query for catalog zone: {}",
+            query.qtype,
             cx.config().dns.catalog_zone_name
         );
         let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
@@ -127,7 +155,8 @@ async fn handle_soa_request(
             }
             TransferAccess::Refused(reason) => {
                 log::warn!(
-                    "Refused SOA query for {:?} from {}: {}",
+                    "Refused {} query for {:?} from {}: {}",
+                    query.qtype,
                     zone_name_str,
                     client_ip,
                     reason
@@ -158,7 +187,8 @@ async fn handle_soa_request(
         }
         TransferAccess::Refused(reason) => {
             log::warn!(
-                "Refused SOA query for {:?} from {}: {}",
+                "Refused {} query for {:?} from {}: {}",
+                query.qtype,
                 zone_name_str,
                 client_ip,
                 reason

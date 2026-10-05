@@ -354,13 +354,26 @@ async fn dispatch_udp_query(
         return;
     }
 
-    // RFC 1995, Section 2: a UDP IXFR gets the current SOA alone, sending a
-    // client that is behind to TCP; Windows DNS asks this way after NOTIFY.
-    if matches!(query.qtype, Rtype::SOA | Rtype::IXFR) {
+    if query.qtype == Rtype::SOA {
         if let Err(e) =
             server::soa::handle_udp_soa(dns_cx, socket, client_addr, &query, query_data).await
         {
             log::warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
+        }
+        return;
+    }
+
+    // RFC 1995, Section 2: a UDP IXFR gets the current SOA alone, sending a
+    // client that is behind to TCP; Windows DNS asks this way after NOTIFY.
+    if query.qtype == Rtype::IXFR {
+        if let Err(e) =
+            server::soa::handle_udp_ixfr(dns_cx, socket, client_addr, &query, query_data).await
+        {
+            log::warn!(
+                "Failed to handle IXFR UDP query from {}: {}",
+                client_addr,
+                e
+            );
         }
         return;
     }
