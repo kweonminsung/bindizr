@@ -119,7 +119,9 @@ each rule says which spelling is this project's.
   mismatch" error can exist. Nothing needs `async-trait`.
 - **An error is a type** (`C-GOOD-ERR`). Every fallible function returns a `Result`
   whose error is a type declared in the module that raises it, derived with `thiserror`,
-  implementing `std::error::Error` with its `source()` intact and `Send + Sync`.
+  implementing `std::error::Error` with its `source()` intact and `Send + Sync`. An
+  impl of a foreign trait returns the error that trait fixes (`fmt::Result`, sqlx's
+  `BoxDynError`, serde's `D::Error`); the rule is for signatures this project writes.
   Project-authored error prose starts lowercase without a trailing period; protocol
   tokens, proper names, and wrapped errors retain their original spelling. Name it `<Verb><Object>Error`
   (`ParseNameError`, `C-WORD-ORDER`) or `<Layer>Error` for a layer's whole surface
@@ -382,7 +384,8 @@ each rule says which spelling is this project's.
   the operations table in `docs/cli/advanced.md`, the action table in
   `docs/cli/access-control.md`, the `Action` doc (the OpenAPI schema, so
   regenerate `docs/openapi.yaml`), `role grant --help`, and the UI's
-  `ACTION_DESCRIPTIONS`; the route's own OpenAPI description when it states one.
+  `ACTION_DESCRIPTIONS` (in the companion repository, see *Web UI*); the
+  route's own OpenAPI description when it states one.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
@@ -413,12 +416,15 @@ One locking model covers the service layer; keep new code on it:
   flight (row locks on MySQL/PostgreSQL, the writer reservation on SQLite) and refuses
   every later one; a read authorizes and loads its content in one snapshot, so on
   SQLite, where a read holds no lock, it may finish after a revocation but serves only
-  what it could read before. Every write therefore runs in a transaction, management
-  writes included; a TSIG transfer or update re-reads its key and grants the same way,
-  and a transfer loads what it serves (AXFR records, IXFR delta, catalog members, SOA)
-  in that transaction, a cached AXFR serving its serial's content. A read without a
-  transaction, an outbound NOTIFY or probe, and an unsigned transfer (the address list
-  as the request finds it) decide on the request's credential.
+  what it could read before. Every write that acts for a caller therefore runs in a
+  transaction, management writes included; a TSIG transfer or update re-reads its key
+  and grants the same way, and a transfer loads what it serves (AXFR records, IXFR
+  delta, catalog members, SOA) in that transaction, a cached AXFR serving its serial's
+  content. A single statement that only records what already happened — the token's
+  last-used stamp written during authentication, the transfer log — runs on the pool:
+  nothing decides on it, and the caller's own transaction re-authenticates regardless.
+  A read without a transaction, an outbound NOTIFY or probe, and an unsigned transfer
+  (the address list as the request finds it) decide on the request's credential.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and
@@ -511,7 +517,10 @@ The project targets **clean installs exclusively** and does not support
 upgrading an existing deployment. **Do not add migration code, schema
 `ALTER`s, schema-version tracking, or shims for older data/config/API
 formats** — and remove any that appear. Breaking schema/API/config changes are
-fine; change the definition in place.
+fine; change the definition in place. An upgrade here is a new version over an
+existing database or configuration; re-deploying the same version with other
+values (`helm upgrade --reuse-values --set …` in the Kubernetes guide) is
+ordinary operation.
 
 Schema setup runs `CREATE TABLE/INDEX IF NOT EXISTS` at startup for idempotency
 across restarts, **not** to migrate existing databases. This is why MySQL may
@@ -522,10 +531,11 @@ step. "The inline index won't reach existing databases" is a non-issue here.
 ### Only the entry point ends the process
 
 `std::process::exit` belongs in the `execute()` of a binary crate — that
-function is the body of `main`, so deciding to stop is its call. Everywhere
-else, including `bindizr-core` and `bindizr-db`, report the failure and let it
-propagate: a library that exits takes that decision away from whoever embedded
-it, and the e2e suite runs both binaries in-process.
+function is the body of `main`, so deciding to stop is its call. It sits in
+the crate's lib target only so the e2e package can wrap it in a `[[bin]]` of
+its own and spawn that as a child process. Everywhere else, including
+`bindizr-core` and `bindizr-db`, report the failure and let it propagate: a
+library that exits takes that decision away from whoever embedded it.
 
 ### State is a value — built in order, passed by reference
 
@@ -1277,6 +1287,19 @@ section above.
   `docs/api/` directory — it would collide.
 - README.md is a landing page (pitch, quickstart, links into the site), not a
   manual. New prose belongs in `docs/`.
+
+### Web UI — a companion repository
+
+The web UI is the separate `bindizr-ui` repository (a Go backend and a React
+app under `ui/`, with a CLAUDE.md of its own), usually checked out beside this
+one as `../bindizr-ui`. It tracks this repository through two copies: its
+git-ignored `openapi.yaml`, a copy of `docs/openapi.yaml` that
+`ui/src/lib/api.ts` and `ui/src/lib/types.ts` must match, and the grant
+picker's `ACTION_DESCRIPTIONS` in `types.ts`. A change here that touches
+either — a route, a payload, an action's meaning — is finished by a pull
+request there, after copying the regenerated spec over. The two repositories
+release independently; the chart's `bindizrUi.image.tag` names an image the
+UI repository must already have pushed.
 
 ## Release workflows — the tag and the inputs are the whole truth
 
