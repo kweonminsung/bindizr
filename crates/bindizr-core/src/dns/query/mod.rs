@@ -268,18 +268,22 @@ pub fn validate_notify_response(
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<(), ReadResponseError> {
-    // The response copies the request's question (RFC 1996, Section 3.7).
-    let message = parse_answer(query_id, qname, Rtype::SOA, response)
-        .map_err(|e| ReadResponseError::Notify(Box::new(e)))?;
+    let message =
+        parse_response(query_id, response).map_err(|e| ReadResponseError::Notify(Box::new(e)))?;
     let header = message.header();
     if header.opcode() != Opcode::NOTIFY {
         return Err(ReadResponseError::NotifyOpcode {
             got: header.opcode().to_int(),
         });
     }
+    // A refusal may omit the question (NSD 4.6's NOTAUTH does), so its RCODE
+    // is read first.
     if header.rcode() != Rcode::NOERROR {
         return Err(ReadResponseError::NotifyRcode(header.rcode().to_int()));
     }
+    // The acknowledgement copies the request's question (RFC 1996, Section 3.7).
+    parse_answer(query_id, qname, Rtype::SOA, response)
+        .map_err(|e| ReadResponseError::Notify(Box::new(e)))?;
     Ok(())
 }
 

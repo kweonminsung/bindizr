@@ -22,11 +22,11 @@ Open-source control plane for authoritative DNS
 
 </div>
 
-**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
+**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to secondaries such as BIND, Knot DNS, NSD, PowerDNS, Technitium, and Windows Server DNS via AXFR/IXFR, using DNS Catalog Zones where the secondary reads them.
 
 &nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding the secondaries, which answer client queries">
 
-Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND, Knot DNS, NSD, or PowerDNS — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
+Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND, Knot DNS, NSD, PowerDNS, or Technitium — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
 
 ## Features
 
@@ -41,6 +41,12 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, text or JSON logs, and `bindizr status` / `bindizr doctor` diagnostics.
+
+## Supported DNS Servers
+
+<img src="docs/assets/secondaries.svg" width="720px" alt="BIND, Knot DNS, NSD, PowerDNS, Technitium, and CoreDNS follow Bindizr's catalog zone; Windows Server DNS, YADIFA, and Unbound take its zones one by one">
+
+Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven updates, and DNSSEC-signed zones. The left column learns zones from the catalog zone; the right one is given each zone by hand. Versions, TSIG support, and each server's configuration are in [Secondary Servers](https://kweonminsung.github.io/bindizr/secondaries/).
 
 ## Roadmap
 
@@ -90,7 +96,7 @@ $ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL (bindizr-*.aarch64.
 The package runs on SQLite out of the box and serves zone transfers on port
 5300, leaving 53 to the secondary. Point the secondary at the catalog zone —
 [Secondary Servers](https://kweonminsung.github.io/bindizr/secondaries/)
-has the configuration for BIND, Knot DNS, NSD, and PowerDNS — then start.
+has the configuration for each supported server — then start.
 
 ```bash
 $ sudo systemctl start bindizr

@@ -11,7 +11,7 @@ use bindizr_core::{
 };
 use thiserror::Error;
 
-use super::ExchangeError;
+use super::{ExchangeError, ResolveAddressError};
 use crate::{
     Context, error::ServiceError, model::secondary::Secondary, secondary,
     types::NotifyCheckResponse,
@@ -28,6 +28,8 @@ pub enum SendNotifyError {
     Verify(#[from] bindizr_core::dns::tsig::VerifyAnswerError),
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    #[error("NOTIFY task failed: {0}")]
+    TaskFailed(#[source] tokio::task::JoinError),
 }
 
 /// NOTIFY for a zone did not reach every address of its secondaries.
@@ -78,12 +80,7 @@ pub async fn send_notify_to_secondaries(
     zone_name: &ZoneName,
 ) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
-
-    let mut reports = Vec::new();
-    for secondary in &secondaries {
-        reports.extend(send_notify_to_secondary(cx, zone_name, secondary).await?);
-    }
-    Ok(reports)
+    send_notify(cx, zone_name, secondaries).await
 }
 
 /// Send NOTIFY for a zone to every resolved address of one secondary, signed
@@ -93,57 +90,96 @@ pub async fn send_notify_to_secondary(
     zone_name: &ZoneName,
     secondary: &Secondary,
 ) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
-    let dns_config = &cx.config().dns;
-    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
-    let retries = dns_config.notify.retries;
+    send_notify(cx, zone_name, vec![secondary.clone()]).await
+}
+
+/// Send NOTIFY for a zone to every address of each secondary, signed with its
+/// NOTIFY key when it has one; one outcome per address.
+async fn send_notify(
+    cx: &Context,
+    zone_name: &ZoneName,
+    secondaries: Vec<Secondary>,
+) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
     // The zone name is a stored row, so one that does not parse is the
     // server's fault.
     let qname = zone_name
         .to_wire_name()
         .map_err(|e| ServiceError::internal_with_source(format!("invalid zone name: {}", e), e))?;
+    let timeout = cx.config().dns.notify.timeout();
+    let retries = cx.config().dns.notify.retries;
 
-    let key = match secondary::notify_signing_key(cx, secondary).await {
-        Ok(key) => key,
-        Err(e) => {
-            cx.metrics().track_notify(NotifyResult::Failed);
-            return Ok(vec![NotifyCheckResponse {
-                address: secondary.address.to_string(),
-                error: Some(e.to_string()),
-            }]);
-        }
-    };
-    let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
-        Ok(addrs) => addrs,
-        Err(e) => {
-            cx.metrics().track_notify(NotifyResult::ResolveFailed);
-            return Ok(vec![NotifyCheckResponse {
-                address: secondary.address.to_string(),
-                error: Some(format!("failed to resolve: {}", e)),
-            }]);
-        }
-    };
-
+    // A secondary that never answers must cost its own timeouts, not the
+    // others': each sends on a task of its own, the key lookup and metrics
+    // stay on this one.
     let mut reports = Vec::new();
-    for addr in addrs {
-        let result = match send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await
-        {
-            Ok(()) => {
-                log::info!("NOTIFY sent successfully to {}", addr);
-                cx.metrics().track_notify(NotifyResult::Ok);
-                Ok(())
-            }
+    let mut tasks = Vec::with_capacity(secondaries.len());
+    for secondary in secondaries {
+        let key = match secondary::notify_signing_key(cx, &secondary).await {
+            Ok(key) => key,
             Err(e) => {
-                log::error!("Failed to send NOTIFY to {}: {}", addr, e);
                 cx.metrics().track_notify(NotifyResult::Failed);
-                Err(e)
+                reports.push(NotifyCheckResponse {
+                    address: secondary.address.to_string(),
+                    error: Some(e.to_string()),
+                });
+                continue;
             }
         };
-        reports.push(NotifyCheckResponse {
-            address: addr.to_string(),
-            error: result.err().map(|e| e.to_string()),
-        });
+        let qname = qname.clone();
+        tasks.push((
+            secondary.address.clone(),
+            tokio::spawn(async move {
+                let addrs = super::resolve_address_entry(&secondary.address, timeout).await?;
+                let mut outcomes = Vec::with_capacity(addrs.len());
+                for addr in addrs {
+                    let result =
+                        send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await;
+                    outcomes.push((addr, result));
+                }
+                Ok::<_, ResolveAddressError>(outcomes)
+            }),
+        ));
     }
 
+    for (address, task) in tasks {
+        let outcomes = match task.await {
+            Ok(Ok(outcomes)) => outcomes,
+            Ok(Err(e)) => {
+                cx.metrics().track_notify(NotifyResult::ResolveFailed);
+                reports.push(NotifyCheckResponse {
+                    address: address.to_string(),
+                    error: Some(format!("failed to resolve: {}", e)),
+                });
+                continue;
+            }
+            Err(e) => {
+                cx.metrics().track_notify(NotifyResult::Failed);
+                reports.push(NotifyCheckResponse {
+                    address: address.to_string(),
+                    error: Some(SendNotifyError::TaskFailed(e).to_string()),
+                });
+                continue;
+            }
+        };
+        for (addr, result) in outcomes {
+            let error = match result {
+                Ok(()) => {
+                    log::info!("NOTIFY sent successfully to {}", addr);
+                    cx.metrics().track_notify(NotifyResult::Ok);
+                    None
+                }
+                Err(e) => {
+                    log::error!("Failed to send NOTIFY to {}: {}", addr, e);
+                    cx.metrics().track_notify(NotifyResult::Failed);
+                    Some(e.to_string())
+                }
+            };
+            reports.push(NotifyCheckResponse {
+                address: addr.to_string(),
+                error,
+            });
+        }
+    }
     Ok(reports)
 }
 
@@ -267,6 +303,21 @@ mod tests {
         let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 
         assert!(err.to_string().contains("RCODE 5"));
+    }
+
+    /// Verify that `validate_notify_response` reports the RCODE of a refusal
+    /// that carries no question.
+    #[test]
+    fn validate_notify_response_reports_rcode_without_question() {
+        // NSD 4.6 answers NOTIFY for a zone it does not serve with NOTAUTH
+        // (RCODE 9) and an empty question section.
+        let mut response = notify_response(1234, 0xa009, "example.com");
+        response.truncate(12);
+        response[4..6].copy_from_slice(&0u16.to_be_bytes());
+
+        let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
+
+        assert!(err.to_string().contains("RCODE 9"), "{err}");
     }
 
     /// Verify that `validate_notify_response` rejects another question.

@@ -1,5 +1,5 @@
 //! Serves SOA queries over TCP and UDP, used by secondaries to poll the
-//! primary's serial.
+//! primary's serial, and a UDP IXFR, which the SOA alone answers.
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -9,7 +9,7 @@ use bindizr_core::{
         message::{Rcode, Rtype},
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
-    metrics::SoaResult,
+    metrics::{SoaResult, XfrResult},
 };
 use bindizr_service::zone::{self, TransferAccess};
 use tokio::net::{TcpStream, UdpSocket};
@@ -64,6 +64,33 @@ pub(crate) async fn handle_udp_soa(
     Ok(())
 }
 
+/// Answer an IXFR over UDP with the zone's SOA alone, counted as a
+/// `truncated` transfer since the transfer itself follows over TCP.
+pub(crate) async fn handle_udp_ixfr(
+    dns_cx: &DnsContext,
+    socket: &UdpSocket,
+    client_addr: SocketAddr,
+    query: &message::ParsedQuery,
+    query_data: &[u8],
+) -> Result<(), XfrError> {
+    let cx = dns_cx.daemon();
+    let (response, outcome) = handle_soa_request(dns_cx, query, client_addr.ip(), query_data)
+        .await
+        .inspect_err(|_| cx.metrics().track_xfr(Rtype::IXFR, XfrResult::Failed))?;
+    socket
+        .send_to(&response, client_addr)
+        .await
+        .inspect_err(|_| cx.metrics().track_xfr(Rtype::IXFR, XfrResult::Failed))?;
+    let result = match outcome {
+        SoaResult::Ok => XfrResult::Truncated,
+        SoaResult::Refused => XfrResult::Refused,
+        SoaResult::NotAuth => XfrResult::NotAuth,
+        SoaResult::Failed => XfrResult::Failed,
+    };
+    cx.metrics().track_xfr(Rtype::IXFR, result);
+    Ok(())
+}
+
 /// `bindizr doctor` probes over the wire, reaching a concrete `listen_addr` from it.
 fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
     // A v4 client on a `::` listener arrives mapped, so canonicalize first.
@@ -86,7 +113,8 @@ async fn handle_soa_request(
         Ok(identity) => identity,
         Err(refusal) => {
             log::warn!(
-                "Refused SOA query for {:?} from {}: {}",
+                "Refused {} query for {:?} from {}: {}",
+                query.qtype,
                 zone_name_str,
                 client_ip,
                 refusal.reason
@@ -97,10 +125,16 @@ async fn handle_soa_request(
         }
     };
 
-    log::info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
+    log::info!(
+        "{} query for zone {:?} from {}",
+        query.qtype,
+        zone_name_str,
+        client_ip
+    );
 
+    // The question is echoed as asked: SOA, or a UDP IXFR answered by it.
     let build = |signer: Option<TransferSigner>| {
-        let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
+        let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, query.qtype);
         match signer {
             Some(signer) => builder.sign_with(signer),
             None => builder,
@@ -109,7 +143,8 @@ async fn handle_soa_request(
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
         log::info!(
-            "SOA query for catalog zone: {}",
+            "{} query for catalog zone: {}",
+            query.qtype,
             cx.config().dns.catalog_zone_name
         );
         let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
@@ -120,7 +155,8 @@ async fn handle_soa_request(
             }
             TransferAccess::Refused(reason) => {
                 log::warn!(
-                    "Refused SOA query for {:?} from {}: {}",
+                    "Refused {} query for {:?} from {}: {}",
+                    query.qtype,
                     zone_name_str,
                     client_ip,
                     reason
@@ -151,7 +187,8 @@ async fn handle_soa_request(
         }
         TransferAccess::Refused(reason) => {
             log::warn!(
-                "Refused SOA query for {:?} from {}: {}",
+                "Refused {} query for {:?} from {}: {}",
+                query.qtype,
                 zone_name_str,
                 client_ip,
                 reason

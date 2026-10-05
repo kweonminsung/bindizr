@@ -331,7 +331,8 @@ pub enum XfrResult {
     Ok,
     Refused,
     NotAuth,
-    /// Answered over UDP with TC set; the transfer follows over TCP.
+    /// Answered over UDP with TC set, or an IXFR with the zone's SOA alone;
+    /// the transfer follows over TCP.
     Truncated,
     Failed,
 }
