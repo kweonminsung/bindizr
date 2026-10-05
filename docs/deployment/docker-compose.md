@@ -82,20 +82,92 @@ curl http://127.0.0.1:8000/zones
 
 `examples/swarm/docker-compose.yml` runs the published image with BIND as a
 global service, one replica per node on host-mode port 53, and PostgreSQL,
-using Docker configs for the BIND configuration:
+using Docker configs for BIND configuration and a Docker secret for its
+transfer key. Run these commands from the repository root on a Swarm manager
+(`docker swarm init` creates a single-node Swarm).
+
+### Prepare the transfer key
+
+BIND connects to Bindizr's service VIP so primary task replacement keeps the
+same address. Swarm can translate the transfer's source IP, so transfers use
+TSIG authentication instead of relying on the registered secondary addresses.
+Create the secret once before deploying; it is mounted in both services:
+
+```bash
+printf 'key "swarm-xfr" {\n  algorithm hmac-sha256;\n  secret "%s";\n};\n' \
+  "$(openssl rand -base64 32)" | docker secret create bindizr_xfr_key -
+```
+
+### Start the services
+
+On amd64:
 
 ```bash
 docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```
 
-The CLI runs in the `bindizr` service's container, through `docker exec` on
-the node that runs it. Register the BIND service there as one secondary under
-its `tasks.bind9` name, which resolves to every replica, so NOTIFY reaches
-them all and each may transfer:
+On an arm64 Swarm, build the BIND image on **each node** first. Swarm does not
+build images, and its startup script needs a shell that the Compose example's
+Ubuntu BIND image does not include:
 
 ```bash
-docker exec <bindizr-container> bindizr secondary create bind9 --address tasks.bind9
+docker build -t bindizr-swarm-bind9:local examples/swarm/bind9
 ```
+
+Then deploy from the manager with that image. `--resolve-image never`
+uses the locally built image without looking it up in a registry:
+
+```bash
+BIND9_IMAGE=bindizr-swarm-bind9:local docker stack deploy --resolve-image never \
+  -c examples/swarm/docker-compose.yml bindizr
+```
+
+### Authorize transfers and register BIND
+
+Find the node running Bindizr with `docker service ps bindizr_bindizr`. On
+that node, wait for `bindizr status` to succeed, then run the CLI through its
+container. The transfer role needs `zone:transfer` in all zones, including the
+catalog; the TSIG secret is read from the mounted file:
+
+```bash
+BINDIZR_CONTAINER=$(docker ps -q --filter label=com.docker.swarm.service.name=bindizr_bindizr)
+docker exec "$BINDIZR_CONTAINER" bindizr status
+docker exec "$BINDIZR_CONTAINER" bindizr role create swarm-secondaries
+docker exec "$BINDIZR_CONTAINER" bindizr role grant swarm-secondaries --actions zone:transfer
+docker exec "$BINDIZR_CONTAINER" sh -ec '
+  bindizr tsig-key create swarm-xfr --role swarm-secondaries \
+    --secret "$(awk -F\" "/secret/ {print \$2}" /run/secrets/bindizr-xfr.key)"
+' > /dev/null
+docker exec "$BINDIZR_CONTAINER" bindizr secondary create bind9 --address tasks.bind9
+```
+
+`tasks.bind9` resolves to the BIND replicas so NOTIFY reaches each one.
+Before the key is registered, BIND may log refused transfers; it retries
+after registration. These setup commands run once per fresh database.
+
+### Create and query a zone
+
+```bash
+docker exec "$BINDIZR_CONTAINER" bindizr zone create example.com \
+  --mname ns1.example.com --rname admin@example.com
+docker exec "$BINDIZR_CONTAINER" bindizr record create example.com www --type A --value 192.0.2.1
+```
+
+Wait for the catalog and member zone to transfer, then check their status and
+query any Swarm node:
+
+```bash
+docker exec "$BINDIZR_CONTAINER" bindizr doctor
+docker exec "$BINDIZR_CONTAINER" bindizr zone status example.com
+dig @<swarm-node-address> www.example.com A +short
+# Expected answer: 192.0.2.1
+```
+
+After task replacement, find the current container again before using `exec`.
+BIND retries failed transfers at intervals of at most 60 seconds while the
+replacement primary becomes reachable.
+The database and zone volumes are local to each node; keep stateful services
+on their data-bearing nodes or configure shared storage for rescheduling.
 
 ## Using a different database
 

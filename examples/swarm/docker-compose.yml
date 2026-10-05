@@ -21,6 +21,9 @@ services:
         mode: ingress
     volumes:
       - bindizr-data:/var/lib/bindizr
+    secrets:
+      - source: bindizr_xfr_key
+        target: bindizr-xfr.key
     networks:
       - bindizr-net
     deploy:
@@ -29,18 +32,20 @@ services:
         condition: any
 
   bind9:
-    image: internetsystemsconsortium/bind9:9.21
+    image: ${BIND9_IMAGE:-internetsystemsconsortium/bind9:9.21}
+    entrypoint: ["/bin/sh", "-ec"]
     command:
-      - /bin/sh
-      - -ec
       - |
         BINDIZR_IP=$$(getent hosts bindizr)
         BINDIZR_IP=$${BINDIZR_IP%% *}
         sed "s/__BINDIZR_PRIMARY__/$${BINDIZR_IP}/g" /etc/bind/named.conf.template > /tmp/named.conf
-        exec named -g -c /tmp/named.conf
+        exec named -u bind -g -c /tmp/named.conf
     configs:
       - source: bind9_named_template
         target: /etc/bind/named.conf.template
+    secrets:
+      - source: bindizr_xfr_key
+        target: bindizr-xfr.key
     ports:
       - target: 53
         published: 53
@@ -77,6 +82,10 @@ services:
 configs:
   bind9_named_template:
     file: ./bind9/named.swarm.conf.template
+
+secrets:
+  bindizr_xfr_key:
+    external: true
 
 networks:
   bindizr-net:
