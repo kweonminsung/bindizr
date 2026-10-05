@@ -140,8 +140,8 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
             .and_then(|addr| addr.as_pathname().map(|p| p.display().to_string()))
             .unwrap_or_else(|| "?".to_string());
         return Err(CliError::request(format!(
-            "the daemon at '{}' runs as uid {}, neither this user nor root. Run the CLI as that \
-             user, or remove a socket another user left there.",
+            "the daemon at '{}' runs as uid {}, neither this user nor root; run the CLI as that \
+             user, or remove a socket another user left there",
             path, peer_uid
         )));
     }

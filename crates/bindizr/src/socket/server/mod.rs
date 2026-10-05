@@ -461,8 +461,11 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
 /// Encode a handler's response, or the error it failed with, as one JSON line.
 fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
     match result {
-        Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
-            encode_error(&ServiceError::internal("failed to serialize response"))
+        Ok(response) => serde_json::to_string(&response).unwrap_or_else(|e| {
+            encode_error(&ServiceError::internal_with_source(
+                "failed to serialize response",
+                e,
+            ))
         }),
         Err(e) => encode_error(&e),
     }
@@ -471,7 +474,7 @@ fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, Servic
 /// Encode a service error as one JSON line.
 fn encode_error(err: &ServiceError) -> String {
     serde_json::to_string(&ErrorResponse::from(err)).unwrap_or_else(|_| {
-        r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
+        r#"{"error":"failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })
 }
 
