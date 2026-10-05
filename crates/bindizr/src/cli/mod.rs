@@ -163,7 +163,7 @@ pub async fn execute() {
     // not lost output.
     let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
         Some(failure) => Err(error::CliError::request_with_source(
-            "output was lost",
+            format!("output was lost: {}", failure),
             failure,
         )),
         None => Ok(()),
