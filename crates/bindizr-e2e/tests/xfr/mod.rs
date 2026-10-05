@@ -76,14 +76,29 @@ async fn a_name_no_zone_can_carry_is_answered_notauth() {
     }
 }
 
+/// Read one series of a counter from `/metrics`, picked by its labels.
+async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
+    let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let text = body.as_str().expect("metrics body is prometheus text");
+    text.lines()
+        .filter(|line| line.starts_with(&format!("{name}{{")))
+        .find(|line| labels.iter().all(|label| line.contains(label)))
+        .and_then(|line| line.rsplit(' ').next()?.parse().ok())
+        .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
+}
+
 /// Verify that an IXFR over UDP is answered with the zone's current SOA
-/// alone, which sends a client that is behind to TCP.
+/// alone and counts as a truncated transfer.
 #[tokio::test]
 #[serial]
 async fn a_udp_ixfr_is_answered_with_the_current_soa() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+    let ixfr_truncated = [r#"type="ixfr""#, r#"result="truncated""#];
+    let truncated = counter(&app, "bindizr_xfr_total", &ixfr_truncated).await;
+    let soa_ok = counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await;
 
     // RFC 1995, Section 2: Windows DNS asks this way after a NOTIFY and goes
     // to TCP only when the answer's serial is ahead of its own.
@@ -106,6 +121,16 @@ async fn a_udp_ixfr_is_answered_with_the_current_soa() {
     assert_eq!(
         u64::from(answer[0].data().serial().into_int()),
         zone["serial"].as_u64().unwrap()
+    );
+
+    // Counted as a transfer, as a UDP AXFR's TC answer is, not as an SOA poll.
+    assert_eq!(
+        counter(&app, "bindizr_xfr_total", &ixfr_truncated).await,
+        truncated + 1.0
+    );
+    assert_eq!(
+        counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await,
+        soa_ok
     );
 }
 
