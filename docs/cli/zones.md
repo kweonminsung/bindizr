@@ -109,7 +109,10 @@ Choose an import mode explicitly when replacing existing data:
 
 `--from-server` imports over AXFR instead of reading a file. With `--create`,
 a missing zone is created from the source SOA, preserving its timers and
-serial. See [Migrating an Existing Primary](../deployment/migrating.md).
+using its serial as the starting value. That serial must be between 1 and
+2,137,483,647; otherwise both dry run and apply fail without creating the
+zone. Applying record changes advances it once. See
+[Migrating an Existing Primary](../deployment/migrating.md).
 
 ```bash
 bindizr zone import example.com --from-server 192.0.2.1:53 --mode replace --create --dry-run

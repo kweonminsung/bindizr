@@ -5,6 +5,36 @@ use crate::{
     common::TestApp,
 };
 
+/// Refuse an unsupported migration serial in both preview and apply without creating a zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejects_an_unsupported_initial_serial() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-high-serial.example");
+    let content = format!(
+        "@ IN SOA ns.old.example. hostmaster.{zone_name}. (2140000000 7200 1800 1209600 300)\n\
+         @ IN NS ns.old.example.\n\
+         www IN A 192.0.2.10\n"
+    );
+
+    for dry_run in [true, false] {
+        let mut args = vec!["zone", "import", &zone_name, "-", "--create"];
+        if dry_run {
+            args.push("--dry-run");
+        }
+        let output = app.run_cli_with_input(&args, Some(&content)).await;
+        assert!(!output.status.success(), "{output:?}");
+        let stderr = String::from_utf8(output.stderr).expect("CLI stderr was not UTF-8");
+        assert!(
+            stderr.contains("serial 2140000000 must not exceed 2137483647"),
+            "{stderr}"
+        );
+
+        let output = app.run_cli(&["zone", "get", &zone_name]).await;
+        assert!(!output.status.success(), "{output:?}");
+    }
+}
+
 /// Verify that a rejected import applies nothing and exits non-zero.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
