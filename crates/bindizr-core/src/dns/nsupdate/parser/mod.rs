@@ -123,17 +123,17 @@ impl UpdateRequest {
 
         // UPDATE uses the answer count for prerequisites and the authority count
         // for changes; these are not ordinary response sections.
-        let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
+        let mut prerequisites = Vec::with_capacity(usize::from(counts.ancount()));
         for _ in 0..counts.ancount() {
             prerequisites.push(parse_record(&mut parser, data)?);
         }
 
-        let mut updates = Vec::with_capacity(counts.nscount() as usize);
+        let mut updates = Vec::with_capacity(usize::from(counts.nscount()));
         for _ in 0..counts.nscount() {
             updates.push(parse_record(&mut parser, data)?);
         }
 
-        let tsig = parse_additional_section(&mut parser, counts.arcount() as usize)?;
+        let tsig = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
 
         if parser.remaining() != 0 {
             return Err(ParseUpdateError::InvalidHeader);
@@ -169,9 +169,11 @@ fn parse_record(
     let ttl = parser
         .parse_u32_be()
         .map_err(|_| ParseUpdateError::InvalidRecord)?;
-    let rdlen = parser
-        .parse_u16_be()
-        .map_err(|_| ParseUpdateError::InvalidRecord)? as usize;
+    let rdlen = usize::from(
+        parser
+            .parse_u16_be()
+            .map_err(|_| ParseUpdateError::InvalidRecord)?,
+    );
 
     let rdata_start = parser.pos();
     parser
@@ -216,9 +218,11 @@ fn parse_additional_section(
             parser
                 .parse_u32_be()
                 .map_err(|_| ParseUpdateError::InvalidRecord)?; // TTL
-            let rdlen = parser
-                .parse_u16_be()
-                .map_err(|_| ParseUpdateError::InvalidRecord)? as usize;
+            let rdlen = usize::from(
+                parser
+                    .parse_u16_be()
+                    .map_err(|_| ParseUpdateError::InvalidRecord)?,
+            );
             parser
                 .advance(rdlen)
                 .map_err(|_| ParseUpdateError::InvalidRecord)?;
@@ -241,9 +245,11 @@ fn parse_tsig_record(
     let ttl = parser
         .parse_u32_be()
         .map_err(|_| ParseUpdateError::InvalidTsig)?;
-    let rdlen = parser
-        .parse_u16_be()
-        .map_err(|_| ParseUpdateError::InvalidTsig)? as usize;
+    let rdlen = usize::from(
+        parser
+            .parse_u16_be()
+            .map_err(|_| ParseUpdateError::InvalidTsig)?,
+    );
 
     if class != Class::ANY || ttl != 0 {
         return Err(ParseUpdateError::InvalidTsig);

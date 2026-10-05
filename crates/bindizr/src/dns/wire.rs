@@ -94,7 +94,7 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
 
     // No size check: the two-octet prefix cannot name more than the limit
     // RFC 1035, Section 4.2.2 sets, so the allocation is bounded by the wire.
-    let len = u16::from_be_bytes(len_buf) as usize;
+    let len = usize::from(u16::from_be_bytes(len_buf));
     let mut message_buf = vec![0u8; len];
     reader.read_exact(&mut message_buf).await.map_err(|e| {
         if e.kind() == ErrorKind::UnexpectedEof {

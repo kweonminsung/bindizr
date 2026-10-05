@@ -122,7 +122,7 @@ fn read_frame(stream: &mut TcpStream) -> Result<Option<Vec<u8>>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(e.to_string()),
     }
-    let mut frame = vec![0u8; u16::from_be_bytes(len) as usize];
+    let mut frame = vec![0u8; usize::from(u16::from_be_bytes(len))];
     stream.read_exact(&mut frame).map_err(|e| e.to_string())?;
     Ok(Some(frame))
 }

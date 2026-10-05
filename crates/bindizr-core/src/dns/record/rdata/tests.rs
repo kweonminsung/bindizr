@@ -123,8 +123,8 @@ fn encode_txt_rdata_decodes_the_stored_presentation_form() {
 /// Verify that `rdata` rejects bytes beyond the rdlength limit.
 #[test]
 fn rdata_rejects_bytes_beyond_the_rdlength_limit() {
-    assert!(Rdata::new(vec![0; u16::MAX as usize]).is_ok());
-    assert!(Rdata::new(vec![0; u16::MAX as usize + 1]).is_err());
+    assert!(Rdata::new(vec![0; usize::from(u16::MAX)]).is_ok());
+    assert!(Rdata::new(vec![0; usize::from(u16::MAX) + 1]).is_err());
 }
 
 /// Verify that encode CNAME RDATA reads an escaped dot as label data.
