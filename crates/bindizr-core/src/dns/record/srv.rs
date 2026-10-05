@@ -7,7 +7,7 @@ use super::{
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SrvRecordValue<'a> {
     priority: u16,
     weight: u16,

@@ -50,7 +50,7 @@ impl TransferRefusal {
 
 /// Who a transfer request is: the verified key that signed it, or nobody when
 /// the address ACL admitted it unsigned; the signer answers under that key.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct TransferIdentity {
     pub(crate) key: Option<TsigKey>,
     pub(crate) signer: Option<TransferSigner>,

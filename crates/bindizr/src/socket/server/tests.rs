@@ -112,7 +112,7 @@ async fn prepare_socket_path_rejects_active_socket() {
 
     let err = prepare_socket_path(socket_path).await.unwrap_err();
 
-    assert_eq!(err.kind(), io::ErrorKind::AddrInUse);
+    assert!(matches!(err, BindSocketPathError::AlreadyRunning));
     assert!(Path::new(socket_path).exists());
     drop(listener);
 }
@@ -127,6 +127,6 @@ async fn prepare_socket_path_rejects_non_socket_file() {
 
     let err = prepare_socket_path(socket_path).await.unwrap_err();
 
-    assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+    assert!(matches!(err, BindSocketPathError::NotASocket { .. }));
     assert!(Path::new(socket_path).exists());
 }

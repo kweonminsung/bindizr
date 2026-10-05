@@ -16,6 +16,7 @@ use bindizr_service::{
     zone,
 };
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use crate::{
     api::{
@@ -111,9 +112,12 @@ pub(crate) async fn enable_dnssec(
     Ok((StatusCode::CREATED, Json(status)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The check switch of a DNSSEC disable request.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DisableDnssecQuery {
+    /// Skip the parent DS check.
     skip_ds_check: Option<bool>,
 }
 
@@ -126,7 +130,7 @@ pub(crate) struct DisableDnssecQuery {
         description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone's parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check.")
+            DisableDnssecQuery
         ),
         responses(
             (status = 200, description = "DNSSEC disabled successfully", body = MessageResponse),
@@ -220,10 +224,14 @@ pub(crate) async fn start_dnssec_rollover(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The check switches of a ds-seen request.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DsSeenQuery {
+    /// Skip the parent DS check.
     skip_ds_check: Option<bool>,
+    /// Promote before the publish hold-down has passed.
     skip_holddown: Option<bool>,
 }
 
@@ -236,8 +244,7 @@ pub(crate) struct DsSeenQuery {
         description = "Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check."),
-            ("skip_holddown" = Option<bool>, Query, description = "Promote before the publish hold-down has passed.")
+            DsSeenQuery
         ),
         responses(
             (status = 200, description = "Rollover advanced, new key promoted", body = DnssecStatusResponse),
