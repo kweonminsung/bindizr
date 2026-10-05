@@ -44,8 +44,8 @@ use crate::{
 };
 
 /// The request a zone file's SOA describes. The serial carries over so
-/// secondaries holding the old primary's serial accept the transfer; one past
-/// bindizr's ceiling starts fresh instead.
+/// secondaries holding the old primary's serial accept the transfer. An
+/// unsupported initial serial rejects the import before the zone is created.
 fn build_create_zone_request(
     zone_name: &ZoneName,
     soa: &ZoneFileSoa,
@@ -63,11 +63,7 @@ fn build_create_zone_request(
         mname: soa.mname.clone(),
         rname,
         default_ttl: None,
-        // The file's serial only if a zone may start from it, so an
-        // unusable one generates a fresh serial instead of failing.
-        serial: validate_initial_serial(soa.serial)
-            .is_ok()
-            .then_some(soa.serial),
+        serial: Some(validate_initial_serial(soa.serial)?),
         refresh: Some(i32::from(soa.refresh)),
         retry: Some(i32::from(soa.retry)),
         expire: Some(i32::from(soa.expire)),

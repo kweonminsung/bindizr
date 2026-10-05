@@ -29,7 +29,8 @@ pub struct ImportZoneRequest {
     #[schema(example = "www IN A 192.0.2.1\nmail IN A 192.0.2.2\n")]
     pub content: Option<String>,
     /// Transfer source (`host[:port]`, port 53 default) to pull the zone
-    /// from over AXFR; its SOA and DNSSEC-derived records are dropped.
+    /// from over AXFR; its SOA seeds a missing zone when `create` is true.
+    /// SOA and DNSSEC-derived records are not imported as ordinary records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "192.0.2.1:53")]
     pub from_server: Option<String>,
@@ -45,8 +46,11 @@ pub struct ImportZoneRequest {
     #[serde(default)]
     pub skip_unsupported: bool,
     /// Create the zone from the file's SOA when it does not exist yet, which
-    /// needs `zone:create` and the mode's record actions in all zones. Without
-    /// this a missing zone is an error, so a typo creates nothing.
+    /// needs `zone:create` and the mode's record actions in all zones. Its
+    /// initial serial must be 1..=2137483647; an unsupported serial rejects
+    /// both a dry run and an apply without creating the zone. Applying record
+    /// changes advances the serial once. Without this a missing zone is an
+    /// error, so a typo creates nothing.
     #[serde(default)]
     pub create: bool,
 }
