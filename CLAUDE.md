@@ -230,12 +230,15 @@ each rule says which spelling is this project's.
   is a `From` (`i64::from(count)`); the `as` casts that remain truncate or
   change sign on purpose.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type derives `Debug`;
-  `Clone` and `PartialEq, Eq` when its fields allow and it does not own a resource — a
-  handle that shares one (`Shutdown`) clones, since cloning shares it, and compares to
-  nothing; `Copy` for a fieldless enum and for any struct whose fields are all `Copy`,
-  whatever its size — nothing here is hot enough for an implicit copy to matter; a
-  generic wrapper (`Query<T>`) derives them all conditionally, `Copy` included; `Hash`
-  and `Ord` when it keys a map or sorts; `Default` when the empty value means something
+  `Clone` and `PartialEq, Eq` when its fields allow and it does not own a resource,
+  which is something with an identity outside the value — a socket, a pool, a task, a
+  lock, a child process — and not protocol state a foreign type lets you clone (a TSIG
+  sequence); a handle that shares one (`Shutdown`, `SocketContext`) clones, since
+  cloning shares it, and compares to nothing; `Copy` for a fieldless enum and for any
+  struct whose fields are all `Copy`, whatever its size — nothing here is hot enough
+  for an implicit copy to matter; a generic wrapper (`Query<T>`) derives them all
+  conditionally, `Copy` included; `Hash` and `Ord` when it keys a map or sorts;
+  `Default` when the empty value means something
   (a filter); `Serialize` / `Deserialize` on every process-boundary payload, including
   adapter-local HTTP shapes — a row carries neither, since nothing serializes one and
   two hold secrets. Query extractors and final CLI presentation structs need only the
