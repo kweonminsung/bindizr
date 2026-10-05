@@ -227,8 +227,11 @@ each rule says which spelling is this project's.
   priority stays `Option<i32>` up to the value parser: `RecordType` reads
   it with the value and phrases its range against the type (`MX
   priority`), so no earlier type could carry it. A cast that loses nothing
-  is a `From` (`i64::from(count)`); the `as` casts that remain truncate or
-  change sign on purpose.
+  is a `From` where the standard library provides one (`i64::from(count)`,
+  `usize::from(len)`); where it provides none because a width is the
+  platform's (`usize` to `u64`, `u32` to `usize`) the cast stays `as`, as
+  does an enum's discriminant (`Level as usize`); every other `as` truncates
+  or changes sign on purpose.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type derives `Debug`;
   `Clone` and `PartialEq, Eq` when its fields allow and it does not own a resource,
   which is something with an identity outside the value — a socket, a pool, a task, a
