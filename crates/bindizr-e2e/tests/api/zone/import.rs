@@ -401,11 +401,97 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
     assert_eq!(zone["expire"], 1209600);
     assert_eq!(zone["minimum_ttl"], 300);
     // The import advanced it once for the records it added.
-    assert!(
-        zone["serial"].as_i64().unwrap() >= 2026091601,
-        "serial did not carry over: {}",
-        zone["serial"]
-    );
+    assert_eq!(zone["serial"], 2026091602);
+}
+
+/// Reject unsupported source serials without creating a zone, in previews and applies.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejects_unsupported_initial_serials() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-serial-reject.example");
+
+    for serial in [0u32, 2137483648, 2140000000, u32::MAX] {
+        let content = format!(
+            "@ IN SOA ns.old.example. hostmaster.{zone_name}. ({serial} 7200 1800 1209600 300)\n\
+             @ IN NS ns.old.example.\n\
+             www IN A 192.0.2.10\n"
+        );
+        for dry_run in [true, false] {
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{zone_name}/import"),
+                    Some(json!({ "content": content, "create": true, "dry_run": dry_run })),
+                )
+                .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(body["code"], "INVALID_ZONE_FIELD", "{body}");
+            assert!(
+                body["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&format!("serial {serial}")),
+                "{body}"
+            );
+
+            let (status, _) = app
+                .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+                .await;
+            assert_eq!(status, StatusCode::NOT_FOUND);
+        }
+    }
+}
+
+/// Preserve the supported boundary serials and ignore source SOA on an existing zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_preserves_supported_initial_serials() {
+    let app = TestApp::start().await;
+
+    for serial in [1u32, 2137483647] {
+        let zone_name = app.zone_name(&format!("import-serial-{serial}.example"));
+        let content = format!(
+            "@ IN SOA ns.old.example. hostmaster.{zone_name}. ({serial} 7200 1800 1209600 300)\n\
+             @ IN NS ns.old.example.\n\
+             www IN A 192.0.2.10\n"
+        );
+        for dry_run in [true, false] {
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{zone_name}/import"),
+                    Some(json!({ "content": content, "create": true, "dry_run": dry_run })),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["applied"], !dry_run);
+            let (status, body) = app
+                .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+                .await;
+            if dry_run {
+                assert_eq!(status, StatusCode::NOT_FOUND);
+            } else {
+                assert_eq!(status, StatusCode::OK, "{body}");
+                assert_eq!(body["zone"]["serial"], serial + 1);
+            }
+        }
+
+        // An existing zone keeps its own SOA; the source serial is not a new seed.
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(json!({ "content": content.replace(&format!("({serial} "), "(2140000000 "), "create": true })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["summary"]["added"], 0);
+        assert_eq!(
+            app.read_zone_serial(&zone_name).await,
+            i64::from(serial + 1)
+        );
+    }
 }
 
 /// Verify that a missing zone is an error unless `create` says otherwise.

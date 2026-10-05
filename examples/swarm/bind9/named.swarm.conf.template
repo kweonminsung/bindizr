@@ -1,3 +1,5 @@
+include "/run/secrets/bindizr-xfr.key";
+
 options {
     // On the bind9-data volume, so a restarted task answers before its first transfer.
     directory "/var/lib/bind";
@@ -7,15 +9,18 @@ options {
     allow-query { any; };
     allow-notify { any; };
 
+    // Retry promptly while Swarm routes to a replacement primary task.
+    min-retry-time 5;
+    max-retry-time 60;
     ixfr-from-differences yes;
     catalog-zones {
-        zone "catalog.bindizr" default-primaries { __BINDIZR_PRIMARY__ port 53; };
+        zone "catalog.bindizr" default-primaries { __BINDIZR_PRIMARY__ port 53 key "swarm-xfr"; };
     };
 };
 
 zone "catalog.bindizr" {
     type secondary;
-    primaries { __BINDIZR_PRIMARY__ port 53; };
+    primaries { __BINDIZR_PRIMARY__ port 53 key "swarm-xfr"; };
     file "/var/lib/bind/catalog.bindizr.zone";
     ixfr-from-differences yes;
 };

@@ -191,7 +191,8 @@ and [Signing zone transfers](advanced.md#signing-zone-transfers).
 ### ExternalDNS
 
 The role at the top of this page grants the three actions ExternalDNS needs.
-Keep them in one grant so the adapter includes the scope in its domain filter.
+They may be in one grant or split across grants, provided their combined
+rights cover the same name and a common record type that ExternalDNS writes.
 See [ExternalDNS](../external-dns.md) for deployment and record-type constraints.
 
 ### An ACME DNS-01 client over nsupdate

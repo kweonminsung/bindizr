@@ -31,13 +31,12 @@ Host ports: API `8000`, DNS through dnsdist `127.0.0.1:53`, Bindizr's own DNS
 
 ## swarm
 
-```sh
-docker stack deploy -c examples/swarm/docker-compose.yml bindizr
-```
-
 Runs the published image with BIND as a global service (one replica per
-node, host-mode port 53). See
-[docs/deployment/docker-compose.md](../docs/deployment/docker-compose.md).
+node, host-mode port 53). Follow the
+[Swarm setup](../docs/deployment/docker-compose.md#docker-swarm) to create
+the transfer secret, deploy, and register the TSIG key and secondaries.
+On arm64, build `swarm/bind9/Dockerfile` on each node and select it with
+`BIND9_IMAGE` as described there.
 
 ## kind
 
