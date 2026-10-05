@@ -185,7 +185,10 @@ pub(crate) async fn send_ixfr_response(
         }
         // A failure after the first flush leaves the stream mid-transfer, and
         // so does an I/O failure on the first frame: part of it may be out.
-        Err(err) if messages_sent > 0 || matches!(err, XfrError::Io(_)) => {
+        Err(err)
+            if messages_sent > 0
+                || matches!(err, XfrError::Io(_) | XfrError::WriteTimeout { .. }) =>
+        {
             Err(IxfrSendError::Partial(err))
         }
         Err(error) => Err(IxfrSendError::NotStarted {

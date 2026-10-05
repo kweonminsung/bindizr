@@ -83,7 +83,7 @@ pub(crate) enum ServeSocketError {
 /// The socket front end's context: the daemon's, plus the control channel
 /// the lifecycle loop awaits. A command handler takes the daemon's context;
 /// only a control command needs this one.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,
     control: mpsc::Sender<DaemonControl>,
@@ -226,7 +226,12 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
 /// Bind a Unix listener at the requested path.
 async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathError> {
     prepare_socket_path(socket_path).await?;
-    let listener = UnixListener::bind(socket_path)?;
+    // A daemon that bound this path after the check above answers EADDRINUSE
+    // here: the same conflict, not a path to fall back from.
+    let listener = UnixListener::bind(socket_path).map_err(|e| match e.kind() {
+        io::ErrorKind::AddrInUse => BindSocketPathError::AlreadyRunning,
+        _ => BindSocketPathError::Io(e),
+    })?;
     // Owner-only refuses strangers at connect; the peer check in `serve` is the boundary.
     fs::set_permissions(socket_path, Permissions::from_mode(0o600)).await?;
     Ok(listener)

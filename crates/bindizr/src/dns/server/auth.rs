@@ -22,7 +22,7 @@ use crate::dns::{error::XfrError, server::DnsContext};
 /// A refused transfer and the response it owes the client: a TSIG failure
 /// answers with its own error record, anything else with REFUSED, signed by the
 /// key that got that far.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
     response: Option<Vec<u8>>,
