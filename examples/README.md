@@ -47,17 +47,32 @@ works from the host.
 
 ```sh
 kind create cluster --config examples/kind/cluster.yaml
+```
+
+Choose one of the install commands below. On amd64 with the published image:
+
+```sh
 helm install bindizr charts -n bindizr --create-namespace -f examples/kind/values.yaml
 ```
 
-On arm64 hosts the Docker Hub Bindizr image is unusable (amd64-only): build
-it locally, load it into the cluster, and add the arm values overlay:
+On arm64 with the published image, add the BIND image overlay:
+
+```sh
+helm install bindizr charts -n bindizr --create-namespace \
+  -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
+```
+
+Before the Bindizr image is published, or when testing your working tree,
+build and load it locally. This command selects that image and the arm64 BIND
+overlay; omit `-f examples/kind/values.arm.yaml` on amd64:
 
 ```sh
 docker build -t bindizr:local .
 kind load docker-image bindizr:local --name bindizr-test
 helm install bindizr charts -n bindizr --create-namespace \
-  -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
+  -f examples/kind/values.yaml -f examples/kind/values.arm.yaml \
+  --set bindizr.image.repository=bindizr \
+  --set bindizr.image.tag=local --set bindizr.image.pullPolicy=Never
 ```
 
 Once the pods are Running, query from the host; `values.yaml` pins the bind9
@@ -80,9 +95,10 @@ records in a Bindizr-managed zone. Full reference:
 [docs/external-dns.md](../docs/external-dns.md).
 
 ```sh
-# 1. Enable the provider API; the changed configuration rolls the bindizr pods.
-helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
-  -f examples/kind/values.external-dns.yaml   # plus values.arm.yaml on arm64
+# 1. Enable the provider API; retain the install's image and database values.
+#    The changed configuration rolls the bindizr pods.
+helm upgrade bindizr charts -n bindizr --reuse-values \
+  -f examples/kind/values.external-dns.yaml
 
 # 2. Create the zone ExternalDNS will manage (it starts with an apex NS naming
 #    the MNAME, which BIND9 needs), a role granted the record actions there,
@@ -94,7 +110,9 @@ kubectl -n bindizr exec deploy/bindizr -- bindizr role grant external-dns \
   --zone example.com --actions record:read,record:create,record:delete
 kubectl -n bindizr exec deploy/bindizr -- bindizr token create external-dns \
   --role external-dns
-kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
+export BINDIZR_TOKEN='paste-the-secret-printed-above'
+kubectl -n bindizr create secret generic bindizr-external-dns \
+  --from-literal=api-token="$BINDIZR_TOKEN"
 
 # 3. Deploy ExternalDNS + adapter sidecar and the annotated demo Service.
 kubectl -n bindizr apply -f examples/kind/external-dns.yaml
@@ -103,5 +121,5 @@ kubectl -n bindizr apply -f examples/kind/external-dns.yaml
 dig -p 5300 @127.0.0.1 app.example.com A
 ```
 
-On arm64, edit the adapter image in `external-dns.yaml` to the locally built
-`bindizr:local` (with `imagePullPolicy: Never`) first.
+When testing a locally built Bindizr image, edit the adapter image in
+`external-dns.yaml` to `bindizr:local` (with `imagePullPolicy: Never`) first.

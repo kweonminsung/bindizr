@@ -36,9 +36,10 @@ bindizr role create external-dns-prod
 bindizr role grant external-dns-prod --zone example.com \
     --actions record:read,record:create,record:delete
 bindizr token create cluster-a --role external-dns-prod
+export BINDIZR_TOKEN='paste-the-secret-printed-above'
 kubectl create namespace external-dns
 kubectl -n external-dns create secret generic bindizr-external-dns \
-    --from-literal=api-token=<token>
+    --from-literal=api-token="$BINDIZR_TOKEN"
 ```
 
 The role's qualifying grants become the ExternalDNS domain filter
@@ -77,7 +78,7 @@ spec:
             - --registry=txt
             - --txt-owner-id=my-cluster
         - name: bindizr-external-dns
-          image: kweonminsung/bindizr:latest
+          image: kweonminsung/bindizr:0.1.0-rc.2
           command: ["bindizr-external-dns"]
           args:
             - --bindizr-url=http://bindizr-bindizr-chart-api.bindizr.svc:8000

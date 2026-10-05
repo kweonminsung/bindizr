@@ -16,17 +16,23 @@ cd bindizr
 
 `examples/compose/docker-compose.yml` builds Bindizr from the working tree and
 runs it with PostgreSQL and two BIND secondaries behind a dnsdist load
-balancer:
+balancer. On amd64:
 
 ```bash
 docker compose -f examples/compose/docker-compose.yml up -d --build
 ```
 
+On arm64, select the BIND image for that architecture:
+
+```bash
+docker compose -f examples/compose/docker-compose.yml \
+  -f examples/compose/docker-compose.arm.yml up -d --build
+```
+
 Host ports: API `8000`, DNS through dnsdist `127.0.0.1:53`, Bindizr's own DNS
 `5300`, the BIND replicas `1053` and `1054`. API authentication is off in this
 stack, and unsigned dynamic updates are accepted. Use it on an isolated
-development host. On arm64, add `-f examples/compose/docker-compose.arm.yml`
-before `up` to select the BIND image for that architecture.
+development host.
 
 ## 2. Register the secondaries
 

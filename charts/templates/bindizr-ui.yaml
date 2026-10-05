@@ -48,7 +48,7 @@ spec:
       {{- end }}
       containers:
         - name: bindizr-ui
-          image: "{{ .Values.bindizrUi.image.repository }}:{{ .Values.bindizrUi.image.tag }}"
+          image: "{{ .Values.bindizrUi.image.repository }}:{{ required "Set bindizrUi.image.tag to a published compatible UI image tag when bindizrUi.enabled=true" .Values.bindizrUi.image.tag }}"
           imagePullPolicy: {{ .Values.bindizrUi.image.pullPolicy }}
           ports:
             - name: http

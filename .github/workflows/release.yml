@@ -200,12 +200,31 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build, licenses, manifest]
+    needs: [version, build, licenses, manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Take the release notes from the changelog
+        run: |
+          # The section headed by the version, up to the next version's heading.
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { printing = 1; next }
+            /^## \[/ { printing = 0 }
+            printing' CHANGELOG.md > RELEASE_NOTES.md
+          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then
+            echo "CHANGELOG.md has no section for $VERSION" >&2
+            exit 1
+          fi
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+
       - name: Download packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -220,6 +239,7 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          body_path: RELEASE_NOTES.md
           files: |
             bindizr_*.deb
             bindizr-*.rpm
