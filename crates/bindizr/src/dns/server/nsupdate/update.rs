@@ -23,7 +23,7 @@ use thiserror::Error;
 
 use crate::dns::server::DnsContext;
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 pub(crate) enum UpdateError {
     #[error("{0}")]
     Refused(String),
@@ -42,8 +42,14 @@ pub(crate) enum UpdateError {
     NxRrset(String),
     #[error("{0}")]
     NotZone(String),
-    #[error("{0}")]
-    Internal(String),
+    /// A fault of the server's own, answered SERVFAIL; the failure stays
+    /// beneath it.
+    #[error("{message}: {source}")]
+    Internal {
+        message: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
 }
 
 /// A deletion of the wrong shape is refused with its reason.
@@ -79,7 +85,10 @@ impl From<TsigError> for UpdateError {
                 msg: format!("TSIG validation failed: {}", rcode),
                 response,
             },
-            other => UpdateError::Internal(other.to_string()),
+            other => UpdateError::Internal {
+                message: "TSIG verification failed".to_string(),
+                source: Box::new(other),
+            },
         }
     }
 }
@@ -94,7 +103,10 @@ impl From<DynamicUpdateError> for UpdateError {
             DynamicUpdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
             DynamicUpdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
             DynamicUpdateError::NotZone(msg) => UpdateError::NotZone(msg),
-            DynamicUpdateError::Internal(msg) => UpdateError::Internal(msg),
+            DynamicUpdateError::Internal(err) => UpdateError::Internal {
+                message: "failed to apply the update".to_string(),
+                source: Box::new(err),
+            },
         }
     }
 }
@@ -172,7 +184,10 @@ async fn authenticate_request(
 
     let key = tsig_key::find_by_wire_name(cx, &tsig.name)
         .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
+        .map_err(|e| UpdateError::Internal {
+            message: "failed to load TSIG key".to_string(),
+            source: Box::new(e),
+        })?;
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.

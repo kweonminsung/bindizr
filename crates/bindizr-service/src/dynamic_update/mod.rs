@@ -36,7 +36,7 @@ use crate::{
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
 /// response code.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 pub enum DynamicUpdateError {
     #[error("{0}")]
     Refused(String),
@@ -50,8 +50,9 @@ pub enum DynamicUpdateError {
     NxRrset(String),
     #[error("{0}")]
     NotZone(String),
+    /// A fault of the server's own, kept beneath: SERVFAIL.
     #[error("{0}")]
-    Internal(String),
+    Internal(#[source] ServiceError),
 }
 
 /// A service error the requester could fix is REFUSED; a backend fault is
@@ -62,7 +63,7 @@ impl From<ServiceError> for DynamicUpdateError {
         if !err.code().is_internal() {
             DynamicUpdateError::Refused(err.to_string())
         } else {
-            DynamicUpdateError::Internal(err.to_string())
+            DynamicUpdateError::Internal(err)
         }
     }
 }

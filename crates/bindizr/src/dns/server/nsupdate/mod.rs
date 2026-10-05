@@ -134,8 +134,8 @@ async fn handle_nsupdate_request(
             log::warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
             Rcode::NOTZONE
         }
-        Err(update::UpdateError::Internal(msg)) => {
-            log::warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
+        Err(err @ update::UpdateError::Internal { .. }) => {
+            log::warn!("NSUPDATE internal error from {}: {}", client_addr, err);
             Rcode::SERVFAIL
         }
     };

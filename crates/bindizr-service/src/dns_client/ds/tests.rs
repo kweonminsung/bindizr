@@ -41,7 +41,7 @@ fn decode_question(query: &[u8]) -> (String, usize) {
     let mut pos = 12;
     let mut labels = Vec::new();
     loop {
-        let len = query[pos] as usize;
+        let len = usize::from(query[pos]);
         pos += 1;
         if len == 0 {
             break;
@@ -166,9 +166,17 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
 /// A server answering every question with `answer` over UDP and TCP on one
 /// port, until dropped.
 async fn fake_server(answer: Answer) -> SocketAddr {
-    let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    // A port the kernel hands out for UDP may be taken for TCP, so the pair
+    // is retried until both sides bind.
+    let (socket, listener) = loop {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        match TcpListener::bind(socket.local_addr().unwrap()).await {
+            Ok(listener) => break (Arc::new(socket), listener),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(e) => panic!("failed to bind the fake server's TCP side: {e}"),
+        }
+    };
     let addr = socket.local_addr().unwrap();
-    let listener = TcpListener::bind(addr).await.unwrap();
     let udp_answer = answer.clone();
     tokio::spawn(async move {
         let mut buf = [0u8; 4096];
