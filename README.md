@@ -50,9 +50,29 @@ Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven
 
 ## Roadmap
 
-- **Per-zone ACLs** — transfer and SOA access is one server-wide list today.
-  Scoping it per zone lets one deployment serve secondaries that each hold
-  part of the catalog.
+- **Cloud DNS Providers** — a secondary today is a server that takes
+  AXFR/IXFR. Pushing zones to Route 53, Cloud DNS, Azure DNS, and Cloudflare
+  through their APIs lets a managed provider hold a copy where no transfer
+  reaches.
+- **Webhooks** — a change is visible today only by polling the API or the
+  zone versions. Posting each zone, record, and DNSSEC key event to a
+  configured URL lets other systems react as it happens.
+- **More Record Types** — fourteen types are stored today, and an import
+  drops the rest with `--skip-unsupported`. Adding SVCB/HTTPS and storing any
+  other type in its RFC 3597 generic form lets a zone move over whole.
+- **Audit Log** — a zone change names its source and actor in the zone's
+  versions, but a change to a token, role, grant, TSIG key, secondary, or
+  policy leaves no trace. Logging each one answers who changed what, and
+  when.
+- **Bulk Migration** — `zone import --from-server` moves one zone per
+  command. Importing every zone an existing primary serves in one run moves
+  a whole server.
+- **Transfers over TLS** — transfers run over plain TCP with TSIG today.
+  XoT (RFC 9103) encrypts them to the BIND, Knot DNS, and NSD versions that
+  speak it.
+- **Terraform Provider** — infrastructure as code reaches Bindizr through
+  the ExternalDNS adapter alone. A provider over the HTTP API lets zones,
+  records, and access rights be declared beside the rest of the stack.
 
 ## Quick Start
 
