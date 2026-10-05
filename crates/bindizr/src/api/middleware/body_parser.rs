@@ -12,7 +12,7 @@ pub(crate) const MAX_UPLOAD_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 /// JSON body extractor whose rejections render as a JSON [`ApiError`] response
 /// rather than axum's plain-text default.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct JsonBody<T>(pub(crate) T);
 
 impl<T, S> FromRequest<S> for JsonBody<T>

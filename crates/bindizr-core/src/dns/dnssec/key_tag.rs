@@ -13,7 +13,7 @@ use thiserror::Error;
 pub struct KeyTag(u16);
 
 /// A row's key tag outside the 16 bits the wire carries: corrupt data.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("invalid key tag: {key_tag}")]
 pub struct ConvertKeyTagError {
     key_tag: i32,

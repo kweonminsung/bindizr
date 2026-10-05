@@ -5,7 +5,7 @@ pub(crate) mod error;
 pub(crate) mod server;
 pub(crate) mod wire;
 
-use std::{future::Future, io::ErrorKind, net::SocketAddr, sync::Arc, time::Duration};
+use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use bindizr_core::dns::message::{self, Opcode, Rcode, Rtype};
 use bindizr_service::Context;
@@ -186,9 +186,7 @@ async fn handle_tcp_connection(
         .await
         {
             Ok(Ok(query_data)) => query_data,
-            Ok(Err(XfrError::Io(e))) if e.kind() == ErrorKind::UnexpectedEof => {
-                break;
-            }
+            Ok(Err(XfrError::Closed)) => break,
             Ok(Err(e)) => return Err(ServeDnsError::Read(e)),
             Err(_) => {
                 log::info!(

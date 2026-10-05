@@ -27,6 +27,14 @@ pub(crate) enum XfrError {
     #[error("DNS protocol error: {0}")]
     Serial(#[from] ConvertSerialError),
 
+    /// The connection closed before a message began.
+    #[error("connection closed")]
+    Closed,
+
+    /// The client read nothing for the whole write timeout.
+    #[error("the client read nothing for {secs} seconds")]
+    WriteTimeout { secs: u64 },
+
     /// A TCP frame that ended before its two-octet length prefix did.
     #[error("DNS protocol error: Incomplete DNS TCP length prefix")]
     IncompletePrefix,

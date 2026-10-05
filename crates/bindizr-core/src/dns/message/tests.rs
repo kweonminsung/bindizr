@@ -51,10 +51,10 @@ fn overflowing_answers_split_into_multiple_frames() {
     let mut frame_count = 0;
     let mut pos = 0;
     while pos < wire.len() {
-        let len = u16::from_be_bytes([wire[pos], wire[pos + 1]]) as usize;
+        let len = usize::from(u16::from_be_bytes([wire[pos], wire[pos + 1]]));
         assert!(len <= DNS_TCP_MAX_SIZE);
         assert!(len > 0);
-        answer_count += u16::from_be_bytes([wire[pos + 8], wire[pos + 9]]) as usize;
+        answer_count += usize::from(u16::from_be_bytes([wire[pos + 8], wire[pos + 9]]));
         frame_count += 1;
         pos += 2 + len;
     }

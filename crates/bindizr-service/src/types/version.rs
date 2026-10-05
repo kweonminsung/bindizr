@@ -156,7 +156,7 @@ pub struct RecordDiffEntry {
 }
 
 /// How many name-and-type groups of records were added, removed, and changed.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
 pub struct RecordDiffSummary {
     #[schema(example = 1)]
     pub added: u64,
@@ -186,7 +186,7 @@ pub struct VersionDiffResponse {
 
 /// Counts of what a rollback changes. TTL-only differences count as one
 /// delete plus one add.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct RollbackSummary {
     #[schema(example = 2)]
     pub added: u64,
@@ -200,7 +200,7 @@ pub struct RollbackSummary {
 
 /// Result of a zone rollback. The zone's state returns to `target_serial`
 /// while its serial advances to `new_serial` (serials never go backward).
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct RollbackZoneResponse {
     #[schema(example = true)]
     pub applied: bool,

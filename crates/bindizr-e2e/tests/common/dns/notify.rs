@@ -33,7 +33,6 @@ pub(crate) struct ReceivedNotify {
 }
 
 #[derive(Debug)]
-
 pub(crate) struct FakeSecondary {
     addr: SocketAddr,
     received: Arc<Mutex<Vec<ReceivedNotify>>>,

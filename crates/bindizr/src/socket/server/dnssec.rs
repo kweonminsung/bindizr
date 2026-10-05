@@ -97,7 +97,7 @@ pub(crate) async fn start_dnssec_rollover(
 }
 
 /// Confirm the parent DS and advance the requested rollover.
-pub(crate) async fn advance_dnssec_rollover(
+pub(crate) async fn ds_seen_dnssec_rollover(
     cx: &Context,
     zone_name: &str,
     ds_check: DsCheck,

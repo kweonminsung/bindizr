@@ -167,7 +167,7 @@ pub(crate) async fn update_record(
         summary = "Delete a specific DNS record",
         params(
             ("id" = i32, Path, description = "The ID of the DNS record to delete."),
-            ("dry_run" = Option<bool>, Query, description = "Report what would go without removing it.")
+            DryRunQuery
         ),
         responses(
             (status = 200, description = "DNS record deleted successfully", body = DeleteRecordsResponse),

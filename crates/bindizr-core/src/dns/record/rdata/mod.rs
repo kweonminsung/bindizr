@@ -64,7 +64,7 @@ impl Rdata {
 
     /// Wrap wire-format record data after checking its length limit.
     pub fn new(bytes: Vec<u8>) -> Result<Self, EncodeRdataError> {
-        if bytes.len() > u16::MAX as usize {
+        if bytes.len() > usize::from(u16::MAX) {
             return Err(EncodeRdataError::TooLong { len: bytes.len() });
         }
         Ok(Self(bytes))

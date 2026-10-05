@@ -30,7 +30,7 @@ use utoipa::{
 };
 
 /// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
-#[derive(Debug, OpenApi)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, OpenApi)]
 #[openapi(
     paths(
         super::health::handle_health,
@@ -220,11 +220,9 @@ use utoipa::{
         license(name = "Apache 2.0", url = "http://www.apache.org/licenses/LICENSE-2.0.html")
     )
 )]
-#[derive(Clone, PartialEq, Eq, Copy)]
 pub(crate) struct ApiDoc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {

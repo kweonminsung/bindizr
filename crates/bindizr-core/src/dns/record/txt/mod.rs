@@ -222,7 +222,7 @@ fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
     let mut segments = Vec::new();
     let mut pos = 0usize;
     while pos < rdata.len() {
-        let len = rdata[pos] as usize;
+        let len = usize::from(rdata[pos]);
         pos += 1;
         segments.push(rdata.get(pos..pos + len)?);
         pos += len;

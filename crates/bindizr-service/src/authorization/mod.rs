@@ -471,20 +471,18 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
         return Ok(stored_token);
     }
 
-    let updated_token = bindizr_db::api_token::update(
-        cx.db(),
-        ApiToken {
-            last_used_at: Some(Utc::now()),
-            ..stored_token
-        },
-    )
-    .await
-    .map_err(|e| {
-        log::error!("Failed to update last_used_at: {}", e);
-        ServiceError::internal_with_source("failed to update last_used_at", e)
-    })?;
+    let last_used_at = Utc::now();
+    bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to update last_used_at: {}", e);
+            ServiceError::internal_with_source("failed to update last_used_at", e)
+        })?;
 
-    Ok(updated_token)
+    Ok(ApiToken {
+        last_used_at: Some(last_used_at),
+        ..stored_token
+    })
 }
 
 #[cfg(test)]
