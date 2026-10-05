@@ -224,7 +224,7 @@ pub struct DnsConfig {
 }
 
 /// When NOTIFY reaches the secondaries.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
     /// Window (ms) that collects one zone's changes into one NOTIFY, sent
@@ -258,7 +258,7 @@ impl Default for NotifyConfig {
 
 /// The cache of each zone's transfer content, keyed by serial, so repeated
 /// AXFRs skip the database read.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TransferCacheConfig {
     /// Records the cache may hold before evicting the least recently used
@@ -278,7 +278,7 @@ impl Default for TransferCacheConfig {
 
 /// What a zone takes when its creation request leaves a field out. Only the
 /// creation reads these: afterwards the values are the zone's own columns.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
@@ -361,7 +361,7 @@ fn default_notify_timeout_secs() -> u64 {
 }
 
 /// Logging settings.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
     pub level: LogLevel,

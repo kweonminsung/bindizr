@@ -162,7 +162,7 @@ impl From<&TransferWithZone> for TransferResponse {
 }
 
 /// How the zones a secondary asked for were last served, counted by zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct TransferSummary {
     #[schema(example = 12)]
     pub zones: u64,

@@ -20,17 +20,17 @@ pub(crate) async fn auth_middleware(
     let auth_header = match req.headers().get(AUTHORIZATION) {
         Some(header) => header,
         None => {
-            return Ok(unauthorized("No authorization header"));
+            return Ok(unauthorized("no authorization header"));
         }
     };
 
     let auth_str = match auth_header.to_str() {
         Ok(s) => s,
-        Err(_) => return Ok(unauthorized("Invalid authorization header")),
+        Err(_) => return Ok(unauthorized("invalid authorization header")),
     };
 
     if !auth_str.starts_with("Bearer ") {
-        return Ok(unauthorized("Invalid authentication scheme"));
+        return Ok(unauthorized("invalid authentication scheme"));
     }
 
     let token = &auth_str[7..];

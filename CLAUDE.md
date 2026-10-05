@@ -89,7 +89,11 @@ each rule says which spelling is this project's.
   here: `bindizr_service::zone` is a module of functions, and a front end
   imports the module and calls `zone::create(&cx, &caller, &request)`. The
   entity is the module's name, so a function omits it (`zone::get_by_name`,
-  never `zone::get_zone_by_name`). A module that spreads over files by verb
+  never `zone::get_zone_by_name`). That elision is the service's and the
+  db's; a front end's handler names the operation whole (`get_zone`,
+  `list_records`), since the HTTP one is its OpenAPI operationId, unique
+  across the API, and the socket one carries the same name. A module that
+  spreads over files by verb
   (`zone/create.rs`, `zone/get.rs`) declares them in `mod.rs` and
   re-exports their functions flat (`pub use create::create;`), so the path
   a caller writes is `zone::create` — the shape of `tokio::fs::read` — and
@@ -119,7 +123,13 @@ each rule says which spelling is this project's.
   mismatch" error can exist. Nothing needs `async-trait`.
 - **An error is a type** (`C-GOOD-ERR`). Every fallible function returns a `Result`
   whose error is a type declared in the module that raises it, derived with `thiserror`,
-  implementing `std::error::Error` with its `source()` intact and `Send + Sync`.
+  implementing `std::error::Error` with its `source()` intact and `Send + Sync`. An
+  impl of a foreign trait returns the error that trait fixes (`fmt::Result`, sqlx's
+  `BoxDynError`, serde's `D::Error`); the rule is for signatures this project writes.
+  A helper that performs standard-library I/O and names no failure of its own returns
+  `io::Result` (`read_own_uid`), kept as a `source` by its caller's type; the moment a
+  function chooses a kind or writes a message, that is a variant of its own type, never
+  an `io::Error::new`.
   Project-authored error prose starts lowercase without a trailing period; protocol
   tokens, proper names, and wrapped errors retain their original spelling. Name it `<Verb><Object>Error`
   (`ParseNameError`, `C-WORD-ORDER`) or `<Layer>Error` for a layer's whole surface
@@ -165,10 +175,10 @@ each rule says which spelling is this project's.
   Combining independent inputs or classifying an outcome is an assembly;
   *Methods and free functions* decides who owns it, not the argument count.
   `Into` and `TryInto` are never implemented.
-  The prefix says the cost: `as_` borrows for free, `to_` does work and
-  returns an owned value, `into_` consumes `self`. A conversion trait is
-  implemented for a type, never for a `Result` — the caller writes `?`
-  first.
+  The prefix says the cost: `as_` exposes a borrowed view or a `Copy` scalar
+  without allocation, `to_` does work and returns an owned value, and
+  `into_` consumes `self`. A conversion trait is implemented for a type,
+  never for a `Result` — the caller writes `?` first.
 - **A constructor is an associated function named by how the value comes
   to be** (`C-CTOR`): `new` for the plain case, with `Default` beside an
   infallible no-argument `new() -> Self`, producing the same value. A
@@ -217,12 +227,21 @@ each rule says which spelling is this project's.
   priority stays `Option<i32>` up to the value parser: `RecordType` reads
   it with the value and phrases its range against the type (`MX
   priority`), so no earlier type could carry it. A cast that loses nothing
-  is a `From` (`i64::from(count)`); the `as` casts that remain truncate or
-  change sign on purpose.
+  is a `From` where the standard library provides one (`i64::from(count)`,
+  `usize::from(len)`); where it provides none because a width is the
+  platform's (`usize` to `u64`, `u32` to `usize`) the cast stays `as`, as
+  does an enum's discriminant (`Level as usize`); every other `as` truncates
+  or changes sign on purpose.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type derives `Debug`;
-  `Clone` when its fields support cloning and it does not own a resource;
-  `PartialEq, Eq` when its fields allow; `Copy` for a fieldless enum or a small plain struct; `Hash`
-  and `Ord` when it keys a map or sorts; `Default` when the empty value means something
+  `Clone` and `PartialEq, Eq` when its fields allow and it does not own a resource,
+  which is something with an identity outside the value — a socket, a pool, a task, a
+  lock, a child process — and not protocol state a foreign type lets you clone (a TSIG
+  sequence); a handle that shares one (`Shutdown`, `SocketContext`) clones, since
+  cloning shares it, and compares to nothing; `Copy` for a fieldless enum and for any
+  struct whose fields are all `Copy`, whatever its size — nothing here is hot enough
+  for an implicit copy to matter; a generic wrapper (`Query<T>`) derives them all
+  conditionally, `Copy` included; `Hash` and `Ord` when it keys a map or sorts;
+  `Default` when the empty value means something
   (a filter); `Serialize` / `Deserialize` on every process-boundary payload, including
   adapter-local HTTP shapes — a row carries neither, since nothing serializes one and
   two hold secrets. Query extractors and final CLI presentation structs need only the
@@ -244,7 +263,7 @@ each rule says which spelling is this project's.
   state it uses, in the order *Service functions* defines. A stateful entry
   point starts with `Context` (`zone::create(&cx, &caller, &request)`);
   an axum handler receives it as `State<Arc<Context>>`, a spawned task holds
-  an `Arc<Context>`. No
+  an `Arc<Context>`. No production
   function reaches for a `static` to find the configuration, the pool, the
   metrics, or a cache: *State is a value* says what the `Context` holds,
   what a front end holds for itself, and which two globals remain. A test
@@ -302,8 +321,9 @@ each rule says which spelling is this project's.
   `Error` or `Fail`, so that `error` stays the text beside it, and a response's `Option`
   is emitted as `null`, never skipped, so clients read one shape. One entity travels in
   an envelope keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
-  rollback, the DNSSEC status) travels bare. A listing's query parameters come from its
-  filter struct (`IntoParams`), never a hand-written list.
+  rollback, the DNSSEC status) travels bare. A handler's `Query<T>` is its OpenAPI
+  `params(T)` (`IntoParams`), a listing's filter and a single switch alike, never a
+  hand-written list beside the struct.
 
 ### Access control — a role holds rights, a credential authenticates
 
@@ -382,7 +402,8 @@ each rule says which spelling is this project's.
   the operations table in `docs/cli/advanced.md`, the action table in
   `docs/cli/access-control.md`, the `Action` doc (the OpenAPI schema, so
   regenerate `docs/openapi.yaml`), `role grant --help`, and the UI's
-  `ACTION_DESCRIPTIONS`; the route's own OpenAPI description when it states one.
+  `ACTION_DESCRIPTIONS` (in the companion repository, see *Web UI*); the
+  route's own OpenAPI description when it states one.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
@@ -413,12 +434,15 @@ One locking model covers the service layer; keep new code on it:
   flight (row locks on MySQL/PostgreSQL, the writer reservation on SQLite) and refuses
   every later one; a read authorizes and loads its content in one snapshot, so on
   SQLite, where a read holds no lock, it may finish after a revocation but serves only
-  what it could read before. Every write therefore runs in a transaction, management
-  writes included; a TSIG transfer or update re-reads its key and grants the same way,
-  and a transfer loads what it serves (AXFR records, IXFR delta, catalog members, SOA)
-  in that transaction, a cached AXFR serving its serial's content. A read without a
-  transaction, an outbound NOTIFY or probe, and an unsigned transfer (the address list
-  as the request finds it) decide on the request's credential.
+  what it could read before. Every write that acts for a caller therefore runs in a
+  transaction, management writes included; a TSIG transfer or update re-reads its key
+  and grants the same way, and a transfer loads what it serves (AXFR records, IXFR
+  delta, catalog members, SOA) in that transaction, a cached AXFR serving its serial's
+  content. A single statement that only records what already happened — the token's
+  last-used stamp written during authentication, the transfer log — runs on the pool:
+  nothing decides on it, and the caller's own transaction re-authenticates regardless.
+  A read without a transaction, an outbound NOTIFY or probe, and an unsigned transfer
+  (the address list as the request finds it) decide on the request's credential.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and
@@ -511,7 +535,10 @@ The project targets **clean installs exclusively** and does not support
 upgrading an existing deployment. **Do not add migration code, schema
 `ALTER`s, schema-version tracking, or shims for older data/config/API
 formats** — and remove any that appear. Breaking schema/API/config changes are
-fine; change the definition in place.
+fine; change the definition in place. An upgrade here is a new version over an
+existing database or configuration; re-deploying the same version with other
+values (`helm upgrade --reuse-values --set …` in the Kubernetes guide) is
+ordinary operation.
 
 Schema setup runs `CREATE TABLE/INDEX IF NOT EXISTS` at startup for idempotency
 across restarts, **not** to migrate existing databases. This is why MySQL may
@@ -522,10 +549,11 @@ step. "The inline index won't reach existing databases" is a non-issue here.
 ### Only the entry point ends the process
 
 `std::process::exit` belongs in the `execute()` of a binary crate — that
-function is the body of `main`, so deciding to stop is its call. Everywhere
-else, including `bindizr-core` and `bindizr-db`, report the failure and let it
-propagate: a library that exits takes that decision away from whoever embedded
-it, and the e2e suite runs both binaries in-process.
+function is the body of `main`, so deciding to stop is its call. It sits in
+the crate's lib target only so the e2e package can wrap it in a `[[bin]]` of
+its own and spawn that as a child process. Everywhere else, including
+`bindizr-core` and `bindizr-db`, report the failure and let it propagate: a
+library that exits takes that decision away from whoever embedded it.
 
 ### State is a value — built in order, passed by reference
 
@@ -552,14 +580,16 @@ fills a `static`, with a `stop` beside it where the daemon must drain it.
 The daemon socket keeps its split — `bind` first, so a second daemon is
 refused before anything else is built, then `serve`.
 
-Two process globals remain, because the process is their receiver: the
-`log` facade (`Logger::init` once, `set_level` on reload — the level and
-format atomics are the logger's own state) and the stdout/stderr write
-state behind `outln!`. A pure fact about the environment (colour
-detection) may memoize in a function-local `OnceLock`. Nothing else is a
-`static` — not the configuration, not a pool, not a metrics registry, not
-a cache: a `static` hides a dependency the signature should show, and
-forbids a second instance in one process, which is what a test wants.
+Two production process globals remain, because the process is their
+receiver: the `log` facade (`Logger::init` once, `set_level` on reload — the
+level and format atomics are the logger's own state) and the stdout/stderr
+write state behind `outln!`. A pure fact about the environment (colour
+detection) may memoize in a function-local `OnceLock`. Nothing else in
+production is a `static` — not the configuration, a pool, a metrics registry,
+or a cache: a `static` hides a dependency the signature should show, and
+forbids a second instance in one process, which is what a test wants. The e2e
+harness uses globals for process-wide coordination: its test sequence, run
+ID, and shared Compose stack. Production code has no dependency on them.
 
 ### `--output` renders a result, so a command that is its output has none
 
@@ -759,7 +789,9 @@ equality selector the name must carry as `_by_state`.
   changing it. The same distinction applies with `_tx`: `get_by_name_tx`
   takes a `Caller`, `lookup_by_name_tx` does not. `find_*` returns `Option`
   when absence is an ordinary outcome, `list_*` a collection, `count_*` a
-  count. Their authorization follows *Who decides what* and their contract;
+  count. A `get_*` read may assemble current state from rows and read-only
+  probes (`zone::get_status`); a pure calculation is not a read entry point.
+  Their authorization follows *Who decides what* and their contract;
   an optional return does not imply authorization. A domain verb is preferred
   where it says more (`advance_catalog_serial`, `sign_zone_tx`).
 - A record mutation that also writes IXFR journal rows says so in the name:
@@ -791,10 +823,13 @@ contracts, not a claim that every check mutates state.
 
 ### Free-function helpers
 
-The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data
-access; their layer-specific error and authorization contracts are defined
-above. A free helper that computes a value never takes `get_`, and a metrics counter is
-`track_`, never `count_`. The verb says what is read, not where: a stored
+The `get_*`/`find_*`/`list_*`/`count_*` verbs above name read operations.
+The db layer performs row queries. A service read may assemble a read-only
+report, and a front end delegates that read to the service, as *Service
+functions* and *Diagnostics* define. Their layer-specific error and
+authorization contracts are defined above. A free helper that computes a
+value never takes `get_`, and a metrics counter is `track_`, never `count_`.
+The verb says what is read, not where: a stored
 row is `get`/`list` in `bindizr-db`, the service, and a front end alike; a
 value the `Context` holds — the configuration snapshot, the metrics, the
 start time — is read by a noun (`cx.config()`, `cx.metrics()`,
@@ -803,11 +838,12 @@ start time — is read by a noun (`cx.config()`, `cx.metrics()`,
 is created, updated, or deleted. `convert_` does not exist: a conversion is
 `to_`, a parse `parse_`. Every other helper starts with one of these verbs:
 
-- Conversion: the prefix says the cost (`C-CONV`) — `as_` a free borrow,
-  `to_` work returning an owned value, `into_` consuming `self` — and a
-  name says only what the call site cannot see. `to_<form>` when the
-  source is evident there — a method's receiver, or the one argument
-  (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
+- Conversion: the prefix says the cost (`C-CONV`) — `as_` a borrowed view or
+  `Copy` scalar without allocation, `to_` work returning an owned value,
+  `into_` consuming `self`. The name says only what the call site cannot see.
+  `to_<form>` when the source is evident there — a method's receiver, or the
+  one argument (`to_fqdn(name)`, `to_sqlite_url(path)`,
+  `to_response_data(status)`).
   `<source>_to_<form>` only when the source carries the meaning: several
   sources reach the same form (`labels_to_wire` beside `encode_name`), or
   the source is the point (`zone_name_to_member_id`). A conversion from
@@ -844,7 +880,9 @@ is created, updated, or deleted. `convert_` does not exist: a conversion is
   and report reachability or state), `fetch_` (pull a whole artifact, such as
   an AXFR), `resolve_` / `discover_` (names to addresses, the parent zone),
   `load_` / `read_` / `write_` (disk and streams), `print_` (stdout; CLI only).
-- Flow: `handle_<thing>` — the entry point of one request or command;
+- Flow: `handle_<thing>` — an entry point that dispatches (`handle_client`,
+  `handle_command`) or a route with no entity (`handle_health`); a handler
+  for one entity operation is `<verb>_<entity>`, as *Rust idioms* says;
   `apply_<thing>` — write a computed change set; `authenticate_` (who the
   caller is) / `authorize_` (what they may do).
 
@@ -1001,9 +1039,11 @@ the API guidelines reject: an acronym is one word (`MySql`, `Sqlite`;
 ### No dead code, no `#[allow(dead_code)]`
 
 The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep
-it that way. `bindizr-db` carries only functions with a live caller in the
-service — do **not** add one "for symmetry" with an existing `_tx`/non-`_tx`
-pair or to round out an entity's surface.
+it that way. `bindizr-db` carries only functions with a live caller — the
+service for every entity query, the offline `doctor` for `probe_connection`,
+a lifecycle operation outside the entity grammar — do **not** add one "for
+symmetry" with an existing `_tx`/non-`_tx` pair or to round out an entity's
+surface.
 
 Its root functions are `pub` and consumed across crates, so rustc cannot see
 when deleting a service call orphans one. After deleting a call, re-check the
@@ -1109,9 +1149,9 @@ does not by itself make the operation belong to that type.
    representation (`Config::load`), starts work the returned handle controls,
    or authenticates a `Caller`. Reading unrelated application state to
    assemble a response remains a service flow.
-2. **A conversion or accessor**: `as_` a free borrow, `to_` an owned
-   derivation, `into_` consuming `self`, and the `From`/`TryFrom`, sqlx,
-   serde and `Display` impls beside them.
+2. **A conversion or accessor**: `as_` a borrowed view or `Copy` scalar
+   without allocation, `to_` an owned derivation, `into_` consuming `self`,
+   and the `From`/`TryFrom`, sqlx, serde and `Display` impls beside them.
 3. **A derivation or predicate about the receiver**: `is_`/`has_`/`matches_`
    or another verb phrase read as a sentence (`key.wants_parent_ds()`),
    computed from the fields and plain arguments; a peer of the same type may be an
@@ -1278,6 +1318,19 @@ section above.
 - README.md is a landing page (pitch, quickstart, links into the site), not a
   manual. New prose belongs in `docs/`.
 
+### Web UI — a companion repository
+
+The web UI is the separate `bindizr-ui` repository (a Go backend and a React
+app under `ui/`, with a CLAUDE.md of its own), usually checked out beside this
+one as `../bindizr-ui`. It tracks this repository through two copies: its
+git-ignored `openapi.yaml`, a copy of `docs/openapi.yaml` that
+`ui/src/lib/api.ts` and `ui/src/lib/types.ts` must match, and the grant
+picker's `ACTION_DESCRIPTIONS` in `types.ts`. A change here that touches
+either — a route, a payload, an action's meaning — is finished by a pull
+request there, after copying the regenerated spec over. The two repositories
+release independently; the chart's `bindizrUi.image.tag` names an image the
+UI repository must already have pushed.
+
 ## Release workflows — the tag and the inputs are the whole truth
 
 `release.yml` publishes what the pushed `v*` tag says, `manual-release.yml`
@@ -1305,8 +1358,8 @@ fixed.
 - Do **not** add Claude (or any AI assistant) as a `Co-Authored-By` trailer or
   otherwise attribute co-authorship in commit messages. Commits are authored by
   the repository owner only.
-- Commit/push only when explicitly asked. Branch off `main` before committing if
-  currently on `main`.
+- Commit/push only when explicitly asked. Branch off `develop` before committing
+  if currently on `main` or `develop`; pull requests target `develop`.
 
 ## Benchmarks
 

@@ -8,7 +8,9 @@ use utoipa::{IntoParams, ToSchema};
 pub const DEFAULT_PAGE_LIMIT: u32 = 50;
 
 /// Requested pagination window for a listing with no row predicates.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema, IntoParams,
+)]
 #[serde(deny_unknown_fields)]
 pub struct PageRequest {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
@@ -27,7 +29,7 @@ pub struct PaginatedResponse<T> {
 }
 
 /// Pagination window and total count for a list response.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct Pagination {
     #[schema(example = 50)]
     pub limit: u32,

@@ -34,7 +34,7 @@ use crate::{
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 struct BulkTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,

@@ -468,7 +468,7 @@ paths:
       parameters:
       - name: bump_serial
         in: query
-        description: Bump all zones' serials first, so secondaries transfer even when nothing changed.
+        description: Bump the serial first, so secondaries transfer even when nothing changed.
         required: false
         schema:
           type: boolean
@@ -1012,7 +1012,7 @@ paths:
           format: int32
       - name: dry_run
         in: query
-        description: Report what would go without removing it.
+        description: Report what the request would do without applying it.
         required: false
         schema:
           type: boolean
@@ -1275,19 +1275,22 @@ paths:
           type: string
       - name: limit
         in: query
-        description: Grants per page; defaults to 50.
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
         required: false
         schema:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
           maximum: 1000
           minimum: 1
       - name: offset
         in: query
-        description: Number of grants to skip.
         required: false
         schema:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int64
           minimum: 0
       responses:
@@ -2589,7 +2592,7 @@ paths:
           type: string
       - name: dry_run
         in: query
-        description: Report what would go without removing it.
+        description: Report what the request would do without applying it.
         required: false
         schema:
           type: boolean
@@ -3349,7 +3352,7 @@ paths:
           type: string
       - name: bump_serial
         in: query
-        description: Bump the zone's serial first, so secondaries transfer even when nothing changed.
+        description: Bump the serial first, so secondaries transfer even when nothing changed.
         required: false
         schema:
           type: boolean
@@ -3611,7 +3614,7 @@ paths:
           minimum: 0
       - name: dry_run
         in: query
-        description: Compute and report the rollback without applying it.
+        description: Report what the request would do without applying it.
         required: false
         schema:
           type: boolean

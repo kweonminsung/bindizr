@@ -2,7 +2,7 @@
 //! Early readers such as `head` must not crash a command or the daemon.
 
 use std::{
-    io::{ErrorKind, Write},
+    io::{self, ErrorKind, Write},
     sync::{
         OnceLock,
         atomic::{AtomicBool, Ordering},
@@ -16,7 +16,7 @@ static STDERR_CLOSED: AtomicBool = AtomicBool::new(false);
 
 /// The first failure that was not a closed pipe, such as a full disk. Output
 /// is lost, so the entry point reports it instead of exiting as success.
-static WRITE_FAILURE: OnceLock<String> = OnceLock::new();
+static WRITE_FAILURE: OnceLock<io::Error> = OnceLock::new();
 
 /// Write to stdout, ignoring a closed pipe. Both writers are `pub` only
 /// because `outln!`/`errln!` expand to them in other crates.
@@ -40,14 +40,14 @@ fn write(closed: &AtomicBool, sink: &mut impl Write, text: &str) {
     // Either way this stream is done; only a closed pipe is success.
     closed.store(true, Ordering::Relaxed);
     if e.kind() != ErrorKind::BrokenPipe {
-        let _ = WRITE_FAILURE.set(e.to_string());
+        let _ = WRITE_FAILURE.set(e);
     }
 }
 
 /// The failure that lost output, for the entry point to report; a closed pipe
 /// is not one.
-pub fn write_failure() -> Option<&'static str> {
-    WRITE_FAILURE.get().map(String::as_str)
+pub fn write_failure() -> Option<&'static io::Error> {
+    WRITE_FAILURE.get()
 }
 
 /// `print!` for stdout.
@@ -111,13 +111,13 @@ mod tests {
             closed.load(Ordering::Relaxed),
             "the stream is done either way"
         );
-        assert_eq!(write_failure(), None, "the reader chose to stop");
+        assert!(write_failure().is_none(), "the reader chose to stop");
 
         let closed = AtomicBool::new(false);
         write(&closed, &mut FailingSink(ErrorKind::StorageFull), "x");
         assert!(closed.load(Ordering::Relaxed));
         assert!(
-            write_failure().is_some_and(|e| e.contains("sink failed")),
+            write_failure().is_some_and(|e| e.to_string().contains("sink failed")),
             "lost output must be reported: {:?}",
             write_failure()
         );

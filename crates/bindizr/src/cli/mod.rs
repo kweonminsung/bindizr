@@ -162,10 +162,10 @@ pub async fn execute() {
     // Lost output must not read as success; a reader that stopped early is
     // not lost output.
     let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
-        Some(failure) => Err(error::CliError::request(format!(
-            "output was lost: {}",
-            failure
-        ))),
+        Some(failure) => Err(error::CliError::request_with_source(
+            format!("output was lost: {}", failure),
+            failure,
+        )),
         None => Ok(()),
     });
 

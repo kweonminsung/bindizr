@@ -20,7 +20,9 @@ message, or reporting something that confused you all count.
 You need Rust 1.94 or newer and the native build dependencies — a C compiler,
 pkg-config, and the OpenSSL headers — listed per platform in
 [Building from Source](https://kweonminsung.github.io/bindizr/deployment/source/).
-Docker is only needed for the end-to-end tests and the benchmark suite.
+The end-to-end tests use temporary SQLite databases and local processes by
+default; Docker is needed only to run them against database and BIND9 containers
+(`BINDIZR_E2E_VERIFY_DNS=true`) and for the benchmark suite.
 
 ```bash
 $ git clone https://github.com/kweonminsung/bindizr.git
@@ -29,26 +31,29 @@ $ cargo build -p bindizr
 $ cargo test --workspace --all-features -- --test-threads=1
 ```
 
-Tests share process-wide state, so `--test-threads=1` is required — without it
-they race and fail for reasons that have nothing to do with your change.
+Tests share process-wide state, so they run single-threaded: `.cargo/config.toml`
+sets `RUST_TEST_THREADS=1`, and the explicit `--test-threads=1` spells out the
+same guarantee.
 
 `cargo +nightly fmt` formats the code (the config uses nightly-only options), and
 `cargo clippy --workspace` catches the rest.
 
 ## A few things worth knowing
 
-- The three database backends under `crates/bindizr-db/src/repository/` are
-  duplicated on purpose — the SQL dialects differ, and keeping them separate
-  keeps each readable.
-- Until the first stable release, Bindizr targets clean installs only, so there
-  is no migration code and no compatibility shims. Breaking schema changes are
-  fine for now — change the definition in place.
-- Comments are for *why* something is done, especially where a protocol or RFC
-  is behind it.
+- The three database backends — `mysql/`, `postgres/`, and `sqlite/` under
+  `crates/bindizr-db/src/` — are duplicated on purpose: the SQL dialects
+  differ, and keeping them separate keeps each readable.
+- Bindizr targets clean installs only and does not support upgrading an
+  existing deployment, so there is no migration code and no compatibility
+  shims. Breaking schema changes are fine — change the definition in place.
+- Every named function carries a one-sentence purpose comment, private helpers
+  and tests included. Beyond that, comments are for *why* something is done,
+  especially where a protocol or RFC is behind it.
 
 ## Pull requests
 
-Branch off `main`, and write commit messages in the style already in the history
+Branch off `develop` and open the pull request against it, and write commit
+messages in the style already in the history
 (`feat:`, `fix:`, `docs:`, …). A test for new behavior is appreciated. Everything
 else is a conversation, not a checklist — reviews are here to help, not to gate.
 

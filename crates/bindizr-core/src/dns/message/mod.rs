@@ -89,7 +89,7 @@ impl ComposeRecord for ComposedRecord<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,

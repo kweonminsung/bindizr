@@ -88,7 +88,7 @@ struct AppliedImport {
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
 /// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 struct ImportTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,

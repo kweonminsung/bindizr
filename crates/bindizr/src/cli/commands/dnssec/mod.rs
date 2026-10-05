@@ -322,7 +322,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 output,
             } => {
                 let response = client::send_command::<DnssecStatusResponse>(
-                    DaemonCommand::AdvanceDnssecRollover {
+                    DaemonCommand::DsSeenDnssecRollover {
                         zone_name: name,
                         ds_check: DsCheck::from_skip_ds_check(skip_ds_check),
                         holddown: Holddown::from_skip_holddown(skip_holddown),

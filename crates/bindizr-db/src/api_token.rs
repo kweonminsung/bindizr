@@ -1,4 +1,5 @@
 use bindizr_core::model::{api_token::TokenId, role::RoleId};
+use chrono::{DateTime, Utc};
 
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::api_token::ApiToken, mysql,
@@ -57,13 +58,20 @@ pub async fn list_all(db: &Db) -> Result<Vec<ApiToken>, DatabaseError> {
     }
 }
 
-/// Update description, expiry, and last-used time; callers must preserve
-/// immutable fields so the returned row matches storage.
-pub async fn update(db: &Db, token: ApiToken) -> Result<ApiToken, DatabaseError> {
+/// Stamp when the token was last used.
+pub async fn update_last_used_at(
+    db: &Db,
+    id: TokenId,
+    last_used_at: DateTime<Utc>,
+) -> Result<(), DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::update(pool, token).await,
-        Backend::Postgres(pool) => postgres::api_token::update(pool, token).await,
-        Backend::Sqlite(pool) => sqlite::api_token::update(pool, token).await,
+        Backend::MySql(pool) => mysql::api_token::update_last_used_at(pool, id, last_used_at).await,
+        Backend::Postgres(pool) => {
+            postgres::api_token::update_last_used_at(pool, id, last_used_at).await
+        }
+        Backend::Sqlite(pool) => {
+            sqlite::api_token::update_last_used_at(pool, id, last_used_at).await
+        }
     }
 }
 

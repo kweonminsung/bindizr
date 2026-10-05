@@ -151,7 +151,7 @@ On a cluster without a load balancer provider, use `NodePort` for direct testing
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  -n bindizr --reuse-values \
+  --version 0.1.0-rc.1 -n bindizr --reuse-values \
   --set bind9.service.type=NodePort --set bind9.service.nodePort=30053
 dig @<node-ip> -p 30053 www.example.com A +short
 ```
@@ -175,7 +175,7 @@ name and a `host[:port]` address:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  -n bindizr --reuse-values \
+  --version 0.1.0-rc.1 -n bindizr --reuse-values \
   --set 'bindizr.dns.extraSecondaries[0].name=ns2' \
   --set 'bindizr.dns.extraSecondaries[0].address=ns2.example.net:53'
 ```
@@ -195,7 +195,7 @@ HTTPS itself:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
+  --version 0.1.0-rc.1 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
 ```
 
 The readiness probe follows to HTTPS on its own. Leave the value empty when

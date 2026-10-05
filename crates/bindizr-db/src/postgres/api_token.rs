@@ -1,5 +1,5 @@
 use bindizr_core::model::{api_token::TokenId, role::RoleId};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::{LockLevel, error::DatabaseError, model::api_token::ApiToken};
@@ -99,28 +99,21 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<ApiToken>, Dat
     Ok(rows)
 }
 
-/// Update an API token.
-pub(crate) async fn update(
+/// Stamp when the token was last used.
+pub(crate) async fn update_last_used_at(
     pool: &Pool<Postgres>,
-    token: ApiToken,
-) -> Result<ApiToken, DatabaseError> {
+    id: TokenId,
+    last_used_at: DateTime<Utc>,
+) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
-    sqlx::query(
-        r#"
-        UPDATE api_tokens 
-        SET description = $1, expires_at = $2, last_used_at = $3
-        WHERE id = $4
-    "#,
-    )
-    .bind(&token.description)
-    .bind(token.expires_at)
-    .bind(token.last_used_at)
-    .bind(token.id)
-    .execute(&mut *conn)
-    .await?;
+    sqlx::query("UPDATE api_tokens SET last_used_at = $1 WHERE id = $2")
+        .bind(last_used_at)
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
 
-    Ok(token)
+    Ok(())
 }
 
 /// Delete an API token by ID.

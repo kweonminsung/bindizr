@@ -181,7 +181,7 @@ pub(crate) enum DaemonCommand {
         zone_name: String,
         request: RolloverDnssecRequest,
     },
-    AdvanceDnssecRollover {
+    DsSeenDnssecRollover {
         zone_name: String,
         ds_check: DsCheck,
         holddown: Holddown,

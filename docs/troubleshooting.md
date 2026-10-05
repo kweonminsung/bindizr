@@ -10,7 +10,7 @@ On a package install, run these commands with `sudo`.
 | Symptom | Where | Fix |
 | --- | --- | --- |
 | `Is the bindizr daemon running?` | any CLI command | Start it: `sudo systemctl start bindizr`, or `bindizr start` in the foreground. `journalctl -u bindizr` shows why a start failed. |
-| `Bindizr is already running.` | `bindizr start` | Another daemon is running. Stop it with `bindizr stop` or `systemctl stop bindizr` rather than starting a second one. |
+| `Bindizr is already running` | `bindizr start` | Another daemon is running. Stop it with `bindizr stop` or `systemctl stop bindizr` rather than starting a second one. |
 | `Permission denied on the daemon socket` | any CLI command | Run the CLI as the daemon's user: `sudo bindizr …` on a package install, `docker exec` / `kubectl exec` in a container. |
 | `The daemon at '/tmp/bindizr/bindizr.sock' runs as uid …` | any CLI command | Run the CLI as the daemon's user or root. Remove a stale socket only after confirming its daemon has stopped. |
 | `unknown field \`…\`` | start, `config check` | A mistyped configuration key; the message lists the keys the section accepts. |

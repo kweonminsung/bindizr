@@ -115,9 +115,10 @@ async fn openapi_yaml() -> axum::response::Response {
             openapi_yaml,
         )
             .into_response(),
-        Err(err) => ApiError(ServiceError::internal(format!(
-            "failed to generate OpenAPI YAML: {err}"
-        )))
+        Err(err) => ApiError(ServiceError::internal_with_source(
+            "failed to generate OpenAPI YAML",
+            err,
+        ))
         .into_response(),
     }
 }

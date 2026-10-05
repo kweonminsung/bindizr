@@ -70,13 +70,9 @@ where
     };
     match timeout(TCP_WRITE_TIMEOUT, write).await {
         Ok(result) => result.map_err(XfrError::Io),
-        Err(_) => Err(XfrError::Io(std::io::Error::new(
-            ErrorKind::TimedOut,
-            format!(
-                "the client read nothing for {} seconds",
-                TCP_WRITE_TIMEOUT.as_secs()
-            ),
-        ))),
+        Err(_) => Err(XfrError::WriteTimeout {
+            secs: TCP_WRITE_TIMEOUT.as_secs(),
+        }),
     }
 }
 
@@ -86,13 +82,10 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
 ) -> Result<Vec<u8>, XfrError> {
     let mut len_buf = [0u8; 2];
     if reader.read(&mut len_buf[..1]).await.map_err(XfrError::Io)? == 0 {
-        return Err(XfrError::Io(std::io::Error::new(
-            std::io::ErrorKind::UnexpectedEof,
-            "connection closed",
-        )));
+        return Err(XfrError::Closed);
     }
     reader.read_exact(&mut len_buf[1..]).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+        if e.kind() == ErrorKind::UnexpectedEof {
             XfrError::IncompletePrefix
         } else {
             XfrError::Io(e)
@@ -101,10 +94,10 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
 
     // No size check: the two-octet prefix cannot name more than the limit
     // RFC 1035, Section 4.2.2 sets, so the allocation is bounded by the wire.
-    let len = u16::from_be_bytes(len_buf) as usize;
+    let len = usize::from(u16::from_be_bytes(len_buf));
     let mut message_buf = vec![0u8; len];
     reader.read_exact(&mut message_buf).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+        if e.kind() == ErrorKind::UnexpectedEof {
             XfrError::IncompleteMessage { expected: len }
         } else {
             XfrError::Io(e)
@@ -149,7 +142,7 @@ mod tests {
         // transfers reads as EOF rather than a malformed length prefix.
         let error = read(b"").await.unwrap_err();
 
-        assert!(matches!(error, XfrError::Io(_)), "{error:?}");
+        assert!(matches!(error, XfrError::Closed), "{error:?}");
     }
 
     /// Verify that a truncated length prefix is a protocol error.
@@ -192,7 +185,7 @@ mod tests {
             .expect_err("the write should have timed out");
 
         assert!(
-            matches!(&error, XfrError::Io(e) if e.kind() == ErrorKind::TimedOut),
+            matches!(&error, XfrError::WriteTimeout { secs: 30 }),
             "{error}"
         );
     }
