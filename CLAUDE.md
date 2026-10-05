@@ -1317,9 +1317,9 @@ section above.
   `docs/api/` directory — it would collide.
 - README.md is a landing page (pitch, quickstart, links into the site), not a
   manual. New prose belongs in `docs/`.
-- `docs/changelog.md` is the root `CHANGELOG.md`, included through
-  `pymdownx.snippets`; release notes are written in the root file, never on
-  the page.
+- `docs/changelog.md` indexes the version files in `docs/changelog/`; the root
+  `CHANGELOG.md` points readers to that index. A release's optional notes live
+  in `docs/changelog/<version>.md`, without the `v` tag prefix.
 
 ### Web UI — a companion repository
 
@@ -1343,9 +1343,9 @@ image tag typed in. Release and Manual Release validate SemVer before building:
 check every prerelease identifier, forbid build metadata, and cap the version at 128
 characters so a Docker tag can carry it. Publish Image accepts any valid
 Docker tag of at most 128 characters, including non-version labels such as
-`dev`. Both release workflows take the release body from `CHANGELOG.md`: the
-section headed by the version, which the release pull request writes beside
-the version bump. These format checks and that section are the only
+`dev`. Both release workflows use `docs/changelog/<version>.md` as the release
+body when that file exists; without it, the release has an empty body. Missing
+notes do not block publication. The SemVer format checks are the only
 version/tag gates. Build checks and the third-party license gate still apply. `latest` follows the version in the release workflows, as
 `packaging/scripts/build_image.sh` does; Publish Image has a checkbox for it.
 
