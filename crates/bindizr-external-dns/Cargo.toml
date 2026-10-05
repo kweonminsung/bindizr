@@ -22,7 +22,7 @@ path = "src/main.rs"
 
 [dependencies]
 thiserror.workspace = true
-bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.1" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.2" }
 axum.workspace = true
 clap = { workspace = true, features = ["env"] }
 log.workspace = true

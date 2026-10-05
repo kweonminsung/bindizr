@@ -140,5 +140,6 @@ nav:
       # rather than a page.
       - API Reference: https://kweonminsung.github.io/bindizr/api/
   - Troubleshooting: troubleshooting.md
+  - Changelog: changelog.md
   - Benchmarks: benchmarks.md
   - Contributing: contributing.md

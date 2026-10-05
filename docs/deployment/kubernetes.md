@@ -12,13 +12,30 @@ or `mysql` adds a single database pod.
 
 ## 1. Install
 
-For a first look, let the chart run PostgreSQL:
+For a first look, let the chart run PostgreSQL. The chart's default BIND image
+is amd64-only; on arm64, use the BIND image tested by the
+[kind example](https://github.com/kweonminsung/bindizr/blob/main/examples/README.md#kind):
 
-```bash
-helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 -n bindizr --create-namespace \
-  --set postgresql.enabled=true
-```
+=== "amd64"
+
+    ```bash
+    helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+      --version 0.1.0-rc.2 -n bindizr --create-namespace \
+      --set postgresql.enabled=true
+    ```
+
+=== "arm64"
+
+    ```bash
+    helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+      --version 0.1.0-rc.2 -n bindizr --create-namespace \
+      --set postgresql.enabled=true \
+      --set bind9.image.repository=ubuntu/bind9 \
+      --set bind9.image.tag=9.18-22.04_beta
+    ```
+
+    This BIND image runs the chart's shell-based startup command. Select and
+    verify a maintained BIND image for production.
 
 Resource names are the release name plus the chart name, so with the command
 above the Deployment is `bindizr-bindizr-chart` and the Services
@@ -132,7 +149,7 @@ kubectl create secret generic bindizr-db-secret -n bindizr \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 
 helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 -n bindizr \
+  --version 0.1.0-rc.2 -n bindizr \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
@@ -151,7 +168,7 @@ On a cluster without a load balancer provider, use `NodePort` for direct testing
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 -n bindizr --reuse-values \
+  --version 0.1.0-rc.2 -n bindizr --reuse-values \
   --set bind9.service.type=NodePort --set bind9.service.nodePort=30053
 dig @<node-ip> -p 30053 www.example.com A +short
 ```
@@ -159,8 +176,7 @@ dig @<node-ip> -p 30053 www.example.com A +short
 Public DNS delegation needs TCP and UDP port 53. A NodePort such as 30053
 requires a load balancer or port mapping before ordinary resolvers can use it.
 
-The other `bind9.*` values: `bind9.replicas`, `bind9.image` (the ISC image
-is amd64-only; the kind example carries an arm64 overlay),
+The other `bind9.*` values: `bind9.replicas`, `bind9.image`,
 `bind9.persistence` for a volume per pod, and `bind9.service.annotations`
 for the load balancer.
 
@@ -175,7 +191,7 @@ name and a `host[:port]` address:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 -n bindizr --reuse-values \
+  --version 0.1.0-rc.2 -n bindizr --reuse-values \
   --set 'bindizr.dns.extraSecondaries[0].name=ns2' \
   --set 'bindizr.dns.extraSecondaries[0].address=ns2.example.net:53'
 ```
@@ -195,7 +211,7 @@ HTTPS itself:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.1 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
+  --version 0.1.0-rc.2 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
 ```
 
 The readiness probe follows to HTTPS on its own. Leave the value empty when
