@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "docs/**"
+      - "CHANGELOG.md"
       - "mkdocs.yml"
       - ".github/workflows/update-github-pages.yml"
   workflow_dispatch:
