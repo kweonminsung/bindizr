@@ -110,6 +110,10 @@ async fn handle_nsupdate_request(
             cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
             return Some(response);
         }
+        Err(update::UpdateError::FormErr(msg)) => {
+            log::warn!("NSUPDATE formerr from {}: {}", client_addr, msg);
+            Rcode::FORMERR
+        }
         Err(update::UpdateError::Refused(msg)) => {
             log::warn!("NSUPDATE refused from {}: {}", client_addr, msg);
             Rcode::REFUSED
@@ -129,6 +133,10 @@ async fn handle_nsupdate_request(
         Err(update::UpdateError::NxRrset(msg)) => {
             log::warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
             Rcode::NXRRSET
+        }
+        Err(update::UpdateError::NotAuth(msg)) => {
+            log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+            Rcode::NOTAUTH
         }
         Err(update::UpdateError::NotZone(msg)) => {
             log::warn!("NSUPDATE notzone from {}: {}", client_addr, msg);

@@ -9,6 +9,7 @@ mod prerequisite;
 use bindizr_core::{
     dns::{
         Serial, Ttl,
+        message::Rtype,
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
     },
     model::{
@@ -48,6 +49,11 @@ pub enum DynamicUpdateError {
     NxDomain(String),
     #[error("{0}")]
     NxRrset(String),
+    /// The zone section names a zone this server does not serve (RFC 2136,
+    /// Section 3.1.2).
+    #[error("{0}")]
+    NotAuth(String),
+    /// An owner name lies outside the zone the request named.
     #[error("{0}")]
     NotZone(String),
     /// A fault of the server's own, kept beneath: SERVFAIL.
@@ -103,6 +109,12 @@ pub enum Prerequisite {
         value: String,
         priority: Option<i32>,
     },
+    /// A record set of a type bindizr never stores must exist: it cannot, so
+    /// this is NXRRSET once the owner is known to be in the zone.
+    UnstoredTypeInUse { name: String, record_type: Rtype },
+    /// A record set of a type bindizr never stores must not exist: it never
+    /// does, so this holds once the owner is known to be in the zone.
+    UnstoredTypeNotInUse { name: String, record_type: Rtype },
 }
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
@@ -183,7 +195,10 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
         let zone = zone::find_served_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| {
-                DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
+                DynamicUpdateError::NotAuth(format!(
+                    "zone '{}' is not served here",
+                    update.zone_name
+                ))
             })?;
 
         authorize_key_tx(
@@ -288,7 +303,10 @@ async fn authorize_key_tx(
     // is evaluated, ahead of where RFC 2136, Section 3.3 puts permissions.
     for prerequisite in prerequisites {
         let (name, record_type) = match prerequisite {
-            Prerequisite::NameInUse { name } | Prerequisite::NameNotInUse { name } => (name, None),
+            Prerequisite::NameInUse { name }
+            | Prerequisite::NameNotInUse { name }
+            | Prerequisite::UnstoredTypeInUse { name, .. }
+            | Prerequisite::UnstoredTypeNotInUse { name, .. } => (name, None),
             Prerequisite::RecordSetInUse { name, record_type }
             | Prerequisite::RecordSetNotInUse { name, record_type }
             | Prerequisite::RecordInUse {
@@ -354,14 +372,58 @@ async fn apply_op_tx(
                 })?
             };
 
+            let records_at_name =
+                bindizr_db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
+                    .await?;
+
+            // RFC 2136, Section 3.4.2.2: a CNAME beside other data (the apex
+            // holds the SOA) or data beside a CNAME is ignored; a second
+            // CNAME replaces the first.
+            let adding_cname = *record_type == RecordType::Cname;
+            let (cnames, others): (Vec<&Record>, Vec<&Record>) = records_at_name
+                .iter()
+                .partition(|r| r.record_type == RecordType::Cname);
+            if (adding_cname && (owner.is_apex() || !others.is_empty()))
+                || (!adding_cname && !cnames.is_empty())
+            {
+                return Ok(false);
+            }
+            let mut changed = false;
+            if adding_cname && !cnames.is_empty() {
+                let replaced: Vec<Record> = cnames.into_iter().cloned().collect();
+                record::delete_with_changes_tx(tx, zone.id, new_serial, &replaced).await?;
+                changed = true;
+            }
+
+            // RFC 2136, Section 3.4.2.2 and RFC 2181, Section 5.2: an add with
+            // a new TTL moves the whole record set to it, as a delete and an add.
+            let retimed: Vec<Record> = records_at_name
+                .iter()
+                .filter(|r| r.record_type == *record_type && r.ttl != *ttl)
+                .cloned()
+                .collect();
+            if !retimed.is_empty() {
+                record::delete_with_changes_tx(tx, zone.id, new_serial, &retimed).await?;
+                let renewed: Vec<Record> = retimed
+                    .into_iter()
+                    .map(|record| Record {
+                        id: RecordId::UNWRITTEN,
+                        ttl: *ttl,
+                        created_at: Utc::now(),
+                        ..record
+                    })
+                    .collect();
+                record::create_with_changes_tx(tx, zone.id, new_serial, &renewed).await?;
+                changed = true;
+            }
+
             let outcome =
                 record::validate_add_tx(tx, zone, &owner, record_type, &value, *ttl, *priority)
                     .await?;
 
-            // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
-            // TTL-replace clause is not implemented; record set TTLs change via the API.
+            // An rdata-identical add changes nothing beyond the TTL above.
             if matches!(outcome, AddResult::Duplicate) {
-                return Ok(false);
+                return Ok(changed);
             }
 
             record::create_with_changes_tx(
@@ -422,11 +484,25 @@ async fn delete_matching_tx(
     let owner_records =
         bindizr_db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
 
-    let matched: Vec<Record> = owner_records
+    let mut matched: Vec<Record> = owner_records
         .iter()
         .filter(|record| record.matches(record_type, value, priority))
         .cloned()
         .collect();
+
+    // RFC 2136, Sections 3.4.2.3 and 3.4.2.4: at the apex the NS set outlives
+    // a delete, and one NS goes only while another remains; the SOA is no row.
+    if owner.is_apex() {
+        let ns_total = owner_records
+            .iter()
+            .filter(|r| r.record_type == RecordType::Ns)
+            .count();
+        match value {
+            None => matched.retain(|r| r.record_type != RecordType::Ns),
+            Some(_) if ns_total <= 1 => matched.retain(|r| r.record_type != RecordType::Ns),
+            Some(_) => {}
+        }
+    }
 
     if matched.is_empty() {
         return Ok(false);

@@ -65,6 +65,16 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
+            Prerequisite::UnstoredTypeInUse { name, record_type } => {
+                let owner = parse_update_owner(name, &zone.name)?;
+                return Err(DynamicUpdateError::NxRrset(format!(
+                    "no {} records at {}: the type is not stored",
+                    record_type, owner
+                )));
+            }
+            Prerequisite::UnstoredTypeNotInUse { name, .. } => {
+                parse_update_owner(name, &zone.name)?;
+            }
             Prerequisite::RecordInUse {
                 name,
                 record_type,

@@ -45,6 +45,23 @@ refused for all zones.
     `api.authentication_required = false` does for the HTTP API. Signed
     requests are always verified either way.
 
+## Response codes
+
+The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone Bindizr
+does not serve, `NOTZONE` an owner outside the zone named, `FORMERR` a
+malformed section (a prerequisite with a TTL, a delete carrying rdata, a type
+no update may carry, or a type Bindizr does not store in an add), and
+`REFUSED` a policy decision: an unsigned request where a signature is
+required, or a key whose role does not reach what the update touches. The
+prerequisite codes (`NXDOMAIN`, `YXDOMAIN`, `NXRRSET`, `YXRRSET`) report the
+first prerequisite that failed.
+
+Some records in an update are passed over rather than refused, as the RFC
+says: a delete that would remove the SOA or the last apex NS record, a CNAME
+added beside other data or data added beside a CNAME, and a delete of a type
+Bindizr never stores. A second CNAME replaces the first, and an add whose
+TTL differs from the record set's moves the whole set to the new TTL.
+
 ## The first key
 
 A TSIG key needs no bootstrapping of its own: with an API token whose role has

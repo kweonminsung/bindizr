@@ -1,4 +1,5 @@
 use domain::base::{Rtype, iana::Rcode};
+use serde_json::Value;
 use serial_test::serial;
 
 use crate::common::{
@@ -529,4 +530,198 @@ async fn nsupdate_adds_at_the_zone_apex() {
                 && record["value"] == "192.0.2.60"),
         "apex record was not added"
     );
+}
+
+/// Verify that an update for a zone this server does not serve is NOTAUTH
+/// (RFC 2136, Section 3.1.2), while an owner outside a served zone stays
+/// NOTZONE.
+#[tokio::test]
+#[serial]
+async fn nsupdate_answers_notauth_for_a_zone_it_does_not_serve() {
+    let app = unsigned_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-notauth.example");
+
+    let rcode = send_update(
+        app.dns_port(),
+        &zone_name,
+        &[],
+        &[UpdateRecord::AddA {
+            name: format!("host.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.70".to_string(),
+        }],
+    )
+    .expect("update for an unknown zone");
+
+    assert_eq!(rcode, Rcode::NOTAUTH);
+}
+
+/// Verify that a delete leaves the apex NS set standing and passes over the
+/// SOA (RFC 2136, Sections 3.4.2.3 and 3.4.2.4).
+#[tokio::test]
+#[serial]
+async fn nsupdate_keeps_the_apex_ns_set() {
+    let app = unsigned_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-apex-ns.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let apex = format!("{zone_name}.");
+    let apex_ns = |records: &[Value]| -> Vec<String> {
+        records
+            .iter()
+            .filter(|record| record["name"] == apex && record["type"] == "NS")
+            .map(|record| record["value"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let seeded = apex_ns(&app.list_records(&zone_name).await);
+    assert_eq!(seeded.len(), 1, "zone creation seeds one apex NS");
+
+    // The NS set survives a delete of the type, of the only NS, and of the
+    // whole name; the SOA delete is passed over rather than refused.
+    let apex_a = UpdateRecord::AddA {
+        name: apex.clone(),
+        ttl: 300,
+        addr: "192.0.2.80".to_string(),
+    };
+    for updates in [
+        vec![UpdateRecord::DeleteRecordSet {
+            name: apex.clone(),
+            rtype: Rtype::NS,
+        }],
+        vec![UpdateRecord::DeleteNs {
+            name: apex.clone(),
+            target: seeded[0].clone(),
+        }],
+        vec![UpdateRecord::DeleteRecordSet {
+            name: apex.clone(),
+            rtype: Rtype::SOA,
+        }],
+        vec![
+            apex_a,
+            UpdateRecord::DeleteRecordSet {
+                name: apex.clone(),
+                rtype: Rtype::ANY,
+            },
+        ],
+    ] {
+        let rcode = send_update(app.dns_port(), &zone_name, &[], &updates).expect("apex delete");
+        assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
+    }
+
+    let records = app.list_records(&zone_name).await;
+    assert_eq!(apex_ns(&records), seeded);
+    assert!(
+        !records
+            .iter()
+            .any(|record| record["name"] == apex && record["type"] == "A"),
+        "the whole-name delete removed the apex A"
+    );
+}
+
+/// Verify that a CNAME beside other data, or data beside a CNAME, is passed
+/// over, and that a second CNAME replaces the first (RFC 2136, Section
+/// 3.4.2.2).
+#[tokio::test]
+#[serial]
+async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let www = format!("www.{zone_name}.");
+    let alias = format!("alias.{zone_name}.");
+    let records_at = |records: &[Value], name: &str| -> Vec<(String, String)> {
+        records
+            .iter()
+            .filter(|record| record["name"] == name)
+            .map(|record| {
+                (
+                    record["type"].as_str().unwrap().to_string(),
+                    record["value"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+
+    for updates in [
+        vec![UpdateRecord::AddA {
+            name: www.clone(),
+            ttl: 300,
+            addr: "192.0.2.90".to_string(),
+        }],
+        // A CNAME beside the A: passed over.
+        vec![UpdateRecord::AddCname {
+            name: www.clone(),
+            ttl: 300,
+            target: format!("target.{zone_name}."),
+        }],
+        vec![UpdateRecord::AddCname {
+            name: alias.clone(),
+            ttl: 300,
+            target: format!("one.{zone_name}."),
+        }],
+        // An A beside the CNAME: passed over.
+        vec![UpdateRecord::AddA {
+            name: alias.clone(),
+            ttl: 300,
+            addr: "192.0.2.91".to_string(),
+        }],
+        // A second CNAME replaces the first.
+        vec![UpdateRecord::AddCname {
+            name: alias.clone(),
+            ttl: 300,
+            target: format!("two.{zone_name}."),
+        }],
+    ] {
+        let rcode = send_update(app.dns_port(), zone_name, &[], &updates).expect("update");
+        assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
+    }
+
+    let records = app.list_records(zone_name).await;
+    assert_eq!(
+        records_at(&records, &www),
+        [("A".to_string(), "192.0.2.90".to_string())]
+    );
+    assert_eq!(
+        records_at(&records, &alias),
+        [("CNAME".to_string(), format!("two.{zone_name}."))]
+    );
+}
+
+/// Verify that an add with a new TTL moves the whole record set to it, as
+/// RFC 2181, Section 5.2 keeps one TTL per set.
+#[tokio::test]
+#[serial]
+async fn nsupdate_moves_a_record_set_to_the_added_ttl() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let host = format!("host.{zone_name}.");
+
+    for (ttl, addr) in [
+        (300, "192.0.2.100"),
+        (600, "192.0.2.101"),
+        (900, "192.0.2.100"),
+    ] {
+        let rcode = send_update(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[UpdateRecord::AddA {
+                name: host.clone(),
+                ttl,
+                addr: addr.to_string(),
+            }],
+        )
+        .expect("add");
+        assert_eq!(rcode, Rcode::NOERROR);
+    }
+
+    // The third add repeated an rdata with yet another TTL: the set follows.
+    let ttls: Vec<u64> = app
+        .list_records(zone_name)
+        .await
+        .iter()
+        .filter(|record| record["name"] == host)
+        .map(|record| record["ttl"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ttls, [900, 900]);
 }

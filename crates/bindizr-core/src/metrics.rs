@@ -396,7 +396,7 @@ pub enum NsupdateResult {
 }
 
 impl NsupdateResult {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::TsigFailed,
         Self::Rcode(Rcode::NOERROR),
         Self::Rcode(Rcode::FORMERR),
@@ -405,6 +405,7 @@ impl NsupdateResult {
         Self::Rcode(Rcode::YXRRSET),
         Self::Rcode(Rcode::NXDOMAIN),
         Self::Rcode(Rcode::NXRRSET),
+        Self::Rcode(Rcode::NOTAUTH),
         Self::Rcode(Rcode::NOTZONE),
         Self::Rcode(Rcode::SERVFAIL),
         Self::Rcode(Rcode::NOTIMP),
@@ -424,6 +425,7 @@ impl NsupdateResult {
             Rcode::YXRRSET => "yxrrset",
             Rcode::NXDOMAIN => "nxdomain",
             Rcode::NXRRSET => "nxrrset",
+            Rcode::NOTAUTH => "notauth",
             Rcode::NOTZONE => "notzone",
             Rcode::SERVFAIL => "servfail",
             _ => "other",

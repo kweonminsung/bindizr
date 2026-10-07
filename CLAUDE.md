@@ -514,8 +514,8 @@ arrives by `zone::normalize_name`, which owns the request-phrased rejection
 (`INVALID_ZONE_FIELD`; the root and a wildcard refused): an HTTP path or
 query parameter in its handler, a socket command in its handler, a transfer
 question in the DNS server once the catalog check has passed, where a name
-the type refuses is answered NOTAUTH like a missing zone (an nsupdate says
-NOTZONE), since no stored zone can match it. A name inside a request body
+the type refuses is answered NOTAUTH like a missing zone (an nsupdate too,
+RFC 2136, Section 3.1.2), since no stored zone can match it. A name inside a request body
 or a listing filter is parsed by the service function that takes that
 payload, since the payload is its argument. Everything beneath —
 the `_tx` lookups, the NOTIFY and probe clients, the zone-file parser, the

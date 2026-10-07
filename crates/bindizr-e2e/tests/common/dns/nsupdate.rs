@@ -10,7 +10,7 @@ use domain::{
         iana::{Class, Opcode, Rcode},
         message_builder::AdditionalBuilder,
     },
-    rdata::{A, tsig::Time48},
+    rdata::{A, Cname, Ns, tsig::Time48},
     tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
 
@@ -44,10 +44,18 @@ pub(crate) enum UpdateRecord {
         ttl: u32,
         addr: String,
     },
+    /// CLASS IN: add this CNAME.
+    AddCname {
+        name: String,
+        ttl: u32,
+        target: String,
+    },
     /// CLASS ANY: delete the record set.
     DeleteRecordSet { name: String, rtype: Rtype },
     /// CLASS NONE: delete just this address record.
     DeleteA { name: String, addr: String },
+    /// CLASS NONE: delete just this NS record.
+    DeleteNs { name: String, target: String },
 }
 
 /// One prerequisite (RFC 2136, Section 2.4).
@@ -172,9 +180,38 @@ fn build_update(
                     ))
                     .map_err(|e| e.to_string())?;
             }
+            UpdateRecord::AddCname {
+                name: owner,
+                ttl,
+                target,
+            } => {
+                let data = Cname::new(parse_name(target)?);
+                authority
+                    .push(Record::new(
+                        parse_name(owner)?,
+                        Class::IN,
+                        Ttl::from_secs(*ttl),
+                        data,
+                    ))
+                    .map_err(|e| e.to_string())?;
+            }
             UpdateRecord::DeleteRecordSet { name: owner, rtype } => authority
                 .push(empty_record(owner, *rtype, Class::ANY)?)
                 .map_err(|e| e.to_string())?,
+            UpdateRecord::DeleteNs {
+                name: owner,
+                target,
+            } => {
+                let data = Ns::new(parse_name(target)?);
+                authority
+                    .push(Record::new(
+                        parse_name(owner)?,
+                        Class::NONE,
+                        Ttl::ZERO,
+                        data,
+                    ))
+                    .map_err(|e| e.to_string())?;
+            }
             UpdateRecord::DeleteA { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 authority
