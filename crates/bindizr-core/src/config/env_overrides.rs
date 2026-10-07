@@ -49,6 +49,15 @@ impl Config {
         if let Some(value) = get_env("BINDIZR_DATABASE_SQLITE_FILE_PATH") {
             self.database.sqlite.file_path = value;
         }
+        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_MODE") {
+            self.database.tls.mode = match to_optional_setting(value) {
+                Some(value) => Some(parse_env_value("BINDIZR_DATABASE_TLS_MODE", &value)?),
+                None => None,
+            };
+        }
+        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_CA_FILE") {
+            self.database.tls.ca_file = to_optional_setting(value);
+        }
         // The generic URL overrides the selected backend's URL above; SQLite
         // continues to use its file path.
         if let Some(value) = get_env("BINDIZR_DATABASE_URL") {

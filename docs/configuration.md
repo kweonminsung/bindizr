@@ -61,6 +61,10 @@ file_path = "/var/lib/bindizr/bindizr.db"
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
 
+[database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
+# mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
+# ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
+
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
@@ -101,6 +105,15 @@ A reserved character in the user, password, or database of a database `url`
 Bindizr decodes the components before connecting. The Helm chart encodes
 the credentials it assembles from the bundled database's `auth` values.
 
+`[database.tls]` is the connection to a MySQL or PostgreSQL server, which a
+managed database usually requires over TLS. Without a `mode`, TLS is used
+when the server offers it and the certificate is not checked; `require`
+insists on TLS and checks nothing either. A server reached over a network
+should be verified: `verify-full` checks the chain and the host name against
+the system's roots, or against `ca_file` when the issuer is private, as the
+certificate bundles of RDS and Cloud SQL are. The URL's own parameters
+(`sslmode`, `ssl-mode`) still work; a set key overrides them.
+
 Use distinct catalog names for independent Bindizr deployments feeding the
 same secondary. Configure [TLS](http-api/index.md#tls) before exposing the API
 off-host. Signing settings are managed per zone through [DNSSEC](dnssec/index.md).
@@ -126,6 +139,8 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DATABASE_MYSQL_URL` | `database.mysql.url` | |
 | `BINDIZR_DATABASE_POSTGRESQL_URL` | `database.postgresql.url` | |
 | `BINDIZR_DATABASE_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
+| `BINDIZR_DATABASE_TLS_MODE` | `database.tls.mode` | Empty leaves it to the URL |
+| `BINDIZR_DATABASE_TLS_CA_FILE` | `database.tls.ca_file` | Empty clears it |
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |

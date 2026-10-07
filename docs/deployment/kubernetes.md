@@ -155,6 +155,12 @@ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 
 For MySQL, add `--set bindizr.database.type=mysql`.
 
+A database reached over a network is verified with
+`--set bindizr.database.tls.mode=verify-full`; a private issuer's certificate
+goes in a Secret holding `ca.crt`, named by
+`--set bindizr.database.tls.existingSecret=<name>`. See
+[Configuration](../configuration.md#configuration-file).
+
 !!! note "SQLite is not supported by the Helm chart"
 
     A pod-local SQLite file cannot be shared across replicas or survive

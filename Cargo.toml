@@ -56,6 +56,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_norway = "0.9"
 serial_test = "4"
+# TLS to the database over the same ring-backed rustls.
 sqlx = { version = "0.9", features = [
     "runtime-tokio",
     "mysql",
@@ -63,6 +64,7 @@ sqlx = { version = "0.9", features = [
     "postgres",
     "sqlite",
     "chrono",
+    "tls-rustls-ring-native-roots",
 ] }
 tabled = { version = "0.22", default-features = false, features = ["derive"] }
 tempfile = "3.27.0"

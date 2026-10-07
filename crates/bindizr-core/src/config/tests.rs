@@ -117,6 +117,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.retries, 3);
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
     assert_eq!(parsed.dns.transfer.cache_max_records, 500_000);
+    assert_eq!(parsed.database.tls, Default::default());
     // The registered DNS over TLS port, and no certificate: the listener is off.
     assert_eq!(parsed.dns.tls.listen_port, 853);
     assert!(parsed.dns.tls.tls_files().is_none());
@@ -224,6 +225,8 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_API_TLS_KEY_FILE" => Some("/tls/api.key".to_string()),
             "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
             "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
+            "BINDIZR_DATABASE_TLS_MODE" => Some("verify-full".to_string()),
+            "BINDIZR_DATABASE_TLS_CA_FILE" => Some("/tls/db-ca.crt".to_string()),
             "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
             "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
             "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog.staging".to_string()),
@@ -260,6 +263,14 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(
         overridden.database.mysql.url,
         "mysql://user:p#ss&word@mysql:3306/bindizr"
+    );
+    assert_eq!(
+        overridden.database.tls.mode,
+        Some(DatabaseTlsMode::VerifyFull)
+    );
+    assert_eq!(
+        overridden.database.tls.ca_file.as_deref(),
+        Some("/tls/db-ca.crt")
     );
     assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
     assert_eq!(overridden.dns.listen_port, 5353);
@@ -318,6 +329,46 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
         resolve_config_path_with_env(None, |_| None),
         BINDIZR_CONF_PATH
     );
+}
+
+/// Verify that `from_toml` rejects a database CA file no mode would check.
+#[test]
+fn from_toml_rejects_a_database_ca_file_without_a_verifying_mode() {
+    let base = TestConfigToml::default().render();
+    for mode in ["", "mode = \"require\"\n"] {
+        let toml = format!("{base}\n[database.tls]\n{mode}ca_file = \"/tls/db-ca.crt\"\n");
+        let err = Config::from_toml(&toml, |_| None).unwrap_err();
+        assert!(matches!(err, ConfigError::DatabaseTlsCaUnchecked), "{err}");
+    }
+
+    let toml =
+        format!("{base}\n[database.tls]\nmode = \"verify-ca\"\nca_file = \"/tls/db-ca.crt\"\n");
+    let parsed = Config::from_toml(&toml, |_| None).unwrap();
+    assert_eq!(parsed.database.tls.mode, Some(DatabaseTlsMode::VerifyCa));
+}
+
+/// Verify that the database TLS mode is spelled once across its forms.
+#[test]
+fn database_tls_mode_spells_itself_once() {
+    for (value, expected) in [
+        (DatabaseTlsMode::Disable, "disable"),
+        (DatabaseTlsMode::Prefer, "prefer"),
+        (DatabaseTlsMode::Require, "require"),
+        (DatabaseTlsMode::VerifyCa, "verify-ca"),
+        (DatabaseTlsMode::VerifyFull, "verify-full"),
+    ] {
+        assert_eq!(value.as_str(), expected);
+        assert_eq!(value.to_string(), expected);
+        assert_eq!(expected.parse::<DatabaseTlsMode>().unwrap(), value);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(
+            serde_json::from_value::<DatabaseTlsMode>(serde_json::json!(expected)).unwrap(),
+            value
+        );
+    }
 }
 
 /// Verify that `from_toml` rejects port zero.

@@ -46,6 +46,10 @@ pub enum ConfigError {
         second: &'static str,
         port: u16,
     },
+    #[error(
+        "database.tls.ca_file is checked only when database.tls.mode is verify-ca or verify-full"
+    )]
+    DatabaseTlsCaUnchecked,
     #[error("{key} must not be empty when database.type is {database_type}")]
     EmptyDatabaseLocation {
         key: &'static str,
@@ -141,6 +145,8 @@ pub struct DatabaseConfig {
     pub sqlite: SqliteConfig,
     #[serde(default)]
     pub postgresql: PostgresqlConfig,
+    #[serde(default)]
+    pub tls: DatabaseTlsConfig,
 }
 
 /// Supported database backends.
@@ -195,6 +201,118 @@ pub struct SqliteConfig {
 #[serde(deny_unknown_fields)]
 pub struct PostgresqlConfig {
     pub url: String,
+}
+
+/// TLS to the MySQL or PostgreSQL server. A set key overrides the URL's own
+/// parameter; unset leaves the URL and sqlx's default (TLS if offered, unverified).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseTlsConfig {
+    #[serde(default)]
+    pub mode: Option<DatabaseTlsMode>,
+    /// A private issuer to check the server's certificate against; the
+    /// system roots otherwise.
+    #[serde(default)]
+    pub ca_file: Option<String>,
+}
+
+impl DatabaseTlsConfig {
+    /// Validate the TLS fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        // A CA that no mode consults would read as protection it is not.
+        if self.ca_file.is_some()
+            && !matches!(
+                self.mode,
+                Some(DatabaseTlsMode::VerifyCa | DatabaseTlsMode::VerifyFull)
+            )
+        {
+            return Err(ConfigError::DatabaseTlsCaUnchecked);
+        }
+        Ok(())
+    }
+}
+
+/// How far the database connection insists on TLS, in PostgreSQL's words;
+/// MySQL's modes map one to one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DatabaseTlsMode {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+impl DatabaseTlsMode {
+    /// Return the canonical spelling, the configuration file's.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disable => "disable",
+            Self::Prefer => "prefer",
+            Self::Require => "require",
+            Self::VerifyCa => "verify-ca",
+            Self::VerifyFull => "verify-full",
+        }
+    }
+}
+
+impl fmt::Display for DatabaseTlsMode {
+    /// Write the mode in its configuration spelling.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for DatabaseTlsMode {
+    type Err = ConfigError;
+
+    /// Parse a TLS mode from its configuration spelling.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "disable" => Ok(Self::Disable),
+            "prefer" => Ok(Self::Prefer),
+            "require" => Ok(Self::Require),
+            "verify-ca" => Ok(Self::VerifyCa),
+            "verify-full" => Ok(Self::VerifyFull),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "disable, prefer, require, verify-ca, or verify-full",
+            }),
+        }
+    }
+}
+
+impl serde::Serialize for DatabaseTlsMode {
+    /// Serialize through the canonical spelling.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl From<DatabaseTlsMode> for sqlx::postgres::PgSslMode {
+    /// The same mode in sqlx's PostgreSQL vocabulary.
+    fn from(mode: DatabaseTlsMode) -> Self {
+        match mode {
+            DatabaseTlsMode::Disable => Self::Disable,
+            DatabaseTlsMode::Prefer => Self::Prefer,
+            DatabaseTlsMode::Require => Self::Require,
+            DatabaseTlsMode::VerifyCa => Self::VerifyCa,
+            DatabaseTlsMode::VerifyFull => Self::VerifyFull,
+        }
+    }
+}
+
+impl From<DatabaseTlsMode> for sqlx::mysql::MySqlSslMode {
+    /// The same mode in sqlx's MySQL vocabulary.
+    fn from(mode: DatabaseTlsMode) -> Self {
+        match mode {
+            DatabaseTlsMode::Disable => Self::Disabled,
+            DatabaseTlsMode::Prefer => Self::Preferred,
+            DatabaseTlsMode::Require => Self::Required,
+            DatabaseTlsMode::VerifyCa => Self::VerifyCa,
+            DatabaseTlsMode::VerifyFull => Self::VerifyIdentity,
+        }
+    }
 }
 
 /// DNS server settings; NOTIFY, nsupdate, the TLS listener, transfers, and
@@ -627,6 +745,7 @@ impl Config {
 impl DatabaseConfig {
     /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
+        self.tls.validate()?;
         match self.database_type {
             DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
                 Err(ConfigError::EmptyDatabaseLocation {

@@ -160,6 +160,10 @@ fn print_config(config: &Config) {
 
     print_section("database.postgresql");
     print_value("url", &config.database.postgresql.url);
+
+    print_section("database.tls");
+    print_optional("mode", config.database.tls.mode.map(|mode| mode.as_str()));
+    print_optional("ca_file", config.database.tls.ca_file.as_deref());
     outln!();
 
     print_section("dns");

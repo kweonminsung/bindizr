@@ -76,6 +76,11 @@ bindizr:
     # empty with a bundled mysql/postgresql enabled, the chart builds the URL
     # from that database's auth values.
     url: ""
+    tls:
+      # disable, prefer, require, verify-ca, or verify-full; empty leaves it to the URL.
+      mode: ""
+      # A Secret holding ca.crt, a private issuer to verify against.
+      existingSecret: ""
 
   podAnnotations: {}
   podSecurityContext:

@@ -130,6 +130,11 @@ spec:
               mountPath: /etc/bindizr/tls
               readOnly: true
             {{- end }}
+            {{- with .Values.bindizr.database.tls.existingSecret }}
+            - name: database-tls
+              mountPath: /etc/bindizr/db-tls
+              readOnly: true
+            {{- end }}
             # The daemon's control socket: the only path a read-only root
             # filesystem has to open.
             - name: runtime
@@ -140,6 +145,11 @@ spec:
             name: {{ include "bindizr-chart.fullname" . }}-config
         {{- with .Values.bindizr.api.tls.existingSecret }}
         - name: api-tls
+          secret:
+            secretName: {{ . }}
+        {{- end }}
+        {{- with .Values.bindizr.database.tls.existingSecret }}
+        - name: database-tls
           secret:
             secretName: {{ . }}
         {{- end }}

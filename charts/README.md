@@ -22,6 +22,10 @@ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
+A database behind TLS is verified with `--set bindizr.database.tls.mode=verify-full`;
+a private issuer's certificate goes in a Secret holding `ca.crt`, named by
+`bindizr.database.tls.existingSecret`.
+
 Install the released OCI chart from Docker Hub. Its default BIND image is
 amd64-only; the [Kubernetes guide](../docs/deployment/kubernetes.md#1-install)
 shows the tested arm64 image settings:

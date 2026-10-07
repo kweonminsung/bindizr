@@ -10,3 +10,6 @@
 {{- if eq .Values.bindizr.database.type "sqlite" }}
 {{- fail "SQLite is not supported by the Helm chart. Use mysql or postgresql." }}
 {{- end }}
+{{- if and .Values.bindizr.database.tls.existingSecret (not (has .Values.bindizr.database.tls.mode (list "verify-ca" "verify-full"))) }}
+{{- fail "bindizr.database.tls.existingSecret needs bindizr.database.tls.mode verify-ca or verify-full" }}
+{{- end }}

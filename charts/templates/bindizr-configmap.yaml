@@ -29,6 +29,16 @@ data:
 
     [database.postgresql]
     url = ""
+    {{- if or .Values.bindizr.database.tls.mode .Values.bindizr.database.tls.existingSecret }}
+
+    [database.tls]
+    {{- with .Values.bindizr.database.tls.mode }}
+    mode = "{{ . }}"
+    {{- end }}
+    {{- if .Values.bindizr.database.tls.existingSecret }}
+    ca_file = "/etc/bindizr/db-tls/ca.crt"
+    {{- end }}
+    {{- end }}
 
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"

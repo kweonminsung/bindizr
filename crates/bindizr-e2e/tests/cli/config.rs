@@ -118,6 +118,7 @@ async fn config_list_and_get_show_loaded_config() {
     assert!(listed.contains("[api]"));
     assert!(listed.contains("[api.tls]"));
     assert!(listed.contains("[dns]"));
+    assert!(listed.contains("[database.tls]"));
     assert!(listed.contains("[dns.notify]"));
     assert!(listed.contains("[dns.nsupdate]"));
     assert!(listed.contains("[dns.tls]"));

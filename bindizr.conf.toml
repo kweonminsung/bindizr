@@ -22,6 +22,10 @@ file_path = "/var/lib/bindizr/bindizr.db"
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
 
+[database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
+# mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
+# ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
+
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
