@@ -815,3 +815,25 @@ async fn pipelined_transfers_on_one_connection_both_complete() {
     assert_eq!(soas.get(&1), Some(&2));
     assert_eq!(soas.get(&2), Some(&2));
 }
+
+/// Verify that a question of another class is NOTAUTH, its class echoed
+/// (RFC 5936, Section 2.2.2).
+#[tokio::test]
+#[serial]
+async fn a_question_of_another_class_is_notauth() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(95);
+    let mut question = builder.question();
+    question
+        .push((&parse_name(zone_name).unwrap(), Rtype::SOA, Class::CH))
+        .unwrap();
+
+    let response = exchange_udp(app.dns_port(), &question.finish());
+    let response = Message::from_octets(response.as_slice()).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+    assert_eq!(response.first_question().unwrap().qclass(), Class::CH);
+}

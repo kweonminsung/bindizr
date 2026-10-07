@@ -3,7 +3,7 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::message::{self, ExtendedErrorCode, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype};
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::{
@@ -246,6 +246,21 @@ async fn dispatch_tcp_query(
 
     if let Some(response) = query.edns_error_response() {
         log::info!("Refusing the EDNS of a DNS TCP query from {}", client_addr);
+        return writer
+            .write_message(&response)
+            .await
+            .map_err(ServeDnsError::Refusal);
+    }
+
+    // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
+    if query.qclass != Class::IN {
+        log::info!(
+            "Refusing DNS TCP class {} from {}",
+            query.qclass,
+            client_addr
+        );
+        let response =
+            query.error_response(Rcode::NOTAUTH, Some(ExtendedErrorCode::NOT_AUTHORITATIVE));
         return writer
             .write_message(&response)
             .await

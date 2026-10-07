@@ -5,7 +5,7 @@ pub use domain::base::iana::exterr::ExtendedErrorCode;
 use domain::{
     base::{
         Message, MessageBuilder, Name, Rtype, ToName,
-        iana::{Opcode, OptRcode, Rcode},
+        iana::{Class, Opcode, OptRcode, Rcode},
         message_builder::AdditionalBuilder,
         opt::{Opt, OptRecord, exterr::ExtendedError},
     },
@@ -101,6 +101,8 @@ pub struct ParsedQuery {
     /// Presentation form of `qname` without the trailing dot.
     pub zone_name: String,
     pub qtype: Rtype,
+    /// Echoed in every response (RFC 5936, Section 2.2.2); only IN is served.
+    pub qclass: Class,
     pub client_serial: Option<u32>,
     pub query_id: u16,
     pub opcode: Opcode,
@@ -126,6 +128,7 @@ impl ParsedQuery {
 
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
+        let qclass = question.qclass();
 
         // domain's `Display` renders the root as "." and otherwise omits the
         // root dot, so only the root query maps to the empty zone form; a
@@ -149,6 +152,7 @@ impl ParsedQuery {
             qname,
             zone_name,
             qtype,
+            qclass,
             client_serial,
             query_id,
             opcode,
@@ -244,7 +248,7 @@ impl ParsedQuery {
 
         let mut question = builder.question();
         question
-            .push((&self.qname, self.qtype))
+            .push((&self.qname, self.qtype, self.qclass))
             .expect("one question fits an unlimited message");
 
         let mut additional = question.additional();

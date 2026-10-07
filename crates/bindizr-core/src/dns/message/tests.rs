@@ -274,3 +274,19 @@ fn an_answer_over_the_udp_limit_is_truncated() {
     assert_eq!(response.header_counts().ancount(), 0);
     assert!(response.opt().is_some());
 }
+
+/// Verify that a response echoes the class asked (RFC 5936, Section 2.2.2).
+#[test]
+fn a_response_echoes_the_question_class() {
+    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(5);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::SOA, Class::CH)).unwrap();
+    let parsed = ParsedQuery::parse(&question.finish()).unwrap();
+    assert_eq!(parsed.qclass, Class::CH);
+
+    let reply = parsed.error_response(Rcode::NOTAUTH, None);
+    let reply = Message::from_octets(reply.as_slice()).unwrap();
+    assert_eq!(reply.first_question().unwrap().qclass(), Class::CH);
+}

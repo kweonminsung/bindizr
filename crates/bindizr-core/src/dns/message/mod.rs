@@ -94,6 +94,7 @@ pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,
     qtype: u16,
+    qclass: Class,
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
@@ -117,6 +118,7 @@ impl DnsMessageBuilder {
             query_id: query.query_id,
             qname: query.qname.clone(),
             qtype: qtype.to_int(),
+            qclass: query.qclass,
             answers: Vec::new(),
             answers_len: 0,
             signer: None,
@@ -263,7 +265,7 @@ impl DnsMessageBuilder {
 
         let mut question = builder.question();
         question
-            .push((&self.qname, Rtype::from_int(self.qtype), Class::IN))
+            .push((&self.qname, Rtype::from_int(self.qtype), self.qclass))
             .map_err(|e| EncodeMessageError::ComposeQuestion(Box::new(e)))?;
 
         let mut answer = question.answer();

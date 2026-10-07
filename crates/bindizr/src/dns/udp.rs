@@ -3,7 +3,7 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc};
 
-use bindizr_core::dns::message::{self, ExtendedErrorCode, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype};
 use tokio::{net::UdpSocket, sync::Semaphore};
 
 use super::server::{self, DnsContext};
@@ -87,6 +87,19 @@ async fn dispatch_udp_query(
 
     if let Some(response) = query.edns_error_response() {
         log::info!("Refusing the EDNS of a DNS UDP query from {}", client_addr);
+        send_udp_response(socket, client_addr, &response).await;
+        return;
+    }
+
+    // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
+    if query.qclass != Class::IN {
+        log::info!(
+            "Refusing DNS UDP class {} from {}",
+            query.qclass,
+            client_addr
+        );
+        let response =
+            query.error_response(Rcode::NOTAUTH, Some(ExtendedErrorCode::NOT_AUTHORITATIVE));
         send_udp_response(socket, client_addr, &response).await;
         return;
     }

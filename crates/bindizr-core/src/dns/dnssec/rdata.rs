@@ -29,7 +29,7 @@ pub enum KeyRdataError {
 
 /// The digest types `DnssecKey::ds_rdata` computes. SHA-1 only matches a parent's
 /// existing DS: RFC 8624, Section 3.3 forbids it for new delegations, so
-/// `ds_digest_type` never picks it.
+/// `DS_DIGEST_TYPE` is never it.
 pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 
 impl DnssecKey {
@@ -48,7 +48,7 @@ impl DnssecKey {
     }
 
     /// The key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
-    /// `DS_DIGEST_TYPES`; the zone publishes its algorithm's (`ds_digest_type`).
+    /// `DS_DIGEST_TYPES`; the zone publishes `DS_DIGEST_TYPE`.
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, KeyRdataError> {
         let dnskey = self.to_dnskey()?;
         let mut dnskey_rdata = Vec::new();

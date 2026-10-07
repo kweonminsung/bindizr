@@ -240,8 +240,8 @@ pub async fn advance_rollover(
     Ok(response)
 }
 
-/// Publish a replacement for `template` with `algorithm`. Promotion waits
-/// for the DNSKEY TTL; algorithm rollovers may require signing before then.
+/// Publish a replacement for `template` with `algorithm`; promotion waits
+/// Ipub, the DNSKEY TTL plus propagation (RFC 7583, Section 3.2.1).
 pub(crate) async fn publish_replacement_key_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -249,7 +249,11 @@ pub(crate) async fn publish_replacement_key_tx(
     algorithm: DnssecAlgorithm,
 ) -> Result<DnssecKey, ServiceError> {
     let now = Utc::now();
-    let publish_wait = Duration::seconds(i64::from(zone.default_ttl.as_secs()));
+    // The SOA refresh is the propagation delay: how long a secondary that
+    // missed the NOTIFY takes to catch up.
+    let publish_wait = Duration::seconds(
+        i64::from(zone.default_ttl.as_secs()) + i64::from(zone.refresh.as_secs()),
+    );
     let new_key = DnssecKey::generate(
         zone,
         algorithm,
@@ -282,7 +286,7 @@ pub(crate) async fn promote_published_keys_tx(
     let retire_wait = keys
         .iter()
         .filter(|key| key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role))
-        .map(|key| key.retirement_interval_secs(parent_ds_ttl))
+        .map(|key| key.retirement_interval_secs(parent_ds_ttl, zone.refresh.as_secs()))
         .max()
         .unwrap_or(0);
 
