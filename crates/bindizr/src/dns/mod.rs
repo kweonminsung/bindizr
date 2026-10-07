@@ -40,12 +40,21 @@ pub(crate) enum StartDnsError {
     Tls(#[from] tls::LoadServerConfigError),
 }
 
+/// The DNS front end's accept loops, for the daemon to supervise.
+#[derive(Debug)]
+pub(crate) struct DnsServers {
+    pub(crate) tcp: JoinHandle<()>,
+    pub(crate) udp: JoinHandle<()>,
+    /// Present when `dns.tls` names a certificate.
+    pub(crate) tls: Option<JoinHandle<()>>,
+}
+
 /// Bring the DNS front end up: prepare the catalog zone and spawn the TCP,
 /// UDP, and (with a certificate) TLS servers, handing back their accept loops.
 pub(crate) async fn initialize(
     cx: Arc<Context>,
     shutdown: &Shutdown,
-) -> Result<(JoinHandle<()>, JoinHandle<()>, Option<JoinHandle<()>>), StartDnsError> {
+) -> Result<DnsServers, StartDnsError> {
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
 
     // The catalog zone must exist before a secondary asks for it.
@@ -133,5 +142,9 @@ pub(crate) async fn initialize(
     let udp_cx = dns_cx;
     let udp_task = tokio::spawn(udp::run_udp_server(udp_cx, udp_socket, udp_stop));
 
-    Ok((tcp_task, udp_task, tls_task))
+    Ok(DnsServers {
+        tcp: tcp_task,
+        udp: udp_task,
+        tls: tls_task,
+    })
 }

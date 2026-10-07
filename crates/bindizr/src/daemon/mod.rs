@@ -168,7 +168,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
-    let (dns_tcp_task, dns_udp_task, dns_tls_task) = dns::initialize(cx.clone(), &shutdown).await?;
+    let dns_servers = dns::initialize(cx.clone(), &shutdown).await?;
 
     let (control_tx, mut control_rx) = socket::server::control::channel();
     let socket_cx = Arc::new(socket::server::SocketContext::new(cx.clone(), control_tx));
@@ -180,9 +180,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     let mut servers = Servers::new();
     watch(&mut servers, "daemon socket server", socket_task);
     watch(&mut servers, "API server", api_task);
-    watch(&mut servers, "DNS TCP server", dns_tcp_task);
-    watch(&mut servers, "DNS UDP server", dns_udp_task);
-    if let Some(task) = dns_tls_task {
+    watch(&mut servers, "DNS TCP server", dns_servers.tcp);
+    watch(&mut servers, "DNS UDP server", dns_servers.udp);
+    if let Some(task) = dns_servers.tls {
         watch(&mut servers, "DNS TLS server", task);
     }
 
