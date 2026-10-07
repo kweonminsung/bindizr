@@ -43,5 +43,5 @@ On a package install, run these commands with `sudo`.
 
 | Symptom | Fix |
 | --- | --- |
-| `unsigned NSUPDATE refused` | Sign the request with a TSIG key Bindizr knows, whose role covers the records the update touches — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate_tsig_required` is for testing only. |
+| `unsigned NSUPDATE refused` | Sign the request with a TSIG key Bindizr knows, whose role covers the records the update touches — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate.tsig_required` is for testing only. |
 | `dnssec disable` refused | The parent still serves the zone's DS, or could not be asked. Remove the DS at the parent and wait out its TTL, or pass `--skip-ds-check` when the parent is known to be clear — see [DNSSEC](dnssec/index.md). |

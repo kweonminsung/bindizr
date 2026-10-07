@@ -35,12 +35,12 @@ EOF
 
 ## Unsigned requests
 
-With `dns.nsupdate_tsig_required = true`, the default, an unsigned update is
+With `dns.nsupdate.tsig_required = true`, the default, an unsigned update is
 refused for all zones.
 
 !!! warning "Unsigned updates are for testing only"
 
-    `dns.nsupdate_tsig_required = false` accepts unsigned requests for every
+    `dns.nsupdate.tsig_required = false` accepts unsigned requests for every
     zone from any client that reaches the DNS listener, as
     `api.authentication_required = false` does for the HTTP API. Signed
     requests are always verified either way.

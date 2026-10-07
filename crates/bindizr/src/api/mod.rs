@@ -108,7 +108,7 @@ pub(crate) enum StartApiError {
 }
 
 /// Bind the HTTP API listener and spawn the server in the background, over TLS
-/// when `api.tls_cert_file` and `api.tls_key_file` name a pair. The returned
+/// when `api.tls` names a certificate and key. The returned
 /// handle finishes once `shutdown` fires and in-flight requests are answered.
 pub(crate) async fn initialize(
     cx: Arc<Context>,
@@ -129,7 +129,7 @@ pub(crate) async fn initialize(
     let Some(TlsFiles {
         cert_file,
         key_file,
-    }) = bindizr_config.api.tls_files()
+    }) = bindizr_config.api.tls.tls_files()
     else {
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();

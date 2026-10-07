@@ -12,6 +12,8 @@ use crate::{
 struct TestConfigToml {
     api_listen_addr: &'static str,
     authentication_required: bool,
+    /// Extra lines after the `[api]` keys, as `dns_extra` below.
+    api_extra: &'static str,
     database_type: &'static str,
     /// Include the `[database.mysql]` / `[database.postgresql]` sections.
     unselected_databases: bool,
@@ -28,6 +30,7 @@ impl Default for TestConfigToml {
         Self {
             api_listen_addr: "127.0.0.1",
             authentication_required: false,
+            api_extra: "",
             database_type: "sqlite",
             unselected_databases: true,
             dns_extra: "",
@@ -51,7 +54,7 @@ impl TestConfigToml {
 listen_addr = "{api_listen_addr}"
 listen_port = {api_listen_port}
 authentication_required = {authentication_required}
-
+{api_extra}
 [database]
 type = "{database_type}"
 
@@ -67,6 +70,7 @@ level = "debug"
 "#,
             api_listen_addr = self.api_listen_addr,
             authentication_required = self.authentication_required,
+            api_extra = self.api_extra,
             database_type = self.database_type,
             dns_extra = self.dns_extra,
             api_listen_port = self.api_listen_port,
@@ -84,7 +88,7 @@ fn parse_config(toml: &TestConfigToml) -> Result<Config, ConfigError> {
 #[test]
 fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
-        dns_extra: "nsupdate_tsig_required = false\n\n[dns.notify]\nretries = 4\ntimeout_secs = 9",
+        dns_extra: "[dns.nsupdate]\ntsig_required = false\n\n[dns.notify]\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
     .unwrap();
@@ -98,7 +102,7 @@ fn from_toml_accepts_valid_config() {
     assert_eq!(parsed.api.listen_port, 3000);
     assert_eq!(parsed.dns.notify.retries, 4);
     assert_eq!(parsed.dns.notify.timeout_secs, 9);
-    assert!(!parsed.dns.nsupdate_tsig_required);
+    assert!(!parsed.dns.nsupdate.tsig_required);
 }
 
 /// Verify that `from_toml` defaults missing optional fields.
@@ -112,8 +116,11 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.batch_ms, 0);
     assert_eq!(parsed.dns.notify.retries, 3);
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
-    assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
-    assert!(parsed.dns.nsupdate_tsig_required);
+    assert_eq!(parsed.dns.transfer.cache_max_records, 500_000);
+    // The registered DNS over TLS port, and no certificate: the listener is off.
+    assert_eq!(parsed.dns.tls.listen_port, 853);
+    assert!(parsed.dns.tls.tls_files().is_none());
+    assert!(parsed.dns.nsupdate.tsig_required);
     assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
@@ -126,13 +133,14 @@ fn from_toml_defaults_fields_of_an_empty_sub_table() {
     // The sample file keeps every sub-table header and comments out the
     // keys, so a header with nothing under it must read as the defaults.
     let parsed = parse_config(&TestConfigToml {
-        dns_extra: "[dns.notify]\n\n[dns.transfer_cache]\nmax_records = 10",
+        dns_extra: "[dns.notify]\n\n[dns.tls]\n\n[dns.transfer]\ncache_max_records = 10",
         ..Default::default()
     })
     .unwrap();
 
     assert_eq!(parsed.dns.notify, Default::default());
-    assert_eq!(parsed.dns.transfer_cache.max_records, 10);
+    assert_eq!(parsed.dns.tls, Default::default());
+    assert_eq!(parsed.dns.transfer.cache_max_records, 10);
 }
 
 /// Verify that `from_toml` rejects a key it does not know.
@@ -212,6 +220,8 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
             "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
             "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
+            "BINDIZR_API_TLS_CERT_FILE" => Some("/tls/api.crt".to_string()),
+            "BINDIZR_API_TLS_KEY_FILE" => Some("/tls/api.key".to_string()),
             "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
             "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
             "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
@@ -221,6 +231,9 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
             "BINDIZR_DNS_NOTIFY_RETRIES" => Some("7".to_string()),
             "BINDIZR_DNS_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
+            "BINDIZR_DNS_TLS_LISTEN_PORT" => Some("8853".to_string()),
+            "BINDIZR_DNS_TLS_CERT_FILE" => Some("/tls/xot.crt".to_string()),
+            "BINDIZR_DNS_TLS_KEY_FILE" => Some("/tls/xot.key".to_string()),
             "BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS" => Some("0".to_string()),
             "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
@@ -235,6 +248,11 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert!(!overridden.api.authentication_required);
     assert!(!overridden.api.metrics_enabled);
     assert!(overridden.api.external_dns_enabled);
+    assert_eq!(
+        overridden.api.tls.cert_file.as_deref(),
+        Some("/tls/api.crt")
+    );
+    assert_eq!(overridden.api.tls.key_file.as_deref(), Some("/tls/api.key"));
     assert!(matches!(
         overridden.database.database_type,
         DatabaseType::MySql
@@ -246,10 +264,16 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
     assert_eq!(overridden.dns.listen_port, 5353);
     assert_eq!(overridden.dns.catalog_zone_name.as_str(), "catalog.staging");
-    assert!(!overridden.dns.nsupdate_tsig_required);
+    assert!(!overridden.dns.nsupdate.tsig_required);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
     assert_eq!(overridden.dns.notify.retries, 7);
     assert_eq!(overridden.dns.notify.timeout_secs, 11);
+    assert_eq!(overridden.dns.tls.listen_port, 8853);
+    assert_eq!(
+        overridden.dns.tls.cert_file.as_deref(),
+        Some("/tls/xot.crt")
+    );
+    assert_eq!(overridden.dns.tls.key_file.as_deref(), Some("/tls/xot.key"));
     assert_eq!(overridden.dns.zone_history_retention_days, 0);
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
@@ -321,6 +345,71 @@ fn from_toml_rejects_port_zero() {
         "{}",
         err
     );
+
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "[dns.tls]\nlisten_port = 0",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns.tls.listen_port must not be 0"),
+        "{}",
+        err
+    );
+}
+
+/// Verify that `from_toml` rejects a TLS certificate without its key, and
+/// the reverse, for the API and the DNS listener alike.
+#[test]
+fn from_toml_rejects_a_tls_half_pair() {
+    let err = parse_config(&TestConfigToml {
+        api_extra: "[api.tls]\ncert_file = \"/tls/api.crt\"",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("api.tls.cert_file needs api.tls.key_file"),
+        "{}",
+        err
+    );
+
+    let err = parse_config(&TestConfigToml {
+        api_extra: "[api.tls]\nkey_file = \"/tls/api.key\"",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("api.tls.key_file needs api.tls.cert_file"),
+        "{}",
+        err
+    );
+
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "[dns.tls]\ncert_file = \"/tls/xot.crt\"",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns.tls.cert_file needs dns.tls.key_file"),
+        "{}",
+        err
+    );
+
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "[dns.tls]\nkey_file = \"/tls/xot.key\"",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns.tls.key_file needs dns.tls.cert_file"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that `from_toml` rejects listeners sharing a port.
@@ -334,7 +423,49 @@ fn from_toml_rejects_listeners_sharing_a_port() {
     .unwrap_err();
 
     assert!(
-        err.to_string().contains("cannot share port 5353"),
+        err.to_string()
+            .contains("api and dns cannot share port 5353"),
+        "{}",
+        err
+    );
+}
+
+/// Verify that the TLS listener's port is checked against the others only
+/// while the listener is on.
+#[test]
+fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
+    // Off, the port is never bound, so an API on 853 is fine.
+    let parsed = parse_config(&TestConfigToml {
+        api_listen_port: 853,
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(parsed.dns.tls.listen_port, 853);
+
+    let on = "[dns.tls]\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"";
+    let err = parse_config(&TestConfigToml {
+        api_listen_port: 853,
+        dns_extra: on,
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("api and dns.tls cannot share port 853"),
+        "{}",
+        err
+    );
+
+    // The TLS listener shares the DNS address, so equal ports always collide.
+    let err = parse_config(&TestConfigToml {
+        dns_listen_port: 853,
+        dns_extra: on,
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns and dns.tls cannot share port 853"),
         "{}",
         err
     );
@@ -372,6 +503,11 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
         current.fixed_settings_changed(&catalog_renamed),
         ["dns.catalog_zone_name"]
     );
+
+    // The TLS listener is bound and its certificate read at startup.
+    let mut tls_moved = current.clone();
+    tls_moved.dns.tls.listen_port += 1;
+    assert_eq!(current.fixed_settings_changed(&tls_moved), ["dns.tls"]);
 }
 
 /// Verify that `from_toml` rejects a catalog zone name that is not a zone name.

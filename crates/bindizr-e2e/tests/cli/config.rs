@@ -116,8 +116,11 @@ async fn config_list_and_get_show_loaded_config() {
 
     let listed = app.run_cli_success(&["config", "list"]).await;
     assert!(listed.contains("[api]"));
+    assert!(listed.contains("[api.tls]"));
     assert!(listed.contains("[dns]"));
     assert!(listed.contains("[dns.notify]"));
+    assert!(listed.contains("[dns.nsupdate]"));
+    assert!(listed.contains("[dns.tls]"));
 
     let value = app
         .run_cli_success(&["config", "get", "api.authentication_required"])

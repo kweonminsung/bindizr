@@ -147,12 +147,13 @@ url = ""
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
-nsupdate_tsig_required = {nsupdate_tsig_required}
-
 
 [dns.notify]
 retries = 0
 timeout_secs = 1
+
+[dns.nsupdate]
+tsig_required = {nsupdate_tsig_required}
 
 [logging]
 level = "error"
@@ -168,7 +169,9 @@ level = "error"
                     .parent()
                     .expect("config has a directory")
                     .display();
-                format!("tls_cert_file = \"{dir}/tls.crt\"\ntls_key_file = \"{dir}/tls.key\"\n")
+                format!(
+                    "\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n"
+                )
             }
             false => String::new(),
         },

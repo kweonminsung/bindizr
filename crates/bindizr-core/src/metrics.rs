@@ -253,14 +253,14 @@ impl Metrics {
         let zone_cache_evictions_total = IntCounter::new(
             "bindizr_zone_cache_evictions_total",
             "Zones dropped to make room; a rising count beside a low hit ratio \
-             means dns.transfer_cache.max_records is too small for the working set.",
+             means dns.transfer.cache_max_records is too small for the working set.",
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &zone_cache_evictions_total)?;
 
         let zone_cache_records = IntGauge::new(
             "bindizr_zone_cache_records",
-            "Records the zone cache holds, against dns.transfer_cache.max_records.",
+            "Records the zone cache holds, against dns.transfer.cache_max_records.",
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &zone_cache_records)?;

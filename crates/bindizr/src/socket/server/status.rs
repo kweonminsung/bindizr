@@ -31,7 +31,7 @@ pub(crate) async fn handle_status(
                 )),
             ),
         };
-    let scheme = if config.api.tls_files().is_some() {
+    let scheme = if config.api.tls.tls_files().is_some() {
         "https"
     } else {
         "http"

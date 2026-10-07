@@ -6,6 +6,9 @@ metrics_enabled = true
 external_dns_enabled = false
 openapi_enabled = false
 
+[api.tls]                       # Set both files to serve HTTPS
+# cert_file = "/etc/bindizr/tls/tls.crt"
+# key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
 type = "sqlite"
@@ -23,7 +26,6 @@ url = ""
 listen_addr = "0.0.0.0"
 listen_port = 53
 catalog_zone_name = "catalog.bindizr"
-nsupdate_tsig_required = true  # false accepts updates from anyone (testing only)
 zone_history_retention_days = 365
 scheduler_interval_secs = 3600
 
@@ -33,8 +35,16 @@ batch_ms = 0
 retries = 3
 timeout_secs = 3
 
-[dns.transfer_cache]
-max_records = 500000
+[dns.nsupdate]
+tsig_required = true            # false accepts updates from anyone (testing only)
+
+[dns.tls]                       # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
+listen_port = 853
+# cert_file = "/etc/bindizr/tls/xot.crt"
+# key_file = "/etc/bindizr/tls/xot.key"
+
+[dns.transfer]
+cache_max_records = 500000
 
 [dns.zone_defaults]             # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)

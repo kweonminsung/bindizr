@@ -43,8 +43,10 @@ HTTPS directly, set both PEM file paths:
 ```toml
 [api]
 listen_addr = "0.0.0.0"
-tls_cert_file = "/etc/bindizr/tls/tls.crt"
-tls_key_file = "/etc/bindizr/tls/tls.key"
+
+[api.tls]
+cert_file = "/etc/bindizr/tls/tls.crt"
+key_file = "/etc/bindizr/tls/tls.key"
 ```
 
 Supplying only one file is rejected at startup. Certificates are read at

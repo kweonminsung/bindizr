@@ -139,8 +139,11 @@ fn print_config(config: &Config) {
     print_value("metrics_enabled", config.api.metrics_enabled);
     print_value("external_dns_enabled", config.api.external_dns_enabled);
     print_value("openapi_enabled", config.api.openapi_enabled);
-    print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
-    print_optional("tls_key_file", config.api.tls_key_file.as_deref());
+    outln!();
+
+    print_section("api.tls");
+    print_optional("cert_file", config.api.tls.cert_file.as_deref());
+    print_optional("key_file", config.api.tls.key_file.as_deref());
     outln!();
 
     print_section("database");
@@ -170,7 +173,6 @@ fn print_config(config: &Config) {
         "scheduler_interval_secs",
         config.dns.scheduler_interval_secs,
     );
-    print_value("nsupdate_tsig_required", config.dns.nsupdate_tsig_required);
     outln!();
 
     print_section("dns.notify");
@@ -179,8 +181,18 @@ fn print_config(config: &Config) {
     print_value("timeout_secs", config.dns.notify.timeout_secs);
     outln!();
 
-    print_section("dns.transfer_cache");
-    print_value("max_records", config.dns.transfer_cache.max_records);
+    print_section("dns.nsupdate");
+    print_value("tsig_required", config.dns.nsupdate.tsig_required);
+    outln!();
+
+    print_section("dns.tls");
+    print_value("listen_port", config.dns.tls.listen_port);
+    print_optional("cert_file", config.dns.tls.cert_file.as_deref());
+    print_optional("key_file", config.dns.tls.key_file.as_deref());
+    outln!();
+
+    print_section("dns.transfer");
+    print_value("cache_max_records", config.dns.transfer.cache_max_records);
     outln!();
 
     print_section("dns.zone_defaults");

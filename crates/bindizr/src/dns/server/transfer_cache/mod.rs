@@ -26,7 +26,7 @@ use super::DnsContext;
 
 /// Read the configured cache record budget, which counts records rather than bytes.
 fn max_records(dns_cx: &Context) -> usize {
-    dns_cx.config().dns.transfer_cache.max_records as usize
+    dns_cx.config().dns.transfer.cache_max_records as usize
 }
 
 /// Everything a full transfer serves for one zone: the user records and the
@@ -56,7 +56,7 @@ struct CachedTransfer {
 }
 
 /// The DNS front end's transfer cache: one cached transfer per zone, behind
-/// one lock, within the record budget `dns.transfer_cache.max_records` sets.
+/// one lock, within the record budget `dns.transfer.cache_max_records` sets.
 #[derive(Debug, Default)]
 pub(crate) struct TransferCache {
     entries: Mutex<Entries>,

@@ -159,7 +159,7 @@ pub(crate) async fn apply_update(
 }
 
 /// Verify TSIG and retain its response signer, or return `None` for an allowed unsigned update.
-/// Disabling `nsupdate_tsig_required` never bypasses verification of signed requests.
+/// Disabling `dns.nsupdate.tsig_required` never bypasses verification of signed requests.
 async fn authenticate_request(
     dns_cx: &DnsContext,
     request: &UpdateRequest,
@@ -173,7 +173,7 @@ async fn authenticate_request(
             // An unsigned update carries no identity, so this admits every
             // client that reaches the listener — the same trade
             // `api.authentication_required = false` makes for the API.
-            if !cx.config().dns.nsupdate_tsig_required {
+            if !cx.config().dns.nsupdate.tsig_required {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(
