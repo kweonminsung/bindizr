@@ -267,6 +267,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tower-http 0.7.0",
  "utoipa",
 ]

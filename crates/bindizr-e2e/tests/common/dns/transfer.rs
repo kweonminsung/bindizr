@@ -1,9 +1,10 @@
-//! Pulling a zone over TCP the way a secondary does, signed or not, so the
-//! transfer path can be driven without BIND on the host.
+//! Pulling a zone over TCP or TLS the way a secondary does, signed or not, so
+//! the transfer path can be driven without BIND on the host.
 
 use std::{
     io::{Read, Write},
-    net::TcpStream,
+    net::{IpAddr, Ipv4Addr, TcpStream},
+    sync::Arc,
     time::Duration,
 };
 
@@ -12,6 +13,7 @@ use domain::{
     rdata::tsig::Time48,
     tsig::ClientSequence,
 };
+use rustls::{ClientConfig, ClientConnection, StreamOwned, pki_types::ServerName};
 
 use super::parse_name;
 use crate::common::dns::nsupdate::SigningKey;
@@ -42,17 +44,50 @@ impl TransferOutcome {
     }
 }
 
-/// Run an AXFR against `port`. With a key the request is signed and every
-/// envelope's MAC is verified, so a server that answered unsigned — which
-/// BIND would discard — fails here too.
+/// Run an AXFR against `port` over plain TCP. With a key the request is
+/// signed and every envelope's MAC is verified, so a server that answered
+/// unsigned — which BIND would discard — fails here too.
 pub(crate) fn axfr(
     port: u16,
     zone: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferOutcome, String> {
-    let query_id = (std::process::id() as u16)
-        .wrapping_add(port)
-        .wrapping_add(7);
+    let mut stream = connect(port)?;
+    transfer(&mut stream, zone, key)
+}
+
+/// Run an AXFR against `port` over TLS (XoT, RFC 9103) as `client` is
+/// configured to; a handshake the server refuses is the transfer's error.
+pub(crate) fn xot(
+    port: u16,
+    zone: &str,
+    key: Option<&SigningKey>,
+    client: ClientConfig,
+) -> Result<TransferOutcome, String> {
+    let tcp = connect(port)?;
+    let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let session = ClientConnection::new(Arc::new(client), server).map_err(|e| e.to_string())?;
+    transfer(&mut StreamOwned::new(session, tcp), zone, key)
+}
+
+/// Connect to the listener on `port`, with a read timeout so a silent server
+/// fails the test instead of hanging it.
+fn connect(port: u16) -> Result<TcpStream, String> {
+    let stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .map_err(|e| e.to_string())?;
+    Ok(stream)
+}
+
+/// Transfer `zone` over an open stream, verifying the signature when `key`
+/// signed the request.
+fn transfer<S: Read + Write>(
+    stream: &mut S,
+    zone: &str,
+    key: Option<&SigningKey>,
+) -> Result<TransferOutcome, String> {
+    let query_id = (std::process::id() as u16).wrapping_add(7);
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     let mut question = builder.question();
@@ -71,10 +106,6 @@ pub(crate) fn axfr(
     };
     let query = additional.finish();
 
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|e| e.to_string())?;
     let mut framed = (query.len() as u16).to_be_bytes().to_vec();
     framed.extend_from_slice(&query);
     stream.write_all(&framed).map_err(|e| e.to_string())?;
@@ -83,7 +114,7 @@ pub(crate) fn axfr(
     let mut records = 0usize;
     let mut soa_seen = 0usize;
     while soa_seen < 2 {
-        let Some(frame) = read_frame(&mut stream)? else {
+        let Some(frame) = read_frame(stream)? else {
             return Err(format!(
                 "the transfer ended after {records} record(s) without its closing SOA"
             ));
@@ -115,7 +146,7 @@ pub(crate) fn axfr(
 }
 
 /// Read the next length-prefixed DNS transfer frame.
-fn read_frame(stream: &mut TcpStream) -> Result<Option<Vec<u8>>, String> {
+fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
     let mut len = [0u8; 2];
     match stream.read_exact(&mut len) {
         Ok(()) => {}

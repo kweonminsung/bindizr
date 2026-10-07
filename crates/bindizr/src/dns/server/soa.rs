@@ -12,7 +12,7 @@ use bindizr_core::{
     metrics::{SoaResult, XfrResult},
 };
 use bindizr_service::zone::{self, TransferAccess};
-use tokio::net::{TcpStream, UdpSocket};
+use tokio::net::UdpSocket;
 
 use crate::dns::{
     error::XfrError,
@@ -21,6 +21,7 @@ use crate::dns::{
         auth::{TransferIdentity, TransferRefusal, authenticate_transfer},
         catalog,
     },
+    stream::DnsStream,
     wire,
 };
 
@@ -28,7 +29,7 @@ use crate::dns::{
 /// on the wire: the metric says whether secondaries are getting a serial.
 pub(crate) async fn handle_tcp_soa(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],

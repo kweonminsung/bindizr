@@ -37,6 +37,8 @@ impl TestApp {
             client,
             base_url: COMPOSE_API_BASE_URL.to_string(),
             dns_port: None,
+            dns_tls_port: None,
+            tls_cert: None,
             dns_secondary_ports: SECONDARY_PORTS.to_vec(),
             namespace: test_namespace(),
             auth_token: None,

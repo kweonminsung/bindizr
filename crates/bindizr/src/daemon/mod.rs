@@ -83,7 +83,9 @@ impl DaemonError {
     pub(crate) fn is_configuration(&self) -> bool {
         matches!(
             self,
-            DaemonError::Config(_) | DaemonError::Api(StartApiError::Tls { .. })
+            DaemonError::Config(_)
+                | DaemonError::Api(StartApiError::Tls { .. })
+                | DaemonError::Dns(StartDnsError::Tls(_))
         )
     }
 }
@@ -166,7 +168,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
-    let (dns_tcp_task, dns_udp_task) = dns::initialize(cx.clone(), &shutdown).await?;
+    let (dns_tcp_task, dns_udp_task, dns_tls_task) = dns::initialize(cx.clone(), &shutdown).await?;
 
     let (control_tx, mut control_rx) = socket::server::control::channel();
     let socket_cx = Arc::new(socket::server::SocketContext::new(cx.clone(), control_tx));
@@ -180,6 +182,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     watch(&mut servers, "API server", api_task);
     watch(&mut servers, "DNS TCP server", dns_tcp_task);
     watch(&mut servers, "DNS UDP server", dns_udp_task);
+    if let Some(task) = dns_tls_task {
+        watch(&mut servers, "DNS TLS server", task);
+    }
 
     // Publish the start time only after all front ends serve; restart
     // polling and the uptime gauge use this same readiness point.

@@ -21,9 +21,8 @@ use bindizr_core::{
     model::transfer::TransferKind,
 };
 use bindizr_service::{Context, transfer};
-use tokio::net::TcpStream;
 
-use crate::dns::{error::XfrError, wire};
+use crate::dns::{error::XfrError, stream::DnsStream, wire};
 
 /// The DNS front end's context: the daemon's, plus the caches only this
 /// front end reads. A handler takes it first as `dns_cx` and binds the
@@ -61,7 +60,7 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
 /// Count by the requested type so an IXFR falling back to AXFR still counts as IXFR.
 pub(crate) async fn handle_tcp_xfr(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],

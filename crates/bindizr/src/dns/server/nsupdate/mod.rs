@@ -14,9 +14,9 @@ use bindizr_core::{
     metrics::NsupdateResult,
 };
 use thiserror::Error;
-use tokio::net::{TcpStream, UdpSocket};
+use tokio::net::UdpSocket;
 
-use crate::dns::{error::XfrError, server::DnsContext};
+use crate::dns::{error::XfrError, server::DnsContext, stream::DnsStream};
 
 /// Why an UPDATE was not answered, for the listener's log.
 #[derive(Debug, Error)]
@@ -32,7 +32,7 @@ pub(crate) enum NsupdateError {
 /// Apply a dynamic update received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), NsupdateError> {

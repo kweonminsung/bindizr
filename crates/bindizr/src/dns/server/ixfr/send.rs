@@ -12,14 +12,13 @@ use bindizr_core::{
     },
 };
 use thiserror::Error;
-use tokio::net::TcpStream;
 
-use crate::dns::error::XfrError;
+use crate::dns::{error::XfrError, stream::DnsStream};
 
 /// The whole answer when the client is already at the current serial: one
 /// SOA and nothing to replay (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     query: &message::ParsedQuery,
     current_soa: &ZoneVersion,
     signer: Option<TransferSigner>,
@@ -57,7 +56,7 @@ pub(crate) enum IxfrSendError {
 /// 64 KiB wire limit, and reports whether a failure left the stream dirty so
 /// the caller can decide about AXFR fallback.
 pub(crate) async fn send_ixfr_response(
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     query: &message::ParsedQuery,
     zone: &Zone,
     client_serial: Serial,

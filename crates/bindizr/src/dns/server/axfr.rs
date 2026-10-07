@@ -8,16 +8,15 @@ use bindizr_service::{
     transfer,
     zone::{self, TransferAccess},
 };
-use tokio::net::TcpStream;
 
 use super::{auth::TransferIdentity, catalog, transfer_cache};
-use crate::dns::{error::XfrError, server::DnsContext};
+use crate::dns::{error::XfrError, server::DnsContext, stream::DnsStream};
 
 /// Send AXFR content with the original QTYPE, including IXFR fallback.
 /// Claim the signer only after authorization, leaving it available for refusal responses.
 pub(crate) async fn handle_axfr(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     response_qtype: Rtype,

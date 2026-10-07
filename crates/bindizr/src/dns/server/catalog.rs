@@ -5,9 +5,8 @@ use bindizr_core::{
 use bindizr_service::zone;
 use chrono::Utc;
 use ring::digest::{Context, SHA256};
-use tokio::net::TcpStream;
 
-use crate::dns::{error::XfrError, server::DnsContext};
+use crate::dns::{error::XfrError, server::DnsContext, stream::DnsStream};
 
 /// Generates the catalog zone and its member zone list from `zones`, the
 /// served zones loaded where the transfer was authorized.
@@ -81,7 +80,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
 /// Send a catalog zone transfer using the requested question type.
 pub(crate) async fn handle_catalog_axfr(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
     signer: Option<TransferSigner>,

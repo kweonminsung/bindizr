@@ -13,16 +13,15 @@ use bindizr_service::{
     transfer,
     zone::{self, TransferAccess, TransferDelta},
 };
-use tokio::net::TcpStream;
 
 use self::send::{IxfrSendError, send_ixfr_response, send_soa_response};
 use super::{auth::TransferIdentity, axfr};
-use crate::dns::{error::XfrError, server::DnsContext};
+use crate::dns::{error::XfrError, server::DnsContext, stream::DnsStream};
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.
 pub(crate) async fn handle_ixfr(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    stream: &mut DnsStream,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     identity: &mut TransferIdentity,
