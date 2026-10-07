@@ -108,15 +108,17 @@ summary per secondary:
 
 ```text
 $ bindizr secondary transfers ns2
-ZONE            TRANSFER     SERIAL  ADDRESS     AT                    ERROR
-example.com     IXFR delta   42      10.0.0.14   2026-09-28T09:41:05Z  -
-example.net     AXFR         7       10.0.0.14   2026-09-28T09:40:58Z  -
-internal.test   refused      -       10.0.0.14   2026-09-28T09:40:58Z  TSIG key 'xfr-key' is not granted 'zone:transfer' in zone 'internal.test'
+ZONE            TRANSFER     TRANSPORT  SERIAL  ADDRESS     AT                    ERROR
+example.com     IXFR delta   TLS        42      10.0.0.14   2026-09-28T09:41:05Z  -
+example.net     AXFR         TLS        7       10.0.0.14   2026-09-28T09:40:58Z  -
+internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z  TSIG key 'xfr-key' is not granted 'zone:transfer' in zone 'internal.test'
 3 zones: 1 IXFR delta, 0 IXFR full, 1 AXFR, 1 refused, 0 failed
 ```
 
 `IXFR full` is an IXFR answered with the whole zone because the journal no
 longer held the delta; `refused` and `failed` carry the reason in `ERROR`.
+`TRANSPORT` says whether the request came over plain TCP or TLS, and `zone
+status` marks a TLS transfer with `over TLS`.
 `--zone` narrows the list and `--limit` shortens it; the summary counts every
 zone regardless. The rows are in the database, so a restart keeps them and
 deleting a zone drops them.

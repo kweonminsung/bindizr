@@ -600,6 +600,8 @@ pub(crate) struct TransferRow {
     pub(crate) zone_name: String,
     #[tabled(rename = "TRANSFER")]
     pub(crate) transfer: String,
+    #[tabled(rename = "TRANSPORT")]
+    pub(crate) transport: String,
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: String,
     #[tabled(rename = "ADDRESS")]
@@ -616,6 +618,7 @@ impl From<&TransferResponse> for TransferRow {
         TransferRow {
             zone_name: transfer.zone_name.clone(),
             transfer: display_transfer_kind(transfer),
+            transport: transfer.transport.to_string(),
             serial: display_option(&transfer.serial),
             address: transfer.address.clone(),
             at: display_time(transfer.at),

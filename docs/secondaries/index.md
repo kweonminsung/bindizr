@@ -104,6 +104,9 @@ key was actually used is visible rather than assumed:
 XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=false
 ```
 
+A transfer over TLS logs as `XFR TLS query`, and `secondary transfers` lists
+the transport beside each one.
+
 ## Checking that it worked
 
 | Command | Checks |

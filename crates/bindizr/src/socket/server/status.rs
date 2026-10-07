@@ -47,6 +47,9 @@ pub(crate) async fn handle_status(
         ),
         api_authentication: config.api.authentication_required,
         dns_addr: SocketAddr::new(config.dns.listen_addr, config.dns.listen_port).to_string(),
+        dns_tls_addr: config.dns.tls.tls_files().map(|_| {
+            SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port).to_string()
+        }),
         database_type: config.database.database_type.to_string(),
         secondaries,
         zones,

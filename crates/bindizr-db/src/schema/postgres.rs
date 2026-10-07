@@ -185,6 +185,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             zone_id INTEGER NOT NULL,
             kind VARCHAR(4) NOT NULL,
             result VARCHAR(7) NOT NULL,
+            transport VARCHAR(3) NOT NULL,
             incremental BOOLEAN NOT NULL,
             serial INTEGER NULL,
             served_at TIMESTAMPTZ NOT NULL,

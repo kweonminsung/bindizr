@@ -134,6 +134,7 @@ pub(crate) async fn handle_axfr(
         client_ip,
         zone.id,
         TransferKind::from_qtype(response_qtype),
+        stream.transport(),
         false,
         serial,
     )

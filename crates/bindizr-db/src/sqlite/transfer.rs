@@ -12,12 +12,13 @@ pub(crate) async fn upsert(pool: &Pool<Sqlite>, transfer: Transfer) -> Result<()
 
     sqlx::query(
         r#"
-        INSERT INTO transfers (client_addr, zone_id, kind, result, incremental, serial, served_at, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO transfers (client_addr, zone_id, kind, result, transport, incremental, serial, served_at, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(client_addr, zone_id)
         DO UPDATE SET
             kind = excluded.kind,
             result = excluded.result,
+            transport = excluded.transport,
             incremental = excluded.incremental,
             serial = excluded.serial,
             served_at = excluded.served_at,
@@ -28,6 +29,7 @@ pub(crate) async fn upsert(pool: &Pool<Sqlite>, transfer: Transfer) -> Result<()
     .bind(transfer.zone_id)
     .bind(transfer.kind.as_str())
     .bind(transfer.result.as_str())
+    .bind(transfer.transport.as_str())
     .bind(transfer.incremental)
     .bind(transfer.serial)
     .bind(transfer.served_at)
@@ -47,7 +49,7 @@ pub(crate) async fn list_by_client_addr_with_zone(
 
     let transfers = sqlx::query_as::<_, TransferWithZone>(
         r#"
-        SELECT t.client_addr, t.kind, t.result, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
+        SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
         FROM transfers t
         INNER JOIN zones z ON z.id = t.zone_id
         WHERE t.client_addr = ?
@@ -71,7 +73,7 @@ pub(crate) async fn get_by_client_addr_and_zone_name_with_zone(
 
     let transfer = sqlx::query_as::<_, TransferWithZone>(
         r#"
-        SELECT t.client_addr, t.kind, t.result, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
+        SELECT t.client_addr, t.kind, t.result, t.transport, t.incremental, t.serial, t.served_at, t.error, z.name AS zone_name
         FROM transfers t
         INNER JOIN zones z ON z.id = t.zone_id
         WHERE t.client_addr = ? AND z.name = ?

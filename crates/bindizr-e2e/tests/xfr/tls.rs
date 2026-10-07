@@ -2,6 +2,7 @@
 //! the plain one does, under the same key or address check.
 
 use domain::base::iana::Rcode;
+use reqwest::{Method, StatusCode};
 use rustls::{
     ClientConfig, RootCertStore, SupportedProtocolVersion, pki_types::CertificateDer, version,
 };
@@ -62,6 +63,27 @@ async fn an_unsigned_transfer_over_tls_follows_the_secondary_registry() {
     // SOA polls and older secondaries still arrive on the plain port.
     let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
     assert!(outcome.records() >= 3);
+
+    // The transfer log and the metric say which transport served each one.
+    let (status, body) = app
+        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["transfers"][0]["transport"], "tcp", "{body}");
+    let tls_ok = super::counter(
+        &app,
+        "bindizr_xfr_total",
+        &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tls""#],
+    )
+    .await;
+    let tcp_ok = super::counter(
+        &app,
+        "bindizr_xfr_total",
+        &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tcp""#],
+    )
+    .await;
+    assert_eq!(tls_ok, 1.0);
+    assert_eq!(tcp_ok, 1.0);
 }
 
 /// Verify that a signed transfer over TLS is answered under its key, every

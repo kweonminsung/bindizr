@@ -156,6 +156,9 @@ pub(crate) async fn check_services(report: &mut Report) {
     let database_failed = doctor.database.status == DoctorCheckStatus::Failed;
     report.push(doctor.database);
     report.push(doctor.dns_server);
+    if let Some(check) = doctor.dns_tls_server {
+        report.push(check);
+    }
 
     if database_failed {
         report.skip("Secondary checks skipped: the database did not answer");

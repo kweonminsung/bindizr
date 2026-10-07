@@ -10,6 +10,7 @@ use bindizr_core::{
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
     metrics::{SoaResult, XfrResult},
+    model::transfer::TransferTransport,
 };
 use bindizr_service::zone::{self, TransferAccess};
 use tokio::net::UdpSocket;
@@ -77,18 +78,25 @@ pub(crate) async fn handle_udp_ixfr(
     let cx = dns_cx.daemon();
     let (response, outcome) = handle_soa_request(dns_cx, query, client_addr.ip(), query_data)
         .await
-        .inspect_err(|_| cx.metrics().track_xfr(Rtype::IXFR, XfrResult::Failed))?;
+        .inspect_err(|_| {
+            cx.metrics()
+                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+        })?;
     socket
         .send_to(&response, client_addr)
         .await
-        .inspect_err(|_| cx.metrics().track_xfr(Rtype::IXFR, XfrResult::Failed))?;
+        .inspect_err(|_| {
+            cx.metrics()
+                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+        })?;
     let result = match outcome {
         SoaResult::Ok => XfrResult::Truncated,
         SoaResult::Refused => XfrResult::Refused,
         SoaResult::NotAuth => XfrResult::NotAuth,
         SoaResult::Failed => XfrResult::Failed,
     };
-    cx.metrics().track_xfr(Rtype::IXFR, result);
+    cx.metrics()
+        .track_xfr(Rtype::IXFR, TransferTransport::Udp, result);
     Ok(())
 }
 

@@ -6,7 +6,7 @@ use bindizr_core::{
     dns::Serial,
     model::{
         secondary::SecondaryId,
-        transfer::{TransferKind, TransferResult, TransferWithZone},
+        transfer::{TransferKind, TransferResult, TransferTransport, TransferWithZone},
     },
 };
 use chrono::{DateTime, Utc};
@@ -133,6 +133,9 @@ pub struct TransferResponse {
     pub kind: TransferKind,
     /// Answered, refused, or allowed and then broken off by a failure.
     pub result: TransferResult,
+    /// Plain TCP or TLS (XoT).
+    #[schema(example = "tcp")]
+    pub transport: TransferTransport,
     /// Whether the answer was a delta; an IXFR the journal could not serve
     /// went out as the whole zone.
     #[schema(example = true)]
@@ -153,6 +156,7 @@ impl From<&TransferWithZone> for TransferResponse {
             zone_name: transfer.zone_name.to_string(),
             kind: transfer.kind,
             result: transfer.result,
+            transport: transfer.transport,
             incremental: transfer.incremental,
             serial: transfer.serial,
             at: transfer.served_at,

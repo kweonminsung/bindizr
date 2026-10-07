@@ -10,6 +10,7 @@ use bindizr_service::{
     types::SecondaryTransferSummary,
     zone,
 };
+use tokio::net::TcpStream;
 
 use crate::{
     daemon::db_probe::DB_PROBE_TIMEOUT,
@@ -75,6 +76,40 @@ pub(crate) async fn check_installation(
             ),
         };
 
+    // A connection without a handshake, as the API's TLS check: trusting
+    // whatever it presents would prove nothing.
+    let dns_tls_server = match config.dns.tls.tls_files() {
+        Some(_) => {
+            let dns_tls_addr = SocketAddr::new(
+                loopback_if_unspecified(config.dns.listen_addr),
+                config.dns.tls.listen_port,
+            );
+            Some(
+                match tokio::time::timeout(timeout, TcpStream::connect(dns_tls_addr)).await {
+                    Ok(Ok(_)) => DoctorCheck {
+                        status: DoctorCheckStatus::Ok,
+                        message: format!(
+                            "DNS TLS server listening: {} (TLS handshake not attempted)",
+                            dns_tls_addr
+                        ),
+                    },
+                    Ok(Err(e)) => DoctorCheck {
+                        status: DoctorCheckStatus::Failed,
+                        message: format!("DNS TLS server not reachable: {}: {}", dns_tls_addr, e),
+                    },
+                    Err(_) => DoctorCheck {
+                        status: DoctorCheckStatus::Failed,
+                        message: format!(
+                            "DNS TLS server not reachable: {}: timed out",
+                            dns_tls_addr
+                        ),
+                    },
+                },
+            )
+        }
+        None => None,
+    };
+
     // The secondaries are rows: a database that did not answer is not asked
     // for them again.
     let (secondaries, notifies, transfers) = if database.status == DoctorCheckStatus::Failed {
@@ -100,6 +135,7 @@ pub(crate) async fn check_installation(
     let response = DaemonDoctorResponse {
         database,
         dns_server,
+        dns_tls_server,
         catalog_zone_name: config.dns.catalog_zone_name.to_string(),
         catalog_serial,
         secondaries,

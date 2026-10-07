@@ -18,7 +18,7 @@ use auth::{TransferRefusal, authenticate_transfer};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
     metrics::XfrResult,
-    model::transfer::TransferKind,
+    model::transfer::{TransferKind, TransferTransport},
 };
 use bindizr_service::{Context, transfer};
 
@@ -67,7 +67,8 @@ pub(crate) async fn handle_tcp_xfr(
 ) -> Result<(), XfrError> {
     let cx = dns_cx.daemon();
     let client_ip = client_addr.ip();
-    let track_result = |result| cx.metrics().track_xfr(query.qtype, result);
+    let transport = stream.transport();
+    let track_result = |result| cx.metrics().track_xfr(query.qtype, transport, result);
 
     // Verify the key or the address first; the zone's grant is decided beside
     // its row inside the transfer.
@@ -76,7 +77,8 @@ pub(crate) async fn handle_tcp_xfr(
         Err(refusal) => {
             track_result(XfrResult::Refused);
             log::warn!(
-                "Refused XFR TCP query from {}: {}",
+                "Refused XFR {} query from {}: {}",
+                transport,
                 client_ip,
                 refusal.reason
             );
@@ -87,6 +89,7 @@ pub(crate) async fn handle_tcp_xfr(
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
+                transport,
                 refusal.reason.clone(),
             )
             .await;
@@ -99,7 +102,8 @@ pub(crate) async fn handle_tcp_xfr(
     };
 
     log::info!(
-        "XFR TCP query: zone={:?}, qtype={:?}, from={}, signed={}",
+        "XFR {} query: zone={:?}, qtype={:?}, from={}, signed={}",
+        transport,
         query.zone_name,
         query.qtype,
         client_ip,
@@ -135,12 +139,18 @@ pub(crate) async fn handle_tcp_xfr(
         }
         Err(XfrError::Refused(reason)) => {
             track_result(XfrResult::Refused);
-            log::warn!("Refused XFR TCP query from {}: {}", client_ip, reason);
+            log::warn!(
+                "Refused XFR {} query from {}: {}",
+                transport,
+                client_ip,
+                reason
+            );
             transfer::save_refused(
                 cx,
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
+                transport,
                 reason.clone(),
             )
             .await;
@@ -156,6 +166,7 @@ pub(crate) async fn handle_tcp_xfr(
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
+                transport,
                 err.to_string(),
             )
             .await;
@@ -178,7 +189,8 @@ pub(crate) async fn handle_udp_xfr(
     let mut identity = match authenticate_transfer(dns_cx, query_data, client_addr.ip()).await {
         Ok(identity) => identity,
         Err(refusal) => {
-            cx.metrics().track_xfr(query.qtype, XfrResult::Refused);
+            cx.metrics()
+                .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Refused);
             log::warn!(
                 "Refused XFR UDP query from {}: {}",
                 client_addr.ip(),
@@ -190,7 +202,8 @@ pub(crate) async fn handle_udp_xfr(
         }
     };
     // The transfer itself counts when the client returns over TCP.
-    cx.metrics().track_xfr(query.qtype, XfrResult::Truncated);
+    cx.metrics()
+        .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Truncated);
     query
         .signed_truncated_response(identity.signer.as_mut())
         .unwrap_or_else(|_| query.truncated_response())

@@ -6248,6 +6248,7 @@ components:
       - zone_name
       - kind
       - result
+      - transport
       - incremental
       - at
       properties:
@@ -6282,6 +6283,9 @@ components:
           description: The serial the answer reached; absent when nothing was transferred.
           example: 42
           minimum: 0
+        transport:
+          $ref: '#/components/schemas/TransferTransport'
+          description: Plain TCP or TLS (XoT).
         zone_name:
           type: string
           example: example.com
@@ -6337,6 +6341,15 @@ components:
           format: int64
           example: 12
           minimum: 0
+    TransferTransport:
+      type: string
+      description: |-
+        What a request arrived over, in DNS's own transport words. `Udp` reaches
+        the metrics alone: a UDP question is answered with TC or the SOA, never saved.
+      enum:
+      - udp
+      - tcp
+      - tls
     TsigAlgorithm:
       type: string
       description: TSIG HMAC algorithms for update and transfer authentication (RFC 8945).

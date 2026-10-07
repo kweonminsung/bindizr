@@ -7,7 +7,7 @@ use std::net::IpAddr;
 use bindizr_core::{
     dns::{Serial, name::ZoneName},
     model::{
-        transfer::{Transfer, TransferKind, TransferResult, TransferWithZone},
+        transfer::{Transfer, TransferKind, TransferResult, TransferTransport, TransferWithZone},
         zone::ZoneId,
     },
 };
@@ -22,6 +22,7 @@ pub async fn save_ok(
     client: IpAddr,
     zone_id: ZoneId,
     kind: TransferKind,
+    transport: TransferTransport,
     incremental: bool,
     serial: Serial,
 ) {
@@ -32,6 +33,7 @@ pub async fn save_ok(
             zone_id,
             kind,
             result: TransferResult::Ok,
+            transport,
             incremental,
             serial: Some(serial),
             served_at: Utc::now(),
@@ -50,9 +52,19 @@ pub async fn save_refused(
     client: IpAddr,
     zone_name: &str,
     kind: TransferKind,
+    transport: TransferTransport,
     reason: String,
 ) {
-    save_unserved(cx, client, zone_name, kind, TransferResult::Refused, reason).await;
+    save_unserved(
+        cx,
+        client,
+        zone_name,
+        kind,
+        transport,
+        TransferResult::Refused,
+        reason,
+    )
+    .await;
 }
 
 /// Save a transfer of the zone `zone_name` names that was allowed and
@@ -62,9 +74,19 @@ pub async fn save_failed(
     client: IpAddr,
     zone_name: &str,
     kind: TransferKind,
+    transport: TransferTransport,
     error: String,
 ) {
-    save_unserved(cx, client, zone_name, kind, TransferResult::Failed, error).await;
+    save_unserved(
+        cx,
+        client,
+        zone_name,
+        kind,
+        transport,
+        TransferResult::Failed,
+        error,
+    )
+    .await;
 }
 
 /// Save a refusal or failure for the zone `zone_name` names; a zone
@@ -74,6 +96,7 @@ async fn save_unserved(
     client: IpAddr,
     zone_name: &str,
     kind: TransferKind,
+    transport: TransferTransport,
     result: TransferResult,
     error: String,
 ) {
@@ -95,6 +118,7 @@ async fn save_unserved(
             zone_id: zone.id,
             kind,
             result,
+            transport,
             incremental: false,
             serial: None,
             served_at: Utc::now(),

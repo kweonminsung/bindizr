@@ -7,6 +7,7 @@ use std::{
     task::{self, Poll},
 };
 
+use bindizr_core::model::transfer::TransferTransport;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpStream,
@@ -20,6 +21,17 @@ pub(crate) enum DnsStream {
     Tcp(TcpStream),
     /// Boxed: a TLS session dwarfs the socket beside it.
     Tls(Box<TlsStream<TcpStream>>),
+}
+
+impl DnsStream {
+    /// The transport the connection arrived over, as the transfer log and
+    /// the metrics record it.
+    pub(crate) fn transport(&self) -> TransferTransport {
+        match self {
+            DnsStream::Tcp(_) => TransferTransport::Tcp,
+            DnsStream::Tls(_) => TransferTransport::Tls,
+        }
+    }
 }
 
 impl AsyncRead for DnsStream {

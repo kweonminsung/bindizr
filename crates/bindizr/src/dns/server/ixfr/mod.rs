@@ -148,6 +148,7 @@ pub(crate) async fn handle_ixfr(
         client_ip,
         zone.id,
         TransferKind::Ixfr,
+        stream.transport(),
         true,
         current_serial,
     )

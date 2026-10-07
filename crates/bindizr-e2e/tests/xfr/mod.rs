@@ -98,7 +98,11 @@ async fn a_udp_ixfr_is_answered_with_the_current_soa() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    let ixfr_truncated = [r#"type="ixfr""#, r#"result="truncated""#];
+    let ixfr_truncated = [
+        r#"type="ixfr""#,
+        r#"result="truncated""#,
+        r#"transport="udp""#,
+    ];
     let truncated = counter(&app, "bindizr_xfr_total", &ixfr_truncated).await;
     let soa_ok = counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await;
 
@@ -461,6 +465,7 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     assert_eq!(body["summary"]["failed"], 0, "{body}");
     assert_eq!(body["transfers"][0]["kind"], "axfr");
     assert_eq!(body["transfers"][0]["result"], "ok");
+    assert_eq!(body["transfers"][0]["transport"], "tcp");
     assert_eq!(body["transfers"][0]["incremental"], false);
     assert_eq!(body["transfers"][0]["serial"], zone["serial"], "{body}");
     assert!(body["transfers"][0]["error"].is_null(), "{body}");
