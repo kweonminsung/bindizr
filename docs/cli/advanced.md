@@ -100,4 +100,7 @@ configures nothing extra.
 
 A key Bindizr does not hold is refused (`BADKEY`) rather than falling back to
 the address list: signing must not be a way around the check. A known key
-whose role lacks `zone:transfer` for the zone is refused too.
+whose role lacks `zone:transfer` for the zone is refused too. A TSIG record
+that is doubled, not last, unreadable, or carries a MAC of a size its
+algorithm cannot produce is a `FORMERR` (RFC 8945, Section 5.2), signed by
+no one.

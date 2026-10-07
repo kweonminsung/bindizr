@@ -5,7 +5,8 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TestAppOptions,
     dns::nsupdate::{
-        KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update, send_update,
+        KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
+        send_signed_update_with_two_zones, send_update,
     },
 };
 
@@ -724,4 +725,21 @@ async fn nsupdate_moves_a_record_set_to_the_added_ttl() {
         .map(|record| record["ttl"].as_u64().unwrap())
         .collect();
     assert_eq!(ttls, [900, 900]);
+}
+
+/// Verify that a signed request the parser rejects is still answered under
+/// its key (RFC 8945, Section 5.2), as a signed FORMERR.
+#[tokio::test]
+#[serial]
+async fn a_signed_request_that_does_not_parse_is_answered_under_its_key() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "formerr-key", KeyRole::Admin).await;
+
+    let (rcode, signed) =
+        send_signed_update_with_two_zones(app.dns_port(), zone_name, &key).expect("update");
+
+    assert_eq!(rcode, Rcode::FORMERR);
+    assert!(signed, "the FORMERR was not signed");
 }

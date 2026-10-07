@@ -182,7 +182,19 @@ async fn authenticate_request(
         }
     };
 
-    let key = tsig_key::find_by_wire_name(cx, &tsig.name)
+    let (key, verified) = verify_signer(dns_cx, &tsig.name, query_data).await?;
+    *signer = Some(verified);
+    Ok(key)
+}
+
+/// Verify the request's TSIG under the key `key_name` names and return that
+/// key with the context that signs the response.
+pub(crate) async fn verify_signer(
+    dns_cx: &DnsContext,
+    key_name: &str,
+    query_data: &[u8],
+) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
+    let key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
         .map_err(|e| UpdateError::Internal {
             message: "failed to load TSIG key".to_string(),
@@ -192,11 +204,8 @@ async fn authenticate_request(
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
     let domain_key = key.as_ref().map(TsigKey::to_domain_key).transpose()?;
-    *signer = Some(bindizr_core::dns::tsig::verify_tsig(
-        query_data, domain_key,
-    )?);
-
-    Ok(key)
+    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, domain_key)?;
+    Ok((key, signer))
 }
 
 /// One prerequisite record, its shape held to RFC 2136, Section 3.2.1 (TTL 0,

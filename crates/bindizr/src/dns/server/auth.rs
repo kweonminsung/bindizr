@@ -21,11 +21,12 @@ use super::acl;
 use crate::dns::{error::XfrError, server::DnsContext};
 
 /// A refused transfer and the response it owes the client: a TSIG failure
-/// answers with its own error record, anything else with REFUSED, signed by the
-/// key that got that far.
+/// its own error record, a malformed TSIG an unsigned FORMERR (RFC 8945,
+/// Section 5.2), anything else REFUSED under the key that got that far.
 #[derive(Debug, Clone)]
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
+    rcode: Rcode,
     response: Option<Vec<u8>>,
     signer: Option<TransferSigner>,
 }
@@ -35,8 +36,19 @@ impl TransferRefusal {
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         TransferRefusal {
             reason,
+            rcode: Rcode::REFUSED,
             response: None,
             signer,
+        }
+    }
+
+    /// A request whose TSIG breaks RFC 8945, Section 5.2: FORMERR, unsigned.
+    fn malformed(reason: String) -> Self {
+        TransferRefusal {
+            reason,
+            rcode: Rcode::FORMERR,
+            response: None,
+            signer: None,
         }
     }
 
@@ -45,7 +57,7 @@ impl TransferRefusal {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        Ok(query.signed_error_response(Rcode::REFUSED, self.signer.as_mut())?)
+        Ok(query.signed_error_response(self.rcode, self.signer.as_mut())?)
     }
 }
 
@@ -70,7 +82,7 @@ pub(crate) async fn authenticate_transfer(
     let cx = dns_cx.daemon();
     let over_tls = matches!(transport, TransferTransport::Tls);
     let key_name = match request_signature(query_data) {
-        RequestSignature::Key(key_name) => key_name,
+        RequestSignature::Key { name, .. } => name,
         RequestSignature::Absent if over_tls => {
             return Err(TransferRefusal::refused(
                 "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
@@ -98,9 +110,8 @@ pub(crate) async fn authenticate_transfer(
         // The address would have allowed this one; a TSIG that does not parse
         // must not be answered as though none had been sent.
         RequestSignature::Malformed => {
-            return Err(TransferRefusal::refused(
-                "TSIG record is malformed".to_string(),
-                None,
+            return Err(TransferRefusal::malformed(
+                "TSIG record is malformed (RFC 8945, Section 5.2)".to_string(),
             ));
         }
     };
@@ -155,6 +166,7 @@ impl From<TsigError> for TransferRefusal {
         match error {
             TsigError::Rejected { rcode, response } => TransferRefusal {
                 reason: format!("TSIG validation failed: {}", rcode),
+                rcode: Rcode::NOTAUTH,
                 response: Some(response),
                 signer: None,
             },

@@ -3,14 +3,21 @@
 
 mod tls;
 
-use std::time::{Duration, Instant};
+use std::{
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use domain::{
     base::{
-        Message,
-        iana::{Rcode, Rtype},
+        Message, MessageBuilder, Name, Ttl,
+        iana::{Class, Rcode, Rtype, TsigRcode},
     },
-    rdata::Soa,
+    rdata::{
+        A, Soa,
+        tsig::{Time48, Tsig},
+    },
+    tsig::ClientSequence,
 };
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -18,8 +25,11 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TransferOutcome, axfr,
-    dns::nsupdate::{KeyRole, SigningKey, create_tsig_key},
-    exchange_dns_query, wait_for_any_dns_record,
+    dns::{
+        nsupdate::{KeyRole, SigningKey, create_tsig_key},
+        parse_name,
+    },
+    exchange_dns_query, exchange_tcp, wait_for_any_dns_record,
 };
 
 /// A bindizr whose transfer ACL admits the test's own loopback pull.
@@ -535,4 +545,67 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     let checked = app.run_cli(&["secondary", "check", "loopback"]).await;
     let stdout = String::from_utf8_lossy(&checked.stdout);
     assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
+}
+
+/// Verify that a TSIG out of place or with a MAC of a size its algorithm
+/// cannot produce is answered FORMERR and unsigned (RFC 8945, Section 5.2),
+/// not REFUSED under the address that would have admitted the client.
+#[tokio::test]
+#[serial]
+async fn a_malformed_tsig_is_answered_formerr_unsigned() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xfr-malformed-key", KeyRole::Admin).await;
+    let qname = parse_name(zone_name).unwrap();
+
+    // A valid signature, then one more record: the TSIG is no longer last.
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(41);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::AXFR)).unwrap();
+    let mut additional = question.additional();
+    ClientSequence::request(key.to_tsig_key().unwrap(), &mut additional, Time48::now()).unwrap();
+    additional
+        .push((
+            &qname,
+            Class::IN,
+            Ttl::ZERO,
+            A::from_str("192.0.2.1").unwrap(),
+        ))
+        .unwrap();
+    let not_last = additional.finish();
+
+    // A TSIG whose 4-octet MAC is below the floor of RFC 8945, Section 5.2.2.1.
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(42);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::AXFR)).unwrap();
+    let mut additional = question.additional();
+    let algorithm = Name::<Vec<u8>>::from_str("hmac-sha256.").unwrap();
+    let tsig = Tsig::new(
+        algorithm,
+        Time48::now(),
+        300,
+        vec![0u8; 4],
+        42,
+        TsigRcode::NOERROR,
+        Vec::new(),
+    )
+    .unwrap();
+    additional
+        .push((parse_name(&key.name).unwrap(), Class::ANY, Ttl::ZERO, tsig))
+        .unwrap();
+    let short_mac = additional.finish();
+
+    for (label, query) in [("not last", not_last), ("short MAC", short_mac)] {
+        let frame = exchange_tcp(app.dns_port(), &query).expect(label);
+        let response = Message::from_octets(frame).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::FORMERR, "{label}");
+        assert_eq!(
+            response.additional().unwrap().count(),
+            0,
+            "{label}: a FORMERR for a malformed TSIG is signed by no one"
+        );
+    }
 }

@@ -49,7 +49,10 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
         0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x01, // Time signed
         0x01, 0x2c, // Fudge
-        0x00, 0x00, // MAC size
+        0x00, 0x20, // MAC size: the 32 octets hmac-sha256 produces
+    ]);
+    rdata.extend_from_slice(&[0u8; 32]);
+    rdata.extend_from_slice(&[
         0x12, 0x34, // Original ID
         0x00, 0x00, // Error
         0x00, 0x00, // Other len

@@ -52,7 +52,11 @@ does not serve, `NOTZONE` an owner outside the zone named, `FORMERR` a
 malformed section (a prerequisite with a TTL, a delete carrying rdata, a type
 no update may carry, or a type Bindizr does not store in an add), and
 `REFUSED` a policy decision: an unsigned request where a signature is
-required, or a key whose role does not reach what the update touches. The
+required, or a key whose role does not reach what the update touches. A
+request whose key verifies is answered under that key whatever the code; a
+TSIG record that is doubled, not last, unreadable, or carries a MAC of a size
+its algorithm cannot produce is a `FORMERR` signed by no one (RFC 8945,
+Section 5.2). The
 prerequisite codes (`NXDOMAIN`, `YXDOMAIN`, `NXRRSET`, `YXRRSET`) report the
 first prerequisite that failed.
 

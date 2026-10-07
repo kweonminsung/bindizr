@@ -10,6 +10,7 @@ use bindizr_core::{
     dns::{
         message::Rcode,
         nsupdate::{DEFAULT_FUDGE, build_response},
+        tsig::{RequestSignature, request_signature},
     },
     metrics::NsupdateResult,
 };
@@ -81,9 +82,28 @@ async fn handle_nsupdate_request(
         Ok(req) => req,
         Err(e) => {
             log::warn!("NSUPDATE parse error from {}: {}", client_addr, e);
+            // RFC 8945, Section 5.2: a request whose key verifies is answered
+            // under it, a FORMERR included; a bad key or MAC is its own error.
+            let (signer, fudge) = match request_signature(query_data) {
+                RequestSignature::Key { name, fudge } => {
+                    match update::verify_signer(dns_cx, &name, query_data).await {
+                        Ok((_, signer)) => (Some(signer), fudge),
+                        Err(update::UpdateError::TsigFailed { msg, response }) => {
+                            log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+                            cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
+                            return Some(response);
+                        }
+                        Err(err) => {
+                            log::warn!("NSUPDATE key check failed from {}: {}", client_addr, err);
+                            (None, DEFAULT_FUDGE)
+                        }
+                    }
+                }
+                RequestSignature::Absent | RequestSignature::Malformed => (None, DEFAULT_FUDGE),
+            };
             cx.metrics()
                 .track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
-            return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
+            return build_response(query_data, Rcode::FORMERR, signer, fudge);
         }
     };
 

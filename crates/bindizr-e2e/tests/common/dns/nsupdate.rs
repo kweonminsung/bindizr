@@ -106,24 +106,59 @@ fn send(
     if let Some(key) = key {
         sign(&mut builder, key)?;
     }
-    let message = builder.finish();
+    let response = exchange(port, query_id, &builder.finish())?;
+    Ok(response.header().rcode())
+}
 
+/// Send an UPDATE signed with `key` whose zone section carries two
+/// questions, which RFC 2136, Section 3.1.1 makes a FORMERR; returns the
+/// RCODE and whether the response was signed.
+pub(crate) fn send_signed_update_with_two_zones(
+    port: u16,
+    zone: &str,
+    key: &SigningKey,
+) -> Result<(Rcode, bool), String> {
+    let query_id = (std::process::id() as u16)
+        .wrapping_add(port)
+        .wrapping_add(2);
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(query_id);
+    builder.header_mut().set_opcode(Opcode::UPDATE);
+    let mut question = builder.question();
+    for _ in 0..2 {
+        question
+            .push((&parse_name(zone)?, Rtype::SOA, Class::IN))
+            .map_err(|e| e.to_string())?;
+    }
+    let mut additional = question.additional();
+    sign(&mut additional, key)?;
+
+    let response = exchange(port, query_id, &additional.finish())?;
+    let signed = response
+        .additional()
+        .map_err(|e| e.to_string())?
+        .any(|record| record.is_ok_and(|record| record.rtype() == Rtype::TSIG));
+    Ok((response.header().rcode(), signed))
+}
+
+/// Send one UPDATE over UDP and return its response, checked against the id.
+fn exchange(port: u16, query_id: u16, message: &[u8]) -> Result<Message<Vec<u8>>, String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
         .set_read_timeout(Some(Duration::from_secs(5)))
         .map_err(|e| e.to_string())?;
     socket
-        .send_to(&message, ("127.0.0.1", port))
+        .send_to(message, ("127.0.0.1", port))
         .map_err(|e| e.to_string())?;
 
     let mut response = [0_u8; 1500];
     let (len, _) = socket.recv_from(&mut response).map_err(|e| e.to_string())?;
 
-    let message = Message::from_octets(&response[..len]).map_err(|e| e.to_string())?;
+    let message = Message::from_octets(response[..len].to_vec()).map_err(|e| e.to_string())?;
     if message.header().id() != query_id {
         return Err("UPDATE response id mismatch".to_string());
     }
-    Ok(message.header().rcode())
+    Ok(message)
 }
 
 /// An UPDATE message reuses the standard sections: the zone is the question,

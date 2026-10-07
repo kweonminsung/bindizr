@@ -13,6 +13,7 @@ use crate::{
     dns::{
         name::labels_to_presentation,
         record::{NaptrRecordValue, ParseRecordValueError, TxtRecordValue},
+        tsig::is_mac_size_in_bounds,
     },
     model::record::{ParseRecordTypeError, RecordType},
 };
@@ -259,7 +260,7 @@ fn parse_tsig_record(
         .parse_parser(rdlen)
         .map_err(|_| ParseUpdateError::InvalidTsig)?;
     let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseUpdateError::InvalidTsig)?;
-    if rdata.remaining() != 0 {
+    if rdata.remaining() != 0 || !is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().len()) {
         return Err(ParseUpdateError::InvalidTsig);
     }
 

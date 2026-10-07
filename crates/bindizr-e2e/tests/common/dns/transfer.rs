@@ -70,6 +70,16 @@ pub(crate) fn xot(
     transfer(&mut StreamOwned::new(session, tcp), zone, key)
 }
 
+/// Send one message over TCP to the listener on `port` and return the first
+/// response frame, for a test that builds its own question.
+pub(crate) fn exchange_tcp(port: u16, message: &[u8]) -> Result<Vec<u8>, String> {
+    let mut stream = connect(port)?;
+    let mut framed = (message.len() as u16).to_be_bytes().to_vec();
+    framed.extend_from_slice(message);
+    stream.write_all(&framed).map_err(|e| e.to_string())?;
+    read_frame(&mut stream)?.ok_or_else(|| "the server closed without answering".to_string())
+}
+
 /// Connect to the listener on `port`, with a read timeout so a silent server
 /// fails the test instead of hanging it.
 fn connect(port: u16) -> Result<TcpStream, String> {
