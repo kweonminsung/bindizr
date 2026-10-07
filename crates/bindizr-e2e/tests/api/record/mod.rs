@@ -1570,3 +1570,180 @@ async fn record_reject_cname_conflicts() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 }
+
+/// Verify the DNAME rules of RFC 6672, Section 2.4 and the alias-target rule
+/// of RFC 2181, Section 10.3 and RFC 2782, in either order of arrival.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_reject_dname_and_alias_target_rules() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let create = |name: &str, record_type: &str, value: String, priority: Option<u16>| {
+        json!({
+            "name": name,
+            "type": record_type,
+            "value": value,
+            "ttl": 3600,
+            "priority": priority,
+            "zone_name": zone_name
+        })
+    };
+
+    let cases = [
+        // A DNAME keeps other data at its own name, but is a singleton and no delegation.
+        (
+            "sub",
+            "DNAME",
+            "one.example.net.".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "sub",
+            "A",
+            "192.0.2.1".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "sub",
+            "DNAME",
+            "two.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "sub",
+            "NS",
+            "ns.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "del",
+            "NS",
+            "ns.example.net.".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "del",
+            "DNAME",
+            "one.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        // Nothing below a DNAME, whichever arrives first.
+        (
+            "leaf.sub",
+            "A",
+            "192.0.2.2".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "leaf.top",
+            "A",
+            "192.0.2.3".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "top",
+            "DNAME",
+            "one.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        // An NS, MX, or SRV may not name a CNAME of this zone, whichever arrives first.
+        (
+            "cn",
+            "CNAME",
+            "www.example.net.".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "@",
+            "MX",
+            format!("cn.{zone_name}."),
+            Some(10),
+            StatusCode::CONFLICT,
+        ),
+        (
+            "@",
+            "NS",
+            format!("cn.{zone_name}."),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "_sip._tcp",
+            "SRV",
+            format!("5 5060 cn.{zone_name}."),
+            Some(10),
+            StatusCode::CONFLICT,
+        ),
+        (
+            "@",
+            "MX",
+            "mail.example.net.".to_string(),
+            Some(10),
+            StatusCode::CREATED,
+        ),
+        (
+            "@",
+            "MX",
+            format!("mx2.{zone_name}."),
+            Some(20),
+            StatusCode::CREATED,
+        ),
+        (
+            "mx2",
+            "CNAME",
+            "www.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+    ];
+    for (name, record_type, value, priority, expected) in cases {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(create(name, record_type, value.clone(), priority)),
+            )
+            .await;
+        assert_eq!(status, expected, "{name} {record_type} {value}: {body}");
+    }
+
+    // A DNAME at the apex is allowed beside the zone's own SOA and NS, and
+    // then nothing else may exist in the zone.
+    let apex_zone_name = app.zone_name("apex-dname.example");
+    app.create_zone_cli(&apex_zone_name, "3600").await;
+    for (name, record_type, expected) in [
+        ("@", "DNAME", StatusCode::CREATED),
+        ("host", "A", StatusCode::CONFLICT),
+    ] {
+        let value = if record_type == "A" {
+            "192.0.2.4"
+        } else {
+            "one.example.net."
+        };
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name,
+                    "type": record_type,
+                    "value": value,
+                    "ttl": 3600,
+                    "zone_name": apex_zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, expected, "{name} {record_type}: {body}");
+    }
+}

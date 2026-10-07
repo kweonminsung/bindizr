@@ -24,7 +24,7 @@ fn encode_tcp_message_rejects_oversized_payload() {
 #[test]
 fn overflowing_answers_split_into_multiple_frames() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
-    let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR);
+    let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR, false);
     let mut wire = Vec::new();
 
     for index in 0..4000 {
@@ -136,7 +136,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     let (query, mut client) = signed_axfr_query(key.clone());
 
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
-    let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR)
+    let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR, false)
         .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
 
     // Two envelopes, so the second is checked against the MAC chain the first
@@ -179,8 +179,8 @@ fn a_signed_message_reserves_room_for_its_tsig_record() {
     let (query, _) = signed_axfr_query(key.clone());
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
 
-    let unsigned = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR);
-    let signed = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR)
+    let unsigned = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR, false);
+    let signed = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR, false)
         .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
 
     // Without the reservation an envelope could fill to the wire limit and

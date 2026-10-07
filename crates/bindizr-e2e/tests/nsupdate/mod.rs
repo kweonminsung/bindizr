@@ -743,3 +743,86 @@ async fn a_signed_request_that_does_not_parse_is_answered_under_its_key() {
     assert_eq!(rcode, Rcode::FORMERR);
     assert!(signed, "the FORMERR was not signed");
 }
+
+/// Verify the DNAME rules of RFC 6672: a DNAME beside a CNAME is passed
+/// over, a second DNAME replaces the first, a name below one is refused.
+#[tokio::test]
+#[serial]
+async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let alias = format!("alias.{zone_name}.");
+    let tree = format!("tree.{zone_name}.");
+    let records_at = |records: &[Value], name: &str| -> Vec<(String, String)> {
+        records
+            .iter()
+            .filter(|record| record["name"] == name)
+            .map(|record| {
+                (
+                    record["type"].as_str().unwrap().to_string(),
+                    record["value"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+
+    for (updates, expected) in [
+        (
+            vec![UpdateRecord::AddCname {
+                name: alias.clone(),
+                ttl: 300,
+                target: "www.example.net.".to_string(),
+            }],
+            Rcode::NOERROR,
+        ),
+        // A DNAME beside the CNAME: passed over.
+        (
+            vec![UpdateRecord::AddDname {
+                name: alias.clone(),
+                ttl: 300,
+                target: "one.example.net.".to_string(),
+            }],
+            Rcode::NOERROR,
+        ),
+        (
+            vec![UpdateRecord::AddDname {
+                name: tree.clone(),
+                ttl: 300,
+                target: "one.example.net.".to_string(),
+            }],
+            Rcode::NOERROR,
+        ),
+        // A second DNAME replaces the first.
+        (
+            vec![UpdateRecord::AddDname {
+                name: tree.clone(),
+                ttl: 300,
+                target: "two.example.net.".to_string(),
+            }],
+            Rcode::NOERROR,
+        ),
+        // Nothing may exist below a DNAME.
+        (
+            vec![UpdateRecord::AddA {
+                name: format!("leaf.tree.{zone_name}."),
+                ttl: 300,
+                addr: "192.0.2.110".to_string(),
+            }],
+            Rcode::REFUSED,
+        ),
+    ] {
+        let rcode = send_update(app.dns_port(), zone_name, &[], &updates).expect("update");
+        assert_eq!(rcode, expected, "{updates:?}");
+    }
+
+    let records = app.list_records(zone_name).await;
+    assert_eq!(
+        records_at(&records, &alias),
+        [("CNAME".to_string(), "www.example.net.".to_string())]
+    );
+    assert_eq!(
+        records_at(&records, &tree),
+        [("DNAME".to_string(), "two.example.net.".to_string())]
+    );
+}

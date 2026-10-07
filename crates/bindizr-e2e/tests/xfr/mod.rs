@@ -4,6 +4,7 @@
 mod tls;
 
 use std::{
+    net::UdpSocket,
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -607,5 +608,39 @@ async fn a_malformed_tsig_is_answered_formerr_unsigned() {
             0,
             "{label}: a FORMERR for a malformed TSIG is signed by no one"
         );
+    }
+}
+
+/// Verify that a response copies the query's RD bit (RFC 1035, Section 4.1.1).
+#[tokio::test]
+#[serial]
+async fn a_response_copies_the_rd_bit() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for rd in [true, false] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(77);
+        builder.header_mut().set_rd(rd);
+        let mut question = builder.question();
+        question
+            .push((&parse_name(zone_name).unwrap(), Rtype::SOA))
+            .unwrap();
+        let query = question.finish();
+
+        let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        socket
+            .send_to(&query, ("127.0.0.1", app.dns_port()))
+            .unwrap();
+        let mut buf = [0u8; 1500];
+        let (len, _) = socket.recv_from(&mut buf).unwrap();
+
+        let response = Message::from_octets(&buf[..len]).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        assert_eq!(response.header().rd(), rd, "rd={rd}");
     }
 }

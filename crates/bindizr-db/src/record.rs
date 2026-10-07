@@ -134,6 +134,46 @@ pub async fn find_name_ds_without_ns_tx(
     }
 }
 
+/// List the records of the given types, in the current transaction; the
+/// cross-name checks at versioning read the few types they relate.
+pub async fn list_by_record_types_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+    record_types: &[RecordType],
+) -> Result<Vec<Record>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
+    }
+}
+
+/// Find any owner strictly below `owner`, in row form; below the apex is
+/// every other name. One match suffices and the ordering is unspecified.
+pub async fn find_name_under_owner_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+    owner: &OwnerName,
+) -> Result<Option<String>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::record::find_name_under_owner_tx(tx, zone_id, owner).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::record::find_name_under_owner_tx(tx, zone_id, owner).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::record::find_name_under_owner_tx(tx, zone_id, owner).await
+        }
+    }
+}
+
 /// Load records whose owner name is any of `names` (lowercased match). Used
 /// by bulk insert to fetch only the rows that could conflict with the batch.
 pub async fn list_by_names_tx(

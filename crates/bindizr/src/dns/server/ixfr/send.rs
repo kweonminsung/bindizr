@@ -23,7 +23,8 @@ pub(crate) async fn send_soa_response(
     current_soa: &ZoneVersion,
     signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    let mut builder =
+        message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR, query.rd);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }
@@ -64,7 +65,8 @@ pub(crate) async fn send_ixfr_response(
     versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
 ) -> Result<(), IxfrSendError> {
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    let mut builder =
+        message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR, query.rd);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }

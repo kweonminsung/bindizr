@@ -38,17 +38,26 @@ pub(crate) fn partial_term(value: &str) -> String {
 }
 
 /// Wrap the [`partial_term`] for a contains-match, `None` when nothing remains.
-/// The LIKE wildcards are escaped: `%` and `_` are ordinary characters in
-/// rdata and `_dmarc`-style names.
 pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
     value
         .map(partial_term)
         .filter(|term| !term.is_empty())
-        .map(|term| {
-            let escaped = term
-                .replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_");
-            format!("%{}%", escaped)
-        })
+        .map(|term| format!("%{}%", escape_like(&term)))
+}
+
+/// The LIKE pattern of the names below `owner`, the owner itself included:
+/// a stored name's dots are label boundaries, so the suffix is the subtree.
+pub(crate) fn under_owner_pattern(owner: &OwnerName) -> String {
+    if owner.is_apex() {
+        return "%".to_string();
+    }
+    format!("%.{}", escape_like(&owner.to_stored()))
+}
+
+/// Escape the LIKE wildcards for an `ESCAPE '\\'` clause; `%`, `_`, and
+/// `\` all occur in names and rdata.
+fn escape_like(term: &str) -> String {
+    term.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }

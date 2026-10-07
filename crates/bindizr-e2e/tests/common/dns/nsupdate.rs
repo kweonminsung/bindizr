@@ -10,7 +10,7 @@ use domain::{
         iana::{Class, Opcode, Rcode},
         message_builder::AdditionalBuilder,
     },
-    rdata::{A, Cname, Ns, tsig::Time48},
+    rdata::{A, Cname, Dname, Ns, tsig::Time48},
     tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
 
@@ -46,6 +46,12 @@ pub(crate) enum UpdateRecord {
     },
     /// CLASS IN: add this CNAME.
     AddCname {
+        name: String,
+        ttl: u32,
+        target: String,
+    },
+    /// CLASS IN: add this DNAME.
+    AddDname {
         name: String,
         ttl: u32,
         target: String,
@@ -221,6 +227,21 @@ fn build_update(
                 target,
             } => {
                 let data = Cname::new(parse_name(target)?);
+                authority
+                    .push(Record::new(
+                        parse_name(owner)?,
+                        Class::IN,
+                        Ttl::from_secs(*ttl),
+                        data,
+                    ))
+                    .map_err(|e| e.to_string())?;
+            }
+            UpdateRecord::AddDname {
+                name: owner,
+                ttl,
+                target,
+            } => {
+                let data = Dname::new(parse_name(target)?);
                 authority
                     .push(Record::new(
                         parse_name(owner)?,

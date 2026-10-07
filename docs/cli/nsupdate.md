@@ -62,9 +62,12 @@ first prerequisite that failed.
 
 Some records in an update are passed over rather than refused, as the RFC
 says: a delete that would remove the SOA or the last apex NS record, a CNAME
-added beside other data or data added beside a CNAME, and a delete of a type
-Bindizr never stores. A second CNAME replaces the first, and an add whose
-TTL differs from the record set's moves the whole set to the new TTL.
+added beside other data or data added beside a CNAME, a DNAME added beside a
+CNAME, and a delete of a type Bindizr never stores. A second CNAME or DNAME
+replaces the first, and an add whose TTL differs from the record set's moves
+the whole set to the new TTL. A record below a DNAME, or a DNAME above
+existing records, is refused: nothing may exist under a DNAME (RFC 6672,
+Section 2.4).
 
 ## The first key
 

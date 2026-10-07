@@ -8,11 +8,11 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::record::{Record, RecordWithZone},
+    model::record::{Record, RecordType, RecordWithZone},
     record::RecordFilter,
     sql::{
         apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, name_like_types_sql,
-        partial_term,
+        partial_term, under_owner_pattern,
     },
 };
 
@@ -174,6 +174,54 @@ pub(crate) async fn find_name_ds_without_ns_tx(
     )
     .bind(zone_id)
     .bind(zone_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(name)
+}
+
+/// List the records of the given types in the current transaction.
+pub(crate) async fn list_by_record_types_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    record_types: &[RecordType],
+) -> Result<Vec<Record>, DatabaseError> {
+    if record_types.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut sql = String::from(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (",
+    );
+    for i in 0..record_types.len() {
+        if i > 0 {
+            sql.push(',');
+        }
+        sql.push_str(&format!("${}", i + 2));
+    }
+    sql.push_str(") ORDER BY name, id");
+
+    let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+    for record_type in record_types {
+        query = query.bind(record_type.as_str());
+    }
+    let records = query.fetch_all(&mut **tx).await?;
+
+    Ok(records)
+}
+
+/// Find any owner strictly below `owner` in the current transaction.
+pub(crate) async fn find_name_under_owner_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    owner: &OwnerName,
+) -> Result<Option<String>, DatabaseError> {
+    // The owner is excluded by name: the apex pattern matches every row.
+    let name = sqlx::query_scalar::<_, String>(
+        "SELECT name FROM records WHERE zone_id = $1 AND name <> $2 AND name LIKE $3 ESCAPE '\\' LIMIT 1",
+    )
+    .bind(zone_id)
+    .bind(owner)
+    .bind(under_owner_pattern(owner))
     .fetch_optional(&mut **tx)
     .await?;
 

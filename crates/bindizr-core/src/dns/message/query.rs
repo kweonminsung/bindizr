@@ -39,6 +39,8 @@ pub struct ParsedQuery {
     pub client_serial: Option<u32>,
     pub query_id: u16,
     pub opcode: Opcode,
+    /// Copied into every response (RFC 1035, Section 4.1.1).
+    pub rd: bool,
 }
 
 impl ParsedQuery {
@@ -49,6 +51,7 @@ impl ParsedQuery {
 
         let query_id = message.header().id();
         let opcode = message.header().opcode();
+        let rd = message.header().rd();
 
         let question = message
             .first_question()
@@ -82,6 +85,7 @@ impl ParsedQuery {
             client_serial,
             query_id,
             opcode,
+            rd,
         })
     }
 
@@ -145,8 +149,9 @@ impl ParsedQuery {
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
-        // RFC 1035, Section 4.1.1: a response echoes the request's opcode.
+        // RFC 1035, Section 4.1.1: a response echoes the request's opcode and RD.
         header.set_opcode(self.opcode);
+        header.set_rd(self.rd);
         set(header);
 
         let mut question = builder.question();

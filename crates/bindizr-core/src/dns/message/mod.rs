@@ -100,11 +100,13 @@ pub struct DnsMessageBuilder {
     /// Signs every message this builder produces, carrying one MAC chain
     /// across the envelopes of a transfer.
     signer: Option<TransferSigner>,
+    /// The query's RD, copied into every message (RFC 1035, Section 4.1.1).
+    rd: bool,
 }
 
 impl DnsMessageBuilder {
     /// Create a DNS response builder for the supplied question.
-    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
+    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype, rd: bool) -> Self {
         Self {
             query_id,
             qname: qname.clone(),
@@ -112,6 +114,7 @@ impl DnsMessageBuilder {
             answers: Vec::new(),
             answers_len: 0,
             signer: None,
+            rd,
         }
     }
 
@@ -245,6 +248,7 @@ impl DnsMessageBuilder {
         header.set_id(self.query_id);
         header.set_qr(true);
         header.set_aa(true);
+        header.set_rd(self.rd);
 
         let mut question = builder.question();
         question

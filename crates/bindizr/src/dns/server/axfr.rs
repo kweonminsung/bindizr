@@ -76,7 +76,8 @@ pub(crate) async fn handle_axfr(
         zone.serial
     );
 
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
+    let mut builder =
+        message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype, query.rd);
     if let Some(signer) = identity.signer.take() {
         builder = builder.sign_with(signer);
     }

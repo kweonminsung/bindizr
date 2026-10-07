@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::Serial,
+    dns::{Serial, name::OwnerName, record::SrvRecordValue},
     model::{zone::ZoneId, zone_version::ZoneVersionId},
 };
 use chrono::Utc;
@@ -8,6 +8,7 @@ use crate::{
     Context, Transaction,
     error::ServiceError,
     model::{
+        record::RecordType,
         zone::Zone,
         zone_version::{ChangeActor, ChangeSource, ZoneVersion},
     },
@@ -80,6 +81,66 @@ async fn validate_delegations_tx(
     Ok(())
 }
 
+/// Reject records below a DNAME owner (RFC 6672, Section 2.4): the DNAME
+/// stands in for the whole subtree. Names go unnamed, as the DS check's do.
+async fn validate_dname_subtrees_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+) -> Result<(), ServiceError> {
+    let dnames =
+        bindizr_db::record::list_by_record_types_tx(tx, zone_id, &[RecordType::Dname]).await?;
+    for dname in &dnames {
+        if bindizr_db::record::find_name_under_owner_tx(tx, zone_id, &dname.name)
+            .await?
+            .is_some()
+        {
+            return Err(ServiceError::record_conflict(
+                "records cannot exist below a DNAME record (RFC 6672, Section 2.4)",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Reject an NS, MX, or SRV whose target in this zone is a CNAME (RFC 2181,
+/// Section 10.3; RFC 2782). A target outside the zone is nobody's to check.
+async fn validate_alias_targets_tx(
+    tx: &mut Transaction<'_>,
+    zone: &Zone,
+) -> Result<(), ServiceError> {
+    let cnames =
+        bindizr_db::record::list_by_record_types_tx(tx, zone.id, &[RecordType::Cname]).await?;
+    if cnames.is_empty() {
+        return Ok(());
+    }
+    let pointers = bindizr_db::record::list_by_record_types_tx(
+        tx,
+        zone.id,
+        &[RecordType::Ns, RecordType::Mx, RecordType::Srv],
+    )
+    .await?;
+    for record in &pointers {
+        // An NS or MX value is its target; an SRV value carries it last.
+        let target = match record.record_type {
+            RecordType::Srv => SrvRecordValue::parse(&record.value, record.priority)
+                .ok()
+                .map(|srv| srv.target().to_string()),
+            _ => Some(record.value.clone()),
+        };
+        let Some(owner) =
+            target.and_then(|target| OwnerName::parse_absolute_in_zone(&target, &zone.name).ok())
+        else {
+            continue;
+        };
+        if cnames.iter().any(|cname| cname.name == owner) {
+            return Err(ServiceError::record_conflict(
+                "an NS, MX, or SRV record cannot name a CNAME record of this zone as its target (RFC 2181, Section 10.3; RFC 2782)",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Save a version of the zone's SOA data for historical tracking.
 /// Every mutation path ends here, so the cross-row invariants are
 /// checked once, against the final state, order-independently.
@@ -91,6 +152,8 @@ pub(crate) async fn save_version_tx(
     attribution: &ChangeAttribution,
 ) -> Result<(), ServiceError> {
     validate_delegations_tx(tx, zone.id).await?;
+    validate_dname_subtrees_tx(tx, zone.id).await?;
+    validate_alias_targets_tx(tx, zone).await?;
     bindizr_db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
