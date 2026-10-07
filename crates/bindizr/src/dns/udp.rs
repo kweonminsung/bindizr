@@ -3,7 +3,7 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc};
 
-use bindizr_core::dns::message::{self, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{self, ExtendedErrorCode, Opcode, Rcode, Rtype};
 use tokio::{net::UdpSocket, sync::Semaphore};
 
 use super::server::{self, DnsContext};
@@ -85,13 +85,20 @@ async fn dispatch_udp_query(
         return;
     };
 
+    if let Some(response) = query.edns_error_response() {
+        log::info!("Refusing the EDNS of a DNS UDP query from {}", client_addr);
+        send_udp_response(socket, client_addr, &response).await;
+        return;
+    }
+
     if query.opcode != Opcode::QUERY {
         log::info!(
             "Refusing DNS UDP opcode {:?} from {}",
             query.opcode,
             client_addr
         );
-        send_udp_response(socket, client_addr, &query.error_response(Rcode::NOTIMP)).await;
+        let response = query.error_response(Rcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED));
+        send_udp_response(socket, client_addr, &response).await;
         return;
     }
 
@@ -127,7 +134,7 @@ async fn dispatch_udp_query(
             client_addr,
             query.qtype
         );
-        query.error_response(Rcode::REFUSED)
+        query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
     };
     send_udp_response(socket, client_addr, &response).await;
 }

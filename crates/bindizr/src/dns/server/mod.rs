@@ -16,7 +16,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use auth::{TransferRefusal, authenticate_transfer};
 use bindizr_core::{
-    dns::message::{Rcode, Rtype},
+    dns::message::{ExtendedErrorCode, Rcode, Rtype},
     metrics::XfrResult,
     model::transfer::{TransferKind, TransferTransport},
 };
@@ -133,7 +133,11 @@ pub(crate) async fn handle_tcp_xfr(
         }
         Err(XfrError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
-            let response = query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?;
+            let response = query.signed_error_response(
+                Rcode::NOTAUTH,
+                Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+                identity.signer.as_mut(),
+            )?;
             wire::write_tcp_message(stream, &response).await?;
             Ok(())
         }
@@ -199,9 +203,9 @@ pub(crate) async fn handle_udp_xfr(
                     client_addr.ip(),
                     refusal.reason
                 );
-                return refusal
-                    .into_response(query)
-                    .unwrap_or_else(|_| query.error_response(Rcode::REFUSED));
+                return refusal.into_response(query).unwrap_or_else(|_| {
+                    query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
+                });
             }
         };
     // The transfer itself counts when the client returns over TCP.

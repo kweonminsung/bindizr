@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    dns::message::{Class, Rtype},
+    dns::message::{Class, Edns, Rtype},
     model::record::RecordType,
 };
 
@@ -335,4 +335,39 @@ fn a_malformed_delete_names_what_it_lacks() {
     ] {
         assert_eq!(record.validate_delete_shape().unwrap_err(), expected);
     }
+}
+
+/// Verify that the OPT record is read as RFC 6891 asks: one is kept, two
+/// are malformed, and a version above 0 is unsupported.
+#[test]
+fn parse_update_request_reads_the_opt_record() {
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 1);
+    append_opt_record(&mut message);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Present {
+            udp_payload_size: 1232
+        }
+    );
+
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 2);
+    append_opt_record(&mut message);
+    append_opt_record(&mut message);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Malformed
+    );
+
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 1);
+    // The TTL's second octet is the EDNS version.
+    message.extend_from_slice(&[
+        0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::UnsupportedVersion(1)
+    );
 }

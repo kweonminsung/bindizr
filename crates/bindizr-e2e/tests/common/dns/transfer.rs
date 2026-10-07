@@ -73,11 +73,28 @@ pub(crate) fn xot(
 /// Send one message over TCP to the listener on `port` and return the first
 /// response frame, for a test that builds its own question.
 pub(crate) fn exchange_tcp(port: u16, message: &[u8]) -> Result<Vec<u8>, String> {
-    let mut stream = connect(port)?;
+    exchange(&mut connect(port)?, message)
+}
+
+/// Send one message over TLS to the listener on `port` as `client` is
+/// configured to, and return the first response frame.
+pub(crate) fn exchange_xot(
+    port: u16,
+    message: &[u8],
+    client: ClientConfig,
+) -> Result<Vec<u8>, String> {
+    let tcp = connect(port)?;
+    let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let session = ClientConnection::new(Arc::new(client), server).map_err(|e| e.to_string())?;
+    exchange(&mut StreamOwned::new(session, tcp), message)
+}
+
+/// Write one framed message and read the first frame back.
+fn exchange<S: Read + Write>(stream: &mut S, message: &[u8]) -> Result<Vec<u8>, String> {
     let mut framed = (message.len() as u16).to_be_bytes().to_vec();
     framed.extend_from_slice(message);
     stream.write_all(&framed).map_err(|e| e.to_string())?;
-    read_frame(&mut stream)?.ok_or_else(|| "the server closed without answering".to_string())
+    read_frame(stream)?.ok_or_else(|| "the server closed without answering".to_string())
 }
 
 /// Connect to the listener on `port`, with a read timeout so a silent server

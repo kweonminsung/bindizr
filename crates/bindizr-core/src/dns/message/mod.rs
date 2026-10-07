@@ -3,7 +3,7 @@
 
 pub use domain::base::{
     Name,
-    iana::{Class, Opcode, Rcode, Rtype},
+    iana::{Class, Opcode, OptRcode, Rcode, Rtype},
 };
 use domain::{
     base::{
@@ -102,19 +102,27 @@ pub struct DnsMessageBuilder {
     signer: Option<TransferSigner>,
     /// The query's RD, copied into every message (RFC 1035, Section 4.1.1).
     rd: bool,
+    /// Whether the query spoke EDNS, so every message carries an OPT
+    /// (RFC 6891, Section 6.1.1; RFC 9103, Section 6.3.4).
+    edns: bool,
+    /// Set once the answers were dropped to fit a UDP limit.
+    truncated: bool,
 }
 
 impl DnsMessageBuilder {
-    /// Create a DNS response builder for the supplied question.
-    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype, rd: bool) -> Self {
+    /// Create a response builder answering `query` under `qtype`, which an
+    /// IXFR falling back to AXFR keeps as asked.
+    pub fn new(query: &ParsedQuery, qtype: Rtype) -> Self {
         Self {
-            query_id,
-            qname: qname.clone(),
+            query_id: query.query_id,
+            qname: query.qname.clone(),
             qtype: qtype.to_int(),
             answers: Vec::new(),
             answers_len: 0,
             signer: None,
-            rd,
+            rd: query.rd,
+            edns: query.edns != Edns::Absent,
+            truncated: false,
         }
     }
 
@@ -159,10 +167,12 @@ impl DnsMessageBuilder {
         self.answers.len()
     }
 
-    /// Calculate the response size including the question and optional TSIG.
+    /// Calculate the response size including the question, the OPT an EDNS
+    /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, signature_len);
-        12 + self.qname.len() + 4 + self.answers_len + signature
+        let opt = if self.edns { OPT_RECORD_LEN } else { 0 };
+        12 + self.qname.len() + 4 + self.answers_len + opt + signature
     }
 
     /// Remove the last answer and update the buffered byte count.
@@ -249,6 +259,7 @@ impl DnsMessageBuilder {
         header.set_qr(true);
         header.set_aa(true);
         header.set_rd(self.rd);
+        header.set_tc(self.truncated);
 
         let mut question = builder.question();
         question
@@ -262,7 +273,11 @@ impl DnsMessageBuilder {
                 .map_err(|e| EncodeMessageError::ComposeAnswer(Box::new(e)))?;
         }
 
+        // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
+        if self.edns {
+            push_opt(&mut additional, OptRcode::NOERROR, None);
+        }
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .answer(&mut additional, Time48::now())
@@ -277,8 +292,13 @@ impl DnsMessageBuilder {
         encode_tcp_message(&message)
     }
 
-    /// Consume the builder and serialize its DNS response.
-    pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
+    /// Build the response within `max_len`: over it, the answers are dropped
+    /// and TC set (RFC 6891, Section 6.2.5 keeps the header, question, and OPT).
+    pub fn build(mut self, max_len: usize) -> Result<Vec<u8>, EncodeMessageError> {
+        if self.message_len() > max_len {
+            self.clear_answers();
+            self.truncated = true;
+        }
         self.build_message()
     }
 }
@@ -296,10 +316,12 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
     Ok(result)
 }
 
-mod query;
+pub(crate) mod query;
 mod records;
 
-pub use query::{ParseQueryError, ParsedQuery, is_response};
+use query::OPT_RECORD_LEN;
+pub(crate) use query::push_opt;
+pub use query::{Edns, ExtendedErrorCode, ParseQueryError, ParsedQuery, is_response};
 
 #[cfg(test)]
 mod tests;

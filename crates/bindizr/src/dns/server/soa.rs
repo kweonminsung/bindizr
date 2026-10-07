@@ -5,8 +5,8 @@ use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::{
     dns::{
-        message,
-        message::{Rcode, Rtype},
+        DNS_TCP_MAX_SIZE, message,
+        message::{ExtendedErrorCode, Rcode, Rtype},
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
     metrics::{SoaResult, XfrResult},
@@ -42,6 +42,7 @@ pub(crate) async fn handle_tcp_soa(
         client_addr.ip(),
         query_data,
         stream.transport(),
+        DNS_TCP_MAX_SIZE,
     )
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
@@ -67,6 +68,7 @@ pub(crate) async fn handle_udp_soa(
         client_addr.ip(),
         query_data,
         TransferTransport::Udp,
+        query.udp_payload_limit(),
     )
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
@@ -94,6 +96,7 @@ pub(crate) async fn handle_udp_ixfr(
         client_addr.ip(),
         query_data,
         TransferTransport::Udp,
+        query.udp_payload_limit(),
     )
     .await
     .inspect_err(|_| {
@@ -126,13 +129,15 @@ fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
 }
 
 /// Build the SOA response and outcome for any transport, applying the same
-/// gate as transfers because secondaries poll with their transfer key.
+/// gate as transfers because secondaries poll with their transfer key. An
+/// answer over `max_len` goes out truncated, for UDP.
 async fn handle_soa_request(
     dns_cx: &DnsContext,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     query_data: &[u8],
     transport: TransferTransport,
+    max_len: usize,
 ) -> Result<(Vec<u8>, SoaResult), XfrError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
@@ -162,8 +167,7 @@ async fn handle_soa_request(
 
     // The question is echoed as asked: SOA, or a UDP IXFR answered by it.
     let build = |signer: Option<TransferSigner>| {
-        let builder =
-            message::DnsMessageBuilder::new(query.query_id, &query.qname, query.qtype, query.rd);
+        let builder = message::DnsMessageBuilder::new(query, query.qtype);
         match signer {
             Some(signer) => builder.sign_with(signer),
             None => builder,
@@ -179,8 +183,12 @@ async fn handle_soa_request(
         let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
-                return Ok(query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?)
-                    .map(|response| (response, SoaResult::NotAuth));
+                return Ok(query.signed_error_response(
+                    Rcode::NOTAUTH,
+                    Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+                    identity.signer.as_mut(),
+                )?)
+                .map(|response| (response, SoaResult::NotAuth));
             }
             TransferAccess::Refused(reason) => {
                 log::warn!(
@@ -198,7 +206,7 @@ async fn handle_soa_request(
         let (catalog_zone, _) = catalog::generate_catalog_zone(dns_cx, zones).await?;
         let mut builder = build(identity.signer);
         builder.add_catalog_soa(&catalog_zone, catalog_zone.serial)?;
-        return Ok((builder.build()?, SoaResult::Ok));
+        return Ok((builder.build(max_len)?, SoaResult::Ok));
     }
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
@@ -211,8 +219,12 @@ async fn handle_soa_request(
     let zone = match access {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
-            return Ok(query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?)
-                .map(|response| (response, SoaResult::NotAuth));
+            return Ok(query.signed_error_response(
+                Rcode::NOTAUTH,
+                Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+                identity.signer.as_mut(),
+            )?)
+            .map(|response| (response, SoaResult::NotAuth));
         }
         TransferAccess::Refused(reason) => {
             log::warn!(
@@ -237,7 +249,7 @@ async fn handle_soa_request(
     let mut builder = build(identity.signer);
     builder.add_soa(&zone, zone.serial)?;
 
-    Ok((builder.build()?, SoaResult::Ok))
+    Ok((builder.build(max_len)?, SoaResult::Ok))
 }
 
 /// `bindizr doctor`'s own probe carries no key and is not a secondary, so it

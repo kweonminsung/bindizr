@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::{
     dns::{
-        message::Rcode,
+        message::{Edns, ExtendedErrorCode, OptRcode, Rcode},
         nsupdate::{DEFAULT_FUDGE, build_response},
         tsig::{RequestSignature, request_signature},
     },
@@ -103,7 +103,7 @@ async fn handle_nsupdate_request(
             };
             cx.metrics()
                 .track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
-            return build_response(query_data, Rcode::FORMERR, signer, fudge);
+            return build_response(query_data, OptRcode::FORMERR, None, signer, fudge);
         }
     };
 
@@ -112,16 +112,30 @@ async fn handle_nsupdate_request(
         .tsig
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
+
+    // RFC 6891, Sections 6.1.1 and 6.1.3: an OPT the server cannot take is
+    // answered before the update is read.
+    let edns_rcode = match parsed.edns {
+        Edns::Absent | Edns::Present { .. } => None,
+        Edns::Malformed => Some(OptRcode::FORMERR),
+        Edns::UnsupportedVersion(_) => Some(OptRcode::BADVERS),
+    };
+    if let Some(rcode) = edns_rcode {
+        log::info!("Refusing the EDNS of an NSUPDATE from {}", client_addr);
+        cx.metrics()
+            .track_nsupdate(NsupdateResult::Rcode(rcode.rcode()));
+        return build_response(query_data, rcode, None, None, fudge);
+    }
     let (result, signer) = update::apply_update(dns_cx, parsed, query_data).await;
 
-    let rcode = match result {
+    let (rcode, ede) = match result {
         Ok(changed) => {
             log::info!(
                 "NSUPDATE applied from {} (changed={})",
                 client_addr,
                 changed
             );
-            Rcode::NOERROR
+            (Rcode::NOERROR, None)
         }
         // TSIG failures carry their own complete response, built against the
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
@@ -132,42 +146,42 @@ async fn handle_nsupdate_request(
         }
         Err(update::UpdateError::FormErr(msg)) => {
             log::warn!("NSUPDATE formerr from {}: {}", client_addr, msg);
-            Rcode::FORMERR
+            (Rcode::FORMERR, None)
         }
         Err(update::UpdateError::Refused(msg)) => {
             log::warn!("NSUPDATE refused from {}: {}", client_addr, msg);
-            Rcode::REFUSED
+            (Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
         Err(update::UpdateError::YxDomain(msg)) => {
             log::warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
-            Rcode::YXDOMAIN
+            (Rcode::YXDOMAIN, None)
         }
         Err(update::UpdateError::YxRrset(msg)) => {
             log::warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
-            Rcode::YXRRSET
+            (Rcode::YXRRSET, None)
         }
         Err(update::UpdateError::NxDomain(msg)) => {
             log::warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
-            Rcode::NXDOMAIN
+            (Rcode::NXDOMAIN, None)
         }
         Err(update::UpdateError::NxRrset(msg)) => {
             log::warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
-            Rcode::NXRRSET
+            (Rcode::NXRRSET, None)
         }
         Err(update::UpdateError::NotAuth(msg)) => {
             log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
-            Rcode::NOTAUTH
+            (Rcode::NOTAUTH, Some(ExtendedErrorCode::NOT_AUTHORITATIVE))
         }
         Err(update::UpdateError::NotZone(msg)) => {
             log::warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
-            Rcode::NOTZONE
+            (Rcode::NOTZONE, None)
         }
         Err(err @ update::UpdateError::Internal { .. }) => {
             log::warn!("NSUPDATE internal error from {}: {}", client_addr, err);
-            Rcode::SERVFAIL
+            (Rcode::SERVFAIL, None)
         }
     };
 
     cx.metrics().track_nsupdate(NsupdateResult::Rcode(rcode));
-    build_response(query_data, rcode, signer, fudge)
+    build_response(query_data, OptRcode::from(rcode), ede, signer, fudge)
 }

@@ -8,7 +8,7 @@ use std::net::IpAddr;
 
 use bindizr_core::{
     dns::{
-        message::{ParsedQuery, Rcode},
+        message::{ExtendedErrorCode, ParsedQuery, Rcode},
         tsig::{
             RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
         },
@@ -27,16 +27,19 @@ use crate::dns::{error::XfrError, server::DnsContext};
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
     rcode: Rcode,
+    /// The reason an EDNS query hears beside the RCODE (RFC 8914).
+    ede: Option<ExtendedErrorCode>,
     response: Option<Vec<u8>>,
     signer: Option<TransferSigner>,
 }
 
 impl TransferRefusal {
-    /// Build a transfer refusal with the supplied reason.
+    /// A refusal by policy: REFUSED, prohibited.
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         TransferRefusal {
             reason,
             rcode: Rcode::REFUSED,
+            ede: Some(ExtendedErrorCode::PROHIBITED),
             response: None,
             signer,
         }
@@ -47,6 +50,7 @@ impl TransferRefusal {
         TransferRefusal {
             reason,
             rcode: Rcode::FORMERR,
+            ede: None,
             response: None,
             signer: None,
         }
@@ -57,7 +61,7 @@ impl TransferRefusal {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        Ok(query.signed_error_response(self.rcode, self.signer.as_mut())?)
+        Ok(query.signed_error_response(self.rcode, self.ede, self.signer.as_mut())?)
     }
 }
 
@@ -167,6 +171,7 @@ impl From<TsigError> for TransferRefusal {
             TsigError::Rejected { rcode, response } => TransferRefusal {
                 reason: format!("TSIG validation failed: {}", rcode),
                 rcode: Rcode::NOTAUTH,
+                ede: None,
                 response: Some(response),
                 signer: None,
             },

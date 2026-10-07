@@ -2,7 +2,11 @@
 //! the plain one does, but admits a request only when its TSIG key and its
 //! address both pass, as Section 7.5 requires without mTLS.
 
-use domain::base::iana::Rcode;
+use domain::base::{
+    Message, MessageBuilder,
+    iana::{ExtendedErrorCode, Rcode, Rtype},
+    opt::exterr::ExtendedError,
+};
 use reqwest::{Method, StatusCode};
 use rustls::{
     ClientConfig, RootCertStore, SupportedProtocolVersion, pki_types::CertificateDer, version,
@@ -11,8 +15,11 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TestAppOptions, axfr,
-    dns::nsupdate::{KeyRole, create_tsig_key},
-    xot,
+    dns::{
+        nsupdate::{KeyRole, create_tsig_key},
+        parse_name,
+    },
+    exchange_xot, xot,
 };
 
 /// A bindizr serving XoT beside plain TCP.
@@ -122,4 +129,43 @@ async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
         error.contains("without its closing SOA") || error.contains("close_notify"),
         "{error}"
     );
+}
+
+/// Verify that a query the TLS listener does not serve is REFUSED with
+/// extended DNS error 21, Not Supported (RFC 9103, Section 7.8).
+#[tokio::test]
+#[serial]
+async fn a_query_the_tls_listener_does_not_serve_is_refused_as_not_supported() {
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(93);
+    let mut question = builder.question();
+    question
+        .push((&parse_name(&format!("www.{zone_name}")).unwrap(), Rtype::A))
+        .unwrap();
+    let mut additional = question.additional();
+    additional
+        .opt(|opt| {
+            opt.set_udp_payload_size(1232);
+            Ok(())
+        })
+        .unwrap();
+
+    let frame =
+        exchange_xot(app.dns_tls_port(), &additional.finish(), dot_client(&app)).expect("XoT");
+
+    let response = Message::from_octets(frame.as_slice()).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::REFUSED);
+    let ede = response
+        .opt()
+        .expect("the refusal carries an OPT")
+        .opt()
+        .iter::<ExtendedError<_>>()
+        .next()
+        .expect("the refusal names its reason")
+        .unwrap();
+    assert_eq!(ede.code(), ExtendedErrorCode::NOT_SUPPORTED);
 }

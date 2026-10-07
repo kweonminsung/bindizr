@@ -12,7 +12,7 @@ use std::{
 use domain::{
     base::{
         Message, MessageBuilder, Name, Ttl,
-        iana::{Class, Rcode, Rtype, TsigRcode},
+        iana::{Class, OptRcode, Rcode, Rtype, TsigRcode},
     },
     rdata::{
         A, Soa,
@@ -627,20 +627,140 @@ async fn a_response_copies_the_rd_bit() {
         question
             .push((&parse_name(zone_name).unwrap(), Rtype::SOA))
             .unwrap();
-        let query = question.finish();
-
-        let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        socket
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
-        socket
-            .send_to(&query, ("127.0.0.1", app.dns_port()))
-            .unwrap();
-        let mut buf = [0u8; 1500];
-        let (len, _) = socket.recv_from(&mut buf).unwrap();
-
-        let response = Message::from_octets(&buf[..len]).unwrap();
+        let response = exchange_udp(app.dns_port(), &question.finish());
+        let response = Message::from_octets(response.as_slice()).unwrap();
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         assert_eq!(response.header().rd(), rd, "rd={rd}");
     }
+}
+
+/// A question for `zone` and `qtype` with `opts` OPT records of `version`
+/// advertising 4096 octets; none without EDNS.
+fn question_with_opt(zone: &str, qtype: Rtype, opts: usize, version: u8) -> Vec<u8> {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(91);
+    let mut question = builder.question();
+    question.push((&parse_name(zone).unwrap(), qtype)).unwrap();
+    let mut additional = question.additional();
+    for _ in 0..opts {
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(4096);
+                opt.set_version(version);
+                Ok(())
+            })
+            .unwrap();
+    }
+    additional.finish()
+}
+
+/// Send one UDP query to bindizr and return the response.
+fn exchange_udp(port: u16, query: &[u8]) -> Vec<u8> {
+    let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    socket.send_to(query, ("127.0.0.1", port)).unwrap();
+    let mut buf = [0u8; 4096];
+    let (len, _) = socket.recv_from(&mut buf).unwrap();
+    buf[..len].to_vec()
+}
+
+/// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3, and that
+/// an AXFR envelope carries the OPT too (RFC 9103, Section 6.3.4).
+#[tokio::test]
+#[serial]
+async fn an_edns_query_is_answered_with_an_opt() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let plain = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 0, 0),
+    );
+    let plain = Message::from_octets(plain.as_slice()).unwrap();
+    assert_eq!(plain.header().rcode(), Rcode::NOERROR);
+    assert!(plain.opt().is_none(), "no OPT was asked for");
+
+    let edns = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 1, 0),
+    );
+    let edns = Message::from_octets(edns.as_slice()).unwrap();
+    assert_eq!(edns.header().rcode(), Rcode::NOERROR);
+    let opt = edns.opt().expect("an EDNS query is answered with an OPT");
+    assert_eq!(opt.version(), 0);
+    assert_eq!(opt.udp_payload_size(), 1232);
+
+    let doubled = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 2, 0),
+    );
+    let doubled = Message::from_octets(doubled.as_slice()).unwrap();
+    assert_eq!(doubled.header().rcode(), Rcode::FORMERR);
+
+    let newer = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 1, 1),
+    );
+    let newer = Message::from_octets(newer.as_slice()).unwrap();
+    let opt = newer.opt().expect("BADVERS travels in an OPT");
+    assert_eq!(opt.rcode(newer.header()), OptRcode::BADVERS);
+    assert_eq!(opt.version(), 0);
+
+    let frame = exchange_tcp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::AXFR, 1, 0),
+    )
+    .expect("AXFR");
+    let envelope = Message::from_octets(frame.as_slice()).unwrap();
+    assert_eq!(envelope.header().rcode(), Rcode::NOERROR);
+    assert!(envelope.opt().is_some(), "the envelope carries the OPT");
+}
+
+/// Verify that a UDP answer over 512 octets is truncated without EDNS and
+/// delivered whole within an advertised size (RFC 1035, Section 4.2.1).
+#[tokio::test]
+#[serial]
+async fn a_udp_answer_over_the_limit_is_truncated() {
+    let app = transfer_app().await;
+    // Three 60-octet labels push the SOA answer well past 512 octets.
+    let label = "x".repeat(60);
+    let zone_name = format!("{label}.{label}.{label}.{}", app.zone_name("long.test"));
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": format!("hostmaster@{zone_name}"),
+                "default_ttl": 3600,
+                "serial": 10,
+                "refresh": 7200,
+                "retry": 3600,
+                "expire": 604800,
+                "minimum_ttl": 86400
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let plain = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(&zone_name, Rtype::SOA, 0, 0),
+    );
+    let plain = Message::from_octets(plain.as_slice()).unwrap();
+    assert!(plain.header().tc(), "over 512 octets without EDNS");
+    assert_eq!(plain.header_counts().ancount(), 0);
+    assert!(plain.as_slice().len() <= 512);
+
+    let edns = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(&zone_name, Rtype::SOA, 1, 0),
+    );
+    let edns = Message::from_octets(edns.as_slice()).unwrap();
+    assert!(!edns.header().tc(), "fits the advertised size");
+    assert_eq!(edns.header_counts().ancount(), 1);
 }

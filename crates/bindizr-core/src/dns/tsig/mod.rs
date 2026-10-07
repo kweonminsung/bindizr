@@ -9,7 +9,7 @@ use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Rtype, ToName,
-        iana::{Rcode, TsigRcode},
+        iana::{OptRcode, Rcode, TsigRcode},
         message_builder::AdditionalBuilder,
     },
     rdata::tsig::{Time48, Tsig},
@@ -21,7 +21,7 @@ use domain::{
 use thiserror::Error;
 
 use crate::{
-    dns::{LibraryError, name::MAX_DOMAIN_LEN},
+    dns::{LibraryError, message::push_opt, name::MAX_DOMAIN_LEN},
     model::tsig_key::{TsigAlgorithm, TsigKey},
 };
 
@@ -269,15 +269,17 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     };
 
     let error = err.error();
-    // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2.
-    // The structure was checked before verification (`request_signature`, the
-    // UPDATE parser), so what reaches here as FORMERR is a bad MAC: BADSIG.
-    let response = if error == TsigRcode::FORMERR {
-        build_unsigned_error(&msg, TsigRcode::BADSIG)
-    } else {
-        err.build_message(&msg, MessageBuilder::new_vec())
+    // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2;
+    // the structure was checked before verification, so that is BADSIG. Only
+    // BADTIME is signed (RFC 8945, Section 5.2.3); the rest are built here
+    // with the OPT an EDNS request is owed.
+    let response = match error {
+        TsigRcode::FORMERR => build_unsigned_error(&msg, TsigRcode::BADSIG),
+        TsigRcode::BADTIME => err
+            .build_message(&msg, MessageBuilder::new_vec())
             .ok()
-            .map(|builder| builder.finish())
+            .map(|builder| builder.finish()),
+        other => build_unsigned_error(&msg, other),
     };
 
     match response {
@@ -303,6 +305,9 @@ fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?;
     let mut builder = builder.additional();
+    if msg.opt().is_some() {
+        push_opt(&mut builder, OptRcode::NOTAUTH, None);
+    }
     builder
         .push((
             tsig_record.owner(),

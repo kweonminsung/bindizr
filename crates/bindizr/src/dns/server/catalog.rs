@@ -94,8 +94,7 @@ pub(crate) async fn handle_catalog_axfr(
     // Materialize the virtual catalog from the current member zones.
     let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx, zones).await?;
 
-    let mut builder =
-        message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype, query.rd);
+    let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }

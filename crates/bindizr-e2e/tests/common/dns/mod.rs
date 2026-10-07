@@ -9,7 +9,7 @@ use domain::{
 };
 pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
-pub(crate) use transfer::{TransferOutcome, axfr, exchange_tcp, xot};
+pub(crate) use transfer::{TransferOutcome, axfr, exchange_tcp, exchange_xot, xot};
 
 pub(crate) mod notify;
 pub(crate) mod nsupdate;

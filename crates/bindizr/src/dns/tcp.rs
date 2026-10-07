@@ -3,7 +3,7 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::message::{self, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{self, ExtendedErrorCode, Opcode, Rcode, Rtype};
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::{
@@ -210,13 +210,20 @@ async fn dispatch_tcp_query(
         }
     };
 
+    if let Some(response) = query.edns_error_response() {
+        log::info!("Refusing the EDNS of a DNS TCP query from {}", client_addr);
+        return wire::write_tcp_message(stream, &response)
+            .await
+            .map_err(ServeDnsError::Refusal);
+    }
+
     if query.opcode != Opcode::QUERY {
         log::info!(
             "Refusing DNS TCP opcode {:?} from {}",
             query.opcode,
             client_addr
         );
-        let response = query.error_response(Rcode::NOTIMP);
+        let response = query.error_response(Rcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED));
         return wire::write_tcp_message(stream, &response)
             .await
             .map_err(ServeDnsError::AnswerOpcode);
@@ -231,13 +238,14 @@ async fn dispatch_tcp_query(
             .await
             .map_err(ServeDnsError::Xfr)?;
     } else {
-        // bindizr answers secondaries, not resolvers.
+        // bindizr answers secondaries, not resolvers; over TLS the refusal
+        // names its reason (RFC 9103, Section 7.8).
         log::info!(
             "Refusing out-of-scope DNS TCP query from {} (qtype={:?})",
             client_addr,
             query.qtype
         );
-        let response = query.error_response(Rcode::REFUSED);
+        let response = query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED));
         wire::write_tcp_message(stream, &response)
             .await
             .map_err(ServeDnsError::Refusal)?;
