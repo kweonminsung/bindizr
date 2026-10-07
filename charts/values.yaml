@@ -56,6 +56,11 @@ bindizr:
       batchMs: 0
       retries: 3
       timeoutSecs: 3
+    tls:
+      # A Secret holding tls.crt and tls.key to serve zone transfers over TLS
+      # (XoT, RFC 9103) on dns.tls.port; empty leaves that listener off.
+      existingSecret: ""
+      port: 853
     transfer:
       # Zone records cached per serial, so repeated transfers skip the
       # database; a larger zone is served uncached, 0 caches nothing.

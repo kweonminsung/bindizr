@@ -140,3 +140,31 @@ server 10.0.0.5 {
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
 for creating the key in a role that holds `zone:transfer` in all zones.
+
+## Transfers over TLS
+
+BIND 9.18.10 or newer pulls over TLS. A `tls` statement says how Bindizr's
+certificate is checked (`remote-hostname`, and `ca-file` for a private
+issuer); name it with the key beside Bindizr's address, port 853, in both
+places:
+
+```text
+tls xot {
+    remote-hostname "bindizr.example.net";
+    ca-file "/etc/bind/bindizr-ca.crt";
+    protocols { TLSv1.3; };
+};
+
+options {
+    catalog-zones {
+        zone "catalog.bindizr" default-primaries { 10.0.0.5 port 853 key xfr-key tls xot; };
+    };
+};
+
+zone "catalog.bindizr" {
+    type secondary;
+    primaries { 10.0.0.5 port 853 key xfr-key tls xot; };
+    file "/var/cache/bind/catalog.bindizr.zone";
+    ixfr-from-differences yes;
+};
+```

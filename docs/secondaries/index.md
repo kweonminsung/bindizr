@@ -112,6 +112,17 @@ serve is refused with extended DNS error 21, Not Supported (Section 7.8).
 Every listener answers an EDNS query with an OPT record and keeps a UDP
 answer within the size the query advertised, 512 octets without EDNS.
 
+## Transfers over TLS
+
+With `[dns.tls]` set (see [Configuration](../configuration.md)), Bindizr
+serves transfers over TLS (XoT, RFC 9103) on a second port, 853 by default.
+The certificate must carry the name the secondary connects to. Over TLS a
+secondary must be registered *and* sign with a key (RFC 9103, Section 7.5);
+the plain listener takes either alone. [BIND](bind.md#transfers-over-tls)
+9.18.10, [Knot DNS](knot.md#transfers-over-tls) 3.4, and
+[NSD](nsd.md#transfers-over-tls) 4.3.7 or newer speak it. `secondary
+transfers` shows the transport, and the log says `XFR TLS query`.
+
 ## Checking that it worked
 
 | Command | Checks |

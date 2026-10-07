@@ -55,6 +55,13 @@ data:
 
     [dns.nsupdate]
     tsig_required = {{ .Values.bindizr.dns.nsupdateTsigRequired }}
+    {{- with .Values.bindizr.dns.tls.existingSecret }}
+
+    [dns.tls]
+    listen_port = {{ $.Values.bindizr.dns.tls.port }}
+    cert_file = "/etc/bindizr/dns-tls/tls.crt"
+    key_file = "/etc/bindizr/dns-tls/tls.key"
+    {{- end }}
 
     [dns.transfer]
     cache_max_records = {{ .Values.bindizr.dns.transfer.cacheMaxRecords }}

@@ -46,31 +46,82 @@ impl TestApp {
     }
 }
 
-/// Register the stack's BIND9 services as secondaries; the stack is reused
-/// across tests, so one already registered is left alone.
+/// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
+const COMPOSE_XOT_KEY: &str = "xot-key";
+const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
+/// Register the stack's BIND9 services as secondaries, and the key bind9-1
+/// signs with; the stack is reused across tests, so what exists is left alone.
 async fn register_compose_secondaries(client: &Client) {
     for name in COMPOSE_SECONDARY_SERVICES {
-        let url = format!("{COMPOSE_API_BASE_URL}/secondaries/{name}");
-        let response = client
-            .get(&url)
-            .send()
-            .await
-            .expect("GET /secondaries/{name}");
-        if response.status() == StatusCode::OK {
+        if exists(client, &format!("/secondaries/{name}")).await {
             continue;
         }
-        let response = client
-            .post(format!("{COMPOSE_API_BASE_URL}/secondaries"))
-            .json(&serde_json::json!({ "name": name, "address": format!("{name}:53") }))
-            .send()
-            .await
-            .expect("POST /secondaries");
-        assert_eq!(
-            response.status(),
-            StatusCode::CREATED,
-            "registering the compose secondary {name}"
-        );
+        post(
+            client,
+            "/secondaries",
+            serde_json::json!({ "name": name, "address": format!("{name}:53") }),
+            &[StatusCode::CREATED],
+        )
+        .await;
     }
+
+    // RFC 9103, Section 7.5: over TLS the key is required beside the
+    // address, in a role that may transfer all zones.
+    if exists(client, &format!("/tsig-keys/{COMPOSE_XOT_KEY}")).await {
+        return;
+    }
+    post(
+        client,
+        "/roles",
+        serde_json::json!({ "name": "secondaries" }),
+        &[StatusCode::CREATED, StatusCode::CONFLICT],
+    )
+    .await;
+    post(
+        client,
+        "/roles/secondaries/grants",
+        serde_json::json!({ "actions": ["zone:transfer"] }),
+        &[StatusCode::CREATED],
+    )
+    .await;
+    post(
+        client,
+        "/tsig-keys",
+        serde_json::json!({
+            "name": COMPOSE_XOT_KEY,
+            "secret": COMPOSE_XOT_SECRET,
+            "role_name": "secondaries"
+        }),
+        &[StatusCode::CREATED],
+    )
+    .await;
+}
+
+/// Whether the compose API serves `path`.
+async fn exists(client: &Client, path: &str) -> bool {
+    client
+        .get(format!("{COMPOSE_API_BASE_URL}{path}"))
+        .send()
+        .await
+        .unwrap_or_else(|e| panic!("GET {path}: {e}"))
+        .status()
+        == StatusCode::OK
+}
+
+/// POST `body` to the compose API, accepting one of `allowed` statuses.
+async fn post(client: &Client, path: &str, body: serde_json::Value, allowed: &[StatusCode]) {
+    let response = client
+        .post(format!("{COMPOSE_API_BASE_URL}{path}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap_or_else(|e| panic!("POST {path}: {e}"));
+    assert!(
+        allowed.contains(&response.status()),
+        "POST {path} answered {}",
+        response.status()
+    );
 }
 
 /// The Docker Compose project hosting bindizr and its BIND9 secondaries for

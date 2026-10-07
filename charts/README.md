@@ -24,7 +24,9 @@ kubectl create secret generic bindizr-db-secret \
 
 A database behind TLS is verified with `--set bindizr.database.tls.mode=verify-full`;
 a private issuer's certificate goes in a Secret holding `ca.crt`, named by
-`bindizr.database.tls.existingSecret`.
+`bindizr.database.tls.existingSecret`. A Secret holding `tls.crt` and `tls.key`
+named by `bindizr.dns.tls.existingSecret` serves zone transfers over TLS (XoT)
+on port 853.
 
 Install the released OCI chart from Docker Hub. Its default BIND image is
 amd64-only; the [Kubernetes guide](../docs/deployment/kubernetes.md#1-install)
