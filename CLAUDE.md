@@ -1082,6 +1082,22 @@ and the file imports its parent with `use super::*;`; rustfmt orders it beside
 the other imports. Apply the same threshold after deletions: below 100 lines,
 including the enclosing module braces, return the tests inline.
 
+A module's body — its lines outside `#[cfg(test)]` — splits into files when
+two things hold at once: it has passed **500 lines**, and it decomposes into
+peers of one kind, each complete with its own logic, which the files are
+then named for — the record types (`dns/record/a.rs`, `aaaa.rs`, `cname.rs`),
+the backends (`db/mysql/`, `postgres/`, `sqlite/`), the verbs of an entity
+(`zone/create.rs`, `get.rs`), the listeners (`dns/tcp.rs`, `udp.rs`), the
+subcommand groups of a CLI command (`zone/version.rs`), the route groups of
+a resource, the sections of a protocol message
+(`dynamic_update/prerequisite.rs`, `operation.rs`). The split takes every
+peer, not one pulled out of the rest, and never cuts a function, a type's
+`impl`s, or a `match`. Length alone splits nothing: a long file whose body
+is one type with its impls (`ServiceError`, `Metrics`), one sequenced flow
+(the zone-file reconcile in `record/import`), or a series of declarations
+that carry no logic of their own (the rows of `cli/output/table.rs`) has no
+peers and stays whole.
+
 ### Visibility follows the interface contract
 
 Use only private, `pub(crate)`, and `pub`; never `pub(super)` or `pub(in path)`.
