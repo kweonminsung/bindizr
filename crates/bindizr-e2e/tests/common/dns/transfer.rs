@@ -173,7 +173,7 @@ fn transfer<S: Read + Write>(
 }
 
 /// Read the next length-prefixed DNS transfer frame.
-fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
     let mut len = [0u8; 2];
     match stream.read_exact(&mut len) {
         Ok(()) => {}

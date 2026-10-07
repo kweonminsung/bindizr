@@ -16,12 +16,12 @@ use bindizr_service::{
 
 use self::send::{IxfrSendError, send_ixfr_response, send_soa_response};
 use super::{auth::TransferIdentity, axfr};
-use crate::dns::{error::XfrError, server::DnsContext, stream::DnsStream};
+use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.
 pub(crate) async fn handle_ixfr(
     dns_cx: &DnsContext,
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     identity: &mut TransferIdentity,
@@ -39,14 +39,14 @@ pub(crate) async fn handle_ixfr(
     // Choose a full transfer or an SOA-only reply before loading incremental history.
     if cx.config().dns.is_catalog_zone(zone_name_str) {
         log::info!("IXFR: Catalog zone requested, falling back to AXFR");
-        return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity).await;
     }
 
     let client_serial = match query.client_serial {
         Some(s) => Serial::from(s),
         None => {
             log::warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
+            return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
                 .await;
         }
     };
@@ -77,7 +77,7 @@ pub(crate) async fn handle_ixfr(
     let (changes, versions) = match delta {
         TransferDelta::UpToDate(current_soa) => {
             log::info!("IXFR: Client is up-to-date (serial={})", current_serial);
-            return send_soa_response(stream, query, &current_soa, identity.signer.take()).await;
+            return send_soa_response(writer, query, &current_soa, identity.signer.take()).await;
         }
         TransferDelta::Full => {
             log::info!(
@@ -85,7 +85,7 @@ pub(crate) async fn handle_ixfr(
                 client_serial,
                 current_serial
             );
-            return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
+            return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
                 .await;
         }
         TransferDelta::Changes { changes, versions } => (changes, versions),
@@ -108,7 +108,7 @@ pub(crate) async fn handle_ixfr(
     // The service checked the delta has no gap; a failure still falls back
     // to AXFR only while no bytes have reached the client.
     match send_ixfr_response(
-        stream,
+        writer,
         query,
         &zone,
         client_serial,
@@ -129,7 +129,7 @@ pub(crate) async fn handle_ixfr(
                 error
             );
             identity.signer = signer_back.map(|s| *s);
-            return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
+            return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
                 .await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
@@ -148,7 +148,7 @@ pub(crate) async fn handle_ixfr(
         client_ip,
         zone.id,
         TransferKind::Ixfr,
-        stream.transport(),
+        writer.transport(),
         true,
         current_serial,
     )

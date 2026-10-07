@@ -13,12 +13,12 @@ use bindizr_core::{
 };
 use thiserror::Error;
 
-use crate::dns::{error::XfrError, stream::DnsStream};
+use crate::dns::{error::XfrError, stream::ResponseWriter};
 
 /// The whole answer when the client is already at the current serial: one
 /// SOA and nothing to replay (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     current_soa: &ZoneVersion,
     signer: Option<TransferSigner>,
@@ -29,7 +29,7 @@ pub(crate) async fn send_soa_response(
     }
 
     builder.add_version_soa(current_soa)?;
-    crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
+    writer.flush_if_not_empty(&mut builder).await?;
 
     Ok(())
 }
@@ -56,7 +56,7 @@ pub(crate) enum IxfrSendError {
 /// 64 KiB wire limit, and reports whether a failure left the stream dirty so
 /// the caller can decide about AXFR fallback.
 pub(crate) async fn send_ixfr_response(
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     zone: &Zone,
     client_serial: Serial,
@@ -80,13 +80,11 @@ pub(crate) async fn send_ixfr_response(
                 })?;
 
         // Initial SOA (current serial).
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_version_soa(current_version),
-        )
-        .await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_version_soa(current_version)
+            })
+            .await?;
 
         let mut changes_by_serial: HashMap<Serial, Vec<&ZoneChange>> = HashMap::new();
         for change in changes {
@@ -113,25 +111,21 @@ pub(crate) async fn send_ixfr_response(
                     which: "old",
                     serial: old_serial,
                 })?;
-            crate::dns::wire::add_answer_and_flush_if_needed(
-                &mut builder,
-                stream,
-                &mut messages_sent,
-                |builder| builder.add_version_soa(old_soa),
-            )
-            .await?;
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_version_soa(old_soa)
+                })
+                .await?;
 
             for change in serial_changes
                 .iter()
                 .filter(|c| c.operation == ChangeOperation::Delete)
             {
-                crate::dns::wire::add_answer_and_flush_if_needed(
-                    &mut builder,
-                    stream,
-                    &mut messages_sent,
-                    |builder| builder.add_change(change, &zone.name),
-                )
-                .await?;
+                writer
+                    .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                        builder.add_change(change, &zone.name)
+                    })
+                    .await?;
             }
 
             // New SOA (addition section marker).
@@ -141,37 +135,31 @@ pub(crate) async fn send_ixfr_response(
                     which: "new",
                     serial,
                 })?;
-            crate::dns::wire::add_answer_and_flush_if_needed(
-                &mut builder,
-                stream,
-                &mut messages_sent,
-                |builder| builder.add_version_soa(new_soa),
-            )
-            .await?;
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_version_soa(new_soa)
+                })
+                .await?;
 
             for change in serial_changes
                 .iter()
                 .filter(|c| c.operation == ChangeOperation::Add)
             {
-                crate::dns::wire::add_answer_and_flush_if_needed(
-                    &mut builder,
-                    stream,
-                    &mut messages_sent,
-                    |builder| builder.add_change(change, &zone.name),
-                )
-                .await?;
+                writer
+                    .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                        builder.add_change(change, &zone.name)
+                    })
+                    .await?;
             }
         }
 
         // Final SOA (current serial).
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_version_soa(current_version),
-        )
-        .await?;
-        messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_version_soa(current_version)
+            })
+            .await?;
+        messages_sent += writer.flush_if_not_empty(&mut builder).await?;
 
         Ok::<(), XfrError>(())
     }

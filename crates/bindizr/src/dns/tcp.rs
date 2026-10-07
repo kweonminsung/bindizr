@@ -10,6 +10,7 @@ use tokio::{
     io::AsyncWriteExt as _,
     net::{TcpListener, TcpStream},
     sync::Semaphore,
+    task::JoinSet,
     time::timeout,
 };
 use tokio_rustls::TlsAcceptor;
@@ -17,7 +18,7 @@ use tokio_rustls::TlsAcceptor;
 use super::{
     error::XfrError,
     server::{self, DnsContext},
-    stream::DnsStream,
+    stream::{DnsStream, ResponseWriter},
     wire,
 };
 
@@ -28,6 +29,10 @@ const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Connections served at once; the accept backlog holds the rest.
 const MAX_TCP_CONNECTIONS: usize = 128;
+
+/// Queries served at once on one connection; past this the next is read once
+/// one finishes, so a client cannot queue work faster than it is answered.
+const MAX_QUERIES_IN_FLIGHT: usize = 16;
 
 /// What a listener does with an accepted socket before serving it: nothing,
 /// or a TLS handshake under the XoT server configuration.
@@ -90,7 +95,7 @@ pub(crate) async fn run_tcp_server(
                 let dns_cx = dns_cx.clone();
                 let handshake = handshake.clone();
                 tokio::spawn(async move {
-                    serve_connection(&dns_cx, &handshake, stream, client_addr).await;
+                    serve_connection(dns_cx, &handshake, stream, client_addr).await;
                     drop(permit);
                 });
             }
@@ -104,7 +109,7 @@ pub(crate) async fn run_tcp_server(
 /// Run the handshake the listener requires, then serve the connection. A
 /// handshake the client fails is noted, not reported as a server error.
 async fn serve_connection(
-    dns_cx: &DnsContext,
+    dns_cx: Arc<DnsContext>,
     handshake: &Handshake,
     stream: TcpStream,
     client_addr: SocketAddr,
@@ -149,43 +154,72 @@ async fn serve_connection(
     }
 }
 
-/// Read and dispatch DNS queries on one connection until the client is done
-/// or idle.
+/// Read DNS queries on one connection until the client is done or idle,
+/// serving them concurrently (RFC 7766, Section 6.2.1.1; RFC 9103, Section 6).
 async fn handle_tcp_connection(
-    dns_cx: &DnsContext,
-    mut stream: DnsStream,
+    dns_cx: Arc<DnsContext>,
+    stream: DnsStream,
     client_addr: SocketAddr,
 ) -> Result<(), ServeDnsError> {
-    loop {
-        let query_data = match timeout(TCP_IDLE_TIMEOUT, wire::read_tcp_message(&mut stream)).await
-        {
-            Ok(Ok(query_data)) => query_data,
-            Ok(Err(XfrError::Closed)) => break,
-            Ok(Err(e)) => return Err(ServeDnsError::Read(e)),
-            Err(_) => {
-                log::info!(
-                    "Closing idle DNS TCP connection from {} after {:?}",
-                    client_addr,
-                    TCP_IDLE_TIMEOUT
-                );
-                break;
+    let (mut reader, writer) = stream.into_split();
+    let writer = Arc::new(writer);
+    let mut pending = Vec::new();
+    let mut in_flight = JoinSet::new();
+
+    let outcome = loop {
+        // A connection with a query in flight is not idle (RFC 7766, Section
+        // 6.2.3); the cancel-safe read may be interrupted by a query finishing.
+        let read = wire::read_tcp_message(&mut reader, &mut pending);
+        let result = if in_flight.is_empty() {
+            match timeout(TCP_IDLE_TIMEOUT, read).await {
+                Ok(result) => result,
+                Err(_) => {
+                    log::info!(
+                        "Closing idle DNS TCP connection from {} after {:?}",
+                        client_addr,
+                        TCP_IDLE_TIMEOUT
+                    );
+                    break Ok(());
+                }
+            }
+        } else {
+            tokio::select! {
+                result = read => result,
+                Some(_) = in_flight.join_next() => continue,
             }
         };
+        let query_data = match result {
+            Ok(query_data) => query_data,
+            Err(XfrError::Closed) => break Ok(()),
+            Err(e) => break Err(ServeDnsError::Read(e)),
+        };
 
-        dispatch_tcp_query(dns_cx, &mut stream, client_addr, &query_data).await?;
-    }
+        if in_flight.len() >= MAX_QUERIES_IN_FLIGHT {
+            in_flight.join_next().await;
+        }
+        let dns_cx = dns_cx.clone();
+        let writer = writer.clone();
+        in_flight.spawn(async move {
+            if let Err(e) = dispatch_tcp_query(&dns_cx, &writer, client_addr, &query_data).await {
+                log::error!("DNS TCP query from {} failed: {}", client_addr, e);
+            }
+        });
+    };
+
+    // The queries in flight are answered before the connection closes.
+    while in_flight.join_next().await.is_some() {}
 
     // A TLS peer is owed close_notify ahead of the FIN; a plain socket closes.
-    if let Err(e) = stream.shutdown().await {
+    if let Err(e) = writer.shutdown().await {
         log::debug!("Closing DNS TCP connection from {}: {}", client_addr, e);
     }
-    Ok(())
+    outcome
 }
 
 /// Route a TCP DNS query to its transfer, update, or SOA handler.
 async fn dispatch_tcp_query(
     dns_cx: &DnsContext,
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     client_addr: SocketAddr,
     query_data: &[u8],
 ) -> Result<(), ServeDnsError> {
@@ -198,7 +232,7 @@ async fn dispatch_tcp_query(
     // one upfront parse.
     if server::nsupdate::is_nsupdate(query_data) {
         return Ok(
-            server::nsupdate::handle_tcp_nsupdate(dns_cx, stream, query_data, client_addr).await?,
+            server::nsupdate::handle_tcp_nsupdate(dns_cx, writer, query_data, client_addr).await?,
         );
     }
 
@@ -212,7 +246,8 @@ async fn dispatch_tcp_query(
 
     if let Some(response) = query.edns_error_response() {
         log::info!("Refusing the EDNS of a DNS TCP query from {}", client_addr);
-        return wire::write_tcp_message(stream, &response)
+        return writer
+            .write_message(&response)
             .await
             .map_err(ServeDnsError::Refusal);
     }
@@ -224,17 +259,18 @@ async fn dispatch_tcp_query(
             client_addr
         );
         let response = query.error_response(Rcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED));
-        return wire::write_tcp_message(stream, &response)
+        return writer
+            .write_message(&response)
             .await
             .map_err(ServeDnsError::AnswerOpcode);
     }
 
     if query.qtype == Rtype::SOA {
-        server::soa::handle_tcp_soa(dns_cx, stream, client_addr, &query, query_data)
+        server::soa::handle_tcp_soa(dns_cx, writer, client_addr, &query, query_data)
             .await
             .map_err(ServeDnsError::Soa)?;
     } else if server::is_xfr_query_type(query.qtype) {
-        server::handle_tcp_xfr(dns_cx, stream, client_addr, &query, query_data)
+        server::handle_tcp_xfr(dns_cx, writer, client_addr, &query, query_data)
             .await
             .map_err(ServeDnsError::Xfr)?;
     } else {
@@ -246,7 +282,8 @@ async fn dispatch_tcp_query(
             query.qtype
         );
         let response = query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED));
-        wire::write_tcp_message(stream, &response)
+        writer
+            .write_message(&response)
             .await
             .map_err(ServeDnsError::Refusal)?;
     }

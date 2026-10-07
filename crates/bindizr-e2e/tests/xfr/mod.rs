@@ -4,7 +4,9 @@
 mod tls;
 
 use std::{
-    net::UdpSocket,
+    collections::HashMap,
+    io::Write,
+    net::{TcpStream, UdpSocket},
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -30,7 +32,7 @@ use crate::common::{
         nsupdate::{KeyRole, SigningKey, create_tsig_key},
         parse_name,
     },
-    exchange_dns_query, exchange_tcp, wait_for_any_dns_record,
+    exchange_dns_query, exchange_tcp, read_frame, wait_for_any_dns_record,
 };
 
 /// A bindizr whose transfer ACL admits the test's own loopback pull.
@@ -763,4 +765,53 @@ async fn a_udp_answer_over_the_limit_is_truncated() {
     let edns = Message::from_octets(edns.as_slice()).unwrap();
     assert!(!edns.header().tc(), "fits the advertised size");
     assert_eq!(edns.header_counts().ancount(), 1);
+}
+
+/// Verify that two transfers pipelined on one connection both complete,
+/// their streams free to intermingle (RFC 9103, Section 6.2).
+#[tokio::test]
+#[serial]
+async fn pipelined_transfers_on_one_connection_both_complete() {
+    let app = transfer_app().await;
+    let first = app.create_test_zone().await;
+    let first = first["name"].as_str().unwrap().to_string();
+    let second = app.zone_name("second.example");
+    app.create_zone_cli(&second, "3600").await;
+
+    let mut stream = TcpStream::connect(("127.0.0.1", app.dns_port())).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    for (id, zone) in [(1u16, &first), (2u16, &second)] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(id);
+        let mut question = builder.question();
+        question
+            .push((&parse_name(zone).unwrap(), Rtype::AXFR))
+            .unwrap();
+        let query = question.finish();
+        let mut framed = (query.len() as u16).to_be_bytes().to_vec();
+        framed.extend_from_slice(&query);
+        stream.write_all(&framed).unwrap();
+    }
+
+    // Each transfer ends with its second SOA, whichever order the envelopes
+    // of the two arrive in.
+    let mut soas: HashMap<u16, usize> = HashMap::new();
+    while soas.values().filter(|&&seen| seen >= 2).count() < 2 {
+        let frame = read_frame(&mut stream)
+            .expect("read")
+            .expect("the server closed before both transfers ended");
+        let message = Message::from_octets(frame.as_slice()).unwrap();
+        assert_eq!(message.header().rcode(), Rcode::NOERROR);
+        let seen = message
+            .answer()
+            .unwrap()
+            .filter(|record| record.as_ref().is_ok_and(|r| r.rtype() == Rtype::SOA))
+            .count();
+        *soas.entry(message.header().id()).or_default() += seen;
+    }
+
+    assert_eq!(soas.get(&1), Some(&2));
+    assert_eq!(soas.get(&2), Some(&2));
 }

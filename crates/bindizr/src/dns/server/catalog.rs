@@ -6,7 +6,7 @@ use bindizr_service::zone;
 use chrono::Utc;
 use ring::digest::{Context, SHA256};
 
-use crate::dns::{error::XfrError, server::DnsContext, stream::DnsStream};
+use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
 
 /// Generates the catalog zone and its member zone list from `zones`, the
 /// served zones loaded where the transfer was authorized.
@@ -80,7 +80,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
 /// Send a catalog zone transfer using the requested question type.
 pub(crate) async fn handle_catalog_axfr(
     dns_cx: &DnsContext,
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
     signer: Option<TransferSigner>,
@@ -103,49 +103,39 @@ pub(crate) async fn handle_catalog_axfr(
     // Both SOAs must carry this snapshot's serial to delimit the AXFR.
     let serial = catalog_zone.serial;
 
-    crate::dns::wire::add_answer_and_flush_if_needed(
-        &mut builder,
-        stream,
-        &mut messages_sent,
-        |builder| builder.add_catalog_soa(&catalog_zone, serial),
-    )
-    .await?;
+    writer
+        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+            builder.add_catalog_soa(&catalog_zone, serial)
+        })
+        .await?;
 
-    crate::dns::wire::add_answer_and_flush_if_needed(
-        &mut builder,
-        stream,
-        &mut messages_sent,
-        |builder| builder.add_catalog_ns(&catalog_zone),
-    )
-    .await?;
-    crate::dns::wire::add_answer_and_flush_if_needed(
-        &mut builder,
-        stream,
-        &mut messages_sent,
-        |builder| builder.add_catalog_schema_version(&catalog_zone),
-    )
-    .await?;
+    writer
+        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+            builder.add_catalog_ns(&catalog_zone)
+        })
+        .await?;
+    writer
+        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+            builder.add_catalog_schema_version(&catalog_zone)
+        })
+        .await?;
 
     // Member PTRs tell secondaries which zones this catalog provisions.
     for member_zone in &member_zones {
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_catalog_ptr(&catalog_zone, member_zone),
-        )
-        .await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_catalog_ptr(&catalog_zone, member_zone)
+            })
+            .await?;
     }
 
     // Close the catalog snapshot before flushing its final envelope.
-    crate::dns::wire::add_answer_and_flush_if_needed(
-        &mut builder,
-        stream,
-        &mut messages_sent,
-        |builder| builder.add_catalog_soa(&catalog_zone, serial),
-    )
-    .await?;
-    messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
+    writer
+        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+            builder.add_catalog_soa(&catalog_zone, serial)
+        })
+        .await?;
+    messages_sent += writer.flush_if_not_empty(&mut builder).await?;
 
     log::info!(
         "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",

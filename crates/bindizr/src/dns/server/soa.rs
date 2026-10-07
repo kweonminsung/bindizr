@@ -22,15 +22,14 @@ use crate::dns::{
         auth::{TransferIdentity, TransferRefusal, authenticate_transfer},
         catalog,
     },
-    stream::DnsStream,
-    wire,
+    stream::ResponseWriter,
 };
 
 /// Answer an SOA query over TCP. The outcome is counted once the answer is
 /// on the wire: the metric says whether secondaries are getting a serial.
 pub(crate) async fn handle_tcp_soa(
     dns_cx: &DnsContext,
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
@@ -41,12 +40,13 @@ pub(crate) async fn handle_tcp_soa(
         query,
         client_addr.ip(),
         query_data,
-        stream.transport(),
+        writer.transport(),
         DNS_TCP_MAX_SIZE,
     )
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
-    wire::write_tcp_message(stream, &response)
+    writer
+        .write_message(&response)
         .await
         .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     cx.metrics().track_soa(outcome);

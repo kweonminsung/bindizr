@@ -22,7 +22,7 @@ use bindizr_core::{
 };
 use bindizr_service::{Context, transfer};
 
-use crate::dns::{error::XfrError, stream::DnsStream, wire};
+use crate::dns::{error::XfrError, stream::ResponseWriter};
 
 /// The DNS front end's context: the daemon's, plus the caches only this
 /// front end reads. A handler takes it first as `dns_cx` and binds the
@@ -60,14 +60,14 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
 /// Count by the requested type so an IXFR falling back to AXFR still counts as IXFR.
 pub(crate) async fn handle_tcp_xfr(
     dns_cx: &DnsContext,
-    stream: &mut DnsStream,
+    writer: &ResponseWriter,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let cx = dns_cx.daemon();
     let client_ip = client_addr.ip();
-    let transport = stream.transport();
+    let transport = writer.transport();
     let track_result = |result| cx.metrics().track_xfr(query.qtype, transport, result);
 
     // Verify the key or the address first; the zone's grant is decided beside
@@ -96,7 +96,7 @@ pub(crate) async fn handle_tcp_xfr(
             // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped
             // connection.
             let response = refusal.into_response(query)?;
-            wire::write_tcp_message(stream, &response).await?;
+            writer.write_message(&response).await?;
             return Ok(());
         }
     };
@@ -112,9 +112,9 @@ pub(crate) async fn handle_tcp_xfr(
 
     let result = match query.qtype {
         Rtype::AXFR => {
-            axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::AXFR, &mut identity).await
+            axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::AXFR, &mut identity).await
         }
-        Rtype::IXFR => ixfr::handle_ixfr(dns_cx, stream, query, client_ip, &mut identity).await,
+        Rtype::IXFR => ixfr::handle_ixfr(dns_cx, writer, query, client_ip, &mut identity).await,
         _ => {
             log::warn!("Unsupported query type: {:?}", query.qtype);
             return Err(XfrError::InvalidQuery(format!(
@@ -138,7 +138,7 @@ pub(crate) async fn handle_tcp_xfr(
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 identity.signer.as_mut(),
             )?;
-            wire::write_tcp_message(stream, &response).await?;
+            writer.write_message(&response).await?;
             Ok(())
         }
         Err(XfrError::Refused(reason)) => {
@@ -160,7 +160,7 @@ pub(crate) async fn handle_tcp_xfr(
             .await;
             let response =
                 TransferRefusal::refused(reason, identity.signer.take()).into_response(query)?;
-            wire::write_tcp_message(stream, &response).await?;
+            writer.write_message(&response).await?;
             Ok(())
         }
         Err(err) => {

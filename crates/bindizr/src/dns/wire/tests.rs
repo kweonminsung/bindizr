@@ -1,18 +1,43 @@
+use bindizr_core::dns::message::encode_tcp_message;
+
 use super::*;
 
 /// Decode a TCP DNS frame from the supplied test bytes.
 async fn read(bytes: &[u8]) -> Result<Vec<u8>, XfrError> {
-    read_tcp_message(&mut &bytes[..]).await
+    read_tcp_message(&mut &bytes[..], &mut Vec::new()).await
 }
 
 /// Verify that a written message reads back whole.
 #[tokio::test]
 async fn a_written_message_reads_back_whole() {
     let mut framed = Vec::new();
-    write_tcp_message(&mut framed, b"payload").await.unwrap();
+    write_frame(&mut framed, &encode_tcp_message(b"payload").unwrap())
+        .await
+        .unwrap();
 
     assert_eq!(framed[..2], 7u16.to_be_bytes());
     assert_eq!(read(&framed).await.unwrap(), b"payload");
+}
+
+/// Verify that a frame arriving with the start of the next leaves that start
+/// pending, so the next read begins where this one ended.
+#[tokio::test]
+async fn a_frame_arriving_with_the_next_leaves_it_pending() {
+    let mut framed = encode_tcp_message(b"one").unwrap();
+    framed.extend_from_slice(&encode_tcp_message(b"two").unwrap());
+    let mut pending = Vec::new();
+    let mut reader = &framed[..];
+
+    assert_eq!(
+        read_tcp_message(&mut reader, &mut pending).await.unwrap(),
+        b"one"
+    );
+    assert_eq!(pending, encode_tcp_message(b"two").unwrap());
+    assert_eq!(
+        read_tcp_message(&mut reader, &mut pending).await.unwrap(),
+        b"two"
+    );
+    assert!(pending.is_empty());
 }
 
 /// Verify that a connection closed between messages is not a protocol error.
@@ -47,7 +72,9 @@ impl AsyncRead for AbruptEof {
 /// is not a protocol error.
 #[tokio::test]
 async fn a_peer_leaving_without_close_notify_is_not_a_protocol_error() {
-    let error = read_tcp_message(&mut AbruptEof).await.unwrap_err();
+    let error = read_tcp_message(&mut AbruptEof, &mut Vec::new())
+        .await
+        .unwrap_err();
 
     assert!(matches!(error, XfrError::Closed), "{error:?}");
 }
@@ -87,7 +114,7 @@ async fn a_write_no_one_reads_gives_up_rather_than_holding_the_slot() {
     // One byte of buffer, and nothing draining the far end.
     let (mut writer, _unread) = tokio::io::duplex(1);
 
-    let error = write_tcp_message(&mut writer, &vec![0u8; 4096])
+    let error = write_frame(&mut writer, &vec![0u8; 4096])
         .await
         .expect_err("the write should have timed out");
 
