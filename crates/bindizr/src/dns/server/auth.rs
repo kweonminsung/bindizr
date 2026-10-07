@@ -1,7 +1,8 @@
 //! Who may transfer a zone: the key that signed the request, or — when it
 //! carried no TSIG — the address ACL a deployment with no keys keeps using.
-//! A real zone's grant is decided in the service beside the row it serves;
-//! the virtual catalog zone, which has no row, is gated here.
+//! Over TLS the two are required together (RFC 9103, Section 7.5). A real
+//! zone's grant is decided in the service beside the row it serves; the
+//! virtual catalog zone, which has no row, is gated here.
 
 use std::net::IpAddr;
 
@@ -12,7 +13,7 @@ use bindizr_core::{
             RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
         },
     },
-    model::tsig_key::TsigKey,
+    model::{transfer::TransferTransport, tsig_key::TsigKey},
 };
 use bindizr_service::tsig_key;
 
@@ -57,16 +58,25 @@ pub(crate) struct TransferIdentity {
 }
 
 /// Authenticate a transfer request: verify its TSIG under the key it names, or
-/// admit an unsigned one by the address ACL. What the key may read is decided
-/// where the content is loaded, the catalog's included.
+/// admit an unsigned one by the address ACL; over TLS both must pass (RFC
+/// 9103, Section 7.5). What the key may read is decided where the content is
+/// loaded, the catalog's included.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
     query_data: &[u8],
     client_ip: IpAddr,
+    transport: TransferTransport,
 ) -> Result<TransferIdentity, TransferRefusal> {
     let cx = dns_cx.daemon();
+    let over_tls = matches!(transport, TransferTransport::Tls);
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
+        RequestSignature::Absent if over_tls => {
+            return Err(TransferRefusal::refused(
+                "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
+                None,
+            ));
+        }
         RequestSignature::Absent => {
             // An address is no credential the content transaction re-reads:
             // removing a secondary refuses later transfers, not one admitted.
@@ -110,6 +120,28 @@ pub(crate) async fn authenticate_transfer(
     let domain_key = key.to_domain_key().map_err(TransferRefusal::from)?;
     let signer =
         verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
+
+    // The key answers for the address check, so the refusal is signed too.
+    if over_tls {
+        match acl::is_client_allowed(dns_cx, client_ip).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(TransferRefusal::refused(
+                    format!(
+                        "IP {} is not an enabled secondary; XoT needs the key and the address (RFC 9103, Section 7.5)",
+                        client_ip
+                    ),
+                    Some(signer),
+                ));
+            }
+            Err(e) => {
+                return Err(TransferRefusal::refused(
+                    format!("failed to load secondaries: {}", e),
+                    Some(signer),
+                ));
+            }
+        }
+    }
 
     Ok(TransferIdentity {
         key: Some(key),

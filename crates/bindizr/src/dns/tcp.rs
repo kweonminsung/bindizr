@@ -114,7 +114,21 @@ async fn serve_connection(
         Handshake::Tls(server_config) => {
             let accept = TlsAcceptor::from(server_config.clone()).accept(stream);
             match timeout(TLS_HANDSHAKE_TIMEOUT, accept).await {
-                Ok(Ok(session)) => DnsStream::Tls(Box::new(session)),
+                // RFC 9103, Section 7.1: the handshake selects "dot". rustls
+                // completes one that named nothing, so that session is closed here.
+                Ok(Ok(mut session)) => {
+                    if session.get_ref().1.alpn_protocol() != Some(b"dot") {
+                        log::warn!(
+                            "Closing TLS session with {}: no \"dot\" ALPN was selected",
+                            client_addr
+                        );
+                        if let Err(e) = session.shutdown().await {
+                            log::debug!("Closing TLS session with {}: {}", client_addr, e);
+                        }
+                        return;
+                    }
+                    DnsStream::Tls(Box::new(session))
+                }
                 Ok(Err(e)) => {
                     log::warn!("TLS handshake with {} failed: {}", client_addr, e);
                     return;

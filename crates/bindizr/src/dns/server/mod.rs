@@ -72,7 +72,7 @@ pub(crate) async fn handle_tcp_xfr(
 
     // Verify the key or the address first; the zone's grant is decided beside
     // its row inside the transfer.
-    let mut identity = match authenticate_transfer(dns_cx, query_data, client_ip).await {
+    let mut identity = match authenticate_transfer(dns_cx, query_data, client_ip, transport).await {
         Ok(identity) => identity,
         Err(refusal) => {
             track_result(XfrResult::Refused);
@@ -186,21 +186,24 @@ pub(crate) async fn handle_udp_xfr(
     query_data: &[u8],
 ) -> Vec<u8> {
     let cx = dns_cx.daemon();
-    let mut identity = match authenticate_transfer(dns_cx, query_data, client_addr.ip()).await {
-        Ok(identity) => identity,
-        Err(refusal) => {
-            cx.metrics()
-                .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Refused);
-            log::warn!(
-                "Refused XFR UDP query from {}: {}",
-                client_addr.ip(),
-                refusal.reason
-            );
-            return refusal
-                .into_response(query)
-                .unwrap_or_else(|_| query.error_response(Rcode::REFUSED));
-        }
-    };
+    let mut identity =
+        match authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
+            .await
+        {
+            Ok(identity) => identity,
+            Err(refusal) => {
+                cx.metrics()
+                    .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Refused);
+                log::warn!(
+                    "Refused XFR UDP query from {}: {}",
+                    client_addr.ip(),
+                    refusal.reason
+                );
+                return refusal
+                    .into_response(query)
+                    .unwrap_or_else(|_| query.error_response(Rcode::REFUSED));
+            }
+        };
     // The transfer itself counts when the client returns over TCP.
     cx.metrics()
         .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Truncated);

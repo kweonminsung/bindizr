@@ -36,9 +36,15 @@ pub(crate) async fn handle_tcp_soa(
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let cx = dns_cx.daemon();
-    let (response, outcome) = handle_soa_request(dns_cx, query, client_addr.ip(), query_data)
-        .await
-        .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
+    let (response, outcome) = handle_soa_request(
+        dns_cx,
+        query,
+        client_addr.ip(),
+        query_data,
+        stream.transport(),
+    )
+    .await
+    .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     wire::write_tcp_message(stream, &response)
         .await
         .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
@@ -55,9 +61,15 @@ pub(crate) async fn handle_udp_soa(
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let cx = dns_cx.daemon();
-    let (response, outcome) = handle_soa_request(dns_cx, query, client_addr.ip(), query_data)
-        .await
-        .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
+    let (response, outcome) = handle_soa_request(
+        dns_cx,
+        query,
+        client_addr.ip(),
+        query_data,
+        TransferTransport::Udp,
+    )
+    .await
+    .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     socket
         .send_to(&response, client_addr)
         .await
@@ -76,12 +88,18 @@ pub(crate) async fn handle_udp_ixfr(
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let cx = dns_cx.daemon();
-    let (response, outcome) = handle_soa_request(dns_cx, query, client_addr.ip(), query_data)
-        .await
-        .inspect_err(|_| {
-            cx.metrics()
-                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
-        })?;
+    let (response, outcome) = handle_soa_request(
+        dns_cx,
+        query,
+        client_addr.ip(),
+        query_data,
+        TransferTransport::Udp,
+    )
+    .await
+    .inspect_err(|_| {
+        cx.metrics()
+            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+    })?;
     socket
         .send_to(&response, client_addr)
         .await
@@ -107,18 +125,19 @@ fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
     client_ip.is_loopback() || client_ip == dns_cx.daemon().config().dns.listen_addr.to_canonical()
 }
 
-/// Build the SOA response and outcome for either transport, applying the same
-/// zone grant as transfers because secondaries poll with their transfer key.
+/// Build the SOA response and outcome for any transport, applying the same
+/// gate as transfers because secondaries poll with their transfer key.
 async fn handle_soa_request(
     dns_cx: &DnsContext,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     query_data: &[u8],
+    transport: TransferTransport,
 ) -> Result<(Vec<u8>, SoaResult), XfrError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
-    let mut identity = match authenticate_soa(dns_cx, client_ip, query_data).await {
+    let mut identity = match authenticate_soa(dns_cx, client_ip, query_data, transport).await {
         Ok(identity) => identity,
         Err(refusal) => {
             log::warn!(
@@ -226,6 +245,7 @@ async fn authenticate_soa(
     dns_cx: &DnsContext,
     client_ip: IpAddr,
     query_data: &[u8],
+    transport: TransferTransport,
 ) -> Result<TransferIdentity, TransferRefusal> {
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.
@@ -237,5 +257,5 @@ async fn authenticate_soa(
             signer: None,
         });
     }
-    authenticate_transfer(dns_cx, query_data, client_ip).await
+    authenticate_transfer(dns_cx, query_data, client_ip, transport).await
 }

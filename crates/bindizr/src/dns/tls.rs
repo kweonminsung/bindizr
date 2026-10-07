@@ -55,8 +55,8 @@ pub(crate) fn load_server_config(
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(LoadServerConfigError::Config)?;
-    // RFC 9103, Section 7.1: the handshake selects "dot". A client offering
-    // only other tokens fails it; one offering none is served.
+    // RFC 9103, Section 7.1: the handshake selects "dot". Other tokens alone
+    // fail here; a client naming none is closed by the listener instead.
     config.alpn_protocols = vec![b"dot".to_vec()];
     Ok(Arc::new(config))
 }

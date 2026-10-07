@@ -1,5 +1,6 @@
 //! Zone transfers over TLS (XoT, RFC 9103): the second listener serves what
-//! the plain one does, under the same key or address check.
+//! the plain one does, but admits a request only when its TSIG key and its
+//! address both pass, as Section 7.5 requires without mTLS.
 
 use domain::base::iana::Rcode;
 use reqwest::{Method, StatusCode};
@@ -44,24 +45,30 @@ fn dot_client(app: &TestApp) -> ClientConfig {
     xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
 }
 
-/// Verify that the TLS listener admits an unsigned transfer by the same
-/// secondary registry as the plain one, which keeps serving beside it.
+/// Verify that over TLS a transfer needs its key and a registered address
+/// together, while the plain listener keeps admitting either alone.
 #[tokio::test]
 #[serial]
-async fn an_unsigned_transfer_over_tls_follows_the_secondary_registry() {
+async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xot-key", KeyRole::Admin).await;
 
+    // RFC 9103, Section 7.5: the key alone is refused here, though the plain
+    // listener takes it.
+    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).expect("XoT");
+    assert_eq!(outcome.refusal(), Rcode::REFUSED);
+    let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+    assert!(outcome.records() >= 3);
+
+    // The address alone is refused over TLS as well.
+    app.create_secondary("loopback", "127.0.0.1").await;
     let outcome = xot(app.dns_tls_port(), zone_name, None, dot_client(&app)).expect("XoT");
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
-    app.create_secondary("loopback", "127.0.0.1").await;
-    let outcome = xot(app.dns_tls_port(), zone_name, None, dot_client(&app)).expect("XoT");
-    assert!(outcome.records() >= 3);
-
-    // SOA polls and older secondaries still arrive on the plain port.
-    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    // Both together: served, every envelope verified under the key.
+    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).expect("XoT");
     assert!(outcome.records() >= 3);
 
     // The transfer log and the metric say which transport served each one.
@@ -69,7 +76,7 @@ async fn an_unsigned_transfer_over_tls_follows_the_secondary_registry() {
         .send_request(Method::GET, "/secondaries/loopback/transfers", None)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["transfers"][0]["transport"], "tcp", "{body}");
+    assert_eq!(body["transfers"][0]["transport"], "tls", "{body}");
     let tls_ok = super::counter(
         &app,
         "bindizr_xfr_total",
@@ -86,28 +93,12 @@ async fn an_unsigned_transfer_over_tls_follows_the_secondary_registry() {
     assert_eq!(tcp_ok, 1.0);
 }
 
-/// Verify that a signed transfer over TLS is answered under its key, every
-/// envelope verified.
-#[tokio::test]
-#[serial]
-async fn a_signed_transfer_over_tls_answers_under_its_key() {
-    let app = xot_app().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-    let key = create_tsig_key(&app, "xot-key", KeyRole::Admin).await;
-
-    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).expect("XoT");
-
-    assert!(outcome.records() >= 3);
-}
-
 /// Verify that the handshake refuses TLS 1.2 and an ALPN without "dot", and
-/// serves a client naming no ALPN.
+/// that a client naming no ALPN is closed without a transfer.
 #[tokio::test]
 #[serial]
 async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
     let app = xot_app().await;
-    app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let (port, cert) = (app.dns_tls_port(), app.tls_cert());
@@ -123,8 +114,12 @@ async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
     let error = xot(port, zone_name, None, client).unwrap_err();
     assert!(error.contains("NoApplicationProtocol"), "{error}");
 
-    // ALPN is negotiated only when both sides name it.
+    // A client naming no ALPN completes the handshake, so the server closes
+    // the session instead of answering.
     let client = xot_client(cert, &[&version::TLS13], &[]);
-    let outcome = xot(port, zone_name, None, client).expect("XoT");
-    assert!(outcome.records() >= 3);
+    let error = xot(port, zone_name, None, client).unwrap_err();
+    assert!(
+        error.contains("without its closing SOA") || error.contains("close_notify"),
+        "{error}"
+    );
 }

@@ -105,7 +105,9 @@ XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=fal
 ```
 
 A transfer over TLS logs as `XFR TLS query`, and `secondary transfers` lists
-the transport beside each one.
+the transport beside each one. Over TLS the key and the registered address
+are required together, as RFC 9103, Section 7.5 asks of a server without
+mutual TLS; either alone is refused there.
 
 ## Checking that it worked
 
