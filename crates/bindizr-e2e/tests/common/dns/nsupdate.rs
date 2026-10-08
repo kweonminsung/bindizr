@@ -7,7 +7,7 @@ use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Name, Record, Rtype, Ttl, UnknownRecordData,
-        iana::{Class, Opcode, Rcode},
+        iana::{Class, Opcode, OptRcode, Rcode},
         message_builder::AdditionalBuilder,
     },
     rdata::{A, Cname, Dname, Ns, tsig::Time48},
@@ -140,11 +140,45 @@ pub(crate) fn send_signed_update_with_two_zones(
     sign(&mut additional, key)?;
 
     let response = exchange(port, query_id, &additional.finish())?;
-    let signed = response
+    Ok((response.header().rcode(), is_signed(&response)?))
+}
+
+/// Send an UPDATE signed with `key` carrying an OPT of EDNS `version`;
+/// returns the extended RCODE and whether the response was signed.
+pub(crate) fn send_signed_update_with_edns_version(
+    port: u16,
+    zone: &str,
+    key: &SigningKey,
+    version: u8,
+) -> Result<(OptRcode, bool), String> {
+    let query_id = (std::process::id() as u16)
+        .wrapping_add(port)
+        .wrapping_add(3);
+    let mut builder = build_update(query_id, zone, &[], &[])?;
+    builder
+        .opt(|opt| {
+            opt.set_udp_payload_size(4096);
+            opt.set_version(version);
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+    sign(&mut builder, key)?;
+
+    let response = exchange(port, query_id, &builder.finish())?;
+    let rcode = response
+        .opt()
+        .map_or(OptRcode::from(response.header().rcode()), |opt| {
+            opt.rcode(response.header())
+        });
+    Ok((rcode, is_signed(&response)?))
+}
+
+/// Whether the response carries a TSIG record.
+fn is_signed(response: &Message<Vec<u8>>) -> Result<bool, String> {
+    Ok(response
         .additional()
         .map_err(|e| e.to_string())?
-        .any(|record| record.is_ok_and(|record| record.rtype() == Rtype::TSIG));
-    Ok((response.header().rcode(), signed))
+        .any(|record| record.is_ok_and(|record| record.rtype() == Rtype::TSIG)))
 }
 
 /// Send one UPDATE over UDP and return its response, checked against the id.

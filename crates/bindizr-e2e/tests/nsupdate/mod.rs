@@ -1,4 +1,7 @@
-use domain::base::{Rtype, iana::Rcode};
+use domain::base::{
+    Rtype,
+    iana::{OptRcode, Rcode},
+};
 use serde_json::Value;
 use serial_test::serial;
 
@@ -6,7 +9,7 @@ use crate::common::{
     TestApp, TestAppOptions,
     dns::nsupdate::{
         KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
-        send_signed_update_with_two_zones, send_update,
+        send_signed_update_with_edns_version, send_signed_update_with_two_zones, send_update,
     },
 };
 
@@ -629,7 +632,7 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
     let zone_name = zone["name"].as_str().unwrap();
     let www = format!("www.{zone_name}.");
     let alias = format!("alias.{zone_name}.");
-    let records_at = |records: &[Value], name: &str| -> Vec<(String, String)> {
+    let records_at = |records: &[Value], name: &str| -> Vec<(String, String, u64)> {
         records
             .iter()
             .filter(|record| record["name"] == name)
@@ -637,6 +640,7 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
                 (
                     record["type"].as_str().unwrap().to_string(),
                     record["value"].as_str().unwrap().to_string(),
+                    record["ttl"].as_u64().unwrap(),
                 )
             })
             .collect()
@@ -665,10 +669,10 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
             ttl: 300,
             addr: "192.0.2.91".to_string(),
         }],
-        // A second CNAME replaces the first.
+        // A second CNAME replaces the first, TTL included.
         vec![UpdateRecord::AddCname {
             name: alias.clone(),
-            ttl: 300,
+            ttl: 600,
             target: format!("two.{zone_name}."),
         }],
     ] {
@@ -679,11 +683,11 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
     let records = app.list_records(zone_name).await;
     assert_eq!(
         records_at(&records, &www),
-        [("A".to_string(), "192.0.2.90".to_string())]
+        [("A".to_string(), "192.0.2.90".to_string(), 300)]
     );
     assert_eq!(
         records_at(&records, &alias),
-        [("CNAME".to_string(), format!("two.{zone_name}."))]
+        [("CNAME".to_string(), format!("two.{zone_name}."), 600)]
     );
 }
 
@@ -744,6 +748,23 @@ async fn a_signed_request_that_does_not_parse_is_answered_under_its_key() {
     assert!(signed, "the FORMERR was not signed");
 }
 
+/// Verify that a signed request's BADVERS is answered under its key
+/// (RFC 8945, Section 5.3).
+#[tokio::test]
+#[serial]
+async fn a_signed_request_with_a_newer_edns_is_answered_under_its_key() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "badvers-key", KeyRole::Admin).await;
+
+    let (rcode, signed) =
+        send_signed_update_with_edns_version(app.dns_port(), zone_name, &key, 1).expect("update");
+
+    assert_eq!(rcode, OptRcode::BADVERS);
+    assert!(signed, "the BADVERS was not signed");
+}
+
 /// Verify the DNAME rules of RFC 6672: a DNAME beside a CNAME is passed
 /// over, a second DNAME replaces the first, a name below one is refused.
 #[tokio::test]
@@ -754,7 +775,7 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
     let zone_name = zone["name"].as_str().unwrap();
     let alias = format!("alias.{zone_name}.");
     let tree = format!("tree.{zone_name}.");
-    let records_at = |records: &[Value], name: &str| -> Vec<(String, String)> {
+    let records_at = |records: &[Value], name: &str| -> Vec<(String, String, u64)> {
         records
             .iter()
             .filter(|record| record["name"] == name)
@@ -762,6 +783,7 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
                 (
                     record["type"].as_str().unwrap().to_string(),
                     record["value"].as_str().unwrap().to_string(),
+                    record["ttl"].as_u64().unwrap(),
                 )
             })
             .collect()
@@ -793,11 +815,11 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
             }],
             Rcode::NOERROR,
         ),
-        // A second DNAME replaces the first.
+        // A second DNAME replaces the first, TTL included.
         (
             vec![UpdateRecord::AddDname {
                 name: tree.clone(),
-                ttl: 300,
+                ttl: 600,
                 target: "two.example.net.".to_string(),
             }],
             Rcode::NOERROR,
@@ -819,10 +841,10 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
     let records = app.list_records(zone_name).await;
     assert_eq!(
         records_at(&records, &alias),
-        [("CNAME".to_string(), "www.example.net.".to_string())]
+        [("CNAME".to_string(), "www.example.net.".to_string(), 300)]
     );
     assert_eq!(
         records_at(&records, &tree),
-        [("DNAME".to_string(), "two.example.net.".to_string())]
+        [("DNAME".to_string(), "two.example.net.".to_string(), 600)]
     );
 }

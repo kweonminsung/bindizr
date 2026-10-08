@@ -5,7 +5,7 @@
 use bindizr_core::{
     dns::{
         Ttl,
-        message::{Class, Rtype},
+        message::{Class, Edns, OptRcode, Rtype},
         name::ZoneName,
         nsupdate::parser::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest},
         tsig::{ResponseSigner, TsigError},
@@ -25,6 +25,10 @@ pub(crate) enum UpdateError {
     /// A section breaks the shapes RFC 2136, Sections 3.2.1 and 3.4.1 fix.
     #[error("{0}")]
     FormErr(String),
+    /// An OPT the server cannot take: a malformed one is FORMERR, a newer
+    /// version BADVERS (RFC 6891, Sections 6.1.1 and 6.1.3).
+    #[error("unacceptable EDNS: {0}")]
+    Edns(OptRcode),
     #[error("{0}")]
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
@@ -117,6 +121,17 @@ pub(crate) async fn apply_update(
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = async {
+        // Authenticate first: keys are zone-independent, and every refusal
+        // below is then signed.
+        let key = authenticate_request(dns_cx, &request, query_data, &mut signer).await?;
+
+        // An OPT the server cannot take is answered before the update is read.
+        match request.edns {
+            Edns::Absent | Edns::Present { .. } => {}
+            Edns::Malformed => return Err(UpdateError::Edns(OptRcode::FORMERR)),
+            Edns::UnsupportedVersion(_) => return Err(UpdateError::Edns(OptRcode::BADVERS)),
+        }
+
         // The parser renders the zone absolute; decoding it into labels here
         // leaves no string test to decide where its root dot ends the name. A
         // name no zone can carry is not served here (RFC 2136, Section 3.1.2).
@@ -128,10 +143,6 @@ pub(crate) async fn apply_update(
         let zone_name = ZoneName::parse(&request.zone_name).map_err(|e| {
             UpdateError::NotAuth(format!("'{}' is not a zone name: {}", request.zone_name, e))
         })?;
-
-        // Authenticate before anything zone-specific: keys are zone-independent,
-        // and this lets even NOTAUTH/FORMERR/REFUSED responses be signed.
-        let key = authenticate_request(dns_cx, &request, query_data, &mut signer).await?;
 
         let update = DynamicUpdate {
             zone_name,

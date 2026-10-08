@@ -112,7 +112,8 @@ insists on TLS and checks nothing either. A server reached over a network
 should be verified: `verify-full` checks the chain and the host name against
 the system's roots, or against `ca_file` when the issuer is private, as the
 certificate bundles of RDS and Cloud SQL are. The URL's own parameters
-(`sslmode`, `ssl-mode`) still work; a set key overrides them.
+(`sslmode`, `ssl-mode`) still work; a set key overrides them, and `ca_file`
+needs its verifying `mode` beside it rather than in the URL.
 
 Use distinct catalog names for independent Bindizr deployments feeding the
 same secondary. Configure [TLS](http-api/index.md#tls) before exposing the API

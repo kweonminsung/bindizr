@@ -111,45 +111,44 @@ pub(crate) async fn apply_op_tx(
                     .await?;
 
             // RFC 2136, Section 3.4.2.2: a CNAME beside other data (the apex
-            // holds the SOA) or data beside a CNAME is ignored; a second
-            // CNAME replaces the first.
+            // holds the SOA) or data beside a CNAME is ignored.
             let adding_cname = *record_type == RecordType::Cname;
-            let (cnames, others): (Vec<&Record>, Vec<&Record>) = records_at_name
+            let has_cname = records_at_name
                 .iter()
-                .partition(|r| r.record_type == RecordType::Cname);
-            if (adding_cname && (owner.is_apex() || !others.is_empty()))
-                || (!adding_cname && !cnames.is_empty())
-            {
+                .any(|r| r.record_type == RecordType::Cname);
+            let has_other = records_at_name
+                .iter()
+                .any(|r| r.record_type != RecordType::Cname);
+            if (adding_cname && (owner.is_apex() || has_other)) || (!adding_cname && has_cname) {
                 return Ok(false);
             }
+
+            // RFC 2136, Section 3.4.2.2 and RFC 6672, Section 5.2: a second
+            // CNAME or DNAME with other rdata replaces the first.
+            let is_alias = matches!(record_type, RecordType::Cname | RecordType::Dname);
+            let replaced: Vec<Record> = records_at_name
+                .iter()
+                .filter(|r| {
+                    is_alias && r.record_type == *record_type && !r.has_rdata(&value, *priority)
+                })
+                .cloned()
+                .collect();
             let mut changed = false;
-            if adding_cname && !cnames.is_empty() {
-                let replaced: Vec<Record> = cnames.into_iter().cloned().collect();
+            if !replaced.is_empty() {
                 record::delete_with_changes_tx(tx, zone.id, new_serial, &replaced).await?;
                 changed = true;
             }
 
-            // RFC 6672, Section 5.2: a second DNAME replaces the first; the
-            // CNAME rule above already passes over a DNAME beside a CNAME.
-            if *record_type == RecordType::Dname {
-                let replaced: Vec<Record> = others
-                    .iter()
-                    .filter(|r| {
-                        r.record_type == RecordType::Dname && !r.has_rdata(&value, *priority)
-                    })
-                    .map(|r| (*r).clone())
-                    .collect();
-                if !replaced.is_empty() {
-                    record::delete_with_changes_tx(tx, zone.id, new_serial, &replaced).await?;
-                    changed = true;
-                }
-            }
-
             // RFC 2136, Section 3.4.2.2 and RFC 2181, Section 5.2: an add with
-            // a new TTL moves the whole record set to it, as a delete and an add.
+            // a new TTL moves the rest of the record set to it, as a delete and
+            // an add.
             let retimed: Vec<Record> = records_at_name
                 .iter()
-                .filter(|r| r.record_type == *record_type && r.ttl != *ttl)
+                .filter(|r| {
+                    r.record_type == *record_type
+                        && r.ttl != *ttl
+                        && !replaced.iter().any(|gone| gone.id == r.id)
+                })
                 .cloned()
                 .collect();
             if !retimed.is_empty() {
