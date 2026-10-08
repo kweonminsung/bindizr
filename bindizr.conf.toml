@@ -48,6 +48,7 @@ tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
+# require_tls = false         # Refuse AXFR/IXFR over plain TCP and UDP; needs [dns.tls], SOA queries still answer
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)

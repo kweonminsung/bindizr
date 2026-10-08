@@ -26,6 +26,7 @@ rejected and the current configuration stays active.
 | --- | --- |
 | `[logging]` and `[dns]` except the settings below | Reloadable |
 | `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` | Restart required |
+| The certificate and key files `[api.tls]` and `[dns.tls]` name | Re-read on reload, so a renewed pair serves without a restart; the paths stay fixed |
 
 A reload names the sections it changed; a refusal names the settings that
 would need a restart and leaves the running configuration alone.
@@ -87,6 +88,7 @@ tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
+# require_tls = false         # Refuse AXFR/IXFR over plain TCP and UDP; needs [dns.tls], SOA queries still answer
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
@@ -155,6 +157,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_TLS_CERT_FILE` | `dns.tls.cert_file` | Empty clears it |
 | `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |
 | `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer.cache_max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | needs `[dns.tls]` |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |

@@ -65,6 +65,22 @@ impl TransferRefusal {
     }
 }
 
+/// The refusal a plain transport earns while `dns.transfer.require_tls` is
+/// set (RFC 9103, Section 11); SOA queries are no transfers.
+pub(crate) fn transport_refusal(
+    dns_cx: &DnsContext,
+    transport: TransferTransport,
+) -> Option<TransferRefusal> {
+    (dns_cx.daemon().config().dns.transfer.require_tls && transport != TransferTransport::Tls).then(
+        || {
+            TransferRefusal::refused(
+                "transfers require TLS (dns.transfer.require_tls)".to_string(),
+                None,
+            )
+        },
+    )
+}
+
 /// Who a transfer request is: the verified key that signed it, or nobody when
 /// the address ACL admitted it unsigned; the signer answers under that key.
 #[derive(Debug, Clone)]

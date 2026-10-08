@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use self::{server::DnsContext, tcp::Handshake};
-use crate::shutdown::Shutdown;
+use crate::{shutdown::Shutdown, tls::TlsCertificate};
 
 /// Why a DNS listener could not come up.
 #[derive(Debug, Error)]
@@ -34,10 +34,6 @@ pub(crate) enum StartDnsError {
         #[source]
         source: std::io::Error,
     },
-    /// A pair that cannot be read is permanent, so it exits as a
-    /// configuration failure rather than looping through systemd's restart.
-    #[error("failed to load the DNS TLS listener's certificate and key: {0}")]
-    Tls(#[from] tls::LoadServerConfigError),
 }
 
 /// The DNS front end's accept loops, for the daemon to supervise.
@@ -54,6 +50,7 @@ pub(crate) struct DnsServers {
 pub(crate) async fn initialize(
     cx: Arc<Context>,
     shutdown: &Shutdown,
+    certificate: Option<Arc<TlsCertificate>>,
 ) -> Result<DnsServers, StartDnsError> {
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
 
@@ -95,11 +92,11 @@ pub(crate) async fn initialize(
             setting: "dns.listen_port",
             source,
         })?;
-    // Bound and read before anything serves, so a failure exits the start.
-    let tls_listener = match config.dns.tls.tls_files() {
-        Some(files) => {
+    // Bound before anything serves, so a failure exits the start.
+    let tls_listener = match certificate {
+        Some(certificate) => {
             let tls_addr = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
-            let server_config = tls::load_server_config(files)?;
+            let server_config = tls::build_server_config(certificate);
             let listener =
                 TcpListener::bind(tls_addr)
                     .await

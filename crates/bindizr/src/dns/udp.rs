@@ -3,7 +3,10 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc};
 
-use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype};
+use bindizr_core::{
+    dns::message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype},
+    model::transfer::TransferTransport,
+};
 use tokio::{net::UdpSocket, sync::Semaphore};
 
 use super::server::{self, DnsContext};
@@ -81,7 +84,7 @@ async fn dispatch_udp_query(
         return;
     }
 
-    let Ok(query) = message::ParsedQuery::parse(query_data) else {
+    let Ok(query) = message::ParsedQuery::parse(query_data, TransferTransport::Udp) else {
         return;
     };
 

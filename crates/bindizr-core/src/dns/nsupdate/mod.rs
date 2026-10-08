@@ -39,7 +39,7 @@ pub fn build_response(
         .ok()?;
     let mut additional = answer.additional();
     if msg.opt().is_some() {
-        push_opt(&mut additional, rcode, ede);
+        push_opt(&mut additional, rcode, ede, None);
     }
 
     if let Some(signer) = signer {

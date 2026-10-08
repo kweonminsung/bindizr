@@ -3,7 +3,10 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype};
+use bindizr_core::dns::{
+    TCP_IDLE_TIMEOUT,
+    message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype},
+};
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::{
@@ -22,12 +25,12 @@ use super::{
     wire,
 };
 
-const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// A client that connects and says nothing must not hold a connection slot.
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Connections served at once; the accept backlog holds the rest.
+/// Connections served at once; the accept backlog holds the rest. RFC 9103,
+/// Section 6.3.3 asks for SERVFAIL when a transfer limit is hit, but this
+/// limit is on connections, so no message exists to answer.
 const MAX_TCP_CONNECTIONS: usize = 128;
 
 /// Queries served at once on one connection; past this the next is read once
@@ -236,7 +239,7 @@ async fn dispatch_tcp_query(
         );
     }
 
-    let query = match message::ParsedQuery::parse(query_data) {
+    let query = match message::ParsedQuery::parse(query_data, writer.transport()) {
         Ok(query) => query,
         Err(e) => {
             log::warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);

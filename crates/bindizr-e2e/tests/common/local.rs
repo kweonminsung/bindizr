@@ -167,6 +167,7 @@ url = ""
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
 {dns_tls}
+{dns_transfer}
 
 [dns.notify]
 retries = 0
@@ -196,6 +197,10 @@ level = "error"
                 "\n[dns.tls]\nlisten_port = {port}\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n"
             ),
             None => String::new(),
+        },
+        dns_transfer = match options.dns_transfer_require_tls {
+            true => "\n[dns.transfer]\nrequire_tls = true\n",
+            false => "",
         },
     );
 
@@ -234,4 +239,15 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
         let _ = pipe.read_to_string(&mut stderr);
     }
     Err(format!("{failure}\n{stderr}"))
+}
+
+impl TestApp {
+    /// Replace the run's certificate pair on disk, as a renewal does; returns
+    /// the certificate a client trusts after `config reload`.
+    pub(crate) fn renew_test_certificate(&self) -> CertificateDer<'static> {
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("the compose stack's certificate is fixed");
+        };
+        write_test_certificate(temp_dir.path())
+    }
 }

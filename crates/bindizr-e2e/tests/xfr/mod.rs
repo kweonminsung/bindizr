@@ -718,7 +718,15 @@ async fn an_edns_query_is_answered_with_an_opt() {
     .expect("AXFR");
     let envelope = Message::from_octets(frame.as_slice()).unwrap();
     assert_eq!(envelope.header().rcode(), Rcode::NOERROR);
-    assert!(envelope.opt().is_some(), "the envelope carries the OPT");
+    // RFC 7828, Section 3.3.2: over TCP the OPT carries the idle timeout.
+    let keepalive = envelope
+        .opt()
+        .expect("the envelope carries the OPT")
+        .opt()
+        .tcp_keepalive()
+        .expect("a TCP answer advertises its idle timeout");
+    assert_eq!(keepalive.timeout().map(u16::from), Some(300));
+    assert!(edns.opt().unwrap().opt().tcp_keepalive().is_none());
 }
 
 /// Verify that a UDP answer over 512 octets is truncated without EDNS and

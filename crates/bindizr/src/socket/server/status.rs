@@ -5,7 +5,10 @@ use bindizr_service::{Context, error::ServiceError, secondary, types::MessageRes
 
 use crate::{
     daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::types::{DaemonResponse, DaemonStatusResponse},
+    socket::{
+        server::SocketContext,
+        types::{DaemonResponse, DaemonStatusResponse},
+    },
 };
 
 /// Return the daemon's current status as JSON.
@@ -63,8 +66,10 @@ pub(crate) async fn handle_status(
 }
 
 /// Reload the daemon configuration and return the result.
-pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    let changed = crate::daemon::reload_config(cx)?;
+pub(crate) fn reload_config(
+    socket_cx: &SocketContext,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    let changed = crate::daemon::reload_config(socket_cx.daemon(), socket_cx.tls())?;
 
     let message = if changed.is_empty() {
         "Configuration reloaded; nothing changed".to_string()

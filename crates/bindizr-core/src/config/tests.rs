@@ -719,3 +719,27 @@ fn log_level_spells_itself_once() {
         );
     }
 }
+
+/// Verify that `dns.transfer.require_tls` needs the TLS listener the
+/// transfers are sent to.
+#[test]
+fn from_toml_requires_the_tls_listener_to_require_tls() {
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "[dns.transfer]\nrequire_tls = true",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file"),
+        "{}",
+        err
+    );
+
+    let parsed = parse_config(&TestConfigToml {
+        dns_extra: "[dns.tls]\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"\n\n[dns.transfer]\nrequire_tls = true",
+        ..Default::default()
+    })
+    .unwrap();
+    assert!(parsed.dns.transfer.require_tls);
+}

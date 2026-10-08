@@ -14,7 +14,7 @@ pub(crate) mod transfer_cache;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use auth::{TransferRefusal, authenticate_transfer};
+use auth::{TransferRefusal, authenticate_transfer, transport_refusal};
 use bindizr_core::{
     dns::message::{ExtendedErrorCode, Rcode, Rtype},
     metrics::XfrResult,
@@ -70,9 +70,13 @@ pub(crate) async fn handle_tcp_xfr(
     let transport = writer.transport();
     let track_result = |result| cx.metrics().track_xfr(query.qtype, transport, result);
 
-    // Verify the key or the address first; the zone's grant is decided beside
-    // its row inside the transfer.
-    let mut identity = match authenticate_transfer(dns_cx, query_data, client_ip, transport).await {
+    // The transport, then the key or the address; the zone's grant is decided
+    // beside its row inside the transfer.
+    let identity = match transport_refusal(dns_cx, transport) {
+        Some(refusal) => Err(refusal),
+        None => authenticate_transfer(dns_cx, query_data, client_ip, transport).await,
+    };
+    let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
             track_result(XfrResult::Refused);
@@ -196,24 +200,28 @@ pub(crate) async fn handle_udp_xfr(
     query_data: &[u8],
 ) -> Vec<u8> {
     let cx = dns_cx.daemon();
-    let mut identity =
-        match authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
-            .await
-        {
-            Ok(identity) => identity,
-            Err(refusal) => {
-                cx.metrics()
-                    .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Refused);
-                log::warn!(
-                    "Refused XFR UDP query from {}: {}",
-                    client_addr.ip(),
-                    refusal.reason
-                );
-                return refusal.into_response(query).unwrap_or_else(|_| {
-                    query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
-                });
-            }
-        };
+    let identity = match transport_refusal(dns_cx, TransferTransport::Udp) {
+        Some(refusal) => Err(refusal),
+        None => {
+            authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
+                .await
+        }
+    };
+    let mut identity = match identity {
+        Ok(identity) => identity,
+        Err(refusal) => {
+            cx.metrics()
+                .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Refused);
+            log::warn!(
+                "Refused XFR UDP query from {}: {}",
+                client_addr.ip(),
+                refusal.reason
+            );
+            return refusal.into_response(query).unwrap_or_else(|_| {
+                query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
+            });
+        }
+    };
     // The transfer itself counts when the client returns over TCP.
     cx.metrics()
         .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Truncated);

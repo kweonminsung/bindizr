@@ -220,7 +220,11 @@ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-rc.2 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
 ```
 
-The readiness probe follows to HTTPS on its own. Leave the value empty when
+The readiness probe follows to HTTPS on its own. cert-manager renews the
+Secret in place and the kubelet refreshes the mounted files within about a
+minute; `kubectl exec -n bindizr deploy/bindizr-bindizr-chart -- bindizr
+config reload` then serves the renewed certificate without a restart. Leave
+the value empty when
 an Ingress terminates TLS in front instead; with `bindizr.api.service.type`
 left at `ClusterIP`, Bindizr's own port is then never reachable from outside.
 
@@ -236,7 +240,8 @@ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 ```
 
 The DNS Service gains a `dns-tls` port (853); expose it as you do the plain
-one. The secondary needs a key beside its registration, as
+one, and a renewed Secret is picked up by `bindizr config reload` as above.
+The secondary needs a key beside its registration, as
 [Transfers over TLS](../secondaries/index.md#transfers-over-tls) says; the
 chart's own BIND pods keep plain TCP inside the cluster.
 

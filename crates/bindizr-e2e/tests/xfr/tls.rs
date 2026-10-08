@@ -17,7 +17,7 @@ use crate::common::{
     TestApp, TestAppOptions, axfr,
     dns::{
         nsupdate::{KeyRole, UpdateRecord, build_update, create_tsig_key, is_signed, sign},
-        parse_name,
+        parse_name, probe_zone_soa,
     },
     exchange_xot, xot,
 };
@@ -98,6 +98,71 @@ async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
     .await;
     assert_eq!(tls_ok, 1.0);
     assert_eq!(tcp_ok, 1.0);
+}
+
+/// Verify that `dns.transfer.require_tls` refuses a transfer over plain TCP
+/// while SOA queries and the transfer over TLS keep working (RFC 9103,
+/// Section 11).
+#[tokio::test]
+#[serial]
+async fn require_tls_refuses_a_transfer_over_plain_tcp() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        dns_tls: true,
+        dns_transfer_require_tls: true,
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xot-only-key", KeyRole::Admin).await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+
+    let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+    assert_eq!(outcome.refusal(), Rcode::REFUSED);
+    assert!(probe_zone_soa(app.dns_port(), zone_name));
+
+    // The refusal is logged against the secondary with its reason; the log
+    // keeps one row per zone, so it is read before the transfer that works.
+    let (status, body) = app
+        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let refused = &body["transfers"][0];
+    assert_eq!(refused["result"], "refused", "{body}");
+    assert_eq!(refused["transport"], "tcp", "{body}");
+    assert!(
+        refused["error"].as_str().unwrap().contains("require TLS"),
+        "{body}"
+    );
+
+    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).expect("XoT");
+    assert!(outcome.records() >= 3);
+}
+
+/// Verify that `config reload` re-reads the certificate pair, so a renewed
+/// certificate serves without a restart.
+#[tokio::test]
+#[serial]
+async fn a_reload_picks_up_a_renewed_certificate() {
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "renewal-key", KeyRole::Admin).await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).expect("XoT");
+    assert!(outcome.records() >= 3);
+
+    let renewed = app.renew_test_certificate();
+    let output = app.run_cli_success(&["config", "reload"]).await;
+    assert!(output.contains("dns.tls certificate"), "{output}");
+
+    let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
+    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
+    assert!(outcome.records() >= 3);
+    // The certificate the run started with is no longer presented: the new
+    // one carries the same name, so the stale root fails on the signature.
+    let error = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).unwrap_err();
+    assert!(error.contains("invalid peer certificate"), "{error}");
 }
 
 /// Verify that the handshake refuses TLS 1.2 and an ALPN without "dot", and

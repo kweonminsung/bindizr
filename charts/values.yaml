@@ -65,6 +65,9 @@ bindizr:
       # Zone records cached per serial, so repeated transfers skip the
       # database; a larger zone is served uncached, 0 caches nothing.
       cacheMaxRecords: 500000
+      # Refuse AXFR and IXFR over plain TCP and UDP once every secondary pulls
+      # over TLS; needs dns.tls.existingSecret. SOA queries keep answering.
+      requireTls: false
     service:
       port: 53
 

@@ -66,6 +66,8 @@ pub(crate) struct TestAppOptions {
     pub(crate) tls: bool,
     /// Serve zone transfers over TLS on a second port with that same certificate.
     pub(crate) dns_tls: bool,
+    /// Refuse transfers on the plain listeners, so only `dns_tls` serves them.
+    pub(crate) dns_transfer_require_tls: bool,
 }
 
 impl Default for TestAppOptions {
@@ -79,6 +81,7 @@ impl Default for TestAppOptions {
             openapi_enabled: false,
             tls: false,
             dns_tls: false,
+            dns_transfer_require_tls: false,
         }
     }
 }

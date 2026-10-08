@@ -7,14 +7,21 @@ use domain::{
         Message, MessageBuilder, Name, Rtype, ToName,
         iana::{Class, Opcode, OptRcode, Rcode},
         message_builder::AdditionalBuilder,
-        opt::{Opt, OptRecord, exterr::ExtendedError},
+        opt::{
+            Opt, OptRecord,
+            exterr::ExtendedError,
+            keepalive::{IdleTimeout, TcpKeepalive},
+        },
     },
     rdata::{Soa, tsig::Time48},
 };
 use thiserror::Error;
 
 use super::EncodeMessageError;
-use crate::dns::{LibraryError, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner};
+use crate::{
+    dns::{LibraryError, TCP_IDLE_TIMEOUT, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner},
+    model::transfer::TransferTransport,
+};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
@@ -22,6 +29,9 @@ pub(crate) const UDP_PAYLOAD_SIZE_WITHOUT_EDNS: u16 = 512;
 
 /// The wire size of the OPT record a response carries, options aside.
 pub(crate) const OPT_RECORD_LEN: usize = 11;
+
+/// The wire size of the edns-tcp-keepalive option with its timeout.
+pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
 
 /// What the query said through its OPT record (RFC 6891), or what it got
 /// wrong; a query that carried one is answered with one.
@@ -39,11 +49,13 @@ pub enum Edns {
 }
 
 /// Append the OPT a response owes an EDNS query (RFC 6891, Section 6.1.1),
-/// with `rcode`'s extended bits and `ede` when there is one.
+/// with `rcode`'s extended bits, `ede` when there is one, and the keepalive
+/// a TCP answer carries.
 pub(crate) fn push_opt(
     additional: &mut AdditionalBuilder<Vec<u8>>,
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
+    keepalive: Option<TcpKeepalive>,
 ) {
     additional
         .opt(|opt| {
@@ -51,6 +63,9 @@ pub(crate) fn push_opt(
             opt.set_rcode(rcode);
             if let Some(code) = ede {
                 opt.push(&ExtendedError::<Vec<u8>>::from(code))?;
+            }
+            if let Some(keepalive) = keepalive {
+                opt.push(&keepalive)?;
             }
             Ok(())
         })
@@ -109,11 +124,16 @@ pub struct ParsedQuery {
     /// Copied into every response (RFC 1035, Section 4.1.1).
     pub rd: bool,
     pub edns: Edns,
+    /// The listener the query arrived on.
+    pub transport: TransferTransport,
 }
 
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
-    pub fn parse(data: &[u8]) -> Result<ParsedQuery, ParseQueryError> {
+    pub fn parse(
+        data: &[u8],
+        transport: TransferTransport,
+    ) -> Result<ParsedQuery, ParseQueryError> {
         let message =
             Message::from_octets(data).map_err(|e| ParseQueryError::Malformed(Box::new(e)))?;
 
@@ -158,11 +178,24 @@ impl ParsedQuery {
             opcode,
             rd,
             edns,
+            transport,
         })
     }
 
     /// The largest UDP answer this query may get: what it advertised, capped
     /// at what bindizr sends, or 512 octets without EDNS.
+    /// The edns-tcp-keepalive option a TCP answer carries, the listener's
+    /// idle timeout (RFC 7828, Section 3.3.2); none over UDP.
+    pub(crate) fn keepalive(&self) -> Option<TcpKeepalive> {
+        if self.transport == TransferTransport::Udp {
+            return None;
+        }
+        let Ok(timeout) = IdleTimeout::try_from(TCP_IDLE_TIMEOUT) else {
+            return None;
+        };
+        Some(TcpKeepalive::new(Some(timeout)))
+    }
+
     pub fn udp_payload_limit(&self) -> usize {
         let size = match self.edns {
             Edns::Present { udp_payload_size } => udp_payload_size.min(EDNS_UDP_PAYLOAD_SIZE),
@@ -253,7 +286,7 @@ impl ParsedQuery {
 
         let mut additional = question.additional();
         if self.edns != Edns::Absent {
-            push_opt(&mut additional, rcode, ede);
+            push_opt(&mut additional, rcode, ede, self.keepalive());
         }
         additional
     }

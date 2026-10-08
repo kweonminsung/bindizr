@@ -62,6 +62,8 @@ pub enum ConfigError {
         present: &'static str,
         missing: &'static str,
     },
+    #[error("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file")]
+    TransferRequiresTlsListener,
     #[error("dns.catalog_zone_name is not a zone name: {0}")]
     CatalogZoneName(#[source] crate::dns::name::ParseNameError),
     /// A zero would stop secondaries refreshing, so a zone must not inherit it.
@@ -390,6 +392,10 @@ pub struct TransferConfig {
     /// than this is served uncached; `0` caches nothing.
     #[serde(default = "default_transfer_cache_max_records")]
     pub cache_max_records: u64,
+    /// Refuse AXFR and IXFR over plain TCP and UDP (RFC 9103, Section 11);
+    /// SOA queries keep answering. Needs `[dns.tls]`.
+    #[serde(default)]
+    pub require_tls: bool,
 }
 
 impl Default for TransferConfig {
@@ -397,6 +403,7 @@ impl Default for TransferConfig {
     fn default() -> Self {
         Self {
             cache_max_records: default_transfer_cache_max_records(),
+            require_tls: false,
         }
     }
 }
@@ -859,6 +866,10 @@ impl DnsConfig {
             return Err(ConfigError::PortZero { section: "dns" });
         }
         self.tls.validate()?;
+        // Refusing plain transfers with no TLS listener would refuse them all.
+        if self.transfer.require_tls && self.tls.tls_files().is_none() {
+            return Err(ConfigError::TransferRequiresTlsListener);
+        }
         // A zone without its own timers inherits these; a zero is refused
         // here as it is in a request.
         let defaults = &self.zone_defaults;

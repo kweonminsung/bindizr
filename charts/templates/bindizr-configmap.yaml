@@ -65,6 +65,7 @@ data:
 
     [dns.transfer]
     cache_max_records = {{ .Values.bindizr.dns.transfer.cacheMaxRecords }}
+    require_tls = {{ .Values.bindizr.dns.transfer.requireTls }}
 
     [dns.zone_defaults]
     ttl = {{ .Values.bindizr.zoneDefaults.ttl }}

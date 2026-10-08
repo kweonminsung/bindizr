@@ -7,8 +7,8 @@ pub use domain::base::{
 };
 use domain::{
     base::{
-        MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
-        record::ComposeRecord, wire::Composer,
+        MessageBuilder, ToName, Ttl, UnknownRecordData, opt::keepalive::TcpKeepalive,
+        rdata::ComposeRecordData, record::ComposeRecord, wire::Composer,
     },
     rdata::tsig::Time48,
 };
@@ -106,6 +106,8 @@ pub struct DnsMessageBuilder {
     /// Whether the query spoke EDNS, so every message carries an OPT
     /// (RFC 6891, Section 6.1.1; RFC 9103, Section 6.3.4).
     edns: bool,
+    /// The keepalive that OPT carries over TCP (RFC 7828, Section 3.3.2).
+    keepalive: Option<TcpKeepalive>,
     /// Set once the answers were dropped to fit a UDP limit.
     truncated: bool,
 }
@@ -124,6 +126,7 @@ impl DnsMessageBuilder {
             signer: None,
             rd: query.rd,
             edns: query.edns != Edns::Absent,
+            keepalive: query.keepalive(),
             truncated: false,
         }
     }
@@ -173,7 +176,11 @@ impl DnsMessageBuilder {
     /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, signature_len);
-        let opt = if self.edns { OPT_RECORD_LEN } else { 0 };
+        let opt = if self.edns {
+            OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
+        } else {
+            0
+        };
         12 + self.qname.len() + 4 + self.answers_len + opt + signature
     }
 
@@ -278,7 +285,7 @@ impl DnsMessageBuilder {
         // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
         if self.edns {
-            push_opt(&mut additional, OptRcode::NOERROR, None);
+            push_opt(&mut additional, OptRcode::NOERROR, None, self.keepalive);
         }
         if let Some(signer) = self.signer.as_mut() {
             signer
@@ -321,9 +328,9 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
 pub(crate) mod query;
 mod records;
 
-use query::OPT_RECORD_LEN;
 pub(crate) use query::push_opt;
 pub use query::{Edns, ExtendedErrorCode, ParseQueryError, ParsedQuery, is_response};
+use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 
 #[cfg(test)]
 mod tests;

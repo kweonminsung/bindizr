@@ -306,7 +306,7 @@ fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8
         .ok()?;
     let mut builder = builder.additional();
     if msg.opt().is_some() {
-        push_opt(&mut builder, OptRcode::NOTAUTH, None);
+        push_opt(&mut builder, OptRcode::NOTAUTH, None, None);
     }
     builder
         .push((

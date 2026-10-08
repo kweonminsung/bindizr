@@ -31,6 +31,7 @@ use crate::{
     shutdown::Shutdown,
     socket,
     socket::server::{BindSocketError, ServeSocketError},
+    tls::{LoadCertificateError, TlsCertificates},
 };
 
 /// How long the servers that can finish on their own get before the daemon
@@ -42,6 +43,10 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) enum DaemonError {
     #[error(transparent)]
     Config(#[from] ConfigError),
+    /// A pair that cannot be read is permanent, so it exits as a
+    /// configuration failure rather than looping through systemd's restart.
+    #[error(transparent)]
+    Tls(#[from] LoadCertificateError),
     #[error(transparent)]
     Socket(#[from] BindSocketError),
     #[error(transparent)]
@@ -81,12 +86,7 @@ impl DaemonError {
     /// Whether running the same thing again would fail the same way: the
     /// exit class a supervisor stops retrying on.
     pub(crate) fn is_configuration(&self) -> bool {
-        matches!(
-            self,
-            DaemonError::Config(_)
-                | DaemonError::Api(StartApiError::Tls { .. })
-                | DaemonError::Dns(StartDnsError::Tls(_))
-        )
+        matches!(self, DaemonError::Config(_) | DaemonError::Tls(_))
     }
 }
 
@@ -99,10 +99,35 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<()>) {
     servers.spawn(async move { (name, task.await) });
 }
 
+/// Why a reload applied nothing, or not everything.
+#[derive(Debug, Error)]
+pub(crate) enum ReloadError {
+    #[error(transparent)]
+    Config(#[from] ReloadConfigError),
+    #[error("the certificates were not reloaded: {0}")]
+    Tls(#[from] LoadCertificateError),
+}
+
+/// A refused reload is the operator's to fix: a pair that does not load is
+/// invalid input, as a refused configuration is.
+impl From<ReloadError> for ServiceError {
+    /// Classify the reload failure for the error payload.
+    fn from(err: ReloadError) -> Self {
+        match err {
+            ReloadError::Config(err) => ServiceError::from(err),
+            tls @ ReloadError::Tls(_) => ServiceError::invalid_input(tls),
+        }
+    }
+}
+
 /// Re-read the configuration file and apply what only a running process can:
-/// the settings whose readers captured them at startup.
-pub(crate) fn reload_config(cx: &Context) -> Result<Vec<String>, ReloadConfigError> {
-    let changed = cx.reload_config()?;
+/// the settings whose readers captured them at startup, and the certificate
+/// pairs the TLS listeners present.
+pub(crate) fn reload_config(
+    cx: &Context,
+    tls: &TlsCertificates,
+) -> Result<Vec<String>, ReloadError> {
+    let mut changed = cx.reload_config()?;
 
     // The installed logger reads its level and format per record, so this is enough.
     let config = cx.config();
@@ -112,6 +137,9 @@ pub(crate) fn reload_config(cx: &Context) -> Result<Vec<String>, ReloadConfigErr
     // The scheduler takes its period from the channel, so a reload that
     // names one reaches an instance a zero interval left idle.
     cx.set_scheduler_period(config.dns.scheduler_interval_secs);
+
+    // The paths are fixed while bindizr runs; what they hold is re-read.
+    changed.extend(tls.reload(&config)?);
     Ok(changed)
 }
 
@@ -133,6 +161,10 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // opening the database or claiming DNS ports.
     let (socket_path, socket_listener) = socket::server::bind().await?;
     log::info!("Daemon socket server listening on {}", socket_path);
+
+    // Read before the database opens: a pair that does not load is a
+    // configuration failure.
+    let tls = TlsCertificates::load(&config)?;
 
     let db = Db::connect(&config.database).await?;
 
@@ -168,12 +200,16 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
-    let dns_servers = dns::initialize(cx.clone(), &shutdown).await?;
+    let dns_servers = dns::initialize(cx.clone(), &shutdown, tls.dns.clone()).await?;
 
     let (control_tx, mut control_rx) = socket::server::control::channel();
-    let socket_cx = Arc::new(socket::server::SocketContext::new(cx.clone(), control_tx));
+    let socket_cx = Arc::new(socket::server::SocketContext::new(
+        cx.clone(),
+        control_tx,
+        tls.clone(),
+    ));
     let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
-    let api_task = api::initialize(cx.clone(), &shutdown).await?;
+    let api_task = api::initialize(cx.clone(), &shutdown, tls.api.clone()).await?;
 
     // A front end that stops on its own ends the daemon: the control socket
     // would otherwise keep answering for a process serving nothing.
@@ -216,7 +252,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
                 break RunResult::Stop;
             }
             _ = hangup.recv() => {
-                match reload_config(&cx) {
+                match reload_config(&cx, &tls) {
                     Ok(changed) if changed.is_empty() => {
                         log::info!("SIGHUP received, nothing changed.")
                     }
