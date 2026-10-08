@@ -16,7 +16,7 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TestAppOptions, axfr,
     dns::{
-        nsupdate::{KeyRole, UpdateRecord, build_update, create_tsig_key},
+        nsupdate::{KeyRole, UpdateRecord, build_update, create_tsig_key, is_signed, sign},
         parse_name,
     },
     exchange_xot, xot,
@@ -166,40 +166,50 @@ async fn a_query_the_tls_listener_does_not_serve_is_refused_as_not_supported() {
 }
 
 /// Verify that an UPDATE sent to the TLS listener, which serves transfers
-/// alone, is refused as not supported (RFC 9103, Section 7.8).
+/// alone, is refused as not supported (RFC 9103, Section 7.8), under its key
+/// when it has one (RFC 8945, Section 5.3).
 #[tokio::test]
 #[serial]
 async fn an_update_over_tls_is_refused_as_not_supported() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xot-update-key", KeyRole::Admin).await;
 
-    let mut update = build_update(
-        94,
-        zone_name,
-        &[],
-        &[UpdateRecord::AddA {
-            name: format!("host.{zone_name}."),
-            ttl: 300,
-            addr: "192.0.2.1".to_string(),
-        }],
-    )
-    .unwrap();
-    update
-        .opt(|opt| {
-            opt.set_udp_payload_size(1232);
-            Ok(())
-        })
+    for (query_id, key) in [(94, None), (95, Some(&key))] {
+        let mut update = build_update(
+            query_id,
+            zone_name,
+            &[],
+            &[UpdateRecord::AddA {
+                name: format!("host.{zone_name}."),
+                ttl: 300,
+                addr: "192.0.2.1".to_string(),
+            }],
+        )
         .unwrap();
+        update
+            .opt(|opt| {
+                opt.set_udp_payload_size(1232);
+                Ok(())
+            })
+            .unwrap();
+        if let Some(key) = key {
+            sign(&mut update, key).unwrap();
+        }
 
-    let frame = exchange_xot(app.dns_tls_port(), &update.finish(), dot_client(&app)).expect("XoT");
+        let frame =
+            exchange_xot(app.dns_tls_port(), &update.finish(), dot_client(&app)).expect("XoT");
 
-    let response = Message::from_octets(frame.as_slice()).unwrap();
-    assert_eq!(response.header().rcode(), Rcode::REFUSED);
-    assert_eq!(
-        extended_error_code(&frame),
-        ExtendedErrorCode::NOT_SUPPORTED
-    );
+        let response = Message::from_octets(frame.as_slice()).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::REFUSED);
+        assert_eq!(
+            extended_error_code(&frame),
+            ExtendedErrorCode::NOT_SUPPORTED
+        );
+        let response = Message::from_octets(frame).unwrap();
+        assert_eq!(is_signed(&response).unwrap(), key.is_some());
+    }
 }
 
 /// The extended error code a refusal names in its OPT.

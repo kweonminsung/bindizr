@@ -10,7 +10,7 @@ use bindizr_core::{
         nsupdate::parser::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest},
         tsig::{ResponseSigner, TsigError},
     },
-    model::{record::RecordType, tsig_key::TsigKey},
+    model::{record::RecordType, transfer::TransferTransport, tsig_key::TsigKey},
 };
 use bindizr_service::{
     dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOperation},
@@ -29,6 +29,10 @@ pub(crate) enum UpdateError {
     /// version BADVERS (RFC 6891, Sections 6.1.1 and 6.1.3).
     #[error("unacceptable EDNS: {0}")]
     Edns(OptRcode),
+    /// An UPDATE on the TLS listener, which serves transfers alone
+    /// (RFC 9103, Section 7.8): REFUSED, Not Supported.
+    #[error("{0}")]
+    NotSupported(String),
     #[error("{0}")]
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
@@ -118,12 +122,36 @@ pub(crate) async fn apply_update(
     dns_cx: &DnsContext,
     request: UpdateRequest,
     query_data: &[u8],
+    transport: TransferTransport,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = async {
-        // Authenticate first: keys are zone-independent, and every refusal
-        // below is then signed.
-        let key = authenticate_request(dns_cx, &request, query_data, &mut signer).await?;
+        // A signature is verified first, whatever the listener's answer:
+        // keys are zone-independent, and every refusal below is then signed.
+        let key = match &request.tsig {
+            Some(tsig) => {
+                let (key, verified) = verify_signer(dns_cx, &tsig.name, query_data).await?;
+                signer = Some(verified);
+                key
+            }
+            None => None,
+        };
+
+        // RFC 9103, Section 7.8: the TLS listener serves transfers alone.
+        if transport == TransferTransport::Tls {
+            return Err(UpdateError::NotSupported(
+                "UPDATE is not served over TLS".to_string(),
+            ));
+        }
+
+        // An unsigned update carries no identity, so admitting one admits
+        // every client that reaches the listener — the same trade
+        // `api.authentication_required = false` makes for the API.
+        if request.tsig.is_none() && dns_cx.daemon().config().dns.nsupdate.tsig_required {
+            return Err(UpdateError::Refused(
+                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+            ));
+        }
 
         // An OPT the server cannot take is answered before the update is read.
         match request.edns {
@@ -167,35 +195,6 @@ pub(crate) async fn apply_update(
     }
     .await;
     (result, signer)
-}
-
-/// Verify TSIG and retain its response signer, or return `None` for an allowed unsigned update.
-/// Disabling `dns.nsupdate.tsig_required` never bypasses verification of signed requests.
-async fn authenticate_request(
-    dns_cx: &DnsContext,
-    request: &UpdateRequest,
-    query_data: &[u8],
-    signer: &mut Option<ResponseSigner>,
-) -> Result<Option<TsigKey>, UpdateError> {
-    let cx = dns_cx.daemon();
-    let tsig = match &request.tsig {
-        Some(tsig) => tsig,
-        None => {
-            // An unsigned update carries no identity, so this admits every
-            // client that reaches the listener — the same trade
-            // `api.authentication_required = false` makes for the API.
-            if !cx.config().dns.nsupdate.tsig_required {
-                return Ok(None);
-            }
-            return Err(UpdateError::Refused(
-                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
-            ));
-        }
-    };
-
-    let (key, verified) = verify_signer(dns_cx, &tsig.name, query_data).await?;
-    *signer = Some(verified);
-    Ok(key)
 }
 
 /// Verify the request's TSIG under the key `key_name` names and return that

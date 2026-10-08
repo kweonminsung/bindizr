@@ -183,7 +183,7 @@ pub(crate) fn send_signed_update_with_edns_version(
 }
 
 /// Whether the response carries a TSIG record.
-fn is_signed(response: &Message<Vec<u8>>) -> Result<bool, String> {
+pub(crate) fn is_signed(response: &Message<Vec<u8>>) -> Result<bool, String> {
     Ok(response
         .additional()
         .map_err(|e| e.to_string())?
@@ -354,7 +354,10 @@ fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, 
 }
 
 /// Append the request TSIG, the way `domain`'s client transaction does it.
-fn sign(builder: &mut AdditionalBuilder<Vec<u8>>, key: &SigningKey) -> Result<(), String> {
+pub(crate) fn sign(
+    builder: &mut AdditionalBuilder<Vec<u8>>,
+    key: &SigningKey,
+) -> Result<(), String> {
     ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
         .map_err(|e| e.to_string())?;
     Ok(())

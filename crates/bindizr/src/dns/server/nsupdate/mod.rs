@@ -38,30 +38,8 @@ pub(crate) async fn handle_tcp_nsupdate(
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), NsupdateError> {
-    // RFC 9103, Section 7.8: the TLS listener serves transfers; an UPDATE
-    // there is refused with its reason.
-    if writer.transport() == TransferTransport::Tls {
-        log::info!("Refusing an NSUPDATE over TLS from {}", client_addr);
-        dns_cx
-            .daemon()
-            .metrics()
-            .track_nsupdate(NsupdateResult::Rcode(Rcode::REFUSED));
-        let response = build_response(
-            query_data,
-            OptRcode::REFUSED,
-            Some(ExtendedErrorCode::NOT_SUPPORTED),
-            None,
-            DEFAULT_FUDGE,
-        )
-        .ok_or(NsupdateError::BuildResponse)?;
-        return writer
-            .write_message(&response)
-            .await
-            .map_err(NsupdateError::WriteTcp);
-    }
-
     log::info!("NSUPDATE TCP request from {}", client_addr);
-    let response = handle_nsupdate_request(dns_cx, query_data, client_addr)
+    let response = handle_nsupdate_request(dns_cx, query_data, client_addr, writer.transport())
         .await
         .ok_or(NsupdateError::BuildResponse)?;
     writer
@@ -79,7 +57,14 @@ pub(crate) async fn handle_udp_nsupdate(
 ) -> Result<(), NsupdateError> {
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
-    let response = match handle_nsupdate_request(dns_cx, query_data, client_addr).await {
+    let response = match handle_nsupdate_request(
+        dns_cx,
+        query_data,
+        client_addr,
+        TransferTransport::Udp,
+    )
+    .await
+    {
         Some(resp) => resp,
         None => {
             log::warn!("Ignored malformed NSUPDATE packet from {}", client_addr);
@@ -100,6 +85,7 @@ async fn handle_nsupdate_request(
     dns_cx: &DnsContext,
     query_data: &[u8],
     client_addr: SocketAddr,
+    transport: TransferTransport,
 ) -> Option<Vec<u8>> {
     let cx = dns_cx.daemon();
     let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
@@ -137,7 +123,7 @@ async fn handle_nsupdate_request(
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
 
-    let (result, signer) = update::apply_update(dns_cx, parsed, query_data).await;
+    let (result, signer) = update::apply_update(dns_cx, parsed, query_data, transport).await;
 
     let (rcode, ede) = match result {
         Ok(changed) => {
@@ -158,6 +144,10 @@ async fn handle_nsupdate_request(
         Err(update::UpdateError::Edns(rcode)) => {
             log::info!("Refusing the EDNS of an NSUPDATE from {}", client_addr);
             (rcode, None)
+        }
+        Err(update::UpdateError::NotSupported(msg)) => {
+            log::info!("NSUPDATE refused from {}: {}", client_addr, msg);
+            (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
         Err(update::UpdateError::FormErr(msg)) => {
             log::warn!("NSUPDATE formerr from {}: {}", client_addr, msg);
