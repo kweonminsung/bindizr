@@ -10,7 +10,7 @@ use domain::{
         iana::{Class, Opcode, OptRcode, Rcode},
         message_builder::AdditionalBuilder,
     },
-    rdata::{A, Cname, Dname, Ns, tsig::Time48},
+    rdata::{A, Cname, Dname, Ns, Soa, tsig::Time48},
     tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
 
@@ -71,9 +71,18 @@ pub(crate) enum PrereqRecord {
     NameInUse { name: String },
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
     NameNotInUse { name: String },
+    /// CLASS ANY: the record set must exist.
+    RecordSetInUse { name: String, rtype: Rtype },
+    /// CLASS NONE: the record set must not exist.
+    RecordSetNotInUse { name: String, rtype: Rtype },
     /// CLASS IN, TTL 0: with the others of its name, these A values must be
     /// exactly the zone's (RFC 2136, Section 3.2.3).
     AEquals { name: String, addr: String },
+    /// CLASS IN, TTL 0: the zone's SOA must be exactly this one.
+    SoaEquals {
+        name: String,
+        soa: Soa<Name<Vec<u8>>>,
+    },
 }
 
 /// Send an unsigned UPDATE for `zone` and return the response RCODE.
@@ -204,7 +213,7 @@ fn exchange(port: u16, query_id: u16, message: &[u8]) -> Result<Message<Vec<u8>>
 /// An UPDATE message reuses the standard sections: the zone is the question,
 /// the prerequisites are the answer, the updates are the authority
 /// (RFC 2136, Section 2.1).
-fn build_update(
+pub(crate) fn build_update(
     query_id: u16,
     zone: &str,
     prerequisites: &[PrereqRecord],
@@ -227,6 +236,20 @@ fn build_update(
                 .map_err(|e| e.to_string())?,
             PrereqRecord::NameNotInUse { name: owner } => answer
                 .push(empty_record(owner, Rtype::ANY, Class::NONE)?)
+                .map_err(|e| e.to_string())?,
+            PrereqRecord::RecordSetInUse { name: owner, rtype } => answer
+                .push(empty_record(owner, *rtype, Class::ANY)?)
+                .map_err(|e| e.to_string())?,
+            PrereqRecord::RecordSetNotInUse { name: owner, rtype } => answer
+                .push(empty_record(owner, *rtype, Class::NONE)?)
+                .map_err(|e| e.to_string())?,
+            PrereqRecord::SoaEquals { name: owner, soa } => answer
+                .push(Record::new(
+                    parse_name(owner)?,
+                    Class::IN,
+                    Ttl::ZERO,
+                    soa.clone(),
+                ))
                 .map_err(|e| e.to_string())?,
             PrereqRecord::AEquals { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;

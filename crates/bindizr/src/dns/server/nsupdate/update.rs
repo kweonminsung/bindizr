@@ -221,7 +221,7 @@ pub(crate) async fn verify_signer(
 
 /// One prerequisite record, its shape held to RFC 2136, Section 3.2.1 (TTL 0,
 /// rdata only in the zone class); a type bindizr never stores keeps its
-/// meaning, since its record set can never exist.
+/// meaning, since its record set can never exist, the zone's SOA excepted.
 fn decode_prerequisite(
     record: &UpdateRecord,
     query_data: &[u8],
@@ -261,6 +261,12 @@ fn decode_prerequisite(
                 return Err(UpdateError::FormErr(
                     "IN-class prerequisite must specify record type and rdata".to_string(),
                 ));
+            }
+            if record.record_type == Rtype::SOA {
+                return Ok(Prerequisite::SoaInUse {
+                    name,
+                    rdata: record.to_soa_rdata(query_data)?,
+                });
             }
             if RecordType::try_from(record.record_type).is_err() {
                 return Ok(Prerequisite::UnstoredTypeInUse {

@@ -13,6 +13,7 @@ use bindizr_core::{
         tsig::{RequestSignature, request_signature},
     },
     metrics::NsupdateResult,
+    model::transfer::TransferTransport,
 };
 use thiserror::Error;
 use tokio::net::UdpSocket;
@@ -37,6 +38,28 @@ pub(crate) async fn handle_tcp_nsupdate(
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), NsupdateError> {
+    // RFC 9103, Section 7.8: the TLS listener serves transfers; an UPDATE
+    // there is refused with its reason.
+    if writer.transport() == TransferTransport::Tls {
+        log::info!("Refusing an NSUPDATE over TLS from {}", client_addr);
+        dns_cx
+            .daemon()
+            .metrics()
+            .track_nsupdate(NsupdateResult::Rcode(Rcode::REFUSED));
+        let response = build_response(
+            query_data,
+            OptRcode::REFUSED,
+            Some(ExtendedErrorCode::NOT_SUPPORTED),
+            None,
+            DEFAULT_FUDGE,
+        )
+        .ok_or(NsupdateError::BuildResponse)?;
+        return writer
+            .write_message(&response)
+            .await
+            .map_err(NsupdateError::WriteTcp);
+    }
+
     log::info!("NSUPDATE TCP request from {}", client_addr);
     let response = handle_nsupdate_request(dns_cx, query_data, client_addr)
         .await

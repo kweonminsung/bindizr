@@ -1,15 +1,21 @@
-use domain::base::{
-    Rtype,
-    iana::{OptRcode, Rcode},
+use domain::{
+    base::{
+        Rtype, Serial, Ttl,
+        iana::{OptRcode, Rcode},
+    },
+    rdata::Soa,
 };
 use serde_json::Value;
 use serial_test::serial;
 
 use crate::common::{
     TestApp, TestAppOptions,
-    dns::nsupdate::{
-        KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
-        send_signed_update_with_edns_version, send_signed_update_with_two_zones, send_update,
+    dns::{
+        nsupdate::{
+            KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
+            send_signed_update_with_edns_version, send_signed_update_with_two_zones, send_update,
+        },
+        parse_name,
     },
 };
 
@@ -266,6 +272,80 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
     .expect("whole prerequisite");
     assert_eq!(rcode, Rcode::NOERROR);
     assert_eq!(app.list_records(&zone_name).await.len(), before + 1);
+}
+
+/// Verify that a prerequisite may name the zone's SOA, which no row holds
+/// (RFC 2136, Section 3.2).
+#[tokio::test]
+#[serial]
+async fn a_prerequisite_may_name_the_zone_soa() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let apex = format!("{zone_name}.");
+    let host = format!("host.{zone_name}.");
+    let add = [UpdateRecord::AddA {
+        name: host.clone(),
+        ttl: 300,
+        addr: "192.0.2.120".to_string(),
+    }];
+
+    for (prerequisites, expected) in [
+        (
+            vec![PrereqRecord::RecordSetInUse {
+                name: apex.clone(),
+                rtype: Rtype::SOA,
+            }],
+            Rcode::NOERROR,
+        ),
+        (
+            vec![PrereqRecord::RecordSetNotInUse {
+                name: apex.clone(),
+                rtype: Rtype::SOA,
+            }],
+            Rcode::YXRRSET,
+        ),
+        (
+            vec![PrereqRecord::RecordSetInUse {
+                name: host.clone(),
+                rtype: Rtype::SOA,
+            }],
+            Rcode::NXRRSET,
+        ),
+    ] {
+        let rcode = send_update(app.dns_port(), zone_name, &prerequisites, &add).expect("update");
+        assert_eq!(rcode, expected, "{prerequisites:?}");
+    }
+
+    // The value-dependent form compares with the SOA served, serial included.
+    let serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
+    let served_soa = |serial: u32| {
+        Soa::new(
+            parse_name(&format!("ns1.{zone_name}")).unwrap(),
+            parse_name("admin.example.com").unwrap(),
+            Serial::from(serial),
+            Ttl::from_secs(7200),
+            Ttl::from_secs(3600),
+            Ttl::from_secs(604800),
+            Ttl::from_secs(86400),
+        )
+    };
+    for (soa, expected) in [
+        (served_soa(serial), Rcode::NOERROR),
+        (served_soa(serial + 1), Rcode::NXRRSET),
+    ] {
+        let rcode = send_update(
+            app.dns_port(),
+            zone_name,
+            &[PrereqRecord::SoaEquals {
+                name: apex.clone(),
+                soa,
+            }],
+            &add,
+        )
+        .expect("update");
+        assert_eq!(rcode, expected);
+    }
 }
 
 /// Verify that `nsupdate` refuses an owner outside the zone.

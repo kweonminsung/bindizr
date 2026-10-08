@@ -10,6 +10,7 @@ use bindizr_core::{
         Serial,
         message::Rtype,
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
+        record::Rdata,
     },
     model::role_grant::{Action, RoleGrants},
 };
@@ -102,12 +103,15 @@ pub enum Prerequisite {
         value: String,
         priority: Option<i32>,
     },
-    /// A record set of a type bindizr never stores must exist: it cannot, so
-    /// this is NXRRSET once the owner is known to be in the zone.
+    /// A record set of a type bindizr never stores must exist: it cannot,
+    /// the zone's own SOA at the apex excepted.
     UnstoredTypeInUse { name: String, record_type: Rtype },
     /// A record set of a type bindizr never stores must not exist: it never
-    /// does, so this holds once the owner is known to be in the zone.
+    /// does, the zone's own SOA at the apex excepted.
     UnstoredTypeNotInUse { name: String, record_type: Rtype },
+    /// CLASS IN, TYPE SOA: the zone's SOA must carry exactly this rdata
+    /// (RFC 2136, Section 3.2.3).
+    SoaInUse { name: String, rdata: Rdata },
 }
 
 /// A decoded UPDATE message: the zone it targets, the key that signed it, and
@@ -242,7 +246,8 @@ async fn authorize_key_tx(
             Prerequisite::NameInUse { name }
             | Prerequisite::NameNotInUse { name }
             | Prerequisite::UnstoredTypeInUse { name, .. }
-            | Prerequisite::UnstoredTypeNotInUse { name, .. } => (name, None),
+            | Prerequisite::UnstoredTypeNotInUse { name, .. }
+            | Prerequisite::SoaInUse { name, .. } => (name, None),
             Prerequisite::RecordSetInUse { name, record_type }
             | Prerequisite::RecordSetNotInUse { name, record_type }
             | Prerequisite::RecordInUse {

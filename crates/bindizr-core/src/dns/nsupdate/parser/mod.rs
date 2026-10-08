@@ -5,7 +5,7 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Srv, Txt, tsig::Tsig},
+    rdata::{A, Aaaa, Mx, Soa, Srv, Txt, tsig::Tsig},
 };
 use thiserror::Error;
 
@@ -13,7 +13,7 @@ use crate::{
     dns::{
         message::{Edns, query::UDP_PAYLOAD_SIZE_WITHOUT_EDNS},
         name::labels_to_presentation,
-        record::{NaptrRecordValue, ParseRecordValueError, TxtRecordValue},
+        record::{NaptrRecordValue, ParseRecordValueError, Rdata, SoaRecordValue, TxtRecordValue},
         tsig::is_mac_size_in_bounds,
     },
     model::record::{ParseRecordTypeError, RecordType},
@@ -337,6 +337,27 @@ impl UpdateRecord {
             Class::NONE if self.rdata.is_empty() => Err(DeleteShapeError::NoneClassNoRdata),
             _ => Ok(()),
         }
+    }
+
+    /// The SOA rdata of a prerequisite, re-encoded without compression to
+    /// compare with the zone's own.
+    pub fn to_soa_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
+        let soa = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
+        let mname = to_presentation_name(soa.mname())?;
+        let rname = to_presentation_name(soa.rname())?;
+        SoaRecordValue {
+            mname: &mname,
+            rname: &rname,
+            serial: soa.serial().into_int(),
+            refresh: soa.refresh().as_secs(),
+            retry: soa.retry().as_secs(),
+            expire: soa.expire().as_secs(),
+            minimum: soa.minimum().as_secs(),
+        }
+        .to_rdata()
+        .map_err(|_| ParseUpdateError::Rdata {
+            record_type: "SOA".to_string(),
+        })
     }
 
     /// Decode an update record's wire data into its typed value.

@@ -108,7 +108,8 @@ A transfer over TLS logs as `XFR TLS query`, and `secondary transfers` lists
 the transport beside each one. Over TLS the key and the registered address
 are required together, as RFC 9103, Section 7.5 asks of a server without
 mutual TLS; either alone is refused there. A query the listener does not
-serve is refused with extended DNS error 21, Not Supported (Section 7.8).
+serve, an update included, is refused with extended DNS error 21, Not
+Supported (Section 7.8).
 Every listener answers an EDNS query with an OPT record and keeps a UDP
 answer within the size the query advertised, 512 octets without EDNS.
 
