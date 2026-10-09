@@ -3,7 +3,9 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc};
 
-use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Keepalive, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{
+    self, Class, ExtendedErrorCode, Keepalive, Opcode, OptRcode, Rtype,
+};
 use tokio::{net::UdpSocket, sync::Semaphore};
 
 use super::server::{self, DnsContext};
@@ -85,33 +87,36 @@ async fn dispatch_udp_query(
         return;
     };
 
-    if let Some(response) = query.edns_error_response() {
+    // Each refusal below is answered under the query's key when it has one.
+    let refusal = if let Some(rcode) = query.edns_error() {
         log::info!("Refusing the EDNS of a DNS UDP query from {}", client_addr);
-        send_udp_response(socket, client_addr, &response).await;
-        return;
-    }
-
-    // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
-    if query.qclass != Class::IN {
+        Some((rcode, None))
+    } else if query.qclass != Class::IN {
+        // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
         log::info!(
             "Refusing DNS UDP class {} from {}",
             query.qclass,
             client_addr
         );
-        let response =
-            query.error_response(Rcode::NOTAUTH, Some(ExtendedErrorCode::NOT_AUTHORITATIVE));
-        send_udp_response(socket, client_addr, &response).await;
-        return;
-    }
-
-    if query.opcode != Opcode::QUERY {
+        Some((
+            OptRcode::NOTAUTH,
+            Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+        ))
+    } else if query.opcode != Opcode::QUERY {
         log::info!(
             "Refusing DNS UDP opcode {:?} from {}",
             query.opcode,
             client_addr
         );
-        let response = query.error_response(Rcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED));
-        send_udp_response(socket, client_addr, &response).await;
+        Some((OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED)))
+    } else {
+        None
+    };
+    if let Some((rcode, ede)) = refusal {
+        match server::refuse_query(dns_cx, &query, query_data, rcode, ede).await {
+            Ok(response) => send_udp_response(socket, client_addr, &response).await,
+            Err(e) => log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e),
+        }
         return;
     }
 
@@ -147,7 +152,21 @@ async fn dispatch_udp_query(
             client_addr,
             query.qtype
         );
-        query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
+        match server::refuse_query(
+            dns_cx,
+            &query,
+            query_data,
+            OptRcode::REFUSED,
+            Some(ExtendedErrorCode::NOT_SUPPORTED),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e);
+                return;
+            }
+        }
     };
     send_udp_response(socket, client_addr, &response).await;
 }

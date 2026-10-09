@@ -14,9 +14,10 @@ pub(crate) mod transfer_cache;
 
 use std::{net::SocketAddr, sync::Arc};
 
+pub(crate) use auth::refuse_query;
 use auth::{TransferRefusal, authenticate_transfer, authorize_transport};
 use bindizr_core::{
-    dns::message::{ExtendedErrorCode, Rcode, Rtype},
+    dns::message::{ExtendedErrorCode, OptRcode, Rcode, Rtype},
     metrics::XfrResult,
     model::transfer::{TransferKind, TransferTransport},
 };
@@ -137,7 +138,7 @@ pub(crate) async fn handle_tcp_xfr(
         Err(XfrError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
             let response = query.signed_error_response(
-                Rcode::NOTAUTH,
+                OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 identity.signer.as_mut(),
             )?;
@@ -181,8 +182,11 @@ pub(crate) async fn handle_tcp_xfr(
             // connection stays open for the other queries it carries; it is
             // signed under the key that got this far (RFC 8945, Section 5.3.1).
             let ended = async {
-                let response =
-                    query.signed_error_response(Rcode::SERVFAIL, None, identity.signer.as_mut())?;
+                let response = query.signed_error_response(
+                    OptRcode::SERVFAIL,
+                    None,
+                    identity.signer.as_mut(),
+                )?;
                 writer.write_message(&response).await
             }
             .await;

@@ -8,7 +8,7 @@ use std::net::IpAddr;
 
 use bindizr_core::{
     dns::{
-        message::{ExtendedErrorCode, ParsedQuery, Rcode},
+        message::{ExtendedErrorCode, OptRcode, ParsedQuery},
         tsig::{
             RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
         },
@@ -26,7 +26,7 @@ use crate::dns::{error::XfrError, server::DnsContext};
 #[derive(Debug, Clone)]
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
-    rcode: Rcode,
+    rcode: OptRcode,
     /// The reason an EDNS query hears beside the RCODE (RFC 8914).
     ede: Option<ExtendedErrorCode>,
     response: Option<Vec<u8>>,
@@ -39,7 +39,7 @@ impl TransferRefusal {
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         TransferRefusal {
             reason,
-            rcode: Rcode::REFUSED,
+            rcode: OptRcode::REFUSED,
             ede: Some(ExtendedErrorCode::PROHIBITED),
             response: None,
             signer: signer.map(Box::new),
@@ -50,7 +50,7 @@ impl TransferRefusal {
     fn malformed(reason: String) -> Self {
         TransferRefusal {
             reason,
-            rcode: Rcode::FORMERR,
+            rcode: OptRcode::FORMERR,
             ede: None,
             response: None,
             signer: None,
@@ -90,44 +90,15 @@ pub(crate) struct TransferIdentity {
     pub(crate) signer: Option<TransferSigner>,
 }
 
-/// Authenticate a transfer request: verify its TSIG under the key it names, or
-/// admit an unsigned one by the address ACL; over TLS both must pass (RFC
-/// 9103, Section 7.5). What the key may read is decided where the content is
-/// loaded, the catalog's included.
-pub(crate) async fn authenticate_transfer(
+/// Verify the key a request names, for an answer that needs no address:
+/// `None` for an unsigned request, the refusal a bad or malformed TSIG earns.
+pub(crate) async fn authenticate_key(
     dns_cx: &DnsContext,
     query_data: &[u8],
-    client_ip: IpAddr,
-    transport: TransferTransport,
-) -> Result<TransferIdentity, TransferRefusal> {
-    let cx = dns_cx.daemon();
-    let over_tls = matches!(transport, TransferTransport::Tls);
+) -> Result<Option<TransferIdentity>, TransferRefusal> {
     let key_name = match request_signature(query_data) {
         RequestSignature::Key { name, .. } => name,
-        RequestSignature::Absent if over_tls => {
-            return Err(TransferRefusal::refused(
-                "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
-                None,
-            ));
-        }
-        RequestSignature::Absent => {
-            // An address is no credential the content transaction re-reads:
-            // removing a secondary refuses later transfers, not one admitted.
-            return match acl::is_client_allowed(dns_cx, client_ip).await {
-                Ok(true) => Ok(TransferIdentity {
-                    key: None,
-                    signer: None,
-                }),
-                Ok(false) => Err(TransferRefusal::refused(
-                    format!("IP {} is not an enabled secondary", client_ip),
-                    None,
-                )),
-                Err(e) => Err(TransferRefusal::refused(
-                    format!("failed to load secondaries: {}", e),
-                    None,
-                )),
-            };
-        }
+        RequestSignature::Absent => return Ok(None),
         // The address would have allowed this one; a TSIG that does not parse
         // must not be answered as though none had been sent.
         RequestSignature::Malformed => {
@@ -137,7 +108,7 @@ pub(crate) async fn authenticate_transfer(
         }
     };
 
-    let key = tsig_key::find_by_wire_name(cx, &key_name)
+    let key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
         .await
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
     let Some(key) = key else {
@@ -152,6 +123,47 @@ pub(crate) async fn authenticate_transfer(
     let domain_key = key.to_domain_key().map_err(TransferRefusal::from)?;
     let signer =
         verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
+    Ok(Some(TransferIdentity {
+        key: Some(key),
+        signer: Some(signer),
+    }))
+}
+
+/// Authenticate a transfer request: verify its TSIG under the key it names, or
+/// admit an unsigned one by the address ACL; over TLS both must pass (RFC
+/// 9103, Section 7.5). What the key may read is decided where the content is
+/// loaded, the catalog's included.
+pub(crate) async fn authenticate_transfer(
+    dns_cx: &DnsContext,
+    query_data: &[u8],
+    client_ip: IpAddr,
+    transport: TransferTransport,
+) -> Result<TransferIdentity, TransferRefusal> {
+    let over_tls = matches!(transport, TransferTransport::Tls);
+    let Some(identity) = authenticate_key(dns_cx, query_data).await? else {
+        if over_tls {
+            return Err(TransferRefusal::refused(
+                "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
+                None,
+            ));
+        }
+        // An address is no credential the content transaction re-reads:
+        // removing a secondary refuses later transfers, not one admitted.
+        return match acl::is_client_allowed(dns_cx, client_ip).await {
+            Ok(true) => Ok(TransferIdentity {
+                key: None,
+                signer: None,
+            }),
+            Ok(false) => Err(TransferRefusal::refused(
+                format!("IP {} is not an enabled secondary", client_ip),
+                None,
+            )),
+            Err(e) => Err(TransferRefusal::refused(
+                format!("failed to load secondaries: {}", e),
+                None,
+            )),
+        };
+    };
 
     // The key answers for the address check, so the refusal is signed too.
     if over_tls {
@@ -163,22 +175,37 @@ pub(crate) async fn authenticate_transfer(
                         "IP {} is not an enabled secondary; XoT needs the key and the address (RFC 9103, Section 7.5)",
                         client_ip
                     ),
-                    Some(signer),
+                    identity.signer,
                 ));
             }
             Err(e) => {
                 return Err(TransferRefusal::refused(
                     format!("failed to load secondaries: {}", e),
-                    Some(signer),
+                    identity.signer,
                 ));
             }
         }
     }
 
-    Ok(TransferIdentity {
-        key: Some(key),
-        signer: Some(signer),
-    })
+    Ok(identity)
+}
+
+/// Answer a query refused before any handler: under its key when it has one
+/// (RFC 8945, Section 5.3), or with the TSIG error a bad key earns instead.
+pub(crate) async fn refuse_query(
+    dns_cx: &DnsContext,
+    query: &ParsedQuery,
+    query_data: &[u8],
+    rcode: OptRcode,
+    ede: Option<ExtendedErrorCode>,
+) -> Result<Vec<u8>, XfrError> {
+    match authenticate_key(dns_cx, query_data).await {
+        Ok(identity) => {
+            let mut signer = identity.and_then(|identity| identity.signer);
+            Ok(query.signed_error_response(rcode, ede, signer.as_mut())?)
+        }
+        Err(refusal) => refusal.into_response(query),
+    }
 }
 
 impl From<TsigError> for TransferRefusal {
@@ -187,7 +214,7 @@ impl From<TsigError> for TransferRefusal {
         match error {
             TsigError::Rejected { rcode, response } => TransferRefusal {
                 reason: format!("TSIG validation failed: {}", rcode),
-                rcode: Rcode::NOTAUTH,
+                rcode: OptRcode::NOTAUTH,
                 ede: None,
                 response: Some(response),
                 signer: None,

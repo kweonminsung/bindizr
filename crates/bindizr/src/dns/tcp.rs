@@ -3,7 +3,9 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Keepalive, Opcode, Rcode, Rtype};
+use bindizr_core::dns::message::{
+    self, Class, ExtendedErrorCode, Keepalive, Opcode, OptRcode, Rtype,
+};
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::{
@@ -64,8 +66,8 @@ pub(crate) async fn run_tcp_server(
     handshake: Handshake,
     stop: impl Future<Output = ()>,
 ) -> Result<(), ServeDnsError> {
-    // RFC 9103, Section 6.3.3 asks for SERVFAIL when a transfer limit is hit,
-    // but this limit is on connections, so no message exists to answer.
+    // One cap per listener, so a flooded plain port leaves the TLS one its
+    // slots; RFC 9103, Section 6.3.3's SERVFAIL has no connection to travel on.
     let open = Arc::new(Semaphore::new(
         dns_cx.daemon().config().dns.tcp_max_connections,
     ));
@@ -248,40 +250,45 @@ async fn dispatch_tcp_query(
         }
     };
 
-    if let Some(response) = query.edns_error_response() {
+    // Each refusal below is answered under the query's key when it has one.
+    let refusal = if let Some(rcode) = query.edns_error() {
         log::info!("Refusing the EDNS of a DNS TCP query from {}", client_addr);
-        return writer
-            .write_message(&response)
-            .await
-            .map_err(ServeDnsError::Refusal);
-    }
-
-    // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
-    if query.qclass != Class::IN {
+        Some((
+            rcode,
+            None,
+            ServeDnsError::Refusal as fn(XfrError) -> ServeDnsError,
+        ))
+    } else if query.qclass != Class::IN {
+        // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
         log::info!(
             "Refusing DNS TCP class {} from {}",
             query.qclass,
             client_addr
         );
-        let response =
-            query.error_response(Rcode::NOTAUTH, Some(ExtendedErrorCode::NOT_AUTHORITATIVE));
-        return writer
-            .write_message(&response)
-            .await
-            .map_err(ServeDnsError::Refusal);
-    }
-
-    if query.opcode != Opcode::QUERY {
+        Some((
+            OptRcode::NOTAUTH,
+            Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+            ServeDnsError::Refusal as fn(XfrError) -> ServeDnsError,
+        ))
+    } else if query.opcode != Opcode::QUERY {
         log::info!(
             "Refusing DNS TCP opcode {:?} from {}",
             query.opcode,
             client_addr
         );
-        let response = query.error_response(Rcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED));
-        return writer
-            .write_message(&response)
+        Some((
+            OptRcode::NOTIMP,
+            Some(ExtendedErrorCode::NOT_SUPPORTED),
+            ServeDnsError::AnswerOpcode as fn(XfrError) -> ServeDnsError,
+        ))
+    } else {
+        None
+    };
+    if let Some((rcode, ede, failed)) = refusal {
+        let response = server::refuse_query(dns_cx, &query, query_data, rcode, ede)
             .await
-            .map_err(ServeDnsError::AnswerOpcode);
+            .map_err(failed)?;
+        return writer.write_message(&response).await.map_err(failed);
     }
 
     if query.qtype == Rtype::SOA {
@@ -300,7 +307,15 @@ async fn dispatch_tcp_query(
             client_addr,
             query.qtype
         );
-        let response = query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED));
+        let response = server::refuse_query(
+            dns_cx,
+            &query,
+            query_data,
+            OptRcode::REFUSED,
+            Some(ExtendedErrorCode::NOT_SUPPORTED),
+        )
+        .await
+        .map_err(ServeDnsError::Refusal)?;
         writer
             .write_message(&response)
             .await

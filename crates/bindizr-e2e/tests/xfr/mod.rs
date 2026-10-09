@@ -29,7 +29,7 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TransferOutcome, axfr,
     dns::{
-        nsupdate::{KeyRole, SigningKey, create_tsig_key},
+        nsupdate::{KeyRole, SigningKey, create_tsig_key, is_signed, sign},
         parse_name,
     },
     exchange_dns_query, exchange_tcp, read_frame, wait_for_any_dns_record,
@@ -844,4 +844,19 @@ async fn a_question_of_another_class_is_notauth() {
     let response = Message::from_octets(response.as_slice()).unwrap();
     assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
     assert_eq!(response.first_question().unwrap().qclass(), Class::CH);
+
+    // RFC 8945, Section 5.3: a signed question hears its NOTAUTH under the key.
+    let key = create_tsig_key(&app, "class-key", KeyRole::Admin).await;
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(96);
+    let mut question = builder.question();
+    question
+        .push((&parse_name(zone_name).unwrap(), Rtype::SOA, Class::CH))
+        .unwrap();
+    let mut additional = question.additional();
+    sign(&mut additional, &key).unwrap();
+    let response = exchange_tcp(app.dns_port(), &additional.finish()).expect("CH query");
+    let response = Message::from_octets(response).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+    assert!(is_signed(&response).unwrap());
 }

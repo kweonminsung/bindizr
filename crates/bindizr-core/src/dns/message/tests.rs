@@ -216,7 +216,7 @@ fn an_edns_query_is_answered_with_an_opt() {
         }
     );
     assert_eq!(parsed.udp_payload_limit(), 1232);
-    assert!(parsed.edns_error_response().is_none());
+    assert!(parsed.edns_error().is_none());
     let reply = parsed.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED));
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().expect("an EDNS query is answered with an OPT");
@@ -232,14 +232,18 @@ fn an_edns_query_is_answered_with_an_opt() {
 
     let doubled = ParsedQuery::parse(&question(Rtype::SOA, &[0, 0]), Keepalive::None).unwrap();
     assert_eq!(doubled.edns, Edns::Malformed);
-    let reply = doubled.edns_error_response().unwrap();
+    let reply = doubled
+        .signed_error_response(doubled.edns_error().unwrap(), None, None)
+        .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     assert_eq!(reply.header().rcode(), Rcode::FORMERR);
     assert!(reply.opt().is_some());
 
     let newer = ParsedQuery::parse(&question(Rtype::SOA, &[1]), Keepalive::None).unwrap();
     assert_eq!(newer.edns, Edns::UnsupportedVersion(1));
-    let reply = newer.edns_error_response().unwrap();
+    let reply = newer
+        .signed_error_response(newer.edns_error().unwrap(), None, None)
+        .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().unwrap();
     assert_eq!(opt.rcode(reply.header()), OptRcode::BADVERS);

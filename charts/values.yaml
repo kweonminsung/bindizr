@@ -44,7 +44,7 @@ bindizr:
     # least one must keep it.
     schedulerIntervalSecs: 3600
     # Idle seconds before a TCP or TLS connection closes (advertised as
-    # edns-tcp-keepalive), and connections served at once.
+    # edns-tcp-keepalive), and connections served at once on each listener.
     tcpIdleTimeoutSecs: 30
     tcpMaxConnections: 128
     # Secondaries outside the chart, registered beside the BIND pods when a

@@ -350,8 +350,8 @@ pub struct DnsConfig {
     /// advertised as the edns-tcp-keepalive timeout (RFC 7828, Section 3.3.2).
     #[serde(default = "default_tcp_idle_timeout_secs")]
     pub tcp_idle_timeout_secs: u64,
-    /// TCP and TLS connections served at once; the rest wait in the accept
-    /// backlog.
+    /// Connections served at once on each of the TCP and TLS listeners; the
+    /// rest wait in the accept backlog.
     #[serde(default = "default_tcp_max_connections")]
     pub tcp_max_connections: usize,
     #[serde(default)]
@@ -458,7 +458,7 @@ fn default_tcp_idle_timeout_secs() -> u64 {
     30
 }
 
-/// Return the default number of connections served at once.
+/// Return the default number of connections served at once per listener.
 fn default_tcp_max_connections() -> usize {
     128
 }

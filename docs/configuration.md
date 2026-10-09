@@ -73,7 +73,7 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
 # tcp_idle_timeout_secs = 30             # Idle time between queries before a TCP or TLS connection closes; advertised as edns-tcp-keepalive (RFC 7828)
-# tcp_max_connections = 128              # TCP and TLS connections served at once; the rest wait in the accept backlog
+# tcp_max_connections = 128              # Connections served at once on each listener, TCP and TLS; the rest wait in the accept backlog
 
 [dns.notify]                  # NOTIFY to the secondaries
 # batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)

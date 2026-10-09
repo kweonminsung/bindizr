@@ -6,7 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use bindizr_core::{
     dns::{
         DNS_TCP_MAX_SIZE, message,
-        message::{ExtendedErrorCode, Rcode, Rtype},
+        message::{ExtendedErrorCode, OptRcode, Rtype},
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
     metrics::{SoaResult, XfrResult},
@@ -194,7 +194,7 @@ async fn handle_soa_request(
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
                 return Ok(query.signed_error_response(
-                    Rcode::NOTAUTH,
+                    OptRcode::NOTAUTH,
                     Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                     identity.signer.as_mut(),
                 )?)
@@ -230,7 +230,7 @@ async fn handle_soa_request(
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
             return Ok(query.signed_error_response(
-                Rcode::NOTAUTH,
+                OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 identity.signer.as_mut(),
             )?)

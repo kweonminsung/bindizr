@@ -210,13 +210,12 @@ impl ParsedQuery {
 
     /// FORMERR for a malformed OPT, BADVERS for a version above 0 (RFC 6891,
     /// Sections 6.1.1 and 6.1.3); `None` when the query's EDNS is in order.
-    pub fn edns_error_response(&self) -> Option<Vec<u8>> {
-        let rcode = match self.edns {
-            Edns::Absent | Edns::Present { .. } => return None,
-            Edns::Malformed => OptRcode::FORMERR,
-            Edns::UnsupportedVersion(_) => OptRcode::BADVERS,
-        };
-        Some(self.build_response(rcode, false, None).finish())
+    pub fn edns_error(&self) -> Option<OptRcode> {
+        match self.edns {
+            Edns::Absent | Edns::Present { .. } => None,
+            Edns::Malformed => Some(OptRcode::FORMERR),
+            Edns::UnsupportedVersion(_) => Some(OptRcode::BADVERS),
+        }
     }
 
     /// An empty authoritative answer with TC set, so a transfer client asks
@@ -250,11 +249,11 @@ impl ParsedQuery {
     /// answers under itself, error or not (RFC 8945, Section 5.3).
     pub fn signed_error_response(
         &self,
-        rcode: Rcode,
+        rcode: OptRcode,
         ede: Option<ExtendedErrorCode>,
         signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
-        let mut additional = self.build_response(OptRcode::from(rcode), false, ede);
+        let mut additional = self.build_response(rcode, false, ede);
         if let Some(signer) = signer {
             signer
                 .answer(&mut additional, Time48::now())
