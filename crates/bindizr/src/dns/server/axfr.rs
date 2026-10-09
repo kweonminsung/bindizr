@@ -42,7 +42,7 @@ pub(crate) async fn handle_axfr(
             writer,
             query,
             response_qtype,
-            identity.signer.take(),
+            &mut identity.signer,
             zones,
         )
         .await;
@@ -80,40 +80,46 @@ pub(crate) async fn handle_axfr(
     if let Some(signer) = identity.signer.take() {
         builder = builder.sign_with(signer);
     }
-    let mut messages_sent = 0usize;
-
     // The opening SOA identifies the serial of this content snapshot.
     let serial = zone.serial;
-    writer
-        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-            builder.add_soa(&zone, serial)
-        })
-        .await?;
-
-    // The snapshot includes both user records and the derived DNSSEC plane.
-    for record in content.records.iter() {
+    let streamed = async {
+        let mut messages_sent = 0usize;
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-                builder.add_record(record, &zone.name)
+                builder.add_soa(&zone, serial)
             })
             .await?;
-    }
 
-    for record in content.dnssec_records.iter() {
+        // The snapshot includes both user records and the derived DNSSEC plane.
+        for record in content.records.iter() {
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_record(record, &zone.name)
+                })
+                .await?;
+        }
+
+        for record in content.dnssec_records.iter() {
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_dnssec_record(record, &zone.name)
+                })
+                .await?;
+        }
+
+        // Final SOA closes the transfer.
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-                builder.add_dnssec_record(record, &zone.name)
+                builder.add_soa(&zone, serial)
             })
             .await?;
+        messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+        Ok::<usize, XfrError>(messages_sent)
     }
-
-    // Final SOA closes the transfer.
-    writer
-        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-            builder.add_soa(&zone, serial)
-        })
-        .await?;
-    messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+    .await;
+    // Handed back so a failure's SERVFAIL is signed too.
+    identity.signer = builder.take_signer();
+    let messages_sent = streamed?;
 
     log::info!(
         "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",

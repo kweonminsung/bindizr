@@ -83,7 +83,7 @@ pub(crate) async fn handle_catalog_axfr(
     writer: &ResponseWriter,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
-    signer: Option<TransferSigner>,
+    signer: &mut Option<TransferSigner>,
     zones: Vec<Zone>,
 ) -> Result<(), XfrError> {
     log::info!(
@@ -95,47 +95,54 @@ pub(crate) async fn handle_catalog_axfr(
     let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx, zones).await?;
 
     let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
-    if let Some(signer) = signer {
+    if let Some(signer) = signer.take() {
         builder = builder.sign_with(signer);
     }
-    let mut messages_sent = 0usize;
+    let streamed = async {
+        let mut messages_sent = 0usize;
 
-    // Both SOAs must carry this snapshot's serial to delimit the AXFR.
-    let serial = catalog_zone.serial;
+        // Both SOAs must carry this snapshot's serial to delimit the AXFR.
+        let serial = catalog_zone.serial;
 
-    writer
-        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-            builder.add_catalog_soa(&catalog_zone, serial)
-        })
-        .await?;
-
-    writer
-        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-            builder.add_catalog_ns(&catalog_zone)
-        })
-        .await?;
-    writer
-        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-            builder.add_catalog_schema_version(&catalog_zone)
-        })
-        .await?;
-
-    // Member PTRs tell secondaries which zones this catalog provisions.
-    for member_zone in &member_zones {
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-                builder.add_catalog_ptr(&catalog_zone, member_zone)
+                builder.add_catalog_soa(&catalog_zone, serial)
             })
             .await?;
-    }
 
-    // Close the catalog snapshot before flushing its final envelope.
-    writer
-        .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-            builder.add_catalog_soa(&catalog_zone, serial)
-        })
-        .await?;
-    messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_catalog_ns(&catalog_zone)
+            })
+            .await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_catalog_schema_version(&catalog_zone)
+            })
+            .await?;
+
+        // Member PTRs tell secondaries which zones this catalog provisions.
+        for member_zone in &member_zones {
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_catalog_ptr(&catalog_zone, member_zone)
+                })
+                .await?;
+        }
+
+        // Close the catalog snapshot before flushing its final envelope.
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_catalog_soa(&catalog_zone, serial)
+            })
+            .await?;
+        messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+        Ok::<usize, XfrError>(messages_sent)
+    }
+    .await;
+    // Handed back so a failure's SERVFAIL is signed too.
+    *signer = builder.take_signer();
+    let messages_sent = streamed?;
 
     log::info!(
         "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",

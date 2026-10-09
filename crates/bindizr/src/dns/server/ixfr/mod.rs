@@ -133,12 +133,13 @@ pub(crate) async fn handle_ixfr(
                 .await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
-        Err(IxfrSendError::Partial(err)) => {
+        Err(IxfrSendError::Partial { error, signer }) => {
             log::warn!(
                 "IXFR: aborting after partial send, not falling back: {}",
-                err
+                error
             );
-            return Err(err);
+            identity.signer = signer.map(|s| *s);
+            return Err(error);
         }
     }
 

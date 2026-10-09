@@ -138,8 +138,9 @@ impl DnsMessageBuilder {
         self
     }
 
-    /// Hand the signer back to a caller answering the request another way.
-    /// Only sound before the first frame: a MAC chain cannot be rewound.
+    /// Hand the signer back to a caller answering the request another way:
+    /// before the first frame, or after a failure, where the MAC chain goes
+    /// on with the error (RFC 8945, Section 5.3.1).
     pub fn take_signer(&mut self) -> Option<TransferSigner> {
         self.signer.take()
     }

@@ -47,9 +47,14 @@ pub(crate) enum IxfrSendError {
         signer: Option<Box<TransferSigner>>,
     },
     /// Failed mid-stream, or in the I/O of the first frame, part of which may
-    /// have reached the client; falling back to AXFR would corrupt the stream.
-    #[error("{0}")]
-    Partial(#[source] XfrError),
+    /// have reached the client; falling back to AXFR would corrupt the
+    /// stream, so the signer comes back to end it.
+    #[error("{error}")]
+    Partial {
+        #[source]
+        error: XfrError,
+        signer: Option<Box<TransferSigner>>,
+    },
 }
 
 /// Streams the IXFR answers across multiple TCP messages, flushing before the
@@ -176,7 +181,10 @@ pub(crate) async fn send_ixfr_response(
             if messages_sent > 0
                 || matches!(err, XfrError::Io(_) | XfrError::WriteTimeout { .. }) =>
         {
-            Err(IxfrSendError::Partial(err))
+            Err(IxfrSendError::Partial {
+                error: err,
+                signer: builder.take_signer().map(Box::new),
+            })
         }
         Err(error) => Err(IxfrSendError::NotStarted {
             error,

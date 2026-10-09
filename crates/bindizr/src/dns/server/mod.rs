@@ -178,9 +178,15 @@ pub(crate) async fn handle_tcp_xfr(
             )
             .await;
             // RFC 5936, Section 2.2: an error message ends the session, as the
-            // connection stays open for the other queries it carries.
-            let response = query.error_response(Rcode::SERVFAIL, None);
-            if let Err(e) = writer.write_message(&response).await {
+            // connection stays open for the other queries it carries; it is
+            // signed under the key that got this far (RFC 8945, Section 5.3.1).
+            let ended = async {
+                let response =
+                    query.signed_error_response(Rcode::SERVFAIL, None, identity.signer.as_mut())?;
+                writer.write_message(&response).await
+            }
+            .await;
+            if let Err(e) = ended {
                 log::debug!("Failed to end the XFR session from {}: {}", client_ip, e);
             }
             Err(err)
