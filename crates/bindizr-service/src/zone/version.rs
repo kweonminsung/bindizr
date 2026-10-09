@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bindizr_core::{
     dns::{Serial, name::OwnerName, record::SrvRecordValue},
     model::{zone::ZoneId, zone_version::ZoneVersionId},
@@ -89,15 +91,20 @@ async fn validate_dname_subtrees_tx(
 ) -> Result<(), ServiceError> {
     let dnames =
         bindizr_db::record::list_by_record_types_tx(tx, zone_id, &[RecordType::Dname]).await?;
-    for dname in &dnames {
-        if bindizr_db::record::find_name_under_owner_tx(tx, zone_id, &dname.name)
-            .await?
-            .is_some()
-        {
-            return Err(ServiceError::record_conflict(
-                "records cannot exist below a DNAME record (RFC 6672, Section 2.4)",
-            ));
-        }
+    if dnames.is_empty() {
+        return Ok(());
+    }
+    // Below a DNAME: a proper ancestor, the apex included, owns one.
+    let dname_owners: HashSet<&[String]> = dnames.iter().map(|dname| dname.name.labels()).collect();
+    let names = bindizr_db::record::list_names_tx(tx, zone_id).await?;
+    let below_a_dname = names.iter().any(|name| {
+        let labels = name.labels();
+        (1..=labels.len()).any(|depth| dname_owners.contains(&labels[depth..]))
+    });
+    if below_a_dname {
+        return Err(ServiceError::record_conflict(
+            "records cannot exist below a DNAME record (RFC 6672, Section 2.4)",
+        ));
     }
     Ok(())
 }
@@ -113,6 +120,7 @@ async fn validate_alias_targets_tx(
     if cnames.is_empty() {
         return Ok(());
     }
+    let cnames: HashSet<&OwnerName> = cnames.iter().map(|cname| &cname.name).collect();
     let pointers = bindizr_db::record::list_by_record_types_tx(
         tx,
         zone.id,
@@ -132,7 +140,7 @@ async fn validate_alias_targets_tx(
         else {
             continue;
         };
-        if cnames.iter().any(|cname| cname.name == owner) {
+        if cnames.contains(&owner) {
             return Err(ServiceError::record_conflict(
                 "an NS, MX, or SRV record cannot name a CNAME record of this zone as its target (RFC 2181, Section 10.3; RFC 2782)",
             ));

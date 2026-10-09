@@ -204,6 +204,7 @@ fn print_config(config: &Config) {
 
     print_section("dns.transfer");
     print_value("cache_max_records", config.dns.transfer.cache_max_records);
+    print_value("require_tls", config.dns.transfer.require_tls);
     outln!();
 
     print_section("dns.zone_defaults");

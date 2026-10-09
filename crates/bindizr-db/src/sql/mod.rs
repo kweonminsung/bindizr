@@ -45,15 +45,6 @@ pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
         .map(|term| format!("%{}%", escape_like(&term)))
 }
 
-/// The LIKE pattern of the names below `owner`, the owner itself included:
-/// a stored name's dots are label boundaries, so the suffix is the subtree.
-pub(crate) fn under_owner_pattern(owner: &OwnerName) -> String {
-    if owner.is_apex() {
-        return "%".to_string();
-    }
-    format!("%.{}", escape_like(&owner.to_stored()))
-}
-
 /// Escape the LIKE wildcards for an `ESCAPE '\\'` clause; `%`, `_`, and
 /// `\` all occur in names and rdata.
 fn escape_like(term: &str) -> String {

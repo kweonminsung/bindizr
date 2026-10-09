@@ -12,7 +12,7 @@ use crate::{
     record::RecordFilter,
     sql::{
         apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, name_like_types_sql,
-        partial_term, under_owner_pattern,
+        partial_term,
     },
 };
 
@@ -197,23 +197,18 @@ pub(crate) async fn list_by_record_types_tx(
     Ok(records)
 }
 
-/// Find any owner strictly below `owner` in the current transaction.
-pub(crate) async fn find_name_under_owner_tx(
+/// List the distinct owner names of a zone in the current transaction.
+pub(crate) async fn list_names_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
-    owner: &OwnerName,
-) -> Result<Option<String>, DatabaseError> {
-    // The owner is excluded by name: the apex pattern matches every row.
-    let name = sqlx::query_scalar::<_, String>(
-        "SELECT name FROM records WHERE zone_id = ? AND name <> ? AND name LIKE ? ESCAPE '\\' LIMIT 1",
-    )
-    .bind(zone_id)
-    .bind(owner)
-    .bind(under_owner_pattern(owner))
-    .fetch_optional(&mut **tx)
-    .await?;
+) -> Result<Vec<OwnerName>, DatabaseError> {
+    let names =
+        sqlx::query_scalar::<_, OwnerName>("SELECT DISTINCT name FROM records WHERE zone_id = ?")
+            .bind(zone_id)
+            .fetch_all(&mut **tx)
+            .await?;
 
-    Ok(name)
+    Ok(names)
 }
 
 /// List records at the requested owner names in a zone in the current transaction.

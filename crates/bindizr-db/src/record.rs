@@ -154,23 +154,15 @@ pub async fn list_by_record_types_tx(
     }
 }
 
-/// Find any owner strictly below `owner`, in row form; below the apex is
-/// every other name. One match suffices and the ordering is unspecified.
-pub async fn find_name_under_owner_tx(
+/// List the owner names of a zone, each once.
+pub async fn list_names_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
-    owner: &OwnerName,
-) -> Result<Option<String>, DatabaseError> {
+) -> Result<Vec<OwnerName>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => {
-            mysql::record::find_name_under_owner_tx(tx, zone_id, owner).await
-        }
-        TransactionKind::Postgres(tx) => {
-            postgres::record::find_name_under_owner_tx(tx, zone_id, owner).await
-        }
-        TransactionKind::Sqlite(tx) => {
-            sqlite::record::find_name_under_owner_tx(tx, zone_id, owner).await
-        }
+        TransactionKind::MySql(tx) => mysql::record::list_names_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::record::list_names_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::list_names_tx(tx, zone_id).await,
     }
 }
 
