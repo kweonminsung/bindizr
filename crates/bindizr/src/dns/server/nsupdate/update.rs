@@ -324,7 +324,8 @@ fn decode_update(
         }
         Class::NONE => {
             record.validate_delete_shape()?;
-            if record.record_type == Rtype::SOA {
+            // No row can match the SOA or an unstored type (RFC 2136, Section 2.5.4).
+            if RecordType::try_from(record.record_type).is_err() {
                 return Ok(None);
             }
             let (record_type, value, priority) = record.to_record_value(query_data)?;
@@ -396,6 +397,11 @@ mod tests {
         );
         assert!(
             decode_update(&record(Class::ANY, Rtype::HINFO, 0, &[]), &[])
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            decode_update(&record(Class::NONE, Rtype::HINFO, 0, &[1, 2]), &[])
                 .unwrap()
                 .is_none()
         );
