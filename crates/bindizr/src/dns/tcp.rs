@@ -67,7 +67,7 @@ pub(crate) async fn run_tcp_server(
     // RFC 9103, Section 6.3.3 asks for SERVFAIL when a transfer limit is hit,
     // but this limit is on connections, so no message exists to answer.
     let open = Arc::new(Semaphore::new(
-        dns_cx.daemon().config().dns.tcp.max_connections,
+        dns_cx.daemon().config().dns.tcp_max_connections,
     ));
     tokio::pin!(stop);
 
@@ -162,7 +162,7 @@ async fn handle_tcp_connection(
 ) -> Result<(), ServeDnsError> {
     let (mut reader, writer) = stream.into_split();
     let writer = Arc::new(writer);
-    let idle_timeout = dns_cx.daemon().config().dns.tcp.idle_timeout();
+    let idle_timeout = dns_cx.daemon().config().dns.tcp_idle_timeout();
     let mut pending = Vec::new();
     let mut in_flight = JoinSet::new();
 

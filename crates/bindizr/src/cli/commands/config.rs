@@ -177,6 +177,8 @@ fn print_config(config: &Config) {
         "scheduler_interval_secs",
         config.dns.scheduler_interval_secs,
     );
+    print_value("tcp_idle_timeout_secs", config.dns.tcp_idle_timeout_secs);
+    print_value("tcp_max_connections", config.dns.tcp_max_connections);
     outln!();
 
     print_section("dns.import");
@@ -192,11 +194,6 @@ fn print_config(config: &Config) {
 
     print_section("dns.nsupdate");
     print_value("tsig_required", config.dns.nsupdate.tsig_required);
-    outln!();
-
-    print_section("dns.tcp");
-    print_value("idle_timeout_secs", config.dns.tcp.idle_timeout_secs);
-    print_value("max_connections", config.dns.tcp.max_connections);
     outln!();
 
     print_section("dns.tls");

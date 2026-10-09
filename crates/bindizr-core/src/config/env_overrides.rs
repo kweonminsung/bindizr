@@ -119,11 +119,11 @@ impl Config {
                 parse_env_value("BINDIZR_DNS_TRANSFER_REQUIRE_TLS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS") {
-            self.dns.tcp.idle_timeout_secs =
+            self.dns.tcp_idle_timeout_secs =
                 parse_env_value("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_TCP_MAX_CONNECTIONS") {
-            self.dns.tcp.max_connections =
+            self.dns.tcp_max_connections =
                 parse_env_value("BINDIZR_DNS_TCP_MAX_CONNECTIONS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_IMPORT_TIMEOUT_SECS") {

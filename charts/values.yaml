@@ -43,6 +43,10 @@ bindizr:
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
     # least one must keep it.
     schedulerIntervalSecs: 3600
+    # Idle seconds before a TCP or TLS connection closes (advertised as
+    # edns-tcp-keepalive), and connections served at once.
+    tcpIdleTimeoutSecs: 30
+    tcpMaxConnections: 128
     # Secondaries outside the chart, registered beside the BIND pods when a
     # bindizr pod starts; each needs a name and a host[:port] address.
     extraSecondaries: []
@@ -68,11 +72,6 @@ bindizr:
       # Refuse AXFR and IXFR over plain TCP and UDP once every secondary pulls
       # over TLS; needs dns.tls.existingSecret. SOA queries keep answering.
       requireTls: false
-    tcp:
-      # Idle seconds between queries before a connection closes, advertised as
-      # edns-tcp-keepalive; connections served at once, the rest wait.
-      idleTimeoutSecs: 30
-      maxConnections: 128
     import:
       # zone import --from-server: the whole pull's deadline and the most
       # records a pulled zone may hold.

@@ -25,7 +25,7 @@ rejected and the current configuration stays active.
 | Settings | Reload behavior |
 | --- | --- |
 | `[logging]` and `[dns]` except the settings below | Reloadable |
-| `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name`, `dns.tcp.max_connections` | Restart required |
+| `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name`, `dns.tcp_max_connections` | Restart required |
 | The certificate and key files `[api.tls]` and `[dns.tls]` name | Re-read on reload, so a renewed pair serves without a restart; the paths stay fixed |
 
 A reload names the sections it changed; a refusal names the settings that
@@ -72,6 +72,8 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
 # zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
+# tcp_idle_timeout_secs = 30             # Idle time between queries before a TCP or TLS connection closes; advertised as edns-tcp-keepalive (RFC 7828)
+# tcp_max_connections = 128              # TCP and TLS connections served at once; the rest wait in the accept backlog
 
 [dns.notify]                  # NOTIFY to the secondaries
 # batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
@@ -80,10 +82,6 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # false admits unsigned updates from anyone
-
-[dns.tcp]                     # The TCP and TLS listeners
-# idle_timeout_secs = 30      # Idle time between queries before the connection closes; advertised as edns-tcp-keepalive (RFC 7828)
-# max_connections = 128       # Connections served at once; the rest wait in the accept backlog
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
 # listen_port = 853           # On dns.listen_addr
@@ -166,8 +164,8 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |
 | `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer.cache_max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
 | `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | needs `[dns.tls]` |
-| `BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS` | `dns.tcp.idle_timeout_secs` | 1 to 6553 |
-| `BINDIZR_DNS_TCP_MAX_CONNECTIONS` | `dns.tcp.max_connections` | |
+| `BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS` | `dns.tcp_idle_timeout_secs` | 1 to 6553 |
+| `BINDIZR_DNS_TCP_MAX_CONNECTIONS` | `dns.tcp_max_connections` | |
 | `BINDIZR_DNS_IMPORT_TIMEOUT_SECS` | `dns.import.timeout_secs` | |
 | `BINDIZR_DNS_IMPORT_MAX_RECORDS` | `dns.import.max_records` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |

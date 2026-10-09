@@ -113,7 +113,7 @@ Supported (Section 7.8).
 Every listener answers an EDNS query with an OPT record and keeps a UDP
 answer within the size the query advertised, 512 octets without EDNS. Over
 TCP and TLS the OPT also carries the connection's idle timeout
-(`dns.tcp.idle_timeout_secs`, 30 seconds by default) as edns-tcp-keepalive
+(`dns.tcp_idle_timeout_secs`, 30 seconds by default) as edns-tcp-keepalive
 (RFC 7828).
 
 ## Transfers over TLS

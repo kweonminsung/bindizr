@@ -46,6 +46,8 @@ data:
     catalog_zone_name = "{{ .Values.bindizr.dns.catalogZoneName }}"
     zone_history_retention_days = {{ .Values.bindizr.dns.zoneHistoryRetentionDays }}
     scheduler_interval_secs = {{ .Values.bindizr.dns.schedulerIntervalSecs }}
+    tcp_idle_timeout_secs = {{ .Values.bindizr.dns.tcpIdleTimeoutSecs }}
+    tcp_max_connections = {{ .Values.bindizr.dns.tcpMaxConnections }}
 
 
     [dns.notify]
@@ -66,10 +68,6 @@ data:
     [dns.transfer]
     cache_max_records = {{ .Values.bindizr.dns.transfer.cacheMaxRecords }}
     require_tls = {{ .Values.bindizr.dns.transfer.requireTls }}
-
-    [dns.tcp]
-    idle_timeout_secs = {{ .Values.bindizr.dns.tcp.idleTimeoutSecs }}
-    max_connections = {{ .Values.bindizr.dns.tcp.maxConnections }}
 
     [dns.import]
     timeout_secs = {{ .Values.bindizr.dns.import.timeoutSecs }}

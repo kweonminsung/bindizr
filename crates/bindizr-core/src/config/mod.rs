@@ -326,7 +326,7 @@ impl From<DatabaseTlsMode> for sqlx::mysql::MySqlSslMode {
 }
 
 /// DNS server settings; the sub-tables hold the import client, NOTIFY,
-/// nsupdate, the TCP and TLS listeners, transfers, and zone defaults.
+/// nsupdate, the TLS listener, transfers, and zone defaults.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DnsConfig {
@@ -346,14 +346,20 @@ pub struct DnsConfig {
     /// 0 disables this instance; at least one instance must run the scheduler.
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
+    /// Seconds a TCP or TLS connection may sit idle between queries;
+    /// advertised as the edns-tcp-keepalive timeout (RFC 7828, Section 3.3.2).
+    #[serde(default = "default_tcp_idle_timeout_secs")]
+    pub tcp_idle_timeout_secs: u64,
+    /// TCP and TLS connections served at once; the rest wait in the accept
+    /// backlog.
+    #[serde(default = "default_tcp_max_connections")]
+    pub tcp_max_connections: usize,
     #[serde(default)]
     pub import: ImportConfig,
     #[serde(default)]
     pub notify: NotifyConfig,
     #[serde(default)]
     pub nsupdate: NsupdateConfig,
-    #[serde(default)]
-    pub tcp: TcpConfig,
     #[serde(default)]
     pub tls: DnsTlsConfig,
     #[serde(default)]
@@ -441,55 +447,6 @@ impl Default for NsupdateConfig {
 /// Return the default nsupdate TSIG requirement.
 fn default_nsupdate_tsig_required() -> bool {
     true
-}
-
-/// The TCP and TLS listeners.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TcpConfig {
-    /// Seconds a connection may sit idle between queries before it is
-    /// closed; advertised as the edns-tcp-keepalive timeout (RFC 7828,
-    /// Section 3.3.2).
-    #[serde(default = "default_tcp_idle_timeout_secs")]
-    pub idle_timeout_secs: u64,
-    /// Connections served at once; the rest wait in the accept backlog.
-    #[serde(default = "default_tcp_max_connections")]
-    pub max_connections: usize,
-}
-
-impl TcpConfig {
-    /// How long a connection may sit idle between queries.
-    pub fn idle_timeout(&self) -> Duration {
-        Duration::from_secs(self.idle_timeout_secs)
-    }
-
-    /// Validate the listener limits; the idle timeout must fit the keepalive
-    /// option's 16-bit deciseconds.
-    fn validate(&self) -> Result<(), ConfigError> {
-        if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.idle_timeout_secs) {
-            return Err(ConfigError::OutOfRange {
-                key: "dns.tcp.idle_timeout_secs",
-                min: 1,
-                max: MAX_TCP_IDLE_TIMEOUT_SECS,
-            });
-        }
-        if self.max_connections == 0 {
-            return Err(ConfigError::Zero {
-                key: "dns.tcp.max_connections",
-            });
-        }
-        Ok(())
-    }
-}
-
-impl Default for TcpConfig {
-    /// Build the default listener limits.
-    fn default() -> Self {
-        Self {
-            idle_timeout_secs: default_tcp_idle_timeout_secs(),
-            max_connections: default_tcp_max_connections(),
-        }
-    }
 }
 
 /// The longest idle timeout the edns-tcp-keepalive option carries.
@@ -823,8 +780,8 @@ impl Config {
             fixed.push("dns.tls".to_string());
         }
         // The connection slots are allotted when the listener starts.
-        if self.dns.tcp.max_connections != next.dns.tcp.max_connections {
-            fixed.push("dns.tcp.max_connections".to_string());
+        if self.dns.tcp_max_connections != next.dns.tcp_max_connections {
+            fixed.push("dns.tcp_max_connections".to_string());
         }
         // Renaming the catalog live would strand its stored row and the
         // secondaries configured to request its old name.
@@ -992,13 +949,30 @@ impl DnsConfig {
         zone_name.eq_ignore_ascii_case(self.catalog_zone_name.as_str())
     }
 
+    /// How long a TCP or TLS connection may sit idle between queries.
+    pub fn tcp_idle_timeout(&self) -> Duration {
+        Duration::from_secs(self.tcp_idle_timeout_secs)
+    }
+
     /// Validate the DNS configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
         }
+        // The idle timeout must fit the keepalive option's 16-bit deciseconds.
+        if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.tcp_idle_timeout_secs) {
+            return Err(ConfigError::OutOfRange {
+                key: "dns.tcp_idle_timeout_secs",
+                min: 1,
+                max: MAX_TCP_IDLE_TIMEOUT_SECS,
+            });
+        }
+        if self.tcp_max_connections == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.tcp_max_connections",
+            });
+        }
         self.tls.validate()?;
-        self.tcp.validate()?;
         self.import.validate()?;
         // Refusing plain transfers with no TLS listener would refuse them all.
         if self.transfer.require_tls && self.tls.tls_files().is_none() {
