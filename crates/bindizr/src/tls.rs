@@ -54,16 +54,16 @@ impl TlsCertificate {
         }))
     }
 
-    /// Re-read the pair; `true` when the certificate changed.
-    pub(crate) fn reload(&self, files: TlsFiles<'_>) -> Result<bool, LoadCertificateError> {
-        let next = Arc::new(load_certified_key(files)?);
+    /// Present `next` from now on; `true` when the certificate changed.
+    fn swap(&self, next: CertifiedKey) -> bool {
+        let next = Arc::new(next);
         let mut current = self
             .certified
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         let changed = current.cert != next.cert;
         *current = next;
-        Ok(changed)
+        changed
     }
 }
 
@@ -130,15 +130,21 @@ impl TlsCertificates {
     }
 
     /// Re-read the pairs, naming the listeners whose certificate changed.
+    /// Both are read before either is presented, so one that fails leaves
+    /// each listener as it was.
     pub(crate) fn reload(&self, config: &Config) -> Result<Vec<String>, LoadCertificateError> {
-        let mut changed = Vec::new();
+        let mut renewed = Vec::new();
         for (section, certificate, files) in [
             ("api.tls", &self.api, config.api.tls.tls_files()),
             ("dns.tls", &self.dns, config.dns.tls.tls_files()),
         ] {
-            if let (Some(certificate), Some(files)) = (certificate, files)
-                && certificate.reload(files)?
-            {
+            if let (Some(certificate), Some(files)) = (certificate, files) {
+                renewed.push((section, certificate, load_certified_key(files)?));
+            }
+        }
+        let mut changed = Vec::new();
+        for (section, certificate, next) in renewed {
+            if certificate.swap(next) {
                 changed.push(format!("{section} certificate"));
             }
         }

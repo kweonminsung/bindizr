@@ -21,23 +21,15 @@ use crate::{
 pub enum ReloadConfigError {
     #[error(transparent)]
     Load(#[from] ConfigError),
-    #[error("Bindizr configuration lock is poisoned")]
-    Poisoned,
     #[error("these settings are fixed while bindizr runs, so nothing was reloaded: {}", settings.join(", "))]
     FixedSettingsChanged { settings: Vec<String> },
 }
 
-/// A refused reload is the operator's to fix, except a poisoned lock.
+/// A refused reload is the operator's to fix.
 impl From<ReloadConfigError> for ServiceError {
     /// Classify the reload failure for the error payload.
     fn from(err: ReloadConfigError) -> Self {
-        match err {
-            ReloadConfigError::Poisoned => ServiceError::Internal {
-                message: err.to_string(),
-                source: Some(Box::new(err)),
-            },
-            other => ServiceError::invalid_input(other),
-        }
+        ServiceError::invalid_input(err)
     }
 }
 
@@ -98,23 +90,28 @@ impl Context {
         &self.config_path
     }
 
-    /// Reload configuration, rejecting changes that require restart, and return changed settings.
-    /// The caller applies the logger level and scheduler period.
-    pub fn reload_config(&self) -> Result<Vec<String>, ReloadConfigError> {
+    /// Read the configuration file again, refusing one whose fixed settings
+    /// differ from the running one; nothing changes until `set_config`.
+    pub fn load_config(&self) -> Result<Config, ReloadConfigError> {
         let next = Config::load(&self.config_path)?;
-
-        let mut stored = self
-            .config
-            .write()
-            .map_err(|_| ReloadConfigError::Poisoned)?;
-        let fixed = stored.fixed_settings_changed(&next);
+        let fixed = self.config().fixed_settings_changed(&next);
         if !fixed.is_empty() {
             return Err(ReloadConfigError::FixedSettingsChanged { settings: fixed });
         }
+        Ok(next)
+    }
 
+    /// Replace the running configuration with one `load_config` read, naming
+    /// the sections that changed. The caller applies the logger level and
+    /// scheduler period.
+    pub fn set_config(&self, next: Config) -> Vec<String> {
+        let mut stored = self
+            .config
+            .write()
+            .expect("Bindizr configuration lock is poisoned");
         let changed = stored.changed_settings(&next);
         *stored = Arc::new(next);
-        Ok(changed)
+        changed
     }
 
     /// The database every query runs on.

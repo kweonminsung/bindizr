@@ -104,7 +104,7 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<()>) {
 pub(crate) enum ReloadError {
     #[error(transparent)]
     Config(#[from] ReloadConfigError),
-    #[error("the certificates were not reloaded: {0}")]
+    #[error("nothing was reloaded: {0}")]
     Tls(#[from] LoadCertificateError),
 }
 
@@ -127,7 +127,11 @@ pub(crate) fn reload_config(
     cx: &Context,
     tls: &TlsCertificates,
 ) -> Result<Vec<String>, ReloadError> {
-    let mut changed = cx.reload_config()?;
+    // Everything that can fail, the file and both certificate pairs, is read
+    // before anything is replaced, so a refusal leaves the daemon as it was.
+    let next = cx.load_config()?;
+    let certificates = tls.reload(&next)?;
+    let mut changed = cx.set_config(next);
 
     // The installed logger reads its level and format per record, so this is enough.
     let config = cx.config();
@@ -138,8 +142,7 @@ pub(crate) fn reload_config(
     // names one reaches an instance a zero interval left idle.
     cx.set_scheduler_period(config.dns.scheduler_interval_secs);
 
-    // The paths are fixed while bindizr runs; what they hold is re-read.
-    changed.extend(tls.reload(&config)?);
+    changed.extend(certificates);
     Ok(changed)
 }
 
