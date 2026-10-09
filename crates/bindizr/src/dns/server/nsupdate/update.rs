@@ -164,6 +164,7 @@ pub(crate) async fn apply_update(
 
         let update = Update {
             zone_name,
+            zone_class: request.zone_class,
             prerequisites: &request.prerequisites,
             updates: &request.updates,
             message: query_data,

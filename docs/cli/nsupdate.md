@@ -50,10 +50,11 @@ refused for all zones.
 
 ## Response codes
 
-The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone Bindizr
-does not serve, `NOTZONE` an owner outside the zone named, `FORMERR` a
-malformed section (a prerequisite with a TTL, a delete carrying rdata, a type
-no update may carry, or a type Bindizr does not store in an add), and
+The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone or class
+Bindizr does not serve: only IN is served, even when another class names an
+existing zone (Section 3.1.1). `NOTZONE` names an owner outside the zone,
+`FORMERR` a malformed section (a prerequisite with a TTL, a delete carrying
+rdata, a type no update may carry, or a type Bindizr does not store in an add), and
 `REFUSED` a policy decision: an unsigned request where a signature is
 required, a key whose role does not reach what the update touches, or an
 update sent to the TLS listener, which serves transfers alone (RFC 9103,

@@ -11,6 +11,7 @@ mod prerequisite;
 use bindizr_core::{
     dns::{
         Serial,
+        message::Class,
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
         nsupdate::parser::{ParseUpdateError, UpdateRecord, UpdateShapeError},
     },
@@ -49,8 +50,7 @@ pub enum NsupdateError {
     NxDomain(String),
     #[error("{0}")]
     NxRrset(String),
-    /// The zone section names a zone this server does not serve (RFC 2136,
-    /// Section 3.1.2).
+    /// The zone name and class are not served here (RFC 2136, Section 3.1).
     #[error("{0}")]
     NotAuth(String),
     /// An owner name lies outside the zone the request named.
@@ -105,6 +105,7 @@ impl From<bindizr_db::error::DatabaseError> for NsupdateError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Update<'a> {
     pub zone_name: ZoneName,
+    pub zone_class: Class,
     pub prerequisites: &'a [UpdateRecord],
     pub updates: &'a [UpdateRecord],
     pub message: &'a [u8],
@@ -118,6 +119,14 @@ pub async fn apply(
     caller: &Caller,
     update: Update<'_>,
 ) -> Result<bool, NsupdateError> {
+    // Bindizr serves only IN zones; other classes lack authority even if
+    // their ZNAME matches a stored zone (RFC 2136, Section 3.1.1).
+    if update.zone_class != Class::IN {
+        return Err(NsupdateError::NotAuth(format!(
+            "zone '{}' in class {} is not served here",
+            update.zone_name, update.zone_class
+        )));
+    }
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
     let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {

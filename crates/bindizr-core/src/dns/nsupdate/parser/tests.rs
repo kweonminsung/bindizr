@@ -107,20 +107,57 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
-/// Verify that `UpdateRequest::parse` rejects non SOA zone type.
+/// Reject non-SOA zone types before the service considers authority.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
-    let message = minimal_update_with_ztype(1);
-    let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
+    for class in [Class::IN, Class::CH, Class::HS, Class::from_int(65280)] {
+        let mut message = minimal_update_with_ztype(1);
+        let class_start = message.len() - 2;
+        message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
+        let err = UpdateRequest::parse(&message).unwrap_err();
+        assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
+    }
 }
 
-/// Verify that `UpdateRequest::parse` accepts SOA zone type.
+/// Preserve ZCLASS so the service can decide whether the zone is served.
 #[test]
-fn parse_update_request_accepts_soa_zone_type() {
+fn parse_update_request_preserves_zone_class() {
+    for class in [
+        Class::IN,
+        Class::CH,
+        Class::HS,
+        Class::NONE,
+        Class::ANY,
+        Class::from_int(0),
+        Class::from_int(65280),
+        Class::from_int(u16::MAX),
+    ] {
+        let mut message = minimal_update_with_ztype(6);
+        let class_start = message.len() - 2;
+        message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
+        let request = UpdateRequest::parse(&message).unwrap();
+        assert_eq!(request.zone_name, "example.com.");
+        assert_eq!(request.zone_class, class);
+        for count in [0u16, 2] {
+            message[4..6].copy_from_slice(&count.to_be_bytes());
+            assert!(matches!(
+                UpdateRequest::parse(&message),
+                Err(ParseUpdateError::InvalidHeader)
+            ));
+        }
+    }
+}
+
+/// A missing class field is malformed, not an unsupported zone class.
+#[test]
+fn parse_update_request_rejects_truncated_zone_class() {
     let message = minimal_update_with_ztype(6);
-    let request = UpdateRequest::parse(&message).unwrap();
-    assert_eq!(request.zone_name, "example.com.");
+    for missing in [1, 2] {
+        assert!(matches!(
+            UpdateRequest::parse(&message[..message.len() - missing]),
+            Err(ParseUpdateError::InvalidZoneSection)
+        ));
+    }
 }
 
 /// Verify that `UpdateRequest::parse` accepts opt additional without TSIG.

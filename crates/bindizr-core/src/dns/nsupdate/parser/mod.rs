@@ -29,6 +29,7 @@ const DNS_HEADER_LEN: usize = 12;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRequest {
     pub zone_name: String,
+    pub zone_class: Class,
     pub prerequisites: Vec<UpdateRecord>,
     pub updates: Vec<UpdateRecord>,
     pub tsig: Option<TsigRecord>,
@@ -102,7 +103,8 @@ impl UpdateRequest {
             .advance(DNS_HEADER_LEN)
             .map_err(|_| ParseUpdateError::TooShort)?;
 
-        // The single question identifies the update zone and must carry SOA/IN.
+        // RFC 2136, Section 3.1.1 requires SOA; authority over ZCLASS is
+        // decided by the service, not by the wire parser.
         let zone = ParsedName::parse(&mut parser).map_err(|_| ParseUpdateError::InvalidName)?;
         let ztype = parser
             .parse_u16_be()
@@ -111,7 +113,7 @@ impl UpdateRequest {
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidZoneSection)?;
 
-        if Rtype::from_int(ztype) != Rtype::SOA || Class::from_int(zclass) != Class::IN {
+        if Rtype::from_int(ztype) != Rtype::SOA {
             return Err(ParseUpdateError::InvalidZoneSection);
         }
         let zone_name = to_presentation_name(&zone)?;
@@ -136,6 +138,7 @@ impl UpdateRequest {
 
         Ok(UpdateRequest {
             zone_name,
+            zone_class: Class::from_int(zclass),
             prerequisites,
             updates,
             tsig,

@@ -4,7 +4,7 @@
 
 use domain::base::{
     Message, MessageBuilder,
-    iana::{ExtendedErrorCode, Rcode, Rtype},
+    iana::{Class, ExtendedErrorCode, Rcode, Rtype},
     opt::exterr::ExtendedError,
 };
 use reqwest::{Method, StatusCode};
@@ -263,6 +263,7 @@ async fn an_update_over_tls_is_refused_as_not_supported() {
         let mut update = build_update(
             query_id,
             zone_name,
+            Class::IN,
             &[],
             &[UpdateRecord::AddA {
                 name: format!("host.{zone_name}."),

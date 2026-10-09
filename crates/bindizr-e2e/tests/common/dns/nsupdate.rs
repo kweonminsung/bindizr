@@ -138,7 +138,7 @@ pub(crate) fn send_signed_update_tcp(
     key: &SigningKey,
 ) -> Result<Rcode, String> {
     let query_id = (std::process::id() as u16).wrapping_add(port);
-    let mut builder = build_update(query_id, zone, prerequisites, updates)?;
+    let mut builder = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
     let client = ClientTransaction::request(key.to_tsig_key()?, &mut builder, Time48::now())
         .map_err(|e| e.to_string())?;
     let query = builder.finish();
@@ -182,11 +182,11 @@ fn send(
     let query_id = (std::process::id() as u16)
         .wrapping_add(port)
         .wrapping_add(1);
-    let mut builder = build_update(query_id, zone, prerequisites, updates)?;
+    let mut builder = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
     if let Some(key) = key {
         sign(&mut builder, key)?;
     }
-    let response = exchange(port, query_id, &builder.finish())?;
+    let response = exchange_udp(port, query_id, &builder.finish())?;
     Ok(response.header().rcode())
 }
 
@@ -213,7 +213,7 @@ pub(crate) fn send_signed_update_with_two_zones(
     let mut additional = question.additional();
     sign(&mut additional, key)?;
 
-    let response = exchange(port, query_id, &additional.finish())?;
+    let response = exchange_udp(port, query_id, &additional.finish())?;
     Ok((response.header().rcode(), is_signed(&response)?))
 }
 
@@ -228,7 +228,7 @@ pub(crate) fn send_signed_update_with_edns_version(
     let query_id = (std::process::id() as u16)
         .wrapping_add(port)
         .wrapping_add(3);
-    let mut builder = build_update(query_id, zone, &[], &[])?;
+    let mut builder = build_update(query_id, zone, Class::IN, &[], &[])?;
     builder
         .opt(|opt| {
             opt.set_udp_payload_size(4096);
@@ -238,7 +238,7 @@ pub(crate) fn send_signed_update_with_edns_version(
         .map_err(|e| e.to_string())?;
     sign(&mut builder, key)?;
 
-    let response = exchange(port, query_id, &builder.finish())?;
+    let response = exchange_udp(port, query_id, &builder.finish())?;
     let rcode = response
         .opt()
         .map_or(OptRcode::from(response.header().rcode()), |opt| {
@@ -256,7 +256,11 @@ pub(crate) fn is_signed(response: &Message<Vec<u8>>) -> Result<bool, String> {
 }
 
 /// Send one UPDATE over UDP and return its response, checked against the id.
-fn exchange(port: u16, query_id: u16, message: &[u8]) -> Result<Message<Vec<u8>>, String> {
+pub(crate) fn exchange_udp(
+    port: u16,
+    query_id: u16,
+    message: &[u8],
+) -> Result<Message<Vec<u8>>, String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -281,6 +285,7 @@ fn exchange(port: u16, query_id: u16, message: &[u8]) -> Result<Message<Vec<u8>>
 pub(crate) fn build_update(
     query_id: u16,
     zone: &str,
+    zone_class: Class,
     prerequisites: &[PrereqRecord],
     updates: &[UpdateRecord],
 ) -> Result<AdditionalBuilder<Vec<u8>>, String> {
@@ -290,7 +295,7 @@ pub(crate) fn build_update(
 
     let mut question = builder.question();
     question
-        .push((&parse_name(zone)?, Rtype::SOA, Class::IN))
+        .push((&parse_name(zone)?, Rtype::SOA, zone_class))
         .map_err(|e| e.to_string())?;
 
     let mut answer = question.answer();

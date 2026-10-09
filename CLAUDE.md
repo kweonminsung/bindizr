@@ -552,9 +552,12 @@ key and its registered address both pass (RFC 9103, Section 7.5), though
 the plain listener takes either alone. Code that meets a requirement cites
 the section (`RFC 9103, Section 7.1`), so a reader can check the text.
 
-An UPDATE reaches the service with its complete wire sections. After locating
-the authoritative zone, the service checks every update record's owner and
-wire shape before selecting operations (RFC 2136, Section 3.4.1). Even a
+An UPDATE reaches the service with its zone class and complete wire sections.
+The parser checks the zone count and SOA type; the service decides authority
+over the name and class. A class other than IN is NOTAUTH, even when its name
+matches a stored zone (RFC 2136, Section 3.1.1). After locating the authoritative
+zone, the service checks every update record's owner and wire shape before
+selecting operations (RFC 2136, Section 3.4.1). Even a
 delete that will be ignored must pass that prescan. Checked owners remain
 `OwnerName` values through authorization and execution, without re-parsing.
 Prerequisites compare with the complete served zone at that transaction's

@@ -5,10 +5,11 @@ mod soa;
 use common::unsigned_nsupdate_app;
 use domain::{
     base::{
-        Rtype, Serial, Ttl,
-        iana::{OptRcode, Rcode},
+        Message, Rtype, Serial, Ttl,
+        iana::{Class, Opcode, OptRcode, Rcode},
     },
-    rdata::Soa,
+    rdata::{Soa, tsig::Time48},
+    tsig::ClientTransaction,
 };
 use serde_json::Value;
 use serial_test::serial;
@@ -17,13 +18,144 @@ use crate::common::{
     TestApp,
     dns::{
         nsupdate::{
-            KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
-            send_signed_update_tcp, send_signed_update_with_edns_version,
+            KeyRole, PrereqRecord, UpdateRecord, build_update, create_tsig_key, exchange_udp,
+            send_signed_update, send_signed_update_tcp, send_signed_update_with_edns_version,
             send_signed_update_with_two_zones, send_update,
         },
         parse_name,
     },
 };
+
+/// Refuse unserved zone classes before evaluating prerequisites or updates.
+#[tokio::test]
+#[serial]
+async fn nsupdate_unserved_zone_classes_are_notauth_over_udp() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "class-udp-key", KeyRole::Admin).await;
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let add = UpdateRecord::AddA {
+        name: format!("class-check.{zone_name}."),
+        ttl: 300,
+        addr: "192.0.2.170".to_string(),
+    };
+    let cases = [
+        (vec![], vec![]),
+        (vec![], vec![add.clone()]),
+        (
+            vec![PrereqRecord::NameInUse {
+                name: format!("absent.{zone_name}."),
+            }],
+            vec![add.clone()],
+        ),
+        (
+            vec![],
+            vec![
+                add.clone(),
+                UpdateRecord::DeleteRecordSet {
+                    name: "outside.example.net.".to_string(),
+                    rtype: Rtype::AXFR,
+                },
+            ],
+        ),
+    ];
+    for class in [
+        Class::CH,
+        Class::HS,
+        Class::from_int(65280),
+        Class::NONE,
+        Class::ANY,
+        Class::from_int(0),
+        Class::from_int(u16::MAX),
+    ] {
+        for (prerequisites, updates) in &cases {
+            for signing_key in [None, Some(&key)] {
+                let mut request =
+                    build_update(171, zone_name, class, prerequisites, updates).unwrap();
+                request
+                    .opt(|opt| {
+                        opt.set_udp_payload_size(1232);
+                        Ok(())
+                    })
+                    .unwrap();
+                let client = signing_key.map(|key| {
+                    ClientTransaction::request(
+                        key.to_tsig_key().unwrap(),
+                        &mut request,
+                        Time48::now(),
+                    )
+                    .unwrap()
+                });
+                let mut response = exchange_udp(app.dns_port(), 171, &request.finish()).unwrap();
+                if let Some(client) = client {
+                    client
+                        .answer(&mut response, Time48::now())
+                        .expect("authenticated class refusal");
+                }
+                assert_eq!(response.header().rcode(), Rcode::NOTAUTH, "class {class}");
+                assert_eq!(response.header().opcode(), Opcode::UPDATE);
+                let question = response.sole_question().unwrap();
+                assert_eq!(question.qname().to_string(), zone_name);
+                assert_eq!(question.qtype(), Rtype::SOA);
+                assert_eq!(question.qclass(), class);
+                assert_eq!(
+                    response.opt().unwrap().rcode(response.header()),
+                    OptRcode::NOTAUTH
+                );
+                assert_eq!(response.header_counts().ancount(), 0);
+                assert_eq!(response.header_counts().nscount(), 0);
+            }
+        }
+        assert_eq!(app.list_records(zone_name).await, before);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+    assert_eq!(
+        send_update(app.dns_port(), zone_name, &[], &[add]).unwrap(),
+        Rcode::NOERROR
+    );
+    assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
+}
+
+/// Sign TCP class refusals and distinguish missing authority from missing grants.
+#[tokio::test]
+#[serial]
+async fn nsupdate_zone_class_refusals_are_signed_over_tcp() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "class-tcp-key", KeyRole::Own).await;
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let updates = [UpdateRecord::AddA {
+        name: format!("must-not-exist.{zone_name}."),
+        ttl: 300,
+        addr: "192.0.2.171".to_string(),
+    }];
+    for (class, expected) in [
+        (Class::IN, Rcode::REFUSED),
+        (Class::CH, Rcode::NOTAUTH),
+        (Class::HS, Rcode::NOTAUTH),
+        (Class::from_int(65280), Rcode::NOTAUTH),
+    ] {
+        let mut request = build_update(172, zone_name, class, &[], &updates).unwrap();
+        let client =
+            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut request, Time48::now())
+                .unwrap();
+        let response = crate::common::exchange_tcp(app.dns_port(), &request.finish()).unwrap();
+        let mut response = Message::from_octets(response).unwrap();
+        client
+            .answer(&mut response, Time48::now())
+            .expect("authenticated class refusal");
+        assert_eq!(response.header().id(), 172);
+        assert_eq!(response.header().opcode(), Opcode::UPDATE);
+        assert_eq!(response.header().rcode(), expected, "class {class}");
+        assert_eq!(response.sole_question().unwrap().qclass(), class);
+        assert_eq!(app.list_records(zone_name).await, before);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+}
 
 /// Verify that `nsupdate` adds and deletes records.
 #[tokio::test]
