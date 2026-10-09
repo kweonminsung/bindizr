@@ -31,7 +31,7 @@ docker compose -f examples/compose/docker-compose.yml \
 
 Host ports: API `8000`, DNS through dnsdist `127.0.0.1:53`, Bindizr's own DNS
 `5300`, the BIND replicas `1053` and `1054`. API authentication is off in this
-stack, and unsigned dynamic updates are accepted. Use it on an isolated
+stack, and unsigned nsupdate requests are accepted. Use it on an isolated
 development host.
 
 ## 2. Register the secondaries

@@ -80,7 +80,7 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # retries = 3
 # timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
-[dns.nsupdate]                # RFC 2136 dynamic updates
+[dns.nsupdate]                # nsupdate (RFC 2136)
 tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
@@ -153,7 +153,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
-| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [nsupdate](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |

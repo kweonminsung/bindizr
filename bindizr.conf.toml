@@ -40,7 +40,7 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # retries = 3
 # timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
-[dns.nsupdate]                # RFC 2136 dynamic updates
+[dns.nsupdate]                # nsupdate (RFC 2136)
 tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)

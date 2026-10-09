@@ -81,7 +81,7 @@ impl From<ParseUpdateError> for UpdateError {
 }
 
 impl From<TsigError> for UpdateError {
-    /// Convert a failure into a dynamic update response error.
+    /// Convert a failure into an nsupdate response error.
     fn from(err: TsigError) -> Self {
         match err {
             TsigError::Malformed(_) => UpdateError::Refused(err.to_string()),
@@ -98,7 +98,7 @@ impl From<TsigError> for UpdateError {
 }
 
 impl From<NsupdateError> for UpdateError {
-    /// Convert a failure into a dynamic update response error.
+    /// Convert a failure into an nsupdate response error.
     fn from(err: NsupdateError) -> Self {
         match err {
             NsupdateError::Refused(msg) => UpdateError::Refused(msg),

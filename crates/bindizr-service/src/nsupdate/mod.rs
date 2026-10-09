@@ -1,4 +1,4 @@
-//! RFC 2136 dynamic updates, from the point the wire message is decoded.
+//! nsupdate (RFC 2136), from the point the wire message is decoded.
 //! Prerequisite evaluation, per-key authorization, and the transactional apply
 //! live here; the DNS front end owns the message format, TSIG, and rdata.
 
@@ -59,7 +59,7 @@ pub enum NsupdateError {
 /// A service error the requester could fix is REFUSED; a backend fault is
 /// SERVFAIL.
 impl From<ServiceError> for NsupdateError {
-    /// Map a service failure to the corresponding dynamic update error.
+    /// Map a service failure to the corresponding nsupdate error.
     fn from(err: ServiceError) -> Self {
         if !err.code().is_internal() {
             NsupdateError::Refused(err.to_string())

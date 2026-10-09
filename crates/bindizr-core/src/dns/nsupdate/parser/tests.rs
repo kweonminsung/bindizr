@@ -275,7 +275,7 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
     assert_eq!(priority, Some(10));
 }
 
-/// Build a dynamic update record with the requested wire fields.
+/// Build an nsupdate record with the requested wire fields.
 fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
@@ -287,7 +287,7 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
     }
 }
 
-/// Build a dynamic update record with the requested wire fields.
+/// Build an nsupdate record with the requested wire fields.
 fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),

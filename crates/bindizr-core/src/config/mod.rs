@@ -427,7 +427,7 @@ impl Default for TransferConfig {
     }
 }
 
-/// RFC 2136 dynamic updates.
+/// nsupdate (RFC 2136).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NsupdateConfig {

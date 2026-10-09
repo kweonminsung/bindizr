@@ -174,7 +174,7 @@ impl Metrics {
         let nsupdate_requests_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_nsupdate_requests_total",
-                "RFC 2136 dynamic update requests processed, by outcome.",
+                "nsupdate requests processed (RFC 2136), by outcome.",
             ),
             &["result"],
         )
@@ -498,7 +498,7 @@ impl Metrics {
             .inc();
     }
 
-    /// Increment the counter for a dynamic update result.
+    /// Increment the counter for an nsupdate result.
     pub fn track_nsupdate(&self, result: NsupdateResult) {
         self.nsupdate_requests_total
             .with_label_values(&[result.label()])

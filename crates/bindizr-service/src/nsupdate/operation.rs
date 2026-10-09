@@ -76,7 +76,7 @@ impl UpdateOperation {
     }
 }
 
-/// Apply one authorized dynamic update operation in the current transaction.
+/// Apply one authorized nsupdate operation in the current transaction.
 pub(crate) async fn apply_op_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

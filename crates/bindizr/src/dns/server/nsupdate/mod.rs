@@ -1,4 +1,4 @@
-//! RFC 2136 dynamic DNS update (nsupdate) handling, including TSIG-authenticated
+//! nsupdate (RFC 2136) handling, including TSIG-authenticated
 //! requests.
 
 mod update;
@@ -31,7 +31,7 @@ pub(crate) enum HandleNsupdateError {
     SendUdp(#[source] std::io::Error),
 }
 
-/// Apply a dynamic update received over TCP and send its response.
+/// Apply an nsupdate received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
@@ -48,7 +48,7 @@ pub(crate) async fn handle_tcp_nsupdate(
         .map_err(HandleNsupdateError::WriteTcp)
 }
 
-/// Apply a dynamic update received over UDP and return its response.
+/// Apply an nsupdate received over UDP and return its response.
 pub(crate) async fn handle_udp_nsupdate(
     dns_cx: &DnsContext,
     socket: &UdpSocket,

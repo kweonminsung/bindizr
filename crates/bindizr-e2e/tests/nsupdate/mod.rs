@@ -656,7 +656,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     assert_eq!(rcode, Rcode::NOERROR);
 }
 
-/// Verify that dynamic updates map the input apex `@` to the empty stored owner.
+/// Verify that nsupdate maps the input apex `@` to the empty stored owner.
 #[tokio::test]
 #[serial]
 async fn nsupdate_adds_at_the_zone_apex() {

@@ -136,7 +136,7 @@ Hand out further tokens from this one, each in a role granted only what it
 needs — see [Access Control](../cli/access-control.md). Clients that update zones themselves
 (cert-manager's DNS-01 solver, a DHCP server) sign with a TSIG key instead,
 created over the HTTP API with this token — see
-[Dynamic Updates](../cli/nsupdate.md#the-first-key).
+[nsupdate](../cli/nsupdate.md#the-first-key).
 
 ## Production: external database
 

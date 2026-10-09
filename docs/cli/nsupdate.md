@@ -1,6 +1,6 @@
-# Dynamic Updates (nsupdate)
+# nsupdate
 
-Bindizr supports RFC 2136-style dynamic updates through the DNS listener,
+Bindizr serves nsupdate, the RFC 2136 UPDATE message, through the DNS listener,
 authenticated with TSIG. The key named in the request's TSIG record says who
 is calling; the key's [role](access-control.md) says what it may change.
 

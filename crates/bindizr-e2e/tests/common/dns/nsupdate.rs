@@ -106,7 +106,7 @@ pub(crate) fn send_signed_update(
     send(port, zone, prerequisites, updates, Some(key))
 }
 
-/// Send a dynamic update with optional TSIG and return the response code.
+/// Send an nsupdate with optional TSIG and return the response code.
 fn send(
     port: u16,
     zone: &str,

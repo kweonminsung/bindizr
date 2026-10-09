@@ -1,4 +1,4 @@
-//! RFC 2136 dynamic update on the wire: decoding an UPDATE message, TSIG
+//! nsupdate (RFC 2136) on the wire: decoding an UPDATE message, TSIG
 //! authentication, and building the response. Applying the changes is the
 //! service layer's.
 
