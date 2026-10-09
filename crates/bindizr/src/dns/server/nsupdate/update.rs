@@ -13,7 +13,8 @@ use bindizr_core::{
     model::{record::RecordType, transfer::TransferTransport, tsig_key::TsigKey},
 };
 use bindizr_service::{
-    dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOperation},
+    authorization::Caller,
+    nsupdate::{self, NsupdateError, Prerequisite, Update, UpdateOperation},
     tsig_key,
 };
 use thiserror::Error;
@@ -96,18 +97,18 @@ impl From<TsigError> for UpdateError {
     }
 }
 
-impl From<DynamicUpdateError> for UpdateError {
+impl From<NsupdateError> for UpdateError {
     /// Convert a failure into a dynamic update response error.
-    fn from(err: DynamicUpdateError) -> Self {
+    fn from(err: NsupdateError) -> Self {
         match err {
-            DynamicUpdateError::Refused(msg) => UpdateError::Refused(msg),
-            DynamicUpdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
-            DynamicUpdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
-            DynamicUpdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
-            DynamicUpdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
-            DynamicUpdateError::NotAuth(msg) => UpdateError::NotAuth(msg),
-            DynamicUpdateError::NotZone(msg) => UpdateError::NotZone(msg),
-            DynamicUpdateError::Internal(err) => UpdateError::Internal {
+            NsupdateError::Refused(msg) => UpdateError::Refused(msg),
+            NsupdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
+            NsupdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
+            NsupdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
+            NsupdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
+            NsupdateError::NotAuth(msg) => UpdateError::NotAuth(msg),
+            NsupdateError::NotZone(msg) => UpdateError::NotZone(msg),
+            NsupdateError::Internal(err) => UpdateError::Internal {
                 message: "failed to apply the update".to_string(),
                 source: Box::new(err),
             },
@@ -128,11 +129,12 @@ pub(crate) async fn apply_update(
     let result = async {
         // A signature is verified first, whatever the listener's answer:
         // keys are zone-independent, and every refusal below is then signed.
-        let key = match &request.tsig {
+        let tsig_key = match &request.tsig {
             Some(tsig) => {
-                let (key, verified) = verify_signer(dns_cx, &tsig.name, query_data).await?;
+                let (tsig_key, verified) =
+                    authenticate_tsig_key(dns_cx, &tsig.name, query_data).await?;
                 signer = Some(verified);
-                key
+                tsig_key
             }
             None => None,
         };
@@ -147,11 +149,17 @@ pub(crate) async fn apply_update(
         // An unsigned update carries no identity, so admitting one admits
         // every client that reaches the listener — the same trade
         // `api.authentication_required = false` makes for the API.
-        if request.tsig.is_none() && dns_cx.daemon().config().dns.nsupdate.tsig_required {
-            return Err(UpdateError::Refused(
-                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
-            ));
-        }
+        let caller = match tsig_key {
+            Some(tsig_key) => Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
+                .await
+                .map_err(NsupdateError::from)?,
+            None if dns_cx.daemon().config().dns.nsupdate.tsig_required => {
+                return Err(UpdateError::Refused(
+                    "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+                ));
+            }
+            None => Caller::unsigned_dns(),
+        };
 
         // An OPT the server cannot take is answered before the update is read.
         match request.edns {
@@ -172,9 +180,8 @@ pub(crate) async fn apply_update(
             UpdateError::NotAuth(format!("'{}' is not a zone name: {}", request.zone_name, e))
         })?;
 
-        let update = DynamicUpdate {
+        let update = Update {
             zone_name,
-            key,
             prerequisites: request
                 .prerequisites
                 .iter()
@@ -190,21 +197,21 @@ pub(crate) async fn apply_update(
                 .collect(),
         };
 
-        let changed = dynamic_update::apply(dns_cx.daemon(), update).await?;
+        let changed = nsupdate::apply(dns_cx.daemon(), &caller, update).await?;
         Ok(changed)
     }
     .await;
     (result, signer)
 }
 
-/// Verify the request's TSIG under the key `key_name` names and return that
-/// key with the context that signs the response.
-pub(crate) async fn verify_signer(
+/// Authenticate the request by the key `key_name` names: its TSIG verified,
+/// the key comes back with the context that signs the response.
+pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     key_name: &str,
     query_data: &[u8],
 ) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
-    let key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
+    let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
         .map_err(|e| UpdateError::Internal {
             message: "failed to load TSIG key".to_string(),
@@ -213,9 +220,9 @@ pub(crate) async fn verify_signer(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let domain_key = key.as_ref().map(TsigKey::to_domain_key).transpose()?;
+    let domain_key = tsig_key.as_ref().map(TsigKey::to_domain_key).transpose()?;
     let signer = bindizr_core::dns::tsig::verify_tsig(query_data, domain_key)?;
-    Ok((key, signer))
+    Ok((tsig_key, signer))
 }
 
 /// One prerequisite record, its shape held to RFC 2136, Section 3.2.1 (TTL 0,

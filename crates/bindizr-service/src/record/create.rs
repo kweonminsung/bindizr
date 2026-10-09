@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     Context,
-    authorization::{Caller, RecordWrite},
+    authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
     model::record::{Record, RecordData},
@@ -55,9 +55,9 @@ pub async fn create(
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        caller.authorize_record_writes(
+        caller.authorize_record_access(
             &zone,
-            &[RecordWrite {
+            &[RecordAccess {
                 action: Action::RecordCreate,
                 relative_name: owner_name.clone(),
                 record_type: Some(&record_type),

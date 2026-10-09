@@ -22,7 +22,7 @@ use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
 
 /// Why an UPDATE was not answered, for the listener's log.
 #[derive(Debug, Error)]
-pub(crate) enum NsupdateError {
+pub(crate) enum HandleNsupdateError {
     #[error("failed to build NSUPDATE TCP response")]
     BuildResponse,
     #[error("failed to write NSUPDATE TCP response: {0}")]
@@ -37,15 +37,15 @@ pub(crate) async fn handle_tcp_nsupdate(
     writer: &ResponseWriter,
     query_data: &[u8],
     client_addr: SocketAddr,
-) -> Result<(), NsupdateError> {
+) -> Result<(), HandleNsupdateError> {
     log::info!("NSUPDATE TCP request from {}", client_addr);
     let response = handle_nsupdate_request(dns_cx, query_data, client_addr, writer.transport())
         .await
-        .ok_or(NsupdateError::BuildResponse)?;
+        .ok_or(HandleNsupdateError::BuildResponse)?;
     writer
         .write_message(&response)
         .await
-        .map_err(NsupdateError::WriteTcp)
+        .map_err(HandleNsupdateError::WriteTcp)
 }
 
 /// Apply a dynamic update received over UDP and return its response.
@@ -54,7 +54,7 @@ pub(crate) async fn handle_udp_nsupdate(
     socket: &UdpSocket,
     query_data: &[u8],
     client_addr: SocketAddr,
-) -> Result<(), NsupdateError> {
+) -> Result<(), HandleNsupdateError> {
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
     let response = match handle_nsupdate_request(
@@ -75,7 +75,7 @@ pub(crate) async fn handle_udp_nsupdate(
     socket
         .send_to(&response, client_addr)
         .await
-        .map_err(NsupdateError::SendUdp)?;
+        .map_err(HandleNsupdateError::SendUdp)?;
     Ok(())
 }
 
@@ -96,7 +96,7 @@ async fn handle_nsupdate_request(
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match request_signature(query_data) {
                 RequestSignature::Key { name, fudge } => {
-                    match update::verify_signer(dns_cx, &name, query_data).await {
+                    match update::authenticate_tsig_key(dns_cx, &name, query_data).await {
                         Ok((_, signer)) => (Some(signer), fudge),
                         Err(update::UpdateError::TsigFailed { msg, response }) => {
                             log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);

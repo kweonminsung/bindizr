@@ -12,12 +12,12 @@ use bindizr_core::{
     model::{
         dnssec_record::DnssecRecord,
         record::Record,
-        tsig_key::TsigKey,
         zone::{Zone, ZoneId},
     },
 };
 use bindizr_service::{
     Context,
+    authorization::Caller,
     error::ServiceError,
     zone::{self, TransferAccess, TransferContent},
 };
@@ -126,16 +126,16 @@ impl TransferCache {
 /// Decide the zone and key grant together under that lock.
 pub(crate) async fn authorize_transfer_content_by_name(
     dns_cx: &DnsContext,
+    caller: &Caller,
     zone_name: &ZoneName,
-    key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     let cx = dns_cx.daemon();
     let max_records = max_records(cx);
     if max_records == 0 {
-        return fetch_transfer_content(cx, zone_name, key).await;
+        return fetch_transfer_content(cx, caller, zone_name).await;
     }
 
-    let zone = match zone::authorize_transfer_by_name(cx, zone_name, key).await? {
+    let zone = match zone::authorize_transfer_by_name(cx, caller, zone_name).await? {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
@@ -152,7 +152,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
 
     // A miss reads under its own lock, deciding the zone and the grant there
     // again; concurrent misses may load twice, each one complete serial.
-    let loaded = fetch_transfer_content(cx, zone_name, key).await?;
+    let loaded = fetch_transfer_content(cx, caller, zone_name).await?;
     if let TransferAccess::Granted((zone, content)) = &loaded {
         dns_cx.transfer_cache.store_content(
             cx.metrics(),
@@ -165,15 +165,15 @@ pub(crate) async fn authorize_transfer_content_by_name(
     Ok(loaded)
 }
 
-/// Pull both record planes of the zone by name, as far as `key` may read
+/// Pull both record planes of the zone by name, as far as `caller` may read
 /// them, straight from the service.
 async fn fetch_transfer_content(
     dns_cx: &Context,
+    caller: &Caller,
     zone_name: &ZoneName,
-    key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     Ok(
-        zone::authorize_transfer_content_by_name(dns_cx, zone_name, key)
+        zone::authorize_transfer_content_by_name(dns_cx, caller, zone_name)
             .await?
             .map(|content| {
                 let TransferContent {

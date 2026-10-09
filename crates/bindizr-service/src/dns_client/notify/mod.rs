@@ -114,8 +114,8 @@ async fn send_notify(
     let mut reports = Vec::new();
     let mut tasks = Vec::with_capacity(secondaries.len());
     for secondary in secondaries {
-        let key = match secondary::notify_signing_key(cx, &secondary).await {
-            Ok(key) => key,
+        let tsig_key = match secondary::notify_signing_key(cx, &secondary).await {
+            Ok(tsig_key) => tsig_key,
             Err(e) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
                 reports.push(NotifyCheckResponse {
@@ -133,7 +133,8 @@ async fn send_notify(
                 let mut outcomes = Vec::with_capacity(addrs.len());
                 for addr in addrs {
                     let result =
-                        send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await;
+                        send_notify_to_server(&qname, addr, timeout, retries, tsig_key.as_ref())
+                            .await;
                     outcomes.push((addr, result));
                 }
                 Ok::<_, ResolveAddressError>(outcomes)
@@ -190,13 +191,13 @@ async fn send_notify_to_server(
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
-    key: Option<&TsigSigningKey>,
+    tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     let attempts = retries.saturating_add(1);
     let mut attempt = 1;
 
     loop {
-        match send_notify_to_server_once(qname, server_addr, timeout, key).await {
+        match send_notify_to_server_once(qname, server_addr, timeout, tsig_key).await {
             Ok(()) => return Ok(()),
             Err(e) if attempt < attempts => {
                 attempt += 1;
@@ -219,11 +220,11 @@ async fn send_notify_to_server_once(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
-    key: Option<&TsigSigningKey>,
+    tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     let (query_id, mut builder) = question_builder(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
-    let signer = match key {
-        Some(key) => Some(sign_request(&mut builder, key.clone())?),
+    let signer = match tsig_key {
+        Some(tsig_key) => Some(sign_request(&mut builder, tsig_key.clone())?),
         None => None,
     };
     let notify_message = builder.finish();

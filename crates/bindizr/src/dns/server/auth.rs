@@ -13,9 +13,9 @@ use bindizr_core::{
             RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
         },
     },
-    model::{transfer::TransferTransport, tsig_key::TsigKey},
+    model::transfer::TransferTransport,
 };
-use bindizr_service::tsig_key;
+use bindizr_service::{authorization::Caller, tsig_key};
 
 use super::acl;
 use crate::dns::{error::XfrError, server::DnsContext};
@@ -82,17 +82,17 @@ pub(crate) fn authorize_transport(
     Ok(identity)
 }
 
-/// Who a transfer request is: the verified key that signed it, or nobody when
-/// the address ACL admitted it unsigned; the signer answers under that key.
+/// Who a transfer request is: the caller its key became, or the unsigned DNS
+/// caller the address ACL admitted; the signer answers under that key.
 #[derive(Debug, Clone)]
 pub(crate) struct TransferIdentity {
-    pub(crate) key: Option<TsigKey>,
+    pub(crate) caller: Caller,
     pub(crate) signer: Option<TransferSigner>,
 }
 
 /// Verify the key a request names, for an answer that needs no address:
 /// `None` for an unsigned request, the refusal a bad or malformed TSIG earns.
-pub(crate) async fn authenticate_key(
+pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     query_data: &[u8],
 ) -> Result<Option<TransferIdentity>, TransferRefusal> {
@@ -108,10 +108,10 @@ pub(crate) async fn authenticate_key(
         }
     };
 
-    let key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
+    let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
         .await
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
-    let Some(key) = key else {
+    let Some(tsig_key) = tsig_key else {
         // An unknown key still runs validation: the empty key store makes it
         // produce the BADKEY error response.
         verify_tsig_sequence(query_data, None).map_err(TransferRefusal::from)?;
@@ -120,11 +120,16 @@ pub(crate) async fn authenticate_key(
             None,
         ));
     };
-    let domain_key = key.to_domain_key().map_err(TransferRefusal::from)?;
+    let domain_key = tsig_key.to_domain_key().map_err(TransferRefusal::from)?;
     let signer =
         verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
+    let caller = Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
+        .await
+        .map_err(|e| {
+            TransferRefusal::refused(format!("failed to load the key's grants: {}", e), None)
+        })?;
     Ok(Some(TransferIdentity {
-        key: Some(key),
+        caller,
         signer: Some(signer),
     }))
 }
@@ -140,7 +145,7 @@ pub(crate) async fn authenticate_transfer(
     transport: TransferTransport,
 ) -> Result<TransferIdentity, TransferRefusal> {
     let over_tls = matches!(transport, TransferTransport::Tls);
-    let Some(identity) = authenticate_key(dns_cx, query_data).await? else {
+    let Some(identity) = authenticate_tsig_key(dns_cx, query_data).await? else {
         if over_tls {
             return Err(TransferRefusal::refused(
                 "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
@@ -151,7 +156,7 @@ pub(crate) async fn authenticate_transfer(
         // removing a secondary refuses later transfers, not one admitted.
         return match acl::is_client_allowed(dns_cx, client_ip).await {
             Ok(true) => Ok(TransferIdentity {
-                key: None,
+                caller: Caller::unsigned_dns(),
                 signer: None,
             }),
             Ok(false) => Err(TransferRefusal::refused(
@@ -199,7 +204,7 @@ pub(crate) async fn refuse_query(
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
 ) -> Result<Vec<u8>, XfrError> {
-    match authenticate_key(dns_cx, query_data).await {
+    match authenticate_tsig_key(dns_cx, query_data).await {
         Ok(identity) => {
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(query.signed_error_response(rcode, ede, signer.as_mut())?)

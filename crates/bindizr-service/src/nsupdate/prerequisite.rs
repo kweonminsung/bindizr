@@ -5,7 +5,7 @@
 use bindizr_core::dns::{message::Rtype, name::OwnerName};
 use bindizr_db::LockLevel;
 
-use super::{DynamicUpdateError, Prerequisite, parse_update_owner};
+use super::{NsupdateError, Prerequisite, parse_update_owner};
 use crate::{
     Transaction,
     error::ServiceError,
@@ -20,7 +20,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     prerequisites: &[Prerequisite],
-) -> Result<(), DynamicUpdateError> {
+) -> Result<(), NsupdateError> {
     if prerequisites.is_empty() {
         return Ok(());
     }
@@ -33,7 +33,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
             Prerequisite::NameInUse { name } => {
                 let owner = parse_update_owner(name, &zone.name)?;
                 if !has_owner(&owner, &zone_records) {
-                    return Err(DynamicUpdateError::NxDomain(format!(
+                    return Err(NsupdateError::NxDomain(format!(
                         "owner '{}' does not exist",
                         owner
                     )));
@@ -42,16 +42,13 @@ pub(crate) async fn evaluate_prerequisites_tx(
             Prerequisite::NameNotInUse { name } => {
                 let owner = parse_update_owner(name, &zone.name)?;
                 if has_owner(&owner, &zone_records) {
-                    return Err(DynamicUpdateError::YxDomain(format!(
-                        "owner '{}' exists",
-                        owner
-                    )));
+                    return Err(NsupdateError::YxDomain(format!("owner '{}' exists", owner)));
                 }
             }
             Prerequisite::RecordSetInUse { name, record_type } => {
                 let owner = parse_update_owner(name, &zone.name)?;
                 if !has_record_set(&owner, record_type, &zone_records) {
-                    return Err(DynamicUpdateError::NxRrset(format!(
+                    return Err(NsupdateError::NxRrset(format!(
                         "no {} records at {}",
                         record_type, owner
                     )));
@@ -60,7 +57,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
             Prerequisite::RecordSetNotInUse { name, record_type } => {
                 let owner = parse_update_owner(name, &zone.name)?;
                 if has_record_set(&owner, record_type, &zone_records) {
-                    return Err(DynamicUpdateError::YxRrset(format!(
+                    return Err(NsupdateError::YxRrset(format!(
                         "{} records at {} exist",
                         record_type, owner
                     )));
@@ -70,7 +67,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 let owner = parse_update_owner(name, &zone.name)?;
                 // The SOA is no row, but the zone's own stands at the apex.
                 if !(*record_type == Rtype::SOA && owner.is_apex()) {
-                    return Err(DynamicUpdateError::NxRrset(format!(
+                    return Err(NsupdateError::NxRrset(format!(
                         "no {} records at {}",
                         record_type, owner
                     )));
@@ -79,7 +76,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
             Prerequisite::UnstoredTypeNotInUse { name, record_type } => {
                 let owner = parse_update_owner(name, &zone.name)?;
                 if *record_type == Rtype::SOA && owner.is_apex() {
-                    return Err(DynamicUpdateError::YxRrset(format!(
+                    return Err(NsupdateError::YxRrset(format!(
                         "SOA records at {} exist",
                         owner
                     )));
@@ -88,13 +85,13 @@ pub(crate) async fn evaluate_prerequisites_tx(
             Prerequisite::SoaInUse { name, rdata } => {
                 let owner = parse_update_owner(name, &zone.name)?;
                 let served = zone.soa_rdata(zone.serial).map_err(|e| {
-                    DynamicUpdateError::Internal(ServiceError::internal_with_source(
+                    NsupdateError::Internal(ServiceError::internal_with_source(
                         "failed to encode the zone's SOA",
                         e,
                     ))
                 })?;
                 if !owner.is_apex() || served != *rdata {
-                    return Err(DynamicUpdateError::NxRrset(format!(
+                    return Err(NsupdateError::NxRrset(format!(
                         "SOA records at {} are not the ones the prerequisite names",
                         owner
                     )));
@@ -129,7 +126,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
             })
             .collect();
         if !is_same_record_set(&stored, &wanted.records) {
-            return Err(DynamicUpdateError::NxRrset(format!(
+            return Err(NsupdateError::NxRrset(format!(
                 "{} records at {} are not the ones the prerequisite names",
                 wanted.record_type, wanted.owner
             )));

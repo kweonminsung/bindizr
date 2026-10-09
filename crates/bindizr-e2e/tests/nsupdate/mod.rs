@@ -421,6 +421,78 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     assert_eq!(app.read_zone_serial(&zone_name).await, before + 1);
 }
 
+/// Verify that an add rewriting what stands there needs the grant for that
+/// rewrite beyond `record:create`: a delete for a replaced alias, an update
+/// for a retimed record set.
+#[tokio::test]
+#[serial]
+async fn a_create_grant_alone_rewrites_nothing_that_exists() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("nsupdate-rewrite.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let port = app.dns_port();
+    let key = create_tsig_key(&app, "nsupdate-rewrite-key", KeyRole::Own).await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &key.name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "record:create",
+    ])
+    .await;
+    let alias = format!("alias.{zone_name}.");
+    let host = format!("host.{zone_name}.");
+
+    for updates in [
+        vec![UpdateRecord::AddCname {
+            name: alias.clone(),
+            ttl: 300,
+            target: "one.example.net.".to_string(),
+        }],
+        vec![UpdateRecord::AddA {
+            name: host.clone(),
+            ttl: 300,
+            addr: "192.0.2.130".to_string(),
+        }],
+    ] {
+        let rcode = send_signed_update(port, &zone_name, &[], &updates, &key).expect("update");
+        assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
+    }
+
+    // Replacing the CNAME deletes it; a new TTL rewrites the A set.
+    let replace = vec![UpdateRecord::AddCname {
+        name: alias.clone(),
+        ttl: 300,
+        target: "two.example.net.".to_string(),
+    }];
+    let retime = vec![UpdateRecord::AddA {
+        name: host.clone(),
+        ttl: 600,
+        addr: "192.0.2.131".to_string(),
+    }];
+    for updates in [&replace, &retime] {
+        let rcode = send_signed_update(port, &zone_name, &[], updates, &key).expect("update");
+        assert_eq!(rcode, Rcode::REFUSED, "{updates:?}");
+    }
+
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &key.name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "record:update,record:delete",
+    ])
+    .await;
+    for updates in [&replace, &retime] {
+        let rcode = send_signed_update(port, &zone_name, &[], updates, &key).expect("update");
+        assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
+    }
+}
+
 /// Verify that a signed update requires a zone grant for its TSIG key.
 ///
 /// The unsigned cases exercise address authorization; this case checks the key-based path.

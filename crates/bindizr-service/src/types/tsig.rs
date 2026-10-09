@@ -58,13 +58,13 @@ pub struct GetTsigKeyResponse {
 
 impl GetTsigKeyResponse {
     /// Build a TSIG key response with its role's name, without the secret.
-    pub(crate) fn from_key(key: &TsigKey, role_name: &str) -> Self {
+    pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
         GetTsigKeyResponse {
-            id: key.id,
-            name: key.name.clone(),
-            algorithm: key.algorithm,
+            id: tsig_key.id,
+            name: tsig_key.name.clone(),
+            algorithm: tsig_key.algorithm,
             role_name: role_name.to_string(),
-            created_at: key.created_at,
+            created_at: tsig_key.created_at,
         }
     }
 }
@@ -79,10 +79,10 @@ pub struct TsigKeyResponse {
 
 impl TsigKeyResponse {
     /// Build a TSIG key response, with its secret and its role's name.
-    pub(crate) fn from_key(key: &TsigKey, role_name: &str) -> Self {
+    pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
         TsigKeyResponse {
-            tsig_key: GetTsigKeyResponse::from_key(key, role_name),
-            secret: key.secret.clone(),
+            tsig_key: GetTsigKeyResponse::from_tsig_key(tsig_key, role_name),
+            secret: tsig_key.secret.clone(),
         }
     }
 }

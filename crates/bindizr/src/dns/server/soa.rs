@@ -12,7 +12,10 @@ use bindizr_core::{
     metrics::{SoaResult, XfrResult},
     model::transfer::TransferTransport,
 };
-use bindizr_service::zone::{self, TransferAccess};
+use bindizr_service::{
+    authorization::Caller,
+    zone::{self, TransferAccess},
+};
 use tokio::net::UdpSocket;
 
 use crate::dns::{
@@ -190,7 +193,7 @@ async fn handle_soa_request(
             query.qtype,
             cx.config().dns.catalog_zone_name
         );
-        let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
+        let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
                 return Ok(query.signed_error_response(
@@ -221,9 +224,7 @@ async fn handle_soa_request(
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
     let access = match zone::normalize_name(zone_name_str) {
-        Ok(zone_name) => {
-            zone::authorize_transfer_by_name(cx, &zone_name, identity.key.as_ref()).await?
-        }
+        Ok(zone_name) => zone::authorize_transfer_by_name(cx, &identity.caller, &zone_name).await?,
         Err(_) => TransferAccess::NotAuth,
     };
     let zone = match access {
@@ -276,7 +277,7 @@ async fn authenticate_soa(
         && matches!(request_signature(query_data), RequestSignature::Absent)
     {
         return Ok(TransferIdentity {
-            key: None,
+            caller: Caller::unsigned_dns(),
             signer: None,
         });
     }

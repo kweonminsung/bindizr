@@ -35,7 +35,7 @@ pub(crate) async fn auth_middleware(
 
     let token = &auth_str[7..];
 
-    match Caller::authenticate(&cx, token).await {
+    match Caller::authenticate_token(&cx, token).await {
         Ok((caller, token)) => {
             req.extensions_mut().insert(caller);
             req.extensions_mut().insert(AuthenticatedToken(token));

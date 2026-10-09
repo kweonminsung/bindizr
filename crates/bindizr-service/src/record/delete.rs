@@ -9,7 +9,7 @@ use bindizr_db::LockLevel;
 use super::validation::{normalize_record_owner_name, parse_record_type};
 use crate::{
     Context,
-    authorization::{Caller, RecordWrite},
+    authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
     model::record::{Record, RecordData},
@@ -91,9 +91,9 @@ pub async fn delete(
         ) {
             return Err(ServiceError::record_not_found(record_id));
         }
-        caller.authorize_record_writes(
+        caller.authorize_record_access(
             &zone,
-            &[RecordWrite {
+            &[RecordAccess {
                 action: Action::RecordDelete,
                 relative_name: existing_record.name.clone(),
                 record_type: Some(&existing_record.record_type),
@@ -219,9 +219,9 @@ pub async fn delete_matching(
 
         // Authorize the request, not the rows it matches: an answer that
         // depended on the match would reveal what lies outside the grant.
-        caller.authorize_record_writes(
+        caller.authorize_record_access(
             &zone,
-            &[RecordWrite {
+            &[RecordAccess {
                 action: Action::RecordDelete,
                 relative_name: owner.clone(),
                 record_type: record_type.as_ref(),

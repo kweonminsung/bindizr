@@ -5,8 +5,10 @@ authenticated with TSIG. The key named in the request's TSIG record says who
 is calling; the key's [role](access-control.md) says what it may change.
 
 The role needs `record:read` for prerequisites, `record:create` for additions,
-and `record:delete` for deletions. If any record falls outside its grants,
-the entire update is refused.
+and `record:delete` for deletions. An addition that replaces a CNAME or DNAME
+needs `record:delete` as well, and one whose TTL differs from the record set's
+needs `record:update`, since it moves the whole set. If any record falls
+outside its grants, the entire update is refused.
 
 ## Example
 

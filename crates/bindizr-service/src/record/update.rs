@@ -12,7 +12,7 @@ use super::validation::{
 };
 use crate::{
     Context,
-    authorization::{Caller, RecordWrite},
+    authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
     model::{
@@ -308,15 +308,15 @@ async fn update_locked(
 
         // An update moves a record from its stored identity to the requested
         // one, so `record:update` must reach both.
-        caller.authorize_record_writes(
+        caller.authorize_record_access(
             &zone,
             &[
-                RecordWrite {
+                RecordAccess {
                     action: Action::RecordUpdate,
                     relative_name: existing_record.name.clone(),
                     record_type: Some(&existing_record.record_type),
                 },
-                RecordWrite {
+                RecordAccess {
                     action: Action::RecordUpdate,
                     relative_name: resolved.owner_name.clone(),
                     record_type: Some(&resolved.record_type),

@@ -8,9 +8,10 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{DynamicUpdateError, parse_update_owner};
+use super::{NsupdateError, parse_update_owner};
 use crate::{
     Transaction,
+    authorization::{Caller, RecordAccess},
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -81,7 +82,8 @@ pub(crate) async fn apply_op_tx(
     zone: &Zone,
     op: &UpdateOperation,
     new_serial: Serial,
-) -> Result<bool, DynamicUpdateError> {
+    caller: &Caller,
+) -> Result<bool, NsupdateError> {
     match op {
         UpdateOperation::AddRecord {
             name,
@@ -98,11 +100,7 @@ pub(crate) async fn apply_op_tx(
                 value.to_string()
             } else {
                 record_type.encoded_value(value, *priority).map_err(|e| {
-                    DynamicUpdateError::Refused(format!(
-                        "invalid {} rdata: {}",
-                        record_type.as_str(),
-                        e
-                    ))
+                    NsupdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
                 })?
             };
 
@@ -135,6 +133,16 @@ pub(crate) async fn apply_op_tx(
                 .collect();
             let mut changed = false;
             if !replaced.is_empty() {
+                // Replacing deletes what stood there; the create grant alone
+                // does not reach it.
+                caller.authorize_record_access(
+                    zone,
+                    &[RecordAccess {
+                        action: Action::RecordDelete,
+                        relative_name: owner.clone(),
+                        record_type: Some(record_type),
+                    }],
+                )?;
                 record::delete_with_changes_tx(tx, zone.id, new_serial, &replaced).await?;
                 changed = true;
             }
@@ -152,6 +160,15 @@ pub(crate) async fn apply_op_tx(
                 .cloned()
                 .collect();
             if !retimed.is_empty() {
+                // Retiming rewrites the set that stood there: an update.
+                caller.authorize_record_access(
+                    zone,
+                    &[RecordAccess {
+                        action: Action::RecordUpdate,
+                        relative_name: owner.clone(),
+                        record_type: Some(record_type),
+                    }],
+                )?;
                 record::delete_with_changes_tx(tx, zone.id, new_serial, &retimed).await?;
                 let renewed: Vec<Record> = retimed
                     .into_iter()
@@ -227,7 +244,7 @@ async fn delete_matching_tx(
     value: Option<&str>,
     priority: Option<i32>,
     new_serial: Serial,
-) -> Result<bool, DynamicUpdateError> {
+) -> Result<bool, NsupdateError> {
     let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =

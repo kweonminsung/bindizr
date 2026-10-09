@@ -55,7 +55,7 @@ pub(crate) enum ServeDnsError {
     #[error("failed to refuse a DNS TCP query: {0}")]
     Refusal(#[source] XfrError),
     #[error(transparent)]
-    Nsupdate(#[from] server::nsupdate::NsupdateError),
+    Nsupdate(#[from] server::nsupdate::HandleNsupdateError),
 }
 
 /// Accept DNS TCP connections until shutdown, serving each after the

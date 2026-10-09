@@ -55,13 +55,8 @@ pub(crate) async fn handle_ixfr(
     // refuses is answered NOTAUTH like a missing zone.
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
-            zone::authorize_transfer_delta_by_name(
-                cx,
-                &zone_name,
-                identity.key.as_ref(),
-                client_serial,
-            )
-            .await?
+            zone::authorize_transfer_delta_by_name(cx, &identity.caller, &zone_name, client_serial)
+                .await?
         }
         Err(_) => TransferAccess::NotAuth,
     };

@@ -32,7 +32,7 @@ pub(crate) async fn handle_axfr(
     );
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
+        let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => return Err(XfrError::NotAuth(zone_name_str.to_string())),
             TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
@@ -51,12 +51,8 @@ pub(crate) async fn handle_axfr(
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
-            transfer_cache::authorize_transfer_content_by_name(
-                dns_cx,
-                &zone_name,
-                identity.key.as_ref(),
-            )
-            .await?
+            transfer_cache::authorize_transfer_content_by_name(dns_cx, &identity.caller, &zone_name)
+                .await?
         }
         Err(_) => TransferAccess::NotAuth,
     };

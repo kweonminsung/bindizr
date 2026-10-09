@@ -282,9 +282,13 @@ each rule says which spelling is this project's.
   their own name (`zone::lookup_by_name`). The daemon socket
   authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
   user or root); the socket's file mode is a courtesy, not the boundary.
-  DNS-plane operations
-  (transfers, NOTIFY, nsupdate) take no caller — the ACL and the TSIG key's
-  role authorize there.
+  NOTIFY takes no caller. A transfer or an nsupdate authenticates its TSIG
+  key into a `Caller` (`Caller::authenticate_tsig_key`), or takes
+  `Caller::unsigned_dns()` where the address ACL or
+  `dns.nsupdate.tsig_required = false` admits an unsigned request, so the
+  DNS plane passes the gates the API's writes do (`zone:transfer` through
+  `authorize_zone_action`, the record actions through
+  `authorize_record_access`).
   So do operations with nothing to gate: pure request normalization
   (`external_dns::adjust_records`), a token reading itself
   (`token::get_self`, keyed by the authenticated `ApiToken`), and
@@ -331,9 +335,10 @@ each rule says which spelling is this project's.
   `ApiToken` and a `TsigKey` each name exactly one role (`role_id NOT NULL`)
   and carry no rights of their own, so one role serves several tokens and
   keys and revoking a right is one grant edit. There is no third credential
-  type, and no credential is global: the socket (`Caller::socket()`) and an
-  API without authentication (`Caller::unauthenticated_api()`) are the only
-  global callers. A key that only signs outbound NOTIFY still names a role,
+  type, and no credential is global: the socket (`Caller::socket()`), an
+  API without authentication (`Caller::unauthenticated_api()`), and an
+  unsigned DNS request the ACL or the configuration admits
+  (`Caller::unsigned_dns()`) are the only global callers. A key that only signs outbound NOTIFY still names a role,
   an empty one when it needs nothing. Change attribution stays the
   credential (`ChangeActor::Token`/`TsigKey`), never the role.
 - **A grant is a zone scope, a set of actions, and record constraints.**
@@ -408,7 +413,8 @@ each rule says which spelling is this project's.
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
   `record:read`, an add `record:create`, a delete `record:delete`, against the
-  signing key's role. A TSIG-signed transfer needs `zone:transfer` (the
+  signing key's role; an add that replaces a CNAME or DNAME needs
+  `record:delete` too, one that moves the record set's TTL `record:update`. A TSIG-signed transfer needs `zone:transfer` (the
   catalog zone an `All` grant); an unsigned one is the ACL's alone.
 
 ### Transactions and locking
@@ -1090,7 +1096,7 @@ the backends (`db/mysql/`, `postgres/`, `sqlite/`), the verbs of an entity
 (`zone/create.rs`, `get.rs`), the listeners (`dns/tcp.rs`, `udp.rs`), the
 subcommand groups of a CLI command (`zone/version.rs`), the route groups of
 a resource, the sections of a protocol message
-(`dynamic_update/prerequisite.rs`, `operation.rs`). The split takes every
+(`nsupdate/prerequisite.rs`, `operation.rs`). The split takes every
 peer, not one pulled out of the rest, and never cuts a function, a type's
 `impl`s, or a `match`. Length alone splits nothing: a long file whose body
 is one type with its impls (`ServiceError`, `Metrics`), one sequenced flow

@@ -24,17 +24,6 @@ pub(crate) struct ChangeAttribution {
 }
 
 impl ChangeAttribution {
-    /// An RFC 2136 update, named by the TSIG key that signed it; unsigned
-    /// updates reach here only through an address ACL, which names nobody.
-    pub(crate) fn nsupdate(key_name: Option<&str>) -> Self {
-        ChangeAttribution {
-            source: ChangeSource::Nsupdate,
-            actor: key_name.map(|name| ChangeActor::TsigKey {
-                name: name.to_string(),
-            }),
-        }
-    }
-
     /// The scheduler, acting on nobody's request.
     pub(crate) fn system() -> Self {
         ChangeAttribution {

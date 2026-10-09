@@ -12,7 +12,7 @@ use bindizr_core::{
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
         record::Rdata,
     },
-    model::role_grant::{Action, RoleGrants},
+    model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
 pub use operation::UpdateOperation;
@@ -21,18 +21,19 @@ use prerequisite::evaluate_prerequisites_tx;
 use thiserror::Error;
 
 use crate::{
-    Context, Transaction, dnssec,
+    Context,
+    authorization::{Caller, RecordAccess},
+    dnssec,
     error::ServiceError,
-    model::{record::RecordType, tsig_key::TsigKey, zone::Zone},
+    model::{record::RecordType, zone::Zone},
     serial::generate_serial,
-    transaction,
-    zone::{self, version::ChangeAttribution},
+    transaction, zone,
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
 /// response code.
 #[derive(Debug, Error)]
-pub enum DynamicUpdateError {
+pub enum NsupdateError {
     #[error("{0}")]
     Refused(String),
     #[error("{0}")]
@@ -57,22 +58,22 @@ pub enum DynamicUpdateError {
 
 /// A service error the requester could fix is REFUSED; a backend fault is
 /// SERVFAIL.
-impl From<ServiceError> for DynamicUpdateError {
+impl From<ServiceError> for NsupdateError {
     /// Map a service failure to the corresponding dynamic update error.
     fn from(err: ServiceError) -> Self {
         if !err.code().is_internal() {
-            DynamicUpdateError::Refused(err.to_string())
+            NsupdateError::Refused(err.to_string())
         } else {
-            DynamicUpdateError::Internal(err)
+            NsupdateError::Internal(err)
         }
     }
 }
 
 /// A database failure is a backend fault, classified through the service error.
-impl From<bindizr_db::error::DatabaseError> for DynamicUpdateError {
+impl From<bindizr_db::error::DatabaseError> for NsupdateError {
     /// Map a database failure to SERVFAIL.
     fn from(err: bindizr_db::error::DatabaseError) -> Self {
-        DynamicUpdateError::from(ServiceError::from(err))
+        NsupdateError::from(ServiceError::from(err))
     }
 }
 
@@ -114,41 +115,60 @@ pub enum Prerequisite {
     SoaInUse { name: String, rdata: Rdata },
 }
 
-/// A decoded UPDATE message: the zone it targets, the key that signed it, and
-/// the sections to evaluate and apply.
+/// A decoded UPDATE message: the zone it targets and the sections to
+/// evaluate and apply.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DynamicUpdate {
+pub struct Update {
     pub zone_name: ZoneName,
-    /// The verified signing key, or `None` for a request accepted unsigned.
-    pub key: Option<TsigKey>,
     pub prerequisites: Vec<Prerequisite>,
     pub updates: Vec<UpdateOperation>,
 }
 
-/// Apply an update as one transaction, reporting whether it changed
-/// anything. On a change the zone serial advances once and a NOTIFY is
-/// sent after commit.
-pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
+/// Apply an update as one transaction for `caller`, reporting whether it
+/// changed anything; on a change the zone serial advances once and a NOTIFY
+/// follows the commit.
+pub async fn apply(cx: &Context, caller: &Caller, update: Update) -> Result<bool, NsupdateError> {
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
-    let apply_result: Result<(bool, Zone, Serial), DynamicUpdateError> = async {
+    let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {
         let zone = zone::find_served_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| {
-                DynamicUpdateError::NotAuth(format!(
-                    "zone '{}' is not served here",
-                    update.zone_name
-                ))
+                NsupdateError::NotAuth(format!("zone '{}' is not served here", update.zone_name))
             })?;
 
-        authorize_key_tx(
-            &mut tx,
-            &zone,
-            update.key.as_ref(),
-            &update.prerequisites,
-            &update.updates,
-        )
-        .await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
+        // A prerequisite reads what it names, so its grant is checked with
+        // the updates', ahead of where RFC 2136, Section 3.3 puts permissions.
+        let mut accesses = Vec::new();
+        for prerequisite in &update.prerequisites {
+            let (name, record_type) = match prerequisite {
+                Prerequisite::NameInUse { name }
+                | Prerequisite::NameNotInUse { name }
+                | Prerequisite::UnstoredTypeInUse { name, .. }
+                | Prerequisite::UnstoredTypeNotInUse { name, .. }
+                | Prerequisite::SoaInUse { name, .. } => (name, None),
+                Prerequisite::RecordSetInUse { name, record_type }
+                | Prerequisite::RecordSetNotInUse { name, record_type }
+                | Prerequisite::RecordInUse {
+                    name, record_type, ..
+                } => (name, Some(record_type)),
+            };
+            accesses.push(RecordAccess {
+                action: Action::RecordRead,
+                relative_name: parse_update_owner(name, &zone.name)?,
+                record_type,
+            });
+        }
+        for op in &update.updates {
+            accesses.push(RecordAccess {
+                action: op.action(),
+                relative_name: parse_update_owner(op.name(), &zone.name)?,
+                record_type: op.record_type(),
+            });
+        }
+        caller.authorize_record_access(&zone, &accesses)?;
         evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
 
         // An exhausted serial cannot advance, so refuse rather than commit
@@ -157,21 +177,15 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
         let mut changed = false;
 
         for op in &update.updates {
-            changed |= apply_op_tx(&mut tx, &zone, op, new_serial).await?;
+            changed |= apply_op_tx(&mut tx, &zone, op, new_serial, caller).await?;
         }
 
         if changed {
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Bump the serial and version it so secondaries detect the change via
             // SOA/NOTIFY and can serve it as an IXFR delta.
-            zone::advance_serial_tx(
-                &mut tx,
-                cx,
-                &zone,
-                new_serial,
-                &ChangeAttribution::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
-            )
-            .await?;
+            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+                .await?;
         }
 
         Ok((changed, zone, new_serial))
@@ -196,108 +210,22 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
     Ok(changed)
 }
 
-/// Authorize every prerequisite and update against the grants of the TSIG
-/// key's role; accepted unsigned requests need none.
-async fn authorize_key_tx(
-    tx: &mut Transaction<'_>,
-    zone: &Zone,
-    key: Option<&TsigKey>,
-    prerequisites: &[Prerequisite],
-    updates: &[UpdateOperation],
-) -> Result<(), DynamicUpdateError> {
-    let Some(key) = key else {
-        return Ok(());
-    };
-    // The key that signed may have been deleted since; locked, a deletion
-    // waits for this transaction.
-    let Some(key) = bindizr_db::tsig_key::get_tx(tx, key.id, LockLevel::Shared).await? else {
-        return Err(DynamicUpdateError::Refused(format!(
-            "TSIG key '{}' no longer exists",
-            key.name
-        )));
-    };
-
-    // Share-lock the grants so a concurrent revocation waits for this
-    // transaction instead of racing it.
-    let grants = RoleGrants::from(
-        bindizr_db::role_grant::list_by_role_id_covering_zone_tx(
-            tx,
-            key.role_id,
-            zone.id,
-            LockLevel::Shared,
-        )
-        .await?,
-    );
-    let permits = |action: Action, owner: &OwnerName, record_type: Option<&RecordType>| {
-        grants.covers_record(action, zone.id, owner, record_type)
-    };
-
-    if grants.is_empty() {
-        return Err(DynamicUpdateError::Refused(format!(
-            "TSIG key '{}' is not authorized for zone '{}'",
-            key.name, zone.name
-        )));
-    }
-
-    // A prerequisite reads what it names, so the grant is checked before it
-    // is evaluated, ahead of where RFC 2136, Section 3.3 puts permissions.
-    for prerequisite in prerequisites {
-        let (name, record_type) = match prerequisite {
-            Prerequisite::NameInUse { name }
-            | Prerequisite::NameNotInUse { name }
-            | Prerequisite::UnstoredTypeInUse { name, .. }
-            | Prerequisite::UnstoredTypeNotInUse { name, .. }
-            | Prerequisite::SoaInUse { name, .. } => (name, None),
-            Prerequisite::RecordSetInUse { name, record_type }
-            | Prerequisite::RecordSetNotInUse { name, record_type }
-            | Prerequisite::RecordInUse {
-                name, record_type, ..
-            } => (name, Some(record_type)),
-        };
-        let owner = parse_update_owner(name, &zone.name)?;
-        if !permits(Action::RecordRead, &owner, record_type) {
-            return Err(DynamicUpdateError::Refused(format!(
-                "TSIG key '{}' is not authorized to read '{}' ({}) in zone '{}'",
-                key.name,
-                owner,
-                record_type.map_or("ANY", RecordType::as_str),
-                zone.name
-            )));
-        }
-    }
-
-    for op in updates {
-        let owner = parse_update_owner(op.name(), &zone.name)?;
-        if !permits(op.action(), &owner, op.record_type()) {
-            return Err(DynamicUpdateError::Refused(format!(
-                "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
-                key.name,
-                owner,
-                op.record_type().map_or("ANY", RecordType::as_str),
-                zone.name
-            )));
-        }
-    }
-
-    Ok(())
-}
-
 /// The owner of an update record. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
-fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
+fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, NsupdateError> {
     if name.trim_end_matches('.').is_empty() {
-        return Err(DynamicUpdateError::NotZone(
+        return Err(NsupdateError::NotZone(
             "root owner is not supported".to_string(),
         ));
     }
 
     OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|e| match e {
-        ParseNameError::OutsideZone => DynamicUpdateError::NotZone(format!(
+        ParseNameError::OutsideZone => NsupdateError::NotZone(format!(
             "owner '{}' is outside zone '{}'",
             to_fqdn(name),
             zone_name.to_fqdn()
         )),
-        other => DynamicUpdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
+        other => NsupdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
     })
 }
 
@@ -345,7 +273,7 @@ mod tests {
             r"evil\.example.com.",
         ] {
             let err = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
-            assert!(matches!(err, DynamicUpdateError::NotZone(_)), "{owner:?}");
+            assert!(matches!(err, NsupdateError::NotZone(_)), "{owner:?}");
         }
     }
 }

@@ -15,7 +15,7 @@ use super::validation::{
 };
 use crate::{
     Context, Transaction,
-    authorization::{Caller, RecordWrite},
+    authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
     model::{
@@ -218,19 +218,19 @@ pub async fn create_bulk(
         // Authorize before loading existing record rows so an ungranted caller
         // gets 404 instead of constraint details; dry runs included.
         // A name that will not parse lists no write; validation reports it.
-        let writes: Vec<RecordWrite<'_>> = prepared
+        let writes: Vec<RecordAccess<'_>> = prepared
             .iter()
             .filter_map(|p| {
                 normalize_record_owner_name(&p.raw_name, &zone.name)
                     .ok()
-                    .map(|name| RecordWrite {
+                    .map(|name| RecordAccess {
                         action: Action::RecordCreate,
                         relative_name: name,
                         record_type: Some(&p.record_type),
                     })
             })
             .collect();
-        caller.authorize_record_writes(&zone, &writes)?;
+        caller.authorize_record_access(&zone, &writes)?;
 
         // Only records whose owner name appears in the batch can conflict, so
         // load just those instead of the whole zone.
