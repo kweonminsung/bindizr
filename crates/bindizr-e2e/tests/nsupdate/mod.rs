@@ -13,7 +13,8 @@ use crate::common::{
     dns::{
         nsupdate::{
             KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
-            send_signed_update_with_edns_version, send_signed_update_with_two_zones, send_update,
+            send_signed_update_tcp, send_signed_update_with_edns_version,
+            send_signed_update_with_two_zones, send_update,
         },
         parse_name,
     },
@@ -369,6 +370,196 @@ async fn nsupdate_refuses_an_owner_outside_the_zone() {
     .expect("out-of-zone update");
 
     assert_eq!(rcode, Rcode::NOTZONE);
+}
+
+/// Verify that every delete passes the zone prescan before it can be ignored
+/// (RFC 2136, Section 3.4.1), and a rejected batch changes neither data nor serial.
+#[tokio::test]
+#[serial]
+async fn nsupdate_prescans_ignored_deletes() {
+    let app = unsigned_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-prescan.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let before = app.list_records(&zone_name).await;
+    let serial = app.read_zone_serial(&zone_name).await;
+
+    // SOA has two root names and five integers; HINFO has two empty strings.
+    // TYPE65280 is private-use data, distinct from a query or meta type.
+    for (rtype, rdata) in [
+        (Rtype::SOA, vec![0; 22]),
+        (Rtype::HINFO, vec![0; 2]),
+        (Rtype::from_int(65280), vec![1]),
+    ] {
+        for owner in [
+            format!("host.{zone_name}."),
+            "outside.example.net.".to_string(),
+            format!(r"outside\.{zone_name}."),
+            ".".to_string(),
+        ] {
+            let in_zone = owner == format!("host.{zone_name}.");
+            for delete in [
+                UpdateRecord::DeleteRecordSet {
+                    name: owner.clone(),
+                    rtype,
+                },
+                UpdateRecord::DeleteRecord {
+                    name: owner.clone(),
+                    rtype,
+                    rdata: rdata.clone(),
+                },
+            ] {
+                let mut updates = vec![delete];
+                if !in_zone {
+                    // Put a real change before the bad delete: prescan must
+                    // reject the whole message before any operation is applied.
+                    updates.insert(
+                        0,
+                        UpdateRecord::AddA {
+                            name: format!("must-not-exist.{zone_name}."),
+                            ttl: 300,
+                            addr: "192.0.2.123".to_string(),
+                        },
+                    );
+                }
+                let rcode =
+                    send_update(app.dns_port(), &zone_name, &[], &updates).expect("delete update");
+                assert_eq!(
+                    rcode,
+                    if in_zone {
+                        Rcode::NOERROR
+                    } else {
+                        Rcode::NOTZONE
+                    },
+                    "{updates:?}"
+                );
+                assert_eq!(app.list_records(&zone_name).await, before, "{updates:?}");
+                assert_eq!(
+                    app.read_zone_serial(&zone_name).await,
+                    serial,
+                    "{updates:?}"
+                );
+            }
+        }
+    }
+}
+
+/// Verify that a query or meta type is FORMERR even in an otherwise ignored
+/// delete, with no partial writes (RFC 2136, Section 3.4.1.2).
+#[tokio::test]
+#[serial]
+async fn nsupdate_prescans_delete_types() {
+    let app = unsigned_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-meta.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let before = app.list_records(&zone_name).await;
+    let serial = app.read_zone_serial(&zone_name).await;
+    for rtype in [
+        Rtype::AXFR,
+        Rtype::IXFR,
+        Rtype::MAILA,
+        Rtype::MAILB,
+        Rtype::OPT,
+        Rtype::TKEY,
+        Rtype::TSIG,
+        Rtype::from_int(128),
+        Rtype::from_int(248),
+        Rtype::from_int(0),
+        Rtype::from_int(65535),
+    ] {
+        for delete in [
+            UpdateRecord::DeleteRecordSet {
+                name: format!("host.{zone_name}."),
+                rtype,
+            },
+            UpdateRecord::DeleteRecord {
+                name: format!("host.{zone_name}."),
+                rtype,
+                rdata: vec![1],
+            },
+        ] {
+            let updates = [
+                UpdateRecord::AddA {
+                    name: format!("must-not-exist.{zone_name}."),
+                    ttl: 300,
+                    addr: "192.0.2.124".to_string(),
+                },
+                delete,
+            ];
+            let rcode =
+                send_update(app.dns_port(), &zone_name, &[], &updates).expect("meta-type delete");
+            assert_eq!(rcode, Rcode::FORMERR, "{updates:?}");
+            assert_eq!(app.list_records(&zone_name).await, before, "{updates:?}");
+            assert_eq!(
+                app.read_zone_serial(&zone_name).await,
+                serial,
+                "{updates:?}"
+            );
+        }
+    }
+}
+
+/// Verify that TCP prescan errors retain TSIG authentication, and the zone
+/// lookup precedes the prescan (RFC 2136, Sections 3.1 and 3.4.1).
+#[tokio::test]
+#[serial]
+async fn nsupdate_prescan_errors_are_signed_over_tcp() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "prescan-key", KeyRole::Admin).await;
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let missing = app.zone_name("missing-prescan.example");
+    for (target, owner, rtype, expected) in [
+        (
+            zone_name,
+            "outside.example.net.".to_string(),
+            Rtype::SOA,
+            Rcode::NOTZONE,
+        ),
+        (
+            zone_name,
+            format!("host.{zone_name}."),
+            Rtype::AXFR,
+            Rcode::FORMERR,
+        ),
+        // The missing authority is answered before the malformed update.
+        (
+            missing.as_str(),
+            "outside.example.net.".to_string(),
+            Rtype::AXFR,
+            Rcode::NOTAUTH,
+        ),
+    ] {
+        let updates = [
+            UpdateRecord::AddA {
+                name: format!("must-not-exist.{target}."),
+                ttl: 300,
+                addr: "192.0.2.125".to_string(),
+            },
+            UpdateRecord::DeleteRecordSet { name: owner, rtype },
+        ];
+        let rcode = send_signed_update_tcp(app.dns_port(), target, &[], &updates, &key)
+            .expect("signed response");
+        assert_eq!(rcode, expected, "{updates:?}");
+        assert_eq!(app.list_records(zone_name).await, before);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+    // A correctly formed SOA delete remains a successful no-op, under TSIG too.
+    let rcode = send_signed_update_tcp(
+        app.dns_port(),
+        zone_name,
+        &[],
+        &[UpdateRecord::DeleteRecordSet {
+            name: format!("{zone_name}."),
+            rtype: Rtype::SOA,
+        }],
+        &key,
+    )
+    .expect("signed no-op");
+    assert_eq!(rcode, Rcode::NOERROR);
+    assert_eq!(app.list_records(zone_name).await, before);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
 }
 
 /// Verify that nsupdate advances the zone serial once per message.

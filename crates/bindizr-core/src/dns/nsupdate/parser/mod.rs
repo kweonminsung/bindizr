@@ -1,3 +1,5 @@
+mod record;
+
 use domain::{
     base::{
         Message,
@@ -5,18 +7,19 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Soa, Srv, Txt, tsig::Tsig},
+    rdata::tsig::Tsig,
 };
+pub use record::{UpdateRecord, UpdateShapeError};
 use thiserror::Error;
 
 use crate::{
     dns::{
         message::{Edns, query::UDP_PAYLOAD_SIZE_WITHOUT_EDNS},
         name::labels_to_presentation,
-        record::{NaptrRecordValue, ParseRecordValueError, Rdata, SoaRecordValue, TxtRecordValue},
+        record::ParseRecordValueError,
         tsig::is_mac_size_in_bounds,
     },
-    model::record::{ParseRecordTypeError, RecordType},
+    model::record::ParseRecordTypeError,
 };
 
 /// Fixed length of a DNS message header, in bytes.
@@ -30,19 +33,6 @@ pub struct UpdateRequest {
     pub updates: Vec<UpdateRecord>,
     pub tsig: Option<TsigRecord>,
     pub edns: Edns,
-}
-
-/// One record from the prerequisite or update section. `rdata_start` locates the
-/// rdata in the original message so compressed names inside it can be decoded
-/// lazily by the update flow.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateRecord {
-    pub name: String,
-    pub record_type: Rtype,
-    pub class: Class,
-    pub ttl: u32,
-    pub rdata: Vec<u8>,
-    pub rdata_start: usize,
 }
 
 /// TSIG key name for lookup and fudge for the response; `domain::tsig` verifies the full record.
@@ -306,205 +296,6 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateE
     }
 
     Ok(format!("{}.", labels_to_presentation(&labels)))
-}
-
-/// A deletion whose shape RFC 2136, Section 2.5 does not allow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum DeleteShapeError {
-    #[error("delete update TTL must be 0")]
-    NonzeroTtl,
-    #[error("ANY-class delete must have empty rdata")]
-    AnyClassRdata,
-    #[error("NONE-class delete must specify record type")]
-    NoneClassTypeAny,
-    #[error("NONE-class delete must specify rdata")]
-    NoneClassNoRdata,
-}
-
-impl UpdateRecord {
-    /// Check the TTL, type, and RDATA a deletion of this record's class must
-    /// carry: an ANY-class delete names a record set (RFC 2136, Section
-    /// 2.5.2), a NONE-class delete one record (Section 2.5.4).
-    pub fn validate_delete_shape(&self) -> Result<(), DeleteShapeError> {
-        if self.ttl != 0 {
-            return Err(DeleteShapeError::NonzeroTtl);
-        }
-        match self.class {
-            Class::ANY if !self.rdata.is_empty() => Err(DeleteShapeError::AnyClassRdata),
-            Class::NONE if self.record_type == Rtype::ANY => {
-                Err(DeleteShapeError::NoneClassTypeAny)
-            }
-            Class::NONE if self.rdata.is_empty() => Err(DeleteShapeError::NoneClassNoRdata),
-            _ => Ok(()),
-        }
-    }
-
-    /// The SOA rdata of a prerequisite, re-encoded without compression to
-    /// compare with the zone's own.
-    pub fn to_soa_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
-        let soa = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
-        let mname = to_presentation_name(soa.mname())?;
-        let rname = to_presentation_name(soa.rname())?;
-        SoaRecordValue {
-            mname: &mname,
-            rname: &rname,
-            serial: soa.serial().into_int(),
-            refresh: soa.refresh().as_secs(),
-            retry: soa.retry().as_secs(),
-            expire: soa.expire().as_secs(),
-            minimum: soa.minimum().as_secs(),
-        }
-        .to_rdata()
-        .map_err(|_| ParseUpdateError::Rdata {
-            record_type: "SOA".to_string(),
-        })
-    }
-
-    /// Decode an update record's wire data into its typed value.
-    fn parse_rdata<'a, T>(
-        &self,
-        message: &'a [u8],
-        what: &str,
-        parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
-    ) -> Result<T, ParseUpdateError> {
-        let refused = || ParseUpdateError::Rdata {
-            record_type: what.to_string(),
-        };
-
-        // Compression pointers address the whole message, not the RDATA slice.
-        let mut parser = Parser::from_ref(message);
-        parser.advance(self.rdata_start).map_err(|_| refused())?;
-        let value = parse(&mut parser).ok_or_else(refused)?;
-
-        // A type parser must consume exactly RDLENGTH, without borrowing the next record.
-        if parser.pos() != self.rdata_start + self.rdata.len() {
-            return Err(refused());
-        }
-
-        Ok(value)
-    }
-
-    /// Decode this record into stored columns. `message` must be the original
-    /// UPDATE message: compressed RDATA names refer to offsets within it.
-    pub fn to_record_value(
-        &self,
-        message: &[u8],
-    ) -> Result<(RecordType, String, Option<i32>), ParseUpdateError> {
-        match RecordType::try_from(self.record_type)? {
-            RecordType::A => {
-                let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
-                Ok((RecordType::A, data.addr().to_string(), None))
-            }
-            RecordType::Aaaa => {
-                let data = self.parse_rdata(message, "AAAA", |parser| Aaaa::parse(parser).ok())?;
-                Ok((RecordType::Aaaa, data.addr().to_string(), None))
-            }
-            record_type @ (RecordType::Cname
-            | RecordType::Dname
-            | RecordType::Ns
-            | RecordType::Ptr) => {
-                let name = self.parse_rdata(message, record_type.as_str(), |parser| {
-                    ParsedName::parse(parser).ok()
-                })?;
-                let value =
-                    to_presentation_name(&name).map_err(|e| ParseUpdateError::RdataName {
-                        record_type: record_type.as_str().to_string(),
-                        source: Box::new(e),
-                    })?;
-                Ok((record_type, value, None))
-            }
-            RecordType::Txt => {
-                let data = Txt::from_octets(self.rdata.as_slice()).map_err(|e| {
-                    ParseUpdateError::TxtRdata {
-                        reason: e.to_string(),
-                    }
-                })?;
-                // TXT values must be valid UTF-8 (a project-wide rule), so reject
-                // non-UTF-8 character-strings even though the wire allows them.
-                for charstr in data.iter_charstrs() {
-                    if std::str::from_utf8(charstr.as_slice()).is_err() {
-                        return Err(ParseUpdateError::Rdata {
-                            record_type: "TXT".to_string(),
-                        });
-                    }
-                }
-                let value = TxtRecordValue::from_rdata(&self.rdata)
-                    .map_err(ParseUpdateError::TxtValue)?
-                    .to_presentation();
-                Ok((RecordType::Txt, value, None))
-            }
-            RecordType::Caa => {
-                let data = self.parse_rdata(message, "CAA", |parser| {
-                    domain::rdata::Caa::parse(parser).ok()
-                })?;
-                Ok((RecordType::Caa, data.to_string(), None))
-            }
-            RecordType::Ds => {
-                let data = self.parse_rdata(message, "DS", |parser| {
-                    domain::rdata::Ds::parse(parser).ok()
-                })?;
-                Ok((RecordType::Ds, data.to_string(), None))
-            }
-            RecordType::Naptr => {
-                let data = self.parse_rdata(message, "NAPTR", |parser| {
-                    domain::rdata::Naptr::parse(parser).ok()
-                })?;
-                let replacement = to_presentation_name(data.replacement()).map_err(|e| {
-                    ParseUpdateError::RdataName {
-                        record_type: "NAPTR".to_string(),
-                        source: Box::new(e),
-                    }
-                })?;
-                let value = NaptrRecordValue::from_wire(
-                    data.order(),
-                    data.preference(),
-                    data.flags().as_slice(),
-                    data.services().as_slice(),
-                    data.regexp().as_slice(),
-                    &replacement,
-                )?
-                .canonical();
-                Ok((RecordType::Naptr, value, None))
-            }
-            RecordType::Sshfp => {
-                let data = self.parse_rdata(message, "SSHFP", |parser| {
-                    domain::rdata::Sshfp::parse(parser).ok()
-                })?;
-                Ok((RecordType::Sshfp, data.to_string(), None))
-            }
-            RecordType::Tlsa => {
-                let data = self.parse_rdata(message, "TLSA", |parser| {
-                    domain::rdata::Tlsa::parse(parser).ok()
-                })?;
-                Ok((RecordType::Tlsa, data.to_string(), None))
-            }
-            RecordType::Mx => {
-                let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = to_presentation_name(data.exchange()).map_err(|e| {
-                    ParseUpdateError::RdataName {
-                        record_type: "MX".to_string(),
-                        source: Box::new(e),
-                    }
-                })?;
-                Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
-            }
-            RecordType::Srv => {
-                let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = to_presentation_name(data.target()).map_err(|e| {
-                    ParseUpdateError::RdataName {
-                        record_type: "SRV".to_string(),
-                        source: Box::new(e),
-                    }
-                })?;
-                // Priority lives in its own column, so the value holds the rest.
-                Ok((
-                    RecordType::Srv,
-                    format!("{} {} {}", data.weight(), data.port(), target),
-                    Some(i32::from(data.priority())),
-                ))
-            }
-        }
-    }
 }
 
 #[cfg(test)]

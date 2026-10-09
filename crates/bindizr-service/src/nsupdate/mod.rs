@@ -1,23 +1,24 @@
 //! nsupdate (RFC 2136), from the point the wire message is decoded.
 //! Prerequisite evaluation, per-key authorization, and the transactional apply
-//! live here; the DNS front end owns the message format, TSIG, and rdata.
+//! live here; core reads the wire format, and the DNS front end owns TSIG.
+//! The service prescans the complete sections before choosing operations.
 
+mod decode;
 mod operation;
 mod prerequisite;
 
 use bindizr_core::{
     dns::{
         Serial,
-        message::Rtype,
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
-        record::Rdata,
+        nsupdate::parser::{ParseUpdateError, UpdateRecord, UpdateShapeError},
     },
     model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
-pub use operation::UpdateOperation;
-use operation::apply_op_tx;
-use prerequisite::evaluate_prerequisites_tx;
+use decode::{decode_prerequisites, decode_updates};
+use operation::{UpdateOperation, apply_op_tx};
+use prerequisite::{Prerequisite, evaluate_prerequisites_tx};
 use thiserror::Error;
 
 use crate::{
@@ -25,7 +26,7 @@ use crate::{
     authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
-    model::{record::RecordType, zone::Zone},
+    model::zone::Zone,
     serial::generate_serial,
     transaction, zone,
 };
@@ -34,6 +35,9 @@ use crate::{
 /// response code.
 #[derive(Debug, Error)]
 pub enum NsupdateError {
+    /// A section violates the wire shapes of RFC 2136, Sections 3.2.1 and 3.4.1.
+    #[error("{0}")]
+    FormErr(String),
     #[error("{0}")]
     Refused(String),
     #[error("{0}")]
@@ -54,6 +58,23 @@ pub enum NsupdateError {
     /// A fault of the server's own, kept beneath: SERVFAIL.
     #[error("{0}")]
     Internal(#[source] ServiceError),
+}
+
+/// An update record of the wrong shape is a FORMERR (RFC 2136, Section 3.4.1).
+impl From<UpdateShapeError> for NsupdateError {
+    /// Report the shape the record lacked.
+    fn from(err: UpdateShapeError) -> Self {
+        NsupdateError::FormErr(err.to_string())
+    }
+}
+
+/// Rdata that does not decode as its type, or a type no update may carry,
+/// is a FORMERR (RFC 2136, Section 3.4.1).
+impl From<ParseUpdateError> for NsupdateError {
+    /// Report what did not decode.
+    fn from(err: ParseUpdateError) -> Self {
+        NsupdateError::FormErr(err.to_string())
+    }
 }
 
 /// A service error the requester could fix is REFUSED; a backend fault is
@@ -77,57 +98,25 @@ impl From<bindizr_db::error::DatabaseError> for NsupdateError {
     }
 }
 
-/// A condition the zone must satisfy before any update is applied
-/// (RFC 2136, Section 2.4). Owner names are absolute, as they arrive on the wire.
+/// The complete wire sections of an UPDATE, retained until the service has
+/// checked the zone and prescanned every record. RDATA compression addresses
+/// `message`, the original packet.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Prerequisite {
-    /// CLASS ANY, TYPE ANY: the owner name must exist.
-    NameInUse { name: String },
-    /// CLASS NONE, TYPE ANY: the owner name must not exist.
-    NameNotInUse { name: String },
-    /// CLASS ANY: the record set must exist.
-    RecordSetInUse {
-        name: String,
-        record_type: RecordType,
-    },
-    /// CLASS NONE: the record set must not exist.
-    RecordSetNotInUse {
-        name: String,
-        record_type: RecordType,
-    },
-    /// CLASS IN: with the others of its name and type, the record set must equal
-    /// the zone's (RFC 2136, Section 3.2.3).
-    RecordInUse {
-        name: String,
-        record_type: RecordType,
-        /// TXT arrives row-encoded; every other type in presentation form.
-        value: String,
-        priority: Option<i32>,
-    },
-    /// A record set of a type bindizr never stores must exist: it cannot,
-    /// the zone's own SOA at the apex excepted.
-    UnstoredTypeInUse { name: String, record_type: Rtype },
-    /// A record set of a type bindizr never stores must not exist: it never
-    /// does, the zone's own SOA at the apex excepted.
-    UnstoredTypeNotInUse { name: String, record_type: Rtype },
-    /// CLASS IN, TYPE SOA: the zone's SOA must carry exactly this rdata
-    /// (RFC 2136, Section 3.2.3).
-    SoaInUse { name: String, rdata: Rdata },
-}
-
-/// A decoded UPDATE message: the zone it targets and the sections to
-/// evaluate and apply.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Update {
+pub struct Update<'a> {
     pub zone_name: ZoneName,
-    pub prerequisites: Vec<Prerequisite>,
-    pub updates: Vec<UpdateOperation>,
+    pub prerequisites: &'a [UpdateRecord],
+    pub updates: &'a [UpdateRecord],
+    pub message: &'a [u8],
 }
 
 /// Apply an update as one transaction for `caller`, reporting whether it
 /// changed anything; on a change the zone serial advances once and a NOTIFY
 /// follows the commit.
-pub async fn apply(cx: &Context, caller: &Caller, update: Update) -> Result<bool, NsupdateError> {
+pub async fn apply(
+    cx: &Context,
+    caller: &Caller,
+    update: Update<'_>,
+) -> Result<bool, NsupdateError> {
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
     let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {
@@ -139,44 +128,49 @@ pub async fn apply(cx: &Context, caller: &Caller, update: Update) -> Result<bool
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
+        // Keep the wire sections through the zone lookup. Every owner and
+        // shape is checked before decoding can omit an ineffective delete.
+        let prerequisites = decode_prerequisites(update.prerequisites, &zone.name, update.message)?;
+        let updates = decode_updates(update.updates, &zone.name, update.message)?;
+
         // A prerequisite reads what it names, so its grant is checked with
         // the updates', ahead of where RFC 2136, Section 3.3 puts permissions.
         let mut accesses = Vec::new();
-        for prerequisite in &update.prerequisites {
+        for prerequisite in &prerequisites {
             let (name, record_type) = match prerequisite {
-                Prerequisite::NameInUse { name }
-                | Prerequisite::NameNotInUse { name }
-                | Prerequisite::UnstoredTypeInUse { name, .. }
-                | Prerequisite::UnstoredTypeNotInUse { name, .. }
-                | Prerequisite::SoaInUse { name, .. } => (name, None),
-                Prerequisite::RecordSetInUse { name, record_type }
-                | Prerequisite::RecordSetNotInUse { name, record_type }
-                | Prerequisite::RecordInUse {
+                Prerequisite::NameExists { name }
+                | Prerequisite::NameAbsent { name }
+                | Prerequisite::UnstoredTypeExists { name, .. }
+                | Prerequisite::UnstoredTypeAbsent { name, .. }
+                | Prerequisite::SoaMatches { name, .. } => (name, None),
+                Prerequisite::RecordSetExists { name, record_type }
+                | Prerequisite::RecordSetAbsent { name, record_type }
+                | Prerequisite::RecordValueMatches {
                     name, record_type, ..
                 } => (name, Some(record_type)),
             };
             accesses.push(RecordAccess {
                 action: Action::RecordRead,
-                relative_name: parse_update_owner(name, &zone.name)?,
+                relative_name: name.clone(),
                 record_type,
             });
         }
-        for op in &update.updates {
+        for op in &updates {
             accesses.push(RecordAccess {
                 action: op.action(),
-                relative_name: parse_update_owner(op.name(), &zone.name)?,
+                relative_name: op.name().clone(),
                 record_type: op.record_type(),
             });
         }
         caller.authorize_record_access(&zone, &accesses)?;
-        evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
+        evaluate_prerequisites_tx(&mut tx, &zone, &prerequisites).await?;
 
         // An exhausted serial cannot advance, so refuse rather than commit
         // changes secondaries could never detect.
         let new_serial = generate_serial(Some(zone.serial))?;
         let mut changed = false;
 
-        for op in &update.updates {
+        for op in &updates {
             changed |= apply_op_tx(&mut tx, &zone, op, new_serial, caller).await?;
         }
 

@@ -287,28 +287,16 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
     }
 }
 
-/// Build an nsupdate record with the requested wire fields.
-fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
-    UpdateRecord {
-        name: "www.example.com.".to_string(),
-        record_type,
-        class,
-        ttl,
-        rdata,
-        rdata_start: 0,
-    }
-}
-
 /// Verify that the delete shapes RFC 2136, Section 2.5 allows pass: an
 /// ANY-class delete with zero TTL and empty RDATA, a NONE-class delete
 /// naming one record's RDATA.
 #[test]
 fn a_well_formed_delete_passes_the_shape_check() {
-    delete_record(Rtype::A, Class::ANY, 0, Vec::new())
-        .validate_delete_shape()
+    update_record(Rtype::A, Class::ANY, 0, Vec::new())
+        .validate_update_shape()
         .unwrap();
-    delete_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1])
-        .validate_delete_shape()
+    update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1])
+        .validate_update_shape()
         .unwrap();
 }
 
@@ -317,24 +305,76 @@ fn a_well_formed_delete_passes_the_shape_check() {
 fn a_malformed_delete_names_what_it_lacks() {
     for (record, expected) in [
         (
-            delete_record(Rtype::A, Class::ANY, 60, Vec::new()),
-            DeleteShapeError::NonzeroTtl,
+            update_record(Rtype::A, Class::ANY, 60, Vec::new()),
+            UpdateShapeError::NonzeroTtl,
         ),
         (
-            delete_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
-            DeleteShapeError::AnyClassRdata,
+            update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
+            UpdateShapeError::AnyClassRdata,
         ),
         (
-            delete_record(Rtype::A, Class::NONE, 0, Vec::new()),
-            DeleteShapeError::NoneClassNoRdata,
+            update_record(Rtype::A, Class::NONE, 0, Vec::new()),
+            UpdateShapeError::NoneClassNoRdata,
         ),
         (
-            delete_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
-            DeleteShapeError::NoneClassTypeAny,
+            update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
+            UpdateShapeError::RecordType {
+                record_type: Rtype::ANY,
+            },
         ),
     ] {
-        assert_eq!(record.validate_delete_shape().unwrap_err(), expected);
+        assert_eq!(record.validate_update_shape().unwrap_err(), expected);
     }
+}
+
+/// Verify that query/meta types are rejected in every update class, while
+/// ANY remains the whole-name delete (RFC 2136, Section 3.4.1.2).
+#[test]
+fn update_shapes_distinguish_data_from_query_and_meta_types() {
+    for class in [Class::IN, Class::ANY, Class::NONE] {
+        for rtype in [
+            Rtype::OPT,
+            Rtype::TKEY,
+            Rtype::TSIG,
+            Rtype::IXFR,
+            Rtype::AXFR,
+            Rtype::MAILB,
+            Rtype::MAILA,
+            Rtype::ANY,
+            Rtype::from_int(0),
+            Rtype::from_int(128),
+            Rtype::from_int(248),
+            Rtype::from_int(65535),
+        ] {
+            let data = if class == Class::ANY { vec![] } else { vec![1] };
+            let record = update_record(rtype, class, 0, data);
+            let result = record.validate_update_shape();
+            if class == Class::ANY && rtype == Rtype::ANY {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(
+                    result,
+                    Err(UpdateShapeError::RecordType { record_type: rtype })
+                );
+            }
+        }
+        // A valid data type may be absent from the storage model; its
+        // deletion still has a well-formed wire shape (RFC 3597, Section 2).
+        for rtype in [Rtype::A, Rtype::SOA, Rtype::HINFO, Rtype::from_int(65280)] {
+            let data = if class == Class::ANY { vec![] } else { vec![1] };
+            update_record(rtype, class, 0, data)
+                .validate_update_shape()
+                .unwrap();
+        }
+    }
+    assert_eq!(
+        update_record(Rtype::A, Class::CH, 0, vec![192, 0, 2, 1]).validate_update_shape(),
+        Err(UpdateShapeError::Class { class: Class::CH })
+    );
+    // TTL normalization belongs to additions, never to the delete shape.
+    update_record(Rtype::A, Class::IN, u32::MAX, vec![192, 0, 2, 1])
+        .validate_update_shape()
+        .unwrap();
 }
 
 /// Verify that the OPT record is read as RFC 6891 asks: one is kept, two

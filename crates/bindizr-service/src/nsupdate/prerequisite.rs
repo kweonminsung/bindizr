@@ -2,10 +2,10 @@
 //! before any update is applied. Zone-class records are grouped by name and type
 //! and must equal the zone's record set there (Section 3.2.3).
 
-use bindizr_core::dns::{message::Rtype, name::OwnerName};
+use bindizr_core::dns::{message::Rtype, name::OwnerName, record::Rdata};
 use bindizr_db::LockLevel;
 
-use super::{NsupdateError, Prerequisite, parse_update_owner};
+use super::NsupdateError;
 use crate::{
     Transaction,
     error::ServiceError,
@@ -14,6 +14,44 @@ use crate::{
         zone::Zone,
     },
 };
+
+/// A condition the zone must satisfy before any update is applied
+/// (RFC 2136, Section 2.4). Owner names are relative to the checked zone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Prerequisite {
+    /// CLASS ANY, TYPE ANY: the owner name must exist.
+    NameExists { name: OwnerName },
+    /// CLASS NONE, TYPE ANY: the owner name must not exist.
+    NameAbsent { name: OwnerName },
+    /// CLASS ANY: the record set must exist.
+    RecordSetExists {
+        name: OwnerName,
+        record_type: RecordType,
+    },
+    /// CLASS NONE: the record set must not exist.
+    RecordSetAbsent {
+        name: OwnerName,
+        record_type: RecordType,
+    },
+    /// CLASS IN: with the others of its name and type, the record set must equal
+    /// the zone's (RFC 2136, Section 3.2.3).
+    RecordValueMatches {
+        name: OwnerName,
+        record_type: RecordType,
+        /// TXT arrives row-encoded; every other type in presentation form.
+        value: String,
+        priority: Option<i32>,
+    },
+    /// A record set of a type bindizr never stores must exist: it cannot,
+    /// the zone's own SOA at the apex excepted.
+    UnstoredTypeExists { name: OwnerName, record_type: Rtype },
+    /// A record set of a type bindizr never stores must not exist: it never
+    /// does, the zone's own SOA at the apex excepted.
+    UnstoredTypeAbsent { name: OwnerName, record_type: Rtype },
+    /// CLASS IN, TYPE SOA: the zone's SOA must carry exactly this rdata
+    /// (RFC 2136, Section 3.2.3).
+    SoaMatches { name: OwnerName, rdata: Rdata },
+}
 
 /// Evaluate UPDATE prerequisites against the locked zone contents.
 pub(crate) async fn evaluate_prerequisites_tx(
@@ -30,41 +68,45 @@ pub(crate) async fn evaluate_prerequisites_tx(
     let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {
         match prerequisite {
-            Prerequisite::NameInUse { name } => {
-                let owner = parse_update_owner(name, &zone.name)?;
-                if !has_owner(&owner, &zone_records) {
+            Prerequisite::NameExists { name: owner } => {
+                if !has_owner(owner, &zone_records) {
                     return Err(NsupdateError::NxDomain(format!(
                         "owner '{}' does not exist",
                         owner
                     )));
                 }
             }
-            Prerequisite::NameNotInUse { name } => {
-                let owner = parse_update_owner(name, &zone.name)?;
-                if has_owner(&owner, &zone_records) {
+            Prerequisite::NameAbsent { name: owner } => {
+                if has_owner(owner, &zone_records) {
                     return Err(NsupdateError::YxDomain(format!("owner '{}' exists", owner)));
                 }
             }
-            Prerequisite::RecordSetInUse { name, record_type } => {
-                let owner = parse_update_owner(name, &zone.name)?;
-                if !has_record_set(&owner, record_type, &zone_records) {
+            Prerequisite::RecordSetExists {
+                name: owner,
+                record_type,
+            } => {
+                if !has_record_set(owner, record_type, &zone_records) {
                     return Err(NsupdateError::NxRrset(format!(
                         "no {} records at {}",
                         record_type, owner
                     )));
                 }
             }
-            Prerequisite::RecordSetNotInUse { name, record_type } => {
-                let owner = parse_update_owner(name, &zone.name)?;
-                if has_record_set(&owner, record_type, &zone_records) {
+            Prerequisite::RecordSetAbsent {
+                name: owner,
+                record_type,
+            } => {
+                if has_record_set(owner, record_type, &zone_records) {
                     return Err(NsupdateError::YxRrset(format!(
                         "{} records at {} exist",
                         record_type, owner
                     )));
                 }
             }
-            Prerequisite::UnstoredTypeInUse { name, record_type } => {
-                let owner = parse_update_owner(name, &zone.name)?;
+            Prerequisite::UnstoredTypeExists {
+                name: owner,
+                record_type,
+            } => {
                 // The SOA is no row, but the zone's own stands at the apex.
                 if !(*record_type == Rtype::SOA && owner.is_apex()) {
                     return Err(NsupdateError::NxRrset(format!(
@@ -73,8 +115,10 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
-            Prerequisite::UnstoredTypeNotInUse { name, record_type } => {
-                let owner = parse_update_owner(name, &zone.name)?;
+            Prerequisite::UnstoredTypeAbsent {
+                name: owner,
+                record_type,
+            } => {
                 if *record_type == Rtype::SOA && owner.is_apex() {
                     return Err(NsupdateError::YxRrset(format!(
                         "SOA records at {} exist",
@@ -82,8 +126,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
-            Prerequisite::SoaInUse { name, rdata } => {
-                let owner = parse_update_owner(name, &zone.name)?;
+            Prerequisite::SoaMatches { name: owner, rdata } => {
                 let served = zone.soa_rdata(zone.serial).map_err(|e| {
                     NsupdateError::Internal(ServiceError::internal_with_source(
                         "failed to encode the zone's SOA",
@@ -97,19 +140,18 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
-            Prerequisite::RecordInUse {
-                name,
+            Prerequisite::RecordValueMatches {
+                name: owner,
                 record_type,
                 value,
                 priority,
             } => {
-                let owner = parse_update_owner(name, &zone.name)?;
                 match record_sets.iter_mut().find(|record_set| {
-                    record_set.owner == owner && record_set.record_type == *record_type
+                    record_set.owner == *owner && record_set.record_type == *record_type
                 }) {
                     Some(record_set) => record_set.records.push((value.as_str(), *priority)),
                     None => record_sets.push(WantedRecordSet {
-                        owner,
+                        owner: owner.clone(),
                         record_type: *record_type,
                         records: vec![(value.as_str(), *priority)],
                     }),

@@ -1,7 +1,12 @@
 //! Building and sending RFC 2136 UPDATE messages, so the nsupdate path can be
 //! driven without the BIND tools on the host.
 
-use std::{net::UdpSocket, str::FromStr, time::Duration};
+use std::{
+    io::{Read, Write},
+    net::{TcpStream, UdpSocket},
+    str::FromStr,
+    time::Duration,
+};
 
 use base64::Engine;
 use domain::{
@@ -62,6 +67,12 @@ pub(crate) enum UpdateRecord {
     DeleteA { name: String, addr: String },
     /// CLASS NONE: delete just this NS record.
     DeleteNs { name: String, target: String },
+    /// CLASS NONE: delete a record whose wire data the builder need not understand.
+    DeleteRecord {
+        name: String,
+        rtype: Rtype,
+        rdata: Vec<u8>,
+    },
 }
 
 /// One prerequisite (RFC 2136, Section 2.4).
@@ -104,6 +115,48 @@ pub(crate) fn send_signed_update(
     key: &SigningKey,
 ) -> Result<Rcode, String> {
     send(port, zone, prerequisites, updates, Some(key))
+}
+
+/// Send a signed UPDATE over TCP and verify the response MAC, errors included.
+pub(crate) fn send_signed_update_tcp(
+    port: u16,
+    zone: &str,
+    prerequisites: &[PrereqRecord],
+    updates: &[UpdateRecord],
+    key: &SigningKey,
+) -> Result<Rcode, String> {
+    let query_id = (std::process::id() as u16).wrapping_add(port);
+    let mut builder = build_update(query_id, zone, prerequisites, updates)?;
+    let client = ClientTransaction::request(key.to_tsig_key()?, &mut builder, Time48::now())
+        .map_err(|e| e.to_string())?;
+    let query = builder.finish();
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| e.to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| e.to_string())?;
+    let mut frame = u16::try_from(query.len())
+        .map_err(|e| e.to_string())?
+        .to_be_bytes()
+        .to_vec();
+    frame.extend_from_slice(&query);
+    stream.write_all(&frame).map_err(|e| e.to_string())?;
+    let mut length = [0; 2];
+    stream.read_exact(&mut length).map_err(|e| e.to_string())?;
+    let mut response = vec![0; usize::from(u16::from_be_bytes(length))];
+    stream
+        .read_exact(&mut response)
+        .map_err(|e| e.to_string())?;
+    let mut message = Message::from_octets(response).map_err(|e| e.to_string())?;
+    if message.header().id() != query_id {
+        return Err("UPDATE response id mismatch".to_string());
+    }
+    client
+        .answer(&mut message, Time48::now())
+        .map_err(|e| format!("UPDATE response signature did not verify: {e}"))?;
+    Ok(message.header().rcode())
 }
 
 /// Send an nsupdate with optional TSIG and return the response code.
@@ -311,6 +364,13 @@ pub(crate) fn build_update(
             UpdateRecord::DeleteRecordSet { name: owner, rtype } => authority
                 .push(empty_record(owner, *rtype, Class::ANY)?)
                 .map_err(|e| e.to_string())?,
+            UpdateRecord::DeleteRecord { name, rtype, rdata } => {
+                let data = UnknownRecordData::from_octets(*rtype, rdata.clone())
+                    .map_err(|e| e.to_string())?;
+                authority
+                    .push(Record::new(parse_name(name)?, Class::NONE, Ttl::ZERO, data))
+                    .map_err(|e| e.to_string())?;
+            }
             UpdateRecord::DeleteNs {
                 name: owner,
                 target,

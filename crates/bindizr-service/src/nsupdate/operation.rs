@@ -2,13 +2,13 @@
 //! and its application to the locked zone.
 
 use bindizr_core::{
-    dns::{Serial, Ttl},
+    dns::{Serial, Ttl, name::OwnerName},
     model::{record::RecordId, role_grant::Action},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{NsupdateError, parse_update_owner};
+use super::NsupdateError;
 use crate::{
     Transaction,
     authorization::{Caller, RecordAccess},
@@ -19,12 +19,12 @@ use crate::{
     record::{self, AddResult},
 };
 
-/// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
+/// One update to apply (RFC 2136, Section 2.5). Owner names have passed the zone prescan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateOperation {
+pub(crate) enum UpdateOperation {
     /// CLASS IN: add the record.
     AddRecord {
-        name: String,
+        name: OwnerName,
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
         value: String,
@@ -34,12 +34,12 @@ pub enum UpdateOperation {
     /// CLASS ANY: delete a record set, or every record set at the owner name when
     /// `record_type` is `None` (wire TYPE ANY).
     DeleteRecordSet {
-        name: String,
+        name: OwnerName,
         record_type: Option<RecordType>,
     },
     /// CLASS NONE: delete the records carrying exactly this rdata.
     DeleteRecord {
-        name: String,
+        name: OwnerName,
         record_type: RecordType,
         value: String,
         priority: Option<i32>,
@@ -58,7 +58,7 @@ impl UpdateOperation {
     }
 
     /// Return the owner name targeted by this update operation.
-    pub(crate) fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &OwnerName {
         match self {
             UpdateOperation::AddRecord { name, .. }
             | UpdateOperation::DeleteRecordSet { name, .. }
@@ -86,14 +86,12 @@ pub(crate) async fn apply_op_tx(
 ) -> Result<bool, NsupdateError> {
     match op {
         UpdateOperation::AddRecord {
-            name,
+            name: owner,
             record_type,
             value,
             ttl,
             priority,
         } => {
-            let owner = parse_update_owner(name, &zone.name)?;
-
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
             let value = if *record_type == RecordType::Txt {
@@ -105,7 +103,7 @@ pub(crate) async fn apply_op_tx(
             };
 
             let records_at_name =
-                bindizr_db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
+                bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive)
                     .await?;
 
             // RFC 2136, Section 3.4.2.2: a CNAME beside other data (the apex
@@ -184,7 +182,7 @@ pub(crate) async fn apply_op_tx(
             }
 
             let outcome =
-                record::validate_add_tx(tx, zone, &owner, record_type, &value, *ttl, *priority)
+                record::validate_add_tx(tx, zone, owner, record_type, &value, *ttl, *priority)
                     .await?;
 
             // An rdata-identical add changes nothing beyond the TTL above.
@@ -198,7 +196,7 @@ pub(crate) async fn apply_op_tx(
                 new_serial,
                 &[Record {
                     id: RecordId::UNWRITTEN,
-                    name: owner,
+                    name: owner.clone(),
                     value,
                     ttl: *ttl,
                     priority: record_type.stored_priority(*priority),
@@ -234,21 +232,20 @@ pub(crate) async fn apply_op_tx(
     }
 }
 
-/// Delete every record at `name` matching the given type and (optionally)
+/// Delete every record at `owner` matching the given type and (optionally)
 /// rdata. `record_type` is `None` for a whole-name delete.
 async fn delete_matching_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    name: &str,
+    owner: &OwnerName,
     record_type: Option<&RecordType>,
     value: Option<&str>,
     priority: Option<i32>,
     new_serial: Serial,
 ) -> Result<bool, NsupdateError> {
-    let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
-        bindizr_db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
+        bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive).await?;
 
     let mut matched: Vec<Record> = owner_records
         .iter()

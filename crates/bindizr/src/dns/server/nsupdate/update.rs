@@ -1,20 +1,18 @@
-//! Decoding an UPDATE message into the operations the service applies:
-//! TSIG verification, the wire shapes RFC 2136 fixes for each section, and
-//! rdata parsing. Everything that touches zone data lives in the service.
+//! Authenticate an UPDATE request and hand its complete sections to the
+//! service. Transport policy and response signing stay at this boundary.
 
 use bindizr_core::{
     dns::{
-        Ttl,
-        message::{Class, Edns, OptRcode, Rtype},
+        message::{Edns, OptRcode},
         name::ZoneName,
-        nsupdate::parser::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest},
+        nsupdate::parser::UpdateRequest,
         tsig::{ResponseSigner, TsigError},
     },
-    model::{record::RecordType, transfer::TransferTransport, tsig_key::TsigKey},
+    model::{transfer::TransferTransport, tsig_key::TsigKey},
 };
 use bindizr_service::{
     authorization::Caller,
-    nsupdate::{self, NsupdateError, Prerequisite, Update, UpdateOperation},
+    nsupdate::{self, NsupdateError, Update},
     tsig_key,
 };
 use thiserror::Error;
@@ -63,23 +61,6 @@ pub(crate) enum UpdateError {
     },
 }
 
-/// A deletion of the wrong shape is a FORMERR (RFC 2136, Section 3.4.1).
-impl From<DeleteShapeError> for UpdateError {
-    /// Report the shape the record lacked.
-    fn from(err: DeleteShapeError) -> Self {
-        UpdateError::FormErr(err.to_string())
-    }
-}
-
-/// Rdata that does not decode as its type, or a type no update may carry,
-/// is a FORMERR (RFC 2136, Section 3.4.1).
-impl From<ParseUpdateError> for UpdateError {
-    /// Report what did not decode.
-    fn from(err: ParseUpdateError) -> Self {
-        UpdateError::FormErr(err.to_string())
-    }
-}
-
 impl From<TsigError> for UpdateError {
     /// Convert a failure into an nsupdate response error.
     fn from(err: TsigError) -> Self {
@@ -101,6 +82,7 @@ impl From<NsupdateError> for UpdateError {
     /// Convert a failure into an nsupdate response error.
     fn from(err: NsupdateError) -> Self {
         match err {
+            NsupdateError::FormErr(msg) => UpdateError::FormErr(msg),
             NsupdateError::Refused(msg) => UpdateError::Refused(msg),
             NsupdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
             NsupdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
@@ -182,19 +164,9 @@ pub(crate) async fn apply_update(
 
         let update = Update {
             zone_name,
-            prerequisites: request
-                .prerequisites
-                .iter()
-                .map(|record| decode_prerequisite(record, query_data))
-                .collect::<Result<_, _>>()?,
-            updates: request
-                .updates
-                .iter()
-                .map(|record| decode_update(record, query_data))
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .flatten()
-                .collect(),
+            prerequisites: &request.prerequisites,
+            updates: &request.updates,
+            message: query_data,
         };
 
         let changed = nsupdate::apply(dns_cx.daemon(), &caller, update).await?;
@@ -223,202 +195,4 @@ pub(crate) async fn authenticate_tsig_key(
     let domain_key = tsig_key.as_ref().map(TsigKey::to_domain_key).transpose()?;
     let signer = bindizr_core::dns::tsig::verify_tsig(query_data, domain_key)?;
     Ok((tsig_key, signer))
-}
-
-/// One prerequisite record, its shape held to RFC 2136, Section 3.2.1 (TTL 0,
-/// rdata only in the zone class); a type bindizr never stores keeps its
-/// meaning, since its record set can never exist, the zone's SOA excepted.
-fn decode_prerequisite(
-    record: &UpdateRecord,
-    query_data: &[u8],
-) -> Result<Prerequisite, UpdateError> {
-    if record.ttl != 0 {
-        return Err(UpdateError::FormErr(
-            "prerequisite TTL must be 0".to_string(),
-        ));
-    }
-
-    let name = record.name.clone();
-    match record.class {
-        Class::ANY | Class::NONE => {
-            let is_any_class = record.class == Class::ANY;
-            if !record.rdata.is_empty() {
-                return Err(UpdateError::FormErr(format!(
-                    "{}-class prerequisite must have empty rdata",
-                    if is_any_class { "ANY" } else { "NONE" }
-                )));
-            }
-
-            Ok(match (is_any_class, record.record_type) {
-                (true, Rtype::ANY) => Prerequisite::NameInUse { name },
-                (false, Rtype::ANY) => Prerequisite::NameNotInUse { name },
-                (true, record_type) => match RecordType::try_from(record_type) {
-                    Ok(record_type) => Prerequisite::RecordSetInUse { name, record_type },
-                    Err(_) => Prerequisite::UnstoredTypeInUse { name, record_type },
-                },
-                (false, record_type) => match RecordType::try_from(record_type) {
-                    Ok(record_type) => Prerequisite::RecordSetNotInUse { name, record_type },
-                    Err(_) => Prerequisite::UnstoredTypeNotInUse { name, record_type },
-                },
-            })
-        }
-        Class::IN => {
-            if record.record_type == Rtype::ANY || record.rdata.is_empty() {
-                return Err(UpdateError::FormErr(
-                    "IN-class prerequisite must specify record type and rdata".to_string(),
-                ));
-            }
-            if record.record_type == Rtype::SOA {
-                return Ok(Prerequisite::SoaInUse {
-                    name,
-                    rdata: record.to_soa_rdata(query_data)?,
-                });
-            }
-            if RecordType::try_from(record.record_type).is_err() {
-                return Ok(Prerequisite::UnstoredTypeInUse {
-                    name,
-                    record_type: record.record_type,
-                });
-            }
-
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
-            Ok(Prerequisite::RecordInUse {
-                name,
-                record_type,
-                value,
-                priority,
-            })
-        }
-        other => Err(UpdateError::FormErr(format!(
-            "unsupported prerequisite class: {}",
-            other
-        ))),
-    }
-}
-
-/// Convert one wire update record into a validated service operation, or
-/// `None` for a record RFC 2136 has the server pass over: a SOA delete
-/// (Sections 3.4.2.3 and 3.4.2.4) or a delete of a type bindizr never stores.
-fn decode_update(
-    record: &UpdateRecord,
-    query_data: &[u8],
-) -> Result<Option<UpdateOperation>, UpdateError> {
-    let name = record.name.clone();
-    match record.class {
-        Class::IN => {
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
-            // RFC 2181, Section 8: a TTL with its top bit set reads as zero.
-            let ttl = Ttl::try_from(record.ttl).unwrap_or(Ttl::from_secs(0));
-            Ok(Some(UpdateOperation::AddRecord {
-                name,
-                record_type,
-                value,
-                ttl,
-                priority,
-            }))
-        }
-        Class::ANY => {
-            record.validate_delete_shape()?;
-            let record_type = match record.record_type {
-                Rtype::ANY => None,
-                Rtype::SOA => return Ok(None),
-                other => match RecordType::try_from(other) {
-                    Ok(record_type) => Some(record_type),
-                    Err(_) => return Ok(None),
-                },
-            };
-            Ok(Some(UpdateOperation::DeleteRecordSet { name, record_type }))
-        }
-        Class::NONE => {
-            record.validate_delete_shape()?;
-            // No row can match the SOA or an unstored type (RFC 2136, Section 2.5.4).
-            if RecordType::try_from(record.record_type).is_err() {
-                return Ok(None);
-            }
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
-            Ok(Some(UpdateOperation::DeleteRecord {
-                name,
-                record_type,
-                value,
-                priority,
-            }))
-        }
-        class => Err(UpdateError::FormErr(format!(
-            "unsupported update class: {}",
-            class
-        ))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A wire record of the given shape, carrying no rdata.
-    fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
-        UpdateRecord {
-            name: "host.example.com.".to_string(),
-            record_type,
-            class,
-            ttl,
-            rdata: rdata.to_vec(),
-            rdata_start: 0,
-        }
-    }
-
-    /// Verify that the shapes RFC 2136, Sections 3.2.1 and 3.4.1 fix are
-    /// answered FORMERR rather than REFUSED.
-    #[test]
-    fn malformed_sections_are_formerr() {
-        let prerequisites = [
-            record(Class::ANY, Rtype::ANY, 1, &[]),
-            record(Class::ANY, Rtype::A, 0, &[1, 2, 3, 4]),
-            record(Class::IN, Rtype::ANY, 0, &[1, 2, 3, 4]),
-            record(Class::CH, Rtype::ANY, 0, &[]),
-        ];
-        for prerequisite in &prerequisites {
-            let err = decode_prerequisite(prerequisite, &[]).unwrap_err();
-            assert!(matches!(err, UpdateError::FormErr(_)), "{prerequisite:?}");
-        }
-
-        let updates = [
-            record(Class::NONE, Rtype::ANY, 0, &[]),
-            record(Class::ANY, Rtype::A, 0, &[1, 2, 3, 4]),
-            record(Class::IN, Rtype::AXFR, 0, &[]),
-            record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
-        ];
-        for update in &updates {
-            let err = decode_update(update, &[]).unwrap_err();
-            assert!(matches!(err, UpdateError::FormErr(_)), "{update:?}");
-        }
-    }
-
-    /// Verify that a SOA delete and a delete of an unstored type are passed
-    /// over, and that a TTL with its top bit set reads as zero.
-    #[test]
-    fn passed_over_records_and_a_high_bit_ttl() {
-        assert!(
-            decode_update(&record(Class::ANY, Rtype::SOA, 0, &[]), &[])
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            decode_update(&record(Class::ANY, Rtype::HINFO, 0, &[]), &[])
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            decode_update(&record(Class::NONE, Rtype::HINFO, 0, &[1, 2]), &[])
-                .unwrap()
-                .is_none()
-        );
-
-        let message = [192, 0, 2, 1];
-        let mut add = record(Class::IN, Rtype::A, u32::MAX, &message);
-        add.rdata_start = 0;
-        match decode_update(&add, &message).unwrap() {
-            Some(UpdateOperation::AddRecord { ttl, .. }) => assert_eq!(ttl.as_secs(), 0),
-            other => panic!("{other:?}"),
-        }
-    }
 }
