@@ -67,6 +67,14 @@ data:
     cache_max_records = {{ .Values.bindizr.dns.transfer.cacheMaxRecords }}
     require_tls = {{ .Values.bindizr.dns.transfer.requireTls }}
 
+    [dns.tcp]
+    idle_timeout_secs = {{ .Values.bindizr.dns.tcp.idleTimeoutSecs }}
+    max_connections = {{ .Values.bindizr.dns.tcp.maxConnections }}
+
+    [dns.import]
+    timeout_secs = {{ .Values.bindizr.dns.import.timeoutSecs }}
+    max_records = {{ .Values.bindizr.dns.import.maxRecords }}
+
     [dns.zone_defaults]
     ttl = {{ .Values.bindizr.zoneDefaults.ttl }}
     refresh = {{ .Values.bindizr.zoneDefaults.refresh }}

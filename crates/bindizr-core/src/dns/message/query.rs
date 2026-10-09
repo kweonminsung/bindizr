@@ -1,6 +1,8 @@
 //! Reading an inbound query: what the listener parses once and hands to every
 //! handler, and the short replies it answers without touching the zone.
 
+use std::time::Duration;
+
 pub use domain::base::iana::exterr::ExtendedErrorCode;
 use domain::{
     base::{
@@ -18,10 +20,7 @@ use domain::{
 use thiserror::Error;
 
 use super::EncodeMessageError;
-use crate::{
-    dns::{LibraryError, TCP_IDLE_TIMEOUT, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner},
-    model::transfer::TransferTransport,
-};
+use crate::dns::{LibraryError, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
@@ -46,6 +45,14 @@ pub enum Edns {
     Malformed,
     /// A version this server does not implement: BADVERS (Section 6.1.3).
     UnsupportedVersion(u8),
+}
+
+/// What the listener advertises about the connection: nothing for a
+/// datagram, the idle timeout for a connection (RFC 7828, Section 3.3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keepalive {
+    None,
+    IdleTimeout(Duration),
 }
 
 /// Append the OPT a response owes an EDNS query (RFC 6891, Section 6.1.1),
@@ -124,16 +131,13 @@ pub struct ParsedQuery {
     /// Copied into every response (RFC 1035, Section 4.1.1).
     pub rd: bool,
     pub edns: Edns,
-    /// The listener the query arrived on.
-    pub transport: TransferTransport,
+    /// What the listener advertises about the connection.
+    pub keepalive: Keepalive,
 }
 
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
-    pub fn parse(
-        data: &[u8],
-        transport: TransferTransport,
-    ) -> Result<ParsedQuery, ParseQueryError> {
+    pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<ParsedQuery, ParseQueryError> {
         let message =
             Message::from_octets(data).map_err(|e| ParseQueryError::Malformed(Box::new(e)))?;
 
@@ -178,7 +182,7 @@ impl ParsedQuery {
             opcode,
             rd,
             edns,
-            transport,
+            keepalive,
         })
     }
 
@@ -186,11 +190,11 @@ impl ParsedQuery {
     /// at what bindizr sends, or 512 octets without EDNS.
     /// The edns-tcp-keepalive option a TCP answer carries, the listener's
     /// idle timeout (RFC 7828, Section 3.3.2); none over UDP.
-    pub(crate) fn keepalive(&self) -> Option<TcpKeepalive> {
-        if self.transport == TransferTransport::Udp {
+    pub(crate) fn tcp_keepalive(&self) -> Option<TcpKeepalive> {
+        let Keepalive::IdleTimeout(idle_timeout) = self.keepalive else {
             return None;
-        }
-        let Ok(timeout) = IdleTimeout::try_from(TCP_IDLE_TIMEOUT) else {
+        };
+        let Ok(timeout) = IdleTimeout::try_from(idle_timeout) else {
             return None;
         };
         Some(TcpKeepalive::new(Some(timeout)))
@@ -286,7 +290,7 @@ impl ParsedQuery {
 
         let mut additional = question.additional();
         if self.edns != Edns::Absent {
-            push_opt(&mut additional, rcode, ede, self.keepalive());
+            push_opt(&mut additional, rcode, ede, self.tcp_keepalive());
         }
         additional
     }

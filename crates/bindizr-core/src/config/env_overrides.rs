@@ -118,6 +118,22 @@ impl Config {
             self.dns.transfer.require_tls =
                 parse_env_value("BINDIZR_DNS_TRANSFER_REQUIRE_TLS", &value)?;
         }
+        if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS") {
+            self.dns.tcp.idle_timeout_secs =
+                parse_env_value("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_TCP_MAX_CONNECTIONS") {
+            self.dns.tcp.max_connections =
+                parse_env_value("BINDIZR_DNS_TCP_MAX_CONNECTIONS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_TIMEOUT_SECS") {
+            self.dns.import.timeout_secs =
+                parse_env_value("BINDIZR_DNS_IMPORT_TIMEOUT_SECS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_MAX_RECORDS") {
+            self.dns.import.max_records =
+                parse_env_value("BINDIZR_DNS_IMPORT_MAX_RECORDS", &value)?;
+        }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL") {
             self.dns.zone_defaults.ttl = parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;
         }

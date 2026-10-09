@@ -3,10 +3,7 @@
 
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::{
-    TCP_IDLE_TIMEOUT,
-    message::{self, Class, ExtendedErrorCode, Opcode, Rcode, Rtype},
-};
+use bindizr_core::dns::message::{self, Class, ExtendedErrorCode, Keepalive, Opcode, Rcode, Rtype};
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::{
@@ -27,11 +24,6 @@ use super::{
 
 /// A client that connects and says nothing must not hold a connection slot.
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Connections served at once; the accept backlog holds the rest. RFC 9103,
-/// Section 6.3.3 asks for SERVFAIL when a transfer limit is hit, but this
-/// limit is on connections, so no message exists to answer.
-const MAX_TCP_CONNECTIONS: usize = 128;
 
 /// Queries served at once on one connection; past this the next is read once
 /// one finishes, so a client cannot queue work faster than it is answered.
@@ -72,7 +64,11 @@ pub(crate) async fn run_tcp_server(
     handshake: Handshake,
     stop: impl Future<Output = ()>,
 ) -> Result<(), ServeDnsError> {
-    let open = Arc::new(Semaphore::new(MAX_TCP_CONNECTIONS));
+    // RFC 9103, Section 6.3.3 asks for SERVFAIL when a transfer limit is hit,
+    // but this limit is on connections, so no message exists to answer.
+    let open = Arc::new(Semaphore::new(
+        dns_cx.daemon().config().dns.tcp.max_connections,
+    ));
     tokio::pin!(stop);
 
     loop {
@@ -166,6 +162,7 @@ async fn handle_tcp_connection(
 ) -> Result<(), ServeDnsError> {
     let (mut reader, writer) = stream.into_split();
     let writer = Arc::new(writer);
+    let idle_timeout = dns_cx.daemon().config().dns.tcp.idle_timeout();
     let mut pending = Vec::new();
     let mut in_flight = JoinSet::new();
 
@@ -174,13 +171,13 @@ async fn handle_tcp_connection(
         // 6.2.3); the cancel-safe read may be interrupted by a query finishing.
         let read = wire::read_tcp_message(&mut reader, &mut pending);
         let result = if in_flight.is_empty() {
-            match timeout(TCP_IDLE_TIMEOUT, read).await {
+            match timeout(idle_timeout, read).await {
                 Ok(result) => result,
                 Err(_) => {
                     log::info!(
                         "Closing idle DNS TCP connection from {} after {:?}",
                         client_addr,
-                        TCP_IDLE_TIMEOUT
+                        idle_timeout
                     );
                     break Ok(());
                 }
@@ -203,7 +200,9 @@ async fn handle_tcp_connection(
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
         in_flight.spawn(async move {
-            if let Err(e) = dispatch_tcp_query(&dns_cx, &writer, client_addr, &query_data).await {
+            if let Err(e) =
+                dispatch_tcp_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await
+            {
                 log::error!("DNS TCP query from {} failed: {}", client_addr, e);
             }
         });
@@ -225,6 +224,7 @@ async fn dispatch_tcp_query(
     writer: &ResponseWriter,
     client_addr: SocketAddr,
     query_data: &[u8],
+    idle_timeout: Duration,
 ) -> Result<(), ServeDnsError> {
     if message::is_response(query_data) {
         log::warn!("Ignoring a DNS TCP response from {}", client_addr);
@@ -239,7 +239,8 @@ async fn dispatch_tcp_query(
         );
     }
 
-    let query = match message::ParsedQuery::parse(query_data, writer.transport()) {
+    let query = match message::ParsedQuery::parse(query_data, Keepalive::IdleTimeout(idle_timeout))
+    {
         Ok(query) => query,
         Err(e) => {
             log::warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);

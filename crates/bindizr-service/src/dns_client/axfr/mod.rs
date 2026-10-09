@@ -1,18 +1,24 @@
 //! Client-side AXFR: pull a whole zone from another server, the fetch half
 //! of `zone import --from-server`.
 
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
-use bindizr_core::dns::{
-    dnssec::WireNameError,
-    message::{Name, Opcode, Rtype, encode_tcp_message},
-    name::{ZoneName, decode_name_labels, to_fqdn},
-    query::{TransferMessagePosition, TransferRecord, build_question, extract_transfer_records},
+use bindizr_core::{
+    config::ImportConfig,
+    dns::{
+        dnssec::WireNameError,
+        message::{Name, Opcode, Rtype, encode_tcp_message},
+        name::{ZoneName, decode_name_labels, to_fqdn},
+        query::{
+            TransferMessagePosition, TransferRecord, build_question, extract_transfer_records,
+        },
+    },
 };
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
 use super::{ReadTcpMessageError, ResolveAddressError};
+use crate::Context;
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -46,8 +52,6 @@ pub(crate) enum TransferZoneError {
     Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
     #[error("read failed before the closing SOA: {0}")]
     Read(#[source] ReadTcpMessageError),
-    #[error("transfer exceeds {limit} bytes")]
-    TooLarge { limit: usize },
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ReadResponseError),
     #[error("transfer does not start with the zone's SOA")]
@@ -66,34 +70,31 @@ pub(crate) enum TransferZoneError {
     },
 }
 
-/// Transfer the zone from `server` and render it as zone-file text ready
-/// for the import parser.
+/// Transfer the zone from `server` within the bounds of `dns.import` and
+/// render it as zone-file text ready for the import parser.
 pub(crate) async fn fetch_zone_file(
+    cx: &Context,
     server: &str,
     zone_name: &ZoneName,
 ) -> Result<String, TransferZoneError> {
-    let records = transfer_zone(server, zone_name).await?;
+    let records = transfer_zone(server, zone_name, &cx.config().dns.import).await?;
     Ok(render_zone_file(&records))
 }
 
-/// Bounds on one inbound transfer, guarding against a runaway server.
-const MAX_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
-const MAX_TRANSFER_RECORDS: usize = 200_000;
-/// Whole-transfer deadline: resolution and every address attempt share it.
-const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
 /// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
+/// Resolution and every address attempt share the import's deadline.
 async fn transfer_zone(
     server: &str,
     zone_name: &ZoneName,
+    import: &ImportConfig,
 ) -> Result<Vec<TransferRecord>, TransferZoneError> {
     let qname = zone_name.to_wire_name()?;
 
-    let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
+    let deadline = tokio::time::Instant::now() + import.timeout();
     let entries = tokio::time::timeout_at(
         deadline,
-        super::resolve_address_entries(server, TRANSFER_TIMEOUT),
+        super::resolve_address_entries(server, import.timeout()),
     )
     .await
     .map_err(|_| TransferZoneError::ResolutionTimedOut {
@@ -103,7 +104,9 @@ async fn transfer_zone(
     for (entry, result) in entries {
         let addrs = result.map_err(|source| TransferZoneError::Unresolved { entry, source })?;
         for addr in addrs {
-            match tokio::time::timeout_at(deadline, transfer_from(addr, &qname)).await {
+            match tokio::time::timeout_at(deadline, transfer_from(addr, &qname, import.max_records))
+                .await
+            {
                 Ok(Ok(records)) => return Ok(records),
                 Ok(Err(e)) => {
                     last = Some(TransferZoneError::Server {
@@ -124,6 +127,7 @@ async fn transfer_zone(
 async fn transfer_from(
     addr: SocketAddr,
     qname: &Name<Vec<u8>>,
+    max_records: usize,
 ) -> Result<Vec<TransferRecord>, TransferZoneError> {
     let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR);
     let mut stream = tokio::net::TcpStream::connect(addr)
@@ -137,17 +141,10 @@ async fn transfer_from(
     let expected_owner = to_fqdn(&qname.to_string());
     let expected_labels = owner_labels(&expected_owner)?;
     let mut records: Vec<TransferRecord> = Vec::new();
-    let mut total_bytes = 0usize;
     loop {
         let response = super::read_tcp_message(&mut stream)
             .await
             .map_err(TransferZoneError::Read)?;
-        total_bytes += response.len();
-        if total_bytes > MAX_TRANSFER_BYTES {
-            return Err(TransferZoneError::TooLarge {
-                limit: MAX_TRANSFER_BYTES,
-            });
-        }
 
         let position = if records.is_empty() {
             TransferMessagePosition::First
@@ -178,10 +175,8 @@ async fn transfer_from(
                 return Ok(records);
             }
             records.push(record);
-            if records.len() > MAX_TRANSFER_RECORDS {
-                return Err(TransferZoneError::TooManyRecords {
-                    limit: MAX_TRANSFER_RECORDS,
-                });
+            if records.len() > max_records {
+                return Err(TransferZoneError::TooManyRecords { limit: max_records });
             }
         }
     }

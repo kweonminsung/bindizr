@@ -179,6 +179,11 @@ fn print_config(config: &Config) {
     );
     outln!();
 
+    print_section("dns.import");
+    print_value("timeout_secs", config.dns.import.timeout_secs);
+    print_value("max_records", config.dns.import.max_records);
+    outln!();
+
     print_section("dns.notify");
     print_value("batch_ms", config.dns.notify.batch_ms);
     print_value("retries", config.dns.notify.retries);
@@ -187,6 +192,11 @@ fn print_config(config: &Config) {
 
     print_section("dns.nsupdate");
     print_value("tsig_required", config.dns.nsupdate.tsig_required);
+    outln!();
+
+    print_section("dns.tcp");
+    print_value("idle_timeout_secs", config.dns.tcp.idle_timeout_secs);
+    print_value("max_connections", config.dns.tcp.max_connections);
     outln!();
 
     print_section("dns.tls");

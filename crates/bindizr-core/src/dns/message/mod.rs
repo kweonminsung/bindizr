@@ -126,7 +126,7 @@ impl DnsMessageBuilder {
             signer: None,
             rd: query.rd,
             edns: query.edns != Edns::Absent,
-            keepalive: query.keepalive(),
+            keepalive: query.tcp_keepalive(),
             truncated: false,
         }
     }
@@ -329,7 +329,7 @@ pub(crate) mod query;
 mod records;
 
 pub(crate) use query::push_opt;
-pub use query::{Edns, ExtendedErrorCode, ParseQueryError, ParsedQuery, is_response};
+pub use query::{Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery, is_response};
 use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 
 #[cfg(test)]

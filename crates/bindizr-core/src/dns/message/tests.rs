@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use domain::{
     base::{Message, MessageBuilder, Name, iana::Rtype, opt::exterr::ExtendedError},
@@ -9,7 +9,7 @@ use domain::{
 use super::*;
 use crate::{
     dns::tsig::verify_tsig_sequence,
-    model::{record::RecordType, transfer::TransferTransport, tsig_key::TsigAlgorithm},
+    model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
 /// A question for example.com and `qtype`, with one OPT record per entry
@@ -35,7 +35,7 @@ fn question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
 
 /// The parsed form of a plain AXFR question.
 fn axfr_query() -> ParsedQuery {
-    ParsedQuery::parse(&question(Rtype::AXFR, &[]), TransferTransport::Udp).unwrap()
+    ParsedQuery::parse(&question(Rtype::AXFR, &[]), Keepalive::None).unwrap()
 }
 
 /// Verify that `encode_tcp_message` rejects oversized payload.
@@ -101,7 +101,7 @@ fn truncated_response_echoes_the_question_with_tc_set() {
             Rtype::AXFR,
         ))
         .unwrap();
-    let query = ParsedQuery::parse(&question.finish(), TransferTransport::Udp).unwrap();
+    let query = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
 
     let response = query.truncated_response();
     assert_eq!(&response[0..2], &4242u16.to_be_bytes());
@@ -118,8 +118,7 @@ fn is_response_separates_a_reply_from_a_query() {
     let query = question(Rtype::A, &[]);
     assert!(!is_response(&query));
 
-    let parsed =
-        ParsedQuery::parse(&query, TransferTransport::Udp).expect("a question-only query parses");
+    let parsed = ParsedQuery::parse(&query, Keepalive::None).expect("a question-only query parses");
     let reply = parsed.error_response(super::Rcode::REFUSED, None);
     assert!(is_response(&reply));
 }
@@ -209,7 +208,7 @@ fn a_signed_message_reserves_room_for_its_tsig_record() {
 /// with the extended error, FORMERR when doubled, BADVERS for a newer version.
 #[test]
 fn an_edns_query_is_answered_with_an_opt() {
-    let parsed = ParsedQuery::parse(&question(Rtype::SOA, &[0]), TransferTransport::Udp).unwrap();
+    let parsed = ParsedQuery::parse(&question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     assert_eq!(
         parsed.edns,
         Edns::Present {
@@ -231,15 +230,14 @@ fn an_edns_query_is_answered_with_an_opt() {
         .unwrap();
     assert_eq!(ede.code(), ExtendedErrorCode::PROHIBITED);
 
-    let doubled =
-        ParsedQuery::parse(&question(Rtype::SOA, &[0, 0]), TransferTransport::Udp).unwrap();
+    let doubled = ParsedQuery::parse(&question(Rtype::SOA, &[0, 0]), Keepalive::None).unwrap();
     assert_eq!(doubled.edns, Edns::Malformed);
     let reply = doubled.edns_error_response().unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     assert_eq!(reply.header().rcode(), Rcode::FORMERR);
     assert!(reply.opt().is_some());
 
-    let newer = ParsedQuery::parse(&question(Rtype::SOA, &[1]), TransferTransport::Udp).unwrap();
+    let newer = ParsedQuery::parse(&question(Rtype::SOA, &[1]), Keepalive::None).unwrap();
     assert_eq!(newer.edns, Edns::UnsupportedVersion(1));
     let reply = newer.edns_error_response().unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
@@ -256,7 +254,7 @@ fn an_edns_query_is_answered_with_an_opt() {
 #[test]
 fn an_answer_over_the_udp_limit_is_truncated() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
-    let parsed = ParsedQuery::parse(&question(Rtype::SOA, &[0]), TransferTransport::Udp).unwrap();
+    let parsed = ParsedQuery::parse(&question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&parsed, Rtype::SOA);
     for _ in 0..40 {
         builder
@@ -285,7 +283,7 @@ fn a_response_echoes_the_question_class() {
     builder.header_mut().set_id(5);
     let mut question = builder.question();
     question.push((&qname, Rtype::SOA, Class::CH)).unwrap();
-    let parsed = ParsedQuery::parse(&question.finish(), TransferTransport::Udp).unwrap();
+    let parsed = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
     assert_eq!(parsed.qclass, Class::CH);
 
     let reply = parsed.error_response(Rcode::NOTAUTH, None);
@@ -298,7 +296,11 @@ fn a_response_echoes_the_question_class() {
 /// does not.
 #[test]
 fn a_tcp_answer_advertises_the_idle_timeout() {
-    let tcp = ParsedQuery::parse(&question(Rtype::SOA, &[0]), TransferTransport::Tcp).unwrap();
+    let tcp = ParsedQuery::parse(
+        &question(Rtype::SOA, &[0]),
+        Keepalive::IdleTimeout(Duration::from_secs(30)),
+    )
+    .unwrap();
     let response = tcp.error_response(Rcode::REFUSED, None);
     let message = Message::from_octets(response.as_slice()).unwrap();
     let keepalive = message
@@ -309,7 +311,7 @@ fn a_tcp_answer_advertises_the_idle_timeout() {
         .expect("a TCP answer advertises its idle timeout");
     assert_eq!(keepalive.timeout().map(u16::from), Some(300));
 
-    let udp = ParsedQuery::parse(&question(Rtype::SOA, &[0]), TransferTransport::Udp).unwrap();
+    let udp = ParsedQuery::parse(&question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     let response = udp.error_response(Rcode::REFUSED, None);
     let message = Message::from_octets(response.as_slice()).unwrap();
     assert!(message.opt().unwrap().opt().tcp_keepalive().is_none());

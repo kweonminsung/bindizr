@@ -64,6 +64,14 @@ pub enum ConfigError {
     },
     #[error("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file")]
     TransferRequiresTlsListener,
+    #[error("{key} must be between {min} and {max}")]
+    OutOfRange {
+        key: &'static str,
+        min: u64,
+        max: u64,
+    },
+    #[error("{key} must be at least 1")]
+    Zero { key: &'static str },
     #[error("dns.catalog_zone_name is not a zone name: {0}")]
     CatalogZoneName(#[source] crate::dns::name::ParseNameError),
     /// A zero would stop secondaries refreshing, so a zone must not inherit it.
@@ -317,8 +325,8 @@ impl From<DatabaseTlsMode> for sqlx::mysql::MySqlSslMode {
     }
 }
 
-/// DNS server settings; NOTIFY, nsupdate, the TLS listener, transfers, and
-/// zone defaults sit in sub-tables.
+/// DNS server settings; the sub-tables hold the import client, NOTIFY,
+/// nsupdate, the TCP and TLS listeners, transfers, and zone defaults.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DnsConfig {
@@ -339,9 +347,13 @@ pub struct DnsConfig {
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
     #[serde(default)]
+    pub import: ImportConfig,
+    #[serde(default)]
     pub notify: NotifyConfig,
     #[serde(default)]
     pub nsupdate: NsupdateConfig,
+    #[serde(default)]
+    pub tcp: TcpConfig,
     #[serde(default)]
     pub tls: DnsTlsConfig,
     #[serde(default)]
@@ -429,6 +441,122 @@ impl Default for NsupdateConfig {
 /// Return the default nsupdate TSIG requirement.
 fn default_nsupdate_tsig_required() -> bool {
     true
+}
+
+/// The TCP and TLS listeners.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TcpConfig {
+    /// Seconds a connection may sit idle between queries before it is
+    /// closed; advertised as the edns-tcp-keepalive timeout (RFC 7828,
+    /// Section 3.3.2).
+    #[serde(default = "default_tcp_idle_timeout_secs")]
+    pub idle_timeout_secs: u64,
+    /// Connections served at once; the rest wait in the accept backlog.
+    #[serde(default = "default_tcp_max_connections")]
+    pub max_connections: usize,
+}
+
+impl TcpConfig {
+    /// How long a connection may sit idle between queries.
+    pub fn idle_timeout(&self) -> Duration {
+        Duration::from_secs(self.idle_timeout_secs)
+    }
+
+    /// Validate the listener limits; the idle timeout must fit the keepalive
+    /// option's 16-bit deciseconds.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.idle_timeout_secs) {
+            return Err(ConfigError::OutOfRange {
+                key: "dns.tcp.idle_timeout_secs",
+                min: 1,
+                max: MAX_TCP_IDLE_TIMEOUT_SECS,
+            });
+        }
+        if self.max_connections == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.tcp.max_connections",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Default for TcpConfig {
+    /// Build the default listener limits.
+    fn default() -> Self {
+        Self {
+            idle_timeout_secs: default_tcp_idle_timeout_secs(),
+            max_connections: default_tcp_max_connections(),
+        }
+    }
+}
+
+/// The longest idle timeout the edns-tcp-keepalive option carries.
+const MAX_TCP_IDLE_TIMEOUT_SECS: u64 = 6553;
+
+/// Return the default idle timeout between queries on a connection.
+fn default_tcp_idle_timeout_secs() -> u64 {
+    30
+}
+
+/// Return the default number of connections served at once.
+fn default_tcp_max_connections() -> usize {
+    128
+}
+
+/// `zone import --from-server`: the AXFR bindizr pulls.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportConfig {
+    /// Seconds the whole transfer may take, resolution included.
+    #[serde(default = "default_import_timeout_secs")]
+    pub timeout_secs: u64,
+    /// Records a pulled zone may hold; a larger one is refused.
+    #[serde(default = "default_import_max_records")]
+    pub max_records: usize,
+}
+
+impl ImportConfig {
+    /// How long the whole transfer may take.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+
+    /// Validate the import bounds.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.timeout_secs == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.import.timeout_secs",
+            });
+        }
+        if self.max_records == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.import.max_records",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Default for ImportConfig {
+    /// Build the default import bounds.
+    fn default() -> Self {
+        Self {
+            timeout_secs: default_import_timeout_secs(),
+            max_records: default_import_max_records(),
+        }
+    }
+}
+
+/// Return the default deadline of a pulled transfer.
+fn default_import_timeout_secs() -> u64 {
+    30
+}
+
+/// Return the default record limit of a pulled zone.
+fn default_import_max_records() -> usize {
+    200_000
 }
 
 /// Zone transfers over TLS (XoT, RFC 9103): a second TCP listener on
@@ -694,6 +822,10 @@ impl Config {
         if self.dns.tls != next.dns.tls {
             fixed.push("dns.tls".to_string());
         }
+        // The connection slots are allotted when the listener starts.
+        if self.dns.tcp.max_connections != next.dns.tcp.max_connections {
+            fixed.push("dns.tcp.max_connections".to_string());
+        }
         // Renaming the catalog live would strand its stored row and the
         // secondaries configured to request its old name.
         if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
@@ -866,6 +998,8 @@ impl DnsConfig {
             return Err(ConfigError::PortZero { section: "dns" });
         }
         self.tls.validate()?;
+        self.tcp.validate()?;
+        self.import.validate()?;
         // Refusing plain transfers with no TLS listener would refuse them all.
         if self.transfer.require_tls && self.tls.tls_files().is_none() {
             return Err(ConfigError::TransferRequiresTlsListener);

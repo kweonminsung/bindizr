@@ -25,7 +25,7 @@ rejected and the current configuration stays active.
 | Settings | Reload behavior |
 | --- | --- |
 | `[logging]` and `[dns]` except the settings below | Reloadable |
-| `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` | Restart required |
+| `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name`, `dns.tcp.max_connections` | Restart required |
 | The certificate and key files `[api.tls]` and `[dns.tls]` name | Re-read on reload, so a renewed pair serves without a restart; the paths stay fixed |
 
 A reload names the sections it changed; a refusal names the settings that
@@ -81,6 +81,10 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # false admits unsigned updates from anyone
 
+[dns.tcp]                     # The TCP and TLS listeners
+# idle_timeout_secs = 30      # Idle time between queries before the connection closes; advertised as edns-tcp-keepalive (RFC 7828)
+# max_connections = 128       # Connections served at once; the rest wait in the accept backlog
+
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
 # listen_port = 853           # On dns.listen_addr
 # cert_file = "/etc/bindizr/tls/xot.crt"
@@ -89,6 +93,10 @@ tsig_required = true          # false admits unsigned updates from anyone
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
 # require_tls = false         # Refuse AXFR/IXFR over plain TCP and UDP; needs [dns.tls], SOA queries still answer
+
+[dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
+# timeout_secs = 30
+# max_records = 200000        # A larger zone is refused
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
@@ -158,6 +166,10 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |
 | `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer.cache_max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
 | `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | needs `[dns.tls]` |
+| `BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS` | `dns.tcp.idle_timeout_secs` | 1 to 6553 |
+| `BINDIZR_DNS_TCP_MAX_CONNECTIONS` | `dns.tcp.max_connections` | |
+| `BINDIZR_DNS_IMPORT_TIMEOUT_SECS` | `dns.import.timeout_secs` | |
+| `BINDIZR_DNS_IMPORT_MAX_RECORDS` | `dns.import.max_records` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |

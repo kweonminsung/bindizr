@@ -41,6 +41,10 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # false admits unsigned updates from anyone
 
+[dns.tcp]                     # The TCP and TLS listeners
+# idle_timeout_secs = 30      # Idle time between queries before the connection closes; advertised as edns-tcp-keepalive (RFC 7828)
+# max_connections = 128       # Connections served at once; the rest wait in the accept backlog
+
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
 # listen_port = 853           # On dns.listen_addr
 # cert_file = "/etc/bindizr/tls/xot.crt"
@@ -49,6 +53,10 @@ tsig_required = true          # false admits unsigned updates from anyone
 [dns.transfer]                # Zone transfers
 # cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
 # require_tls = false         # Refuse AXFR/IXFR over plain TCP and UDP; needs [dns.tls], SOA queries still answer
+
+[dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
+# timeout_secs = 30
+# max_records = 200000        # A larger zone is refused
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)

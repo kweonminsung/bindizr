@@ -743,3 +743,57 @@ fn from_toml_requires_the_tls_listener_to_require_tls() {
     .unwrap();
     assert!(parsed.dns.transfer.require_tls);
 }
+
+/// Verify the `[dns.tcp]` and `[dns.import]` blocks, their bounds, and
+/// their environment variables.
+#[test]
+fn from_toml_reads_the_tcp_and_import_blocks() {
+    let parsed = parse_config(&TestConfigToml {
+        dns_extra: "[dns.tcp]\nidle_timeout_secs = 60\nmax_connections = 512\n\n[dns.import]\ntimeout_secs = 120\nmax_records = 1000000",
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(parsed.dns.tcp.idle_timeout_secs, 60);
+    assert_eq!(parsed.dns.tcp.max_connections, 512);
+    assert_eq!(parsed.dns.import.timeout_secs, 120);
+    assert_eq!(parsed.dns.import.max_records, 1_000_000);
+
+    // The keepalive option carries 16-bit deciseconds, so the idle timeout
+    // is bounded above as well.
+    for (extra, message) in [
+        (
+            "[dns.tcp]\nidle_timeout_secs = 6554",
+            "dns.tcp.idle_timeout_secs must be between 1 and 6553",
+        ),
+        (
+            "[dns.tcp]\nmax_connections = 0",
+            "dns.tcp.max_connections must be at least 1",
+        ),
+        (
+            "[dns.import]\nmax_records = 0",
+            "dns.import.max_records must be at least 1",
+        ),
+    ] {
+        let err = parse_config(&TestConfigToml {
+            dns_extra: extra,
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains(message), "{err}");
+    }
+
+    let mut overridden = parse_config(&TestConfigToml::default()).unwrap();
+    overridden
+        .apply_env_overrides(|name| match name {
+            "BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS" => Some("45".to_string()),
+            "BINDIZR_DNS_TCP_MAX_CONNECTIONS" => Some("256".to_string()),
+            "BINDIZR_DNS_IMPORT_TIMEOUT_SECS" => Some("90".to_string()),
+            "BINDIZR_DNS_IMPORT_MAX_RECORDS" => Some("5".to_string()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(overridden.dns.tcp.idle_timeout_secs, 45);
+    assert_eq!(overridden.dns.tcp.max_connections, 256);
+    assert_eq!(overridden.dns.import.timeout_secs, 90);
+    assert_eq!(overridden.dns.import.max_records, 5);
+}
