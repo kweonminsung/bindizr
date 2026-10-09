@@ -270,15 +270,10 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
 
     let error = err.error();
     // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2;
-    // the structure was checked before verification, so that is BADSIG. Only
-    // BADTIME is signed (RFC 8945, Section 5.2.3); the rest are built here
-    // with the OPT an EDNS request is owed.
+    // the structure was checked before verification, so that is BADSIG.
     let response = match error {
         TsigRcode::FORMERR => build_unsigned_error(&msg, TsigRcode::BADSIG),
-        TsigRcode::BADTIME => err
-            .build_message(&msg, MessageBuilder::new_vec())
-            .ok()
-            .map(|builder| builder.finish()),
+        TsigRcode::BADTIME => build_signed_error(&msg, err),
         other => build_unsigned_error(&msg, other),
     };
 
@@ -289,6 +284,18 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
         },
         None => TsigError::BuildResponse { rcode: error },
     }
+}
+
+/// Build the signed NOTAUTH response a BADTIME is owed (RFC 8945,
+/// Section 5.2.3), carrying the server's time.
+///
+/// Known gap: it carries no OPT even for an EDNS request (RFC 6891,
+/// Section 6.1.1), since `domain` signs the header and question as it
+/// starts the answer and an OPT appended after the MAC would break it.
+fn build_signed_error(msg: &Message<&[u8]>, err: ServerError<Arc<Key>>) -> Option<Vec<u8>> {
+    err.build_message(msg, MessageBuilder::new_vec())
+        .ok()
+        .map(|builder| builder.finish())
 }
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that
