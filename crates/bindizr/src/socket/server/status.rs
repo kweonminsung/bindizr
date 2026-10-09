@@ -5,7 +5,10 @@ use bindizr_service::{Context, error::ServiceError, secondary, types::MessageRes
 
 use crate::{
     daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::types::{DaemonResponse, DaemonStatusResponse},
+    socket::{
+        server::SocketContext,
+        types::{DaemonResponse, DaemonStatusResponse},
+    },
 };
 
 /// Return the daemon's current status as JSON.
@@ -31,7 +34,7 @@ pub(crate) async fn handle_status(
                 )),
             ),
         };
-    let scheme = if config.api.tls_files().is_some() {
+    let scheme = if config.api.tls.tls_files().is_some() {
         "https"
     } else {
         "http"
@@ -47,6 +50,9 @@ pub(crate) async fn handle_status(
         ),
         api_authentication: config.api.authentication_required,
         dns_addr: SocketAddr::new(config.dns.listen_addr, config.dns.listen_port).to_string(),
+        dns_tls_addr: config.dns.tls.tls_files().map(|_| {
+            SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port).to_string()
+        }),
         database_type: config.database.database_type.to_string(),
         secondaries,
         zones,
@@ -60,8 +66,10 @@ pub(crate) async fn handle_status(
 }
 
 /// Reload the daemon configuration and return the result.
-pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    let changed = crate::daemon::reload_config(cx)?;
+pub(crate) fn reload_config(
+    socket_cx: &SocketContext,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    let changed = crate::daemon::reload_config(socket_cx.daemon(), socket_cx.tls())?;
 
     let message = if changed.is_empty() {
         "Configuration reloaded; nothing changed".to_string()

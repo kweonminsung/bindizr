@@ -5,18 +5,16 @@
 use bindizr_core::{
     dns::{
         Ttl,
-        message::{Class, Rtype},
+        message::{Class, Edns, OptRcode, Rtype},
         name::ZoneName,
         nsupdate::parser::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest},
         tsig::{ResponseSigner, TsigError},
     },
-    model::{
-        record::{ParseRecordTypeError, RecordType},
-        tsig_key::TsigKey,
-    },
+    model::{record::RecordType, transfer::TransferTransport, tsig_key::TsigKey},
 };
 use bindizr_service::{
-    dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOperation},
+    authorization::Caller,
+    nsupdate::{self, NsupdateError, Prerequisite, Update, UpdateOperation},
     tsig_key,
 };
 use thiserror::Error;
@@ -25,6 +23,17 @@ use crate::dns::server::DnsContext;
 
 #[derive(Debug, Error)]
 pub(crate) enum UpdateError {
+    /// A section breaks the shapes RFC 2136, Sections 3.2.1 and 3.4.1 fix.
+    #[error("{0}")]
+    FormErr(String),
+    /// An OPT the server cannot take: a malformed one is FORMERR, a newer
+    /// version BADVERS (RFC 6891, Sections 6.1.1 and 6.1.3).
+    #[error("unacceptable EDNS: {0}")]
+    Edns(OptRcode),
+    /// An UPDATE on the TLS listener, which serves transfers alone
+    /// (RFC 9103, Section 7.8): REFUSED, Not Supported.
+    #[error("{0}")]
+    NotSupported(String),
     #[error("{0}")]
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
@@ -41,6 +50,8 @@ pub(crate) enum UpdateError {
     #[error("{0}")]
     NxRrset(String),
     #[error("{0}")]
+    NotAuth(String),
+    #[error("{0}")]
     NotZone(String),
     /// A fault of the server's own, answered SERVFAIL; the failure stays
     /// beneath it.
@@ -52,32 +63,25 @@ pub(crate) enum UpdateError {
     },
 }
 
-/// A deletion of the wrong shape is refused with its reason.
+/// A deletion of the wrong shape is a FORMERR (RFC 2136, Section 3.4.1).
 impl From<DeleteShapeError> for UpdateError {
-    /// Refuse the update, naming what the shape lacked.
+    /// Report the shape the record lacked.
     fn from(err: DeleteShapeError) -> Self {
-        UpdateError::Refused(err.to_string())
+        UpdateError::FormErr(err.to_string())
     }
 }
 
-/// A record type bindizr does not store is the client's to fix.
-impl From<ParseRecordTypeError> for UpdateError {
-    /// Refuse the update, naming the type.
-    fn from(err: ParseRecordTypeError) -> Self {
-        UpdateError::Refused(err.to_string())
-    }
-}
-
-/// Decoding failures from the wire parser are the client's fault.
+/// Rdata that does not decode as its type, or a type no update may carry,
+/// is a FORMERR (RFC 2136, Section 3.4.1).
 impl From<ParseUpdateError> for UpdateError {
-    /// Refuse the update, naming what did not decode.
+    /// Report what did not decode.
     fn from(err: ParseUpdateError) -> Self {
-        UpdateError::Refused(err.to_string())
+        UpdateError::FormErr(err.to_string())
     }
 }
 
 impl From<TsigError> for UpdateError {
-    /// Convert a failure into a dynamic update response error.
+    /// Convert a failure into an nsupdate response error.
     fn from(err: TsigError) -> Self {
         match err {
             TsigError::Malformed(_) => UpdateError::Refused(err.to_string()),
@@ -93,17 +97,18 @@ impl From<TsigError> for UpdateError {
     }
 }
 
-impl From<DynamicUpdateError> for UpdateError {
-    /// Convert a failure into a dynamic update response error.
-    fn from(err: DynamicUpdateError) -> Self {
+impl From<NsupdateError> for UpdateError {
+    /// Convert a failure into an nsupdate response error.
+    fn from(err: NsupdateError) -> Self {
         match err {
-            DynamicUpdateError::Refused(msg) => UpdateError::Refused(msg),
-            DynamicUpdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
-            DynamicUpdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
-            DynamicUpdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
-            DynamicUpdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
-            DynamicUpdateError::NotZone(msg) => UpdateError::NotZone(msg),
-            DynamicUpdateError::Internal(err) => UpdateError::Internal {
+            NsupdateError::Refused(msg) => UpdateError::Refused(msg),
+            NsupdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
+            NsupdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
+            NsupdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
+            NsupdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
+            NsupdateError::NotAuth(msg) => UpdateError::NotAuth(msg),
+            NsupdateError::NotZone(msg) => UpdateError::NotZone(msg),
+            NsupdateError::Internal(err) => UpdateError::Internal {
                 message: "failed to apply the update".to_string(),
                 source: Box::new(err),
             },
@@ -118,27 +123,65 @@ pub(crate) async fn apply_update(
     dns_cx: &DnsContext,
     request: UpdateRequest,
     query_data: &[u8],
+    transport: TransferTransport,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = async {
+        // A signature is verified first, whatever the listener's answer:
+        // keys are zone-independent, and every refusal below is then signed.
+        let tsig_key = match &request.tsig {
+            Some(tsig) => {
+                let (tsig_key, verified) =
+                    authenticate_tsig_key(dns_cx, &tsig.name, query_data).await?;
+                signer = Some(verified);
+                tsig_key
+            }
+            None => None,
+        };
+
+        // RFC 9103, Section 7.8: the TLS listener serves transfers alone.
+        if transport == TransferTransport::Tls {
+            return Err(UpdateError::NotSupported(
+                "UPDATE is not served over TLS".to_string(),
+            ));
+        }
+
+        // An unsigned update carries no identity, so admitting one admits
+        // every client that reaches the listener — the same trade
+        // `api.authentication_required = false` makes for the API.
+        let caller = match tsig_key {
+            Some(tsig_key) => Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
+                .await
+                .map_err(NsupdateError::from)?,
+            None if dns_cx.daemon().config().dns.nsupdate.tsig_required => {
+                return Err(UpdateError::Refused(
+                    "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+                ));
+            }
+            None => Caller::unsigned_dns(),
+        };
+
+        // An OPT the server cannot take is answered before the update is read.
+        match request.edns {
+            Edns::Absent | Edns::Present { .. } => {}
+            Edns::Malformed => return Err(UpdateError::Edns(OptRcode::FORMERR)),
+            Edns::UnsupportedVersion(_) => return Err(UpdateError::Edns(OptRcode::BADVERS)),
+        }
+
         // The parser renders the zone absolute; decoding it into labels here
-        // leaves no string test to decide where its root dot ends the name.
+        // leaves no string test to decide where its root dot ends the name. A
+        // name no zone can carry is not served here (RFC 2136, Section 3.1.2).
         if request.zone_name == "." {
-            return Err(UpdateError::NotZone(
-                "root zone is not supported".to_string(),
+            return Err(UpdateError::NotAuth(
+                "the root zone is not served here".to_string(),
             ));
         }
         let zone_name = ZoneName::parse(&request.zone_name).map_err(|e| {
-            UpdateError::NotZone(format!("'{}' is not a zone name: {}", request.zone_name, e))
+            UpdateError::NotAuth(format!("'{}' is not a zone name: {}", request.zone_name, e))
         })?;
 
-        // Authenticate before anything zone-specific: keys are zone-independent,
-        // and this lets even NOTZONE/REFUSED responses be signed.
-        let key = authenticate_request(dns_cx, &request, query_data, &mut signer).await?;
-
-        let update = DynamicUpdate {
+        let update = Update {
             zone_name,
-            key,
             prerequisites: request
                 .prerequisites
                 .iter()
@@ -148,41 +191,27 @@ pub(crate) async fn apply_update(
                 .updates
                 .iter()
                 .map(|record| decode_update(record, query_data))
-                .collect::<Result<_, _>>()?,
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
         };
 
-        let changed = dynamic_update::apply(dns_cx.daemon(), update).await?;
+        let changed = nsupdate::apply(dns_cx.daemon(), &caller, update).await?;
         Ok(changed)
     }
     .await;
     (result, signer)
 }
 
-/// Verify TSIG and retain its response signer, or return `None` for an allowed unsigned update.
-/// Disabling `nsupdate_tsig_required` never bypasses verification of signed requests.
-async fn authenticate_request(
+/// Authenticate the request by the key `key_name` names: its TSIG verified,
+/// the key comes back with the context that signs the response.
+pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
-    request: &UpdateRequest,
+    key_name: &str,
     query_data: &[u8],
-    signer: &mut Option<ResponseSigner>,
-) -> Result<Option<TsigKey>, UpdateError> {
-    let cx = dns_cx.daemon();
-    let tsig = match &request.tsig {
-        Some(tsig) => tsig,
-        None => {
-            // An unsigned update carries no identity, so this admits every
-            // client that reaches the listener — the same trade
-            // `api.authentication_required = false` makes for the API.
-            if !cx.config().dns.nsupdate_tsig_required {
-                return Ok(None);
-            }
-            return Err(UpdateError::Refused(
-                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
-            ));
-        }
-    };
-
-    let key = tsig_key::find_by_wire_name(cx, &tsig.name)
+) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
+    let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
         .map_err(|e| UpdateError::Internal {
             message: "failed to load TSIG key".to_string(),
@@ -191,22 +220,20 @@ async fn authenticate_request(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let domain_key = key.as_ref().map(TsigKey::to_domain_key).transpose()?;
-    *signer = Some(bindizr_core::dns::tsig::verify_tsig(
-        query_data, domain_key,
-    )?);
-
-    Ok(key)
+    let domain_key = tsig_key.as_ref().map(TsigKey::to_domain_key).transpose()?;
+    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, domain_key)?;
+    Ok((tsig_key, signer))
 }
 
-/// One prerequisite record, with the wire shapes of RFC 2136, Section 2.4 enforced:
-/// TTL is always 0, and only a CLASS IN prerequisite carries rdata.
+/// One prerequisite record, its shape held to RFC 2136, Section 3.2.1 (TTL 0,
+/// rdata only in the zone class); a type bindizr never stores keeps its
+/// meaning, since its record set can never exist, the zone's SOA excepted.
 fn decode_prerequisite(
     record: &UpdateRecord,
     query_data: &[u8],
 ) -> Result<Prerequisite, UpdateError> {
     if record.ttl != 0 {
-        return Err(UpdateError::Refused(
+        return Err(UpdateError::FormErr(
             "prerequisite TTL must be 0".to_string(),
         ));
     }
@@ -216,7 +243,7 @@ fn decode_prerequisite(
         Class::ANY | Class::NONE => {
             let is_any_class = record.class == Class::ANY;
             if !record.rdata.is_empty() {
-                return Err(UpdateError::Refused(format!(
+                return Err(UpdateError::FormErr(format!(
                     "{}-class prerequisite must have empty rdata",
                     if is_any_class { "ANY" } else { "NONE" }
                 )));
@@ -225,21 +252,33 @@ fn decode_prerequisite(
             Ok(match (is_any_class, record.record_type) {
                 (true, Rtype::ANY) => Prerequisite::NameInUse { name },
                 (false, Rtype::ANY) => Prerequisite::NameNotInUse { name },
-                (true, record_type) => Prerequisite::RecordSetInUse {
-                    name,
-                    record_type: RecordType::try_from(record_type)?,
+                (true, record_type) => match RecordType::try_from(record_type) {
+                    Ok(record_type) => Prerequisite::RecordSetInUse { name, record_type },
+                    Err(_) => Prerequisite::UnstoredTypeInUse { name, record_type },
                 },
-                (false, record_type) => Prerequisite::RecordSetNotInUse {
-                    name,
-                    record_type: RecordType::try_from(record_type)?,
+                (false, record_type) => match RecordType::try_from(record_type) {
+                    Ok(record_type) => Prerequisite::RecordSetNotInUse { name, record_type },
+                    Err(_) => Prerequisite::UnstoredTypeNotInUse { name, record_type },
                 },
             })
         }
         Class::IN => {
             if record.record_type == Rtype::ANY || record.rdata.is_empty() {
-                return Err(UpdateError::Refused(
+                return Err(UpdateError::FormErr(
                     "IN-class prerequisite must specify record type and rdata".to_string(),
                 ));
+            }
+            if record.record_type == Rtype::SOA {
+                return Ok(Prerequisite::SoaInUse {
+                    name,
+                    rdata: record.to_soa_rdata(query_data)?,
+                });
+            }
+            if RecordType::try_from(record.record_type).is_err() {
+                return Ok(Prerequisite::UnstoredTypeInUse {
+                    name,
+                    record_type: record.record_type,
+                });
             }
 
             let (record_type, value, priority) = record.to_record_value(query_data)?;
@@ -250,56 +289,136 @@ fn decode_prerequisite(
                 priority,
             })
         }
-        other => Err(UpdateError::Refused(format!(
+        other => Err(UpdateError::FormErr(format!(
             "unsupported prerequisite class: {}",
             other
         ))),
     }
 }
 
-/// Convert one wire update record into a validated service operation.
-fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOperation, UpdateError> {
+/// Convert one wire update record into a validated service operation, or
+/// `None` for a record RFC 2136 has the server pass over: a SOA delete
+/// (Sections 3.4.2.3 and 3.4.2.4) or a delete of a type bindizr never stores.
+fn decode_update(
+    record: &UpdateRecord,
+    query_data: &[u8],
+) -> Result<Option<UpdateOperation>, UpdateError> {
     let name = record.name.clone();
     match record.class {
         Class::IN => {
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            let ttl = Ttl::try_from(record.ttl).map_err(|_| {
-                UpdateError::Refused(format!(
-                    "TTL value {} exceeds maximum allowed value ({})",
-                    record.ttl,
-                    i32::MAX
-                ))
-            })?;
-            Ok(UpdateOperation::AddRecord {
+            // RFC 2181, Section 8: a TTL with its top bit set reads as zero.
+            let ttl = Ttl::try_from(record.ttl).unwrap_or(Ttl::from_secs(0));
+            Ok(Some(UpdateOperation::AddRecord {
                 name,
                 record_type,
                 value,
                 ttl,
                 priority,
-            })
+            }))
         }
         Class::ANY => {
             record.validate_delete_shape()?;
-            Ok(UpdateOperation::DeleteRecordSet {
-                name,
-                record_type: (record.record_type != Rtype::ANY)
-                    .then(|| RecordType::try_from(record.record_type))
-                    .transpose()?,
-            })
+            let record_type = match record.record_type {
+                Rtype::ANY => None,
+                Rtype::SOA => return Ok(None),
+                other => match RecordType::try_from(other) {
+                    Ok(record_type) => Some(record_type),
+                    Err(_) => return Ok(None),
+                },
+            };
+            Ok(Some(UpdateOperation::DeleteRecordSet { name, record_type }))
         }
         Class::NONE => {
             record.validate_delete_shape()?;
+            // No row can match the SOA or an unstored type (RFC 2136, Section 2.5.4).
+            if RecordType::try_from(record.record_type).is_err() {
+                return Ok(None);
+            }
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            Ok(UpdateOperation::DeleteRecord {
+            Ok(Some(UpdateOperation::DeleteRecord {
                 name,
                 record_type,
                 value,
                 priority,
-            })
+            }))
         }
-        class => Err(UpdateError::Refused(format!(
+        class => Err(UpdateError::FormErr(format!(
             "unsupported update class: {}",
             class
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A wire record of the given shape, carrying no rdata.
+    fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
+        UpdateRecord {
+            name: "host.example.com.".to_string(),
+            record_type,
+            class,
+            ttl,
+            rdata: rdata.to_vec(),
+            rdata_start: 0,
+        }
+    }
+
+    /// Verify that the shapes RFC 2136, Sections 3.2.1 and 3.4.1 fix are
+    /// answered FORMERR rather than REFUSED.
+    #[test]
+    fn malformed_sections_are_formerr() {
+        let prerequisites = [
+            record(Class::ANY, Rtype::ANY, 1, &[]),
+            record(Class::ANY, Rtype::A, 0, &[1, 2, 3, 4]),
+            record(Class::IN, Rtype::ANY, 0, &[1, 2, 3, 4]),
+            record(Class::CH, Rtype::ANY, 0, &[]),
+        ];
+        for prerequisite in &prerequisites {
+            let err = decode_prerequisite(prerequisite, &[]).unwrap_err();
+            assert!(matches!(err, UpdateError::FormErr(_)), "{prerequisite:?}");
+        }
+
+        let updates = [
+            record(Class::NONE, Rtype::ANY, 0, &[]),
+            record(Class::ANY, Rtype::A, 0, &[1, 2, 3, 4]),
+            record(Class::IN, Rtype::AXFR, 0, &[]),
+            record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
+        ];
+        for update in &updates {
+            let err = decode_update(update, &[]).unwrap_err();
+            assert!(matches!(err, UpdateError::FormErr(_)), "{update:?}");
+        }
+    }
+
+    /// Verify that a SOA delete and a delete of an unstored type are passed
+    /// over, and that a TTL with its top bit set reads as zero.
+    #[test]
+    fn passed_over_records_and_a_high_bit_ttl() {
+        assert!(
+            decode_update(&record(Class::ANY, Rtype::SOA, 0, &[]), &[])
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            decode_update(&record(Class::ANY, Rtype::HINFO, 0, &[]), &[])
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            decode_update(&record(Class::NONE, Rtype::HINFO, 0, &[1, 2]), &[])
+                .unwrap()
+                .is_none()
+        );
+
+        let message = [192, 0, 2, 1];
+        let mut add = record(Class::IN, Rtype::A, u32::MAX, &message);
+        add.rdata_start = 0;
+        match decode_update(&add, &message).unwrap() {
+            Some(UpdateOperation::AddRecord { ttl, .. }) => assert_eq!(ttl.as_secs(), 0),
+            other => panic!("{other:?}"),
+        }
     }
 }

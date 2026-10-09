@@ -7,7 +7,7 @@ use bindizr_db::LockLevel;
 use super::change_set::{ZoneChangeSet, group_ops_by_zone, parse_changes_request};
 use crate::{
     Context,
-    authorization::{Caller, RecordWrite},
+    authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
     record,
@@ -63,9 +63,9 @@ pub async fn apply_changes(
             // a no-op must not bypass grants or reveal existing records.
             let adds = ops.adds.iter().map(|op| (Action::RecordCreate, op));
             let dels = ops.dels.iter().map(|op| (Action::RecordDelete, op));
-            let writes: Vec<RecordWrite<'_>> = adds
+            let writes: Vec<RecordAccess<'_>> = adds
                 .chain(dels)
-                .map(|(action, op)| RecordWrite {
+                .map(|(action, op)| RecordAccess {
                     action,
                     relative_name: op.name.clone(),
                     record_type: Some(&op.record_type),
@@ -74,7 +74,7 @@ pub async fn apply_changes(
             caller
                 .reauthenticate_tx(&mut tx)
                 .await?
-                .authorize_record_writes(&zone, &writes)?;
+                .authorize_record_access(&zone, &writes)?;
 
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.

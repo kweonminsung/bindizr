@@ -108,9 +108,16 @@ impl TestApp {
 
         // BIND9 loads no zone whose apex carries no NS, and bindizr leaves
         // that record to the operator, so such a zone reaches no secondary.
+        // The listing renders the name absolute and the zone name bare.
+        let is_apex = |record: &Value| {
+            record["name"]
+                .as_str()
+                .map(|name| name.trim_end_matches('.'))
+                == record["zone_name"].as_str()
+        };
         let served_zones = records
             .iter()
-            .filter(|record| record["type"] == "NS" && record["name"] == record["zone_name"])
+            .filter(|record| record["type"] == "NS" && is_apex(record))
             .filter_map(|record| record["zone_name"].as_str().map(str::to_string))
             .collect::<HashSet<_>>();
 

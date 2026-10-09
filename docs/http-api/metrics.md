@@ -19,10 +19,10 @@ curl http://localhost:3000/metrics
 | `bindizr_zones_total`, `bindizr_records_total` | gauge | Zone / record counts, refreshed at scrape time |
 | `bindizr_http_requests_total{method, route, status}` | counter | HTTP API requests, labeled by route pattern |
 | `bindizr_http_request_duration_seconds{method, route}` | histogram | HTTP API request latency |
-| `bindizr_xfr_total{type, result}` | counter | AXFR/IXFR requests served, by query type and outcome; a UDP request (TC set, or an IXFR's SOA alone) counts as `truncated`, since the transfer itself follows over TCP |
+| `bindizr_xfr_total{type, result, transport}` | counter | AXFR/IXFR requests served, by query type, outcome, and transport (`udp`, `tcp`, `tls`); a UDP request (TC set, or an IXFR's SOA alone) counts as `truncated`, since the transfer itself follows over TCP or TLS |
 | `bindizr_soa_queries_total{result}` | counter | SOA queries answered, by outcome; secondaries poll these on their refresh timer, so a rise in `refused` means one stopped being an enabled secondary |
 | `bindizr_notify_sent_total{result}` | counter | NOTIFY delivery attempts to secondaries, by outcome |
-| `bindizr_nsupdate_requests_total{result}` | counter | RFC 2136 dynamic updates, by outcome |
+| `bindizr_nsupdate_requests_total{result}` | counter | nsupdate requests (RFC 2136), by outcome |
 | `bindizr_pruned_rows_total{table}` | counter | History rows pruned by table (`journal`/`version`); zero is expected until rows exceed the retention period |
 | `bindizr_zone_serial_bumps_total` | counter | Zone serial writes across every update path |
 | `bindizr_dnssec_zones_total` | gauge | DNSSEC-signed zones, refreshed at scrape time |
@@ -31,8 +31,8 @@ curl http://localhost:3000/metrics
 | `bindizr_dnssec_rrsigs_expired_total` | gauge | Signatures already past their expiration; any at all mean resolvers are failing part of a zone |
 | `bindizr_dnssec_scheduler_runs_total{result}` | counter | DNSSEC scheduler passes by outcome; interval set by `dns.scheduler_interval_secs` |
 | `bindizr_zone_cache_lookups_total{result}` | counter | Transfer-cache reads by outcome; a low hit ratio means transfers reach the database anyway |
-| `bindizr_zone_cache_evictions_total` | counter | Zones dropped to make room; rising beside a low hit ratio means `dns.transfer_cache.max_records` is too small |
-| `bindizr_zone_cache_records` | gauge | Records the transfer cache holds, against `dns.transfer_cache.max_records` |
+| `bindizr_zone_cache_evictions_total` | counter | Zones dropped to make room; rising beside a low hit ratio means `dns.transfer.cache_max_records` is too small |
+| `bindizr_zone_cache_records` | gauge | Records the transfer cache holds, against `dns.transfer.cache_max_records` |
 
 Example Prometheus scrape configuration:
 

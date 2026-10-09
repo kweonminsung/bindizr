@@ -129,6 +129,30 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
+    // RFC 6672, Section 2.4: one DNAME per name, and none beside a
+    // delegation, which at any name but the apex is what NS records are.
+    let has_at_name = |wanted: RecordType| records_at_name.iter().any(|r| r.record_type == wanted);
+    if *record_type == RecordType::Dname {
+        if has_at_name(RecordType::Dname) {
+            return Err(ServiceError::record_conflict(format!(
+                "a DNAME record already exists at '{}'; only one DNAME is allowed per name",
+                stored_name
+            )));
+        }
+        if !stored_name.is_apex() && has_at_name(RecordType::Ns) {
+            return Err(ServiceError::record_conflict(format!(
+                "a DNAME record cannot share the delegation '{}' with NS records",
+                stored_name
+            )));
+        }
+    }
+    if *record_type == RecordType::Ns && !stored_name.is_apex() && has_at_name(RecordType::Dname) {
+        return Err(ServiceError::record_conflict(format!(
+            "NS records cannot delegate '{}' beside its DNAME record",
+            stored_name
+        )));
+    }
+
     // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
     // DS lives in its parent. The NS coupling is checked at versioning.
     if *record_type == RecordType::Ds && stored_name.is_apex() {

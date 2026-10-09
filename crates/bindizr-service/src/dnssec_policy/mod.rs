@@ -59,7 +59,7 @@ pub async fn create(
     let signature_validity_days = request.signature_validity_days.unwrap_or(14);
     let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);
     let zsk_lifetime_days = request.zsk_lifetime_days.unwrap_or(0);
-    let (signature_validity_days, signature_refresh_days, zsk_lifetime_days) = validate_timing(
+    let timing = validate_timing(
         signature_validity_days,
         signature_refresh_days,
         zsk_lifetime_days,
@@ -87,9 +87,9 @@ pub async fn create(
                 algorithm,
                 denial,
                 split_keys: request.split_keys,
-                signature_validity_days,
-                signature_refresh_days,
-                zsk_lifetime_days,
+                signature_validity_days: timing.signature_validity_days,
+                signature_refresh_days: timing.signature_refresh_days,
+                zsk_lifetime_days: timing.zsk_lifetime_days,
                 created_at: Utc::now(),
             },
         )
@@ -173,7 +173,7 @@ pub async fn update(
         let zsk_lifetime_days = request
             .zsk_lifetime_days
             .unwrap_or(policy.zsk_lifetime_days.as_days());
-        let (signature_validity_days, signature_refresh_days, zsk_lifetime_days) = validate_timing(
+        let timing = validate_timing(
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
@@ -182,9 +182,9 @@ pub async fn update(
         Ok(bindizr_db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
-                signature_validity_days,
-                signature_refresh_days,
-                zsk_lifetime_days,
+                signature_validity_days: timing.signature_validity_days,
+                signature_refresh_days: timing.signature_refresh_days,
+                zsk_lifetime_days: timing.zsk_lifetime_days,
                 ..policy
             },
         )
@@ -243,13 +243,21 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
     normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
+/// A policy's validated timers, in the columns they are stored as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SigningTiming {
+    signature_validity_days: Days,
+    signature_refresh_days: Days,
+    zsk_lifetime_days: Days,
+}
+
 /// Validate signing timings, requiring refresh below validity so the scheduler
 /// does not re-sign on every pass.
 fn validate_timing(
     signature_validity_days: u32,
     signature_refresh_days: u32,
     zsk_lifetime_days: u32,
-) -> Result<(Days, Days, Days), ServiceError> {
+) -> Result<SigningTiming, ServiceError> {
     if signature_validity_days == 0 {
         return Err(ServiceError::invalid_input(
             "signature_validity_days must be greater than 0",
@@ -279,11 +287,11 @@ fn validate_timing(
         )));
     }
     let days = |value: u32| Days::try_from(value).map_err(ServiceError::invalid_input);
-    Ok((
-        days(signature_validity_days)?,
-        days(signature_refresh_days)?,
-        days(zsk_lifetime_days)?,
-    ))
+    Ok(SigningTiming {
+        signature_validity_days: days(signature_validity_days)?,
+        signature_refresh_days: days(signature_refresh_days)?,
+        zsk_lifetime_days: days(zsk_lifetime_days)?,
+    })
 }
 
 #[cfg(test)]

@@ -26,6 +26,28 @@ services:
         ipv4_address: 172.28.0.2
     restart: unless-stopped
 
+  # One shot: a CA and the certificate bindizr serves XoT with, named for the
+  # bindizr service so bind9-1 verifies it (strict TLS). Kept on a volume, so
+  # a restarted stack keeps the pair bind9-1 trusts.
+  xot-certs:
+    image: alpine:3.21
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cd /certs
+        [ -f xot.key ] && exit 0
+        apk add --no-cache openssl >/dev/null
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+          -subj "/CN=bindizr e2e CA" -keyout ca.key -out ca.crt
+        openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+          -subj "/CN=bindizr" -addext "subjectAltName=DNS:bindizr,IP:172.28.0.10" \
+          -keyout xot.key -out xot.csr
+        openssl x509 -req -in xot.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
+          -copy_extensions copy -out xot.crt
+        chmod 644 xot.key
+    volumes:
+      - xot-certs:/certs
+
   bindizr:
     build:
       context: ../..
@@ -33,6 +55,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      xot-certs:
+        condition: service_completed_successfully
     environment:
       BINDIZR_DATABASE_TYPE: postgresql
       BINDIZR_DATABASE_URL: postgresql://bindizr:bindizr@postgres:5432/bindizr
@@ -45,17 +69,23 @@ services:
       BINDIZR_DNS_NOTIFY_RETRIES: "3"
       BINDIZR_DNS_NOTIFY_TIMEOUT_SECS: "3"
       BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED: "false"
+      BINDIZR_DNS_TLS_CERT_FILE: /certs/xot.crt
+      BINDIZR_DNS_TLS_KEY_FILE: /certs/xot.key
     ports:
       - "8000:8000/tcp"
       - "5300:53/tcp"
       - "5300:53/udp"
+      - "5853:853/tcp"
     volumes:
       - bindizr-data:/var/lib/bindizr
+      - xot-certs:/certs:ro
     networks:
       bindizr-net:
         ipv4_address: 172.28.0.10
     restart: unless-stopped
 
+  # bind9-1 pulls over TLS (XoT) under a TSIG key, bind9-2 over plain TCP by
+  # address, so both paths meet a real BIND.
   bind9-1:
     image: internetsystemsconsortium/bind9:9.21
     command: ["-g", "-c", "/etc/bind/named.conf"]
@@ -66,7 +96,8 @@ services:
       - "1053:53/tcp"
       - "1053:53/udp"
     volumes:
-      - ./bind9/named.conf:/etc/bind/named.conf:ro
+      - ./bind9/named-xot.conf:/etc/bind/named.conf:ro
+      - xot-certs:/etc/bind/xot:ro
       - bind9-1-cache:/var/cache/bind
       - bind9-1-data:/var/lib/bind
     networks:
@@ -120,6 +151,7 @@ networks:
 
 volumes:
   bindizr-data:
+  xot-certs:
   bind9-1-cache:
   bind9-2-cache:
   bind9-1-data:

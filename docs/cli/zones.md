@@ -111,7 +111,8 @@ Choose an import mode explicitly when replacing existing data:
 a missing zone is created from the source SOA, preserving its timers and
 using its serial as the starting value. That serial must be between 1 and
 2,137,483,647; otherwise both dry run and apply fail without creating the
-zone. Applying record changes advances it once. See
+zone. Applying record changes advances it once. `[dns.import]` bounds the
+pull, 30 seconds and 200,000 records by default. See
 [Migrating an Existing Primary](../deployment/migrating.md).
 
 ```bash

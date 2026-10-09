@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    dns::message::{Class, Rtype},
+    dns::message::{Class, Edns, Rtype},
     model::record::RecordType,
 };
 
@@ -49,7 +49,10 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
         0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x01, // Time signed
         0x01, 0x2c, // Fudge
-        0x00, 0x00, // MAC size
+        0x00, 0x20, // MAC size: the 32 octets hmac-sha256 produces
+    ]);
+    rdata.extend_from_slice(&[0u8; 32]);
+    rdata.extend_from_slice(&[
         0x12, 0x34, // Original ID
         0x00, 0x00, // Error
         0x00, 0x00, // Other len
@@ -272,7 +275,7 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
     assert_eq!(priority, Some(10));
 }
 
-/// Build a dynamic update record with the requested wire fields.
+/// Build an nsupdate record with the requested wire fields.
 fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
@@ -284,7 +287,7 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
     }
 }
 
-/// Build a dynamic update record with the requested wire fields.
+/// Build an nsupdate record with the requested wire fields.
 fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
@@ -332,4 +335,39 @@ fn a_malformed_delete_names_what_it_lacks() {
     ] {
         assert_eq!(record.validate_delete_shape().unwrap_err(), expected);
     }
+}
+
+/// Verify that the OPT record is read as RFC 6891 asks: one is kept, two
+/// are malformed, and a version above 0 is unsupported.
+#[test]
+fn parse_update_request_reads_the_opt_record() {
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 1);
+    append_opt_record(&mut message);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Present {
+            udp_payload_size: 1232
+        }
+    );
+
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 2);
+    append_opt_record(&mut message);
+    append_opt_record(&mut message);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Malformed
+    );
+
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 1);
+    // The TTL's second octet is the EDNS version.
+    message.extend_from_slice(&[
+        0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::UnsupportedVersion(1)
+    );
 }

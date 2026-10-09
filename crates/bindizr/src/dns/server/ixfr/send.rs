@@ -12,25 +12,24 @@ use bindizr_core::{
     },
 };
 use thiserror::Error;
-use tokio::net::TcpStream;
 
-use crate::dns::error::XfrError;
+use crate::dns::{error::XfrError, stream::ResponseWriter};
 
 /// The whole answer when the client is already at the current serial: one
 /// SOA and nothing to replay (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(
-    stream: &mut TcpStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     current_soa: &ZoneVersion,
     signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }
 
     builder.add_version_soa(current_soa)?;
-    crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
+    writer.flush_if_not_empty(&mut builder).await?;
 
     Ok(())
 }
@@ -48,16 +47,21 @@ pub(crate) enum IxfrSendError {
         signer: Option<Box<TransferSigner>>,
     },
     /// Failed mid-stream, or in the I/O of the first frame, part of which may
-    /// have reached the client; falling back to AXFR would corrupt the stream.
-    #[error("{0}")]
-    Partial(#[source] XfrError),
+    /// have reached the client; falling back to AXFR would corrupt the
+    /// stream, so the signer comes back to end it.
+    #[error("{error}")]
+    Partial {
+        #[source]
+        error: XfrError,
+        signer: Option<Box<TransferSigner>>,
+    },
 }
 
 /// Streams the IXFR answers across multiple TCP messages, flushing before the
 /// 64 KiB wire limit, and reports whether a failure left the stream dirty so
 /// the caller can decide about AXFR fallback.
 pub(crate) async fn send_ixfr_response(
-    stream: &mut TcpStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     zone: &Zone,
     client_serial: Serial,
@@ -65,7 +69,7 @@ pub(crate) async fn send_ixfr_response(
     versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
 ) -> Result<(), IxfrSendError> {
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }
@@ -81,13 +85,11 @@ pub(crate) async fn send_ixfr_response(
                 })?;
 
         // Initial SOA (current serial).
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_version_soa(current_version),
-        )
-        .await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_version_soa(current_version)
+            })
+            .await?;
 
         let mut changes_by_serial: HashMap<Serial, Vec<&ZoneChange>> = HashMap::new();
         for change in changes {
@@ -114,25 +116,21 @@ pub(crate) async fn send_ixfr_response(
                     which: "old",
                     serial: old_serial,
                 })?;
-            crate::dns::wire::add_answer_and_flush_if_needed(
-                &mut builder,
-                stream,
-                &mut messages_sent,
-                |builder| builder.add_version_soa(old_soa),
-            )
-            .await?;
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_version_soa(old_soa)
+                })
+                .await?;
 
             for change in serial_changes
                 .iter()
                 .filter(|c| c.operation == ChangeOperation::Delete)
             {
-                crate::dns::wire::add_answer_and_flush_if_needed(
-                    &mut builder,
-                    stream,
-                    &mut messages_sent,
-                    |builder| builder.add_change(change, &zone.name),
-                )
-                .await?;
+                writer
+                    .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                        builder.add_change(change, &zone.name)
+                    })
+                    .await?;
             }
 
             // New SOA (addition section marker).
@@ -142,37 +140,31 @@ pub(crate) async fn send_ixfr_response(
                     which: "new",
                     serial,
                 })?;
-            crate::dns::wire::add_answer_and_flush_if_needed(
-                &mut builder,
-                stream,
-                &mut messages_sent,
-                |builder| builder.add_version_soa(new_soa),
-            )
-            .await?;
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_version_soa(new_soa)
+                })
+                .await?;
 
             for change in serial_changes
                 .iter()
                 .filter(|c| c.operation == ChangeOperation::Add)
             {
-                crate::dns::wire::add_answer_and_flush_if_needed(
-                    &mut builder,
-                    stream,
-                    &mut messages_sent,
-                    |builder| builder.add_change(change, &zone.name),
-                )
-                .await?;
+                writer
+                    .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                        builder.add_change(change, &zone.name)
+                    })
+                    .await?;
             }
         }
 
         // Final SOA (current serial).
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_version_soa(current_version),
-        )
-        .await?;
-        messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_version_soa(current_version)
+            })
+            .await?;
+        messages_sent += writer.flush_if_not_empty(&mut builder).await?;
 
         Ok::<(), XfrError>(())
     }
@@ -189,7 +181,10 @@ pub(crate) async fn send_ixfr_response(
             if messages_sent > 0
                 || matches!(err, XfrError::Io(_) | XfrError::WriteTimeout { .. }) =>
         {
-            Err(IxfrSendError::Partial(err))
+            Err(IxfrSendError::Partial {
+                error: err,
+                signer: builder.take_signer().map(Box::new),
+            })
         }
         Err(error) => Err(IxfrSendError::NotStarted {
             error,

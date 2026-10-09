@@ -1,9 +1,10 @@
-//! Pulling a zone over TCP the way a secondary does, signed or not, so the
-//! transfer path can be driven without BIND on the host.
+//! Pulling a zone over TCP or TLS the way a secondary does, signed or not, so
+//! the transfer path can be driven without BIND on the host.
 
 use std::{
     io::{Read, Write},
-    net::TcpStream,
+    net::{IpAddr, Ipv4Addr, TcpStream},
+    sync::Arc,
     time::Duration,
 };
 
@@ -12,16 +13,17 @@ use domain::{
     rdata::tsig::Time48,
     tsig::ClientSequence,
 };
+use rustls::{ClientConfig, ClientConnection, StreamOwned, pki_types::ServerName};
 
 use super::parse_name;
-use crate::common::dns::nsupdate::SigningKey;
+use crate::common::dns::nsupdate::{SigningKey, is_signed};
 
 /// What a zone transfer returned: the records it carried, or the RCODE that
-/// refused it.
+/// refused it and whether that refusal was signed.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) enum TransferOutcome {
     Records(usize),
-    Refused(Rcode),
+    Refused { rcode: Rcode, signed: bool },
 }
 
 impl TransferOutcome {
@@ -29,30 +31,99 @@ impl TransferOutcome {
     pub(crate) fn records(self) -> usize {
         match self {
             TransferOutcome::Records(count) => count,
-            TransferOutcome::Refused(rcode) => panic!("transfer refused with {rcode}"),
+            TransferOutcome::Refused { rcode, .. } => panic!("transfer refused with {rcode}"),
         }
     }
 
     /// The RCODE of a refused transfer, panicking if it ran.
     pub(crate) fn refusal(self) -> Rcode {
         match self {
-            TransferOutcome::Refused(rcode) => rcode,
+            TransferOutcome::Refused { rcode, .. } => rcode,
+            TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
+        }
+    }
+
+    /// Whether a refusal was signed under the request's key, panicking if
+    /// the transfer ran.
+    pub(crate) fn refusal_signed(self) -> bool {
+        match self {
+            TransferOutcome::Refused { signed, .. } => signed,
             TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
         }
     }
 }
 
-/// Run an AXFR against `port`. With a key the request is signed and every
-/// envelope's MAC is verified, so a server that answered unsigned — which
-/// BIND would discard — fails here too.
+/// Run an AXFR against `port` over plain TCP. With a key the request is
+/// signed and every envelope's MAC is verified, so a server that answered
+/// unsigned — which BIND would discard — fails here too.
 pub(crate) fn axfr(
     port: u16,
     zone: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferOutcome, String> {
-    let query_id = (std::process::id() as u16)
-        .wrapping_add(port)
-        .wrapping_add(7);
+    let mut stream = connect(port)?;
+    transfer(&mut stream, zone, key)
+}
+
+/// Run an AXFR against `port` over TLS (XoT, RFC 9103) as `client` is
+/// configured to; a handshake the server refuses is the transfer's error.
+pub(crate) fn xot(
+    port: u16,
+    zone: &str,
+    key: Option<&SigningKey>,
+    client: ClientConfig,
+) -> Result<TransferOutcome, String> {
+    let tcp = connect(port)?;
+    let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let session = ClientConnection::new(Arc::new(client), server).map_err(|e| e.to_string())?;
+    transfer(&mut StreamOwned::new(session, tcp), zone, key)
+}
+
+/// Send one message over TCP to the listener on `port` and return the first
+/// response frame, for a test that builds its own question.
+pub(crate) fn exchange_tcp(port: u16, message: &[u8]) -> Result<Vec<u8>, String> {
+    exchange(&mut connect(port)?, message)
+}
+
+/// Send one message over TLS to the listener on `port` as `client` is
+/// configured to, and return the first response frame.
+pub(crate) fn exchange_xot(
+    port: u16,
+    message: &[u8],
+    client: ClientConfig,
+) -> Result<Vec<u8>, String> {
+    let tcp = connect(port)?;
+    let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let session = ClientConnection::new(Arc::new(client), server).map_err(|e| e.to_string())?;
+    exchange(&mut StreamOwned::new(session, tcp), message)
+}
+
+/// Write one framed message and read the first frame back.
+fn exchange<S: Read + Write>(stream: &mut S, message: &[u8]) -> Result<Vec<u8>, String> {
+    let mut framed = (message.len() as u16).to_be_bytes().to_vec();
+    framed.extend_from_slice(message);
+    stream.write_all(&framed).map_err(|e| e.to_string())?;
+    read_frame(stream)?.ok_or_else(|| "the server closed without answering".to_string())
+}
+
+/// Connect to the listener on `port`, with a read timeout so a silent server
+/// fails the test instead of hanging it.
+fn connect(port: u16) -> Result<TcpStream, String> {
+    let stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .map_err(|e| e.to_string())?;
+    Ok(stream)
+}
+
+/// Transfer `zone` over an open stream, verifying the signature when `key`
+/// signed the request.
+fn transfer<S: Read + Write>(
+    stream: &mut S,
+    zone: &str,
+    key: Option<&SigningKey>,
+) -> Result<TransferOutcome, String> {
+    let query_id = (std::process::id() as u16).wrapping_add(7);
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     let mut question = builder.question();
@@ -71,10 +142,6 @@ pub(crate) fn axfr(
     };
     let query = additional.finish();
 
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|e| e.to_string())?;
     let mut framed = (query.len() as u16).to_be_bytes().to_vec();
     framed.extend_from_slice(&query);
     stream.write_all(&framed).map_err(|e| e.to_string())?;
@@ -83,14 +150,17 @@ pub(crate) fn axfr(
     let mut records = 0usize;
     let mut soa_seen = 0usize;
     while soa_seen < 2 {
-        let Some(frame) = read_frame(&mut stream)? else {
+        let Some(frame) = read_frame(stream)? else {
             return Err(format!(
                 "the transfer ended after {records} record(s) without its closing SOA"
             ));
         };
         let mut message = Message::from_octets(frame).map_err(|e| e.to_string())?;
         if message.header().rcode() != Rcode::NOERROR {
-            return Ok(TransferOutcome::Refused(message.header().rcode()));
+            return Ok(TransferOutcome::Refused {
+                rcode: message.header().rcode(),
+                signed: is_signed(&message)?,
+            });
         }
         if let Some(client) = client.as_mut() {
             client
@@ -115,7 +185,7 @@ pub(crate) fn axfr(
 }
 
 /// Read the next length-prefixed DNS transfer frame.
-fn read_frame(stream: &mut TcpStream) -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
     let mut len = [0u8; 2];
     match stream.read_exact(&mut len) {
         Ok(()) => {}

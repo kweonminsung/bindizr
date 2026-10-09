@@ -59,16 +59,16 @@ reaches only part of the action set:
 - An **API token** exercises every action except `zone:transfer`: transfers
   are DNS requests, authorized by a TSIG key or the registered secondaries,
   never by a token.
-- A **TSIG key** exercises only `record:read`, `record:create`, and
-  `record:delete` (for nsupdate) and `zone:transfer` (for AXFR/IXFR). Other
-  actions in its role have no effect on what it signs.
+- A **TSIG key** exercises only the `record:*` actions (for nsupdate) and
+  `zone:transfer` (for AXFR/IXFR). Other actions in its role have no effect
+  on what it signs.
 
 What a key may sign follows its role:
 
 | Request | Needs |
 | --- | --- |
 | nsupdate prerequisite | `record:read` at its name and type |
-| nsupdate add | `record:create` at its name and type |
+| nsupdate add | `record:create` at its name and type; `record:delete` too when it replaces a CNAME or DNAME, `record:update` when its TTL moves the record set |
 | nsupdate delete | `record:delete` at its name and type |
 | Signed AXFR/IXFR of a zone | `zone:transfer` reaching the zone |
 | Signed transfer of the catalog zone | `zone:transfer` in all zones |
@@ -100,4 +100,7 @@ configures nothing extra.
 
 A key Bindizr does not hold is refused (`BADKEY`) rather than falling back to
 the address list: signing must not be a way around the check. A known key
-whose role lacks `zone:transfer` for the zone is refused too.
+whose role lacks `zone:transfer` for the zone is refused too. A TSIG record
+that is doubled, not last, unreadable, or carries a MAC of a size its
+algorithm cannot produce is a `FORMERR` (RFC 8945, Section 5.2), signed by
+no one.

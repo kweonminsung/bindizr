@@ -1,6 +1,6 @@
 use bindizr_core::model::{
     role_grant::Action,
-    transfer::{TransferKind, TransferResult},
+    transfer::{TransferKind, TransferResult, TransferTransport},
 };
 use bindizr_service::types::{
     BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest,
@@ -170,6 +170,7 @@ use utoipa::{
         NotifyCheckResponse,
         TransferKind,
         TransferResult,
+        TransferTransport,
         TransferResponse,
         TransferSummary,
         SecondaryTransfersResponse,

@@ -29,7 +29,8 @@ impl DnssecKey {
         eligible_at: DateTime<Utc>,
     ) -> Result<Self, GenerateKeyError> {
         let params = match algorithm {
-            // 2048 bits is the interoperable RSA size (RFC 8624 requires >= 2048).
+            // 2048 bits: the RSA size in common use; shorter is weak, longer
+            // slows signing and swells every signed answer.
             DnssecAlgorithm::RsaSha256 => {
                 domain::crypto::sign::GenerateParams::RsaSha256 { bits: 2048 }
             }

@@ -32,10 +32,10 @@ impl Config {
             self.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_API_TLS_CERT_FILE") {
-            self.api.tls_cert_file = to_optional_setting(value);
+            self.api.tls.cert_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_API_TLS_KEY_FILE") {
-            self.api.tls_key_file = to_optional_setting(value);
+            self.api.tls.key_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
             self.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
@@ -48,6 +48,15 @@ impl Config {
         }
         if let Some(value) = get_env("BINDIZR_DATABASE_SQLITE_FILE_PATH") {
             self.database.sqlite.file_path = value;
+        }
+        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_MODE") {
+            self.database.tls.mode = match to_optional_setting(value) {
+                Some(value) => Some(parse_env_value("BINDIZR_DATABASE_TLS_MODE", &value)?),
+                None => None,
+            };
+        }
+        if let Some(value) = get_env("BINDIZR_DATABASE_TLS_CA_FILE") {
+            self.database.tls.ca_file = to_optional_setting(value);
         }
         // The generic URL overrides the selected backend's URL above; SQLite
         // continues to use its file path.
@@ -69,7 +78,7 @@ impl Config {
                 ZoneName::parse(&value).map_err(ConfigError::CatalogZoneName)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
-            self.dns.nsupdate_tsig_required =
+            self.dns.nsupdate.tsig_required =
                 parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;
         }
         // Three variables rather than one, because the key's name is part of
@@ -92,9 +101,38 @@ impl Config {
             self.dns.notify.timeout_secs =
                 parse_env_value("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS", &value)?;
         }
+        if let Some(value) = get_env("BINDIZR_DNS_TLS_LISTEN_PORT") {
+            self.dns.tls.listen_port = parse_env_value("BINDIZR_DNS_TLS_LISTEN_PORT", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_TLS_CERT_FILE") {
+            self.dns.tls.cert_file = to_optional_setting(value);
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_TLS_KEY_FILE") {
+            self.dns.tls.key_file = to_optional_setting(value);
+        }
         if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS") {
-            self.dns.transfer_cache.max_records =
+            self.dns.transfer.cache_max_records =
                 parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_REQUIRE_TLS") {
+            self.dns.transfer.require_tls =
+                parse_env_value("BINDIZR_DNS_TRANSFER_REQUIRE_TLS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS") {
+            self.dns.tcp_idle_timeout_secs =
+                parse_env_value("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_TCP_MAX_CONNECTIONS") {
+            self.dns.tcp_max_connections =
+                parse_env_value("BINDIZR_DNS_TCP_MAX_CONNECTIONS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_TIMEOUT_SECS") {
+            self.dns.import.timeout_secs =
+                parse_env_value("BINDIZR_DNS_IMPORT_TIMEOUT_SECS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_DNS_IMPORT_MAX_RECORDS") {
+            self.dns.import.max_records =
+                parse_env_value("BINDIZR_DNS_IMPORT_MAX_RECORDS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL") {
             self.dns.zone_defaults.ttl = parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;

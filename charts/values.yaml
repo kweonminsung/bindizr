@@ -43,6 +43,10 @@ bindizr:
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
     # least one must keep it.
     schedulerIntervalSecs: 3600
+    # Idle seconds before a TCP or TLS connection closes (advertised as
+    # edns-tcp-keepalive), and connections served at once on each listener.
+    tcpIdleTimeoutSecs: 30
+    tcpMaxConnections: 128
     # Secondaries outside the chart, registered beside the BIND pods when a
     # bindizr pod starts; each needs a name and a host[:port] address.
     extraSecondaries: []
@@ -55,11 +59,25 @@ bindizr:
       # answered; 0 sends before answering.
       batchMs: 0
       retries: 3
+      # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query.
       timeoutSecs: 3
-    # Zone records cached per serial, so repeated transfers skip the database.
-    transferCache:
-      # Records the cache holds; a larger zone is served uncached, 0 caches nothing.
-      maxRecords: 500000
+    tls:
+      # A Secret holding tls.crt and tls.key to serve zone transfers over TLS
+      # (XoT, RFC 9103) on dns.tls.port; empty leaves that listener off.
+      existingSecret: ""
+      port: 853
+    transfer:
+      # Zone records cached per serial, so repeated transfers skip the
+      # database; a larger zone is served uncached, 0 caches nothing.
+      cacheMaxRecords: 500000
+      # Refuse AXFR and IXFR over plain TCP and UDP once every secondary pulls
+      # over TLS; needs dns.tls.existingSecret. SOA queries keep answering.
+      requireTls: false
+    import:
+      # zone import --from-server: the whole pull's deadline and the most
+      # records a pulled zone may hold.
+      timeoutSecs: 30
+      maxRecords: 200000
     service:
       port: 53
 
@@ -76,6 +94,11 @@ bindizr:
     # empty with a bundled mysql/postgresql enabled, the chart builds the URL
     # from that database's auth values.
     url: ""
+    tls:
+      # disable, prefer, require, verify-ca, or verify-full; empty leaves it to the URL.
+      mode: ""
+      # A Secret holding ca.crt, a private issuer to verify against.
+      existingSecret: ""
 
   podAnnotations: {}
   podSecurityContext:

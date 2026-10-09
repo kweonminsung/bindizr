@@ -43,14 +43,16 @@ HTTPS directly, set both PEM file paths:
 ```toml
 [api]
 listen_addr = "0.0.0.0"
-tls_cert_file = "/etc/bindizr/tls/tls.crt"
-tls_key_file = "/etc/bindizr/tls/tls.key"
+
+[api.tls]
+cert_file = "/etc/bindizr/tls/tls.crt"
+key_file = "/etc/bindizr/tls/tls.key"
 ```
 
-Supplying only one file is rejected at startup. Certificates are read at
-startup, so restart Bindizr after renewal. All `[api]` settings require a
-restart. With a proxy or Ingress terminating TLS, keep Bindizr's HTTP listener
-on loopback or a private network.
+Supplying only one file is rejected at startup. A renewed pair is re-read by
+`bindizr config reload` (or `SIGHUP`); the `[api]` settings themselves require
+a restart. With a proxy or Ingress terminating TLS, keep Bindizr's HTTP
+listener on loopback or a private network.
 
 ## Listings
 

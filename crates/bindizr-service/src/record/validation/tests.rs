@@ -243,3 +243,76 @@ fn test_record(
         created_at: Utc::now(),
     }
 }
+
+/// Verify that `add` keeps one DNAME per name and none beside a delegation
+/// (RFC 6672, Section 2.4), while the apex and other data stay allowed.
+#[test]
+fn add_enforces_the_dname_rules() {
+    let dname_at_sub = [test_record(
+        1,
+        "sub",
+        RecordType::Dname,
+        "one.example.net.",
+        None,
+    )];
+    let second = validate_add(
+        &dname_at_sub,
+        "sub",
+        &RecordType::Dname,
+        "two.example.net.",
+        RRSET_TTL,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(second.code(), ErrorCode::RecordConflict);
+    let ns_beside = validate_add(
+        &dname_at_sub,
+        "sub",
+        &RecordType::Ns,
+        "ns.example.net.",
+        RRSET_TTL,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(ns_beside.code(), ErrorCode::RecordConflict);
+    // Other data at the DNAME's own name is allowed; only names below it are not.
+    validate_add(
+        &dname_at_sub,
+        "sub",
+        &RecordType::A,
+        "192.0.2.1",
+        RRSET_TTL,
+        None,
+    )
+    .unwrap();
+
+    let ns_at_del = [test_record(
+        2,
+        "del",
+        RecordType::Ns,
+        "ns.example.net.",
+        None,
+    )];
+    let dname_beside = validate_add(
+        &ns_at_del,
+        "del",
+        &RecordType::Dname,
+        "one.example.net.",
+        RRSET_TTL,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(dname_beside.code(), ErrorCode::RecordConflict);
+
+    // The apex NS set is the zone's own, not a delegation.
+    let ns_at_apex = [test_record(3, "", RecordType::Ns, "ns.example.net.", None)];
+    validate_add(
+        &ns_at_apex,
+        "",
+        &RecordType::Dname,
+        "one.example.net.",
+        RRSET_TTL,
+        None,
+    )
+    .unwrap();
+}

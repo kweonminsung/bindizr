@@ -9,5 +9,6 @@ mod dns;
 mod params;
 mod shutdown;
 mod socket;
+mod tls;
 
 pub use cli::execute;

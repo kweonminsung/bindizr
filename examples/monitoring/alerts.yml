@@ -81,4 +81,4 @@ groups:
           severity: info
         annotations:
           summary: "The transfer cache is evicting with a low hit ratio"
-          description: "Raise dns.transfer_cache.max_records, or accept that transfers read the database."
+          description: "Raise dns.transfer.cache_max_records, or accept that transfers read the database."

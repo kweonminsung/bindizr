@@ -153,7 +153,7 @@ to, per zone, as a client deciding what to offer needs. See the
 
 ## TSIG keys
 
-TSIG keys authenticate [dynamic updates](nsupdate.md), zone transfers, and
+TSIG keys authenticate [nsupdate](nsupdate.md), zone transfers, and
 the NOTIFY Bindizr sends to a secondary registered with `--notify-key` — see
 [Signed NOTIFY](secondaries.md#signed-notify). A key's name is what appears
 on the wire.

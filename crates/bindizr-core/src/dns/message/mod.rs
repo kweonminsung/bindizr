@@ -3,12 +3,12 @@
 
 pub use domain::base::{
     Name,
-    iana::{Class, Opcode, Rcode, Rtype},
+    iana::{Class, Opcode, OptRcode, Rcode, Rtype},
 };
 use domain::{
     base::{
-        MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
-        record::ComposeRecord, wire::Composer,
+        MessageBuilder, ToName, Ttl, UnknownRecordData, opt::keepalive::TcpKeepalive,
+        rdata::ComposeRecordData, record::ComposeRecord, wire::Composer,
     },
     rdata::tsig::Time48,
 };
@@ -94,24 +94,40 @@ pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,
     qtype: u16,
+    qclass: Class,
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
     /// Signs every message this builder produces, carrying one MAC chain
     /// across the envelopes of a transfer.
     signer: Option<TransferSigner>,
+    /// The query's RD, copied into every message (RFC 1035, Section 4.1.1).
+    rd: bool,
+    /// Whether the query spoke EDNS, so every message carries an OPT
+    /// (RFC 6891, Section 6.1.1; RFC 9103, Section 6.3.4).
+    edns: bool,
+    /// The keepalive that OPT carries over TCP (RFC 7828, Section 3.3.2).
+    keepalive: Option<TcpKeepalive>,
+    /// Set once the answers were dropped to fit a UDP limit.
+    truncated: bool,
 }
 
 impl DnsMessageBuilder {
-    /// Create a DNS response builder for the supplied question.
-    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
+    /// Create a response builder answering `query` under `qtype`, which an
+    /// IXFR falling back to AXFR keeps as asked.
+    pub fn new(query: &ParsedQuery, qtype: Rtype) -> Self {
         Self {
-            query_id,
-            qname: qname.clone(),
+            query_id: query.query_id,
+            qname: query.qname.clone(),
             qtype: qtype.to_int(),
+            qclass: query.qclass,
             answers: Vec::new(),
             answers_len: 0,
             signer: None,
+            rd: query.rd,
+            edns: query.edns != Edns::Absent,
+            keepalive: query.tcp_keepalive(),
+            truncated: false,
         }
     }
 
@@ -122,8 +138,9 @@ impl DnsMessageBuilder {
         self
     }
 
-    /// Hand the signer back to a caller answering the request another way.
-    /// Only sound before the first frame: a MAC chain cannot be rewound.
+    /// Hand the signer back to a caller answering the request another way:
+    /// before the first frame, or after a failure, where the MAC chain goes
+    /// on with the error (RFC 8945, Section 5.3.1).
     pub fn take_signer(&mut self) -> Option<TransferSigner> {
         self.signer.take()
     }
@@ -156,10 +173,16 @@ impl DnsMessageBuilder {
         self.answers.len()
     }
 
-    /// Calculate the response size including the question and optional TSIG.
+    /// Calculate the response size including the question, the OPT an EDNS
+    /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, signature_len);
-        12 + self.qname.len() + 4 + self.answers_len + signature
+        let opt = if self.edns {
+            OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
+        } else {
+            0
+        };
+        12 + self.qname.len() + 4 + self.answers_len + opt + signature
     }
 
     /// Remove the last answer and update the buffered byte count.
@@ -245,10 +268,12 @@ impl DnsMessageBuilder {
         header.set_id(self.query_id);
         header.set_qr(true);
         header.set_aa(true);
+        header.set_rd(self.rd);
+        header.set_tc(self.truncated);
 
         let mut question = builder.question();
         question
-            .push((&self.qname, Rtype::from_int(self.qtype), Class::IN))
+            .push((&self.qname, Rtype::from_int(self.qtype), self.qclass))
             .map_err(|e| EncodeMessageError::ComposeQuestion(Box::new(e)))?;
 
         let mut answer = question.answer();
@@ -258,7 +283,11 @@ impl DnsMessageBuilder {
                 .map_err(|e| EncodeMessageError::ComposeAnswer(Box::new(e)))?;
         }
 
+        // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
+        if self.edns {
+            push_opt(&mut additional, OptRcode::NOERROR, None, self.keepalive);
+        }
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .answer(&mut additional, Time48::now())
@@ -273,8 +302,13 @@ impl DnsMessageBuilder {
         encode_tcp_message(&message)
     }
 
-    /// Consume the builder and serialize its DNS response.
-    pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
+    /// Build the response within `max_len`: over it, the answers are dropped
+    /// and TC set (RFC 6891, Section 6.2.5 keeps the header, question, and OPT).
+    pub fn build(mut self, max_len: usize) -> Result<Vec<u8>, EncodeMessageError> {
+        if self.message_len() > max_len {
+            self.clear_answers();
+            self.truncated = true;
+        }
         self.build_message()
     }
 }
@@ -292,10 +326,12 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
     Ok(result)
 }
 
-mod query;
+pub(crate) mod query;
 mod records;
 
-pub use query::{ParseQueryError, ParsedQuery, is_response};
+pub(crate) use query::push_opt;
+pub use query::{Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery, is_response};
+use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 
 #[cfg(test)]
 mod tests;

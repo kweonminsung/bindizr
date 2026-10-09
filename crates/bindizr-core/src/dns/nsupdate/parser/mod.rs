@@ -5,14 +5,16 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Srv, Txt, tsig::Tsig},
+    rdata::{A, Aaaa, Mx, Soa, Srv, Txt, tsig::Tsig},
 };
 use thiserror::Error;
 
 use crate::{
     dns::{
+        message::{Edns, query::UDP_PAYLOAD_SIZE_WITHOUT_EDNS},
         name::labels_to_presentation,
-        record::{NaptrRecordValue, ParseRecordValueError, TxtRecordValue},
+        record::{NaptrRecordValue, ParseRecordValueError, Rdata, SoaRecordValue, TxtRecordValue},
+        tsig::is_mac_size_in_bounds,
     },
     model::record::{ParseRecordTypeError, RecordType},
 };
@@ -20,13 +22,14 @@ use crate::{
 /// Fixed length of a DNS message header, in bytes.
 const DNS_HEADER_LEN: usize = 12;
 
-/// A parsed UPDATE message: its zone, prerequisites, updates, and TSIG.
+/// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRequest {
     pub zone_name: String,
     pub prerequisites: Vec<UpdateRecord>,
     pub updates: Vec<UpdateRecord>,
     pub tsig: Option<TsigRecord>,
+    pub edns: Edns,
 }
 
 /// One record from the prerequisite or update section. `rdata_start` locates the
@@ -133,7 +136,7 @@ impl UpdateRequest {
             updates.push(parse_record(&mut parser, data)?);
         }
 
-        let tsig = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
+        let (tsig, edns) = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
 
         if parser.remaining() != 0 {
             return Err(ParseUpdateError::InvalidHeader);
@@ -144,6 +147,7 @@ impl UpdateRequest {
             prerequisites,
             updates,
             tsig,
+            edns,
         })
     }
 }
@@ -190,12 +194,13 @@ fn parse_record(
     })
 }
 
-/// Validate additional records and locate the request's TSIG.
+/// Validate additional records and locate the request's TSIG and OPT.
 fn parse_additional_section(
     parser: &mut Parser<'_, [u8]>,
     count: usize,
-) -> Result<Option<TsigRecord>, ParseUpdateError> {
+) -> Result<(Option<TsigRecord>, Edns), ParseUpdateError> {
     let mut tsig = None;
+    let mut edns = Edns::Absent;
 
     for index in 0..count {
         let owner = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
@@ -212,12 +217,14 @@ fn parse_additional_section(
 
             tsig = Some(parse_tsig_record(parser, &owner)?);
         } else {
-            parser
+            // An OPT carries the requestor's UDP size as its CLASS and the
+            // EDNS version in its TTL (RFC 6891, Section 6.1.3).
+            let class = parser
                 .parse_u16_be()
-                .map_err(|_| ParseUpdateError::InvalidRecord)?; // CLASS
-            parser
+                .map_err(|_| ParseUpdateError::InvalidRecord)?;
+            let ttl = parser
                 .parse_u32_be()
-                .map_err(|_| ParseUpdateError::InvalidRecord)?; // TTL
+                .map_err(|_| ParseUpdateError::InvalidRecord)?;
             let rdlen = usize::from(
                 parser
                     .parse_u16_be()
@@ -226,10 +233,20 @@ fn parse_additional_section(
             parser
                 .advance(rdlen)
                 .map_err(|_| ParseUpdateError::InvalidRecord)?;
+            if record_type == Rtype::OPT {
+                let version = ((ttl >> 16) & 0xff) as u8;
+                edns = match edns {
+                    Edns::Absent if version == 0 => Edns::Present {
+                        udp_payload_size: class.max(UDP_PAYLOAD_SIZE_WITHOUT_EDNS),
+                    },
+                    Edns::Absent => Edns::UnsupportedVersion(version),
+                    _ => Edns::Malformed,
+                };
+            }
         }
     }
 
-    Ok(tsig)
+    Ok((tsig, edns))
 }
 
 /// Parses a TSIG record from its CLASS field on (owner and TYPE already consumed).
@@ -259,7 +276,7 @@ fn parse_tsig_record(
         .parse_parser(rdlen)
         .map_err(|_| ParseUpdateError::InvalidTsig)?;
     let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseUpdateError::InvalidTsig)?;
-    if rdata.remaining() != 0 {
+    if rdata.remaining() != 0 || !is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().len()) {
         return Err(ParseUpdateError::InvalidTsig);
     }
 
@@ -320,6 +337,27 @@ impl UpdateRecord {
             Class::NONE if self.rdata.is_empty() => Err(DeleteShapeError::NoneClassNoRdata),
             _ => Ok(()),
         }
+    }
+
+    /// The SOA rdata of a prerequisite, re-encoded without compression to
+    /// compare with the zone's own.
+    pub fn to_soa_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
+        let soa = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
+        let mname = to_presentation_name(soa.mname())?;
+        let rname = to_presentation_name(soa.rname())?;
+        SoaRecordValue {
+            mname: &mname,
+            rname: &rname,
+            serial: soa.serial().into_int(),
+            refresh: soa.refresh().as_secs(),
+            retry: soa.retry().as_secs(),
+            expire: soa.expire().as_secs(),
+            minimum: soa.minimum().as_secs(),
+        }
+        .to_rdata()
+        .map_err(|_| ParseUpdateError::Rdata {
+            record_type: "SOA".to_string(),
+        })
     }
 
     /// Decode an update record's wire data into its typed value.

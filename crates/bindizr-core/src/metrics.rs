@@ -7,7 +7,10 @@ use prometheus::{
 };
 use thiserror::Error;
 
-use crate::dns::message::{Rcode, Rtype};
+use crate::{
+    dns::message::{Rcode, Rtype},
+    model::transfer::TransferTransport,
+};
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
@@ -140,9 +143,9 @@ impl Metrics {
         let xfr_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_xfr_total",
-                "Zone transfer requests served, by query type and outcome.",
+                "Zone transfer requests served, by query type, outcome, and transport.",
             ),
-            &["type", "result"],
+            &["type", "result", "transport"],
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &xfr_total)?;
@@ -171,7 +174,7 @@ impl Metrics {
         let nsupdate_requests_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_nsupdate_requests_total",
-                "RFC 2136 dynamic update requests processed, by outcome.",
+                "nsupdate requests processed (RFC 2136), by outcome.",
             ),
             &["result"],
         )
@@ -253,14 +256,14 @@ impl Metrics {
         let zone_cache_evictions_total = IntCounter::new(
             "bindizr_zone_cache_evictions_total",
             "Zones dropped to make room; a rising count beside a low hit ratio \
-             means dns.transfer_cache.max_records is too small for the working set.",
+             means dns.transfer.cache_max_records is too small for the working set.",
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &zone_cache_evictions_total)?;
 
         let zone_cache_records = IntGauge::new(
             "bindizr_zone_cache_records",
-            "Records the zone cache holds, against dns.transfer_cache.max_records.",
+            "Records the zone cache holds, against dns.transfer.cache_max_records.",
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &zone_cache_records)?;
@@ -269,7 +272,9 @@ impl Metrics {
         // instead of reading as missing data until the first event.
         for result in XfrResult::ALL {
             for xfr_type in ["axfr", "ixfr"] {
-                xfr_total.with_label_values(&[xfr_type, result.label()]);
+                for transport in TransferTransport::ALL {
+                    xfr_total.with_label_values(&[xfr_type, result.label(), transport.as_str()]);
+                }
             }
         }
         for result in SoaResult::ALL {
@@ -391,7 +396,7 @@ pub enum NsupdateResult {
 }
 
 impl NsupdateResult {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::TsigFailed,
         Self::Rcode(Rcode::NOERROR),
         Self::Rcode(Rcode::FORMERR),
@@ -400,6 +405,7 @@ impl NsupdateResult {
         Self::Rcode(Rcode::YXRRSET),
         Self::Rcode(Rcode::NXDOMAIN),
         Self::Rcode(Rcode::NXRRSET),
+        Self::Rcode(Rcode::NOTAUTH),
         Self::Rcode(Rcode::NOTZONE),
         Self::Rcode(Rcode::SERVFAIL),
         Self::Rcode(Rcode::NOTIMP),
@@ -419,6 +425,7 @@ impl NsupdateResult {
             Rcode::YXRRSET => "yxrrset",
             Rcode::NXDOMAIN => "nxdomain",
             Rcode::NXRRSET => "nxrrset",
+            Rcode::NOTAUTH => "notauth",
             Rcode::NOTZONE => "notzone",
             Rcode::SERVFAIL => "servfail",
             _ => "other",
@@ -470,16 +477,16 @@ impl SchedulerResult {
 }
 
 impl Metrics {
-    /// A zone transfer's outcome, by query type. Non-transfer types are not
-    /// counted here, so the caller may pass whatever it was asked for.
-    pub fn track_xfr(&self, qtype: Rtype, result: XfrResult) {
+    /// A zone transfer's outcome by query type and transport; a non-transfer
+    /// type is not counted, so the caller passes what it was asked for.
+    pub fn track_xfr(&self, qtype: Rtype, transport: TransferTransport, result: XfrResult) {
         let xfr_type = match qtype {
             Rtype::AXFR => "axfr",
             Rtype::IXFR => "ixfr",
             _ => return,
         };
         self.xfr_total
-            .with_label_values(&[xfr_type, result.label()])
+            .with_label_values(&[xfr_type, result.label(), transport.as_str()])
             .inc();
     }
 
@@ -491,7 +498,7 @@ impl Metrics {
             .inc();
     }
 
-    /// Increment the counter for a dynamic update result.
+    /// Increment the counter for an nsupdate result.
     pub fn track_nsupdate(&self, result: NsupdateResult) {
         self.nsupdate_requests_total
             .with_label_values(&[result.label()])

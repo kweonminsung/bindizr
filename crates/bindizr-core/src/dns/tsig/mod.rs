@@ -9,7 +9,7 @@ use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Rtype, ToName,
-        iana::{Rcode, TsigRcode},
+        iana::{OptRcode, Rcode, TsigRcode},
         message_builder::AdditionalBuilder,
     },
     rdata::tsig::{Time48, Tsig},
@@ -21,7 +21,7 @@ use domain::{
 use thiserror::Error;
 
 use crate::{
-    dns::{LibraryError, name::MAX_DOMAIN_LEN},
+    dns::{LibraryError, message::push_opt, name::MAX_DOMAIN_LEN},
     model::tsig_key::{TsigAlgorithm, TsigKey},
 };
 
@@ -200,11 +200,12 @@ fn verify<T>(
 pub enum RequestSignature {
     /// No TSIG record: the address decides, as it did before keys existed.
     Absent,
-    /// A TSIG record that does not parse. Never treated as unsigned — a
-    /// caller that reaches for a key must be held to it.
+    /// A TSIG that breaks RFC 8945, Section 5.2: more than one, not the last
+    /// record, uninterpretable, or a MAC of a size no key produces. Answered
+    /// FORMERR, never treated as unsigned.
     Malformed,
-    /// The key name the record carries.
-    Key(String),
+    /// The key name the record carries, and the fudge its answer echoes.
+    Key { name: String, fudge: u16 },
 }
 
 /// Read how the message is signed. Presence is decided on the record's type
@@ -218,20 +219,46 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     };
     // A record that does not parse hides everything after it, so absence can
     // only be concluded from a section read whole.
-    let mut carries_tsig = false;
+    let mut records = 0usize;
+    let mut tsig_positions = Vec::new();
     for record in additional {
         match record {
-            Ok(record) => carries_tsig |= record.rtype() == Rtype::TSIG,
+            Ok(record) => {
+                if record.rtype() == Rtype::TSIG {
+                    tsig_positions.push(records);
+                }
+                records += 1;
+            }
             Err(_) => return RequestSignature::Malformed,
         }
     }
-    if !carries_tsig {
-        return RequestSignature::Absent;
+    match tsig_positions[..] {
+        [] => return RequestSignature::Absent,
+        [last] if last + 1 == records => {}
+        _ => return RequestSignature::Malformed,
     }
     match additional.limit_to::<Tsig<_, _>>().last() {
-        Some(Ok(tsig)) => RequestSignature::Key(tsig.owner().to_string()),
+        Some(Ok(tsig))
+            if is_mac_size_in_bounds(tsig.data().algorithm(), tsig.data().mac().len()) =>
+        {
+            RequestSignature::Key {
+                name: tsig.owner().to_string(),
+                fudge: tsig.data().fudge(),
+            }
+        }
         _ => RequestSignature::Malformed,
     }
+}
+
+/// Whether a MAC of `mac_len` octets could come from `algorithm` (RFC 8945,
+/// Section 5.2.2.1): at most the hash's length, at least max(10, half of
+/// it). An unknown algorithm passes, for the key check to answer BADKEY.
+pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) -> bool {
+    let Some(algorithm) = Algorithm::from_name(algorithm) else {
+        return true;
+    };
+    let native = algorithm.native_len();
+    mac_len <= native && mac_len >= 10.max(native / 2)
 }
 
 /// Map a TSIG validation failure to the complete NOTAUTH response to send.
@@ -242,15 +269,12 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     };
 
     let error = err.error();
-    // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2.
-    // The parser already checked TSIG structure, so report BADSIG here
-    // as RFC 8945, Section 5.3.2 requires.
-    let response = if error == TsigRcode::FORMERR {
-        build_unsigned_error(&msg, TsigRcode::BADSIG)
-    } else {
-        err.build_message(&msg, MessageBuilder::new_vec())
-            .ok()
-            .map(|builder| builder.finish())
+    // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2;
+    // the structure was checked before verification, so that is BADSIG.
+    let response = match error {
+        TsigRcode::FORMERR => build_unsigned_error(&msg, TsigRcode::BADSIG),
+        TsigRcode::BADTIME => build_signed_error(&msg, err),
+        other => build_unsigned_error(&msg, other),
     };
 
     match response {
@@ -260,6 +284,18 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
         },
         None => TsigError::BuildResponse { rcode: error },
     }
+}
+
+/// Build the signed NOTAUTH response a BADTIME is owed (RFC 8945,
+/// Section 5.2.3), carrying the server's time.
+///
+/// Known gap: it carries no OPT even for an EDNS request (RFC 6891,
+/// Section 6.1.1), since `domain` signs the header and question as it
+/// starts the answer and an OPT appended after the MAC would break it.
+fn build_signed_error(msg: &Message<&[u8]>, err: ServerError<Arc<Key>>) -> Option<Vec<u8>> {
+    err.build_message(msg, MessageBuilder::new_vec())
+        .ok()
+        .map(|builder| builder.finish())
 }
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that
@@ -276,6 +312,9 @@ fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?;
     let mut builder = builder.additional();
+    if msg.opt().is_some() {
+        push_opt(&mut builder, OptRcode::NOTAUTH, None, None);
+    }
     builder
         .push((
             tsig_record.owner(),

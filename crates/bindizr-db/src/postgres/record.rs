@@ -8,7 +8,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::record::{Record, RecordWithZone},
+    model::record::{Record, RecordType, RecordWithZone},
     record::RecordFilter,
     sql::{
         apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, name_like_types_sql,
@@ -178,6 +178,49 @@ pub(crate) async fn find_name_ds_without_ns_tx(
     .await?;
 
     Ok(name)
+}
+
+/// List the records of the given types in the current transaction.
+pub(crate) async fn list_by_record_types_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    record_types: &[RecordType],
+) -> Result<Vec<Record>, DatabaseError> {
+    if record_types.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut sql = String::from(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (",
+    );
+    for i in 0..record_types.len() {
+        if i > 0 {
+            sql.push(',');
+        }
+        sql.push_str(&format!("${}", i + 2));
+    }
+    sql.push_str(") ORDER BY name, id");
+
+    let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+    for record_type in record_types {
+        query = query.bind(record_type.as_str());
+    }
+    let records = query.fetch_all(&mut **tx).await?;
+
+    Ok(records)
+}
+
+/// List the distinct owner names of a zone in the current transaction.
+pub(crate) async fn list_names_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+) -> Result<Vec<OwnerName>, DatabaseError> {
+    let names =
+        sqlx::query_scalar::<_, OwnerName>("SELECT DISTINCT name FROM records WHERE zone_id = $1")
+            .bind(zone_id)
+            .fetch_all(&mut **tx)
+            .await?;
+
+    Ok(names)
 }
 
 /// List records at the requested owner names in a zone in the current transaction.

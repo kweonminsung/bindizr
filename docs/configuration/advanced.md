@@ -19,7 +19,7 @@ a window in milliseconds
 
 ## Sizing the transfer cache
 
-`dns.transfer_cache.max_records` limits the record count. Approximate memory
+`dns.transfer.cache_max_records` limits the record count. Approximate memory
 costs depend on the record contents:
 
 | Record | Cost |

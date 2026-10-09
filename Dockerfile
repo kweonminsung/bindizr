@@ -25,7 +25,7 @@ RUN setcap cap_net_bind_service=+ep /usr/local/bin/bindizr
 
 USER bindizr
 
-EXPOSE 8000/tcp 53/tcp 53/udp
+EXPOSE 8000/tcp 53/tcp 53/udp 853/tcp
 
 # The daemon's own socket answers this, so the image needs no HTTP client, and
 # a database outage does not restart the container into a crash loop.

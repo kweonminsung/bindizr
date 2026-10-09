@@ -227,6 +227,8 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) api_url: String,
     pub(crate) api_authentication: bool,
     pub(crate) dns_addr: String,
+    /// The XoT listener, when a certificate is configured.
+    pub(crate) dns_tls_addr: Option<String>,
     pub(crate) database_type: String,
     /// Enabled secondaries; `None` when the database did not answer.
     pub(crate) secondaries: Option<usize>,
@@ -243,6 +245,8 @@ pub(crate) struct DaemonStatusResponse {
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheck,
     pub(crate) dns_server: DoctorCheck,
+    /// The XoT listener's reachability, when one is configured.
+    pub(crate) dns_tls_server: Option<DoctorCheck>,
     pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<Serial>,

@@ -134,7 +134,7 @@ pub async fn import_zone(
                 let zone = zone::lookup_by_name(cx, zone_name).await?;
                 authorize_import(caller, mode, &zone)?;
             }
-            let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
+            let content = crate::dns_client::axfr::fetch_zone_file(cx, server, zone_name)
                 .await
                 .map_err(|e| {
                     ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))

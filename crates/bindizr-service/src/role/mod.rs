@@ -98,8 +98,8 @@ pub async fn list(
         *tokens.entry(token.role_id).or_default() += 1;
     }
     let mut keys: HashMap<RoleId, u64> = HashMap::new();
-    for key in bindizr_db::tsig_key::list_all(cx.db()).await? {
-        *keys.entry(key.role_id).or_default() += 1;
+    for tsig_key in bindizr_db::tsig_key::list_all(cx.db()).await? {
+        *keys.entry(tsig_key.role_id).or_default() += 1;
     }
     build_page(
         roles
@@ -160,7 +160,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     let keys: Vec<String> = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id)
         .await?
         .into_iter()
-        .map(|key| key.name)
+        .map(|tsig_key| tsig_key.name)
         .collect();
     if !tokens.is_empty() || !keys.is_empty() {
         return Err(ServiceError::role_in_use(&role.name, &tokens, &keys));

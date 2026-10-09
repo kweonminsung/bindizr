@@ -47,7 +47,7 @@ pub async fn create(
     let name = normalize_secondary_name(&request.name)?;
     let address = normalize_secondary_address(&request.address)?;
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_key = match request.notify_key_name.as_deref() {
+    let notify_tsig_key = match request.notify_key_name.as_deref() {
         Some(key_name) => Some(tsig_key::lookup_by_name(cx, key_name).await?),
         None => None,
     };
@@ -82,7 +82,7 @@ pub async fn create(
                 name: name.clone(),
                 address: address.clone(),
                 enabled: true,
-                notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
+                notify_tsig_key_id: notify_tsig_key.as_ref().map(|tsig_key| tsig_key.id),
                 created_at: Utc::now(),
             },
         )
@@ -103,7 +103,9 @@ pub async fn create(
     let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
     Ok(GetSecondaryResponse::from_secondary(
         &secondary,
-        notify_key.as_ref().map(|key| key.name.as_str()),
+        notify_tsig_key
+            .as_ref()
+            .map(|tsig_key| tsig_key.name.as_str()),
     ))
 }
 
@@ -120,7 +122,7 @@ pub async fn list(
     let key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
-        .map(|key| (key.id, key.name))
+        .map(|tsig_key| (tsig_key.id, tsig_key.name))
         .collect();
     build_page(
         secondaries
@@ -173,7 +175,7 @@ pub async fn update(
         ));
     }
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
+    let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
         None => None,
         Some("") => Some(None),
         Some(key_name) => Some(Some(tsig_key::lookup_by_name(cx, key_name).await?)),
@@ -207,8 +209,8 @@ pub async fn update(
             Secondary {
                 address: address.clone(),
                 enabled: request.enabled.unwrap_or(secondary.enabled),
-                notify_tsig_key_id: match &notify_key {
-                    Some(key) => key.as_ref().map(|key| key.id),
+                notify_tsig_key_id: match &notify_tsig_key {
+                    Some(tsig_key) => tsig_key.as_ref().map(|tsig_key| tsig_key.id),
                     None => secondary.notify_tsig_key_id,
                 },
                 ..secondary
@@ -369,10 +371,10 @@ pub(crate) async fn notify_signing_key(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<Option<TsigSigningKey>, ServiceError> {
-    match notify_key(cx, secondary).await? {
-        Some(key) => key.to_domain_key().map(Some).map_err(|e| {
+    match notify_tsig_key(cx, secondary).await? {
+        Some(tsig_key) => tsig_key.to_domain_key().map(Some).map_err(|e| {
             ServiceError::internal_with_source(
-                format!("NOTIFY key '{}' is unusable: {:?}", key.name, e),
+                format!("NOTIFY key '{}' is unusable: {:?}", tsig_key.name, e),
                 e,
             )
         }),
@@ -381,7 +383,10 @@ pub(crate) async fn notify_signing_key(
 }
 
 /// The stored key a secondary's NOTIFY is signed with, if any.
-async fn notify_key(cx: &Context, secondary: &Secondary) -> Result<Option<TsigKey>, ServiceError> {
+async fn notify_tsig_key(
+    cx: &Context,
+    secondary: &Secondary,
+) -> Result<Option<TsigKey>, ServiceError> {
     match secondary.notify_tsig_key_id {
         Some(id) => Ok(Some(
             bindizr_db::tsig_key::get(cx.db(), id)
@@ -397,10 +402,10 @@ async fn build_response(
     cx: &Context,
     secondary: Secondary,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    let key = notify_key(cx, &secondary).await?;
+    let tsig_key = notify_tsig_key(cx, &secondary).await?;
     Ok(GetSecondaryResponse::from_secondary(
         &secondary,
-        key.as_ref().map(|key| key.name.as_str()),
+        tsig_key.as_ref().map(|tsig_key| tsig_key.name.as_str()),
     ))
 }
 

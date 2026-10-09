@@ -60,3 +60,44 @@ async fn the_api_serves_over_tls_and_nothing_over_plain_http() {
         "untrusted client accepted: {untrusted:?}"
     );
 }
+
+/// Verify that `config reload` re-reads the API certificate pair, so a
+/// renewed certificate serves without a restart.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_reload_picks_up_a_renewed_api_certificate() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        tls: true,
+        ..Default::default()
+    })
+    .await;
+    let trusting = |cert: &reqwest::tls::Certificate| {
+        reqwest::Client::builder()
+            .add_root_certificate(cert.clone())
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap()
+    };
+    let started_with = reqwest::Certificate::from_der(app.tls_cert()).unwrap();
+
+    let renewed = app.renew_test_certificate();
+    let output = app.run_cli_success(&["config", "reload"]).await;
+    assert!(output.contains("api.tls certificate"), "{output}");
+
+    let renewed = reqwest::Certificate::from_der(&renewed).unwrap();
+    let response = trusting(&renewed)
+        .get(format!("{}/health", app.base_url()))
+        .send()
+        .await
+        .expect("the renewed certificate is served");
+    assert_eq!(response.status(), StatusCode::OK);
+    // The certificate the run started with is no longer presented.
+    let stale = trusting(&started_with)
+        .get(format!("{}/health", app.base_url()))
+        .send()
+        .await;
+    assert!(
+        stale.is_err(),
+        "the old certificate still served: {stale:?}"
+    );
+}

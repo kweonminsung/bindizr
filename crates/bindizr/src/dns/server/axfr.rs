@@ -8,16 +8,15 @@ use bindizr_service::{
     transfer,
     zone::{self, TransferAccess},
 };
-use tokio::net::TcpStream;
 
 use super::{auth::TransferIdentity, catalog, transfer_cache};
-use crate::dns::{error::XfrError, server::DnsContext};
+use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
 
 /// Send AXFR content with the original QTYPE, including IXFR fallback.
 /// Claim the signer only after authorization, leaving it available for refusal responses.
 pub(crate) async fn handle_axfr(
     dns_cx: &DnsContext,
-    stream: &mut TcpStream,
+    writer: &ResponseWriter,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     response_qtype: Rtype,
@@ -33,17 +32,17 @@ pub(crate) async fn handle_axfr(
     );
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
+        let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => return Err(XfrError::NotAuth(zone_name_str.to_string())),
             TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
         };
         return catalog::handle_catalog_axfr(
             dns_cx,
-            stream,
+            writer,
             query,
             response_qtype,
-            identity.signer.take(),
+            &mut identity.signer,
             zones,
         )
         .await;
@@ -52,12 +51,8 @@ pub(crate) async fn handle_axfr(
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
-            transfer_cache::authorize_transfer_content_by_name(
-                dns_cx,
-                &zone_name,
-                identity.key.as_ref(),
-            )
-            .await?
+            transfer_cache::authorize_transfer_content_by_name(dns_cx, &identity.caller, &zone_name)
+                .await?
         }
         Err(_) => TransferAccess::NotAuth,
     };
@@ -77,52 +72,50 @@ pub(crate) async fn handle_axfr(
         zone.serial
     );
 
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
+    let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
     if let Some(signer) = identity.signer.take() {
         builder = builder.sign_with(signer);
     }
-    let mut messages_sent = 0usize;
-
     // The opening SOA identifies the serial of this content snapshot.
     let serial = zone.serial;
-    crate::dns::wire::add_answer_and_flush_if_needed(
-        &mut builder,
-        stream,
-        &mut messages_sent,
-        |builder| builder.add_soa(&zone, serial),
-    )
-    .await?;
+    let streamed = async {
+        let mut messages_sent = 0usize;
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_soa(&zone, serial)
+            })
+            .await?;
 
-    // The snapshot includes both user records and the derived DNSSEC plane.
-    for record in content.records.iter() {
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_record(record, &zone.name),
-        )
-        .await?;
+        // The snapshot includes both user records and the derived DNSSEC plane.
+        for record in content.records.iter() {
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_record(record, &zone.name)
+                })
+                .await?;
+        }
+
+        for record in content.dnssec_records.iter() {
+            writer
+                .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                    builder.add_dnssec_record(record, &zone.name)
+                })
+                .await?;
+        }
+
+        // Final SOA closes the transfer.
+        writer
+            .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
+                builder.add_soa(&zone, serial)
+            })
+            .await?;
+        messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+        Ok::<usize, XfrError>(messages_sent)
     }
-
-    for record in content.dnssec_records.iter() {
-        crate::dns::wire::add_answer_and_flush_if_needed(
-            &mut builder,
-            stream,
-            &mut messages_sent,
-            |builder| builder.add_dnssec_record(record, &zone.name),
-        )
-        .await?;
-    }
-
-    // Final SOA closes the transfer.
-    crate::dns::wire::add_answer_and_flush_if_needed(
-        &mut builder,
-        stream,
-        &mut messages_sent,
-        |builder| builder.add_soa(&zone, serial),
-    )
-    .await?;
-    messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
+    .await;
+    // Handed back so a failure's SERVFAIL is signed too.
+    identity.signer = builder.take_signer();
+    let messages_sent = streamed?;
 
     log::info!(
         "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",
@@ -135,6 +128,7 @@ pub(crate) async fn handle_axfr(
         client_ip,
         zone.id,
         TransferKind::from_qtype(response_qtype),
+        writer.transport(),
         false,
         serial,
     )

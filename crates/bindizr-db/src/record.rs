@@ -134,6 +134,38 @@ pub async fn find_name_ds_without_ns_tx(
     }
 }
 
+/// List the records of the given types, in the current transaction; the
+/// cross-name checks at versioning read the few types they relate.
+pub async fn list_by_record_types_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+    record_types: &[RecordType],
+) -> Result<Vec<Record>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
+    }
+}
+
+/// List the owner names of a zone, each once.
+pub async fn list_names_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+) -> Result<Vec<OwnerName>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::record::list_names_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::record::list_names_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::list_names_tx(tx, zone_id).await,
+    }
+}
+
 /// Load records whose owner name is any of `names` (lowercased match). Used
 /// by bulk insert to fetch only the rows that could conflict with the batch.
 pub async fn list_by_names_tx(

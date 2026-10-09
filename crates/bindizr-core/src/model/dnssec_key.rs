@@ -20,6 +20,10 @@ pub enum ParseDnssecKeyError {
     State { value: String },
 }
 
+/// The digest of every DS and CDS bindizr publishes: SHA-256, the one a
+/// delegation MUST carry (RFC 8624, Section 3.3); SHA-384 is only a MAY.
+pub const DS_DIGEST_TYPE: u8 = 2;
+
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
 #[derive(
     Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
@@ -28,7 +32,8 @@ pub enum ParseDnssecKeyError {
 pub enum DnssecAlgorithm {
     /// RSA with SHA-256, algorithm 8 (RFC 5702).
     RsaSha256,
-    /// RSA with SHA-512, algorithm 10 (RFC 5702).
+    /// RSA with SHA-512, algorithm 10 (RFC 5702). NOT RECOMMENDED for
+    /// signing by RFC 8624, Section 3.1; kept for a zone that must stay on it.
     RsaSha512,
     /// ECDSA Curve P-256 with SHA-256, algorithm 13 (RFC 6605).
     EcdsaP256Sha256,
@@ -75,15 +80,6 @@ impl DnssecAlgorithm {
             DnssecAlgorithm::EcdsaP384Sha384 => "ecdsap384sha384",
             DnssecAlgorithm::Ed25519 => "ed25519",
             DnssecAlgorithm::Ed448 => "ed448",
-        }
-    }
-
-    /// DS digest type the algorithm's DS pairs with: 4 = SHA-384 for P-384
-    /// (RFC 6605, Section 4), otherwise 2 = SHA-256 (RFC 4509).
-    pub fn ds_digest_type(self) -> u8 {
-        match self {
-            DnssecAlgorithm::EcdsaP384Sha384 => 4,
-            _ => 2,
         }
     }
 
@@ -333,14 +329,21 @@ impl DnssecKey {
         self.role.is_sep() && self.state != DnssecKeyState::Retired
     }
 
-    /// Return the retire interval (RFC 7583, Section 3.3.4), covering signature
-    /// validity, record TTLs, and the confirmed parent DS TTL for SEP keys.
-    pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
+    /// The retire interval Iret (RFC 7583, Sections 3.2.1 and 3.3.1): the
+    /// longest TTL the key signed, a SEP key's parent DS TTL if longer, plus
+    /// the propagation delay.
+    pub fn retirement_interval_secs(
+        &self,
+        parent_ds_ttl: Option<u32>,
+        propagation_secs: u32,
+    ) -> i64 {
         let signatures = i64::from(self.max_signed_ttl.as_secs());
-        if !self.role.is_sep() {
-            return signatures;
-        }
-        signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
+        let cached = if self.role.is_sep() {
+            signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
+        } else {
+            signatures
+        };
+        cached + i64::from(propagation_secs)
     }
 }
 

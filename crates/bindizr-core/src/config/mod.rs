@@ -40,8 +40,16 @@ pub enum ConfigError {
     },
     #[error("expected {expected}")]
     UnknownValue { expected: &'static str },
-    #[error("api and dns cannot share port {port}")]
-    SharedPort { port: u16 },
+    #[error("{first} and {second} cannot share port {port}")]
+    SharedPort {
+        first: &'static str,
+        second: &'static str,
+        port: u16,
+    },
+    #[error(
+        "database.tls.ca_file is checked only when database.tls.mode is verify-ca or verify-full"
+    )]
+    DatabaseTlsCaUnchecked,
     #[error("{key} must not be empty when database.type is {database_type}")]
     EmptyDatabaseLocation {
         key: &'static str,
@@ -54,6 +62,16 @@ pub enum ConfigError {
         present: &'static str,
         missing: &'static str,
     },
+    #[error("dns.transfer.require_tls needs dns.tls.cert_file and dns.tls.key_file")]
+    TransferRequiresTlsListener,
+    #[error("{key} must be between {min} and {max}")]
+    OutOfRange {
+        key: &'static str,
+        min: u64,
+        max: u64,
+    },
+    #[error("{key} must be at least 1")]
+    Zero { key: &'static str },
     #[error("dns.catalog_zone_name is not a zone name: {0}")]
     CatalogZoneName(#[source] crate::dns::name::ParseNameError),
     /// A zero would stop secondaries refreshing, so a zone must not inherit it.
@@ -93,18 +111,19 @@ pub struct ApiConfig {
     /// (unauthenticated). Off by default: it describes the whole API surface.
     #[serde(default)]
     pub openapi_enabled: bool,
-    /// PEM certificate chain and private key. Set both to serve HTTPS;
-    /// without them the API is plain HTTP and its bearer tokens travel in
-    /// the clear.
     #[serde(default)]
-    pub tls_cert_file: Option<String>,
-    #[serde(default)]
-    pub tls_key_file: Option<String>,
+    pub tls: ApiTlsConfig,
 }
 
-/// Return the default nsupdate TSIG requirement.
-fn default_nsupdate_tsig_required() -> bool {
-    true
+/// HTTPS for the API, served while both PEM files are set; without them the
+/// bearer tokens travel in the clear.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ApiTlsConfig {
+    #[serde(default)]
+    pub cert_file: Option<String>,
+    #[serde(default)]
+    pub key_file: Option<String>,
 }
 
 /// Return the default catalog zone name.
@@ -136,6 +155,8 @@ pub struct DatabaseConfig {
     pub sqlite: SqliteConfig,
     #[serde(default)]
     pub postgresql: PostgresqlConfig,
+    #[serde(default)]
+    pub tls: DatabaseTlsConfig,
 }
 
 /// Supported database backends.
@@ -192,7 +213,120 @@ pub struct PostgresqlConfig {
     pub url: String,
 }
 
-/// DNS server settings; NOTIFY and the transfer cache sit in sub-tables.
+/// TLS to the MySQL or PostgreSQL server. A set key overrides the URL's own
+/// parameter; unset leaves the URL and sqlx's default (TLS if offered, unverified).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseTlsConfig {
+    #[serde(default)]
+    pub mode: Option<DatabaseTlsMode>,
+    /// A private issuer to check the server's certificate against; the
+    /// system roots otherwise.
+    #[serde(default)]
+    pub ca_file: Option<String>,
+}
+
+impl DatabaseTlsConfig {
+    /// Validate the TLS fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        // A CA that no mode consults would read as protection it is not.
+        if self.ca_file.is_some()
+            && !matches!(
+                self.mode,
+                Some(DatabaseTlsMode::VerifyCa | DatabaseTlsMode::VerifyFull)
+            )
+        {
+            return Err(ConfigError::DatabaseTlsCaUnchecked);
+        }
+        Ok(())
+    }
+}
+
+/// How far the database connection insists on TLS, in PostgreSQL's words;
+/// MySQL's modes map one to one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DatabaseTlsMode {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+impl DatabaseTlsMode {
+    /// Return the canonical spelling, the configuration file's.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disable => "disable",
+            Self::Prefer => "prefer",
+            Self::Require => "require",
+            Self::VerifyCa => "verify-ca",
+            Self::VerifyFull => "verify-full",
+        }
+    }
+}
+
+impl fmt::Display for DatabaseTlsMode {
+    /// Write the mode in its configuration spelling.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for DatabaseTlsMode {
+    type Err = ConfigError;
+
+    /// Parse a TLS mode from its configuration spelling.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "disable" => Ok(Self::Disable),
+            "prefer" => Ok(Self::Prefer),
+            "require" => Ok(Self::Require),
+            "verify-ca" => Ok(Self::VerifyCa),
+            "verify-full" => Ok(Self::VerifyFull),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "disable, prefer, require, verify-ca, or verify-full",
+            }),
+        }
+    }
+}
+
+impl serde::Serialize for DatabaseTlsMode {
+    /// Serialize through the canonical spelling.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl From<DatabaseTlsMode> for sqlx::postgres::PgSslMode {
+    /// The same mode in sqlx's PostgreSQL vocabulary.
+    fn from(mode: DatabaseTlsMode) -> Self {
+        match mode {
+            DatabaseTlsMode::Disable => Self::Disable,
+            DatabaseTlsMode::Prefer => Self::Prefer,
+            DatabaseTlsMode::Require => Self::Require,
+            DatabaseTlsMode::VerifyCa => Self::VerifyCa,
+            DatabaseTlsMode::VerifyFull => Self::VerifyFull,
+        }
+    }
+}
+
+impl From<DatabaseTlsMode> for sqlx::mysql::MySqlSslMode {
+    /// The same mode in sqlx's MySQL vocabulary.
+    fn from(mode: DatabaseTlsMode) -> Self {
+        match mode {
+            DatabaseTlsMode::Disable => Self::Disabled,
+            DatabaseTlsMode::Prefer => Self::Preferred,
+            DatabaseTlsMode::Require => Self::Required,
+            DatabaseTlsMode::VerifyCa => Self::VerifyCa,
+            DatabaseTlsMode::VerifyFull => Self::VerifyIdentity,
+        }
+    }
+}
+
+/// DNS server settings; the sub-tables hold the import client, NOTIFY,
+/// nsupdate, the TLS listener, transfers, and zone defaults.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DnsConfig {
@@ -212,13 +346,24 @@ pub struct DnsConfig {
     /// 0 disables this instance; at least one instance must run the scheduler.
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
-    /// Require a TSIG signature on RFC 2136 updates.
-    #[serde(default = "default_nsupdate_tsig_required")]
-    pub nsupdate_tsig_required: bool,
+    /// Seconds a TCP or TLS connection may sit idle between queries;
+    /// advertised as the edns-tcp-keepalive timeout (RFC 7828, Section 3.3.2).
+    #[serde(default = "default_tcp_idle_timeout_secs")]
+    pub tcp_idle_timeout_secs: u64,
+    /// Connections served at once on each of the TCP and TLS listeners; the
+    /// rest wait in the accept backlog.
+    #[serde(default = "default_tcp_max_connections")]
+    pub tcp_max_connections: usize,
+    #[serde(default)]
+    pub import: ImportConfig,
     #[serde(default)]
     pub notify: NotifyConfig,
     #[serde(default)]
-    pub transfer_cache: TransferCacheConfig,
+    pub nsupdate: NsupdateConfig,
+    #[serde(default)]
+    pub tls: DnsTlsConfig,
+    #[serde(default)]
+    pub transfer: TransferConfig,
     #[serde(default)]
     pub zone_defaults: ZoneDefaultsConfig,
 }
@@ -234,6 +379,7 @@ pub struct NotifyConfig {
     pub batch_ms: u64,
     #[serde(default = "default_notify_retries")]
     pub retries: u32,
+    /// Seconds to wait for each NOTIFY, SOA probe, and parent-NS query.
     #[serde(default = "default_notify_timeout_secs")]
     pub timeout_secs: u64,
 }
@@ -256,24 +402,150 @@ impl Default for NotifyConfig {
     }
 }
 
-/// The cache of each zone's transfer content, keyed by serial, so repeated
-/// AXFRs skip the database read.
+/// Zone transfers as bindizr serves them.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct TransferCacheConfig {
-    /// Records the cache may hold before evicting the least recently used
-    /// zone. A zone larger than this is served uncached; `0` caches nothing.
+pub struct TransferConfig {
+    /// Records the cache of each zone's transfer content, keyed by serial,
+    /// may hold before evicting the least recently used zone. A zone larger
+    /// than this is served uncached; `0` caches nothing.
     #[serde(default = "default_transfer_cache_max_records")]
-    pub max_records: u64,
+    pub cache_max_records: u64,
+    /// Refuse AXFR and IXFR over plain TCP and UDP (RFC 9103, Section 11);
+    /// SOA queries keep answering. Needs `[dns.tls]`.
+    #[serde(default)]
+    pub require_tls: bool,
 }
 
-impl Default for TransferCacheConfig {
-    /// Build the default transfer cache settings.
+impl Default for TransferConfig {
+    /// Build the default transfer settings.
     fn default() -> Self {
         Self {
-            max_records: default_transfer_cache_max_records(),
+            cache_max_records: default_transfer_cache_max_records(),
+            require_tls: false,
         }
     }
+}
+
+/// nsupdate (RFC 2136).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct NsupdateConfig {
+    /// Require a TSIG signature on every update; `false` admits anyone.
+    #[serde(default = "default_nsupdate_tsig_required")]
+    pub tsig_required: bool,
+}
+
+impl Default for NsupdateConfig {
+    /// Build the default nsupdate settings: signed updates only.
+    fn default() -> Self {
+        Self {
+            tsig_required: default_nsupdate_tsig_required(),
+        }
+    }
+}
+
+/// Return the default nsupdate TSIG requirement.
+fn default_nsupdate_tsig_required() -> bool {
+    true
+}
+
+/// The longest idle timeout the edns-tcp-keepalive option carries.
+const MAX_TCP_IDLE_TIMEOUT_SECS: u64 = 6553;
+
+/// Return the default idle timeout between queries on a connection.
+fn default_tcp_idle_timeout_secs() -> u64 {
+    30
+}
+
+/// Return the default number of connections served at once per listener.
+fn default_tcp_max_connections() -> usize {
+    128
+}
+
+/// `zone import --from-server`: the AXFR bindizr pulls.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ImportConfig {
+    /// Seconds the whole transfer may take, resolution included.
+    #[serde(default = "default_import_timeout_secs")]
+    pub timeout_secs: u64,
+    /// Records a pulled zone may hold; a larger one is refused.
+    #[serde(default = "default_import_max_records")]
+    pub max_records: usize,
+}
+
+impl ImportConfig {
+    /// How long the whole transfer may take.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+
+    /// Validate the import bounds.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.timeout_secs == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.import.timeout_secs",
+            });
+        }
+        if self.max_records == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.import.max_records",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Default for ImportConfig {
+    /// Build the default import bounds.
+    fn default() -> Self {
+        Self {
+            timeout_secs: default_import_timeout_secs(),
+            max_records: default_import_max_records(),
+        }
+    }
+}
+
+/// Return the default deadline of a pulled transfer.
+fn default_import_timeout_secs() -> u64 {
+    30
+}
+
+/// Return the default record limit of a pulled zone.
+fn default_import_max_records() -> usize {
+    200_000
+}
+
+/// Zone transfers over TLS (XoT, RFC 9103): a second TCP listener on
+/// `dns.listen_addr`, served while both PEM files are set.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DnsTlsConfig {
+    /// 853 is the port DNS over TLS registers (RFC 7858, Section 3.1).
+    #[serde(default = "default_dns_tls_listen_port")]
+    pub listen_port: u16,
+    #[serde(default)]
+    pub cert_file: Option<String>,
+    #[serde(default)]
+    pub key_file: Option<String>,
+}
+
+impl Default for DnsTlsConfig {
+    /// Build the default TLS listener settings: the registered port, and no
+    /// certificate, so the listener stays off.
+    fn default() -> Self {
+        Self {
+            listen_port: default_dns_tls_listen_port(),
+            cert_file: None,
+            key_file: None,
+        }
+    }
+}
+
+/// Return the default DNS over TLS listen port.
+fn default_dns_tls_listen_port() -> u16 {
+    853
 }
 
 /// What a zone takes when its creation request leaves a field out. Only the
@@ -504,6 +776,14 @@ impl Config {
         if self.dns.listen_port != next.dns.listen_port {
             fixed.push("dns.listen_port".to_string());
         }
+        // The TLS listener and its certificate are both built at startup.
+        if self.dns.tls != next.dns.tls {
+            fixed.push("dns.tls".to_string());
+        }
+        // The connection slots are allotted when the listener starts.
+        if self.dns.tcp_max_connections != next.dns.tcp_max_connections {
+            fixed.push("dns.tcp_max_connections".to_string());
+        }
         // Renaming the catalog live would strand its stored row and the
         // secondaries configured to request its old name.
         if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
@@ -528,16 +808,32 @@ impl Config {
         Ok(bindizr_config)
     }
 
-    /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
+    /// Reject listeners sharing an endpoint so every server can bind at
+    /// startup; the TLS listener counts only while it is on.
     fn validate_listeners(&self) -> Result<(), ConfigError> {
-        if self.api.listen_port == self.dns.listen_port
-            && (self.api.listen_addr == self.dns.listen_addr
-                || self.api.listen_addr.is_unspecified()
-                || self.dns.listen_addr.is_unspecified())
-        {
-            return Err(ConfigError::SharedPort {
-                port: self.api.listen_port,
-            });
+        let api = (self.api.listen_addr, self.api.listen_port);
+        let dns = (self.dns.listen_addr, self.dns.listen_port);
+        let dns_tls = (self.dns.listen_addr, self.dns.tls.listen_port);
+        let dns_tls_on = self.dns.tls.tls_files().is_some();
+        let pairs = [
+            ("api", api, "dns", dns, true),
+            ("dns", dns, "dns.tls", dns_tls, dns_tls_on),
+            ("api", api, "dns.tls", dns_tls, dns_tls_on),
+        ];
+        for (first, (first_addr, port), second, (second_addr, second_port), checked) in pairs {
+            // An unspecified address covers every other, so the port alone collides.
+            if checked
+                && port == second_port
+                && (first_addr == second_addr
+                    || first_addr.is_unspecified()
+                    || second_addr.is_unspecified())
+            {
+                return Err(ConfigError::SharedPort {
+                    first,
+                    second,
+                    port,
+                });
+            }
         }
         Ok(())
     }
@@ -546,6 +842,7 @@ impl Config {
 impl DatabaseConfig {
     /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
+        self.tls.validate()?;
         match self.database_type {
             DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
                 Err(ConfigError::EmptyDatabaseLocation {
@@ -570,7 +867,7 @@ impl DatabaseConfig {
     }
 }
 
-/// The certificate and key files the API serves HTTPS with.
+/// The PEM certificate chain and private key a listener serves TLS with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TlsFiles<'a> {
     pub cert_file: &'a str,
@@ -578,29 +875,67 @@ pub struct TlsFiles<'a> {
 }
 
 impl ApiConfig {
-    /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
-    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
-        Some(TlsFiles {
-            cert_file: self.tls_cert_file.as_deref()?,
-            key_file: self.tls_key_file.as_deref()?,
-        })
-    }
-
     /// Validate the API configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "api" });
         }
+        self.tls.validate()
+    }
+}
+
+impl ApiTlsConfig {
+    /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
+    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
+        Some(TlsFiles {
+            cert_file: self.cert_file.as_deref()?,
+            key_file: self.key_file.as_deref()?,
+        })
+    }
+
+    /// Validate the HTTPS fields.
+    fn validate(&self) -> Result<(), ConfigError> {
         // Half a pair would serve plain HTTP on a port the operator means to
         // be HTTPS, which no later error would reveal.
-        match (self.tls_cert_file.as_deref(), self.tls_key_file.as_deref()) {
+        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
             (Some(_), None) => Err(ConfigError::TlsHalfPair {
-                present: "api.tls_cert_file",
-                missing: "api.tls_key_file",
+                present: "api.tls.cert_file",
+                missing: "api.tls.key_file",
             }),
             (None, Some(_)) => Err(ConfigError::TlsHalfPair {
-                present: "api.tls_key_file",
-                missing: "api.tls_cert_file",
+                present: "api.tls.key_file",
+                missing: "api.tls.cert_file",
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl DnsTlsConfig {
+    /// The certificate and key to serve XoT with, or `None` while the TLS
+    /// listener is off.
+    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
+        Some(TlsFiles {
+            cert_file: self.cert_file.as_deref()?,
+            key_file: self.key_file.as_deref()?,
+        })
+    }
+
+    /// Validate the TLS listener fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.listen_port == 0 {
+            return Err(ConfigError::PortZero { section: "dns.tls" });
+        }
+        // Half a pair would leave the listener off on a port the operator
+        // means to serve, which no later error would reveal.
+        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
+            (Some(_), None) => Err(ConfigError::TlsHalfPair {
+                present: "dns.tls.cert_file",
+                missing: "dns.tls.key_file",
+            }),
+            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
+                present: "dns.tls.key_file",
+                missing: "dns.tls.cert_file",
             }),
             _ => Ok(()),
         }
@@ -615,10 +950,34 @@ impl DnsConfig {
         zone_name.eq_ignore_ascii_case(self.catalog_zone_name.as_str())
     }
 
+    /// How long a TCP or TLS connection may sit idle between queries.
+    pub fn tcp_idle_timeout(&self) -> Duration {
+        Duration::from_secs(self.tcp_idle_timeout_secs)
+    }
+
     /// Validate the DNS configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
+        }
+        // The idle timeout must fit the keepalive option's 16-bit deciseconds.
+        if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.tcp_idle_timeout_secs) {
+            return Err(ConfigError::OutOfRange {
+                key: "dns.tcp_idle_timeout_secs",
+                min: 1,
+                max: MAX_TCP_IDLE_TIMEOUT_SECS,
+            });
+        }
+        if self.tcp_max_connections == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.tcp_max_connections",
+            });
+        }
+        self.tls.validate()?;
+        self.import.validate()?;
+        // Refusing plain transfers with no TLS listener would refuse them all.
+        if self.transfer.require_tls && self.tls.tls_files().is_none() {
+            return Err(ConfigError::TransferRequiresTlsListener);
         }
         // A zone without its own timers inherits these; a zero is refused
         // here as it is in a request.

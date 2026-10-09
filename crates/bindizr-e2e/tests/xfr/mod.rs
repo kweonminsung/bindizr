@@ -1,14 +1,26 @@
 //! Zone transfers as a secondary runs them: unsigned under the address ACL,
 //! and signed under a TSIG key the way `primaries { addr key k; }` does.
 
-use std::time::{Duration, Instant};
+mod tls;
+
+use std::{
+    collections::HashMap,
+    io::Write,
+    net::{TcpStream, UdpSocket},
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use domain::{
     base::{
-        Message,
-        iana::{Rcode, Rtype},
+        Message, MessageBuilder, Name, Ttl,
+        iana::{Class, OptRcode, Rcode, Rtype, TsigRcode},
     },
-    rdata::Soa,
+    rdata::{
+        A, Soa,
+        tsig::{Time48, Tsig},
+    },
+    tsig::ClientSequence,
 };
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -16,8 +28,11 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TransferOutcome, axfr,
-    dns::nsupdate::{KeyRole, SigningKey, create_tsig_key},
-    exchange_dns_query, wait_for_any_dns_record,
+    dns::{
+        nsupdate::{KeyRole, SigningKey, create_tsig_key, is_signed, sign},
+        parse_name,
+    },
+    exchange_dns_query, exchange_tcp, read_frame, wait_for_any_dns_record,
 };
 
 /// A bindizr whose transfer ACL admits the test's own loopback pull.
@@ -96,7 +111,11 @@ async fn a_udp_ixfr_is_answered_with_the_current_soa() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    let ixfr_truncated = [r#"type="ixfr""#, r#"result="truncated""#];
+    let ixfr_truncated = [
+        r#"type="ixfr""#,
+        r#"result="truncated""#,
+        r#"transport="udp""#,
+    ];
     let truncated = counter(&app, "bindizr_xfr_total", &ixfr_truncated).await;
     let soa_ok = counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await;
 
@@ -262,7 +281,7 @@ async fn an_unknown_key_is_refused_rather_than_falling_back_to_the_address() {
     };
     let outcome = axfr(app.dns_port(), zone_name, Some(&stranger));
     assert!(
-        outcome.is_err() || matches!(outcome, Ok(TransferOutcome::Refused(_))),
+        outcome.is_err() || matches!(outcome, Ok(TransferOutcome::Refused { .. })),
         "an unknown key was accepted: {outcome:?}"
     );
 }
@@ -459,6 +478,7 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     assert_eq!(body["summary"]["failed"], 0, "{body}");
     assert_eq!(body["transfers"][0]["kind"], "axfr");
     assert_eq!(body["transfers"][0]["result"], "ok");
+    assert_eq!(body["transfers"][0]["transport"], "tcp");
     assert_eq!(body["transfers"][0]["incremental"], false);
     assert_eq!(body["transfers"][0]["serial"], zone["serial"], "{body}");
     assert!(body["transfers"][0]["error"].is_null(), "{body}");
@@ -528,4 +548,315 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     let checked = app.run_cli(&["secondary", "check", "loopback"]).await;
     let stdout = String::from_utf8_lossy(&checked.stdout);
     assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
+}
+
+/// Verify that a TSIG out of place or with a MAC of a size its algorithm
+/// cannot produce is answered FORMERR and unsigned (RFC 8945, Section 5.2),
+/// not REFUSED under the address that would have admitted the client.
+#[tokio::test]
+#[serial]
+async fn a_malformed_tsig_is_answered_formerr_unsigned() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xfr-malformed-key", KeyRole::Admin).await;
+    let qname = parse_name(zone_name).unwrap();
+
+    // A valid signature, then one more record: the TSIG is no longer last.
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(41);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::AXFR)).unwrap();
+    let mut additional = question.additional();
+    ClientSequence::request(key.to_tsig_key().unwrap(), &mut additional, Time48::now()).unwrap();
+    additional
+        .push((
+            &qname,
+            Class::IN,
+            Ttl::ZERO,
+            A::from_str("192.0.2.1").unwrap(),
+        ))
+        .unwrap();
+    let not_last = additional.finish();
+
+    // A TSIG whose 4-octet MAC is below the floor of RFC 8945, Section 5.2.2.1.
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(42);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::AXFR)).unwrap();
+    let mut additional = question.additional();
+    let algorithm = Name::<Vec<u8>>::from_str("hmac-sha256.").unwrap();
+    let tsig = Tsig::new(
+        algorithm,
+        Time48::now(),
+        300,
+        vec![0u8; 4],
+        42,
+        TsigRcode::NOERROR,
+        Vec::new(),
+    )
+    .unwrap();
+    additional
+        .push((parse_name(&key.name).unwrap(), Class::ANY, Ttl::ZERO, tsig))
+        .unwrap();
+    let short_mac = additional.finish();
+
+    for (label, query) in [("not last", not_last), ("short MAC", short_mac)] {
+        let frame = exchange_tcp(app.dns_port(), &query).expect(label);
+        let response = Message::from_octets(frame).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::FORMERR, "{label}");
+        assert_eq!(
+            response.additional().unwrap().count(),
+            0,
+            "{label}: a FORMERR for a malformed TSIG is signed by no one"
+        );
+    }
+}
+
+/// Verify that a response copies the query's RD bit (RFC 1035, Section 4.1.1).
+#[tokio::test]
+#[serial]
+async fn a_response_copies_the_rd_bit() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for rd in [true, false] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(77);
+        builder.header_mut().set_rd(rd);
+        let mut question = builder.question();
+        question
+            .push((&parse_name(zone_name).unwrap(), Rtype::SOA))
+            .unwrap();
+        let response = exchange_udp(app.dns_port(), &question.finish());
+        let response = Message::from_octets(response.as_slice()).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        assert_eq!(response.header().rd(), rd, "rd={rd}");
+    }
+}
+
+/// A question for `zone` and `qtype` with `opts` OPT records of `version`
+/// advertising 4096 octets; none without EDNS.
+fn question_with_opt(zone: &str, qtype: Rtype, opts: usize, version: u8) -> Vec<u8> {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(91);
+    let mut question = builder.question();
+    question.push((&parse_name(zone).unwrap(), qtype)).unwrap();
+    let mut additional = question.additional();
+    for _ in 0..opts {
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(4096);
+                opt.set_version(version);
+                Ok(())
+            })
+            .unwrap();
+    }
+    additional.finish()
+}
+
+/// Send one UDP query to bindizr and return the response.
+fn exchange_udp(port: u16, query: &[u8]) -> Vec<u8> {
+    let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    socket.send_to(query, ("127.0.0.1", port)).unwrap();
+    let mut buf = [0u8; 4096];
+    let (len, _) = socket.recv_from(&mut buf).unwrap();
+    buf[..len].to_vec()
+}
+
+/// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3, and that
+/// an AXFR envelope carries the OPT too (RFC 9103, Section 6.3.4).
+#[tokio::test]
+#[serial]
+async fn an_edns_query_is_answered_with_an_opt() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let plain = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 0, 0),
+    );
+    let plain = Message::from_octets(plain.as_slice()).unwrap();
+    assert_eq!(plain.header().rcode(), Rcode::NOERROR);
+    assert!(plain.opt().is_none(), "no OPT was asked for");
+
+    let edns = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 1, 0),
+    );
+    let edns = Message::from_octets(edns.as_slice()).unwrap();
+    assert_eq!(edns.header().rcode(), Rcode::NOERROR);
+    let opt = edns.opt().expect("an EDNS query is answered with an OPT");
+    assert_eq!(opt.version(), 0);
+    assert_eq!(opt.udp_payload_size(), 1232);
+
+    let doubled = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 2, 0),
+    );
+    let doubled = Message::from_octets(doubled.as_slice()).unwrap();
+    assert_eq!(doubled.header().rcode(), Rcode::FORMERR);
+
+    let newer = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::SOA, 1, 1),
+    );
+    let newer = Message::from_octets(newer.as_slice()).unwrap();
+    let opt = newer.opt().expect("BADVERS travels in an OPT");
+    assert_eq!(opt.rcode(newer.header()), OptRcode::BADVERS);
+    assert_eq!(opt.version(), 0);
+
+    let frame = exchange_tcp(
+        app.dns_port(),
+        &question_with_opt(zone_name, Rtype::AXFR, 1, 0),
+    )
+    .expect("AXFR");
+    let envelope = Message::from_octets(frame.as_slice()).unwrap();
+    assert_eq!(envelope.header().rcode(), Rcode::NOERROR);
+    // RFC 7828, Section 3.3.2: over TCP the OPT carries the idle timeout.
+    let keepalive = envelope
+        .opt()
+        .expect("the envelope carries the OPT")
+        .opt()
+        .tcp_keepalive()
+        .expect("a TCP answer advertises its idle timeout");
+    assert_eq!(keepalive.timeout().map(u16::from), Some(300));
+    assert!(edns.opt().unwrap().opt().tcp_keepalive().is_none());
+}
+
+/// Verify that a UDP answer over 512 octets is truncated without EDNS and
+/// delivered whole within an advertised size (RFC 1035, Section 4.2.1).
+#[tokio::test]
+#[serial]
+async fn a_udp_answer_over_the_limit_is_truncated() {
+    let app = transfer_app().await;
+    // Three 60-octet labels push the SOA answer well past 512 octets.
+    let label = "x".repeat(60);
+    let zone_name = format!("{label}.{label}.{label}.{}", app.zone_name("long.test"));
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": format!("hostmaster@{zone_name}"),
+                "default_ttl": 3600,
+                "serial": 10,
+                "refresh": 7200,
+                "retry": 3600,
+                "expire": 604800,
+                "minimum_ttl": 86400
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let plain = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(&zone_name, Rtype::SOA, 0, 0),
+    );
+    let plain = Message::from_octets(plain.as_slice()).unwrap();
+    assert!(plain.header().tc(), "over 512 octets without EDNS");
+    assert_eq!(plain.header_counts().ancount(), 0);
+    assert!(plain.as_slice().len() <= 512);
+
+    let edns = exchange_udp(
+        app.dns_port(),
+        &question_with_opt(&zone_name, Rtype::SOA, 1, 0),
+    );
+    let edns = Message::from_octets(edns.as_slice()).unwrap();
+    assert!(!edns.header().tc(), "fits the advertised size");
+    assert_eq!(edns.header_counts().ancount(), 1);
+}
+
+/// Verify that two transfers pipelined on one connection both complete,
+/// their streams free to intermingle (RFC 9103, Section 6.2).
+#[tokio::test]
+#[serial]
+async fn pipelined_transfers_on_one_connection_both_complete() {
+    let app = transfer_app().await;
+    let first = app.create_test_zone().await;
+    let first = first["name"].as_str().unwrap().to_string();
+    let second = app.zone_name("second.example");
+    app.create_zone_cli(&second, "3600").await;
+
+    let mut stream = TcpStream::connect(("127.0.0.1", app.dns_port())).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    for (id, zone) in [(1u16, &first), (2u16, &second)] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(id);
+        let mut question = builder.question();
+        question
+            .push((&parse_name(zone).unwrap(), Rtype::AXFR))
+            .unwrap();
+        let query = question.finish();
+        let mut framed = (query.len() as u16).to_be_bytes().to_vec();
+        framed.extend_from_slice(&query);
+        stream.write_all(&framed).unwrap();
+    }
+
+    // Each transfer ends with its second SOA, whichever order the envelopes
+    // of the two arrive in.
+    let mut soas: HashMap<u16, usize> = HashMap::new();
+    while soas.values().filter(|&&seen| seen >= 2).count() < 2 {
+        let frame = read_frame(&mut stream)
+            .expect("read")
+            .expect("the server closed before both transfers ended");
+        let message = Message::from_octets(frame.as_slice()).unwrap();
+        assert_eq!(message.header().rcode(), Rcode::NOERROR);
+        let seen = message
+            .answer()
+            .unwrap()
+            .filter(|record| record.as_ref().is_ok_and(|r| r.rtype() == Rtype::SOA))
+            .count();
+        *soas.entry(message.header().id()).or_default() += seen;
+    }
+
+    assert_eq!(soas.get(&1), Some(&2));
+    assert_eq!(soas.get(&2), Some(&2));
+}
+
+/// Verify that a question of another class is NOTAUTH, its class echoed
+/// (RFC 5936, Section 2.2.2).
+#[tokio::test]
+#[serial]
+async fn a_question_of_another_class_is_notauth() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(95);
+    let mut question = builder.question();
+    question
+        .push((&parse_name(zone_name).unwrap(), Rtype::SOA, Class::CH))
+        .unwrap();
+
+    let response = exchange_udp(app.dns_port(), &question.finish());
+    let response = Message::from_octets(response.as_slice()).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+    assert_eq!(response.first_question().unwrap().qclass(), Class::CH);
+
+    // RFC 8945, Section 5.3: a signed question hears its NOTAUTH under the key.
+    let key = create_tsig_key(&app, "class-key", KeyRole::Admin).await;
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(96);
+    let mut question = builder.question();
+    question
+        .push((&parse_name(zone_name).unwrap(), Rtype::SOA, Class::CH))
+        .unwrap();
+    let mut additional = question.additional();
+    sign(&mut additional, &key).unwrap();
+    let response = exchange_tcp(app.dns_port(), &additional.finish()).expect("CH query");
+    let response = Message::from_octets(response).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+    assert!(is_signed(&response).unwrap());
 }

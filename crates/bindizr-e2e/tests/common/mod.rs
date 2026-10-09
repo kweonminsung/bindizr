@@ -10,6 +10,7 @@ use std::{
 };
 
 use reqwest::{Client, Method, StatusCode};
+use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -23,8 +24,8 @@ mod verify;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
-    FakeParent, ServedDs, TransferOutcome, axfr, exchange_dns_query, probe_zone_soa,
-    wait_for_any_dns_record,
+    FakeParent, ServedDs, TransferOutcome, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
+    probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
 };
 use verify::{PreviousDnsKey, to_fqdn};
 
@@ -44,6 +45,10 @@ pub(crate) struct TestApp {
     client: Client,
     base_url: String,
     dns_port: Option<u16>,
+    /// The XoT listener's port, when the daemon was started with `dns_tls`.
+    dns_tls_port: Option<u16>,
+    /// The self-signed certificate this run's TLS listeners present.
+    tls_cert: Option<CertificateDer<'static>>,
     dns_secondary_ports: Vec<u16>,
     namespace: String,
     auth_token: Option<String>,
@@ -59,6 +64,10 @@ pub(crate) struct TestAppOptions {
     pub(crate) openapi_enabled: bool,
     /// Serve the API over HTTPS with a certificate generated for this run.
     pub(crate) tls: bool,
+    /// Serve zone transfers over TLS on a second port with that same certificate.
+    pub(crate) dns_tls: bool,
+    /// Refuse transfers on the plain listeners, so only `dns_tls` serves them.
+    pub(crate) dns_transfer_require_tls: bool,
 }
 
 impl Default for TestAppOptions {
@@ -71,6 +80,8 @@ impl Default for TestAppOptions {
             nsupdate_tsig_required: true,
             openapi_enabled: false,
             tls: false,
+            dns_tls: false,
+            dns_transfer_require_tls: false,
         }
     }
 }
@@ -112,6 +123,20 @@ impl TestApp {
     /// picks one, the compose stack fixes it.
     pub(crate) fn dns_port(&self) -> u16 {
         self.dns_port.expect("local runtime binds a DNS port")
+    }
+
+    /// Port of bindizr's XoT listener; only a local daemon started with
+    /// `dns_tls` has one.
+    pub(crate) fn dns_tls_port(&self) -> u16 {
+        self.dns_tls_port
+            .expect("the daemon was started with dns_tls")
+    }
+
+    /// The certificate this run's TLS listeners present, for a client to trust.
+    pub(crate) fn tls_cert(&self) -> &CertificateDer<'static> {
+        self.tls_cert
+            .as_ref()
+            .expect("the daemon was started with TLS")
     }
 
     /// Bearer token attached to every subsequent HTTP request.

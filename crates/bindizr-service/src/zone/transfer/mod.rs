@@ -1,7 +1,7 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
-//! to the key that signed it, decided on the locked row it will serve.
+//! to the caller its key became, decided on the locked row it will serve.
 
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::{dns::name::ZoneName, model::role_grant::Action};
 use bindizr_db::LockLevel;
 
 mod delta;
@@ -10,9 +10,10 @@ pub use delta::{TransferDelta, authorize_transfer_delta_by_name};
 
 use crate::{
     Context, Transaction,
-    error::ServiceError,
-    model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
-    transaction, tsig_key,
+    authorization::Caller,
+    error::{ErrorCode, ServiceError},
+    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
+    transaction,
 };
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
@@ -45,35 +46,33 @@ pub struct TransferContent {
     pub dnssec_records: Vec<DnssecRecord>,
 }
 
-/// The enabled zone `zone_name` names, if `key` may transfer it (`None`, a
-/// request the address ACL admitted, no grant narrows). Decided on the row
-/// this transaction share-locks, with the grants locked beside it.
+/// The enabled zone `zone_name` names, if `caller` may transfer it. Decided
+/// on the row this transaction share-locks, with the grants re-read beside it.
 pub async fn authorize_transfer_by_name(
     cx: &Context,
+    caller: &Caller,
     zone_name: &ZoneName,
-    key: Option<&TsigKey>,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
-    let result = authorize_transfer_tx(&mut tx, zone_name, key).await;
+    let result = authorize_transfer_tx(&mut tx, caller, zone_name).await;
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
 /// Authorize a catalog transfer and load its member zones in one read
-/// transaction; a TSIG key needs `zone:transfer` in all zones, while the ACL
-/// alone admits an unsigned one.
+/// transaction; the caller needs `zone:transfer` in all zones.
 pub async fn authorize_catalog_content(
     cx: &Context,
-    key: Option<&TsigKey>,
+    caller: &Caller,
 ) -> Result<TransferAccess<Vec<Zone>>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
     let result = async {
-        if let Some(key) = key
-            && !tsig_key::authorize_catalog_transfer_tx(&mut tx, key).await?
-        {
-            return Ok(TransferAccess::Refused(format!(
-                "TSIG key '{}' is not granted 'zone:transfer' in all zones",
-                key.name
-            )));
+        let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {
+            TransferAccess::Granted(caller) => caller,
+            TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
+            TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
+        };
+        if let Err(e) = caller.authorize_action(Action::ZoneTransfer) {
+            return Ok(TransferAccess::Refused(e.to_string()));
         }
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
         Ok(TransferAccess::Granted(
@@ -85,16 +84,16 @@ pub async fn authorize_catalog_content(
 }
 
 /// Both record planes of the zone `zone_name` names, read under the share
-/// lock that decides whether `key` may transfer it, so the serial, the
+/// lock that decides whether `caller` may transfer it, so the serial, the
 /// signatures, and the grant all describe one row.
 pub async fn authorize_transfer_content_by_name(
     cx: &Context,
+    caller: &Caller,
     zone_name: &ZoneName,
-    key: Option<&TsigKey>,
 ) -> Result<TransferAccess<TransferContent>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load transfer content").await?;
     let result = async {
-        let zone = match authorize_transfer_tx(&mut tx, zone_name, key).await? {
+        let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
@@ -112,23 +111,43 @@ pub async fn authorize_transfer_content_by_name(
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
-/// Share-lock the enabled zone by name and, for a signed request, the grants
-/// of the key's role that must permit the transfer.
+/// Share-lock the enabled zone by name and the grants that must permit the
+/// transfer, re-read for the caller as every transaction does.
 async fn authorize_transfer_tx(
     tx: &mut Transaction<'_>,
+    caller: &Caller,
     zone_name: &ZoneName,
-    key: Option<&TsigKey>,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
     let Some(zone) = super::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {
         return Ok(TransferAccess::NotAuth);
     };
-    if let Some(key) = key
-        && !tsig_key::authorize_transfer_tx(tx, &zone, key).await?
-    {
-        return Ok(TransferAccess::Refused(format!(
-            "TSIG key '{}' is not granted 'zone:transfer' in zone '{}'",
-            key.name, zone.name
-        )));
+    let caller = match reauthenticate_transfer_tx(tx, caller).await? {
+        TransferAccess::Granted(caller) => caller,
+        TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
+        TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
+    };
+    // A zone the role does not reach is refused rather than hidden: NOTAUTH
+    // would claim the zone is not served, and its name is no secret here.
+    match caller.authorize_zone_action(Action::ZoneTransfer, &zone) {
+        Ok(()) => Ok(TransferAccess::Granted(zone)),
+        Err(e) if e.code() == ErrorCode::ZoneNotFound => Ok(TransferAccess::Refused(format!(
+            "role does not permit '{}' in zone '{}'",
+            Action::ZoneTransfer,
+            zone.name
+        ))),
+        Err(e) => Ok(TransferAccess::Refused(e.to_string())),
     }
-    Ok(TransferAccess::Granted(zone))
+}
+
+/// Re-read the caller's credential and grants under the transfer's lock; a
+/// credential gone since is a refusal, not a fault.
+async fn reauthenticate_transfer_tx(
+    tx: &mut Transaction<'_>,
+    caller: &Caller,
+) -> Result<TransferAccess<Caller>, ServiceError> {
+    match caller.reauthenticate_tx(tx).await {
+        Ok(caller) => Ok(TransferAccess::Granted(caller)),
+        Err(e) if e.code() == ErrorCode::InvalidToken => Ok(TransferAccess::Refused(e.to_string())),
+        Err(e) => Err(e),
+    }
 }

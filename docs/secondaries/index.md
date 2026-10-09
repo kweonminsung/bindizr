@@ -104,6 +104,33 @@ key was actually used is visible rather than assumed:
 XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=false
 ```
 
+A transfer over TLS logs as `XFR TLS query`, and `secondary transfers` lists
+the transport beside each one. Over TLS the key and the registered address
+are required together, as RFC 9103, Section 7.5 asks of a server without
+mutual TLS; either alone is refused there. A query the listener does not
+serve, an update included, is refused with extended DNS error 21, Not
+Supported (Section 7.8).
+Every listener answers an EDNS query with an OPT record and keeps a UDP
+answer within the size the query advertised, 512 octets without EDNS. Over
+TCP and TLS the OPT also carries the connection's idle timeout
+(`dns.tcp_idle_timeout_secs`, 30 seconds by default) as edns-tcp-keepalive
+(RFC 7828).
+
+## Transfers over TLS
+
+With `[dns.tls]` set (see [Configuration](../configuration.md)), Bindizr
+serves transfers over TLS (XoT, RFC 9103) on a second port, 853 by default.
+The certificate must carry the name the secondary connects to, and a renewed
+pair is re-read by `bindizr config reload`. Over TLS a
+secondary must be registered *and* sign with a key (RFC 9103, Section 7.5);
+the plain listener takes either alone. [BIND](bind.md#transfers-over-tls)
+9.18.10, [Knot DNS](knot.md#transfers-over-tls) 3.4, and
+[NSD](nsd.md#transfers-over-tls) 4.3.7 or newer speak it. `secondary
+transfers` shows the transport, and the log says `XFR TLS query`. Once every
+secondary pulls over TLS, `dns.transfer.require_tls = true` refuses a
+transfer over plain TCP or UDP, as RFC 9103, Section 11 asks of a zone
+whose transfers are XoT; SOA queries keep answering on every listener.
+
 ## Checking that it worked
 
 | Command | Checks |

@@ -3,7 +3,7 @@
 
 use bindizr_core::{
     dns::{Serial, name::ZoneName},
-    model::role_grant::Action,
+    model::{dnssec_key::DS_DIGEST_TYPE, role_grant::Action},
 };
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
@@ -152,21 +152,21 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
         .to_wire_name()
         .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
     let rdata = key
-        .ds_rdata(&apex, key.algorithm.ds_digest_type())
+        .ds_rdata(&apex, DS_DIGEST_TYPE)
         .map_err(ServiceError::dnssec_signing_failed)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {
         key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
-        digest_type: key.algorithm.ds_digest_type(),
+        digest_type: DS_DIGEST_TYPE,
         digest: digest.clone(),
         presentation: format!(
             "{} IN DS {} {} {} {}",
             zone.name.to_fqdn(),
             key.key_tag,
             key.algorithm.to_int(),
-            key.algorithm.ds_digest_type(),
+            DS_DIGEST_TYPE,
             digest
         ),
     })

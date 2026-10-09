@@ -8,8 +8,9 @@ use thiserror::Error;
 use super::{TransferAccess, authorize_transfer_tx};
 use crate::{
     Context,
+    authorization::Caller,
     error::ServiceError,
-    model::{tsig_key::TsigKey, zone::Zone, zone_change::ZoneChange, zone_version::ZoneVersion},
+    model::{zone::Zone, zone_change::ZoneChange, zone_version::ZoneVersion},
     transaction,
 };
 
@@ -29,16 +30,16 @@ pub enum TransferDelta {
 }
 
 /// Authorize an IXFR of `zone_name` from `client_serial` and load its delta in
-/// one read transaction: as the key could read it, no row pruned mid-load.
+/// one read transaction: as the caller could read it, no row pruned mid-load.
 pub async fn authorize_transfer_delta_by_name(
     cx: &Context,
+    caller: &Caller,
     zone_name: &ZoneName,
-    key: Option<&TsigKey>,
     client_serial: Serial,
 ) -> Result<TransferAccess<(Zone, TransferDelta)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load the transfer delta").await?;
     let result = async {
-        let zone = match authorize_transfer_tx(&mut tx, zone_name, key).await? {
+        let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),

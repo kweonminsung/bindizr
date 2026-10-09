@@ -40,6 +40,7 @@ use crate::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
         types::{DaemonCommand, DaemonResponse},
     },
+    tls::TlsCertificates,
 };
 
 /// Upper bound on a single command line, so a buggy or malicious client cannot
@@ -87,17 +88,32 @@ pub(crate) enum ServeSocketError {
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,
     control: mpsc::Sender<DaemonControl>,
+    /// The certificates a reload re-reads.
+    tls: TlsCertificates,
 }
 
 impl SocketContext {
     /// The front end's context over the daemon's.
-    pub(crate) fn new(daemon: Arc<Context>, control: mpsc::Sender<DaemonControl>) -> Self {
-        SocketContext { daemon, control }
+    pub(crate) fn new(
+        daemon: Arc<Context>,
+        control: mpsc::Sender<DaemonControl>,
+        tls: TlsCertificates,
+    ) -> Self {
+        SocketContext {
+            daemon,
+            control,
+            tls,
+        }
     }
 
     /// The daemon's context.
     pub(crate) fn daemon(&self) -> &Context {
         &self.daemon
+    }
+
+    /// The certificates the TLS listeners present.
+    pub(crate) fn tls(&self) -> &TlsCertificates {
+        &self.tls
     }
 
     /// The sender a shutdown or restart request goes down.
@@ -273,7 +289,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
     match command {
         DaemonCommand::Status => encode_response(status::handle_status(cx).await),
         DaemonCommand::Config => encode_response(Ok(status::config(cx))),
-        DaemonCommand::ReloadConfig => encode_response(status::reload_config(cx)),
+        DaemonCommand::ReloadConfig => encode_response(status::reload_config(socket_cx)),
         DaemonCommand::Doctor => encode_response(doctor::check_installation(cx).await),
         DaemonCommand::Shutdown => encode_response(Ok(control::shutdown(socket_cx))),
         DaemonCommand::Restart => encode_response(Ok(control::restart(socket_cx))),

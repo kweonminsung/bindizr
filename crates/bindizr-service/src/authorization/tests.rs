@@ -61,13 +61,13 @@ fn all_zones(actions: &[Action]) -> RoleGrant {
 }
 
 /// Check fixture record writes against the supplied grants.
-fn authorize(grants: &[RoleGrant], writes: &[RecordWrite<'_>]) -> Result<(), ServiceError> {
+fn authorize(grants: &[RoleGrant], writes: &[RecordAccess<'_>]) -> Result<(), ServiceError> {
     authorize_with_grants(&RoleGrants::from(grants.to_vec()), &test_zone(), writes)
 }
 
 /// Build a record-create authorization target for the test.
-fn create<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<'a> {
-    RecordWrite {
+fn create<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordAccess<'a> {
+    RecordAccess {
         action: Action::RecordCreate,
         relative_name: OwnerName::from_row(name),
         record_type,
@@ -152,7 +152,7 @@ fn authorize_enforces_action_name_and_type() {
     // A typeless write (whole-name delete) needs a grant constraining no type.
     assert!(authorize(&grants, &[create("host.dyn", None)]).is_err());
 
-    let delete = RecordWrite {
+    let delete = RecordAccess {
         action: Action::RecordDelete,
         ..create("host.dyn", Some(&RecordType::A))
     };

@@ -258,7 +258,7 @@ fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
     let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
     assert!(matches!(
         request_signature(&signed),
-        RequestSignature::Key(name) if name == "update-key"
+        RequestSignature::Key { name, fudge: 300 } if name == "update-key"
     ));
 
     // The same message with the TSIG RDATA cut away: a caller reaching for a
@@ -290,4 +290,74 @@ fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
         request_signature(&minimal_update_with_ztype(6)),
         RequestSignature::Absent
     ));
+}
+
+/// The signed update with its TSIG MAC replaced by `mac_len` zero octets; the
+/// digest does not verify, which the structure checks never reach.
+fn update_with_mac_of(mac_len: usize) -> Vec<u8> {
+    let key_name = encode_name("update-key");
+    let algorithm_name = encode_name(TsigAlgorithm::HmacSha256.as_str());
+    let mac = vec![0u8; mac_len];
+
+    let mut message = minimal_update_with_ztype(6);
+    message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
+    message.extend_from_slice(&key_name);
+    message.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
+    message.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
+    message.extend_from_slice(&0u32.to_be_bytes()); // TTL
+    let rdlen = algorithm_name.len() + 6 + 2 + 2 + mac.len() + 2 + 2 + 2;
+    message.extend_from_slice(&(rdlen as u16).to_be_bytes());
+    message.extend_from_slice(&algorithm_name);
+    message.extend_from_slice(&encode_u48(now_secs()));
+    message.extend_from_slice(&300u16.to_be_bytes());
+    message.extend_from_slice(&(mac.len() as u16).to_be_bytes());
+    message.extend_from_slice(&mac);
+    message.extend_from_slice(&[0x12, 0x34]); // original ID
+    message.extend_from_slice(&0u16.to_be_bytes()); // error
+    message.extend_from_slice(&0u16.to_be_bytes()); // other len
+    message
+}
+
+/// Verify that a TSIG out of place, doubled, or with a MAC of a size its
+/// algorithm cannot produce reads as malformed (RFC 8945, Sections 5.2 and
+/// 5.2.2.1), while a permitted truncation still names its key.
+#[test]
+fn a_tsig_breaking_section_5_2_is_malformed() {
+    let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+
+    // An A record after the TSIG: the TSIG is no longer the last record.
+    let mut not_last = signed.clone();
+    not_last[10..12].copy_from_slice(&2u16.to_be_bytes());
+    not_last.extend_from_slice(&encode_name("host.example.com"));
+    not_last.extend_from_slice(&Rtype::A.to_int().to_be_bytes());
+    not_last.extend_from_slice(&Class::IN.to_int().to_be_bytes());
+    not_last.extend_from_slice(&0u32.to_be_bytes());
+    not_last.extend_from_slice(&4u16.to_be_bytes());
+    not_last.extend_from_slice(&[192, 0, 2, 1]);
+    assert!(matches!(
+        request_signature(&not_last),
+        RequestSignature::Malformed
+    ));
+
+    // The TSIG record twice over.
+    let base_len = minimal_update_with_ztype(6).len();
+    let mut doubled = signed;
+    doubled[10..12].copy_from_slice(&2u16.to_be_bytes());
+    doubled.extend_from_within(base_len..);
+    assert!(matches!(
+        request_signature(&doubled),
+        RequestSignature::Malformed
+    ));
+
+    // SHA-256 makes 32 octets: 4 is below the floor of max(10, 16), 40 is
+    // more than the hash, and 16 is a truncation the key check may still
+    // refuse as BADTRUNC but the structure admits.
+    for (mac_len, malformed) in [(4, true), (40, true), (16, false), (32, false)] {
+        let signature = request_signature(&update_with_mac_of(mac_len));
+        assert_eq!(
+            matches!(signature, RequestSignature::Malformed),
+            malformed,
+            "mac of {mac_len}: {signature:?}"
+        );
+    }
 }
