@@ -24,6 +24,28 @@ pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) description: Option<String>,
 }
 
+/// Validated SOA names and TTL, shared by API and DNS zone writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NormalizedSoa {
+    pub(crate) mname: String,
+    pub(crate) rname: String,
+    pub(crate) ttl: Ttl,
+}
+
+/// Apply the zone policy to SOA names, mailbox encoding and default TTL.
+pub(crate) fn normalize_soa(
+    mname: &str,
+    rname: &str,
+    ttl: i32,
+) -> Result<NormalizedSoa, ServiceError> {
+    let mname = normalize_domain_name(mname, "mname")?.to_string();
+    let rname = normalize_email(rname)?;
+    let ttl = validate_default_ttl(ttl)?;
+    SoaMailbox::from_email(&rname)
+        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))?;
+    Ok(NormalizedSoa { mname, rname, ttl })
+}
+
 /// Validate and normalize the fields of a zone creation request.
 pub(crate) fn normalize_create_zone_request(
     cx: &Context,
@@ -31,25 +53,19 @@ pub(crate) fn normalize_create_zone_request(
 ) -> Result<NormalizedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_name(&request.name)?;
     reject_catalog_zone_name(cx, &zone_name)?;
-    let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
-    let rname = normalize_email(&request.rname)?;
-    let ttl = validate_default_ttl(
+    let soa = normalize_soa(
+        &request.mname,
+        &request.rname,
         request
             .default_ttl
             .unwrap_or(i32::from(cx.config().dns.zone_defaults.ttl)),
     )?;
 
-    // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
-    // (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
-    // label boundaries are checked by `SoaMailbox::from_email` itself.
-    SoaMailbox::from_email(&rname)
-        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))?;
-
     Ok(NormalizedCreateZoneRequest {
         name: zone_name,
-        mname,
-        rname,
-        ttl,
+        mname: soa.mname,
+        rname: soa.rname,
+        ttl: soa.ttl,
         description: normalize_description(
             request.description.as_deref(),
             ServiceError::invalid_zone_field,

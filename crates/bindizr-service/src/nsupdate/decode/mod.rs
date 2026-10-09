@@ -11,7 +11,9 @@ use bindizr_core::{
     model::record::RecordType,
 };
 
-use super::{NsupdateError, Prerequisite, UpdateOperation, parse_update_owner};
+use super::{
+    NsupdateError, Prerequisite, UpdateOperation, operation::RecordOperation, parse_update_owner,
+};
 
 /// Decode every prerequisite against the request's zone before it is evaluated.
 pub(crate) fn decode_prerequisites(
@@ -106,16 +108,23 @@ fn decode_update(
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
     match record.class {
         Class::IN => {
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
             // RFC 2181, Section 8: a TTL with its top bit set reads as zero.
             let ttl = Ttl::try_from(record.ttl).unwrap_or(Ttl::from_secs(0));
-            Ok(Some(UpdateOperation::AddRecord {
+            if record.record_type == Rtype::SOA {
+                return Ok(Some(UpdateOperation::ReplaceSoa {
+                    name,
+                    ttl,
+                    value: record.to_soa_value(query_data)?,
+                }));
+            }
+            let (record_type, value, priority) = record.to_record_value(query_data)?;
+            Ok(Some(UpdateOperation::Record(RecordOperation::AddRecord {
                 name,
                 record_type,
                 value,
                 ttl,
                 priority,
-            }))
+            })))
         }
         Class::ANY => {
             let record_type = match record.record_type {
@@ -126,7 +135,9 @@ fn decode_update(
                     Err(_) => return Ok(None),
                 },
             };
-            Ok(Some(UpdateOperation::DeleteRecordSet { name, record_type }))
+            Ok(Some(UpdateOperation::Record(
+                RecordOperation::DeleteRecordSet { name, record_type },
+            )))
         }
         Class::NONE => {
             // No row can match the SOA or an unstored type (RFC 2136, Section 2.5.4).
@@ -134,12 +145,14 @@ fn decode_update(
                 return Ok(None);
             }
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            Ok(Some(UpdateOperation::DeleteRecord {
-                name,
-                record_type,
-                value,
-                priority,
-            }))
+            Ok(Some(UpdateOperation::Record(
+                RecordOperation::DeleteRecord {
+                    name,
+                    record_type,
+                    value,
+                    priority,
+                },
+            )))
         }
         class => Err(NsupdateError::FormErr(format!(
             "unsupported update class: {}",

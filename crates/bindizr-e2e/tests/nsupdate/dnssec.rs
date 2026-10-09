@@ -4,7 +4,10 @@ use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use super::*;
+use super::{
+    common::{exported_record_sets, unsigned_nsupdate_app},
+    *,
+};
 
 /// Check derived names and RRsets for existence (RFC 2136, Sections 3.2.1–3.2.2).
 #[tokio::test]
@@ -80,38 +83,6 @@ async fn dnssec_prerequisites_see_derived_records() {
             assert_eq!(app.read_zone_serial(zone_name).await, serial);
         }
     }
-}
-
-/// Read published RRsets with an independent zone-file parser.
-async fn exported_record_sets(
-    app: &TestApp,
-    zone_name: &str,
-) -> std::collections::BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
-    use domain::{
-        base::rdata::ComposeRecordData,
-        zonefile::inplace::{Entry, Zonefile},
-    };
-
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/zones/{zone_name}/export?signed=true"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let mut file = Zonefile::new();
-    file.extend_from_slice(body.as_str().unwrap().as_bytes());
-    let mut sets = std::collections::BTreeMap::<_, Vec<_>>::new();
-    while let Some(entry) = file.next_entry().unwrap() {
-        if let Entry::Record(record) = entry {
-            let name = format!("{}.", record.owner().to_string().trim_end_matches('.'));
-            let mut rdata = Vec::new();
-            let Ok(()) = record.data().compose_rdata(&mut rdata);
-            sets.entry((name, record.rtype())).or_default().push(rdata);
-        }
-    }
-    sets
 }
 
 /// Check RRset equality with NSEC/NSEC3 and split keys (RFC 2136, Section 3.2.3).

@@ -5,6 +5,7 @@
 
 mod decode;
 mod operation;
+mod plan;
 mod prerequisite;
 
 use bindizr_core::{
@@ -17,7 +18,8 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 use decode::{decode_prerequisites, decode_updates};
-use operation::{UpdateOperation, apply_op_tx};
+use operation::apply_op_tx;
+use plan::UpdateOperation;
 use prerequisite::{Prerequisite, evaluate_prerequisites_tx};
 use thiserror::Error;
 
@@ -27,7 +29,6 @@ use crate::{
     dnssec,
     error::ServiceError,
     model::{record::RecordType, zone::Zone},
-    serial::generate_serial,
     transaction, zone,
 };
 
@@ -151,30 +152,43 @@ pub async fn apply(
         }
         let mut accesses = Vec::new();
         for op in &updates {
-            accesses.push(RecordAccess {
-                action: op.action(),
-                relative_name: op.name().clone(),
-                record_type: op.record_type(),
-            });
+            match op {
+                UpdateOperation::Record(op) => accesses.push(RecordAccess {
+                    action: op.action(),
+                    relative_name: op.name().clone(),
+                    record_type: op.record_type(),
+                }),
+                UpdateOperation::ReplaceSoa { .. } => {
+                    caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
+                }
+            }
         }
         caller.authorize_record_access(&zone, &accesses)?;
         evaluate_prerequisites_tx(&mut tx, &zone, &prerequisites).await?;
 
-        // An exhausted serial cannot advance, so refuse rather than commit
-        // changes secondaries could never detect.
-        let new_serial = generate_serial(Some(zone.serial))?;
-        let mut changed = false;
+        let plan = plan::prepare(&zone, updates)?;
+        let new_serial = plan.zone.serial;
+        let mut changed = plan.soa_changed;
 
-        for op in &updates {
-            changed |= apply_op_tx(&mut tx, &zone, op, new_serial, caller).await?;
+        for op in &plan.records {
+            changed |= apply_op_tx(&mut tx, &plan.zone, op, new_serial, caller).await?;
         }
 
         if changed {
-            dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
-            // Bump the serial and version it so secondaries detect the change via
-            // SOA/NOTIFY and can serve it as an IXFR delta.
-            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
-                .await?;
+            if plan.soa_changed {
+                let changes = zone::soa_replacement_changes(&zone, &plan.zone, new_serial)?;
+                bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
+            }
+            let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
+            dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
+            zone::save_version_tx(
+                &mut tx,
+                cx,
+                &updated,
+                new_serial,
+                caller.change_attribution(),
+            )
+            .await?;
         }
 
         Ok((changed, zone, new_serial))

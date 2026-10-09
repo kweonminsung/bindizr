@@ -7,13 +7,13 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Srv, Txt},
+    rdata::{A, Aaaa, Mx, Soa, Srv, Txt},
 };
 use thiserror::Error;
 
 use super::{ParseUpdateError, to_presentation_name};
 use crate::{
-    dns::record::{NaptrRecordValue, Rdata, TxtRecordValue},
+    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue},
     model::record::RecordType,
 };
 
@@ -80,6 +80,20 @@ impl UpdateRecord {
             self.rdata_start,
             self.rdata.len(),
         )?)
+    }
+
+    /// Decode SOA fields without applying zone storage policy.
+    pub fn to_soa_value(&self, message: &[u8]) -> Result<SoaRecordValue<String>, ParseUpdateError> {
+        let data = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
+        Ok(SoaRecordValue {
+            mname: to_presentation_name(data.mname())?,
+            rname: to_presentation_name(data.rname())?,
+            serial: data.serial().into_int(),
+            refresh: data.refresh().as_secs(),
+            retry: data.retry().as_secs(),
+            expire: data.expire().as_secs(),
+            minimum: data.minimum().as_secs(),
+        })
     }
 
     /// Decode an update record's wire data into its typed value.

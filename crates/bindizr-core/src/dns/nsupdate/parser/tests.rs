@@ -4,6 +4,45 @@ use crate::{
     model::record::RecordType,
 };
 
+/// Decode compressed SOA names and unsigned fields without crossing RDLENGTH.
+#[test]
+fn soa_update_decodes_compression_and_checks_rdata_length() {
+    let mut message = minimal_update_with_ztype(6);
+    let start = message.len();
+    message.extend_from_slice(&[3, b'n', b's', b'1', 0xc0, 12]);
+    message.extend_from_slice(&[
+        11, b'h', b'o', b's', b't', b'.', b'm', b'a', b's', b't', b'e', b'r', 0xc0, 12,
+    ]);
+    for field in [u32::MAX, 7200, 3600, 604800, 86400] {
+        message.extend_from_slice(&field.to_be_bytes());
+    }
+    let mut record = UpdateRecord {
+        name: "example.com.".to_string(),
+        record_type: Rtype::SOA,
+        class: Class::IN,
+        ttl: 300,
+        rdata: message[start..].to_vec(),
+        rdata_start: start,
+    };
+    let soa = record.to_soa_value(&message).unwrap();
+    assert_eq!(soa.mname, "ns1.example.com.");
+    assert_eq!(soa.rname, r"host\046master.example.com.");
+    assert_eq!(soa.serial, u32::MAX);
+    assert_eq!(
+        [soa.refresh, soa.retry, soa.expire, soa.minimum],
+        [7200, 3600, 604800, 86400]
+    );
+    let length = record.rdata.len();
+    for length in 0..length {
+        record.rdata.truncate(length);
+        assert!(record.to_soa_value(&message).is_err());
+        record.rdata = message[start..].to_vec();
+    }
+    record.rdata.push(0);
+    message.push(0);
+    assert!(record.to_soa_value(&message).is_err());
+}
+
 /// Build a minimal UPDATE message with the requested zone type.
 pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     let mut message = Vec::new();

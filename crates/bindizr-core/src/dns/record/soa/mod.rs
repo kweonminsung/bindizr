@@ -1,9 +1,12 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
+use std::str::{FromStr, Utf8Error};
+
+use domain::base::{Name, name::FromStrError};
 use thiserror::Error;
 
 use crate::dns::{
-    name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, encode_name},
+    name::{encode_name, labels_to_presentation},
     record::{EncodeRdataError, Rdata},
 };
 
@@ -14,9 +17,9 @@ pub enum ParseMailboxError {
     #[error("email must contain exactly one @")]
     AtCount,
     #[error(transparent)]
-    Name(#[from] ParseNameError),
-    #[error("SOA mailbox contains a dangling escape")]
-    DanglingEscape,
+    Name(#[from] FromStrError),
+    #[error("SOA mailbox is not UTF-8: {0}")]
+    Utf8(#[from] Utf8Error),
     #[error("SOA mailbox is not a valid encoded email")]
     NotEncodedEmail,
 }
@@ -24,9 +27,9 @@ pub enum ParseMailboxError {
 /// An SOA value as its wire fields (RFC 1035, Section 3.3.13); `rname` is the
 /// mailbox presentation form, not an email address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SoaRecordValue<'a> {
-    pub mname: &'a str,
-    pub rname: &'a str,
+pub struct SoaRecordValue<N> {
+    pub mname: N,
+    pub rname: N,
     pub serial: u32,
     pub refresh: u32,
     pub retry: u32,
@@ -34,11 +37,11 @@ pub struct SoaRecordValue<'a> {
     pub minimum: u32,
 }
 
-impl<'a> SoaRecordValue<'a> {
+impl<N: AsRef<str>> SoaRecordValue<N> {
     /// Encode the SOA value into wire-format record data.
     pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
-        let mut rdata = encode_name(self.mname)?;
-        rdata.extend_from_slice(&encode_name(self.rname)?);
+        let mut rdata = encode_name(self.mname.as_ref())?;
+        rdata.extend_from_slice(&encode_name(self.rname.as_ref())?);
         for field in [
             self.serial,
             self.refresh,
@@ -72,7 +75,7 @@ impl SoaMailbox {
             escape_local_part(local),
             domain.trim_end_matches('.')
         ));
-        mailbox.classify_wire_labels()?;
+        Name::<Vec<u8>>::from_str(mailbox.as_str())?;
         Ok(mailbox)
     }
 
@@ -82,50 +85,22 @@ impl SoaMailbox {
         Self(mailbox.into())
     }
 
-    /// Decode back into an email address. The first unescaped '.' separates
-    /// the local part from the domain; `\.` and `\\` are unescaped.
+    /// Decode mailbox labels, including decimal escapes (RFC 1035, Section 5.1).
     pub fn to_email(&self) -> Result<String, ParseMailboxError> {
-        let mailbox = self.0.trim_end_matches('.');
-        let mut local = String::with_capacity(mailbox.len());
-        let mut chars = mailbox.chars();
-
-        while let Some(c) = chars.next() {
-            match c {
-                '\\' => match chars.next() {
-                    Some(escaped) => local.push(escaped),
-                    None => return Err(ParseMailboxError::DanglingEscape),
-                },
-                '.' => {
-                    let domain: String = chars.collect();
-                    if local.is_empty() || domain.is_empty() {
-                        return Err(ParseMailboxError::NotEncodedEmail);
-                    }
-                    return Ok(format!("{}@{}", local, domain));
-                }
-                c => local.push(c),
-            }
+        let name = Name::<Vec<u8>>::from_str(&self.0)?;
+        let labels = name
+            .iter()
+            .filter(|label| !label.is_root())
+            .map(|label| std::str::from_utf8(label.as_slice()).map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?;
+        if labels.len() < 2 {
+            return Err(ParseMailboxError::NotEncodedEmail);
         }
-
-        Err(ParseMailboxError::NotEncodedEmail)
-    }
-
-    /// Validate the mailbox local-part label and domain labels.
-    fn classify_wire_labels(&self) -> Result<(), ParseNameError> {
-        let bare = self.0.trim_end_matches('.');
-        if bare.len() > MAX_DOMAIN_LEN {
-            return Err(ParseNameError::TooLong);
-        }
-
-        for label in decode_mailbox_labels(bare)? {
-            if label.is_empty() {
-                return Err(ParseNameError::EmptyLabel);
-            }
-            if label.len() > MAX_DNS_LABEL_LEN {
-                return Err(ParseNameError::LabelTooLong);
-            }
-        }
-
-        Ok(())
+        Ok(format!(
+            "{}@{}",
+            labels[0],
+            labels_to_presentation(&labels[1..])
+        ))
     }
 
     /// Return the text representation of this SOA mailbox.
@@ -137,28 +112,6 @@ impl SoaMailbox {
     pub fn into_encoded(self) -> String {
         self.0
     }
-}
-
-/// Split a mailbox into its decoded labels, so the local part's escaped dots
-/// stay inside one label (RFC 1035, Section 5.1).
-fn decode_mailbox_labels(mailbox: &str) -> Result<Vec<String>, ParseNameError> {
-    let mut labels = Vec::new();
-    let mut label = String::new();
-    let mut chars = mailbox.chars();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => match chars.next() {
-                Some(escaped) => label.push(escaped),
-                None => return Err(ParseNameError::DanglingEscape),
-            },
-            '.' => labels.push(std::mem::take(&mut label)),
-            c => label.push(c),
-        }
-    }
-
-    labels.push(label);
-    Ok(labels)
 }
 
 impl std::fmt::Display for SoaMailbox {
@@ -233,6 +186,12 @@ mod tests {
                 .unwrap(),
             "hostmaster@example.com"
         );
+        assert_eq!(
+            SoaMailbox::from_encoded(r"Host\046Master.example.com.")
+                .to_email()
+                .unwrap(),
+            "Host.Master@example.com"
+        );
     }
 
     /// Verify that `to_email` rejects invalid input.
@@ -241,6 +200,13 @@ mod tests {
         assert!(SoaMailbox::from_encoded("no-separator").to_email().is_err());
         assert!(SoaMailbox::from_encoded(".example.com").to_email().is_err());
         assert!(SoaMailbox::from_encoded("dangling\\").to_email().is_err());
+        for mailbox in [
+            r"bad\99.example.com.",
+            r"bad\999.example.com.",
+            r"bad\255.example.com.",
+        ] {
+            assert!(SoaMailbox::from_encoded(mailbox).to_email().is_err());
+        }
     }
 
     /// Verify that SOA RDATA encodes two names followed by five counters (RFC 1035, Section

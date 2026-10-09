@@ -1,5 +1,8 @@
+mod common;
 mod dnssec;
+mod soa;
 
+use common::unsigned_nsupdate_app;
 use domain::{
     base::{
         Rtype, Serial, Ttl,
@@ -11,7 +14,7 @@ use serde_json::Value;
 use serial_test::serial;
 
 use crate::common::{
-    TestApp, TestAppOptions,
+    TestApp,
     dns::{
         nsupdate::{
             KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update,
@@ -21,17 +24,6 @@ use crate::common::{
         parse_name,
     },
 };
-
-/// These drive bindizr's own DNS listener over UDP with unsigned updates, so
-/// the whole RFC 2136 path runs: message decoding, prerequisites, the apply
-/// transaction, and the serial bump. Signed updates below also exercise grants.
-async fn unsigned_nsupdate_app() -> TestApp {
-    TestApp::start_with_options(TestAppOptions {
-        nsupdate_tsig_required: false,
-        ..TestAppOptions::default()
-    })
-    .await
-}
 
 /// Verify that `nsupdate` adds and deletes records.
 #[tokio::test]

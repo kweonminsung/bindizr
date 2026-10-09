@@ -47,6 +47,14 @@ pub(crate) fn normalize_soa_interval<T: TryFrom<i32>>(
     let Some(secs) = value else {
         return Ok(fallback);
     };
+    validate_soa_interval(secs, field)
+}
+
+/// Require a supplied SOA interval to be positive and representable.
+pub(crate) fn validate_soa_interval<T: TryFrom<i32>>(
+    secs: i32,
+    field: &str,
+) -> Result<T, ServiceError> {
     let positive = || {
         ServiceError::invalid_zone_field(format!("{} must be a positive number of seconds", field))
     };

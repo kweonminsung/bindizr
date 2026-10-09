@@ -414,7 +414,9 @@ each rule says which spelling is this project's.
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
   `record:read`, an add `record:create`, a delete `record:delete`, against the
   signing key's role; an add that replaces a CNAME or DNAME needs
-  `record:delete` too, one that moves the record set's TTL `record:update`. A TSIG-signed transfer needs `zone:transfer` (the
+  `record:delete` too, one that moves the record set's TTL `record:update`.
+  An SOA addition needs `zone:update`, since it replaces zone metadata.
+  A TSIG-signed transfer needs `zone:transfer` (the
   catalog zone an `All` grant); an unsigned one is the ACL's alone.
 
 ### Transactions and locking
@@ -559,6 +561,12 @@ Prerequisites compare with the complete served zone at that transaction's
 serial: the SOA, ordinary records, and signer-generated DNSSEC records.
 Their wire type and canonical RDATA identify an RRset independently of
 storage; the writable `RecordType` enum never decides whether it exists.
+SOA additions are resolved in wire order using RFC 1982 comparisons. Equal,
+older, undefined-distance and non-apex SOAs are ignored; an advancing SOA
+passes the existing zone-write policy and supplies the request's final serial
+(RFC 2136, Sections 3.4.2.2 and 3.6). SOA metadata, record changes, signatures
+and the version commit together at that serial. Storage-range or zone-policy
+failures are REFUSED, not malformed RDATA.
 
 ### Clean installs only — no migrations or back-compat
 

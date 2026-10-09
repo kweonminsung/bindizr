@@ -43,6 +43,12 @@ impl SigningKey {
 /// (RFC 2136, Section 2.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum UpdateRecord {
+    /// CLASS IN: replace the zone SOA when its serial advances.
+    AddSoa {
+        name: String,
+        ttl: u32,
+        soa: Soa<Name<Vec<u8>>>,
+    },
     /// CLASS IN: add this address record.
     AddA {
         name: String,
@@ -329,6 +335,14 @@ pub(crate) fn build_update(
     let mut authority = answer.authority();
     for update in updates {
         match update {
+            UpdateRecord::AddSoa { name, ttl, soa } => authority
+                .push(Record::new(
+                    parse_name(name)?,
+                    Class::IN,
+                    Ttl::from_secs(*ttl),
+                    soa.clone(),
+                ))
+                .map_err(|e| e.to_string())?,
             UpdateRecord::AddA {
                 name: owner,
                 ttl,

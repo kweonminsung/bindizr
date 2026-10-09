@@ -21,7 +21,7 @@ use crate::{
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names have passed the zone prescan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum UpdateOperation {
+pub(crate) enum RecordOperation {
     /// CLASS IN: add the record.
     AddRecord {
         name: OwnerName,
@@ -46,12 +46,12 @@ pub(crate) enum UpdateOperation {
     },
 }
 
-impl UpdateOperation {
+impl RecordOperation {
     /// The grant action this operation needs: an add creates, both deletes delete.
     pub(crate) fn action(&self) -> Action {
         match self {
-            UpdateOperation::AddRecord { .. } => Action::RecordCreate,
-            UpdateOperation::DeleteRecordSet { .. } | UpdateOperation::DeleteRecord { .. } => {
+            RecordOperation::AddRecord { .. } => Action::RecordCreate,
+            RecordOperation::DeleteRecordSet { .. } | RecordOperation::DeleteRecord { .. } => {
                 Action::RecordDelete
             }
         }
@@ -60,18 +60,18 @@ impl UpdateOperation {
     /// Return the owner name targeted by this update operation.
     pub(crate) fn name(&self) -> &OwnerName {
         match self {
-            UpdateOperation::AddRecord { name, .. }
-            | UpdateOperation::DeleteRecordSet { name, .. }
-            | UpdateOperation::DeleteRecord { name, .. } => name,
+            RecordOperation::AddRecord { name, .. }
+            | RecordOperation::DeleteRecordSet { name, .. }
+            | RecordOperation::DeleteRecord { name, .. } => name,
         }
     }
 
     /// The type this update touches; `None` for a whole-name delete.
     pub(crate) fn record_type(&self) -> Option<&RecordType> {
         match self {
-            UpdateOperation::AddRecord { record_type, .. }
-            | UpdateOperation::DeleteRecord { record_type, .. } => Some(record_type),
-            UpdateOperation::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
+            RecordOperation::AddRecord { record_type, .. }
+            | RecordOperation::DeleteRecord { record_type, .. } => Some(record_type),
+            RecordOperation::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
         }
     }
 }
@@ -80,12 +80,12 @@ impl UpdateOperation {
 pub(crate) async fn apply_op_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    op: &UpdateOperation,
+    op: &RecordOperation,
     new_serial: Serial,
     caller: &Caller,
 ) -> Result<bool, NsupdateError> {
     match op {
-        UpdateOperation::AddRecord {
+        RecordOperation::AddRecord {
             name: owner,
             record_type,
             value,
@@ -209,10 +209,10 @@ pub(crate) async fn apply_op_tx(
 
             Ok(true)
         }
-        UpdateOperation::DeleteRecordSet { name, record_type } => {
+        RecordOperation::DeleteRecordSet { name, record_type } => {
             delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
         }
-        UpdateOperation::DeleteRecord {
+        RecordOperation::DeleteRecord {
             name,
             record_type,
             value,

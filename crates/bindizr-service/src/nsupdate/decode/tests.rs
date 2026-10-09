@@ -91,7 +91,7 @@ fn decoded_operations_carry_checked_owners() {
     add.name = r"host\.name.example.com.".to_string();
     let operations = decode_updates(&[add], &zone, &message).unwrap();
     match &operations[0] {
-        UpdateOperation::AddRecord { name, ttl, .. } => {
+        UpdateOperation::Record(RecordOperation::AddRecord { name, ttl, .. }) => {
             assert_eq!(name.labels(), ["host.name"]);
             assert_eq!(ttl.as_secs(), 0);
         }

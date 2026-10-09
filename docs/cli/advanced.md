@@ -59,8 +59,8 @@ reaches only part of the action set:
 - An **API token** exercises every action except `zone:transfer`: transfers
   are DNS requests, authorized by a TSIG key or the registered secondaries,
   never by a token.
-- A **TSIG key** exercises only the `record:*` actions (for nsupdate) and
-  `zone:transfer` (for AXFR/IXFR). Other actions in its role have no effect
+- A **TSIG key** exercises the `record:*` actions (for ordinary nsupdate records),
+  `zone:update` (for nsupdate SOA), and `zone:transfer` (for AXFR/IXFR). Other actions in its role have no effect
   on what it signs.
 
 What a key may sign follows its role:
@@ -68,7 +68,8 @@ What a key may sign follows its role:
 | Request | Needs |
 | --- | --- |
 | nsupdate prerequisite | `record:read` at its name and type |
-| nsupdate add | `record:create` at its name and type; `record:delete` too when it replaces a CNAME or DNAME, `record:update` when its TTL moves the record set |
+| nsupdate ordinary record add | `record:create` at its name and type; `record:delete` too when it replaces a CNAME or DNAME, `record:update` when its TTL moves the record set |
+| nsupdate SOA add | `zone:update` reaching the zone |
 | nsupdate delete | `record:delete` at its name and type |
 | Signed AXFR/IXFR of a zone | `zone:transfer` reaching the zone |
 | Signed transfer of the catalog zone | `zone:transfer` in all zones |

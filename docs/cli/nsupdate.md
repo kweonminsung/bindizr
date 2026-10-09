@@ -4,10 +4,11 @@ Bindizr serves nsupdate, the RFC 2136 UPDATE message, through the DNS listener,
 authenticated with TSIG. The key named in the request's TSIG record says who
 is calling; the key's [role](access-control.md) says what it may change.
 
-The role needs `record:read` for prerequisites, `record:create` for additions,
+The role needs `record:read` for prerequisites, `record:create` for ordinary additions,
 and `record:delete` for deletions. An addition that replaces a CNAME or DNAME
 needs `record:delete` as well, and one whose TTL differs from the record set's
-needs `record:update`, since it moves the whole set. If any record falls
+needs `record:update`, since it moves the whole set. An SOA addition needs
+`zone:update`, since it changes the zone's metadata. If any record falls
 outside its grants, the entire update is refused.
 
 ## Example
@@ -80,6 +81,18 @@ replaces the first, and an add whose TTL differs from the record set's moves
 the whole set to the new TTL. A record below a DNAME, or a DNAME above
 existing records, is refused: nothing may exist under a DNAME (RFC 6672,
 Section 2.4).
+
+An SOA addition replaces the apex SOA only when its serial advances under
+RFC 1982. Equal or older serials, the undefined half-range distance, and SOAs
+at other owners are ignored. Multiple SOAs are considered in request order.
+The accepted serial is used for all changes in that request; automatic
+incrementing applies only when records change without an SOA advance
+(RFC 2136, Sections 3.4.2.2 and 3.6).
+
+SOA replacements use the existing zone-write policy: serials at most
+2147483647, SOA TTL 60–604800 seconds, positive timing fields at most
+2147483647, a supported MNAME and an email-convertible RNAME. A newer SOA
+outside that policy refuses the whole request with `REFUSED`.
 
 ## The first key
 

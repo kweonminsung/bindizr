@@ -78,7 +78,7 @@ Examples:
 Actions:
   zone:read         read a zone's status and version history
   zone:create       create zones, and with zone:update rename one (all zones only)
-  zone:update       change a zone's settings and send NOTIFY; with unnarrowed
+  zone:update       change zone settings (including nsupdate SOA) and send NOTIFY; with unnarrowed
                     record:read, record:create and record:delete, roll back a version
   zone:delete       delete zones
   zone:transfer     answer a TSIG-signed AXFR/IXFR (TSIG keys only)
