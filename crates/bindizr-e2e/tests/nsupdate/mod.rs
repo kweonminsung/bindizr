@@ -1,3 +1,5 @@
+mod dnssec;
+
 use domain::{
     base::{
         Rtype, Serial, Ttl,

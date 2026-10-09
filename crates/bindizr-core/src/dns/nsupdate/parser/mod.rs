@@ -16,7 +16,7 @@ use crate::{
     dns::{
         message::{Edns, query::UDP_PAYLOAD_SIZE_WITHOUT_EDNS},
         name::labels_to_presentation,
-        record::ParseRecordValueError,
+        record::{ParseRdataError, ParseRecordValueError},
         tsig::is_mac_size_in_bounds,
     },
     model::record::ParseRecordTypeError,
@@ -62,6 +62,8 @@ pub enum ParseUpdateError {
     /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
     #[error("invalid {record_type} rdata")]
     Rdata { record_type: String },
+    #[error("invalid prerequisite rdata: {0}")]
+    PrerequisiteRdata(#[from] ParseRdataError),
     /// A name inside the RDATA does not read back into presentation form.
     #[error("invalid {record_type} rdata: {source}")]
     RdataName {

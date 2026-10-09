@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    dns::{name::encode_name, record::TxtRecordValue},
+    dns::{message::Rtype, name::encode_name, record::TxtRecordValue},
     model::record::RecordType,
 };
 
@@ -142,4 +142,69 @@ fn encode_cname_rdata_reads_an_escaped_dot_as_label_data() {
             0,
         ]
     );
+}
+
+/// Resolve compressed names within RDLENGTH (RFC 1035, Section 4.1.4).
+#[test]
+fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
+    let mut message = b"\x02NS\x07EXAMPLE\x03COM\0".to_vec();
+    let start = message.len();
+    message.extend_from_slice(&[0, 10, 0xc0, 0, 0xaa, 0xbb]);
+    let rdata = Rdata::parse_canonical(Rtype::MX, &message, start, 4).unwrap();
+    assert_eq!(rdata.as_bytes(), b"\0\x0a\x02ns\x07example\x03com\0");
+    assert!(Rdata::parse_canonical(Rtype::MX, &message, start, 3).is_err());
+    assert!(matches!(
+        Rdata::parse_canonical(Rtype::MX, &message, start, 5),
+        Err(ParseRdataError::TrailingBytes)
+    ));
+    assert!(Rdata::parse_canonical(Rtype::MX, &message, usize::MAX, 4).is_err());
+    assert!(Rdata::parse_canonical(Rtype::MX, &message, start, usize::MAX).is_err());
+}
+
+/// Preserve opaque RDATA, including empty data (RFC 3597, Section 6).
+#[test]
+fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
+    let message = [0xc0, 0, 0xff, 0xee];
+    let unknown = Rtype::from_int(65280);
+    let rdata = Rdata::parse_canonical(unknown, &message, 0, 3).unwrap();
+    assert_eq!(rdata.as_bytes(), &message[..3]);
+    assert!(
+        Rdata::parse_canonical(unknown, &message, 2, 0)
+            .unwrap()
+            .as_bytes()
+            .is_empty()
+    );
+    let txt = Rdata::new(vec![2, b'A', 0xff]).unwrap();
+    assert_eq!(txt.to_canonical(Rtype::TXT).unwrap(), txt);
+}
+
+/// Preserve NSEC name case but fold RRSIG signer names (RFC 6840, Section 5.1).
+#[test]
+fn canonical_rdata_observes_dnssec_name_case_rules() {
+    let name = b"\x02NS\x07EXAMPLE\x03COM\0";
+    let mut sig = vec![0, 1, 13, 2, 0, 0, 1, 44, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1];
+    sig.extend_from_slice(name);
+    sig.extend_from_slice(&[b'A', 0xff]);
+    let rdata = Rdata::new(sig.clone())
+        .unwrap()
+        .to_canonical(Rtype::RRSIG)
+        .unwrap();
+    assert_eq!(&rdata.as_bytes()[18..], b"\x02ns\x07example\x03com\0A\xff");
+    assert_eq!(&rdata.as_bytes()[..18], &sig[..18]);
+    let mut nsec = name.to_vec();
+    nsec.extend_from_slice(&[0, 1, 0x40]);
+    let rdata = Rdata::new(nsec).unwrap();
+    assert_eq!(rdata.to_canonical(Rtype::NSEC).unwrap(), rdata);
+}
+
+/// Reject known RDATA that does not fill its declared length.
+#[test]
+fn canonical_rdata_rejects_malformed_known_types() {
+    let bytes = [192, 0, 2, 1, 0];
+    assert!(Rdata::parse_canonical(Rtype::A, &bytes, 0, 3).is_err());
+    assert!(matches!(
+        Rdata::parse_canonical(Rtype::A, &bytes, 0, 5),
+        Err(ParseRdataError::TrailingBytes)
+    ));
+    assert!(Rdata::parse_canonical(Rtype::DNSKEY, &bytes, 0, 3).is_err());
 }

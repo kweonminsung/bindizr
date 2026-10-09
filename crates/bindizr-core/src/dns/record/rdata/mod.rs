@@ -1,9 +1,12 @@
 //! [`EncodedRdata::from_columns`] maps stored columns to wire RDATA for both
 //! XFR and DNSSEC, keeping transferred bytes identical to signed bytes.
 
+mod canonical;
+
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use base64::Engine;
+pub use canonical::ParseRdataError;
 use thiserror::Error;
 
 use super::{

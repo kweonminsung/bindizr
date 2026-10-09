@@ -32,7 +32,7 @@ pub use naptr::{NaptrRecordValue, NaptrRegexpError};
 pub use ns::NsRecordValue;
 pub use ptr::PtrRecordValue;
 pub(crate) use rdata::EncodedRdata;
-pub use rdata::{EncodeRdataError, Rdata};
+pub use rdata::{EncodeRdataError, ParseRdataError, Rdata};
 pub use soa::{ParseMailboxError, SoaMailbox, SoaRecordValue};
 pub use srv::SrvRecordValue;
 pub use sshfp::SshfpRecordValue;

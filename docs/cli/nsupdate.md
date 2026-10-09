@@ -62,8 +62,11 @@ TSIG record that is doubled, not last, unreadable, or carries a MAC of a size
 its algorithm cannot produce is a `FORMERR` signed by no one (RFC 8945,
 Section 5.2). The
 prerequisite codes (`NXDOMAIN`, `YXDOMAIN`, `NXRRSET`, `YXRRSET`) report the
-first prerequisite that failed. A prerequisite may name the zone's SOA,
-which no record holds but every zone serves, serial included.
+first prerequisite that failed. Prerequisites read the whole served zone:
+ordinary records, the SOA (serial included), and generated DNSSEC records.
+A name holding only DNSSEC records is in use. Value-dependent prerequisites
+must match the entire RRset; order, duplicates, and TTL do not affect equality
+(RFC 2136, Section 3.2). All checks use the same locked zone state as the update.
 
 Some records in an update are passed over rather than refused, as the RFC
 says: a delete that would remove the SOA or the last apex NS record, a CNAME

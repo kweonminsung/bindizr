@@ -47,9 +47,7 @@ pub(crate) fn decode_updates(
         .collect()
 }
 
-/// One prerequisite record, its shape held to RFC 2136, Section 3.2.1 (TTL 0,
-/// rdata only in the zone class); a type bindizr never stores keeps its
-/// meaning, since its record set can never exist, the zone's SOA excepted.
+/// Check and decode a prerequisite (RFC 2136, Section 3.2).
 fn decode_prerequisite(
     record: &UpdateRecord,
     zone_name: &ZoneName,
@@ -75,41 +73,20 @@ fn decode_prerequisite(
             Ok(match (is_any_class, record.record_type) {
                 (true, Rtype::ANY) => Prerequisite::NameExists { name },
                 (false, Rtype::ANY) => Prerequisite::NameAbsent { name },
-                (true, record_type) => match RecordType::try_from(record_type) {
-                    Ok(record_type) => Prerequisite::RecordSetExists { name, record_type },
-                    Err(_) => Prerequisite::UnstoredTypeExists { name, record_type },
-                },
-                (false, record_type) => match RecordType::try_from(record_type) {
-                    Ok(record_type) => Prerequisite::RecordSetAbsent { name, record_type },
-                    Err(_) => Prerequisite::UnstoredTypeAbsent { name, record_type },
-                },
+                (true, record_type) => Prerequisite::RecordSetExists { name, record_type },
+                (false, record_type) => Prerequisite::RecordSetAbsent { name, record_type },
             })
         }
         Class::IN => {
-            if record.record_type == Rtype::ANY || record.rdata.is_empty() {
+            if record.record_type == Rtype::ANY {
                 return Err(NsupdateError::FormErr(
-                    "IN-class prerequisite must specify record type and rdata".to_string(),
+                    "IN-class prerequisite must specify a record type".to_string(),
                 ));
             }
-            if record.record_type == Rtype::SOA {
-                return Ok(Prerequisite::SoaMatches {
-                    name,
-                    rdata: record.to_soa_rdata(query_data)?,
-                });
-            }
-            if RecordType::try_from(record.record_type).is_err() {
-                return Ok(Prerequisite::UnstoredTypeExists {
-                    name,
-                    record_type: record.record_type,
-                });
-            }
-
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
             Ok(Prerequisite::RecordValueMatches {
                 name,
-                record_type,
-                value,
-                priority,
+                record_type: record.record_type,
+                rdata: record.to_rdata(query_data)?,
             })
         }
         other => Err(NsupdateError::FormErr(format!(

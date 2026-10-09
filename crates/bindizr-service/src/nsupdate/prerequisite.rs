@@ -1,6 +1,6 @@
-//! RFC 2136, Section 3.2: every prerequisite is checked against the zone
-//! before any update is applied. Zone-class records are grouped by name and type
-//! and must equal the zone's record set there (Section 3.2.3).
+//! Prerequisites against the complete served zone (RFC 2136, Section 3.2).
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use bindizr_core::dns::{message::Rtype, name::OwnerName, record::Rdata};
 use bindizr_db::LockLevel;
@@ -9,51 +9,55 @@ use super::NsupdateError;
 use crate::{
     Transaction,
     error::ServiceError,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
 };
 
-/// A condition the zone must satisfy before any update is applied
-/// (RFC 2136, Section 2.4). Owner names are relative to the checked zone.
+/// An UPDATE prerequisite with a checked owner and wire type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Prerequisite {
-    /// CLASS ANY, TYPE ANY: the owner name must exist.
+    /// CLASS ANY, TYPE ANY: the owner must hold at least one record.
     NameExists { name: OwnerName },
-    /// CLASS NONE, TYPE ANY: the owner name must not exist.
+    /// CLASS NONE, TYPE ANY: the owner must hold no records.
     NameAbsent { name: OwnerName },
     /// CLASS ANY: the record set must exist.
-    RecordSetExists {
-        name: OwnerName,
-        record_type: RecordType,
-    },
+    RecordSetExists { name: OwnerName, record_type: Rtype },
     /// CLASS NONE: the record set must not exist.
-    RecordSetAbsent {
-        name: OwnerName,
-        record_type: RecordType,
-    },
-    /// CLASS IN: with the others of its name and type, the record set must equal
-    /// the zone's (RFC 2136, Section 3.2.3).
+    RecordSetAbsent { name: OwnerName, record_type: Rtype },
+    /// CLASS IN: exact RRset match (RFC 2136, Section 3.2.3).
     RecordValueMatches {
         name: OwnerName,
-        record_type: RecordType,
-        /// TXT arrives row-encoded; every other type in presentation form.
-        value: String,
-        priority: Option<i32>,
+        record_type: Rtype,
+        rdata: Rdata,
     },
-    /// A record set of a type bindizr never stores must exist: it cannot,
-    /// the zone's own SOA at the apex excepted.
-    UnstoredTypeExists { name: OwnerName, record_type: Rtype },
-    /// A record set of a type bindizr never stores must not exist: it never
-    /// does, the zone's own SOA at the apex excepted.
-    UnstoredTypeAbsent { name: OwnerName, record_type: Rtype },
-    /// CLASS IN, TYPE SOA: the zone's SOA must carry exactly this rdata
-    /// (RFC 2136, Section 3.2.3).
-    SoaMatches { name: OwnerName, rdata: Rdata },
 }
 
-/// Evaluate UPDATE prerequisites against the locked zone contents.
+impl Prerequisite {
+    /// The checked owner.
+    pub(crate) fn name(&self) -> &OwnerName {
+        match self {
+            Self::NameExists { name }
+            | Self::NameAbsent { name }
+            | Self::RecordSetExists { name, .. }
+            | Self::RecordSetAbsent { name, .. }
+            | Self::RecordValueMatches { name, .. } => name,
+        }
+    }
+
+    /// The wire type; `None` denotes a name-only prerequisite.
+    pub(crate) fn record_type(&self) -> Option<Rtype> {
+        match self {
+            Self::NameExists { .. } | Self::NameAbsent { .. } => None,
+            Self::RecordSetExists { record_type, .. }
+            | Self::RecordSetAbsent { record_type, .. }
+            | Self::RecordValueMatches { record_type, .. } => Some(*record_type),
+        }
+    }
+}
+
+/// Canonical RDATA sets, excluding TTL (RFC 2136, Sections 1.1 and 3.2.3).
+type RecordSets = BTreeMap<(OwnerName, Rtype), BTreeSet<Rdata>>;
+
+/// Evaluate prerequisites under the caller's zone lock, before writes.
 pub(crate) async fn evaluate_prerequisites_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -63,205 +67,97 @@ pub(crate) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let served = zone_record_sets(zone, &records, &derived)?;
+    let mut wanted = RecordSets::new();
 
-    let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {
+        let name = prerequisite.name();
         match prerequisite {
-            Prerequisite::NameExists { name: owner } => {
-                if !has_owner(owner, &zone_records) {
+            Prerequisite::NameExists { .. } => {
+                if !served.keys().any(|(owner, _)| owner == name) {
                     return Err(NsupdateError::NxDomain(format!(
-                        "owner '{}' does not exist",
-                        owner
+                        "owner '{name}' does not exist"
                     )));
                 }
             }
-            Prerequisite::NameAbsent { name: owner } => {
-                if has_owner(owner, &zone_records) {
-                    return Err(NsupdateError::YxDomain(format!("owner '{}' exists", owner)));
+            Prerequisite::NameAbsent { .. } => {
+                if served.keys().any(|(owner, _)| owner == name) {
+                    return Err(NsupdateError::YxDomain(format!("owner '{name}' exists")));
                 }
             }
-            Prerequisite::RecordSetExists {
-                name: owner,
-                record_type,
-            } => {
-                if !has_record_set(owner, record_type, &zone_records) {
+            Prerequisite::RecordSetExists { record_type, .. } => {
+                if !served.contains_key(&(name.clone(), *record_type)) {
                     return Err(NsupdateError::NxRrset(format!(
-                        "no {} records at {}",
-                        record_type, owner
+                        "no {record_type} records at {name}"
                     )));
                 }
             }
-            Prerequisite::RecordSetAbsent {
-                name: owner,
-                record_type,
-            } => {
-                if has_record_set(owner, record_type, &zone_records) {
+            Prerequisite::RecordSetAbsent { record_type, .. } => {
+                if served.contains_key(&(name.clone(), *record_type)) {
                     return Err(NsupdateError::YxRrset(format!(
-                        "{} records at {} exist",
-                        record_type, owner
-                    )));
-                }
-            }
-            Prerequisite::UnstoredTypeExists {
-                name: owner,
-                record_type,
-            } => {
-                // The SOA is no row, but the zone's own stands at the apex.
-                if !(*record_type == Rtype::SOA && owner.is_apex()) {
-                    return Err(NsupdateError::NxRrset(format!(
-                        "no {} records at {}",
-                        record_type, owner
-                    )));
-                }
-            }
-            Prerequisite::UnstoredTypeAbsent {
-                name: owner,
-                record_type,
-            } => {
-                if *record_type == Rtype::SOA && owner.is_apex() {
-                    return Err(NsupdateError::YxRrset(format!(
-                        "SOA records at {} exist",
-                        owner
-                    )));
-                }
-            }
-            Prerequisite::SoaMatches { name: owner, rdata } => {
-                let served = zone.soa_rdata(zone.serial).map_err(|e| {
-                    NsupdateError::Internal(ServiceError::internal_with_source(
-                        "failed to encode the zone's SOA",
-                        e,
-                    ))
-                })?;
-                if !owner.is_apex() || served != *rdata {
-                    return Err(NsupdateError::NxRrset(format!(
-                        "SOA records at {} are not the ones the prerequisite names",
-                        owner
+                        "{record_type} records at {name} exist"
                     )));
                 }
             }
             Prerequisite::RecordValueMatches {
-                name: owner,
-                record_type,
-                value,
-                priority,
+                record_type, rdata, ..
             } => {
-                match record_sets.iter_mut().find(|record_set| {
-                    record_set.owner == *owner && record_set.record_type == *record_type
-                }) {
-                    Some(record_set) => record_set.records.push((value.as_str(), *priority)),
-                    None => record_sets.push(WantedRecordSet {
-                        owner: owner.clone(),
-                        record_type: *record_type,
-                        records: vec![(value.as_str(), *priority)],
-                    }),
-                }
+                wanted
+                    .entry((name.clone(), *record_type))
+                    .or_default()
+                    .insert(rdata.clone());
             }
         }
     }
 
-    for wanted in record_sets {
-        let stored: Vec<&Record> = zone_records
-            .iter()
-            .filter(|record| {
-                record.name == wanted.owner && record.record_type == wanted.record_type
-            })
-            .collect();
-        if !is_same_record_set(&stored, &wanted.records) {
+    for (key, values) in wanted {
+        if served.get(&key) != Some(&values) {
             return Err(NsupdateError::NxRrset(format!(
                 "{} records at {} are not the ones the prerequisite names",
-                wanted.record_type, wanted.owner
+                key.1, key.0,
             )));
         }
     }
-
     Ok(())
 }
 
-/// The records a prerequisite names at one owner and type, as value and priority.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WantedRecordSet<'a> {
-    owner: OwnerName,
-    record_type: RecordType,
-    records: Vec<(&'a str, Option<i32>)>,
-}
-
-/// Whether the stored records of one name and type are exactly the records a
-/// prerequisite names; compared both ways, so order and repeats do not matter.
-fn is_same_record_set(stored: &[&Record], wanted: &[(&str, Option<i32>)]) -> bool {
-    let matches = |record: &Record, (value, priority): &(&str, Option<i32>)| {
-        record.has_rdata(value, *priority)
+/// Combine SOA, ordinary and DNSSEC records for comparison.
+/// Invalid stored RDATA is a server error.
+fn zone_record_sets(
+    zone: &Zone,
+    records: &[Record],
+    derived: &[DnssecRecord],
+) -> Result<RecordSets, ServiceError> {
+    let mut sets = RecordSets::new();
+    let mut insert = |name: OwnerName, record_type: Rtype, rdata: Rdata| {
+        let rdata = rdata.to_canonical(record_type).map_err(|e| {
+            ServiceError::internal_with_source("failed to decode stored prerequisite content", e)
+        })?;
+        sets.entry((name, record_type)).or_default().insert(rdata);
+        Ok::<(), ServiceError>(())
     };
-    wanted
-        .iter()
-        .all(|expected| stored.iter().any(|record| matches(record, expected)))
-        && stored
-            .iter()
-            .all(|record| wanted.iter().any(|expected| matches(record, expected)))
-}
-
-/// Check whether an owner exists, counting the apex as present because the zone owns its SOA
-/// and NS records.
-fn has_owner(owner: &OwnerName, records: &[Record]) -> bool {
-    owner.is_apex() || records.iter().any(|record| record.name == *owner)
-}
-
-/// Check whether the zone contains records with the requested owner and type.
-fn has_record_set(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
-    records
-        .iter()
-        .any(|record| record.name == *owner && record.record_type == *record_type)
-}
-
-#[cfg(test)]
-mod tests {
-    use bindizr_core::{
-        dns::Ttl,
-        model::{record::RecordId, zone::ZoneId},
-    };
-    use chrono::Utc;
-
-    use super::*;
-
-    /// Build a stored A record fixture with the given value.
-    fn a_record(value: &str) -> Record {
-        Record {
-            id: RecordId::from(0),
-            name: OwnerName::from_row("check"),
-            record_type: RecordType::A,
-            value: value.to_string(),
-            ttl: Ttl::from_secs(300),
-            priority: None,
-            zone_id: ZoneId::from(1),
-            created_at: Utc::now(),
-        }
+    let soa = zone
+        .soa_rdata(zone.serial)
+        .map_err(|e| ServiceError::internal_with_source("failed to encode the zone's SOA", e))?;
+    insert(OwnerName::apex(), Rtype::SOA, soa)?;
+    for record in records {
+        let rdata = record
+            .to_rdata()
+            .map_err(|e| ServiceError::internal_with_source("failed to encode a zone record", e))?;
+        insert(
+            record.name.clone(),
+            Rtype::from_int(record.record_type.wire_type()),
+            rdata,
+        )?;
     }
-
-    /// Verify that a prerequisite must name the whole record set.
-    #[test]
-    fn a_prerequisite_must_name_the_whole_record_set() {
-        let stored = [a_record("192.0.2.1"), a_record("192.0.2.2")];
-        let stored: Vec<&Record> = stored.iter().collect();
-
-        // RFC 2136, Section 3.2.3: a subset or a superset is not the record set.
-        assert!(!is_same_record_set(&stored, &[("192.0.2.1", None)]));
-        assert!(!is_same_record_set(
-            &stored,
-            &[
-                ("192.0.2.1", None),
-                ("192.0.2.2", None),
-                ("192.0.2.3", None)
-            ]
-        ));
-        // Order and repeats in the request carry no meaning.
-        assert!(is_same_record_set(
-            &stored,
-            &[
-                ("192.0.2.2", None),
-                ("192.0.2.1", None),
-                ("192.0.2.2", None)
-            ]
-        ));
-        assert!(!is_same_record_set(&[], &[("192.0.2.1", None)]));
+    for record in derived {
+        insert(
+            record.name.clone(),
+            Rtype::from_int(record.record_type.wire_type()),
+            record.rdata.clone(),
+        )?;
     }
+    Ok(sets)
 }

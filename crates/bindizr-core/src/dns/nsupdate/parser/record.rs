@@ -7,13 +7,13 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Soa, Srv, Txt},
+    rdata::{A, Aaaa, Mx, Srv, Txt},
 };
 use thiserror::Error;
 
 use super::{ParseUpdateError, to_presentation_name};
 use crate::{
-    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue},
+    dns::record::{NaptrRecordValue, Rdata, TxtRecordValue},
     model::record::RecordType,
 };
 
@@ -72,25 +72,14 @@ impl UpdateRecord {
         }
     }
 
-    /// The SOA rdata of a prerequisite, re-encoded without compression to
-    /// compare with the zone's own.
-    pub fn to_soa_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
-        let soa = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
-        let mname = to_presentation_name(soa.mname())?;
-        let rname = to_presentation_name(soa.rname())?;
-        SoaRecordValue {
-            mname: &mname,
-            rname: &rname,
-            serial: soa.serial().into_int(),
-            refresh: soa.refresh().as_secs(),
-            retry: soa.retry().as_secs(),
-            expire: soa.expire().as_secs(),
-            minimum: soa.minimum().as_secs(),
-        }
-        .to_rdata()
-        .map_err(|_| ParseUpdateError::Rdata {
-            record_type: "SOA".to_string(),
-        })
+    /// Decode prerequisite RDATA for comparison, resolving names in `message`.
+    pub fn to_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
+        Ok(Rdata::parse_canonical(
+            self.record_type,
+            message,
+            self.rdata_start,
+            self.rdata.len(),
+        )?)
     }
 
     /// Decode an update record's wire data into its typed value.

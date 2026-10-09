@@ -26,7 +26,7 @@ use crate::{
     authorization::{Caller, RecordAccess},
     dnssec,
     error::ServiceError,
-    model::zone::Zone,
+    model::{record::RecordType, zone::Zone},
     serial::generate_serial,
     transaction, zone,
 };
@@ -135,26 +135,21 @@ pub async fn apply(
 
         // A prerequisite reads what it names, so its grant is checked with
         // the updates', ahead of where RFC 2136, Section 3.3 puts permissions.
-        let mut accesses = Vec::new();
         for prerequisite in &prerequisites {
-            let (name, record_type) = match prerequisite {
-                Prerequisite::NameExists { name }
-                | Prerequisite::NameAbsent { name }
-                | Prerequisite::UnstoredTypeExists { name, .. }
-                | Prerequisite::UnstoredTypeAbsent { name, .. }
-                | Prerequisite::SoaMatches { name, .. } => (name, None),
-                Prerequisite::RecordSetExists { name, record_type }
-                | Prerequisite::RecordSetAbsent { name, record_type }
-                | Prerequisite::RecordValueMatches {
-                    name, record_type, ..
-                } => (name, Some(record_type)),
-            };
-            accesses.push(RecordAccess {
-                action: Action::RecordRead,
-                relative_name: name.clone(),
-                record_type,
-            });
+            // SOA and DNSSEC need a read grant without a type restriction.
+            let record_type = prerequisite
+                .record_type()
+                .and_then(|rtype| RecordType::try_from(rtype).ok());
+            caller.authorize_record_access(
+                &zone,
+                &[RecordAccess {
+                    action: Action::RecordRead,
+                    relative_name: prerequisite.name().clone(),
+                    record_type: record_type.as_ref(),
+                }],
+            )?;
         }
+        let mut accesses = Vec::new();
         for op in &updates {
             accesses.push(RecordAccess {
                 action: op.action(),

@@ -94,6 +94,12 @@ pub(crate) enum PrereqRecord {
         name: String,
         soa: Soa<Name<Vec<u8>>>,
     },
+    /// CLASS IN, TTL 0: a wire value contributing to exact RRset equality.
+    RecordEquals {
+        name: String,
+        rtype: Rtype,
+        rdata: Vec<u8>,
+    },
 }
 
 /// Send an unsigned UPDATE for `zone` and return the response RCODE.
@@ -308,6 +314,13 @@ pub(crate) fn build_update(
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 answer
                     .push(Record::new(parse_name(owner)?, Class::IN, Ttl::ZERO, data))
+                    .map_err(|e| e.to_string())?;
+            }
+            PrereqRecord::RecordEquals { name, rtype, rdata } => {
+                let data = UnknownRecordData::from_octets(*rtype, rdata.clone())
+                    .map_err(|e| e.to_string())?;
+                answer
+                    .push(Record::new(parse_name(name)?, Class::IN, Ttl::ZERO, data))
                     .map_err(|e| e.to_string())?;
             }
         }

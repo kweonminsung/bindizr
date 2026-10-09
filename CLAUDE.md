@@ -555,6 +555,10 @@ the authoritative zone, the service checks every update record's owner and
 wire shape before selecting operations (RFC 2136, Section 3.4.1). Even a
 delete that will be ignored must pass that prescan. Checked owners remain
 `OwnerName` values through authorization and execution, without re-parsing.
+Prerequisites compare with the complete served zone at that transaction's
+serial: the SOA, ordinary records, and signer-generated DNSSEC records.
+Their wire type and canonical RDATA identify an RRset independently of
+storage; the writable `RecordType` enum never decides whether it exists.
 
 ### Clean installs only — no migrations or back-compat
 
