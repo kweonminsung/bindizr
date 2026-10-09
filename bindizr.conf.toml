@@ -38,7 +38,7 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 [dns.notify]                  # NOTIFY to the secondaries
 # batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
 # retries = 3
-# timeout_secs = 3            # Seconds to wait for each NOTIFY
+# timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # false admits unsigned updates from anyone

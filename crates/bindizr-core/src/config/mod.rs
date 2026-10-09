@@ -379,6 +379,7 @@ pub struct NotifyConfig {
     pub batch_ms: u64,
     #[serde(default = "default_notify_retries")]
     pub retries: u32,
+    /// Seconds to wait for each NOTIFY, SOA probe, and parent-NS query.
     #[serde(default = "default_notify_timeout_secs")]
     pub timeout_secs: u64,
 }

@@ -78,7 +78,7 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 [dns.notify]                  # NOTIFY to the secondaries
 # batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
 # retries = 3
-# timeout_secs = 3            # Seconds to wait for each NOTIFY
+# timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # false admits unsigned updates from anyone
@@ -158,7 +158,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
-| `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |
+| `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | also bounds the SOA probes of `zone status` and the parent-NS queries of `dnssec check-ds` |
 | `BINDIZR_DNS_TLS_LISTEN_PORT` | `dns.tls.listen_port` | |
 | `BINDIZR_DNS_TLS_CERT_FILE` | `dns.tls.cert_file` | Empty clears it |
 | `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |

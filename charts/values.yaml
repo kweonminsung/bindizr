@@ -59,6 +59,7 @@ bindizr:
       # answered; 0 sends before answering.
       batchMs: 0
       retries: 3
+      # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query.
       timeoutSecs: 3
     tls:
       # A Secret holding tls.crt and tls.key to serve zone transfers over TLS
