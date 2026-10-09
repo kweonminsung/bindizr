@@ -101,8 +101,8 @@ async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
 }
 
 /// Verify that `dns.transfer.require_tls` refuses a transfer over plain TCP
-/// while SOA queries and the transfer over TLS keep working (RFC 9103,
-/// Section 11).
+/// and UDP while SOA queries and the transfer over TLS keep working
+/// (RFC 9103, Section 11).
 #[tokio::test]
 #[serial]
 async fn require_tls_refuses_a_transfer_over_plain_tcp() {
@@ -117,8 +117,17 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     let key = create_tsig_key(&app, "xot-only-key", KeyRole::Admin).await;
     app.create_secondary("loopback", "127.0.0.1").await;
 
+    // RFC 8945, Section 5.3: the refusal of a signed request is signed.
     let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
+    assert!(outcome.refusal_signed());
+    // A UDP IXFR is a transfer request too; a SOA query keeps answering.
+    let frame = super::exchange_udp(
+        app.dns_port(),
+        &super::question_with_opt(zone_name, Rtype::IXFR, 1, 0),
+    );
+    let response = Message::from_octets(frame.as_slice()).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::REFUSED);
     assert!(probe_zone_soa(app.dns_port(), zone_name));
 
     // The refusal is logged against the secondary with its reason; the log

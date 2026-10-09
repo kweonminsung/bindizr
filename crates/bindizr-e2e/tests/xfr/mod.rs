@@ -281,7 +281,7 @@ async fn an_unknown_key_is_refused_rather_than_falling_back_to_the_address() {
     };
     let outcome = axfr(app.dns_port(), zone_name, Some(&stranger));
     assert!(
-        outcome.is_err() || matches!(outcome, Ok(TransferOutcome::Refused(_))),
+        outcome.is_err() || matches!(outcome, Ok(TransferOutcome::Refused { .. })),
         "an unknown key was accepted: {outcome:?}"
     );
 }

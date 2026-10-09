@@ -16,14 +16,14 @@ use domain::{
 use rustls::{ClientConfig, ClientConnection, StreamOwned, pki_types::ServerName};
 
 use super::parse_name;
-use crate::common::dns::nsupdate::SigningKey;
+use crate::common::dns::nsupdate::{SigningKey, is_signed};
 
 /// What a zone transfer returned: the records it carried, or the RCODE that
-/// refused it.
+/// refused it and whether that refusal was signed.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) enum TransferOutcome {
     Records(usize),
-    Refused(Rcode),
+    Refused { rcode: Rcode, signed: bool },
 }
 
 impl TransferOutcome {
@@ -31,14 +31,23 @@ impl TransferOutcome {
     pub(crate) fn records(self) -> usize {
         match self {
             TransferOutcome::Records(count) => count,
-            TransferOutcome::Refused(rcode) => panic!("transfer refused with {rcode}"),
+            TransferOutcome::Refused { rcode, .. } => panic!("transfer refused with {rcode}"),
         }
     }
 
     /// The RCODE of a refused transfer, panicking if it ran.
     pub(crate) fn refusal(self) -> Rcode {
         match self {
-            TransferOutcome::Refused(rcode) => rcode,
+            TransferOutcome::Refused { rcode, .. } => rcode,
+            TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
+        }
+    }
+
+    /// Whether a refusal was signed under the request's key, panicking if
+    /// the transfer ran.
+    pub(crate) fn refusal_signed(self) -> bool {
+        match self {
+            TransferOutcome::Refused { signed, .. } => signed,
             TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
         }
     }
@@ -148,7 +157,10 @@ fn transfer<S: Read + Write>(
         };
         let mut message = Message::from_octets(frame).map_err(|e| e.to_string())?;
         if message.header().rcode() != Rcode::NOERROR {
-            return Ok(TransferOutcome::Refused(message.header().rcode()));
+            return Ok(TransferOutcome::Refused {
+                rcode: message.header().rcode(),
+                signed: is_signed(&message)?,
+            });
         }
         if let Some(client) = client.as_mut() {
             client

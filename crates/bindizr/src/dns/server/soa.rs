@@ -19,7 +19,7 @@ use crate::dns::{
     error::XfrError,
     server::{
         DnsContext,
-        auth::{TransferIdentity, TransferRefusal, authenticate_transfer},
+        auth::{TransferIdentity, TransferRefusal, authenticate_transfer, authorize_transport},
         catalog,
     },
     stream::ResponseWriter,
@@ -142,7 +142,17 @@ async fn handle_soa_request(
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
-    let mut identity = match authenticate_soa(dns_cx, client_ip, query_data, transport).await {
+    // A UDP IXFR is a transfer; a SOA query is not.
+    let identity = authenticate_soa(dns_cx, client_ip, query_data, transport)
+        .await
+        .and_then(|identity| {
+            if query.qtype == Rtype::IXFR {
+                authorize_transport(dns_cx, transport, identity)
+            } else {
+                Ok(identity)
+            }
+        });
+    let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
             log::warn!(

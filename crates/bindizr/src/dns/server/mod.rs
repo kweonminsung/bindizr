@@ -14,7 +14,7 @@ pub(crate) mod transfer_cache;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use auth::{TransferRefusal, authenticate_transfer, transport_refusal};
+use auth::{TransferRefusal, authenticate_transfer, authorize_transport};
 use bindizr_core::{
     dns::message::{ExtendedErrorCode, Rcode, Rtype},
     metrics::XfrResult,
@@ -70,12 +70,11 @@ pub(crate) async fn handle_tcp_xfr(
     let transport = writer.transport();
     let track_result = |result| cx.metrics().track_xfr(query.qtype, transport, result);
 
-    // The transport, then the key or the address; the zone's grant is decided
-    // beside its row inside the transfer.
-    let identity = match transport_refusal(dns_cx, transport) {
-        Some(refusal) => Err(refusal),
-        None => authenticate_transfer(dns_cx, query_data, client_ip, transport).await,
-    };
+    // The key or the address, then the transport the policy allows; the
+    // zone's grant is decided beside its row inside the transfer.
+    let identity = authenticate_transfer(dns_cx, query_data, client_ip, transport)
+        .await
+        .and_then(|identity| authorize_transport(dns_cx, transport, identity));
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
@@ -200,13 +199,10 @@ pub(crate) async fn handle_udp_xfr(
     query_data: &[u8],
 ) -> Vec<u8> {
     let cx = dns_cx.daemon();
-    let identity = match transport_refusal(dns_cx, TransferTransport::Udp) {
-        Some(refusal) => Err(refusal),
-        None => {
-            authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
-                .await
-        }
-    };
+    let identity =
+        authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
+            .await
+            .and_then(|identity| authorize_transport(dns_cx, TransferTransport::Udp, identity));
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
