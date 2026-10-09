@@ -14,7 +14,7 @@ use rustls::{
 use serial_test::serial;
 
 use crate::common::{
-    TestApp, TestAppOptions, axfr,
+    TestApp, TestAppOptions, assert_cli_failure_contains, axfr,
     dns::{
         nsupdate::{KeyRole, UpdateRecord, build_update, create_tsig_key, is_signed, sign},
         parse_name, probe_zone_soa,
@@ -172,6 +172,15 @@ async fn a_reload_picks_up_a_renewed_certificate() {
     // one carries the same name, so the stale root fails on the signature.
     let error = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).unwrap_err();
     assert!(error.contains("invalid peer certificate"), "{error}");
+
+    // A pair that does not load refuses the whole reload and leaves the
+    // renewed certificate serving.
+    app.corrupt_test_certificate();
+    let output = app.run_cli(&["config", "reload"]).await;
+    assert_cli_failure_contains(&["config", "reload"], &output, "nothing was reloaded");
+    let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
+    let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
+    assert!(outcome.records() >= 3);
 }
 
 /// Verify that the handshake refuses TLS 1.2 and an ALPN without "dot", and

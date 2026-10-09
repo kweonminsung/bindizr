@@ -251,3 +251,14 @@ impl TestApp {
         write_test_certificate(temp_dir.path())
     }
 }
+
+impl TestApp {
+    /// Overwrite the run's private key with text no key parser reads, as a
+    /// broken renewal does.
+    pub(crate) fn corrupt_test_certificate(&self) {
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("the compose stack's certificate is fixed");
+        };
+        std::fs::write(temp_dir.path().join("tls.key"), "not a key").expect("write tls.key");
+    }
+}

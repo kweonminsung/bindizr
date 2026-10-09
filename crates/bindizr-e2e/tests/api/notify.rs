@@ -9,6 +9,8 @@ async fn notify_zone_all_and_bump_serial() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+    // A secondary answers NOTAUTH for a zone the catalog has not reached yet.
+    app.assert_dns_matches_api(None).await;
 
     let (status, body) = app
         .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
