@@ -123,6 +123,46 @@ fn is_response_separates_a_reply_from_a_query() {
     assert!(is_response(&reply));
 }
 
+/// Enforce QUERY's question limit from QDCOUNT, even when the body is incomplete.
+#[test]
+fn multi_question_headers_receive_formerr_only_for_query() {
+    for (opcode, count, expected) in [
+        (Opcode::QUERY, 1u16, None),
+        (Opcode::QUERY, 2, Some(OptRcode::FORMERR)),
+        (Opcode::QUERY, u16::MAX, Some(OptRcode::FORMERR)),
+        (Opcode::STATUS, 2, None),
+    ] {
+        let mut query = Message::from_octets(question(Rtype::SOA, &[])).unwrap();
+        query.header_mut().set_opcode(opcode);
+        let mut wire = query.into_octets();
+        wire[4..6].copy_from_slice(&count.to_be_bytes());
+        let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+        assert_eq!(parsed.question_count, count);
+        assert_eq!(parsed.format_error(), expected, "{opcode} QDCOUNT={count}");
+        if let Some(rcode) = expected {
+            let response = parsed.signed_error_response(rcode, None, None).unwrap();
+            let response = Message::from_octets(response).unwrap();
+            assert_eq!(response.header().rcode(), Rcode::FORMERR);
+            assert_eq!(response.header_counts().qdcount(), 1);
+            assert_eq!(response.header_counts().ancount(), 0);
+        }
+        for body in [&[][..], &[0xc0, 0x0c][..]] {
+            let mut unreadable = wire[..12].to_vec();
+            unreadable.extend_from_slice(body);
+            let error = ParsedQuery::parse(&unreadable, Keepalive::None).unwrap_err();
+            let response = error.to_response();
+            assert_eq!(response.is_some(), expected.is_some());
+            if let Some(response) = response {
+                let response = Message::from_octets(response).unwrap();
+                assert_eq!(response.header().id(), 1234);
+                assert_eq!(response.header().rcode(), Rcode::FORMERR);
+                assert_eq!(response.header_counts().qdcount(), 0);
+                assert_eq!(response.header_counts().ancount(), 0);
+            }
+        }
+    }
+}
+
 /// Build a signed AXFR query for `example.com.` and a `domain` client
 /// sequence that verifies replies independently of the server under test.
 fn signed_axfr_query(key: Arc<Key>) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
@@ -216,7 +256,7 @@ fn an_edns_query_is_answered_with_an_opt() {
         }
     );
     assert_eq!(parsed.udp_payload_limit(), 1232);
-    assert!(parsed.edns_error().is_none());
+    assert!(parsed.format_error().is_none());
     let reply = parsed.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED));
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().expect("an EDNS query is answered with an OPT");
@@ -233,7 +273,7 @@ fn an_edns_query_is_answered_with_an_opt() {
     let doubled = ParsedQuery::parse(&question(Rtype::SOA, &[0, 0]), Keepalive::None).unwrap();
     assert_eq!(doubled.edns, Edns::Malformed);
     let reply = doubled
-        .signed_error_response(doubled.edns_error().unwrap(), None, None)
+        .signed_error_response(doubled.format_error().unwrap(), None, None)
         .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     assert_eq!(reply.header().rcode(), Rcode::FORMERR);
@@ -242,7 +282,7 @@ fn an_edns_query_is_answered_with_an_opt() {
     let newer = ParsedQuery::parse(&question(Rtype::SOA, &[1]), Keepalive::None).unwrap();
     assert_eq!(newer.edns, Edns::UnsupportedVersion(1));
     let reply = newer
-        .signed_error_response(newer.edns_error().unwrap(), None, None)
+        .signed_error_response(newer.format_error().unwrap(), None, None)
         .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().unwrap();

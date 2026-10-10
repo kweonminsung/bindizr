@@ -788,6 +788,128 @@ async fn a_response_copies_the_rd_bit() {
     }
 }
 
+/// Build a two-question QUERY with optional EDNS.
+fn multi_question_query(
+    zone: &str,
+    qtype: Rtype,
+    qclass: Class,
+    opt_version: Option<u8>,
+) -> AdditionalBuilder<Vec<u8>> {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(9619);
+    builder.header_mut().set_rd(true);
+    let mut question = builder.question();
+    question
+        .push((&parse_name(zone).unwrap(), qtype, qclass))
+        .unwrap();
+    question
+        .push((&parse_name("other.example").unwrap(), Rtype::A, Class::IN))
+        .unwrap();
+    let mut additional = question.additional();
+    if let Some(version) = opt_version {
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(4096);
+                opt.set_version(version);
+                Ok(())
+            })
+            .unwrap();
+    }
+    additional
+}
+
+/// Reject multiple questions before choosing a handler or checking EDNS versions.
+#[tokio::test]
+#[serial]
+async fn multi_question_queries_receive_formerr() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "multi-question-key", KeyRole::Admin).await;
+    // RFC 9619, Section 4 requires FORMERR for QUERY with QDCOUNT > 1.
+    for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR, Rtype::A] {
+        for qclass in [Class::IN, Class::CH] {
+            for version in [None, Some(0), Some(1)] {
+                for key in [None, Some(&key)] {
+                    for udp in [false, true] {
+                        let mut query = multi_question_query(zone_name, qtype, qclass, version);
+                        let mut client = key.map(|key| {
+                            ClientSequence::request(
+                                key.to_tsig_key().unwrap(),
+                                &mut query,
+                                Time48::now(),
+                            )
+                            .unwrap()
+                        });
+                        let query = query.finish();
+                        let response = if udp {
+                            exchange_udp(app.dns_port(), &query)
+                        } else {
+                            exchange_tcp(app.dns_port(), &query).unwrap()
+                        };
+                        let mut response = Message::from_octets(response).unwrap();
+                        if let Some(client) = client.as_mut() {
+                            client.answer(&mut response, Time48::now()).unwrap();
+                        }
+                        if let Some(client) = client {
+                            client.done().unwrap();
+                        }
+                        assert_eq!(
+                            response.header().rcode(),
+                            Rcode::FORMERR,
+                            "{qtype} {qclass} EDNS {version:?} signed={} UDP={udp}",
+                            key.is_some()
+                        );
+                        assert_eq!(response.header().id(), 9619);
+                        assert!(response.header().qr() && response.header().rd());
+                        assert!(!response.header().aa() && !response.header().tc());
+                        assert_eq!(response.header_counts().ancount(), 0);
+                        assert_eq!(response.header_counts().nscount(), 0);
+                        assert_eq!(response.sole_question().unwrap().qtype(), qtype);
+                        assert_eq!(response.sole_question().unwrap().qclass(), qclass);
+                        assert_eq!(response.opt().is_some(), version.is_some());
+                        if let Some(opt) = response.opt() {
+                            assert_eq!(opt.rcode(response.header()), OptRcode::FORMERR);
+                            assert_eq!(opt.version(), 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Return FORMERR even when a multi-question header has no readable question.
+#[tokio::test]
+#[serial]
+async fn multi_question_headers_receive_formerr_without_readable_questions() {
+    let app = TestApp::start_local().await;
+    for count in [2u16, u16::MAX] {
+        let mut query = MessageBuilder::new_vec();
+        query.header_mut().set_id(9619);
+        query.header_mut().set_rd(true);
+        let mut wire = query.question().finish();
+        wire[4..6].copy_from_slice(&count.to_be_bytes());
+        for body in [&[][..], &[0xc0, 0x0c][..]] {
+            let mut query = wire.clone();
+            query.extend_from_slice(body);
+            for response in [
+                exchange_udp(app.dns_port(), &query),
+                exchange_tcp(app.dns_port(), &query).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+                assert_eq!(response.header().id(), 9619);
+                assert_eq!(response.header().rcode(), Rcode::FORMERR);
+                assert!(response.header().qr() && response.header().rd());
+                assert_eq!(response.header_counts().qdcount(), 0);
+                assert_eq!(response.header_counts().ancount(), 0);
+                assert_eq!(response.header_counts().nscount(), 0);
+                assert_eq!(response.header_counts().arcount(), 0);
+            }
+        }
+    }
+}
+
 /// A question for `zone` and `qtype` with `opts` OPT records of `version`
 /// advertising 4096 octets; none without EDNS.
 fn question_with_opt(zone: &str, qtype: Rtype, opts: usize, version: u8) -> Vec<u8> {

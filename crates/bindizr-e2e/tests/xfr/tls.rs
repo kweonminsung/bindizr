@@ -153,6 +153,42 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
     }
 }
 
+/// Sign FORMERR responses to multi-question queries over TLS.
+#[tokio::test]
+#[serial]
+async fn multi_question_queries_receive_signed_formerr_over_tls() {
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xot-multi-question-key", KeyRole::Admin).await;
+    for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
+        let mut query = super::multi_question_query(zone_name, qtype, Class::IN, Some(0));
+        let mut client =
+            ClientSequence::request(key.to_tsig_key().unwrap(), &mut query, Time48::now()).unwrap();
+        let response = exchange_xot(app.dns_tls_port(), &query.finish(), dot_client(&app)).unwrap();
+        let mut response = Message::from_octets(response).unwrap();
+        client.answer(&mut response, Time48::now()).unwrap();
+        client.done().unwrap();
+        assert_eq!(response.header().rcode(), Rcode::FORMERR);
+        assert_eq!(response.header().id(), 9619);
+        assert!(response.header().qr() && response.header().rd());
+        assert!(!response.header().aa() && !response.header().tc());
+        assert_eq!(response.header_counts().ancount(), 0);
+        assert_eq!(response.header_counts().nscount(), 0);
+        assert_eq!(response.sole_question().unwrap().qtype(), qtype);
+        assert!(response.opt().is_some());
+    }
+    let mut unreadable =
+        super::multi_question_query(zone_name, Rtype::SOA, Class::IN, None).finish();
+    unreadable.truncate(12);
+    let response = exchange_xot(app.dns_tls_port(), &unreadable, dot_client(&app)).unwrap();
+    let response = Message::from_octets(response).unwrap();
+    assert_eq!(response.header().rcode(), Rcode::FORMERR);
+    assert_eq!(response.header().id(), 9619);
+    assert_eq!(response.header_counts().qdcount(), 0);
+    assert_eq!(response.header_counts().ancount(), 0);
+}
+
 /// Verify that `dns.transfer.require_tls` refuses a transfer over plain TCP
 /// and UDP while SOA queries and the transfer over TLS keep working
 /// (RFC 9103, Section 11).

@@ -246,13 +246,23 @@ async fn dispatch_tcp_query(
         Ok(query) => query,
         Err(e) => {
             log::warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
+            if let Some(response) = e.to_response() {
+                writer
+                    .write_message(&response)
+                    .await
+                    .map_err(ServeDnsError::Refusal)?;
+            }
             return Ok(());
         }
     };
 
     // Each refusal below is answered under the query's key when it has one.
-    let refusal = if let Some(rcode) = query.edns_error() {
-        log::info!("Refusing the EDNS of a DNS TCP query from {}", client_addr);
+    let refusal = if let Some(rcode) = query.format_error() {
+        log::info!(
+            "Refusing DNS TCP query format from {}: {}",
+            client_addr,
+            rcode
+        );
         Some((
             rcode,
             None,

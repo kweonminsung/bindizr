@@ -545,7 +545,7 @@ defines flag meanings; DNS record validation does not restrict them to a list.
 ### Protocol behavior follows the RFC
 
 The DNS plane implements the RFCs it cites (1034/1035, 1982, 1995, 1996,
-2136, 2181, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8945, 9103, 9432), and a
+2136, 2181, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8945, 9103, 9432, 9619), and a
 requirement one states is met as written: a MUST is implemented, a SHOULD
 is followed unless the reason not to stands in a comment beside the code,
 and a MAY is a design choice recorded here or in the docs. Interoperability
@@ -556,6 +556,10 @@ requirement is met, not *whether*: XoT admits a request only when its TSIG
 key and its registered address both pass (RFC 9103, Section 7.5), though
 the plain listener takes either alone. Code that meets a requirement cites
 the section (`RFC 9103, Section 7.1`), so a reader can check the text.
+
+QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
+(RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
+readable queries; an unreadable question receives a header-only response.
 
 An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority

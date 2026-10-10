@@ -83,13 +83,23 @@ async fn dispatch_udp_query(
         return;
     }
 
-    let Ok(query) = message::ParsedQuery::parse(query_data, Keepalive::None) else {
-        return;
+    let query = match message::ParsedQuery::parse(query_data, Keepalive::None) {
+        Ok(query) => query,
+        Err(error) => {
+            if let Some(response) = error.to_response() {
+                send_udp_response(socket, client_addr, &response).await;
+            }
+            return;
+        }
     };
 
     // Each refusal below is answered under the query's key when it has one.
-    let refusal = if let Some(rcode) = query.edns_error() {
-        log::info!("Refusing the EDNS of a DNS UDP query from {}", client_addr);
+    let refusal = if let Some(rcode) = query.format_error() {
+        log::info!(
+            "Refusing DNS UDP query format from {}: {}",
+            client_addr,
+            rcode
+        );
         Some((rcode, None))
     } else if query.qclass != Class::IN {
         // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.

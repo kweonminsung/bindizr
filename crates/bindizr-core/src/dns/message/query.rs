@@ -55,9 +55,7 @@ pub enum Keepalive {
     IdleTimeout(Duration),
 }
 
-/// Append the OPT a response owes an EDNS query (RFC 6891, Section 6.1.1),
-/// with `rcode`'s extended bits, `ede` when there is one, and the keepalive
-/// a TCP answer carries.
+/// Append response EDNS metadata and options (RFC 6891, Section 6.1.1).
 pub(crate) fn push_opt(
     additional: &mut AdditionalBuilder<Vec<u8>>,
     rcode: OptRcode,
@@ -107,7 +105,41 @@ pub enum ParseQueryError {
     #[error("failed to parse DNS message: {0}")]
     Malformed(#[source] LibraryError),
     #[error("no question in DNS query")]
-    NoQuestion,
+    NoQuestion {
+        query_id: u16,
+        opcode: Opcode,
+        rd: bool,
+        question_count: u16,
+    },
+}
+
+impl ParseQueryError {
+    /// Build a header-only reply for an unreadable multi-question QUERY.
+    pub fn to_response(&self) -> Option<Vec<u8>> {
+        let Self::NoQuestion {
+            query_id,
+            opcode,
+            rd,
+            question_count,
+        } = self
+        else {
+            return None;
+        };
+        let rcode = question_count_error(*opcode, *question_count)?;
+        let mut builder = MessageBuilder::new_vec();
+        let header = builder.header_mut();
+        header.set_id(*query_id);
+        header.set_qr(true);
+        header.set_opcode(*opcode);
+        header.set_rd(*rd);
+        header.set_rcode(rcode.rcode());
+        Some(builder.question().finish())
+    }
+}
+
+/// Reject QUERY question counts above one (RFC 9619, Section 4).
+fn question_count_error(opcode: Opcode, count: u16) -> Option<OptRcode> {
+    (opcode == Opcode::QUERY && count > 1).then_some(OptRcode::FORMERR)
 }
 
 /// Whether the message is itself a response (QR=1). Answering one lets a
@@ -125,6 +157,7 @@ pub struct ParsedQuery {
     pub qtype: Rtype,
     /// Echoed in every response (RFC 5936, Section 2.2.2); only IN is served.
     pub qclass: Class,
+    pub question_count: u16,
     pub client_serial: Option<u32>,
     pub query_id: u16,
     pub opcode: Opcode,
@@ -148,15 +181,18 @@ impl ParsedQuery {
 
         let question = message
             .first_question()
-            .ok_or(ParseQueryError::NoQuestion)?;
+            .ok_or(ParseQueryError::NoQuestion {
+                query_id,
+                opcode,
+                rd,
+                question_count: message.header_counts().qdcount(),
+            })?;
 
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
         let qclass = question.qclass();
 
-        // domain's `Display` renders the root as "." and otherwise omits the
-        // root dot, so only the root query maps to the empty zone form; a
-        // trailing escaped dot inside the last label stays data.
+        // Only the root maps to an empty zone name; escaped label dots stay data.
         let qname_presentation = qname.to_string();
         let zone_name = if qname_presentation == "." {
             String::new()
@@ -177,6 +213,7 @@ impl ParsedQuery {
             zone_name,
             qtype,
             qclass,
+            question_count: message.header_counts().qdcount(),
             client_serial,
             query_id,
             opcode,
@@ -186,10 +223,7 @@ impl ParsedQuery {
         })
     }
 
-    /// The largest UDP answer this query may get: what it advertised, capped
-    /// at what bindizr sends, or 512 octets without EDNS.
-    /// The edns-tcp-keepalive option a TCP answer carries, the listener's
-    /// idle timeout (RFC 7828, Section 3.3.2); none over UDP.
+    /// Advertise the TCP idle timeout (RFC 7828, Section 3.3.2); none over UDP.
     pub(crate) fn tcp_keepalive(&self) -> Option<TcpKeepalive> {
         let Keepalive::IdleTimeout(idle_timeout) = self.keepalive else {
             return None;
@@ -200,6 +234,7 @@ impl ParsedQuery {
         Some(TcpKeepalive::new(Some(timeout)))
     }
 
+    /// Cap the advertised UDP size at the server limit; use 512 without EDNS.
     pub fn udp_payload_limit(&self) -> usize {
         let size = match self.edns {
             Edns::Present { udp_payload_size } => udp_payload_size.min(EDNS_UDP_PAYLOAD_SIZE),
@@ -208,9 +243,12 @@ impl ParsedQuery {
         usize::from(size)
     }
 
-    /// FORMERR for a malformed OPT, BADVERS for a version above 0 (RFC 6891,
-    /// Sections 6.1.1 and 6.1.3); `None` when the query's EDNS is in order.
-    pub fn edns_error(&self) -> Option<OptRcode> {
+    /// The response code for an invalid question count or EDNS record.
+    pub fn format_error(&self) -> Option<OptRcode> {
+        if let Some(rcode) = question_count_error(self.opcode, self.question_count) {
+            return Some(rcode);
+        }
+        // RFC 6891, Sections 6.1.1 and 6.1.3: malformed OPT or unsupported version.
         match self.edns {
             Edns::Absent | Edns::Present { .. } => None,
             Edns::Malformed => Some(OptRcode::FORMERR),
@@ -262,9 +300,7 @@ impl ParsedQuery {
         Ok(additional.finish())
     }
 
-    /// A response carrying only this query's question: the header echoed,
-    /// `rcode`, AA and TC when `truncated`, and the OPT an EDNS query is
-    /// owed, ahead of any TSIG the caller appends.
+    /// Build a question-only response with EDNS, ready for optional TSIG signing.
     fn build_response(
         &self,
         rcode: OptRcode,
