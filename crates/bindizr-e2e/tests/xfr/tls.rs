@@ -5,10 +5,14 @@
 use domain::{
     base::{
         Message, MessageBuilder,
-        iana::{Class, ExtendedErrorCode, OptRcode, Rcode, Rtype},
+        iana::{Class, ExtendedErrorCode, OptRcode, Rcode, Rtype, TsigRcode},
         opt::exterr::ExtendedError,
     },
-    rdata::Soa,
+    rdata::{
+        Soa,
+        tsig::{Time48, Tsig},
+    },
+    tsig::ClientTransaction,
 };
 use reqwest::{Method, StatusCode};
 use rustls::{
@@ -23,7 +27,7 @@ use crate::common::{
         exchange_request, exchange_udp,
         nsupdate::{UpdateRecord, build_update},
         parse_name, probe_zone_soa,
-        tsig::{KeyRole, create_tsig_key, is_signed, sign},
+        tsig::{KeyRole, create_tsig_key, is_signed, sign, verify_response_mac},
     },
     exchange_xot, xot,
 };
@@ -180,6 +184,49 @@ async fn edns_dnssec_ok_is_echoed_over_tls() {
                 assert_eq!(opt.rcode(response.header()), expected);
                 assert!(opt.opt().tcp_keepalive().is_some());
             }
+        }
+    }
+}
+
+/// Return authenticated BADTIME with OPT over TLS.
+#[tokio::test]
+#[serial]
+async fn badtime_tls_responses_preserve_edns_and_verify() {
+    let app = xot_app().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "badtime-tls-key", KeyRole::Admin).await;
+    let signed_at = Time48::from_u64(u64::from(Time48::now()) - 3600);
+    for dnssec_ok in [false, true] {
+        for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
+            let mut query = edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
+            ClientTransaction::request_with_fudge(
+                key.to_tsig_key().unwrap(),
+                &mut query,
+                signed_at,
+                17,
+            )
+            .unwrap();
+            let query = query.finish();
+            let response = exchange_xot(app.dns_tls_port(), &query, dot_client(&app)).unwrap();
+            let response = Message::from_octets(response).unwrap();
+            assert_eq!(response.header().id(), 3225);
+            assert!(response.header().qr());
+            assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+            assert_eq!(response.opt().unwrap().dnssec_ok(), dnssec_ok);
+            let tsig = response
+                .additional()
+                .unwrap()
+                .limit_to::<Tsig<_, _>>()
+                .last()
+                .unwrap()
+                .unwrap();
+            assert_eq!(tsig.data().error(), TsigRcode::BADTIME);
+            assert_eq!(tsig.data().time_signed(), signed_at);
+            assert_eq!(tsig.data().fudge(), 17);
+            assert_eq!(tsig.data().other().len(), 6);
+            verify_response_mac(&query, &response, &key).unwrap();
         }
     }
 }

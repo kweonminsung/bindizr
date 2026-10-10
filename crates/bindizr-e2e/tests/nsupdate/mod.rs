@@ -5,10 +5,14 @@ mod soa;
 use common::{exported_record_sets, unsigned_nsupdate_app};
 use domain::{
     base::{
-        Rtype, Serial, Ttl,
-        iana::{Class, Opcode, OptRcode, Rcode},
+        Message, Rtype, Serial, Ttl,
+        iana::{Class, Opcode, OptRcode, Rcode, TsigRcode},
     },
-    rdata::Soa,
+    rdata::{
+        Soa,
+        tsig::{Time48, Tsig},
+    },
+    tsig::ClientTransaction,
 };
 use serde_json::Value;
 use serial_test::serial;
@@ -22,7 +26,7 @@ use crate::common::{
             send_signed_update_with_edns_version, send_signed_update_with_two_zones, send_update,
         },
         parse_name,
-        tsig::{KeyRole, create_tsig_key},
+        tsig::{KeyRole, create_tsig_key, verify_response_mac},
     },
     exchange_tcp,
 };
@@ -1394,6 +1398,58 @@ async fn edns_dnssec_ok_is_echoed_in_update_responses() {
                     }
                 );
             }
+        }
+    }
+}
+
+/// Reject stale signed UPDATEs with a verifiable BADTIME and OPT.
+#[tokio::test]
+#[serial]
+async fn badtime_update_responses_preserve_edns_and_verify() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "badtime-update-key", KeyRole::Admin).await;
+    let signed_at = Time48::from_u64(u64::from(Time48::now()) - 3600);
+    for dnssec_ok in [false, true] {
+        let mut query = build_update(8945, zone_name, Class::IN, &[], &[]).unwrap();
+        query
+            .opt(|opt| {
+                opt.set_udp_payload_size(4096);
+                opt.set_dnssec_ok(dnssec_ok);
+                Ok(())
+            })
+            .unwrap();
+        ClientTransaction::request_with_fudge(
+            key.to_tsig_key().unwrap(),
+            &mut query,
+            signed_at,
+            17,
+        )
+        .unwrap();
+        let query = query.finish();
+        for response in [
+            exchange_udp(app.dns_port(), &query).unwrap(),
+            exchange_tcp(app.dns_port(), &query).unwrap(),
+        ] {
+            let response = Message::from_octets(response).unwrap();
+            assert_eq!(response.header().id(), 8945);
+            assert!(response.header().qr());
+            assert_eq!(response.header().opcode(), Opcode::UPDATE);
+            assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+            assert_eq!(response.opt().unwrap().dnssec_ok(), dnssec_ok);
+            let tsig = response
+                .additional()
+                .unwrap()
+                .limit_to::<Tsig<_, _>>()
+                .last()
+                .unwrap()
+                .unwrap();
+            assert_eq!(tsig.data().error(), TsigRcode::BADTIME);
+            assert_eq!(tsig.data().time_signed(), signed_at);
+            assert_eq!(tsig.data().fudge(), 17);
+            assert_eq!(tsig.data().other().len(), 6);
+            verify_response_mac(&query, &response, &key).unwrap();
         }
     }
 }

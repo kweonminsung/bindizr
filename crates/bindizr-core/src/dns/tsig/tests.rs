@@ -2,7 +2,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use chrono::Utc;
-use domain::base::iana::{Class, Rtype};
+use domain::base::{
+    Name,
+    iana::{Class, Opcode, Rtype},
+};
 use ring::hmac;
 
 use super::*;
@@ -59,8 +62,7 @@ pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
         .to_vec()
 }
 
-/// A minimal UPDATE request signed with `update-key`: the MAC covers the
-/// message without the TSIG record plus the TSIG variables (RFC 8945, Sections 4.3.2 and 4.3.3).
+/// Sign a minimal UPDATE with `update-key` (RFC 8945, Sections 4.3.2 and 4.3.3).
 pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
     let base = minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");
@@ -96,8 +98,7 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
     message
 }
 
-/// Parse the response's rcode plus TSIG error, time-signed, MAC, and other
-/// data.
+/// Extract the response status and TSIG fields.
 fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     let msg = Message::from_octets(response).unwrap();
     let tsig_record = msg
@@ -126,6 +127,57 @@ fn extract_failed_response(err: TsigError) -> Vec<u8> {
     }
 }
 
+/// Check the response MAC against the request and actual wire fields.
+fn assert_response_mac(query: &[u8], response: &[u8], algorithm: TsigAlgorithm) {
+    let request = Message::from_octets(query).unwrap();
+    let request_tsig = request
+        .additional()
+        .unwrap()
+        .limit_to::<Tsig<_, _>>()
+        .last()
+        .unwrap()
+        .unwrap();
+    let message = Message::from_octets(response).unwrap();
+    let mut additional = message.additional().unwrap();
+    let tsig_start = loop {
+        let start = additional.pos();
+        if additional.next().unwrap().unwrap().rtype() == Rtype::TSIG {
+            break start;
+        }
+    };
+    assert!(additional.next().is_none());
+    let tsig = message
+        .additional()
+        .unwrap()
+        .limit_to::<Tsig<_, _>>()
+        .last()
+        .unwrap()
+        .unwrap();
+    let data = tsig.data();
+    let mut unsigned = response[..tsig_start].to_vec();
+    unsigned[..2].copy_from_slice(&data.original_id().to_be_bytes());
+    unsigned[10..12].copy_from_slice(&(message.header_counts().arcount() - 1).to_be_bytes());
+
+    // RFC 8945, Section 4.3: sign the wire Other Data, including its six-byte time.
+    let request_mac = request_tsig.data().mac();
+    let mut digest = u16::try_from(request_mac.len())
+        .unwrap()
+        .to_be_bytes()
+        .to_vec();
+    digest.extend_from_slice(request_mac);
+    digest.extend_from_slice(&unsigned);
+    tsig.owner().compose_canonical(&mut digest).unwrap();
+    digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
+    digest.extend_from_slice(&0u32.to_be_bytes());
+    data.algorithm().compose_canonical(&mut digest).unwrap();
+    digest.extend_from_slice(&data.time_signed().into_octets());
+    digest.extend_from_slice(&data.fudge().to_be_bytes());
+    digest.extend_from_slice(&data.error().to_int().to_be_bytes());
+    digest.extend_from_slice(&u16::try_from(data.other().len()).unwrap().to_be_bytes());
+    digest.extend_from_slice(data.other());
+    assert_eq!(data.mac(), &hmac_sign(algorithm, &digest));
+}
+
 /// Verify that `verify_tsig` accepts valid signatures for all algorithms.
 #[test]
 fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
@@ -135,29 +187,38 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
         TsigAlgorithm::HmacSha512,
     ] {
         let query = signed_update(algorithm, now_secs());
-        let key = test_key(algorithm).to_domain_key().unwrap();
+        let key = test_key(algorithm).to_signing_key().unwrap();
         verify_tsig(&query, Some(key)).unwrap();
     }
 }
 
-/// Verify that `verify_tsig` rejects tampered mac with badsig.
+/// Reject a bad MAC before considering the request's timestamp.
 #[test]
 fn verify_tsig_rejects_tampered_mac_with_badsig() {
-    let mut query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    // The last 6 rdata bytes are original ID, error, and other-len; the byte
-    // before them is the MAC's last byte.
-    let mac_end = query.len() - 7;
-    query[mac_end] ^= 0xFF;
-
-    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
-    let err = verify_tsig(&query, Some(key)).unwrap_err();
-
-    // RFC 8945, Section 5.3.2: a MAC failure answers NOTAUTH/BADSIG with an unsigned
-    // TSIG error record.
-    let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
-    assert_eq!(rcode, Rcode::NOTAUTH);
-    assert_eq!(error, TsigRcode::BADSIG);
-    assert!(mac.is_empty());
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
+    for offset in [-3600i64, 0, 3600] {
+        let mut query = signed_update(
+            TsigAlgorithm::HmacSha256,
+            now_secs().checked_add_signed(offset).unwrap(),
+        );
+        // The MAC ends before original ID, error, and other-len (six bytes).
+        let mac_end = query.len() - 7;
+        query[mac_end] ^= 0xFF;
+        for err in [
+            verify_tsig(&query, Some(key.clone())).unwrap_err(),
+            verify_tsig_sequence(&query, Some(key.clone())).unwrap_err(),
+        ] {
+            // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
+            let (rcode, error, _, mac, other) =
+                extract_response_tsig(&extract_failed_response(err));
+            assert_eq!(rcode, Rcode::NOTAUTH);
+            assert_eq!(error, TsigRcode::BADSIG);
+            assert!(mac.is_empty());
+            assert!(other.is_empty());
+        }
+    }
 }
 
 /// Verify that `verify_tsig` rejects original id mismatch with badsig.
@@ -169,7 +230,9 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     let original_id = query.len() - 6;
     query[original_id] ^= 0xFF;
 
-    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     let (rcode, error, _, _, _) = extract_response_tsig(&extract_failed_response(err));
@@ -182,7 +245,9 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
 fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
-    let key = test_key(TsigAlgorithm::HmacSha512).to_domain_key().unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha512)
+        .to_signing_key()
+        .unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
@@ -210,22 +275,106 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let stale = now_secs() - 3600;
     let query = signed_update(TsigAlgorithm::HmacSha256, stale);
 
-    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
-    let (rcode, error, time_signed, mac, other) =
-        extract_response_tsig(&extract_failed_response(err));
+    let response = extract_failed_response(err);
+    let (rcode, error, time_signed, mac, other) = extract_response_tsig(&response);
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADTIME);
     assert_eq!(time_signed, stale);
     assert_eq!(other.len(), 6);
     assert!(!mac.is_empty());
+    assert_response_mac(&query, &response, TsigAlgorithm::HmacSha256);
 }
 
-/// Verify that the reserved TSIG size covers the largest key a request can
-/// name.
+/// Preserve EDNS and authenticate BADTIME across algorithms and request paths.
+#[test]
+fn badtime_response_preserves_edns() {
+    for algorithm in [
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        let key = TsigKey {
+            name: "UpDaTe-Key".to_string(),
+            ..test_key(algorithm)
+        }
+        .to_signing_key()
+        .unwrap();
+        for offset in [-3600i64, 3600] {
+            let signed_at = Time48::from_u64(now_secs().checked_add_signed(offset).unwrap());
+            for opcode in [Opcode::QUERY, Opcode::UPDATE] {
+                for edns in [None, Some((0, false)), Some((0, true)), Some((1, true))] {
+                    let mut builder = MessageBuilder::new_vec();
+                    builder.header_mut().set_id(8945);
+                    builder.header_mut().set_opcode(opcode);
+                    let mut question = builder.question();
+                    question
+                        .push((
+                            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+                            Rtype::SOA,
+                        ))
+                        .unwrap();
+                    let mut additional = question.additional();
+                    if let Some((version, dnssec_ok)) = edns {
+                        additional
+                            .opt(|opt| {
+                                opt.set_udp_payload_size(4096);
+                                opt.set_version(version);
+                                opt.set_dnssec_ok(dnssec_ok);
+                                Ok(())
+                            })
+                            .unwrap();
+                    }
+                    ClientTransaction::request_with_fudge(
+                        key.clone(),
+                        &mut additional,
+                        signed_at,
+                        17,
+                    )
+                    .unwrap();
+                    let query = additional.finish();
+                    let before = Time48::now();
+                    for err in [
+                        verify_tsig(&query, Some(key.clone())).unwrap_err(),
+                        verify_tsig_sequence(&query, Some(key.clone())).unwrap_err(),
+                    ] {
+                        let response = extract_failed_response(err);
+                        let message = Message::from_octets(response.as_slice()).unwrap();
+                        assert_eq!(message.header().id(), 8945);
+                        assert_eq!(message.header().opcode(), opcode);
+                        assert_eq!(message.header().rcode(), Rcode::NOTAUTH);
+                        assert_eq!(
+                            message.opt().map(|opt| opt.dnssec_ok()),
+                            edns.map(|(_, do_bit)| do_bit)
+                        );
+                        let tsig = message
+                            .additional()
+                            .unwrap()
+                            .limit_to::<Tsig<_, _>>()
+                            .last()
+                            .unwrap()
+                            .unwrap();
+                        assert_eq!(tsig.data().error(), TsigRcode::BADTIME);
+                        assert_eq!(tsig.data().time_signed(), signed_at);
+                        assert_eq!(tsig.data().fudge(), 17);
+                        assert_eq!(tsig.data().other().len(), 6);
+                        let server_time = tsig.data().other_time().unwrap();
+                        assert!(server_time >= before && server_time <= Time48::now());
+                        assert_response_mac(&query, &response, algorithm);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Verify that the TSIG reservation covers the longest key name and MAC.
 #[test]
 fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
     // The longest name a key can carry, under the algorithm with the widest MAC.
@@ -241,18 +390,17 @@ fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
         algorithm: TsigAlgorithm::HmacSha512,
         ..test_key(TsigAlgorithm::HmacSha512)
     }
-    .to_domain_key()
+    .to_signing_key()
     .unwrap();
 
-    let composed = usize::from(key.compose_len());
+    let composed = usize::from(key.as_ref().compose_len());
     assert!(
         composed <= MAX_TSIG_RECORD,
         "a {composed}-byte TSIG record does not fit the {MAX_TSIG_RECORD} bytes reserved for one"
     );
 }
 
-/// Verify that a TSIG which does not parse is not read as an unsigned
-/// request.
+/// Keep malformed TSIG requests from being treated as unsigned.
 #[test]
 fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
     let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -261,8 +409,7 @@ fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
         RequestSignature::Key { name, fudge: 300 } if name == "update-key"
     ));
 
-    // The same message with the TSIG RDATA cut away: a caller reaching for a
-    // key must be held to it, not fall through to the address that allowed it.
+    // Malformed TSIG must not fall through to address-based authorization.
     let mut empty_rdata = minimal_update_with_ztype(6);
     empty_rdata[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     empty_rdata.extend_from_slice(&encode_name("update-key"));
@@ -275,8 +422,7 @@ fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
         RequestSignature::Malformed
     ));
 
-    // A TSIG whose RDLENGTH overruns the message stops the section making
-    // sense at all, so absence cannot be concluded from what follows.
+    // An overrun prevents establishing whether more records follow.
     let mut overrun = empty_rdata.clone();
     let rdlength_at = overrun.len() - 2;
     overrun[rdlength_at..].copy_from_slice(&8u16.to_be_bytes());
@@ -285,7 +431,6 @@ fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
         RequestSignature::Malformed
     ));
 
-    // And a message with no TSIG at all still reads as unsigned.
     assert!(matches!(
         request_signature(&minimal_update_with_ztype(6)),
         RequestSignature::Absent

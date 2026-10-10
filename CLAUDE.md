@@ -561,9 +561,11 @@ QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
 (RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
 readable queries; an unreadable question receives a header-only response.
 
-EDNS parsing and response encoding are shared by QUERY, UPDATE, and unsigned TSIG errors.
+EDNS parsing and response encoding are shared by QUERY, UPDATE, and TSIG errors.
 A readable OPT retains its version and DO bit even when rejected with BADVERS;
 response OPTs copy DO and clear reserved flags (RFC 3225, Section 3).
+BADTIME responses sign the complete response, including OPT, and the six-byte
+server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3).
 
 An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority

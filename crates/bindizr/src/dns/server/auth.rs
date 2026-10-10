@@ -120,9 +120,9 @@ pub(crate) async fn authenticate_tsig_key(
             None,
         ));
     };
-    let domain_key = tsig_key.to_domain_key().map_err(TransferRefusal::from)?;
+    let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
     let signer =
-        verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
+        verify_tsig_sequence(query_data, Some(signing_key)).map_err(TransferRefusal::from)?;
     let caller = Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
         .await
         .map_err(|e| {

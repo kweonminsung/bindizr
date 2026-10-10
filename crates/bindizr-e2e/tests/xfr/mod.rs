@@ -21,7 +21,7 @@ use domain::{
         A, Soa,
         tsig::{Time48, Tsig},
     },
-    tsig::ClientSequence,
+    tsig::{ClientSequence, ClientTransaction},
 };
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -31,7 +31,7 @@ use crate::common::{
     TestApp, TransferOutcome, axfr,
     dns::{
         exchange_request, exchange_udp, parse_name,
-        tsig::{KeyRole, SigningKey, create_tsig_key, is_signed, sign},
+        tsig::{KeyRole, SigningKey, create_tsig_key, is_signed, sign, verify_response_mac},
         write_frame,
     },
     exchange_dns_query, exchange_tcp, read_frame, wait_for_any_dns_record,
@@ -900,6 +900,65 @@ async fn edns_dnssec_ok_is_echoed_in_tsig_errors() {
                     .unwrap();
                 assert_eq!(tsig.data().error(), error);
                 assert!(tsig.data().mac().is_empty());
+            }
+        }
+    }
+}
+
+/// Return authenticated BADTIME with OPT for stale TCP and UDP queries.
+#[tokio::test]
+#[serial]
+async fn badtime_query_responses_preserve_edns_and_verify() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "badtime-query-key", KeyRole::Admin).await;
+    let signed_at = Time48::from_u64(u64::from(Time48::now()) - 3600);
+    for dnssec_ok in [false, true] {
+        for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
+            let mut query = edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
+            ClientTransaction::request_with_fudge(
+                key.to_tsig_key().unwrap(),
+                &mut query,
+                signed_at,
+                17,
+            )
+            .unwrap();
+            let query = query.finish();
+            let before = Time48::now();
+            for response in [
+                exchange_udp(app.dns_port(), &query).unwrap(),
+                exchange_tcp(app.dns_port(), &query).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+                assert_eq!(response.header().id(), 3225);
+                assert!(response.header().qr());
+                assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+                assert_eq!(response.opt().unwrap().dnssec_ok(), dnssec_ok);
+                let tsig = response
+                    .additional()
+                    .unwrap()
+                    .limit_to::<Tsig<_, _>>()
+                    .last()
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(tsig.data().error(), TsigRcode::BADTIME);
+                assert_eq!(tsig.data().time_signed(), signed_at);
+                assert_eq!(tsig.data().fudge(), 17);
+                assert_eq!(tsig.data().other().len(), 6);
+                let server_time = tsig.data().other_time().unwrap();
+                assert!(server_time >= before && server_time <= Time48::now());
+                verify_response_mac(&query, &response, &key).unwrap();
+                // The MAC covers both OPT flags and the server's six-byte time.
+                let opt_flags = response.additional().unwrap().pos() + 7;
+                for offset in [opt_flags, response.as_slice().len() - 1] {
+                    let mut tampered = response.as_slice().to_vec();
+                    tampered[offset] ^= 1;
+                    assert!(
+                        verify_response_mac(&query, &Message::from_octets(tampered).unwrap(), &key)
+                            .is_err()
+                    );
+                }
             }
         }
     }

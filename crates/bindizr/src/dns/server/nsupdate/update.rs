@@ -191,7 +191,7 @@ pub(crate) async fn authenticate_tsig_key(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let domain_key = tsig_key.as_ref().map(TsigKey::to_domain_key).transpose()?;
-    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, domain_key)?;
+    let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
+    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key)?;
     Ok((tsig_key, signer))
 }

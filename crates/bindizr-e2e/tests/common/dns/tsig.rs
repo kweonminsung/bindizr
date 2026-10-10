@@ -4,10 +4,11 @@ use std::str::FromStr;
 
 use base64::Engine;
 use domain::{
-    base::{Message, Rtype, message_builder::AdditionalBuilder},
-    rdata::tsig::Time48,
+    base::{Message, Rtype, ToName, message_builder::AdditionalBuilder},
+    rdata::tsig::{Time48, Tsig},
     tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
+use ring::hmac;
 
 use crate::common::TestApp;
 
@@ -45,6 +46,81 @@ pub(crate) fn sign(
     ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Verify a response MAC from its wire fields, including BADTIME Other Data.
+pub(crate) fn verify_response_mac(
+    request: &[u8],
+    response: &Message<Vec<u8>>,
+    key: &SigningKey,
+) -> Result<(), String> {
+    let request = Message::from_octets(request).map_err(|e| e.to_string())?;
+    let request_tsig = request
+        .additional()
+        .map_err(|e| e.to_string())?
+        .limit_to::<Tsig<_, _>>()
+        .last()
+        .ok_or("request has no TSIG")?
+        .map_err(|e| e.to_string())?;
+    let tsig = response
+        .additional()
+        .map_err(|e| e.to_string())?
+        .limit_to::<Tsig<_, _>>()
+        .last()
+        .ok_or("response has no TSIG")?
+        .map_err(|e| e.to_string())?;
+    let expected_key = key.to_tsig_key()?;
+    if !tsig.owner().name_eq(expected_key.name())
+        || !tsig
+            .data()
+            .algorithm()
+            .name_eq(&expected_key.algorithm().to_name())
+    {
+        return Err("response uses a different TSIG key or algorithm".to_string());
+    }
+    let mut records = response.additional().map_err(|e| e.to_string())?;
+    let tsig_start = loop {
+        let start = records.pos();
+        let record = records
+            .next()
+            .ok_or("response has no TSIG")?
+            .map_err(|e| e.to_string())?;
+        if record.rtype() == Rtype::TSIG {
+            break start;
+        }
+    };
+    if records.next().is_some() {
+        return Err("TSIG must be the last record".to_string());
+    }
+    let data = tsig.data();
+    let mut unsigned = response.as_slice()[..tsig_start].to_vec();
+    unsigned[..2].copy_from_slice(&data.original_id().to_be_bytes());
+    unsigned[10..12].copy_from_slice(&(response.header_counts().arcount() - 1).to_be_bytes());
+    let request_mac = request_tsig.data().mac();
+    let mut digest = u16::try_from(request_mac.len())
+        .map_err(|e| e.to_string())?
+        .to_be_bytes()
+        .to_vec();
+    digest.extend_from_slice(request_mac);
+    digest.extend_from_slice(&unsigned);
+    tsig.owner().compose_canonical(&mut digest).unwrap();
+    digest.extend_from_slice(&tsig.class().to_int().to_be_bytes());
+    digest.extend_from_slice(&tsig.ttl().as_secs().to_be_bytes());
+    data.algorithm().compose_canonical(&mut digest).unwrap();
+    digest.extend_from_slice(&data.time_signed().into_octets());
+    digest.extend_from_slice(&data.fudge().to_be_bytes());
+    digest.extend_from_slice(&data.error().to_int().to_be_bytes());
+    digest.extend_from_slice(
+        &u16::try_from(data.other().len())
+            .map_err(|e| e.to_string())?
+            .to_be_bytes(),
+    );
+    digest.extend_from_slice(data.other());
+    let secret = base64::engine::general_purpose::STANDARD
+        .decode(&key.secret)
+        .map_err(|e| e.to_string())?;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, &secret);
+    hmac::verify(&key, &digest, data.mac()).map_err(|_| "response MAC did not verify".to_string())
 }
 
 /// The role a test TSIG key authenticates into.

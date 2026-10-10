@@ -54,7 +54,9 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
 #[test]
 fn build_response_signs_with_request_mac_chain() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
     let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
 
     let response = build_response(&query, OptRcode::NOERROR, None, Some(signer), 300).unwrap();

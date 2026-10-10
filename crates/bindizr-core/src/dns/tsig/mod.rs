@@ -1,7 +1,4 @@
-//! TSIG authentication (RFC 8945), backed by `domain::tsig`: verifying a
-//! signed request and signing what answers it. One request-one response for
-//! nsupdate and SOA; a sequence for the envelopes of a zone transfer; and
-//! the client side of it for the NOTIFY bindizr sends.
+//! TSIG authentication for queries, updates, transfers, and outbound NOTIFY (RFC 8945).
 
 use std::{str::FromStr, sync::Arc};
 
@@ -9,7 +6,7 @@ use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Rtype, ToName,
-        iana::{OptRcode, Rcode, TsigRcode},
+        iana::{Class, OptRcode, Rcode, TsigRcode},
         message_builder::AdditionalBuilder,
     },
     rdata::tsig::{Time48, Tsig},
@@ -18,6 +15,7 @@ use domain::{
         ServerTransaction,
     },
 };
+use ring::hmac;
 use thiserror::Error;
 
 use crate::{
@@ -72,17 +70,28 @@ pub enum VerifyAnswerError {
 }
 
 /// Context for signing the response to a validated TSIG request.
-pub type ResponseSigner = ServerTransaction<Arc<Key>>;
+pub type ResponseSigner = ServerTransaction<TsigSigningKey>;
 
 /// Context for signing the envelopes of one transfer, which share a running
 /// MAC chain (RFC 8945, Section 5.3.1).
-pub type TransferSigner = ServerSequence<Arc<Key>>;
+pub type TransferSigner = ServerSequence<TsigSigningKey>;
 
-/// A stored key in the form `domain` signs and verifies with.
-pub type TsigSigningKey = Arc<Key>;
+/// Validated key material for transactions and signed TSIG errors.
+#[derive(Clone, Debug)]
+pub struct TsigSigningKey {
+    domain: Arc<Key>,
+    hmac: hmac::Key,
+}
+
+impl AsRef<Key> for TsigSigningKey {
+    /// Borrow the key used by the transaction and sequence signers.
+    fn as_ref(&self) -> &Key {
+        &self.domain
+    }
+}
 
 /// Context for checking the one answer to a request this side signed.
-pub type RequestSigner = ClientTransaction<Arc<Key>>;
+pub type RequestSigner = ClientTransaction<TsigSigningKey>;
 
 /// Sign a request bindizr is about to send (RFC 8945, Section 5.1) and
 /// return the context that checks its answer.
@@ -118,10 +127,10 @@ pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
 /// Store holding the one key the request names, or nothing when that key is
 /// unknown so validation yields the BADKEY error response.
 #[derive(Debug, Clone)]
-struct DbKeyStore(Option<Arc<Key>>);
+struct DbKeyStore(Option<TsigSigningKey>);
 
 impl KeyStore for DbKeyStore {
-    type Key = Arc<Key>;
+    type Key = TsigSigningKey;
 
     /// Find a stored TSIG key matching the requested name and algorithm.
     fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Self::Key> {
@@ -130,17 +139,17 @@ impl KeyStore for DbKeyStore {
 }
 
 impl TsigKey {
-    /// Convert this stored TSIG key into a `domain` signing key.
-    pub fn to_domain_key(&self) -> Result<Arc<Key>, TsigError> {
+    /// Decode and validate this stored key for TSIG signing and verification.
+    pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {
         let name = KeyName::from_str(&self.name).map_err(|e| TsigError::InvalidKeyName {
             name: self.name.clone(),
             source: Box::new(e),
         })?;
 
-        let algorithm = match self.algorithm {
-            TsigAlgorithm::HmacSha256 => Algorithm::Sha256,
-            TsigAlgorithm::HmacSha384 => Algorithm::Sha384,
-            TsigAlgorithm::HmacSha512 => Algorithm::Sha512,
+        let (algorithm, hmac_algorithm) = match self.algorithm {
+            TsigAlgorithm::HmacSha256 => (Algorithm::Sha256, hmac::HMAC_SHA256),
+            TsigAlgorithm::HmacSha384 => (Algorithm::Sha384, hmac::HMAC_SHA384),
+            TsigAlgorithm::HmacSha512 => (Algorithm::Sha512, hmac::HMAC_SHA512),
         };
 
         let secret = base64::engine::general_purpose::STANDARD
@@ -150,27 +159,30 @@ impl TsigKey {
             return Err(TsigError::EmptySecret);
         }
 
-        Key::new(algorithm, &secret, name, None, None)
-            .map(Arc::new)
-            .map_err(|e| TsigError::InvalidKey {
+        let domain =
+            Key::new(algorithm, &secret, name, None, None).map_err(|e| TsigError::InvalidKey {
                 name: self.name.clone(),
                 source: Box::new(e),
-            })
+            })?;
+        Ok(TsigSigningKey {
+            domain: Arc::new(domain),
+            hmac: hmac::Key::new(hmac_algorithm, &secret),
+        })
     }
 }
 
-/// Verify a TSIG-signed request against the key it names (RFC 8945) and return
-/// the context for signing its one response. `key` is `None` for an unknown
-/// key, which yields the BADKEY error response.
-pub fn verify_tsig(query_data: &[u8], key: Option<Arc<Key>>) -> Result<ResponseSigner, TsigError> {
+/// Authenticate a request and prepare its response signer; an unknown key yields BADKEY.
+pub fn verify_tsig(
+    query_data: &[u8],
+    key: Option<TsigSigningKey>,
+) -> Result<ResponseSigner, TsigError> {
     verify(query_data, key, ServerTransaction::request)
 }
 
-/// The same verification for a request answered by many messages, whose
-/// signing context carries the MAC chain across them.
+/// Authenticate a request and prepare its transfer MAC chain.
 pub fn verify_tsig_sequence(
     query_data: &[u8],
-    key: Option<Arc<Key>>,
+    key: Option<TsigSigningKey>,
 ) -> Result<TransferSigner, TsigError> {
     verify(query_data, key, ServerSequence::request)
 }
@@ -178,20 +190,22 @@ pub fn verify_tsig_sequence(
 /// Verify a request's TSIG and return the authenticated signing context.
 fn verify<T>(
     query_data: &[u8],
-    key: Option<Arc<Key>>,
+    key: Option<TsigSigningKey>,
     request: impl FnOnce(
         &DbKeyStore,
         &mut Message<Vec<u8>>,
         Time48,
-    ) -> Result<Option<T>, ServerError<Arc<Key>>>,
+    ) -> Result<Option<T>, ServerError<TsigSigningKey>>,
 ) -> Result<T, TsigError> {
     let mut message =
         Message::from_octets(query_data.to_vec()).map_err(|e| TsigError::Malformed(Box::new(e)))?;
 
-    match request(&DbKeyStore(key), &mut message, Time48::now()) {
+    let store = DbKeyStore(key);
+    let now = Time48::now();
+    match request(&store, &mut message, now) {
         Ok(Some(context)) => Ok(context),
         Ok(None) => Err(TsigError::RecordMissing),
-        Err(err) => Err(tsig_error(query_data, err)),
+        Err(err) => Err(tsig_error(query_data, err, store.0.as_ref(), now)),
     }
 }
 
@@ -262,7 +276,12 @@ pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) ->
 }
 
 /// Map a TSIG validation failure to the complete NOTAUTH response to send.
-fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
+fn tsig_error(
+    query_data: &[u8],
+    err: ServerError<TsigSigningKey>,
+    key: Option<&TsigSigningKey>,
+    now: Time48,
+) -> TsigError {
     let msg = match Message::from_octets(query_data) {
         Ok(msg) => msg,
         Err(e) => return TsigError::Malformed(Box::new(e)),
@@ -273,7 +292,8 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     // the structure was checked before verification, so that is BADSIG.
     let response = match error {
         TsigRcode::FORMERR => build_unsigned_error(&msg, TsigRcode::BADSIG),
-        TsigRcode::BADTIME => build_signed_error(&msg, err),
+        // BADTIME is returned only after the request MAC has been authenticated.
+        TsigRcode::BADTIME => key.and_then(|key| build_badtime_response(&msg, key, now)),
         other => build_unsigned_error(&msg, other),
     };
 
@@ -286,16 +306,62 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     }
 }
 
-/// Build the signed NOTAUTH response a BADTIME is owed (RFC 8945,
-/// Section 5.2.3), carrying the server's time.
-///
-/// Known gap: it carries no OPT even for an EDNS request (RFC 6891,
-/// Section 6.1.1), since `domain` signs the header and question as it
-/// starts the answer and an OPT appended after the MAC would break it.
-fn build_signed_error(msg: &Message<&[u8]>, err: ServerError<Arc<Key>>) -> Option<Vec<u8>> {
-    err.build_message(msg, MessageBuilder::new_vec())
-        .ok()
-        .map(|builder| builder.finish())
+/// Sign an authenticated BADTIME response, including EDNS (RFC 8945, Section 5.2.3).
+fn build_badtime_response(
+    msg: &Message<&[u8]>,
+    key: &TsigSigningKey,
+    now: Time48,
+) -> Option<Vec<u8>> {
+    let request_tsig = msg
+        .additional()
+        .ok()?
+        .limit_to::<Tsig<_, _>>()
+        .last()?
+        .ok()?;
+    let request = request_tsig.data();
+    let mut builder = MessageBuilder::new_vec()
+        .start_answer(msg, Rcode::NOTAUTH)
+        .ok()?
+        .additional();
+    Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
+
+    // domain's error builder cannot include OPT and hashes Other Data as eight bytes.
+    // RFC 8945, Section 4.3 requires the six bytes actually carried on the wire.
+    let name = key.domain.name().to_canonical_name::<Vec<u8>>();
+    let algorithm = key.domain.algorithm().to_name();
+    let other = now.into_octets();
+    let mut digest = hmac::Context::with_key(&key.hmac);
+    digest.update(&u16::try_from(request.mac().len()).ok()?.to_be_bytes());
+    digest.update(request.mac());
+    digest.update(builder.as_slice());
+    digest.update(name.as_slice());
+    digest.update(&Class::ANY.to_int().to_be_bytes());
+    digest.update(&0u32.to_be_bytes());
+    digest.update(algorithm.as_slice());
+    digest.update(&request.time_signed().into_octets());
+    digest.update(&request.fudge().to_be_bytes());
+    digest.update(&TsigRcode::BADTIME.to_int().to_be_bytes());
+    digest.update(&6u16.to_be_bytes());
+    digest.update(&other);
+    let mac = digest.sign();
+    builder
+        .push((
+            key.domain.name(),
+            Class::ANY,
+            0,
+            Tsig::new(
+                algorithm,
+                request.time_signed(),
+                request.fudge(),
+                mac.as_ref(),
+                msg.header().id(),
+                TsigRcode::BADTIME,
+                other.as_slice(),
+            )
+            .ok()?,
+        ))
+        .ok()?;
+    Some(builder.finish())
 }
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that

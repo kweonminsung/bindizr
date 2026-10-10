@@ -1,14 +1,14 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use domain::{
     base::{Message, MessageBuilder, Name, iana::Rtype, opt::exterr::ExtendedError},
     rdata::tsig::Time48,
-    tsig::{ClientSequence, Key},
+    tsig::ClientSequence,
 };
 
 use super::*;
 use crate::{
-    dns::tsig::verify_tsig_sequence,
+    dns::tsig::{TsigSigningKey, verify_tsig_sequence},
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
@@ -166,9 +166,9 @@ fn multi_question_headers_receive_formerr_only_for_query() {
 /// Build a signed AXFR query for `example.com.` and a `domain` client
 /// sequence that verifies replies independently of the server under test.
 fn signed_axfr_query(
-    key: Arc<Key>,
+    key: TsigSigningKey,
     dnssec_ok: Option<bool>,
-) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
+) -> (Vec<u8>, ClientSequence<TsigSigningKey>) {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1234);
     let mut question = builder.question();
@@ -202,7 +202,7 @@ fn strip_frame_length(frame: Vec<u8>) -> Vec<u8> {
 #[test]
 fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
-        .to_domain_key()
+        .to_signing_key()
         .unwrap();
     let (query, mut client) = signed_axfr_query(key.clone(), Some(true));
     let parsed = ParsedQuery::parse(&query, Keepalive::None).unwrap();
@@ -246,7 +246,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
 #[test]
 fn a_signed_message_reserves_room_for_its_tsig_record() {
     let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
-        .to_domain_key()
+        .to_signing_key()
         .unwrap();
     let (query, _) = signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);

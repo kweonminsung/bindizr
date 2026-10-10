@@ -372,7 +372,7 @@ pub(crate) async fn notify_signing_key(
     secondary: &Secondary,
 ) -> Result<Option<TsigSigningKey>, ServiceError> {
     match notify_tsig_key(cx, secondary).await? {
-        Some(tsig_key) => tsig_key.to_domain_key().map(Some).map_err(|e| {
+        Some(tsig_key) => tsig_key.to_signing_key().map(Some).map_err(|e| {
             ServiceError::internal_with_source(
                 format!("NOTIFY key '{}' is unusable: {:?}", tsig_key.name, e),
                 e,
