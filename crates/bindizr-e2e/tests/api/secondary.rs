@@ -5,7 +5,7 @@ use crate::common::{
     TestApp, assert_cli_failure_contains,
     dns::{
         notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL},
-        nsupdate::{KeyRole, create_tsig_key},
+        tsig::{KeyRole, create_tsig_key},
     },
 };
 

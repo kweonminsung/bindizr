@@ -1,7 +1,9 @@
 mod parent;
 mod transfer;
+mod transport;
+pub(crate) mod tsig;
 
-use std::{net::UdpSocket, str::FromStr, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use domain::{
     base::{Message, MessageBuilder, Name, Rtype, iana::Rcode, name::ParsedName},
@@ -9,7 +11,10 @@ use domain::{
 };
 pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
-pub(crate) use transfer::{TransferOutcome, axfr, exchange_tcp, exchange_xot, read_frame, xot};
+pub(crate) use transfer::{TransferOutcome, axfr, xot};
+pub(crate) use transport::{
+    exchange_request, exchange_tcp, exchange_udp, exchange_xot, read_frame, write_frame,
+};
 
 pub(crate) mod notify;
 pub(crate) mod nsupdate;
@@ -215,21 +220,9 @@ pub(crate) fn exchange_dns_query(
     name: &str,
     record_type: u16,
 ) -> Result<(u16, Vec<u8>), String> {
-    let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
-    socket
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|e| e.to_string())?;
-
     let query_id = (std::process::id() as u16).wrapping_add(port);
     let query = build_dns_query(query_id, name, record_type)?;
-    socket
-        .send_to(&query, ("127.0.0.1", port))
-        .map_err(|e| e.to_string())?;
-
-    let mut response = [0_u8; 1500];
-    let (len, _) = socket.recv_from(&mut response).map_err(|e| e.to_string())?;
-
-    Ok((query_id, response[..len].to_vec()))
+    Ok((query_id, exchange_udp(port, &query)?))
 }
 
 /// Encode a DNS query for the requested owner and type.

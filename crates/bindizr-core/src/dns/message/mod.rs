@@ -103,9 +103,8 @@ pub struct DnsMessageBuilder {
     signer: Option<TransferSigner>,
     /// The query's RD, copied into every message (RFC 1035, Section 4.1.1).
     rd: bool,
-    /// Whether the query spoke EDNS, so every message carries an OPT
-    /// (RFC 6891, Section 6.1.1; RFC 9103, Section 6.3.4).
-    edns: bool,
+    /// Request EDNS metadata, echoed in each frame (RFC 9103, Section 6.3.4).
+    edns: Edns,
     /// The keepalive that OPT carries over TCP (RFC 7828, Section 3.3.2).
     keepalive: Option<TcpKeepalive>,
     /// Set once the answers were dropped to fit a UDP limit.
@@ -125,7 +124,7 @@ impl DnsMessageBuilder {
             answers_len: 0,
             signer: None,
             rd: query.rd,
-            edns: query.edns != Edns::Absent,
+            edns: query.edns,
             keepalive: query.tcp_keepalive(),
             truncated: false,
         }
@@ -177,7 +176,7 @@ impl DnsMessageBuilder {
     /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, signature_len);
-        let opt = if self.edns {
+        let opt = if self.edns != Edns::Absent {
             OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
         } else {
             0
@@ -285,9 +284,8 @@ impl DnsMessageBuilder {
 
         // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
-        if self.edns {
-            push_opt(&mut additional, OptRcode::NOERROR, None, self.keepalive);
-        }
+        self.edns
+            .push_response(&mut additional, OptRcode::NOERROR, None, self.keepalive);
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .answer(&mut additional, Time48::now())
@@ -329,7 +327,6 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
 pub(crate) mod query;
 mod records;
 
-pub(crate) use query::push_opt;
 pub use query::{Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery, is_response};
 use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 

@@ -486,7 +486,9 @@ fn parse_update_request_reads_the_opt_record() {
     assert_eq!(
         UpdateRequest::parse(&message).unwrap().edns,
         Edns::Present {
-            udp_payload_size: 1232
+            udp_payload_size: 1232,
+            version: 0,
+            dnssec_ok: false,
         }
     );
 
@@ -507,6 +509,10 @@ fn parse_update_request_reads_the_opt_record() {
     ]);
     assert_eq!(
         UpdateRequest::parse(&message).unwrap().edns,
-        Edns::UnsupportedVersion(1)
+        Edns::Present {
+            udp_payload_size: 1232,
+            version: 1,
+            dnssec_ok: false,
+        }
     );
 }

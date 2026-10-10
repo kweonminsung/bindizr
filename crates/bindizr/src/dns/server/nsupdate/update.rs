@@ -3,7 +3,7 @@
 
 use bindizr_core::{
     dns::{
-        message::{Edns, OptRcode},
+        message::OptRcode,
         name::ZoneName,
         nsupdate::parser::UpdateRequest,
         tsig::{ResponseSigner, TsigError},
@@ -144,10 +144,8 @@ pub(crate) async fn apply_update(
         };
 
         // An OPT the server cannot take is answered before the update is read.
-        match request.edns {
-            Edns::Absent | Edns::Present { .. } => {}
-            Edns::Malformed => return Err(UpdateError::Edns(OptRcode::FORMERR)),
-            Edns::UnsupportedVersion(_) => return Err(UpdateError::Edns(OptRcode::BADVERS)),
+        if let Some(rcode) = request.edns.format_error() {
+            return Err(UpdateError::Edns(rcode));
         }
 
         // The parser renders the zone absolute; decoding it into labels here

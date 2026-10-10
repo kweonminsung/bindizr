@@ -1,21 +1,21 @@
 //! Zone transfers as a secondary runs them: unsigned under the address ACL,
 //! and signed under a TSIG key the way `primaries { addr key k; }` does.
 
+mod common;
 mod tls;
 
 use std::{
     collections::HashMap,
-    io::Write,
-    net::{TcpStream, UdpSocket},
+    net::TcpStream,
     str::FromStr,
     time::{Duration, Instant},
 };
 
+use common::{counter, edns_query, ixfr_query, multi_question_query};
 use domain::{
     base::{
         Message, MessageBuilder, Name, Ttl,
         iana::{Class, OptRcode, Rcode, Rtype, TsigRcode},
-        message_builder::AdditionalBuilder,
     },
     rdata::{
         A, Soa,
@@ -30,8 +30,9 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TransferOutcome, axfr,
     dns::{
-        nsupdate::{KeyRole, SigningKey, create_tsig_key, is_signed, sign},
-        parse_name,
+        exchange_request, exchange_udp, parse_name,
+        tsig::{KeyRole, SigningKey, create_tsig_key, is_signed, sign},
+        write_frame,
     },
     exchange_dns_query, exchange_tcp, read_frame, wait_for_any_dns_record,
 };
@@ -92,18 +93,6 @@ async fn a_name_no_zone_can_carry_is_answered_notauth() {
     }
 }
 
-/// Read one series of a counter from `/metrics`, picked by its labels.
-async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
-    let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let text = body.as_str().expect("metrics body is prometheus text");
-    text.lines()
-        .filter(|line| line.starts_with(&format!("{name}{{")))
-        .find(|line| labels.iter().all(|label| line.contains(label)))
-        .and_then(|line| line.rsplit(' ').next()?.parse().ok())
-        .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
-}
-
 /// Verify that an IXFR over UDP is answered with the zone's current SOA
 /// alone and counts as a truncated transfer.
 #[tokio::test]
@@ -154,34 +143,6 @@ async fn a_udp_ixfr_is_answered_with_the_current_soa() {
     );
 }
 
-/// Build an IXFR query carrying the client's SOA serial.
-fn ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
-    let name = parse_name(zone).unwrap();
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(1995);
-    let mut question = builder.question();
-    question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
-    let mut authority = question.authority();
-    // RFC 1995, Section 3: the client's SOA belongs in the authority section.
-    authority
-        .push((
-            &name,
-            Class::IN,
-            Ttl::ZERO,
-            Soa::new(
-                name.clone(),
-                name.clone(),
-                serial.into(),
-                Ttl::ZERO,
-                Ttl::ZERO,
-                Ttl::ZERO,
-                Ttl::ZERO,
-            ),
-        ))
-        .unwrap();
-    authority.additional()
-}
-
 /// Check IXFR serial ordering for ordinary and catalog zones on both transports.
 #[tokio::test]
 #[serial]
@@ -215,28 +176,15 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
         ] {
             for key in [None, Some(&key)] {
                 for udp in [false, true] {
-                    let mut query = ixfr_query(zone_name, client_serial);
-                    let mut client = key.map(|key| {
-                        ClientSequence::request(
-                            key.to_tsig_key().unwrap(),
-                            &mut query,
-                            Time48::now(),
-                        )
-                        .unwrap()
-                    });
-                    let query = query.finish();
-                    let response = if udp {
-                        exchange_udp(app.dns_port(), &query)
-                    } else {
-                        exchange_tcp(app.dns_port(), &query).unwrap()
-                    };
-                    let mut response = Message::from_octets(response).unwrap();
-                    if let Some(client) = client.as_mut() {
-                        client.answer(&mut response, Time48::now()).unwrap();
-                    }
-                    if let Some(client) = client {
-                        client.done().unwrap();
-                    }
+                    let query = ixfr_query(zone_name, client_serial);
+                    let response = exchange_request(query, key, |message| {
+                        if udp {
+                            exchange_udp(app.dns_port(), message)
+                        } else {
+                            exchange_tcp(app.dns_port(), message)
+                        }
+                    })
+                    .unwrap();
                     assert_eq!(response.header().rcode(), Rcode::NOERROR);
                     assert_eq!(response.header().id(), 1995);
                     assert!(response.header().aa() && !response.header().tc());
@@ -285,19 +233,15 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
     for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
         for serial in [current, current + 1] {
             for udp in [false, true] {
-                let mut query = ixfr_query(zone_name, serial);
-                let mut client =
-                    ClientSequence::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
-                        .unwrap();
-                let query = query.finish();
-                let response = if udp {
-                    exchange_udp(app.dns_port(), &query)
-                } else {
-                    exchange_tcp(app.dns_port(), &query).unwrap()
-                };
-                let mut response = Message::from_octets(response).unwrap();
-                client.answer(&mut response, Time48::now()).unwrap();
-                client.done().unwrap();
+                let query = ixfr_query(zone_name, serial);
+                let response = exchange_request(query, Some(&key), |message| {
+                    if udp {
+                        exchange_udp(app.dns_port(), message)
+                    } else {
+                        exchange_tcp(app.dns_port(), message)
+                    }
+                })
+                .unwrap();
                 assert_eq!(response.header().rcode(), Rcode::REFUSED);
                 assert_eq!(response.header_counts().ancount(), 0);
             }
@@ -781,41 +725,11 @@ async fn a_response_copies_the_rd_bit() {
         question
             .push((&parse_name(zone_name).unwrap(), Rtype::SOA))
             .unwrap();
-        let response = exchange_udp(app.dns_port(), &question.finish());
+        let response = exchange_udp(app.dns_port(), &question.finish()).unwrap();
         let response = Message::from_octets(response.as_slice()).unwrap();
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         assert_eq!(response.header().rd(), rd, "rd={rd}");
     }
-}
-
-/// Build a two-question QUERY with optional EDNS.
-fn multi_question_query(
-    zone: &str,
-    qtype: Rtype,
-    qclass: Class,
-    opt_version: Option<u8>,
-) -> AdditionalBuilder<Vec<u8>> {
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(9619);
-    builder.header_mut().set_rd(true);
-    let mut question = builder.question();
-    question
-        .push((&parse_name(zone).unwrap(), qtype, qclass))
-        .unwrap();
-    question
-        .push((&parse_name("other.example").unwrap(), Rtype::A, Class::IN))
-        .unwrap();
-    let mut additional = question.additional();
-    if let Some(version) = opt_version {
-        additional
-            .opt(|opt| {
-                opt.set_udp_payload_size(4096);
-                opt.set_version(version);
-                Ok(())
-            })
-            .unwrap();
-    }
-    additional
 }
 
 /// Reject multiple questions before choosing a handler or checking EDNS versions.
@@ -832,28 +746,15 @@ async fn multi_question_queries_receive_formerr() {
             for version in [None, Some(0), Some(1)] {
                 for key in [None, Some(&key)] {
                     for udp in [false, true] {
-                        let mut query = multi_question_query(zone_name, qtype, qclass, version);
-                        let mut client = key.map(|key| {
-                            ClientSequence::request(
-                                key.to_tsig_key().unwrap(),
-                                &mut query,
-                                Time48::now(),
-                            )
-                            .unwrap()
-                        });
-                        let query = query.finish();
-                        let response = if udp {
-                            exchange_udp(app.dns_port(), &query)
-                        } else {
-                            exchange_tcp(app.dns_port(), &query).unwrap()
-                        };
-                        let mut response = Message::from_octets(response).unwrap();
-                        if let Some(client) = client.as_mut() {
-                            client.answer(&mut response, Time48::now()).unwrap();
-                        }
-                        if let Some(client) = client {
-                            client.done().unwrap();
-                        }
+                        let query = multi_question_query(zone_name, qtype, qclass, version);
+                        let response = exchange_request(query, key, |message| {
+                            if udp {
+                                exchange_udp(app.dns_port(), message)
+                            } else {
+                                exchange_tcp(app.dns_port(), message)
+                            }
+                        })
+                        .unwrap();
                         assert_eq!(
                             response.header().rcode(),
                             Rcode::FORMERR,
@@ -871,6 +772,7 @@ async fn multi_question_queries_receive_formerr() {
                         if let Some(opt) = response.opt() {
                             assert_eq!(opt.rcode(response.header()), OptRcode::FORMERR);
                             assert_eq!(opt.version(), 0);
+                            assert!(opt.dnssec_ok());
                         }
                     }
                 }
@@ -894,7 +796,7 @@ async fn multi_question_headers_receive_formerr_without_readable_questions() {
             let mut query = wire.clone();
             query.extend_from_slice(body);
             for response in [
-                exchange_udp(app.dns_port(), &query),
+                exchange_udp(app.dns_port(), &query).unwrap(),
                 exchange_tcp(app.dns_port(), &query).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
@@ -910,36 +812,97 @@ async fn multi_question_headers_receive_formerr_without_readable_questions() {
     }
 }
 
-/// A question for `zone` and `qtype` with `opts` OPT records of `version`
-/// advertising 4096 octets; none without EDNS.
-fn question_with_opt(zone: &str, qtype: Rtype, opts: usize, version: u8) -> Vec<u8> {
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(91);
-    let mut question = builder.question();
-    question.push((&parse_name(zone).unwrap(), qtype)).unwrap();
-    let mut additional = question.additional();
-    for _ in 0..opts {
-        additional
-            .opt(|opt| {
-                opt.set_udp_payload_size(4096);
-                opt.set_version(version);
-                Ok(())
-            })
-            .unwrap();
+/// Echo DO in ordinary, truncated, refused and BADVERS responses.
+#[tokio::test]
+#[serial]
+async fn edns_dnssec_ok_is_echoed_in_query_responses() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "dnssec-ok-key", KeyRole::Admin).await;
+    // RFC 3225, Section 3 requires the response to copy the query's DO bit.
+    for dnssec_ok in [true, false] {
+        for version in [0, 1] {
+            for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR, Rtype::A] {
+                for key in [None, Some(&key)] {
+                    for udp in [false, true] {
+                        let query = edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
+                        let response = exchange_request(query, key, |message| {
+                            if udp {
+                                exchange_udp(app.dns_port(), message)
+                            } else {
+                                exchange_tcp(app.dns_port(), message)
+                            }
+                        })
+                        .unwrap();
+                        let opt = response.opt().unwrap();
+                        assert_eq!(
+                            opt.dnssec_ok(),
+                            dnssec_ok,
+                            "{qtype} EDNS={version} signed={} UDP={udp}",
+                            key.is_some()
+                        );
+                        let expected = if version != 0 {
+                            OptRcode::BADVERS
+                        } else if qtype == Rtype::A {
+                            OptRcode::REFUSED
+                        } else {
+                            OptRcode::NOERROR
+                        };
+                        assert_eq!(opt.rcode(response.header()), expected);
+                        assert_eq!(opt.version(), 0);
+                        assert_eq!(opt.udp_payload_size(), 1232);
+                        assert_eq!(
+                            response.header().tc(),
+                            udp && qtype == Rtype::AXFR && version == 0
+                        );
+                    }
+                }
+            }
+        }
     }
-    additional.finish()
 }
 
-/// Send one UDP query to bindizr and return the response.
-fn exchange_udp(port: u16, query: &[u8]) -> Vec<u8> {
-    let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-    socket
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    socket.send_to(query, ("127.0.0.1", port)).unwrap();
-    let mut buf = [0u8; 4096];
-    let (len, _) = socket.recv_from(&mut buf).unwrap();
-    buf[..len].to_vec()
+/// Preserve DO when TSIG verification rejects a key or MAC.
+#[tokio::test]
+#[serial]
+async fn edns_dnssec_ok_is_echoed_in_tsig_errors() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "dnssec-ok-error-key", KeyRole::Admin).await;
+    for dnssec_ok in [false, true] {
+        for error in [TsigRcode::BADKEY, TsigRcode::BADSIG] {
+            let mut signing_key = key.clone();
+            if error == TsigRcode::BADKEY {
+                signing_key.name = "unknown-key".to_string();
+            }
+            let mut query = edns_query(zone_name, Rtype::SOA, &[(0, dnssec_ok)]);
+            sign(&mut query, &signing_key).unwrap();
+            let mut query = query.finish();
+            if error == TsigRcode::BADSIG {
+                let mac_end = query.len() - 7;
+                query[mac_end] ^= 0xff;
+            }
+            for response in [
+                exchange_udp(app.dns_port(), &query).unwrap(),
+                exchange_tcp(app.dns_port(), &query).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+                assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+                assert_eq!(response.opt().unwrap().dnssec_ok(), dnssec_ok);
+                let tsig = response
+                    .additional()
+                    .unwrap()
+                    .limit_to::<Tsig<_, _>>()
+                    .last()
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(tsig.data().error(), error);
+                assert!(tsig.data().mac().is_empty());
+            }
+        }
+    }
 }
 
 /// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3, and that
@@ -953,16 +916,18 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let plain = exchange_udp(
         app.dns_port(),
-        &question_with_opt(zone_name, Rtype::SOA, 0, 0),
-    );
+        &edns_query(zone_name, Rtype::SOA, &[]).finish(),
+    )
+    .unwrap();
     let plain = Message::from_octets(plain.as_slice()).unwrap();
     assert_eq!(plain.header().rcode(), Rcode::NOERROR);
     assert!(plain.opt().is_none(), "no OPT was asked for");
 
     let edns = exchange_udp(
         app.dns_port(),
-        &question_with_opt(zone_name, Rtype::SOA, 1, 0),
-    );
+        &edns_query(zone_name, Rtype::SOA, &[(0, false)]).finish(),
+    )
+    .unwrap();
     let edns = Message::from_octets(edns.as_slice()).unwrap();
     assert_eq!(edns.header().rcode(), Rcode::NOERROR);
     let opt = edns.opt().expect("an EDNS query is answered with an OPT");
@@ -971,15 +936,17 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let doubled = exchange_udp(
         app.dns_port(),
-        &question_with_opt(zone_name, Rtype::SOA, 2, 0),
-    );
+        &edns_query(zone_name, Rtype::SOA, &[(0, false); 2]).finish(),
+    )
+    .unwrap();
     let doubled = Message::from_octets(doubled.as_slice()).unwrap();
     assert_eq!(doubled.header().rcode(), Rcode::FORMERR);
 
     let newer = exchange_udp(
         app.dns_port(),
-        &question_with_opt(zone_name, Rtype::SOA, 1, 1),
-    );
+        &edns_query(zone_name, Rtype::SOA, &[(1, false)]).finish(),
+    )
+    .unwrap();
     let newer = Message::from_octets(newer.as_slice()).unwrap();
     let opt = newer.opt().expect("BADVERS travels in an OPT");
     assert_eq!(opt.rcode(newer.header()), OptRcode::BADVERS);
@@ -987,7 +954,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let frame = exchange_tcp(
         app.dns_port(),
-        &question_with_opt(zone_name, Rtype::AXFR, 1, 0),
+        &edns_query(zone_name, Rtype::AXFR, &[(0, false)]).finish(),
     )
     .expect("AXFR");
     let envelope = Message::from_octets(frame.as_slice()).unwrap();
@@ -1033,8 +1000,9 @@ async fn a_udp_answer_over_the_limit_is_truncated() {
 
     let plain = exchange_udp(
         app.dns_port(),
-        &question_with_opt(&zone_name, Rtype::SOA, 0, 0),
-    );
+        &edns_query(&zone_name, Rtype::SOA, &[]).finish(),
+    )
+    .unwrap();
     let plain = Message::from_octets(plain.as_slice()).unwrap();
     assert!(plain.header().tc(), "over 512 octets without EDNS");
     assert_eq!(plain.header_counts().ancount(), 0);
@@ -1042,8 +1010,9 @@ async fn a_udp_answer_over_the_limit_is_truncated() {
 
     let edns = exchange_udp(
         app.dns_port(),
-        &question_with_opt(&zone_name, Rtype::SOA, 1, 0),
-    );
+        &edns_query(&zone_name, Rtype::SOA, &[(0, false)]).finish(),
+    )
+    .unwrap();
     let edns = Message::from_octets(edns.as_slice()).unwrap();
     assert!(!edns.header().tc(), "fits the advertised size");
     assert_eq!(edns.header_counts().ancount(), 1);
@@ -1072,9 +1041,7 @@ async fn pipelined_transfers_on_one_connection_both_complete() {
             .push((&parse_name(zone).unwrap(), Rtype::AXFR))
             .unwrap();
         let query = question.finish();
-        let mut framed = (query.len() as u16).to_be_bytes().to_vec();
-        framed.extend_from_slice(&query);
-        stream.write_all(&framed).unwrap();
+        write_frame(&mut stream, &query).unwrap();
     }
 
     // Each transfer ends with its second SOA, whichever order the envelopes
@@ -1114,7 +1081,7 @@ async fn a_question_of_another_class_is_notauth() {
         .push((&parse_name(zone_name).unwrap(), Rtype::SOA, Class::CH))
         .unwrap();
 
-    let response = exchange_udp(app.dns_port(), &question.finish());
+    let response = exchange_udp(app.dns_port(), &question.finish()).unwrap();
     let response = Message::from_octets(response.as_slice()).unwrap();
     assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
     assert_eq!(response.first_question().unwrap().qclass(), Class::CH);

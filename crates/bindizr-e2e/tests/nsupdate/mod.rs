@@ -5,11 +5,10 @@ mod soa;
 use common::{exported_record_sets, unsigned_nsupdate_app};
 use domain::{
     base::{
-        Message, Rtype, Serial, Ttl,
+        Rtype, Serial, Ttl,
         iana::{Class, Opcode, OptRcode, Rcode},
     },
-    rdata::{Soa, tsig::Time48},
-    tsig::ClientTransaction,
+    rdata::Soa,
 };
 use serde_json::Value;
 use serial_test::serial;
@@ -17,13 +16,15 @@ use serial_test::serial;
 use crate::common::{
     TestApp,
     dns::{
+        exchange_request, exchange_udp,
         nsupdate::{
-            KeyRole, PrereqRecord, UpdateRecord, build_update, create_tsig_key, exchange_udp,
-            send_signed_update, send_signed_update_tcp, send_signed_update_with_edns_version,
-            send_signed_update_with_two_zones, send_update,
+            PrereqRecord, UpdateRecord, build_update, send_signed_update, send_signed_update_tcp,
+            send_signed_update_with_edns_version, send_signed_update_with_two_zones, send_update,
         },
         parse_name,
+        tsig::{KeyRole, create_tsig_key},
     },
+    exchange_tcp,
 };
 
 /// Preserve CAA property octets through signed additions, prerequisites and deletions.
@@ -42,7 +43,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
         [vec![0, 255], vec![b'a'; 255], vec![b'b'; 300]].concat(),
     ];
     for rdata in &values {
-        let mut additional = build_update(
+        let additional = build_update(
             173,
             zone_name,
             Class::IN,
@@ -55,11 +56,10 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
             }],
         )
         .unwrap();
-        let client =
-            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut additional, Time48::now())
-                .unwrap();
-        let mut response = exchange_udp(app.dns_port(), 173, &additional.finish()).unwrap();
-        client.answer(&mut response, Time48::now()).unwrap();
+        let response = exchange_request(additional, Some(&key), |message| {
+            exchange_udp(app.dns_port(), message)
+        })
+        .unwrap();
         assert_eq!(
             response.header().rcode(),
             Rcode::NOERROR,
@@ -214,20 +214,10 @@ async fn nsupdate_unserved_zone_classes_are_notauth_over_udp() {
                         Ok(())
                     })
                     .unwrap();
-                let client = signing_key.map(|key| {
-                    ClientTransaction::request(
-                        key.to_tsig_key().unwrap(),
-                        &mut request,
-                        Time48::now(),
-                    )
-                    .unwrap()
-                });
-                let mut response = exchange_udp(app.dns_port(), 171, &request.finish()).unwrap();
-                if let Some(client) = client {
-                    client
-                        .answer(&mut response, Time48::now())
-                        .expect("authenticated class refusal");
-                }
+                let response = exchange_request(request, signing_key, |message| {
+                    exchange_udp(app.dns_port(), message)
+                })
+                .unwrap();
                 assert_eq!(response.header().rcode(), Rcode::NOTAUTH, "class {class}");
                 assert_eq!(response.header().opcode(), Opcode::UPDATE);
                 let question = response.sole_question().unwrap();
@@ -273,15 +263,11 @@ async fn nsupdate_zone_class_refusals_are_signed_over_tcp() {
         (Class::HS, Rcode::NOTAUTH),
         (Class::from_int(65280), Rcode::NOTAUTH),
     ] {
-        let mut request = build_update(172, zone_name, class, &[], &updates).unwrap();
-        let client =
-            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut request, Time48::now())
-                .unwrap();
-        let response = crate::common::exchange_tcp(app.dns_port(), &request.finish()).unwrap();
-        let mut response = Message::from_octets(response).unwrap();
-        client
-            .answer(&mut response, Time48::now())
-            .expect("authenticated class refusal");
+        let request = build_update(172, zone_name, class, &[], &updates).unwrap();
+        let response = exchange_request(request, Some(&key), |message| {
+            exchange_tcp(app.dns_port(), message)
+        })
+        .unwrap();
         assert_eq!(response.header().id(), 172);
         assert_eq!(response.header().opcode(), Opcode::UPDATE);
         assert_eq!(response.header().rcode(), expected, "class {class}");
@@ -1366,6 +1352,50 @@ async fn a_signed_request_with_a_newer_edns_is_answered_under_its_key() {
 
     assert_eq!(rcode, OptRcode::BADVERS);
     assert!(signed, "the BADVERS was not signed");
+}
+
+/// Echo DO in signed UPDATE success and BADVERS responses over UDP and TCP.
+#[tokio::test]
+#[serial]
+async fn edns_dnssec_ok_is_echoed_in_update_responses() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "update-dnssec-ok-key", KeyRole::Admin).await;
+    for dnssec_ok in [false, true] {
+        for version in [0, 1] {
+            for tcp in [false, true] {
+                let mut query = build_update(3225, zone_name, Class::IN, &[], &[]).unwrap();
+                query
+                    .opt(|opt| {
+                        opt.set_udp_payload_size(4096);
+                        opt.set_version(version);
+                        opt.set_dnssec_ok(dnssec_ok);
+                        Ok(())
+                    })
+                    .unwrap();
+                let response = exchange_request(query, Some(&key), |message| {
+                    if tcp {
+                        exchange_tcp(app.dns_port(), message)
+                    } else {
+                        exchange_udp(app.dns_port(), message)
+                    }
+                })
+                .unwrap();
+                let opt = response.opt().unwrap();
+                assert_eq!(opt.dnssec_ok(), dnssec_ok);
+                assert_eq!(opt.version(), 0);
+                assert_eq!(
+                    opt.rcode(response.header()),
+                    if version == 0 {
+                        OptRcode::NOERROR
+                    } else {
+                        OptRcode::BADVERS
+                    }
+                );
+            }
+        }
+    }
 }
 
 /// Verify the DNAME rules of RFC 6672: a DNAME beside a CNAME is passed

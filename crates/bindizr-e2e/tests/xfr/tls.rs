@@ -5,11 +5,10 @@
 use domain::{
     base::{
         Message, MessageBuilder,
-        iana::{Class, ExtendedErrorCode, Rcode, Rtype},
+        iana::{Class, ExtendedErrorCode, OptRcode, Rcode, Rtype},
         opt::exterr::ExtendedError,
     },
-    rdata::{Soa, tsig::Time48},
-    tsig::ClientSequence,
+    rdata::Soa,
 };
 use reqwest::{Method, StatusCode};
 use rustls::{
@@ -17,11 +16,14 @@ use rustls::{
 };
 use serial_test::serial;
 
+use super::common::{counter, edns_query, ixfr_query, multi_question_query};
 use crate::common::{
     TestApp, TestAppOptions, assert_cli_failure_contains, axfr,
     dns::{
-        nsupdate::{KeyRole, UpdateRecord, build_update, create_tsig_key, is_signed, sign},
+        exchange_request, exchange_udp,
+        nsupdate::{UpdateRecord, build_update},
         parse_name, probe_zone_soa,
+        tsig::{KeyRole, create_tsig_key, is_signed, sign},
     },
     exchange_xot, xot,
 };
@@ -88,13 +90,13 @@ async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["transfers"][0]["transport"], "tls", "{body}");
-    let tls_ok = super::counter(
+    let tls_ok = counter(
         &app,
         "bindizr_xfr_total",
         &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tls""#],
     )
     .await;
-    let tcp_ok = super::counter(
+    let tcp_ok = counter(
         &app,
         "bindizr_xfr_total",
         &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tcp""#],
@@ -118,15 +120,11 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
         }
         for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
             for serial in [current, current + 1] {
-                let mut query = super::ixfr_query(zone_name, serial);
-                let mut client =
-                    ClientSequence::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
-                        .unwrap();
-                let response =
-                    exchange_xot(app.dns_tls_port(), &query.finish(), dot_client(&app)).unwrap();
-                let mut response = Message::from_octets(response).unwrap();
-                client.answer(&mut response, Time48::now()).unwrap();
-                client.done().unwrap();
+                let query = ixfr_query(zone_name, serial);
+                let response = exchange_request(query, Some(&key), |message| {
+                    exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                })
+                .unwrap();
                 if registered {
                     assert_eq!(response.header().rcode(), Rcode::NOERROR);
                     assert!(response.header().aa() && !response.header().tc());
@@ -153,6 +151,39 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
     }
 }
 
+/// Echo DO in signed TLS responses, including REFUSED and BADVERS.
+#[tokio::test]
+#[serial]
+async fn edns_dnssec_ok_is_echoed_over_tls() {
+    let app = xot_app().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "xot-dnssec-ok-key", KeyRole::Admin).await;
+    for dnssec_ok in [false, true] {
+        for version in [0, 1] {
+            for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR, Rtype::A] {
+                let query = edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
+                let response = exchange_request(query, Some(&key), |message| {
+                    exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                })
+                .unwrap();
+                let opt = response.opt().unwrap();
+                assert_eq!(opt.dnssec_ok(), dnssec_ok);
+                let expected = if version != 0 {
+                    OptRcode::BADVERS
+                } else if qtype == Rtype::A {
+                    OptRcode::REFUSED
+                } else {
+                    OptRcode::NOERROR
+                };
+                assert_eq!(opt.rcode(response.header()), expected);
+                assert!(opt.opt().tcp_keepalive().is_some());
+            }
+        }
+    }
+}
+
 /// Sign FORMERR responses to multi-question queries over TLS.
 #[tokio::test]
 #[serial]
@@ -162,13 +193,11 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
     let zone_name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "xot-multi-question-key", KeyRole::Admin).await;
     for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
-        let mut query = super::multi_question_query(zone_name, qtype, Class::IN, Some(0));
-        let mut client =
-            ClientSequence::request(key.to_tsig_key().unwrap(), &mut query, Time48::now()).unwrap();
-        let response = exchange_xot(app.dns_tls_port(), &query.finish(), dot_client(&app)).unwrap();
-        let mut response = Message::from_octets(response).unwrap();
-        client.answer(&mut response, Time48::now()).unwrap();
-        client.done().unwrap();
+        let query = multi_question_query(zone_name, qtype, Class::IN, Some(0));
+        let response = exchange_request(query, Some(&key), |message| {
+            exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+        })
+        .unwrap();
         assert_eq!(response.header().rcode(), Rcode::FORMERR);
         assert_eq!(response.header().id(), 9619);
         assert!(response.header().qr() && response.header().rd());
@@ -176,10 +205,9 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
         assert_eq!(response.header_counts().ancount(), 0);
         assert_eq!(response.header_counts().nscount(), 0);
         assert_eq!(response.sole_question().unwrap().qtype(), qtype);
-        assert!(response.opt().is_some());
+        assert!(response.opt().unwrap().dnssec_ok());
     }
-    let mut unreadable =
-        super::multi_question_query(zone_name, Rtype::SOA, Class::IN, None).finish();
+    let mut unreadable = multi_question_query(zone_name, Rtype::SOA, Class::IN, None).finish();
     unreadable.truncate(12);
     let response = exchange_xot(app.dns_tls_port(), &unreadable, dot_client(&app)).unwrap();
     let response = Message::from_octets(response).unwrap();
@@ -211,10 +239,11 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
     assert!(outcome.refusal_signed());
     // A UDP IXFR is a transfer request too; a SOA query keeps answering.
-    let frame = super::exchange_udp(
+    let frame = exchange_udp(
         app.dns_port(),
-        &super::question_with_opt(zone_name, Rtype::IXFR, 1, 0),
-    );
+        &edns_query(zone_name, Rtype::IXFR, &[(0, false)]).finish(),
+    )
+    .unwrap();
     let response = Message::from_octets(frame.as_slice()).unwrap();
     assert_eq!(response.header().rcode(), Rcode::REFUSED);
     assert!(probe_zone_soa(app.dns_port(), zone_name));

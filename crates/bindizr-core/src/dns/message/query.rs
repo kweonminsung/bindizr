@@ -37,14 +37,80 @@ pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edns {
     Absent,
-    /// One version-0 OPT; sizes under 512 read as 512 (Section 6.2.3).
+    /// One readable OPT; sizes under 512 read as 512 (Section 6.2.3).
     Present {
         udp_payload_size: u16,
+        version: u8,
+        dnssec_ok: bool,
     },
     /// More than one OPT, or one that does not parse: FORMERR (Section 6.1.1).
     Malformed,
-    /// A version this server does not implement: BADVERS (Section 6.1.3).
-    UnsupportedVersion(u8),
+}
+
+impl Edns {
+    /// Read the request's OPT metadata, retaining flags even for unsupported versions.
+    pub(crate) fn from_message(message: &Message<&[u8]>) -> Self {
+        let Ok(additional) = message.additional() else {
+            return Self::Absent;
+        };
+        let mut opts = additional.limit_to::<Opt<_>>();
+        let first = match opts.next() {
+            None => return Self::Absent,
+            Some(Err(_)) => return Self::Malformed,
+            Some(Ok(record)) => OptRecord::from(record),
+        };
+        if opts.next().is_some() {
+            return Self::Malformed;
+        }
+        Self::Present {
+            udp_payload_size: first.udp_payload_size().max(UDP_PAYLOAD_SIZE_WITHOUT_EDNS),
+            version: first.version(),
+            dnssec_ok: first.dnssec_ok(),
+        }
+    }
+
+    /// Return FORMERR or BADVERS for unacceptable EDNS (RFC 6891, Sections 6.1.1 and 6.1.3).
+    pub fn format_error(self) -> Option<OptRcode> {
+        match self {
+            Self::Absent | Self::Present { version: 0, .. } => None,
+            Self::Malformed => Some(OptRcode::FORMERR),
+            Self::Present { .. } => Some(OptRcode::BADVERS),
+        }
+    }
+
+    /// Append response EDNS metadata and options when requested (RFC 6891, Section 6.1.1).
+    pub(crate) fn push_response(
+        self,
+        additional: &mut AdditionalBuilder<Vec<u8>>,
+        rcode: OptRcode,
+        ede: Option<ExtendedErrorCode>,
+        keepalive: Option<TcpKeepalive>,
+    ) {
+        if self == Self::Absent {
+            return;
+        }
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
+                opt.set_rcode(rcode);
+                // RFC 3225, Section 3: copy DO, leaving reserved flags clear.
+                opt.set_dnssec_ok(matches!(
+                    self,
+                    Self::Present {
+                        dnssec_ok: true,
+                        ..
+                    }
+                ));
+                if let Some(code) = ede {
+                    opt.push(&ExtendedError::<Vec<u8>>::from(code))?;
+                }
+                if let Some(keepalive) = keepalive {
+                    opt.push(&keepalive)?;
+                }
+                Ok(())
+            })
+            .expect("one OPT record fits an unlimited message");
+    }
 }
 
 /// What the listener advertises about the connection: nothing for a
@@ -53,50 +119,6 @@ pub enum Edns {
 pub enum Keepalive {
     None,
     IdleTimeout(Duration),
-}
-
-/// Append response EDNS metadata and options (RFC 6891, Section 6.1.1).
-pub(crate) fn push_opt(
-    additional: &mut AdditionalBuilder<Vec<u8>>,
-    rcode: OptRcode,
-    ede: Option<ExtendedErrorCode>,
-    keepalive: Option<TcpKeepalive>,
-) {
-    additional
-        .opt(|opt| {
-            opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
-            opt.set_rcode(rcode);
-            if let Some(code) = ede {
-                opt.push(&ExtendedError::<Vec<u8>>::from(code))?;
-            }
-            if let Some(keepalive) = keepalive {
-                opt.push(&keepalive)?;
-            }
-            Ok(())
-        })
-        .expect("one OPT record fits an unlimited message");
-}
-
-/// Read the query's OPT record, if any, as the response must echo it.
-fn parse_edns(message: &Message<&[u8]>) -> Edns {
-    let Ok(additional) = message.additional() else {
-        return Edns::Absent;
-    };
-    let mut opts = additional.limit_to::<Opt<_>>();
-    let first = match opts.next() {
-        None => return Edns::Absent,
-        Some(Err(_)) => return Edns::Malformed,
-        Some(Ok(record)) => OptRecord::from(record),
-    };
-    if opts.next().is_some() {
-        return Edns::Malformed;
-    }
-    if first.version() != 0 {
-        return Edns::UnsupportedVersion(first.version());
-    }
-    Edns::Present {
-        udp_payload_size: first.udp_payload_size().max(UDP_PAYLOAD_SIZE_WITHOUT_EDNS),
-    }
 }
 
 /// An inbound message the listener could not read as a query.
@@ -177,7 +199,7 @@ impl ParsedQuery {
         let query_id = message.header().id();
         let opcode = message.header().opcode();
         let rd = message.header().rd();
-        let edns = parse_edns(&message);
+        let edns = Edns::from_message(&message);
 
         let question = message
             .first_question()
@@ -237,7 +259,9 @@ impl ParsedQuery {
     /// Cap the advertised UDP size at the server limit; use 512 without EDNS.
     pub fn udp_payload_limit(&self) -> usize {
         let size = match self.edns {
-            Edns::Present { udp_payload_size } => udp_payload_size.min(EDNS_UDP_PAYLOAD_SIZE),
+            Edns::Present {
+                udp_payload_size, ..
+            } => udp_payload_size.min(EDNS_UDP_PAYLOAD_SIZE),
             _ => UDP_PAYLOAD_SIZE_WITHOUT_EDNS,
         };
         usize::from(size)
@@ -248,12 +272,7 @@ impl ParsedQuery {
         if let Some(rcode) = question_count_error(self.opcode, self.question_count) {
             return Some(rcode);
         }
-        // RFC 6891, Sections 6.1.1 and 6.1.3: malformed OPT or unsupported version.
-        match self.edns {
-            Edns::Absent | Edns::Present { .. } => None,
-            Edns::Malformed => Some(OptRcode::FORMERR),
-            Edns::UnsupportedVersion(_) => Some(OptRcode::BADVERS),
-        }
+        self.edns.format_error()
     }
 
     /// An empty authoritative answer with TC set, so a transfer client asks
@@ -324,9 +343,8 @@ impl ParsedQuery {
             .expect("one question fits an unlimited message");
 
         let mut additional = question.additional();
-        if self.edns != Edns::Absent {
-            push_opt(&mut additional, rcode, ede, self.tcp_keepalive());
-        }
+        self.edns
+            .push_response(&mut additional, rcode, ede, self.tcp_keepalive());
         additional
     }
 }

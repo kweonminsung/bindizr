@@ -16,7 +16,7 @@ use domain::{
     tsig::{Key, ServerTransaction},
 };
 
-use crate::common::dns::nsupdate::SigningKey;
+use crate::common::dns::tsig::SigningKey;
 
 /// The serial the fake answers every SOA query with.
 pub(crate) const SERVED_SERIAL: u32 = 1;

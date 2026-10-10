@@ -165,7 +165,10 @@ fn multi_question_headers_receive_formerr_only_for_query() {
 
 /// Build a signed AXFR query for `example.com.` and a `domain` client
 /// sequence that verifies replies independently of the server under test.
-fn signed_axfr_query(key: Arc<Key>) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
+fn signed_axfr_query(
+    key: Arc<Key>,
+    dnssec_ok: Option<bool>,
+) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1234);
     let mut question = builder.question();
@@ -177,6 +180,15 @@ fn signed_axfr_query(key: Arc<Key>) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
         .unwrap();
 
     let mut additional = question.additional();
+    if let Some(dnssec_ok) = dnssec_ok {
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(4096);
+                opt.set_dnssec_ok(dnssec_ok);
+                Ok(())
+            })
+            .unwrap();
+    }
     let client = ClientSequence::request(key, &mut additional, Time48::now()).unwrap();
     (additional.finish(), client)
 }
@@ -192,9 +204,10 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_domain_key()
         .unwrap();
-    let (query, mut client) = signed_axfr_query(key.clone());
+    let (query, mut client) = signed_axfr_query(key.clone(), Some(true));
+    let parsed = ParsedQuery::parse(&query, Keepalive::None).unwrap();
 
-    let mut builder = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
+    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR)
         .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
 
     // Two envelopes, so the second is checked against the MAC chain the first
@@ -221,6 +234,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
 
     for frame in frames {
         let mut message = Message::from_octets(strip_frame_length(frame)).unwrap();
+        assert!(message.opt().unwrap().dnssec_ok());
         client
             .answer(&mut message, Time48::now())
             .expect("envelope did not verify against the request's key");
@@ -234,7 +248,7 @@ fn a_signed_message_reserves_room_for_its_tsig_record() {
     let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_domain_key()
         .unwrap();
-    let (query, _) = signed_axfr_query(key.clone());
+    let (query, _) = signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
     let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
         .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
@@ -252,7 +266,9 @@ fn an_edns_query_is_answered_with_an_opt() {
     assert_eq!(
         parsed.edns,
         Edns::Present {
-            udp_payload_size: 4096
+            udp_payload_size: 4096,
+            version: 0,
+            dnssec_ok: false,
         }
     );
     assert_eq!(parsed.udp_payload_limit(), 1232);
@@ -280,7 +296,14 @@ fn an_edns_query_is_answered_with_an_opt() {
     assert!(reply.opt().is_some());
 
     let newer = ParsedQuery::parse(&question(Rtype::SOA, &[1]), Keepalive::None).unwrap();
-    assert_eq!(newer.edns, Edns::UnsupportedVersion(1));
+    assert_eq!(
+        newer.edns,
+        Edns::Present {
+            udp_payload_size: 4096,
+            version: 1,
+            dnssec_ok: false,
+        }
+    );
     let reply = newer
         .signed_error_response(newer.format_error().unwrap(), None, None)
         .unwrap();
@@ -291,6 +314,36 @@ fn an_edns_query_is_answered_with_an_opt() {
 
     // Without EDNS the limit is RFC 1035's.
     assert_eq!(axfr_query().udp_payload_limit(), 512);
+}
+
+/// Echo DO while clearing reserved EDNS flags in error and truncated responses.
+#[test]
+fn edns_dnssec_ok_survives_response_encoding() {
+    for version in [0, 1] {
+        for flags in [0u16, 0x8000, 0x7fff, 0xffff] {
+            let mut wire = question(Rtype::SOA, &[version]);
+            let offset = wire.len() - 4;
+            wire[offset..offset + 2].copy_from_slice(&flags.to_be_bytes());
+            let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+            let rcode = parsed.format_error().unwrap_or(OptRcode::REFUSED);
+            let responses = [
+                parsed
+                    .signed_error_response(rcode, Some(ExtendedErrorCode::PROHIBITED), None)
+                    .unwrap(),
+                parsed.truncated_response(),
+            ];
+            for response in responses {
+                let response = Message::from_octets(response).unwrap();
+                let opt = response.opt().unwrap();
+                // RFC 6891, Section 6.1.4 leaves reserved flags clear.
+                assert_eq!(
+                    opt.as_record().ttl().as_secs() & 0xffff,
+                    u32::from(flags & 0x8000)
+                );
+                assert_eq!(opt.version(), 0);
+            }
+        }
+    }
 }
 
 /// Verify that an answer over the UDP limit goes out truncated with its OPT

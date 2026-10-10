@@ -21,7 +21,7 @@ use domain::{
 use thiserror::Error;
 
 use crate::{
-    dns::{LibraryError, message::push_opt, name::MAX_DOMAIN_LEN},
+    dns::{LibraryError, message::Edns, name::MAX_DOMAIN_LEN},
     model::tsig_key::{TsigAlgorithm, TsigKey},
 };
 
@@ -312,9 +312,7 @@ fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?;
     let mut builder = builder.additional();
-    if msg.opt().is_some() {
-        push_opt(&mut builder, OptRcode::NOTAUTH, None, None);
-    }
+    Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
     builder
         .push((
             tsig_record.owner(),

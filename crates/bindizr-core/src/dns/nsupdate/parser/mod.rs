@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::{
     dns::{
-        message::{Edns, query::UDP_PAYLOAD_SIZE_WITHOUT_EDNS},
+        message::Edns,
         name::labels_to_presentation,
         record::{ParseRdataError, ParseRecordValueError},
         tsig::is_mac_size_in_bounds,
@@ -130,7 +130,7 @@ impl UpdateRequest {
             updates.push(parse_record(&mut parser, data)?);
         }
 
-        let (tsig, edns) = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
+        let tsig = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
 
         if parser.remaining() != 0 {
             return Err(ParseUpdateError::InvalidHeader);
@@ -142,7 +142,7 @@ impl UpdateRequest {
             prerequisites,
             updates,
             tsig,
-            edns,
+            edns: Edns::from_message(&message),
         })
     }
 }
@@ -189,13 +189,12 @@ fn parse_record(
     })
 }
 
-/// Validate additional records and locate the request's TSIG and OPT.
+/// Validate additional records and locate the request's TSIG.
 fn parse_additional_section(
     parser: &mut Parser<'_, [u8]>,
     count: usize,
-) -> Result<(Option<TsigRecord>, Edns), ParseUpdateError> {
+) -> Result<Option<TsigRecord>, ParseUpdateError> {
     let mut tsig = None;
-    let mut edns = Edns::Absent;
 
     for index in 0..count {
         let owner = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
@@ -212,13 +211,9 @@ fn parse_additional_section(
 
             tsig = Some(parse_tsig_record(parser, &owner)?);
         } else {
-            // An OPT carries the requestor's UDP size as its CLASS and the
-            // EDNS version in its TTL (RFC 6891, Section 6.1.3).
-            let class = parser
-                .parse_u16_be()
-                .map_err(|_| ParseUpdateError::InvalidRecord)?;
-            let ttl = parser
-                .parse_u32_be()
+            // CLASS and TTL are opaque here; EDNS metadata uses the shared decoder.
+            parser
+                .advance(6)
                 .map_err(|_| ParseUpdateError::InvalidRecord)?;
             let rdlen = usize::from(
                 parser
@@ -228,20 +223,10 @@ fn parse_additional_section(
             parser
                 .advance(rdlen)
                 .map_err(|_| ParseUpdateError::InvalidRecord)?;
-            if record_type == Rtype::OPT {
-                let version = ((ttl >> 16) & 0xff) as u8;
-                edns = match edns {
-                    Edns::Absent if version == 0 => Edns::Present {
-                        udp_payload_size: class.max(UDP_PAYLOAD_SIZE_WITHOUT_EDNS),
-                    },
-                    Edns::Absent => Edns::UnsupportedVersion(version),
-                    _ => Edns::Malformed,
-                };
-            }
         }
     }
 
-    Ok((tsig, edns))
+    Ok(tsig)
 }
 
 /// Parses a TSIG record from its CLASS field on (owner and TYPE already consumed).
