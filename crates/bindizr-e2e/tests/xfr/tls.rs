@@ -2,10 +2,14 @@
 //! the plain one does, but admits a request only when its TSIG key and its
 //! address both pass, as Section 7.5 requires without mTLS.
 
-use domain::base::{
-    Message, MessageBuilder,
-    iana::{Class, ExtendedErrorCode, Rcode, Rtype},
-    opt::exterr::ExtendedError,
+use domain::{
+    base::{
+        Message, MessageBuilder,
+        iana::{Class, ExtendedErrorCode, Rcode, Rtype},
+        opt::exterr::ExtendedError,
+    },
+    rdata::{Soa, tsig::Time48},
+    tsig::ClientSequence,
 };
 use reqwest::{Method, StatusCode};
 use rustls::{
@@ -98,6 +102,55 @@ async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
     .await;
     assert_eq!(tls_ok, 1.0);
     assert_eq!(tcp_ok, 1.0);
+}
+
+/// Apply IXFR serial policy over TLS after both transfer gates pass.
+#[tokio::test]
+#[serial]
+async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let key = create_tsig_key(&app, "xot-ixfr-key", KeyRole::Admin).await;
+    let current = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
+    for registered in [false, true] {
+        if registered {
+            app.create_secondary("loopback", "127.0.0.1").await;
+        }
+        for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
+            for serial in [current, current + 1] {
+                let mut query = super::ixfr_query(zone_name, serial);
+                let mut client =
+                    ClientSequence::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
+                        .unwrap();
+                let response =
+                    exchange_xot(app.dns_tls_port(), &query.finish(), dot_client(&app)).unwrap();
+                let mut response = Message::from_octets(response).unwrap();
+                client.answer(&mut response, Time48::now()).unwrap();
+                client.done().unwrap();
+                if registered {
+                    assert_eq!(response.header().rcode(), Rcode::NOERROR);
+                    assert!(response.header().aa() && !response.header().tc());
+                    assert_eq!(response.sole_question().unwrap().qtype(), Rtype::IXFR);
+                    if serial == current {
+                        assert_eq!(response.header_counts().ancount(), 1);
+                    } else {
+                        assert!(response.header_counts().ancount() > 1);
+                    }
+                    let soa = response
+                        .answer()
+                        .unwrap()
+                        .limit_to::<Soa<_>>()
+                        .next()
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(soa.data().serial().into_int(), current);
+                } else {
+                    assert_eq!(response.header().rcode(), Rcode::REFUSED);
+                    assert_eq!(response.header_counts().ancount(), 0);
+                }
+            }
+        }
+    }
 }
 
 /// Verify that `dns.transfer.require_tls` refuses a transfer over plain TCP

@@ -1,5 +1,4 @@
-//! Writing the delta out: the SOA-delimited framing of RFC 1995, Section 4
-//! and one journal row rendered as one wire record.
+//! Write SOA-delimited IXFR streams (RFC 1995, Section 4).
 
 use std::collections::HashMap;
 
@@ -15,12 +14,11 @@ use thiserror::Error;
 
 use crate::dns::{error::XfrError, stream::ResponseWriter};
 
-/// The whole answer when the client is already at the current serial: one
-/// SOA and nothing to replay (RFC 1995, Section 2).
+/// Send the current SOA alone (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(
     writer: &ResponseWriter,
     query: &message::ParsedQuery,
-    current_soa: &ZoneVersion,
+    zone: &Zone,
     signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
@@ -28,7 +26,7 @@ pub(crate) async fn send_soa_response(
         builder = builder.sign_with(signer);
     }
 
-    builder.add_version_soa(current_soa)?;
+    builder.add_soa(zone, zone.serial)?;
     writer.flush_if_not_empty(&mut builder).await?;
 
     Ok(())
@@ -37,8 +35,7 @@ pub(crate) async fn send_soa_response(
 /// Outcome of a failed IXFR stream: whether any bytes reached the client yet.
 #[derive(Debug, Error)]
 pub(crate) enum IxfrSendError {
-    /// Failed before writing anything — safe to fall back to AXFR, which
-    /// answers under the same signer since nothing has been signed yet.
+    /// No bytes sent; AXFR may reuse the signer.
     #[error("{error}")]
     NotStarted {
         #[source]
@@ -46,9 +43,7 @@ pub(crate) enum IxfrSendError {
         /// Boxed: a signing context dwarfs the error beside it.
         signer: Option<Box<TransferSigner>>,
     },
-    /// Failed mid-stream, or in the I/O of the first frame, part of which may
-    /// have reached the client; falling back to AXFR would corrupt the
-    /// stream, so the signer comes back to end it.
+    /// Bytes may have been sent; AXFR would corrupt the stream.
     #[error("{error}")]
     Partial {
         #[source]
@@ -57,9 +52,7 @@ pub(crate) enum IxfrSendError {
     },
 }
 
-/// Streams the IXFR answers across multiple TCP messages, flushing before the
-/// 64 KiB wire limit, and reports whether a failure left the stream dirty so
-/// the caller can decide about AXFR fallback.
+/// Stream IXFR within the message limit, reporting whether failure permits AXFR.
 pub(crate) async fn send_ixfr_response(
     writer: &ResponseWriter,
     query: &message::ParsedQuery,

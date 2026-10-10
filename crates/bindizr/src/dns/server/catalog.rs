@@ -77,8 +77,8 @@ fn catalog_digest(member_zones: &[String]) -> String {
     hex::encode(hasher.finish())
 }
 
-/// Send a catalog zone transfer using the requested question type.
-pub(crate) async fn handle_catalog_axfr(
+/// Answer a catalog transfer with its current SOA or full snapshot.
+pub(crate) async fn handle_catalog_transfer(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
     query: &message::ParsedQuery,
@@ -87,7 +87,8 @@ pub(crate) async fn handle_catalog_axfr(
     zones: Vec<Zone>,
 ) -> Result<(), XfrError> {
     log::info!(
-        "AXFR request for catalog zone: {}",
+        "{} request for catalog zone: {}",
+        response_qtype,
         dns_cx.daemon().config().dns.catalog_zone_name
     );
 
@@ -101,7 +102,6 @@ pub(crate) async fn handle_catalog_axfr(
     let streamed = async {
         let mut messages_sent = 0usize;
 
-        // Both SOAs must carry this snapshot's serial to delimit the AXFR.
         let serial = catalog_zone.serial;
 
         writer
@@ -110,6 +110,12 @@ pub(crate) async fn handle_catalog_axfr(
             })
             .await?;
 
+        // RFC 1995, Section 2: equal serials need only the current SOA.
+        if response_qtype == Rtype::IXFR && query.client_serial == Some(serial.as_u32()) {
+            return writer.flush_if_not_empty(&mut builder).await;
+        }
+
+        // RFC 1995, Section 2 exception: newer clients also receive the full snapshot.
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
                 builder.add_catalog_ns(&catalog_zone)
@@ -145,8 +151,9 @@ pub(crate) async fn handle_catalog_axfr(
     let messages_sent = streamed?;
 
     log::info!(
-        "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",
-        member_zones.len(),
+        "Catalog {} completed at serial {} in {} DNS message(s)",
+        response_qtype,
+        catalog_zone.serial,
         messages_sent
     );
 

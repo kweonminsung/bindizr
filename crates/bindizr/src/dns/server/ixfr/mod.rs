@@ -1,5 +1,4 @@
-//! Serving IXFR (RFC 1995): every gate that sends a client to AXFR instead,
-//! then the delta itself.
+//! Serve IXFR responses and AXFR fallbacks (RFC 1995).
 
 mod send;
 
@@ -36,9 +35,8 @@ pub(crate) async fn handle_ixfr(
         query.client_serial
     );
 
-    // Choose a full transfer or an SOA-only reply before loading incremental history.
+    // Catalogs select their response from the generated snapshot.
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        log::info!("IXFR: Catalog zone requested, falling back to AXFR");
         return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity).await;
     }
 
@@ -70,9 +68,12 @@ pub(crate) async fn handle_ixfr(
     let current_serial = zone.serial;
 
     let (changes, versions) = match delta {
-        TransferDelta::UpToDate(current_soa) => {
-            log::info!("IXFR: Client is up-to-date (serial={})", current_serial);
-            return send_soa_response(writer, query, &current_soa, identity.signer.take()).await;
+        TransferDelta::SoaOnly => {
+            log::info!(
+                "IXFR: Answering with current SOA (serial={})",
+                current_serial
+            );
+            return send_soa_response(writer, query, &zone, identity.signer.take()).await;
         }
         TransferDelta::Full => {
             log::info!(

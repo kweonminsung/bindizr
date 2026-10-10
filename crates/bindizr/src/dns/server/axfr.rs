@@ -37,7 +37,7 @@ pub(crate) async fn handle_axfr(
             TransferAccess::NotAuth => return Err(XfrError::NotAuth(zone_name_str.to_string())),
             TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
         };
-        return catalog::handle_catalog_axfr(
+        return catalog::handle_catalog_transfer(
             dns_cx,
             writer,
             query,

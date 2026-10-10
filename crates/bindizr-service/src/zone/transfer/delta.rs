@@ -1,5 +1,4 @@
-//! An IXFR's delta (RFC 1995): what a client's serial is answered with, and
-//! the gap check that sends it to a full transfer instead.
+//! IXFR response selection and journal validation (RFC 1995).
 
 use bindizr_core::dns::{Serial, name::ZoneName};
 use bindizr_db::LockLevel;
@@ -17,10 +16,9 @@ use crate::{
 /// What an IXFR from a client's serial is answered with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransferDelta {
-    /// The client holds the current serial: its SOA version answers alone.
-    UpToDate(ZoneVersion),
-    /// The journal steps after the client's serial, and the SOA versions
-    /// bounding them, both endpoints included, with no step missing.
+    /// Equal serials need only the current SOA.
+    SoaOnly,
+    /// Complete journal steps and their bounding SOA versions.
     Changes {
         changes: Vec<ZoneChange>,
         versions: Vec<ZoneVersion>,
@@ -29,8 +27,7 @@ pub enum TransferDelta {
     Full,
 }
 
-/// Authorize an IXFR of `zone_name` from `client_serial` and load its delta in
-/// one read transaction: as the caller could read it, no row pruned mid-load.
+/// Authorize and load an IXFR delta in one read transaction.
 pub async fn authorize_transfer_delta_by_name(
     cx: &Context,
     caller: &Caller,
@@ -45,18 +42,12 @@ pub async fn authorize_transfer_delta_by_name(
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
         let current = zone.serial;
-        // Serials never wrap, so ordinary ordering replaces RFC 1982
-        // arithmetic; a client ahead of us inherited another primary's serial.
+        // RFC 1995, Section 2: equal serials need only the current SOA.
         let delta = if client_serial == current {
-            bindizr_db::zone_version::get_by_serial_tx(
-                &mut tx,
-                zone.id,
-                current,
-                LockLevel::Unlocked,
-            )
-            .await?
-            .map_or(TransferDelta::Full, TransferDelta::UpToDate)
-        } else if client_serial > current {
+            TransferDelta::SoaOnly
+        } else if !current.is_newer_than(client_serial) || client_serial > Serial::MAX_STORED {
+            // RFC 1995, Section 2 exception: newer clients receive the full snapshot.
+            // Undefined ordering and serials outside stored history also need AXFR.
             TransferDelta::Full
         } else {
             // RFC 1995, Section 2 permits a full transfer when IXFR is no
@@ -119,9 +110,7 @@ pub async fn authorize_transfer_delta_by_name(
     transaction::finish_tx(tx, result, "failed to load the transfer delta").await
 }
 
-/// Why the assembled delta cannot be replayed as an IXFR. The version rows
-/// are the authoritative list of serials the zone passed through, so a
-/// journal skipping one would replay an incomplete delta as whole.
+/// A gap between journal steps and the zone's saved versions.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 enum ReplayDeltaError {
     #[error("journal ends at serial {last} but the zone is at {current}")]
@@ -136,9 +125,7 @@ enum ReplayDeltaError {
     NoClientVersion { client: Serial },
 }
 
-/// Check that every step from the client's serial to the current one has both
-/// journal rows and the SOA version closing it. `journal_serials` comes
-/// sorted and deduplicated.
+/// Check journal coverage and bounding SOAs; `journal_serials` is sorted and unique.
 fn validate_delta(
     client_serial: Serial,
     current_serial: Serial,

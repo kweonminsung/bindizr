@@ -576,6 +576,13 @@ passes the existing zone-write policy and supplies the request's final serial
 and the version commit together at that serial. Storage-range or zone-policy
 failures are REFUSED, not malformed RDATA.
 
+An equal-serial IXFR receives only the current SOA from the authorized
+snapshot, independent of journal retention, including for catalogs (RFC 1995,
+Section 2). By explicit project policy, newer clients over TCP/TLS receive the
+full primary snapshot: an intentional exception to that section, not a guarantee
+that the secondary installs it. UDP IXFRs return the current SOA. RFC 1982
+determines serial order; undefined comparisons and unavailable deltas use AXFR.
+
 ### Clean installs only — no migrations or back-compat
 
 The project targets **clean installs exclusively** and does not support

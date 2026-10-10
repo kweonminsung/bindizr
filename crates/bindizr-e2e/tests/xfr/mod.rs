@@ -15,6 +15,7 @@ use domain::{
     base::{
         Message, MessageBuilder, Name, Ttl,
         iana::{Class, OptRcode, Rcode, Rtype, TsigRcode},
+        message_builder::AdditionalBuilder,
     },
     rdata::{
         A, Soa,
@@ -151,6 +152,157 @@ async fn a_udp_ixfr_is_answered_with_the_current_soa() {
         counter(&app, "bindizr_soa_queries_total", &[r#"result="ok""#]).await,
         soa_ok
     );
+}
+
+/// Build an IXFR query carrying the client's SOA serial.
+fn ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
+    let name = parse_name(zone).unwrap();
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(1995);
+    let mut question = builder.question();
+    question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
+    let mut authority = question.authority();
+    // RFC 1995, Section 3: the client's SOA belongs in the authority section.
+    authority
+        .push((
+            &name,
+            Class::IN,
+            Ttl::ZERO,
+            Soa::new(
+                name.clone(),
+                name.clone(),
+                serial.into(),
+                Ttl::ZERO,
+                Ttl::ZERO,
+                Ttl::ZERO,
+                Ttl::ZERO,
+            ),
+        ))
+        .unwrap();
+    authority.additional()
+}
+
+/// Check IXFR serial ordering for ordinary and catalog zones on both transports.
+#[tokio::test]
+#[serial]
+async fn ixfr_serial_order_selects_soa_only_replies() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let key = create_tsig_key(&app, "ixfr-serial-key", KeyRole::Admin).await;
+    let mut mismatches = Vec::new();
+    for (zone_name, full_count) in [(zone["name"].as_str().unwrap(), 3), ("catalog.bindizr", 5)] {
+        let (_, response) =
+            exchange_dns_query(app.dns_port(), zone_name, Rtype::SOA.to_int()).unwrap();
+        let response = Message::from_octets(response).unwrap();
+        let soa = response
+            .answer()
+            .unwrap()
+            .limit_to::<Soa<_>>()
+            .next()
+            .unwrap()
+            .unwrap();
+        let current = soa.data().serial().into_int();
+        // RFC 1982, Section 3.2: half-range is undefined; larger distances wrap.
+        // Project policy keeps full transfers for newer clients.
+        for (client_serial, soa_only) in [
+            (current, true),
+            (current + 1, false),
+            (current.wrapping_add(0x7fff_ffff), false),
+            (current.wrapping_add(0x8000_0000), false),
+            (current.wrapping_add(0x8000_0001), false),
+            (current - 1, false),
+            (u32::MAX, false),
+        ] {
+            for key in [None, Some(&key)] {
+                for udp in [false, true] {
+                    let mut query = ixfr_query(zone_name, client_serial);
+                    let mut client = key.map(|key| {
+                        ClientSequence::request(
+                            key.to_tsig_key().unwrap(),
+                            &mut query,
+                            Time48::now(),
+                        )
+                        .unwrap()
+                    });
+                    let query = query.finish();
+                    let response = if udp {
+                        exchange_udp(app.dns_port(), &query)
+                    } else {
+                        exchange_tcp(app.dns_port(), &query).unwrap()
+                    };
+                    let mut response = Message::from_octets(response).unwrap();
+                    if let Some(client) = client.as_mut() {
+                        client.answer(&mut response, Time48::now()).unwrap();
+                    }
+                    if let Some(client) = client {
+                        client.done().unwrap();
+                    }
+                    assert_eq!(response.header().rcode(), Rcode::NOERROR);
+                    assert_eq!(response.header().id(), 1995);
+                    assert!(response.header().aa() && !response.header().tc());
+                    assert_eq!(response.sole_question().unwrap().qtype(), Rtype::IXFR);
+                    let answers: Vec<_> = response.answer().unwrap().map(Result::unwrap).collect();
+                    let first = answers[0].to_record::<Soa<_>>().unwrap().unwrap();
+                    assert_eq!(first.data(), soa.data());
+                    assert_eq!(first.ttl(), soa.ttl());
+                    let expected_count = if soa_only || udp { 1 } else { full_count };
+                    if answers.len() != expected_count {
+                        mismatches.push((
+                            zone_name,
+                            client_serial,
+                            key.is_some(),
+                            udp,
+                            answers.len(),
+                        ));
+                    }
+                    if !soa_only && !udp {
+                        let last = answers
+                            .last()
+                            .unwrap()
+                            .to_record::<Soa<_>>()
+                            .unwrap()
+                            .unwrap();
+                        assert_eq!(last.data(), soa.data());
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "zone, client serial, signed, UDP, answers: {mismatches:?}"
+    );
+}
+
+/// Require transfer permission even when IXFR would return only an SOA.
+#[tokio::test]
+#[serial]
+async fn ixfr_soa_only_replies_require_transfer_permission() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let key = create_tsig_key(&app, "ixfr-ungranted-key", KeyRole::Own).await;
+    let current = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
+    for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
+        for serial in [current, current + 1] {
+            for udp in [false, true] {
+                let mut query = ixfr_query(zone_name, serial);
+                let mut client =
+                    ClientSequence::request(key.to_tsig_key().unwrap(), &mut query, Time48::now())
+                        .unwrap();
+                let query = query.finish();
+                let response = if udp {
+                    exchange_udp(app.dns_port(), &query)
+                } else {
+                    exchange_tcp(app.dns_port(), &query).unwrap()
+                };
+                let mut response = Message::from_octets(response).unwrap();
+                client.answer(&mut response, Time48::now()).unwrap();
+                client.done().unwrap();
+                assert_eq!(response.header().rcode(), Rcode::REFUSED);
+                assert_eq!(response.header_counts().ancount(), 0);
+            }
+        }
+    }
 }
 
 /// Verify that an unsigned transfer still runs under the address acl.
