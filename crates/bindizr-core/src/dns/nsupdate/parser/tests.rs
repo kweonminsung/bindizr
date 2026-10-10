@@ -264,6 +264,29 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
     assert!(!RecordType::Txt.values_equal(&first_value, None, &second_value, None));
 }
 
+/// Keep RDLENGTH-delimited values from consuming the following record or TSIG.
+#[test]
+fn variable_length_rdata_stops_before_the_next_record() {
+    for (rtype, rdata) in [
+        (Rtype::CAA, b"\x00\x05issue".to_vec()),
+        (Rtype::DS, [vec![0, 1, 13, 2], vec![0xAB; 32]].concat()),
+        (Rtype::SSHFP, [vec![4, 2], vec![0xAB; 32]].concat()),
+        (Rtype::TLSA, [vec![3, 1, 1], vec![0xAB; 32]].concat()),
+    ] {
+        let mut record = update_record(rtype, Class::IN, 300, rdata.clone());
+        let expected = record.to_record_value(&rdata).unwrap();
+        let mut message = vec![0; 12];
+        record.rdata_start = message.len();
+        message.extend_from_slice(&rdata);
+        message.extend_from_slice(b"following record or TSIG");
+        assert_eq!(
+            record.to_record_value(&message).unwrap(),
+            expected,
+            "{rtype}"
+        );
+    }
+}
+
 /// Verify that `to_record_value` follows compression pointer in name RDATA.
 #[test]
 fn to_record_value_follows_compression_pointer_in_name_rdata() {

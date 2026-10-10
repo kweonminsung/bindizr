@@ -59,12 +59,8 @@ pub enum ParseRecordValueError {
     SrvShape { value: String },
     #[error("CAA record value must be '<flags> <tag> <value>': {value}")]
     CaaShape { value: String },
-    #[error("CAA tag must be 1-15 alphanumeric characters: {tag}")]
+    #[error("CAA tag must be 1-255 ASCII letters or digits: {tag}")]
     CaaTag { tag: String },
-    #[error("CAA value must not be empty")]
-    CaaValueEmpty,
-    #[error("CAA value must not contain control characters")]
-    CaaValueControl,
     #[error("CAA value must be at most {max} bytes, got {len}")]
     CaaValueTooLong { max: usize, len: usize },
     #[error("DS record value must be '<key tag> <algorithm> <digest type> <digest>': {value}")]

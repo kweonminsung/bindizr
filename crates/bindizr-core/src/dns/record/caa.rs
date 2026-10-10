@@ -3,45 +3,38 @@
 
 use super::{
     EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
-    value::{MAX_RECORD_RDATA, parse_quoted_string, parse_u8_record_field},
+    value::{MAX_RECORD_RDATA, parse_string_octets, parse_u8_record_field},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaaRecordValue<'a> {
     flags: u8,
     tag: &'a str,
-    value: String,
+    value: Vec<u8>,
 }
 
 impl<'a> CaaRecordValue<'a> {
-    /// The value is `<flags> <tag> <value>`; the value keeps its surrounding
-    /// quotes optional, as presentation form allows both. Fields may be
-    /// separated by runs of whitespace, as aligned zone files spell them.
+    /// Parse `<flags> <tag> <value>`, decoding quoted or bare value escapes.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
         let err = || ParseRecordValueError::CaaShape {
             value: value.to_string(),
         };
         let (flags, rest) = value
-            .trim()
+            .trim_start()
             .split_once(char::is_whitespace)
             .ok_or_else(err)?;
         let (tag, rest) = rest
             .trim_start()
             .split_once(char::is_whitespace)
             .ok_or_else(err)?;
-        let rest = rest.trim();
+        let rest = rest.trim_start();
 
-        // A quoted value resolves its escapes; a bare one has none, and keeps
-        // the whitespace an unquoted value may carry.
-        let value = if rest.starts_with('"') {
-            let (text, trailing) = parse_quoted_string("CAA value", rest)?;
-            if !trailing.is_empty() {
-                return Err(err());
-            }
-            text
-        } else {
-            rest.to_string()
-        };
+        // RFC 8659, Section 4.1: property values are octets, including empty
+        // or non-UTF-8 values; the presentation escapes preserve those bytes.
+        let (value, trailing) = parse_string_octets("CAA value", rest)?;
+        if !trailing.is_empty() {
+            return Err(err());
+        }
 
         Ok(Self {
             flags: parse_u8_record_field("CAA flags", flags)?,
@@ -52,20 +45,14 @@ impl<'a> CaaRecordValue<'a> {
 
     /// Validate the fields of this CAA value.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
-        // RFC 8659, Section 4.1: a tag is 1-15 alphanumeric characters.
+        // RFC 8659, Section 4.1: a nonempty ASCII tag has a one-octet length.
         if self.tag.is_empty()
-            || self.tag.len() > 15
+            || self.tag.len() > usize::from(u8::MAX)
             || !self.tag.chars().all(|c| c.is_ascii_alphanumeric())
         {
             return Err(ParseRecordValueError::CaaTag {
                 tag: self.tag.to_string(),
             });
-        }
-        if self.value.is_empty() {
-            return Err(ParseRecordValueError::CaaValueEmpty);
-        }
-        if self.value.chars().any(|c| c.is_control()) {
-            return Err(ParseRecordValueError::CaaValueControl);
         }
         // Bounded so the record fits one transfer message beside the flags and
         // length-prefixed tag; enforced here so a stored row cannot poison an AXFR.
@@ -85,11 +72,11 @@ impl<'a> CaaRecordValue<'a> {
             "{} {} {}",
             self.flags,
             self.tag.to_lowercase(),
-            to_quoted_charstr(self.value.as_bytes())
+            to_quoted_charstr(&self.value)
         )
     }
 
-    /// The wire-format RDATA of a stored value (RFC 8659, Section 5.1).
+    /// Encode the stored value as wire RDATA (RFC 8659, Section 4.1).
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let tag_len = u8::try_from(self.tag.len()).map_err(|_| ParseRecordValueError::CaaTag {
             tag: self.tag.to_string(),
@@ -98,7 +85,7 @@ impl<'a> CaaRecordValue<'a> {
         rdata.push(self.flags);
         rdata.push(tag_len);
         rdata.extend_from_slice(self.tag.as_bytes());
-        rdata.extend_from_slice(self.value.as_bytes());
+        rdata.extend_from_slice(&self.value);
         Rdata::new(rdata)
     }
 }
@@ -106,6 +93,20 @@ impl<'a> CaaRecordValue<'a> {
 #[cfg(test)]
 mod tests {
     use super::CaaRecordValue;
+
+    /// Preserve empty CAA properties, including the no-issuer form in RFC 8659, Section 4.2.
+    #[test]
+    fn empty_properties_remain_present_in_wire_data() {
+        for tag in ["issue", "issuewild", "unknown"] {
+            let text = format!("0 {tag} \"\"");
+            let parsed = CaaRecordValue::parse(&text).unwrap();
+            parsed.validate().unwrap();
+            assert_eq!(parsed.canonical(), text);
+            let mut expected = vec![0, u8::try_from(tag.len()).unwrap()];
+            expected.extend_from_slice(tag.as_bytes());
+            assert_eq!(parsed.to_rdata().unwrap().as_bytes(), expected);
+        }
+    }
 
     /// Verify that `parse` accepts quoted and bare values.
     #[test]
@@ -138,12 +139,16 @@ mod tests {
         );
     }
 
-    /// Verify that `validate` rejects a bad tag or a missing value.
+    /// Reject malformed tags and distinguish a missing value from an empty one.
     #[test]
     fn validate_rejects_a_bad_tag_or_a_missing_value() {
-        let long_tag = CaaRecordValue::parse("0 averyveryverylongtag x").unwrap();
-        assert!(long_tag.validate().is_err());
-        assert!(CaaRecordValue::parse("0 issue").is_err());
+        for tag in ["a".repeat(256), "bad-tag".to_string(), "é".to_string()] {
+            let text = format!("0 {tag} \"\"");
+            assert!(CaaRecordValue::parse(&text).unwrap().validate().is_err());
+        }
+        for text in ["0 issue", "0 issue   ", "0  \"\""] {
+            assert!(CaaRecordValue::parse(text).is_err());
+        }
     }
 
     /// Verify rejection of unclosed or concatenated quoted CAA values.
@@ -157,10 +162,68 @@ mod tests {
         }
     }
 
-    /// Verify that `validate` rejects control characters no value can spell back.
+    /// Require quotes or escapes for whitespace within a CAA value.
     #[test]
-    fn validate_rejects_control_characters_no_value_can_spell_back() {
-        let parsed = CaaRecordValue::parse("0 issue a\tb").unwrap();
-        assert!(parsed.validate().is_err());
+    fn unquoted_whitespace_separates_fields() {
+        for text in ["0 issue a\tb", "0 issue a b", "0 issue a\"b"] {
+            assert!(CaaRecordValue::parse(text).is_err());
+        }
+        for text in [r"0 issue a\032b", r"0 issue a\ b", r#"0 issue "a b""#] {
+            let parsed = CaaRecordValue::parse(text).unwrap();
+            parsed.validate().unwrap();
+            assert_eq!(parsed.canonical(), r#"0 issue "a b""#);
+        }
+        let trailing_space = CaaRecordValue::parse("0 issue a\\ ").unwrap();
+        assert_eq!(trailing_space.canonical(), r#"0 issue "a ""#);
+    }
+
+    /// Preserve every property octet through presentation and wire encoding.
+    #[test]
+    fn property_values_preserve_all_octets() {
+        let escaped: String = (0..=255u8).map(|byte| format!("\\{byte:03}")).collect();
+        for text in [
+            format!("128 custom {escaped}"),
+            format!("128 custom \"{escaped}\""),
+        ] {
+            let parsed = CaaRecordValue::parse(&text).unwrap();
+            parsed.validate().unwrap();
+            let mut expected = b"\x80\x06custom".to_vec();
+            expected.extend(0..=255u8);
+            assert_eq!(parsed.to_rdata().unwrap().as_bytes(), expected);
+            let canonical = parsed.canonical();
+            let reparsed = CaaRecordValue::parse(&canonical).unwrap();
+            assert_eq!(reparsed.to_rdata().unwrap().as_bytes(), expected);
+        }
+        for text in [
+            r"0 issue \1",
+            r"0 issue \12",
+            r"0 issue \256",
+            "0 issue x\\",
+        ] {
+            assert!(CaaRecordValue::parse(text).is_err(), "{text}");
+        }
+    }
+
+    /// Bound the decoded RDATA, including a full-length tag and a value over 255 bytes.
+    #[test]
+    fn tag_and_value_lengths_follow_the_wire_fields() {
+        use super::super::{ParseRecordValueError, value::MAX_RECORD_RDATA};
+
+        for tag_len in [1, 15, 16, 255] {
+            let tag = "a".repeat(tag_len);
+            let max = MAX_RECORD_RDATA - 2 - tag_len;
+            let text = format!("0 {tag} \"{}\"", r"\255".repeat(max));
+            let parsed = CaaRecordValue::parse(&text).unwrap();
+            parsed.validate().unwrap();
+            let rdata = parsed.to_rdata().unwrap();
+            assert_eq!(rdata.as_bytes().len(), MAX_RECORD_RDATA);
+            assert_eq!(usize::from(rdata.as_bytes()[1]), tag_len);
+
+            let oversized = format!("0 {tag} \"{}\"", r"\255".repeat(max + 1));
+            assert!(matches!(
+                CaaRecordValue::parse(&oversized).unwrap().validate(),
+                Err(ParseRecordValueError::CaaValueTooLong { .. })
+            ));
+        }
     }
 }

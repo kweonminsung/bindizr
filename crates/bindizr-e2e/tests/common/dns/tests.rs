@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use domain::{
     base::{
-        MessageBuilder, Name, Record, Ttl,
+        MessageBuilder, Name, Record, Ttl, UnknownRecordData,
         iana::{Class, Rcode},
     },
     rdata::{A, Mx, Srv, Txt},
@@ -60,6 +60,19 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
             Txt::from_octets(vec![2, b'a', b'b', 1, b'c']).unwrap(),
         ))
         .unwrap();
+    for rdata in [
+        b"\x00\x05issue".as_slice(),
+        b"\x80\x06custom\x00\xFF\x0A\"\\",
+    ] {
+        answer
+            .push(Record::new(
+                &owner,
+                Class::IN,
+                ttl,
+                UnknownRecordData::from_octets(Rtype::CAA, rdata).unwrap(),
+            ))
+            .unwrap();
+    }
 
     let answers = parse_dns_response(7, &answer.finish()).unwrap();
     let values: Vec<(u16, Option<Value>)> = answers
@@ -75,6 +88,8 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
             (33, Some(json!("1 2 8080 mail.example.com."))),
             (16, Some(json!("hello"))),
             (16, Some(json!(["ab", "c"]))),
+            (257, Some(json!(r#"0 issue """#))),
+            (257, Some(json!(r#"128 custom "\000\255\010\"\\""#))),
         ]
     );
 }

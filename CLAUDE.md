@@ -533,9 +533,10 @@ db layer, which binds a `ZoneName` as it binds an `OwnerName` — takes
 `save_refused` and `save_failed` alone take the question's text, because a
 refusal may come before any parse: a name no zone can carry leaves no row.
 
-Two escapes are unrelated to names and own their own encoding: the SOA RNAME
-(`SoaMailbox`, from the admin email) and the TXT value (`TxtRecordValue`,
-raw rdata).
+Record values own their encoding: the SOA RNAME uses `SoaMailbox`, TXT uses
+`TxtRecordValue`, and CAA uses `CaaRecordValue`. CAA property values are octets,
+including empty and non-UTF-8 values; storage and export render them with
+RFC 1035 escapes (RFC 8659, Section 4.1).
 
 ### Protocol behavior follows the RFC
 

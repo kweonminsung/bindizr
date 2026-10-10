@@ -2,10 +2,10 @@ mod common;
 mod dnssec;
 mod soa;
 
-use common::unsigned_nsupdate_app;
+use common::{exported_record_sets, unsigned_nsupdate_app};
 use domain::{
     base::{
-        Message, Rtype, Serial, Ttl,
+        Message, MessageBuilder, Rtype, Serial, Ttl, UnknownRecordData,
         iana::{Class, Opcode, OptRcode, Rcode},
     },
     rdata::{Soa, tsig::Time48},
@@ -25,6 +25,89 @@ use crate::common::{
         parse_name,
     },
 };
+
+/// Preserve CAA property octets through signed additions, prerequisites and deletions.
+#[tokio::test]
+#[serial]
+async fn nsupdate_caa_values_keep_their_wire_bytes() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let owner = format!("caa.{zone_name}.");
+    let key = create_tsig_key(&app, "caa-key", KeyRole::Admin).await;
+    let values = [
+        b"\x00\x05issue".to_vec(),
+        b"\x00\x09issuewild".to_vec(),
+        b"\x80\x06custom".iter().copied().chain(0..=255u8).collect(),
+        [vec![0, 255], vec![b'a'; 255], vec![b'b'; 300]].concat(),
+    ];
+    for rdata in &values {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(173);
+        builder.header_mut().set_opcode(Opcode::UPDATE);
+        let mut question = builder.question();
+        question
+            .push((parse_name(zone_name).unwrap(), Rtype::SOA, Class::IN))
+            .unwrap();
+        let mut authority = question.authority();
+        authority
+            .push((
+                parse_name(&owner).unwrap(),
+                Class::IN,
+                Ttl::from_secs(300),
+                UnknownRecordData::from_octets(Rtype::CAA, rdata.clone()).unwrap(),
+            ))
+            .unwrap();
+        let mut additional = authority.additional();
+        let client =
+            ClientTransaction::request(key.to_tsig_key().unwrap(), &mut additional, Time48::now())
+                .unwrap();
+        let mut response = exchange_udp(app.dns_port(), 173, &additional.finish()).unwrap();
+        client.answer(&mut response, Time48::now()).unwrap();
+        assert_eq!(
+            response.header().rcode(),
+            Rcode::NOERROR,
+            "CAA RDATA {rdata:?}"
+        );
+    }
+    let sets = exported_record_sets(&app, zone_name).await;
+    let mut exported = sets.get(&(owner.clone(), Rtype::CAA)).unwrap().clone();
+    let mut expected = values.to_vec();
+    exported.sort();
+    expected.sort();
+    assert_eq!(exported, expected);
+
+    for (index, rdata) in values.iter().enumerate() {
+        let prerequisites: Vec<_> = values[index..]
+            .iter()
+            .map(|rdata| PrereqRecord::RecordEquals {
+                name: owner.clone(),
+                rtype: Rtype::CAA,
+                rdata: rdata.clone(),
+            })
+            .collect();
+        let serial = app.read_zone_serial(zone_name).await;
+        let rcode = send_signed_update(
+            app.dns_port(),
+            zone_name,
+            &prerequisites,
+            &[UpdateRecord::DeleteRecord {
+                name: owner.clone(),
+                rtype: Rtype::CAA,
+                rdata: rdata.clone(),
+            }],
+            &key,
+        )
+        .unwrap();
+        assert_eq!(rcode, Rcode::NOERROR);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
+    }
+    assert!(
+        !exported_record_sets(&app, zone_name)
+            .await
+            .contains_key(&(owner, Rtype::CAA))
+    );
+}
 
 /// Refuse unserved zone classes before evaluating prerequisites or updates.
 #[tokio::test]

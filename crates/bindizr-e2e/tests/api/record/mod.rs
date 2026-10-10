@@ -5,6 +5,59 @@ use crate::common::TestApp;
 
 mod bulk;
 
+/// Preserve CAA empty and binary values through record writes and reads.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn caa_values_preserve_empty_and_binary_properties() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let long_tag = format!("0 {} \"\"", "a".repeat(255));
+    for (input, expected) in [
+        (r#"0 ISSUE """#, r#"0 issue """#),
+        (r#"0 issuewild """#, r#"0 issuewild """#),
+        (
+            r"128 custom \000\255\010\034\092",
+            r#"128 custom "\000\255\010\"\\""#,
+        ),
+        ("0 issue a\\ ", r#"0 issue "a ""#),
+        (long_tag.as_str(), long_tag.as_str()),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({"zone_name": zone_name, "name": "@", "type": "CAA", "value": input})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{input}: {body}");
+        assert_eq!(body["record"]["value"], expected);
+        let id = body["record"]["id"].as_i64().unwrap();
+        let path = format!("/records/{id}");
+        let (status, body) = app.send_request(Method::GET, &path, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["record"]["value"], expected);
+
+        let (status, body) = app
+            .send_request(Method::PUT, &path, Some(json!({"value": "0 custom \"\""})))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["record"]["value"], "0 custom \"\"");
+        let serial = app.read_zone_serial(zone_name).await;
+        for invalid in ["0 custom", "0 custom a b", r"0 custom \256"] {
+            let (status, body) = app
+                .send_request(Method::PUT, &path, Some(json!({"value": invalid})))
+                .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}: {body}");
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        }
+        let (_, body) = app.send_request(Method::GET, &path, None).await;
+        assert_eq!(body["record"]["value"], "0 custom \"\"");
+        let (status, _) = app.send_request(Method::DELETE, &path, None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+}
+
 /// Percent-encode a query value byte by byte; `;`, `\` and UTF-8 would
 /// otherwise be taken apart.
 fn encode(value: &str) -> String {

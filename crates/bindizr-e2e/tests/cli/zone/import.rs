@@ -154,13 +154,21 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     let zone_name = app.zone_name("axfr-import.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
-    // MX and a spaced TXT exercise priority and quoting through the wire
-    // presentation round trip.
-    app.run_cli_success_with_input(
-        &["zone", "import", &zone_name, "-"],
-        "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n@ IN TXT \"v=spf1 -all\"\n_sip._udp 300 IN SRV 10 5 5060 sip.example.com.\n",
-    )
-    .await;
+    // Keep empty and binary CAA values through the master file and AXFR
+    // presentation forms (RFC 8659, Sections 4.1 and 4.2).
+    let content = format!(
+        concat!(
+            "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n",
+            "@ IN TXT \"v=spf1 -all\"\n_sip._udp 300 IN SRV 10 5 5060 sip.example.com.\n",
+            "@ IN CAA 0 issue \"\"\n@ IN CAA 0 issuewild \"\"\n",
+            "@ IN CAA 128 custom \"\\000\\255\\010\\034\\092\"\n",
+            "@ IN CAA 0 {} \"{}\"\n",
+        ),
+        "a".repeat(255),
+        "b".repeat(300),
+    );
+    app.run_cli_success_with_input(&["zone", "import", &zone_name, "-"], &content)
+        .await;
 
     let server = format!("127.0.0.1:{}", app.dns_port());
     let dry_run = app
@@ -192,7 +200,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     assert!(applied.contains("Zone imported successfully"), "{applied}");
     assert_eq!(
         summary_row(&applied),
-        ["5", "0", "0", "0", "5", "0"],
+        ["9", "0", "0", "0", "9", "0"],
         "{applied}"
     );
 }

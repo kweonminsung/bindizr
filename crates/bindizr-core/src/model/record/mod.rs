@@ -460,7 +460,7 @@ impl RecordType {
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Caa => {
-                let parsed = CaaRecordValue::parse(trimmed)?;
+                let parsed = CaaRecordValue::parse(value)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }

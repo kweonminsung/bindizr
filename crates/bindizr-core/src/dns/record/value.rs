@@ -89,29 +89,33 @@ pub(crate) fn parse_u16_record_field(
         })
 }
 
-/// One leading quoted string and what follows it, for the rdata grammars that
-/// mix them with other fields. `\\` escapes a byte and `\\DDD` a decimal one, as
-/// RFC 1035, Section 5.1 spells them. The caller bounds its own field.
-pub(crate) fn parse_quoted_string<'a>(
+/// Decode one quoted or bare string using RFC 1035, Section 5.1 escapes.
+pub(crate) fn parse_string_octets<'a>(
     field: &'static str,
     input: &'a str,
-) -> Result<(String, &'a str), ParseRecordValueError> {
-    let rest = input
-        .strip_prefix('"')
-        .ok_or_else(|| ParseRecordValueError::NotQuoted {
-            field,
-            input: input.to_string(),
-        })?;
+) -> Result<(Vec<u8>, &'a str), ParseRecordValueError> {
+    if input.is_empty() {
+        return Err(ParseRecordValueError::Empty { field });
+    }
+    let quoted = input.starts_with('"');
+    let rest = input.strip_prefix('"').unwrap_or(input);
 
     let mut out = Vec::new();
     let mut bytes = rest.bytes().enumerate();
     while let Some((index, byte)) = bytes.next() {
         match byte {
-            b'"' => {
+            b'"' if quoted => {
                 let consumed = &rest[index + 1..];
-                let text =
-                    String::from_utf8(out).map_err(|_| ParseRecordValueError::NotUtf8 { field })?;
-                return Ok((text, consumed.trim_start()));
+                return Ok((out, consumed.trim_start()));
+            }
+            byte if !quoted && byte.is_ascii_whitespace() => {
+                return Ok((out, rest[index..].trim_start()));
+            }
+            b'"' => {
+                return Err(ParseRecordValueError::NotQuoted {
+                    field,
+                    input: input.to_string(),
+                });
             }
             b'\\' => match bytes.next() {
                 Some((_, d @ b'0'..=b'9')) => {
@@ -134,16 +138,26 @@ pub(crate) fn parse_quoted_string<'a>(
         }
     }
 
-    Err(ParseRecordValueError::UnterminatedQuote { field })
+    if quoted {
+        Err(ParseRecordValueError::UnterminatedQuote { field })
+    } else {
+        Ok((out, ""))
+    }
 }
 
-/// A character-string: [`parse_quoted_string`] under the 255-byte limit
-/// RFC 1035, Section 3.3 puts on one.
+/// Decode a quoted UTF-8 field within RFC 1035, Section 3.3's 255-byte limit.
 pub(crate) fn parse_char_string<'a>(
     field: &'static str,
     input: &'a str,
 ) -> Result<(String, &'a str), ParseRecordValueError> {
-    let (text, rest) = parse_quoted_string(field, input)?;
+    if !input.starts_with('"') {
+        return Err(ParseRecordValueError::NotQuoted {
+            field,
+            input: input.to_string(),
+        });
+    }
+    let (octets, rest) = parse_string_octets(field, input)?;
+    let text = String::from_utf8(octets).map_err(|_| ParseRecordValueError::NotUtf8 { field })?;
     if text.len() > 255 {
         return Err(ParseRecordValueError::CharStringTooLong { field });
     }

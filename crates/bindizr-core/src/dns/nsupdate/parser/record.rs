@@ -107,13 +107,16 @@ impl UpdateRecord {
             record_type: what.to_string(),
         };
 
-        // Compression pointers address the whole message, not the RDATA slice.
+        // RDLENGTH bounds the value while compression retains message offsets
+        // (RFC 1035, Sections 4.1.3–4.1.4).
         let mut parser = Parser::from_ref(message);
         parser.advance(self.rdata_start).map_err(|_| refused())?;
-        let value = parse(&mut parser).ok_or_else(refused)?;
+        let mut rdata = parser
+            .parse_parser(self.rdata.len())
+            .map_err(|_| refused())?;
+        let value = parse(&mut rdata).ok_or_else(refused)?;
 
-        // A type parser must consume exactly RDLENGTH, without borrowing the next record.
-        if parser.pos() != self.rdata_start + self.rdata.len() {
+        if rdata.remaining() != 0 {
             return Err(refused());
         }
 

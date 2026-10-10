@@ -377,15 +377,8 @@ fn decode_dns_value(
             u8::from(tlsa.matching_type()),
             hex_upper(tlsa.data())
         )),
-        // The stored form re-escapes `"` and `\` inside the quoted value
-        // (RFC 8659, Section 4), so the wire bytes have to be escaped back
-        // before they compare.
-        AllRecordData::Caa(caa) => Value::String(format!(
-            "{} {} {}",
-            caa.flags(),
-            caa.tag(),
-            to_quoted_string(&String::from_utf8_lossy(caa.value()))
-        )),
+        // CAA values are opaque octets, escaped losslessly (RFC 8659, Section 4.1).
+        AllRecordData::Caa(caa) => Value::String(caa.to_string()),
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
     };

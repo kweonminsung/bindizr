@@ -31,6 +31,7 @@ bindizr record create example.com ns2 --type A --value 192.0.2.2
 ```bash
 bindizr record create example.com www --type A --value 192.0.2.1 --ttl 300
 bindizr record create example.com @ --type TXT --value "v=spf1 include:_spf.example.net ~all"
+bindizr record create example.com @ --type CAA --value '0 issue ""'
 bindizr record list example.com
 bindizr record get example.com www
 bindizr record update example.com www --value 192.0.2.2
@@ -48,6 +49,10 @@ bindizr record update --id 42 --value 192.0.2.2
 Use `--new-name` to rename a record. A TXT value over 255 bytes is split into
 segments automatically; repeat `--value` to choose the segments yourself.
 Resolvers join them without inserting spaces.
+
+CAA values use `<flags> <tag> <value>`. An empty property value is written `""`;
+binary octets use DNS decimal escapes such as `\000` and `\255`. Tags contain
+1–255 ASCII letters or digits (RFC 8659, Section 4.1).
 
 ## Filter records and change zone settings
 
