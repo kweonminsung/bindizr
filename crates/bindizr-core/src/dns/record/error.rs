@@ -115,6 +115,8 @@ pub enum ParseRecordValueError {
     NaptrShape { value: String },
     #[error("NAPTR record value ends before {field}")]
     NaptrEndsBefore { field: &'static str },
+    #[error("NAPTR flags must contain only ASCII letters or digits")]
+    NaptrFlags,
     #[error("NAPTR record replacement must be '.' when the regexp is set (RFC 3403, Section 4.1)")]
     NaptrReplacementWithRegexp,
     #[error(transparent)]

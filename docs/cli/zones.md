@@ -54,6 +54,9 @@ CAA values use `<flags> <tag> <value>`. An empty property value is written `""`;
 binary octets use DNS decimal escapes such as `\000` and `\255`. Tags contain
 1–255 ASCII letters or digits (RFC 8659, Section 4.1).
 
+NAPTR flags may be empty or contain ASCII letters and digits. Their meaning
+depends on the application; letter case is preserved (RFC 3403, Section 4.1).
+
 ## Filter records and change zone settings
 
 ```bash

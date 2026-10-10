@@ -43,6 +43,13 @@ impl SigningKey {
 /// (RFC 2136, Section 2.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum UpdateRecord {
+    /// CLASS IN: add raw RDATA.
+    AddRecord {
+        name: String,
+        rtype: Rtype,
+        ttl: u32,
+        rdata: Vec<u8>,
+    },
     /// CLASS IN: replace the zone SOA when its serial advances.
     AddSoa {
         name: String,
@@ -340,6 +347,23 @@ pub(crate) fn build_update(
     let mut authority = answer.authority();
     for update in updates {
         match update {
+            UpdateRecord::AddRecord {
+                name,
+                rtype,
+                ttl,
+                rdata,
+            } => {
+                let data = UnknownRecordData::from_octets(*rtype, rdata.clone())
+                    .map_err(|e| e.to_string())?;
+                authority
+                    .push(Record::new(
+                        parse_name(name)?,
+                        Class::IN,
+                        Ttl::from_secs(*ttl),
+                        data,
+                    ))
+                    .map_err(|e| e.to_string())?;
+            }
             UpdateRecord::AddSoa { name, ttl, soa } => authority
                 .push(Record::new(
                     parse_name(name)?,

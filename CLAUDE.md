@@ -538,6 +538,10 @@ Record values own their encoding: the SOA RNAME uses `SoaMailbox`, TXT uses
 including empty and non-UTF-8 values; storage and export render them with
 RFC 1035 escapes (RFC 8659, Section 4.1).
 
+`NaptrRecordValue` validates flags after decoding presentation escapes:
+empty or ASCII letters and digits (RFC 3403, Section 4.1). The application
+defines flag meanings; DNS record validation does not restrict them to a list.
+
 ### Protocol behavior follows the RFC
 
 The DNS plane implements the RFCs it cites (1034/1035, 1982, 1995, 1996,

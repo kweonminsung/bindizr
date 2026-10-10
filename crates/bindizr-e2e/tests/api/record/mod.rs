@@ -998,6 +998,75 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
     assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
 }
 
+/// Reject invalid NAPTR flags on create and update.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn naptr_flags_are_checked_on_create_and_update() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let original = r#"10 10 "uZ9" "app" "" target.example."#;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "zone_name": zone_name,
+                "name": "naptr",
+                "type": "NAPTR",
+                "value": original,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["record"]["value"], original);
+    let id = body["record"]["id"].as_i64().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+
+    for flags in ["!", "S-", " ", r"\000", r"\033", "é"] {
+        for replacement in [".", "target.example."] {
+            let invalid = format!("10 10 \"{flags}\" \"app\" \"\" {replacement}");
+            for (method, path, request) in [
+                (
+                    Method::POST,
+                    "/records".to_string(),
+                    json!({
+                        "zone_name": zone_name, "name": "invalid", "type": "NAPTR", "value": invalid,
+                    }),
+                ),
+                (
+                    Method::PUT,
+                    format!("/records/{id}"),
+                    json!({"value": invalid}),
+                ),
+            ] {
+                let (status, body) = app.send_request(method, &path, Some(request)).await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{flags}: {body}");
+                assert_eq!(body["code"], "INVALID_RECORD_VALUE");
+                assert!(
+                    body["error"].as_str().unwrap().contains("NAPTR flags"),
+                    "{body}"
+                );
+            }
+        }
+    }
+    assert_eq!(app.list_records(zone_name).await, before);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/records/{id}"),
+            Some(json!({"value": r#"10 10 "" "app" "" target.example."#})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["record"]["value"],
+        r#"10 10 "" "app" "" target.example."#
+    );
+}
+
 /// Verify that a NAPTR regexp BIND refuses is rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

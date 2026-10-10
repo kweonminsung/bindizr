@@ -952,6 +952,43 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     }
 }
 
+/// Reject an import containing invalid NAPTR flags.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn naptr_flags_reject_the_whole_import() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    for flags in ["!", r"\000", r"\195\169"] {
+        for dry_run in [true, false] {
+            let content = format!(
+                "must-not-exist IN A 192.0.2.18\nbad IN NAPTR 10 10 \"{flags}\" \"app\" \"\" .\n"
+            );
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{zone_name}/import"),
+                    Some(json!({"content": content, "dry_run": dry_run, "skip_unsupported": true})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert_eq!(body["applied"], false);
+            assert!(
+                body["errors"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|error| error.as_str().unwrap().contains("NAPTR flags")),
+                "{body}"
+            );
+            assert_eq!(app.list_records(zone_name).await, before);
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        }
+    }
+}
+
 /// Verify that DNAME and NAPTR survive an import and export round trip.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -963,6 +1000,8 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
     let content = concat!(
         "tel IN NAPTR 200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .\n",
         "sip IN NAPTR 100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com.\n",
+        "next IN NAPTR 100 10 \"\" \"app\" \"\" next.example.com.\n",
+        "future IN NAPTR 100 10 \"z9\" \"app\" \"\" next.example.com.\n",
         "alias IN DNAME target.example.com.\n",
     );
     let (status, body) = app
@@ -974,7 +1013,7 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true, "{body}");
-    assert_eq!(body["summary"]["added"], 3, "{body}");
+    assert_eq!(body["summary"]["added"], 5, "{body}");
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
@@ -993,6 +1032,14 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
     );
     assert!(
         exported.contains("DNAME\ttarget.example.com."),
+        "{exported}"
+    );
+    assert!(
+        exported.contains(r#"100 10 "" "app" "" next.example.com."#),
+        "{exported}"
+    );
+    assert!(
+        exported.contains(r#"100 10 "z9" "app" "" next.example.com."#),
         "{exported}"
     );
 }

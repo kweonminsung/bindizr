@@ -5,7 +5,7 @@ mod soa;
 use common::{exported_record_sets, unsigned_nsupdate_app};
 use domain::{
     base::{
-        Message, MessageBuilder, Rtype, Serial, Ttl, UnknownRecordData,
+        Message, Rtype, Serial, Ttl,
         iana::{Class, Opcode, OptRcode, Rcode},
     },
     rdata::{Soa, tsig::Time48},
@@ -42,23 +42,19 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
         [vec![0, 255], vec![b'a'; 255], vec![b'b'; 300]].concat(),
     ];
     for rdata in &values {
-        let mut builder = MessageBuilder::new_vec();
-        builder.header_mut().set_id(173);
-        builder.header_mut().set_opcode(Opcode::UPDATE);
-        let mut question = builder.question();
-        question
-            .push((parse_name(zone_name).unwrap(), Rtype::SOA, Class::IN))
-            .unwrap();
-        let mut authority = question.authority();
-        authority
-            .push((
-                parse_name(&owner).unwrap(),
-                Class::IN,
-                Ttl::from_secs(300),
-                UnknownRecordData::from_octets(Rtype::CAA, rdata.clone()).unwrap(),
-            ))
-            .unwrap();
-        let mut additional = authority.additional();
+        let mut additional = build_update(
+            173,
+            zone_name,
+            Class::IN,
+            &[],
+            &[UpdateRecord::AddRecord {
+                name: owner.clone(),
+                rtype: Rtype::CAA,
+                ttl: 300,
+                rdata: rdata.clone(),
+            }],
+        )
+        .unwrap();
         let client =
             ClientTransaction::request(key.to_tsig_key().unwrap(), &mut additional, Time48::now())
                 .unwrap();
@@ -107,6 +103,61 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
             .await
             .contains_key(&(owner, Rtype::CAA))
     );
+}
+
+/// Refuse invalid NAPTR flags without applying the update.
+#[tokio::test]
+#[serial]
+async fn nsupdate_naptr_flags_refuse_the_whole_update() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "naptr-flags-key", KeyRole::Admin).await;
+    for (flags, expected) in [
+        (b"!".as_slice(), Rcode::REFUSED),
+        (b"S-", Rcode::REFUSED),
+        (b" ", Rcode::REFUSED),
+        (b"\0", Rcode::REFUSED),
+        ("é".as_bytes(), Rcode::REFUSED),
+        (b"", Rcode::NOERROR),
+        (b"uZ9", Rcode::NOERROR),
+    ] {
+        let before = app.list_records(zone_name).await;
+        let serial = app.read_zone_serial(zone_name).await;
+        // RFC 3403, Section 4.1: order, preference, three character-strings, replacement.
+        let mut rdata = vec![0, 10, 0, 10, u8::try_from(flags.len()).unwrap()];
+        rdata.extend_from_slice(flags);
+        rdata.extend_from_slice(&[0, 0, 0]);
+        let rcode = send_signed_update_tcp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[
+                UpdateRecord::AddA {
+                    name: format!("atomic.{zone_name}."),
+                    ttl: 300,
+                    addr: "192.0.2.19".to_string(),
+                },
+                UpdateRecord::AddRecord {
+                    name: format!("naptr.{zone_name}."),
+                    rtype: Rtype::NAPTR,
+                    ttl: 300,
+                    rdata: rdata.clone(),
+                },
+            ],
+            &key,
+        )
+        .unwrap();
+        assert_eq!(rcode, expected, "flags {flags:?}");
+        if expected == Rcode::REFUSED {
+            assert_eq!(app.list_records(zone_name).await, before);
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        } else {
+            assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
+            let exported = exported_record_sets(&app, zone_name).await;
+            assert!(exported[&(format!("naptr.{zone_name}."), Rtype::NAPTR)].contains(&rdata));
+        }
+    }
 }
 
 /// Refuse unserved zone classes before evaluating prerequisites or updates.
