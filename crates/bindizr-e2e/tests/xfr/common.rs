@@ -25,7 +25,7 @@ pub(crate) async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
 }
 
 /// Build an IXFR query carrying the client's SOA serial.
-pub(crate) fn ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
+pub(crate) fn build_ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
     let name = parse_name(zone).unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1995);
@@ -53,7 +53,7 @@ pub(crate) fn ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> 
 }
 
 /// Build a two-question QUERY with optional EDNS.
-pub(crate) fn multi_question_query(
+pub(crate) fn build_multi_question_query(
     zone: &str,
     qtype: Rtype,
     qclass: Class,
@@ -84,7 +84,7 @@ pub(crate) fn multi_question_query(
 }
 
 /// Build a query with the specified OPT versions and DO bits.
-pub(crate) fn edns_query(
+pub(crate) fn build_edns_query(
     zone: &str,
     qtype: Rtype,
     opts: &[(u8, bool)],

@@ -137,7 +137,7 @@ pub(crate) async fn handle_tcp_xfr(
         }
         Err(XfrError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
-            let response = query.signed_error_response(
+            let response = query.build_signed_error_response(
                 OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 identity.signer.as_mut(),
@@ -182,7 +182,7 @@ pub(crate) async fn handle_tcp_xfr(
             // connection stays open for the other queries it carries; it is
             // signed under the key that got this far (RFC 8945, Section 5.3.1).
             let ended = async {
-                let response = query.signed_error_response(
+                let response = query.build_signed_error_response(
                     OptRcode::SERVFAIL,
                     None,
                     identity.signer.as_mut(),
@@ -224,7 +224,7 @@ pub(crate) async fn handle_udp_xfr(
                 refusal.reason
             );
             return refusal.into_response(query).unwrap_or_else(|_| {
-                query.error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
+                query.build_error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
             });
         }
     };
@@ -232,6 +232,6 @@ pub(crate) async fn handle_udp_xfr(
     cx.metrics()
         .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Truncated);
     query
-        .signed_truncated_response(identity.signer.as_mut())
-        .unwrap_or_else(|_| query.truncated_response())
+        .build_signed_truncated_response(identity.signer.as_mut())
+        .unwrap_or_else(|_| query.build_truncated_response())
 }

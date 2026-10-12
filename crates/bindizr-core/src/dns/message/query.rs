@@ -277,19 +277,19 @@ impl ParsedQuery {
 
     /// An empty authoritative answer with TC set, so a transfer client asks
     /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.1.1).
-    pub fn truncated_response(&self) -> Vec<u8> {
+    pub fn build_truncated_response(&self) -> Vec<u8> {
         self.build_response(OptRcode::NOERROR, true, None).finish()
     }
 
     /// A response echoing this query with only `rcode` set, and the extended
     /// error beside it when the query spoke EDNS (RFC 8914).
-    pub fn error_response(&self, rcode: Rcode, ede: Option<ExtendedErrorCode>) -> Vec<u8> {
+    pub fn build_error_response(&self, rcode: Rcode, ede: Option<ExtendedErrorCode>) -> Vec<u8> {
         self.build_response(OptRcode::from(rcode), false, ede)
             .finish()
     }
 
     /// The truncated answer, signed when the question was.
-    pub fn signed_truncated_response(
+    pub fn build_signed_truncated_response(
         &self,
         signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
@@ -304,7 +304,7 @@ impl ParsedQuery {
 
     /// The error response, signed when a key was accepted: an accepted key
     /// answers under itself, error or not (RFC 8945, Section 5.3).
-    pub fn signed_error_response(
+    pub fn build_signed_error_response(
         &self,
         rcode: OptRcode,
         ede: Option<ExtendedErrorCode>,

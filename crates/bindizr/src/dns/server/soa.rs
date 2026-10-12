@@ -196,7 +196,7 @@ async fn handle_soa_request(
         let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
-                return Ok(query.signed_error_response(
+                return Ok(query.build_signed_error_response(
                     OptRcode::NOTAUTH,
                     Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                     identity.signer.as_mut(),
@@ -230,7 +230,7 @@ async fn handle_soa_request(
     let zone = match access {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
-            return Ok(query.signed_error_response(
+            return Ok(query.build_signed_error_response(
                 OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 identity.signer.as_mut(),

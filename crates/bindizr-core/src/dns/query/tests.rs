@@ -176,10 +176,18 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     ));
 }
 
-/// Verify that build edns question advertises the payload size.
+/// Verify that a question advertises the requested EDNS payload size.
 #[test]
-fn build_edns_question_advertises_the_payload_size() {
-    let (query_id, wire) = build_edns_question(true, &name("example.com"), Rtype::DS);
+fn build_question_advertises_edns_payload_size() {
+    let (query_id, builder) = build_question(
+        Opcode::QUERY,
+        false,
+        true,
+        &name("example.com"),
+        Rtype::DS,
+        Some(EDNS_UDP_PAYLOAD_SIZE),
+    );
+    let wire = builder.finish();
 
     let message = Message::from_octets(wire.as_slice()).unwrap();
     assert_eq!(message.header().id(), query_id);

@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{counter, edns_query, ixfr_query, multi_question_query};
+use common::{build_edns_query, build_ixfr_query, build_multi_question_query, counter};
 use domain::{
     base::{
         Message, MessageBuilder, Name, Ttl,
@@ -176,7 +176,7 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
         ] {
             for key in [None, Some(&key)] {
                 for udp in [false, true] {
-                    let query = ixfr_query(zone_name, client_serial);
+                    let query = build_ixfr_query(zone_name, client_serial);
                     let response = exchange_request(query, key, |message| {
                         if udp {
                             exchange_udp(app.dns_port(), message)
@@ -233,7 +233,7 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
     for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
         for serial in [current, current + 1] {
             for udp in [false, true] {
-                let query = ixfr_query(zone_name, serial);
+                let query = build_ixfr_query(zone_name, serial);
                 let response = exchange_request(query, Some(&key), |message| {
                     if udp {
                         exchange_udp(app.dns_port(), message)
@@ -746,7 +746,7 @@ async fn multi_question_queries_receive_formerr() {
             for version in [None, Some(0), Some(1)] {
                 for key in [None, Some(&key)] {
                     for udp in [false, true] {
-                        let query = multi_question_query(zone_name, qtype, qclass, version);
+                        let query = build_multi_question_query(zone_name, qtype, qclass, version);
                         let response = exchange_request(query, key, |message| {
                             if udp {
                                 exchange_udp(app.dns_port(), message)
@@ -826,7 +826,7 @@ async fn edns_dnssec_ok_is_echoed_in_query_responses() {
             for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR, Rtype::A] {
                 for key in [None, Some(&key)] {
                     for udp in [false, true] {
-                        let query = edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
+                        let query = build_edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
                         let response = exchange_request(query, key, |message| {
                             if udp {
                                 exchange_udp(app.dns_port(), message)
@@ -877,7 +877,7 @@ async fn edns_dnssec_ok_is_echoed_in_tsig_errors() {
             if error == TsigRcode::BADKEY {
                 signing_key.name = "unknown-key".to_string();
             }
-            let mut query = edns_query(zone_name, Rtype::SOA, &[(0, dnssec_ok)]);
+            let mut query = build_edns_query(zone_name, Rtype::SOA, &[(0, dnssec_ok)]);
             sign(&mut query, &signing_key).unwrap();
             let mut query = query.finish();
             if error == TsigRcode::BADSIG {
@@ -916,7 +916,7 @@ async fn badtime_query_responses_preserve_edns_and_verify() {
     let signed_at = Time48::from_u64(u64::from(Time48::now()) - 3600);
     for dnssec_ok in [false, true] {
         for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
-            let mut query = edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
+            let mut query = build_edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
             ClientTransaction::request_with_fudge(
                 key.to_tsig_key().unwrap(),
                 &mut query,
@@ -981,7 +981,7 @@ async fn truncated_queries_follow_tsig_validation_order() {
                 (3600, true, TsigRcode::BADSIG),
             ] {
                 let signed_at = Time48::from_u64(u64::from(Time48::now()) - age);
-                let mut query = edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
+                let mut query = build_edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
                 ClientTransaction::request_with_fudge(
                     key.to_tsig_key_with_mac_len(16).unwrap(),
                     &mut query,
@@ -1037,7 +1037,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let plain = exchange_udp(
         app.dns_port(),
-        &edns_query(zone_name, Rtype::SOA, &[]).finish(),
+        &build_edns_query(zone_name, Rtype::SOA, &[]).finish(),
     )
     .unwrap();
     let plain = Message::from_octets(plain.as_slice()).unwrap();
@@ -1046,7 +1046,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let edns = exchange_udp(
         app.dns_port(),
-        &edns_query(zone_name, Rtype::SOA, &[(0, false)]).finish(),
+        &build_edns_query(zone_name, Rtype::SOA, &[(0, false)]).finish(),
     )
     .unwrap();
     let edns = Message::from_octets(edns.as_slice()).unwrap();
@@ -1057,7 +1057,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let doubled = exchange_udp(
         app.dns_port(),
-        &edns_query(zone_name, Rtype::SOA, &[(0, false); 2]).finish(),
+        &build_edns_query(zone_name, Rtype::SOA, &[(0, false); 2]).finish(),
     )
     .unwrap();
     let doubled = Message::from_octets(doubled.as_slice()).unwrap();
@@ -1065,7 +1065,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let newer = exchange_udp(
         app.dns_port(),
-        &edns_query(zone_name, Rtype::SOA, &[(1, false)]).finish(),
+        &build_edns_query(zone_name, Rtype::SOA, &[(1, false)]).finish(),
     )
     .unwrap();
     let newer = Message::from_octets(newer.as_slice()).unwrap();
@@ -1075,7 +1075,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 
     let frame = exchange_tcp(
         app.dns_port(),
-        &edns_query(zone_name, Rtype::AXFR, &[(0, false)]).finish(),
+        &build_edns_query(zone_name, Rtype::AXFR, &[(0, false)]).finish(),
     )
     .expect("AXFR");
     let envelope = Message::from_octets(frame.as_slice()).unwrap();
@@ -1121,7 +1121,7 @@ async fn a_udp_answer_over_the_limit_is_truncated() {
 
     let plain = exchange_udp(
         app.dns_port(),
-        &edns_query(&zone_name, Rtype::SOA, &[]).finish(),
+        &build_edns_query(&zone_name, Rtype::SOA, &[]).finish(),
     )
     .unwrap();
     let plain = Message::from_octets(plain.as_slice()).unwrap();
@@ -1131,7 +1131,7 @@ async fn a_udp_answer_over_the_limit_is_truncated() {
 
     let edns = exchange_udp(
         app.dns_port(),
-        &edns_query(&zone_name, Rtype::SOA, &[(0, false)]).finish(),
+        &build_edns_query(&zone_name, Rtype::SOA, &[(0, false)]).finish(),
     )
     .unwrap();
     let edns = Message::from_octets(edns.as_slice()).unwrap();

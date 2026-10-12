@@ -61,27 +61,15 @@ pub enum ReadResponseError {
 /// TLD's NS record set): the DNS flag day 2020 value.
 pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
 
-/// Build a single-question DNS message with a random id, returning
-/// `(query_id, wire bytes)`. `rd` asks a resolver to recurse.
+/// Build a question with a random ID and optional EDNS, leaving the
+/// additional section open for signing before the caller finishes it.
 pub fn build_question(
     opcode: Opcode,
     aa: bool,
     rd: bool,
     qname: &Name<Vec<u8>>,
     rtype: Rtype,
-) -> (u16, Vec<u8>) {
-    let (query_id, builder) = question_builder(opcode, aa, rd, qname, rtype);
-    (query_id, builder.finish())
-}
-
-/// The message of [`build_question`] still open at its additional section,
-/// for a caller that signs it before finishing.
-pub fn question_builder(
-    opcode: Opcode,
-    aa: bool,
-    rd: bool,
-    qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    edns_udp_payload_size: Option<u16>,
 ) -> (u16, AdditionalBuilder<Vec<u8>>) {
     let query_id = rand::random::<u16>();
 
@@ -97,21 +85,17 @@ pub fn question_builder(
         .push((qname, rtype))
         .expect("one question fits an unlimited message");
 
-    (query_id, question.additional())
-}
+    let mut additional = question.additional();
+    if let Some(udp_payload_size) = edns_udp_payload_size {
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(udp_payload_size);
+                Ok(())
+            })
+            .expect("one OPT record fits an unlimited message");
+    }
 
-/// [`build_question`] for a standard query carrying an EDNS0 OPT record
-/// (RFC 6891) that advertises [`EDNS_UDP_PAYLOAD_SIZE`].
-pub fn build_edns_question(rd: bool, qname: &Name<Vec<u8>>, rtype: Rtype) -> (u16, Vec<u8>) {
-    let (query_id, mut additional) = question_builder(Opcode::QUERY, false, rd, qname, rtype);
-    additional
-        .opt(|opt| {
-            opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
-            Ok(())
-        })
-        .expect("one OPT record fits an unlimited message");
-
-    (query_id, additional.finish())
+    (query_id, additional)
 }
 
 /// Whether a response carries the TC flag: the answer did not fit the UDP

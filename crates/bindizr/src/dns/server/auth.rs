@@ -60,7 +60,7 @@ impl TransferRefusal {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        Ok(query.signed_error_response(self.rcode, self.ede, self.signer.as_deref_mut())?)
+        Ok(query.build_signed_error_response(self.rcode, self.ede, self.signer.as_deref_mut())?)
     }
 }
 
@@ -204,7 +204,7 @@ pub(crate) async fn refuse_query(
     match authenticate_tsig_key(dns_cx, query_data).await {
         Ok(identity) => {
             let mut signer = identity.and_then(|identity| identity.signer);
-            Ok(query.signed_error_response(rcode, ede, signer.as_mut())?)
+            Ok(query.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
         Err(refusal) => refusal.into_response(query),
     }

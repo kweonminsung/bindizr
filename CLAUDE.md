@@ -961,20 +961,47 @@ methods follow *Methods and free functions*; a free predicate includes its
 subject in `is_<subject>_<property>`, `has_<thing>`, or `matches_<thing>`
 where the arguments do not make it evident.
 
-Noun names belong to pure derivations named by what they return, where a
-verb would add nothing the return type does not say (`elapsed_ms`,
-`record_set_digest`, `promotable_sep_key_ids`, `like_pattern`) — anything with
-I/O or a side effect keeps its verb — and to constructors, which are named
-by what they build: the kind alone where the module builds one kind of
-thing (`unauthorized(message) -> Response` in the auth middleware,
-`ServiceError::unauthorized`), with `_error` / `_response` added only where
-one module builds several (`ParsedQuery::signed_error_response`). Names an
-external trait fixes (`Log::enabled`,
-`KeyStore::get_key`, sqlx's `compatible`) and serde default providers
-(`default_<field>`) are outside the vocabulary.
+Noun names belong to accessors and pure derivations where a verb would add
+nothing (`elapsed_ms`, `record_set_digest`, `promotable_sep_key_ids`,
+`like_pattern`). Error/refusal constructors name the condition
+(`ServiceError::unauthorized`, `TransferRefusal::refused`), as do small HTTP
+status helpers (`unauthorized(message) -> Response`). These are not a
+noun-name exception for message assembly: constructing a reply from a query
+is `build_error_response`, not `error_response`. Names an external trait fixes
+(`Log::enabled`, `KeyStore::get_key`, sqlx's `compatible`) and serde default
+providers (`default_<field>`) are outside the vocabulary.
 
 One concept keeps one name across crates. Do not add a wrapper that only
 reorders or renames the arguments of the function it calls — call it directly.
+
+### Construction names — name the operation and its result
+
+Choose a name from the responsibility, not the return type's implementation:
+
+| Responsibility | Form | Examples |
+| --- | --- | --- |
+| Assemble a message, payload, or aggregate in memory | `build_<thing>` | `build_question`, `build_page`, `build_json_response` |
+| Construct a type's own value | `Type::new`, `Type::parse`, or its lifecycle verb | `DnsMessageBuilder::new`, `ImportPlan::compute`, `Db::connect` |
+| Convert the same logical value to another representation | `From` / `TryFrom`, or `as_` / `to_` / `into_` as defined above | `OwnerName::to_wire`, `TransferRefusal::into_response` |
+| Encode/decode an existing value or frame | `encode_<thing>` / `decode_<thing>` | `encode_tcp_message`, `decode_name_labels` |
+| Create a stored entity | `create` in its entity module; `create_<entity>` at a front end | `zone::create`, `create_zone` |
+
+For assembly, use `build_<qualifier>_<thing>` when a qualifier is needed:
+`build_signed_error_response`, `build_ixfr_query`. Name the actual artifact:
+an error reply is a `response`, while an application error is an `error`.
+The same spelling applies to free functions, protocol methods, and test
+helpers that assemble wire messages. Small fixture constructors retain the
+local names allowed by *Test helpers* (`test_record`, `axfr_query`).
+
+A function returning an unfinished builder still uses `build_<thing>`:
+`build_question(...) -> (u16, AdditionalBuilder<Vec<u8>>)`. Do not use
+`<thing>_builder`, `make_<thing>`, or `construct_<thing>` for that operation.
+`Builder` belongs in the type name and `builder` may name the local value.
+Keep one construction entry point when only finalization differs; the caller
+appends optional data or a signature and calls `finish()`. The return type
+and a short purpose comment state whether further assembly is possible.
+This naming rule does not justify merging different validation, error, or
+resource-lifecycle contracts, or adding a wrapper solely to match a name.
 
 ### Vocabulary — record, record set
 
@@ -1245,7 +1272,7 @@ does not by itself make the operation belong to that type.
    `RecordType::validate_value`) — even when one front end is the only
    caller, which maps the error to its own (`From<DeleteShapeError> for
    UpdateError`). A front end never re-wraps such a method
-   (`ParsedQuery::signed_error_response` takes the optional signer itself).
+   (`ParsedQuery::build_signed_error_response` takes the optional signer itself).
 5. **A builder step or a resource's operation**: `&mut self` steps take the
    values they add (`DnsMessageBuilder::add_record(&record, …)`); a type
    that owns a connection, a task, or a lock drives it
@@ -1258,7 +1285,7 @@ Not a method, whatever its first parameter: a function that takes
 is not the receiver's (a queue's `send_batch(cx, batch)`); an assembly of
 several values of equal standing that returns a payload, a standard type or
 a map (`build_record_diff(zone, …)`, `group_record_sets`,
-`build_notify_message`); a service rule on a payload type — a payload's
+`build_question`); a service rule on a payload type — a payload's
 conversions only reshape a source (`From` impls, `from_secondary`). Page
 limits and metadata belong to the service's `pagination` module, probe
 classification to `dns_client::probe::build_secondary_status`, and the

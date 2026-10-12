@@ -211,11 +211,10 @@ pub fn verify_tsig(
                 .map_err(|e| TsigError::Malformed(Box::new(e)))?;
             if tsig.data().mac().len() < key.domain.native_len() {
                 let response =
-                    build_signed_error(&original, key, AuthenticatedError::BadTrunc, now).ok_or(
-                        TsigError::BuildResponse {
+                    build_signed_error_response(&original, key, AuthenticatedError::BadTrunc, now)
+                        .ok_or(TsigError::BuildResponse {
                             rcode: TsigRcode::BADTRUNC,
-                        },
-                    )?;
+                        })?;
                 return Err(TsigError::Rejected {
                     rcode: TsigRcode::BADTRUNC,
                     response,
@@ -314,10 +313,10 @@ fn tsig_error(
     };
     let response = match error {
         // BADTIME is returned only after the request MAC has been authenticated.
-        TsigRcode::BADTIME => {
-            key.and_then(|key| build_signed_error(&msg, key, AuthenticatedError::BadTime, now))
-        }
-        other => build_unsigned_error(&msg, other),
+        TsigRcode::BADTIME => key.and_then(|key| {
+            build_signed_error_response(&msg, key, AuthenticatedError::BadTime, now)
+        }),
+        other => build_unsigned_error_response(&msg, other),
     };
 
     match response {
@@ -337,7 +336,7 @@ enum AuthenticatedError {
 }
 
 /// Sign a time or truncation error, including EDNS (RFC 8945, Section 5.3.2).
-fn build_signed_error(
+fn build_signed_error_response(
     msg: &Message<&[u8]>,
     key: &TsigSigningKey,
     error: AuthenticatedError,
@@ -405,7 +404,7 @@ fn build_signed_error(
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that
 /// echoes the request TSIG with an empty MAC (RFC 8945, Section 5.3.2).
-fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
+fn build_unsigned_error_response(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
     let tsig_record = msg
         .additional()
         .ok()?

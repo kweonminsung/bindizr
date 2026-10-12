@@ -6,9 +6,9 @@ use std::{net::SocketAddr, time::Duration};
 use bindizr_core::{
     dns::{
         dnssec::WireNameError,
-        message::{Name, Rtype},
+        message::{Name, Opcode, Rtype},
         name::ZoneName,
-        query::{DsRecordSet, build_edns_question, extract_ds_record_set},
+        query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
     },
     model::zone::Zone,
 };
@@ -149,7 +149,15 @@ async fn query_ds_at(
 ) -> Result<Option<DsRecordSet>, QueryDsError> {
     let mut last_error = None;
     for addr in addrs {
-        let (query_id, query) = build_edns_question(false, qname, Rtype::DS);
+        let (query_id, builder) = build_question(
+            Opcode::QUERY,
+            false,
+            false,
+            qname,
+            Rtype::DS,
+            Some(EDNS_UDP_PAYLOAD_SIZE),
+        );
+        let query = builder.finish();
         let result = match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
         {

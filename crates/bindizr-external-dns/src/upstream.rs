@@ -120,7 +120,7 @@ impl UpstreamClient {
         changes: &BindizrChanges,
     ) -> Result<(), UpstreamError> {
         let request = self
-            .request(reqwest::Method::POST, "/external-dns/changes")
+            .build_request(reqwest::Method::POST, "/external-dns/changes")
             .json(changes);
         self.send(request).await?;
         Ok(())
@@ -141,7 +141,7 @@ impl UpstreamClient {
             records: Vec<BindizrRecord>,
         }
         let request = self
-            .request(reqwest::Method::POST, "/external-dns/adjust")
+            .build_request(reqwest::Method::POST, "/external-dns/adjust")
             .json(&AdjustRequest {
                 records: records.into(),
             });
@@ -168,7 +168,9 @@ impl UpstreamClient {
         &self,
         path: &str,
     ) -> Result<T, UpstreamError> {
-        let response = self.send(self.request(reqwest::Method::GET, path)).await?;
+        let response = self
+            .send(self.build_request(reqwest::Method::GET, path))
+            .await?;
         response
             .json::<T>()
             .await
@@ -176,7 +178,7 @@ impl UpstreamClient {
     }
 
     /// Build an authenticated request to a bindizr API path.
-    fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+    fn build_request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         let mut request = self
             .http
             .request(method, format!("{}{}", self.base_url, path));

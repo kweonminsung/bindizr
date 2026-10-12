@@ -20,7 +20,7 @@ use rustls::{
 };
 use serial_test::serial;
 
-use super::common::{counter, edns_query, ixfr_query, multi_question_query};
+use super::common::{build_edns_query, build_ixfr_query, build_multi_question_query, counter};
 use crate::common::{
     TestApp, TestAppOptions, assert_cli_failure_contains, axfr,
     dns::{
@@ -124,7 +124,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
         }
         for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
             for serial in [current, current + 1] {
-                let query = ixfr_query(zone_name, serial);
+                let query = build_ixfr_query(zone_name, serial);
                 let response = exchange_request(query, Some(&key), |message| {
                     exchange_xot(app.dns_tls_port(), message, dot_client(&app))
                 })
@@ -167,7 +167,7 @@ async fn edns_dnssec_ok_is_echoed_over_tls() {
     for dnssec_ok in [false, true] {
         for version in [0, 1] {
             for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR, Rtype::A] {
-                let query = edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
+                let query = build_edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
                 let response = exchange_request(query, Some(&key), |message| {
                     exchange_xot(app.dns_tls_port(), message, dot_client(&app))
                 })
@@ -200,7 +200,7 @@ async fn badtime_tls_responses_preserve_edns_and_verify() {
     let signed_at = Time48::from_u64(u64::from(Time48::now()) - 3600);
     for dnssec_ok in [false, true] {
         for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
-            let mut query = edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
+            let mut query = build_edns_query(zone_name, qtype, &[(0, dnssec_ok)]);
             ClientTransaction::request_with_fudge(
                 key.to_tsig_key().unwrap(),
                 &mut query,
@@ -248,7 +248,7 @@ async fn truncated_tls_queries_follow_tsig_validation_order() {
             (3600, true, TsigRcode::BADSIG),
         ] {
             let signed_at = Time48::from_u64(u64::from(Time48::now()) - age);
-            let mut query = edns_query(zone_name, qtype, &[(0, true)]);
+            let mut query = build_edns_query(zone_name, qtype, &[(0, true)]);
             ClientTransaction::request_with_fudge(
                 key.to_tsig_key_with_mac_len(16).unwrap(),
                 &mut query,
@@ -299,7 +299,7 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
     let zone_name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "xot-multi-question-key", KeyRole::Admin).await;
     for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
-        let query = multi_question_query(zone_name, qtype, Class::IN, Some(0));
+        let query = build_multi_question_query(zone_name, qtype, Class::IN, Some(0));
         let response = exchange_request(query, Some(&key), |message| {
             exchange_xot(app.dns_tls_port(), message, dot_client(&app))
         })
@@ -313,7 +313,8 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
         assert_eq!(response.sole_question().unwrap().qtype(), qtype);
         assert!(response.opt().unwrap().dnssec_ok());
     }
-    let mut unreadable = multi_question_query(zone_name, Rtype::SOA, Class::IN, None).finish();
+    let mut unreadable =
+        build_multi_question_query(zone_name, Rtype::SOA, Class::IN, None).finish();
     unreadable.truncate(12);
     let response = exchange_xot(app.dns_tls_port(), &unreadable, dot_client(&app)).unwrap();
     let response = Message::from_octets(response).unwrap();
@@ -347,7 +348,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     // A UDP IXFR is a transfer request too; a SOA query keeps answering.
     let frame = exchange_udp(
         app.dns_port(),
-        &edns_query(zone_name, Rtype::IXFR, &[(0, false)]).finish(),
+        &build_edns_query(zone_name, Rtype::IXFR, &[(0, false)]).finish(),
     )
     .unwrap();
     let response = Message::from_octets(frame.as_slice()).unwrap();

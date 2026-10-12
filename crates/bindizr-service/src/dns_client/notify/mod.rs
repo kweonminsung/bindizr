@@ -4,7 +4,7 @@ use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
         name::ZoneName,
-        query::{question_builder, validate_notify_response},
+        query::{build_question, validate_notify_response},
         tsig::{TsigSigningKey, sign_request, verify_response},
     },
     metrics::NotifyResult,
@@ -222,7 +222,8 @@ async fn send_notify_to_server_once(
     timeout: Duration,
     tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
-    let (query_id, mut builder) = question_builder(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
+    let (query_id, mut builder) =
+        build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
     let signer = match tsig_key {
         Some(tsig_key) => Some(sign_request(&mut builder, tsig_key.clone())?),
         None => None,
@@ -257,7 +258,7 @@ mod tests {
     use crate::dns_client::ds::tests::encode_name;
 
     /// A NOTIFY response with `flags`, echoing a SOA question for `qname`.
-    fn notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
+    fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
         let mut response = Vec::new();
         response.extend_from_slice(&query_id.to_be_bytes());
         response.extend_from_slice(&flags.to_be_bytes());
@@ -280,7 +281,7 @@ mod tests {
     #[test]
     fn validate_notify_response_accepts_matching_noerror_response() {
         // 0xa000 = QR set + opcode NOTIFY, NOERROR.
-        let response = notify_response(1234, 0xa000, "example.com");
+        let response = build_notify_response(1234, 0xa000, "example.com");
 
         assert!(validate_notify_response(1234, &zone(), &response).is_ok());
     }
@@ -288,7 +289,7 @@ mod tests {
     /// Verify that `validate_notify_response` rejects id mismatch.
     #[test]
     fn validate_notify_response_rejects_id_mismatch() {
-        let response = notify_response(1234, 0xa000, "example.com");
+        let response = build_notify_response(1234, 0xa000, "example.com");
 
         let err = validate_notify_response(5678, &zone(), &response).unwrap_err();
 
@@ -299,7 +300,7 @@ mod tests {
     #[test]
     fn validate_notify_response_rejects_error_rcode() {
         // 0xa005 adds RCODE 5 (REFUSED).
-        let response = notify_response(1234, 0xa005, "example.com");
+        let response = build_notify_response(1234, 0xa005, "example.com");
 
         let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 
@@ -312,7 +313,7 @@ mod tests {
     fn validate_notify_response_reports_rcode_without_question() {
         // NSD 4.6 answers NOTIFY for a zone it does not serve with NOTAUTH
         // (RCODE 9) and an empty question section.
-        let mut response = notify_response(1234, 0xa009, "example.com");
+        let mut response = build_notify_response(1234, 0xa009, "example.com");
         response.truncate(12);
         response[4..6].copy_from_slice(&0u16.to_be_bytes());
 
@@ -324,7 +325,7 @@ mod tests {
     /// Verify that `validate_notify_response` rejects another question.
     #[test]
     fn validate_notify_response_rejects_another_question() {
-        let response = notify_response(1234, 0xa000, "other.com");
+        let response = build_notify_response(1234, 0xa000, "other.com");
 
         let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 

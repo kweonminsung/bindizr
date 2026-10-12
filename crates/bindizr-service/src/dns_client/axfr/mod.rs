@@ -129,7 +129,8 @@ async fn transfer_from(
     qname: &Name<Vec<u8>>,
     max_records: usize,
 ) -> Result<Vec<TransferRecord>, TransferZoneError> {
-    let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR);
+    let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR, None);
+    let query = builder.finish();
     let mut stream = tokio::net::TcpStream::connect(addr)
         .await
         .map_err(TransferZoneError::Connect)?;

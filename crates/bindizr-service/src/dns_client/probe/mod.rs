@@ -255,7 +255,8 @@ async fn probe_one(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<Serial, ProbeError> {
-    let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA);
+    let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA, None);
+    let query = builder.finish();
     let (received, response) =
         super::exchange_over_udp(server_addr, timeout, &query, "SOA probe").await?;
     Ok(Serial::from(extract_soa_serial(
