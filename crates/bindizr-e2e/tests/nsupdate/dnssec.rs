@@ -76,7 +76,7 @@ async fn dnssec_prerequisites_see_derived_records() {
             } else {
                 &add
             };
-            let rcode = send_update(app.dns_port(), zone_name, &[prerequisite], updates)
+            let rcode = send_update_udp(app.dns_port(), zone_name, &[prerequisite], updates, None)
                 .expect("prerequisite response");
             assert_eq!(rcode, expected, "{row}");
             assert_eq!(app.list_records(zone_name).await, before);
@@ -160,18 +160,19 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
                     rdata: rdata.clone(),
                 })
                 .collect();
-            let rcode =
-                send_update(app.dns_port(), zone_name, &prerequisites, &[]).expect("exact set");
+            let rcode = send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
+                .expect("exact set");
             assert_eq!(rcode, Rcode::NOERROR, "{name} {rtype}");
             let mut repeated = prerequisites.clone();
             repeated.reverse();
             repeated.extend(prerequisites.clone());
-            let rcode =
-                send_update(app.dns_port(), zone_name, &repeated, &[]).expect("repeated set");
+            let rcode = send_update_udp(app.dns_port(), zone_name, &repeated, &[], None)
+                .expect("repeated set");
             assert_eq!(rcode, Rcode::NOERROR, "{name} {rtype}");
             if prerequisites.len() > 1 {
-                let rcode = send_update(app.dns_port(), zone_name, &prerequisites[..1], &[])
-                    .expect("subset");
+                let rcode =
+                    send_update_udp(app.dns_port(), zone_name, &prerequisites[..1], &[], None)
+                        .expect("subset");
                 assert_eq!(rcode, Rcode::NXRRSET, "{name} {rtype}");
             }
         }
@@ -191,8 +192,8 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
                     rdata,
                 })
                 .collect();
-            let rcode =
-                send_update(app.dns_port(), zone_name, &prerequisites, &[]).expect("different set");
+            let rcode = send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
+                .expect("different set");
             assert_eq!(rcode, Rcode::NXRRSET);
         }
         // Read-only checks must not advance the signed view.
@@ -213,8 +214,14 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
             ttl: 300,
             addr: "192.0.2.141".to_string(),
         };
-        let rcode = send_update(app.dns_port(), zone_name, &signatures, &[add("accepted")])
-            .expect("guarded write");
+        let rcode = send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &signatures,
+            &[add("accepted")],
+            None,
+        )
+        .expect("guarded write");
         assert_eq!(rcode, Rcode::NOERROR);
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
         let after = exported_record_sets(&app, zone_name).await;
@@ -222,8 +229,14 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
             after[&(apex.clone(), Rtype::RRSIG)],
             sets[&(apex.clone(), Rtype::RRSIG)]
         );
-        let rcode = send_update(app.dns_port(), zone_name, &signatures, &[add("rejected")])
-            .expect("stale guard");
+        let rcode = send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &signatures,
+            &[add("rejected")],
+            None,
+        )
+        .expect("stale guard");
         assert_eq!(rcode, Rcode::NXRRSET);
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
         assert_eq!(exported_record_sets(&app, zone_name).await, after);
@@ -271,7 +284,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
             rdata: rdata.clone(),
         })
         .collect();
-    let rcode = send_signed_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], &key)
+    let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
         .expect("restricted read");
     assert_eq!(rcode, Rcode::REFUSED);
     app.run_cli_success(&[
@@ -284,7 +297,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
         "record:read",
     ])
     .await;
-    let rcode = send_signed_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], &key)
+    let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
         .expect("granted read");
     assert_eq!(rcode, Rcode::NOERROR);
     for (rtype, rdata, expected) in [
@@ -296,7 +309,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
             rtype,
             rdata,
         };
-        let rcode = send_signed_update_tcp(app.dns_port(), zone_name, &[prerequisite], &[], &key)
+        let rcode = send_update_tcp(app.dns_port(), zone_name, &[prerequisite], &[], Some(&key))
             .expect("signed error");
         assert_eq!(rcode, expected);
     }

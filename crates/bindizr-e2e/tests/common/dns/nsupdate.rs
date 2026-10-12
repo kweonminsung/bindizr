@@ -92,43 +92,8 @@ pub(crate) enum PrereqRecord {
     },
 }
 
-/// Send an unsigned UPDATE for `zone` and return the response RCODE.
-pub(crate) fn send_update(
-    port: u16,
-    zone: &str,
-    prerequisites: &[PrereqRecord],
-    updates: &[UpdateRecord],
-) -> Result<Rcode, String> {
-    send(port, zone, prerequisites, updates, None)
-}
-
-/// Send an UPDATE signed with `key`, as a real nsupdate client would.
-pub(crate) fn send_signed_update(
-    port: u16,
-    zone: &str,
-    prerequisites: &[PrereqRecord],
-    updates: &[UpdateRecord],
-    key: &SigningKey,
-) -> Result<Rcode, String> {
-    send(port, zone, prerequisites, updates, Some(key))
-}
-
-/// Send a signed UPDATE over TCP and verify the response MAC, errors included.
-pub(crate) fn send_signed_update_tcp(
-    port: u16,
-    zone: &str,
-    prerequisites: &[PrereqRecord],
-    updates: &[UpdateRecord],
-    key: &SigningKey,
-) -> Result<Rcode, String> {
-    let query_id = (std::process::id() as u16).wrapping_add(port);
-    let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
-    let response = exchange_request(request, Some(key), |message| exchange_tcp(port, message))?;
-    Ok(response.header().rcode())
-}
-
-/// Send an nsupdate with optional TSIG and return the response code.
-fn send(
+/// Send a UDP UPDATE, checking the response ID and optional TSIG.
+pub(crate) fn send_update_udp(
     port: u16,
     zone: &str,
     prerequisites: &[PrereqRecord],
@@ -140,6 +105,20 @@ fn send(
         .wrapping_add(1);
     let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
     let response = exchange_request(request, key, |message| exchange_udp(port, message))?;
+    Ok(response.header().rcode())
+}
+
+/// Send a TCP UPDATE, checking the response ID and optional TSIG.
+pub(crate) fn send_update_tcp(
+    port: u16,
+    zone: &str,
+    prerequisites: &[PrereqRecord],
+    updates: &[UpdateRecord],
+    key: Option<&SigningKey>,
+) -> Result<Rcode, String> {
+    let query_id = (std::process::id() as u16).wrapping_add(port);
+    let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
+    let response = exchange_request(request, key, |message| exchange_tcp(port, message))?;
     Ok(response.header().rcode())
 }
 

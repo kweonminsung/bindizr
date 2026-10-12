@@ -1237,6 +1237,12 @@ A Codacy complexity finding is never a reason to split a function: a bot
 review cannot justify a helper, so leave the function whole unless the user
 asks for the split.
 
+Keep UDP, TCP, and TLS send/receive entry points separate, including test
+helpers (`send_update_udp`, `send_update_tcp`). Share message construction
+and signature handling; framing, timeouts, and connection lifetimes belong
+to each transport. Similar call sequences alone do not justify merging
+these entry points behind a transport selector.
+
 ### Methods and free functions — what a type owns
 
 An inherent `impl` holds only these kinds of function; a function that is

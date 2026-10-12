@@ -30,7 +30,9 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TransferOutcome, axfr,
     dns::{
-        exchange_request, exchange_udp, parse_name,
+        exchange_request, exchange_udp,
+        nsupdate::{UpdateRecord, send_update_udp},
+        parse_name,
         tsig::{KeyRole, SigningKey, create_tsig_key, is_signed, sign, verify_response_mac},
         write_frame,
     },
@@ -346,16 +348,16 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
     assert!(outcome.records() >= 3);
 
     // The same key must not be able to write what it just read.
-    let rcode = crate::common::dns::nsupdate::send_signed_update(
+    let rcode = send_update_udp(
         app.dns_port(),
         zone_name,
         &[],
-        &[crate::common::dns::nsupdate::UpdateRecord::AddA {
+        &[UpdateRecord::AddA {
             name: format!("www.{zone_name}."),
             ttl: 300,
             addr: "192.0.2.80".to_string(),
         }],
-        &key,
+        Some(&key),
     )
     .expect("signed update");
     assert_eq!(rcode, Rcode::REFUSED);

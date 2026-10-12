@@ -48,7 +48,7 @@ async fn soa_ineffective_additions_are_successful_noops() {
         (format!("{zone_name}."), serial.wrapping_add(1 << 31)),
         (format!("{zone_name}."), u32::MAX),
     ] {
-        let rcode = send_update(
+        let rcode = send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -57,6 +57,7 @@ async fn soa_ineffective_additions_are_successful_noops() {
                 ttl: 600,
                 soa: replacement(zone_name, serial),
             }],
+            None,
         )
         .unwrap();
         assert_eq!(rcode, Rcode::NOERROR, "serial {serial}");
@@ -84,7 +85,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
         soa: replacement(zone_name, serial),
     };
     assert_eq!(
-        send_update(
+        send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -96,7 +97,8 @@ async fn soa_replacement_versions_the_whole_update_once() {
                 soa(serial + 15, 1200),
                 soa(serial + 20, 1800),
                 add("after"),
-            ]
+            ],
+            None
         )
         .unwrap(),
         Rcode::NOERROR,
@@ -142,7 +144,14 @@ async fn soa_replacement_versions_the_whole_update_once() {
         soa: replacement(zone_name, serial + 20),
     };
     assert_eq!(
-        send_update(app.dns_port(), zone_name, &[prerequisite], &[add("next")]).unwrap(),
+        send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[prerequisite],
+            &[add("next")],
+            None
+        )
+        .unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(
@@ -202,7 +211,7 @@ async fn soa_replacement_uses_zone_permissions() {
         soa: replacement(zone_name, 100),
     }];
     assert_eq!(
-        send_signed_update_tcp(app.dns_port(), zone_name, &[], &updates, &key).unwrap(),
+        send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::REFUSED
     );
     assert_eq!(metadata(&app, zone_name).await, before);
@@ -217,7 +226,7 @@ async fn soa_replacement_uses_zone_permissions() {
     ])
     .await;
     assert_eq!(
-        send_signed_update_tcp(app.dns_port(), zone_name, &[], &updates, &key).unwrap(),
+        send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(app.read_zone_serial(zone_name).await, 100);
@@ -231,7 +240,7 @@ async fn soa_replacement_refusals_are_atomic() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     assert_eq!(
-        send_update(
+        send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -239,7 +248,8 @@ async fn soa_replacement_refusals_are_atomic() {
                 name: format!("blocked.{zone_name}."),
                 ttl: 300,
                 target: "target.example.net.".to_string(),
-            }]
+            }],
+            None
         )
         .unwrap(),
         Rcode::NOERROR
@@ -292,7 +302,7 @@ async fn soa_replacement_refusals_are_atomic() {
             },
         ];
         assert_eq!(
-            send_update(app.dns_port(), zone_name, &[], &updates).unwrap(),
+            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
             Rcode::REFUSED
         );
         assert_eq!(metadata(&app, zone_name).await, before);
@@ -307,7 +317,7 @@ async fn soa_replacement_refusals_are_atomic() {
         soa: replacement(zone_name, 100),
     }];
     assert_eq!(
-        send_update(app.dns_port(), zone_name, &prerequisites, &updates).unwrap(),
+        send_update_udp(app.dns_port(), zone_name, &prerequisites, &updates, None).unwrap(),
         Rcode::NXDOMAIN
     );
     assert_eq!(metadata(&app, zone_name).await, before);
@@ -331,7 +341,7 @@ async fn soa_replacement_refusals_are_atomic() {
         },
     ];
     assert_eq!(
-        send_update(app.dns_port(), zone_name, &[], &updates).unwrap(),
+        send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
         Rcode::REFUSED
     );
     assert_eq!(metadata(&app, zone_name).await, before);
@@ -352,7 +362,7 @@ async fn soa_noops_do_not_require_serial_headroom() {
     let zone_name = zone["name"].as_str().unwrap();
     for serial in [i32::MAX as u32, i32::MAX as u32, i32::MAX as u32 - 1] {
         assert_eq!(
-            send_update(
+            send_update_udp(
                 app.dns_port(),
                 zone_name,
                 &[],
@@ -360,7 +370,8 @@ async fn soa_noops_do_not_require_serial_headroom() {
                     name: format!("{zone_name}."),
                     ttl: 600,
                     soa: replacement(zone_name, serial)
-                }]
+                }],
+                None
             )
             .unwrap(),
             Rcode::NOERROR
@@ -389,7 +400,7 @@ async fn soa_replacement_updates_the_signed_zone() {
     let before = exported_record_sets(&app, zone_name).await;
     let soa = replacement(zone_name, 100);
     assert_eq!(
-        send_update(
+        send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -397,7 +408,8 @@ async fn soa_replacement_updates_the_signed_zone() {
                 name: format!("{zone_name}."),
                 ttl: 900,
                 soa: soa.clone()
-            }]
+            }],
+            None
         )
         .unwrap(),
         Rcode::NOERROR
@@ -425,7 +437,7 @@ async fn soa_replacement_updates_the_signed_zone() {
         soa,
     }];
     assert_eq!(
-        send_update(app.dns_port(), zone_name, &prerequisites, &[]).unwrap(),
+        send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None).unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(app.read_zone_serial(zone_name).await, 100);
@@ -450,14 +462,14 @@ async fn soa_replacement_is_replayed_by_ixfr() {
         })
         .collect();
     assert_eq!(
-        send_update(app.dns_port(), zone_name, &[], &padding).unwrap(),
+        send_update_udp(app.dns_port(), zone_name, &[], &padding, None).unwrap(),
         Rcode::NOERROR
     );
     let old_serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
     let before = exported_record_sets(&app, zone_name).await;
     let soa = replacement(zone_name, old_serial + 10);
     assert_eq!(
-        send_update(
+        send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -472,7 +484,8 @@ async fn soa_replacement_is_replayed_by_ixfr() {
                     ttl: 300,
                     addr: "192.0.2.161".to_string()
                 },
-            ]
+            ],
+            None
         )
         .unwrap(),
         Rcode::NOERROR
