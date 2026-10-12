@@ -114,7 +114,7 @@ fn config_check_rejects_missing_file() {
 async fn config_list_and_get_show_loaded_config() {
     let app = TestApp::start().await;
 
-    let listed = app.run_cli_success(&["config", "list"]).await;
+    let listed = app.run_cli_success(&["config", "list"], None).await;
     assert!(listed.contains("[api]"));
     assert!(listed.contains("[api.tls]"));
     assert!(listed.contains("[dns]"));
@@ -124,12 +124,12 @@ async fn config_list_and_get_show_loaded_config() {
     assert!(listed.contains("[dns.tls]"));
 
     let value = app
-        .run_cli_success(&["config", "get", "api.authentication_required"])
+        .run_cli_success(&["config", "get", "api.authentication_required"], None)
         .await;
     assert_eq!(value.trim(), "false");
 
     let args = ["config", "get", "no.such.key"];
-    let missing = app.run_cli(&args).await;
+    let missing = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &missing, "unknown configuration key");
 }
 
@@ -142,7 +142,7 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     let original = std::fs::read_to_string(&path).expect("config file");
 
     assert_eq!(
-        app.run_cli_success(&["config", "get", "logging.level"])
+        app.run_cli_success(&["config", "get", "logging.level"], None)
             .await
             .trim(),
         "error"
@@ -153,10 +153,10 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
         original.replace(r#"level = "error""#, r#"level = "warn""#),
     )
     .expect("rewrite config");
-    let reloaded = app.run_cli_success(&["config", "reload"]).await;
+    let reloaded = app.run_cli_success(&["config", "reload"], None).await;
     assert!(reloaded.contains("logging"), "{reloaded}");
     assert_eq!(
-        app.run_cli_success(&["config", "get", "logging.level"])
+        app.run_cli_success(&["config", "get", "logging.level"], None)
             .await
             .trim(),
         "warn"
@@ -165,7 +165,7 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     // Bound to a listening socket, so the file is refused whole and the
     // running configuration is left describing the running process.
     let port = app
-        .run_cli_success(&["config", "get", "api.listen_port"])
+        .run_cli_success(&["config", "get", "api.listen_port"], None)
         .await
         .trim()
         .to_string();
@@ -175,10 +175,10 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     )
     .expect("rewrite config");
     let args = ["config", "reload"];
-    let refused = app.run_cli(&args).await;
+    let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "fixed while bindizr runs");
     assert_eq!(
-        app.run_cli_success(&["config", "get", "api.listen_port"])
+        app.run_cli_success(&["config", "get", "api.listen_port"], None)
             .await
             .trim(),
         port

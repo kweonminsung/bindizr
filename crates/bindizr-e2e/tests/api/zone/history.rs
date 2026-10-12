@@ -432,9 +432,10 @@ async fn zone_versions_record_who_made_each_change() {
     assert_eq!(created["change_source"], "socket", "{body}");
     assert!(created["changed_by"].is_null(), "{body}");
 
-    app.run_cli_success(&["token", "delete", &token_name]).await;
+    app.run_cli_success(&["token", "delete", &token_name], None)
+        .await;
     let history = app
-        .run_cli_success(&["zone", "version", "list", &zone_name, "-o", "json"])
+        .run_cli_success(&["zone", "version", "list", &zone_name, "-o", "json"], None)
         .await;
     let history: serde_json::Value = serde_json::from_str(&history).unwrap();
     assert_eq!(
@@ -442,7 +443,7 @@ async fn zone_versions_record_who_made_each_change() {
         json!({"kind": "token", "name": token_name})
     );
     let table = app
-        .run_cli_success(&["zone", "version", "list", &zone_name])
+        .run_cli_success(&["zone", "version", "list", &zone_name], None)
         .await;
     assert!(table.contains(&format!("token:{token_name}")), "{table}");
 }
@@ -454,7 +455,7 @@ async fn zone_versions_distinguish_unauthenticated_api_from_socket() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    app.run_cli_success(&["zone", "update", zone_name, "--refresh", "301"])
+    app.run_cli_success(&["zone", "update", zone_name, "--refresh", "301"], None)
         .await;
 
     let (status, history) = app

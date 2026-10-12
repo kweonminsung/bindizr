@@ -64,17 +64,23 @@ async fn an_unsigned_transfer_follows_the_secondary_registry() {
     assert!(outcome.records() >= 3);
 
     // Disabling keeps the row but closes the ACL from the next request on.
-    app.run_cli_success(&["secondary", "update", "loopback", "--enabled", "false"])
-        .await;
+    app.run_cli_success(
+        &["secondary", "update", "loopback", "--enabled", "false"],
+        None,
+    )
+    .await;
     let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
-    app.run_cli_success(&["secondary", "update", "loopback", "--enabled", "true"])
-        .await;
+    app.run_cli_success(
+        &["secondary", "update", "loopback", "--enabled", "true"],
+        None,
+    )
+    .await;
     let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
     assert!(outcome.records() >= 3);
 
-    app.run_cli_success(&["secondary", "delete", "loopback"])
+    app.run_cli_success(&["secondary", "delete", "loopback"], None)
         .await;
     let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
@@ -294,26 +300,32 @@ async fn a_key_transfers_only_the_zones_its_role_may_transfer() {
     app.create_zone_cli(&ungranted, "3600").await;
 
     let key = create_tsig_key(&app, "xfr-scoped-key", KeyRole::Own).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        granted,
-        "--actions",
-        "zone:transfer",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            granted,
+            "--actions",
+            "zone:transfer",
+        ],
+        None,
+    )
     .await;
     // Reading a zone's records is not transferring it.
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        &narrowed,
-        "--actions",
-        "record:read",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            &narrowed,
+            "--actions",
+            "record:read",
+        ],
+        None,
+    )
     .await;
 
     let outcome = axfr(app.dns_port(), granted, Some(&key)).expect("granted AXFR");
@@ -333,15 +345,18 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "xfr-transfer-key", KeyRole::Own).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        zone_name,
-        "--actions",
-        "zone:transfer",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            zone_name,
+            "--actions",
+            "zone:transfer",
+        ],
+        None,
+    )
     .await;
 
     let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("transfer-only AXFR");
@@ -635,7 +650,7 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     );
 
     let listed = app
-        .run_cli_success(&["secondary", "transfers", "loopback"])
+        .run_cli_success(&["secondary", "transfers", "loopback"], None)
         .await;
     assert!(
         listed.contains(zone_name) && listed.contains("AXFR") && listed.contains("1 zones:"),
@@ -643,7 +658,7 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     );
     // The check fails, since nothing answers on the registered address, but
     // still reports the transfers.
-    let checked = app.run_cli(&["secondary", "check", "loopback"]).await;
+    let checked = app.run_cli(&["secondary", "check", "loopback"], None).await;
     let stdout = String::from_utf8_lossy(&checked.stdout);
     assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
 }

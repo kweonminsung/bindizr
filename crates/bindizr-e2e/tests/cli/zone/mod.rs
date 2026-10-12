@@ -16,27 +16,30 @@ async fn zone_create_takes_soa_timers() {
     let rname = format!("hostmaster@{zone_name}");
 
     let created = app
-        .run_cli_success(&[
-            "zone",
-            "create",
-            &zone_name,
-            "--mname",
-            &mname,
-            "--rname",
-            &rname,
-            "--default-ttl",
-            "3600",
-            "--refresh",
-            "300",
-            "--retry",
-            "60",
-            "--expire",
-            "1209600",
-            "--minimum-ttl",
-            "120",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "zone",
+                "create",
+                &zone_name,
+                "--mname",
+                &mname,
+                "--rname",
+                &rname,
+                "--default-ttl",
+                "3600",
+                "--refresh",
+                "300",
+                "--retry",
+                "60",
+                "--expire",
+                "1209600",
+                "--minimum-ttl",
+                "120",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
     let zone = &created["zone"];
@@ -58,17 +61,19 @@ async fn zone_create_read_delete() {
     assert!(created.contains(&zone_name), "{created}");
 
     let zone = app
-        .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
+        .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
     assert_eq!(zone["zone"]["name"], zone_name);
     assert_eq!(zone["zone"]["mname"], mname);
 
-    let deleted = app.run_cli_success(&["zone", "delete", &zone_name]).await;
+    let deleted = app
+        .run_cli_success(&["zone", "delete", &zone_name], None)
+        .await;
     assert!(deleted.contains("deleted successfully"));
 
     let args = ["zone", "get", &zone_name, "--output", "json"];
-    let missing = app.run_cli(&args).await;
+    let missing = app.run_cli(&args, None).await;
     assert_cli_failure_contains(
         &args,
         &missing,
@@ -85,17 +90,20 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let updated = app
-        .run_cli_success(&[
-            "zone",
-            "update",
-            &zone_name,
-            "--refresh",
-            "300",
-            "--retry",
-            "60",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "zone",
+                "update",
+                &zone_name,
+                "--refresh",
+                "300",
+                "--retry",
+                "60",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     let updated = &updated["zone"];
@@ -128,11 +136,11 @@ async fn zone_reject_invalid_name_and_ttl() {
             "--default-ttl",
             ttl,
         ];
-        let output = app.run_cli(&args).await;
+        let output = app.run_cli(&args, None).await;
         assert_cli_failure_contains(&args, &output, expected_error);
     }
 
-    let status = app.run_cli(&["status"]).await;
+    let status = app.run_cli(&["status"], None).await;
     assert_cli_success(&["status"], &status);
 }
 
@@ -144,7 +152,9 @@ async fn zone_status_via_cli() {
     let zone_name = app.zone_name("status.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
-    let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
+    let status = app
+        .run_cli_success(&["zone", "status", &zone_name], None)
+        .await;
     // Serial 1: the zone and its apex NS arrive in one version.
     assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
 
@@ -166,18 +176,21 @@ async fn zone_filter_and_paginate() {
     }
 
     let zones = app
-        .run_cli_success(&[
-            "zone",
-            "list",
-            "--search",
-            app.namespace(),
-            "--min-default-ttl",
-            "7000",
-            "--max-default-ttl",
-            "8000",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "zone",
+                "list",
+                "--search",
+                app.namespace(),
+                "--min-default-ttl",
+                "7000",
+                "--max-default-ttl",
+                "8000",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let zones: Value = serde_json::from_str(&zones).expect("CLI did not return valid JSON");
     let zones = zones["items"].as_array().expect("missing zone items");
@@ -185,7 +198,10 @@ async fn zone_filter_and_paginate() {
     assert_eq!(zones[0]["name"], filtered_zone);
 
     let by_name = app
-        .run_cli_success(&["zone", "list", "--name", &first_zone, "--output", "json"])
+        .run_cli_success(
+            &["zone", "list", "--name", &first_zone, "--output", "json"],
+            None,
+        )
         .await;
     let by_name: Value = serde_json::from_str(&by_name).expect("CLI did not return valid JSON");
     let by_name = by_name["items"].as_array().expect("missing zone items");
@@ -193,18 +209,21 @@ async fn zone_filter_and_paginate() {
     assert_eq!(by_name[0]["name"], first_zone);
 
     let page = app
-        .run_cli_success(&[
-            "zone",
-            "list",
-            "--search",
-            app.namespace(),
-            "--limit",
-            "1",
-            "--offset",
-            "1",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "zone",
+                "list",
+                "--search",
+                app.namespace(),
+                "--limit",
+                "1",
+                "--offset",
+                "1",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let page: Value = serde_json::from_str(&page).expect("CLI did not return valid JSON");
     assert_eq!(
@@ -222,20 +241,23 @@ async fn zone_create_without_apex_ns_via_cli() {
     let zone_name = app.zone_name("bare-cli.example.com");
     let mname = format!("ns1.{zone_name}");
 
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        &zone_name,
-        "--mname",
-        &mname,
-        "--rname",
-        "admin@example.com",
-        "--no-apex-ns",
-    ])
+    app.run_cli_success(
+        &[
+            "zone",
+            "create",
+            &zone_name,
+            "--mname",
+            &mname,
+            "--rname",
+            "admin@example.com",
+            "--no-apex-ns",
+        ],
+        None,
+    )
     .await;
 
     let records = app
-        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     assert_eq!(records["pagination"]["total"], 0, "{records}");

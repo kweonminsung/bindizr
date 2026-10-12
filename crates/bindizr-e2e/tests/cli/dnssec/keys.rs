@@ -28,7 +28,7 @@ async fn write_exported_pairs(
     dir: &std::path::Path,
 ) -> Vec<(String, String)> {
     let exported = app
-        .run_cli_success(&["dnssec", "keys", "export", zone_name])
+        .run_cli_success(&["dnssec", "keys", "export", zone_name], None)
         .await;
     let mut blocks: Vec<String> = Vec::new();
     for line in exported.lines() {
@@ -61,19 +61,22 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-keys.example");
     app.create_zone_cli(&zone_name, "3600").await;
-    app.run_cli_success(&[
-        "dnssec",
-        "enable",
-        &zone_name,
-        "--parent-ns-addrs",
-        "127.0.0.1:9",
-    ])
+    app.run_cli_success(
+        &[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--parent-ns-addrs",
+            "127.0.0.1:9",
+        ],
+        None,
+    )
     .await;
 
     let key_tag = read_signing_key_tag(&app, &zone_name).await;
 
     let exported = app
-        .run_cli_success(&["dnssec", "keys", "export", &zone_name])
+        .run_cli_success(&["dnssec", "keys", "export", &zone_name], None)
         .await;
     let base = format!("K{zone_name}.+013+{key_tag:05}");
     assert!(
@@ -105,43 +108,52 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
     // Disable drops the keys; the import must restore the same key.
-    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
 
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
     // import is refused before anything is stored.
     let split_policy = format!("{}-split", app.namespace());
-    app.run_cli_success(&["dnssec-policy", "create", &split_policy, "--split-keys"])
-        .await;
+    app.run_cli_success(
+        &["dnssec-policy", "create", &split_policy, "--split-keys"],
+        None,
+    )
+    .await;
     let refused = app
-        .run_cli(&[
-            "dnssec",
-            "keys",
-            "import",
-            &zone_name,
-            "--key",
-            &key_file,
-            "--private",
-            &private_file,
-            "--policy",
-            &split_policy,
-        ])
+        .run_cli(
+            &[
+                "dnssec",
+                "keys",
+                "import",
+                &zone_name,
+                "--key",
+                &key_file,
+                "--private",
+                &private_file,
+                "--policy",
+                &split_policy,
+            ],
+            None,
+        )
         .await;
     assert!(!refused.status.success());
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(stderr.contains("does not match policy"), "{stderr}");
 
     let imported = app
-        .run_cli_success(&[
-            "dnssec",
-            "keys",
-            "import",
-            &zone_name,
-            "--key",
-            &key_file,
-            "--private",
-            &private_file,
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "keys",
+                "import",
+                &zone_name,
+                "--key",
+                &key_file,
+                "--private",
+                &private_file,
+            ],
+            None,
+        )
         .await;
     assert!(imported.contains(&key_tag.to_string()), "{imported}");
 }
@@ -154,21 +166,27 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     let zone_name = app.zone_name("dnssec-split.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let policy_name = format!("{}-split", app.namespace());
-    app.run_cli_success(&["dnssec-policy", "create", &policy_name, "--split-keys"])
-        .await;
-    app.run_cli_success(&[
-        "dnssec",
-        "enable",
-        &zone_name,
-        "--policy",
-        &policy_name,
-        "--parent-ns-addrs",
-        "127.0.0.1:9",
-    ])
+    app.run_cli_success(
+        &["dnssec-policy", "create", &policy_name, "--split-keys"],
+        None,
+    )
+    .await;
+    app.run_cli_success(
+        &[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--policy",
+            &policy_name,
+            "--parent-ns-addrs",
+            "127.0.0.1:9",
+        ],
+        None,
+    )
     .await;
 
     let exported = app
-        .run_cli_success(&["dnssec", "keys", "export", &zone_name])
+        .run_cli_success(&["dnssec", "keys", "export", &zone_name], None)
         .await;
     // The stream alternates `; K*.key (role, tag N)` and `; K*.private`
     // headers; carve it into per-header blocks.
@@ -205,7 +223,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     }
     pairs.sort(); // ksk before zsk
 
-    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
 
     // Both halves arrive in one call: a KSK alone could not sign, so the
@@ -214,28 +232,31 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     assert_eq!(role, "ksk");
     let (_, zsk_key, zsk_private) = &pairs[1];
     let imported = app
-        .run_cli_success(&[
-            "dnssec",
-            "keys",
-            "import",
-            &zone_name,
-            "--key",
-            ksk_key,
-            "--private",
-            ksk_private,
-            "--key",
-            zsk_key,
-            "--private",
-            zsk_private,
-            "--policy",
-            &policy_name,
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "keys",
+                "import",
+                &zone_name,
+                "--key",
+                ksk_key,
+                "--private",
+                ksk_private,
+                "--key",
+                zsk_key,
+                "--private",
+                zsk_private,
+                "--policy",
+                &policy_name,
+            ],
+            None,
+        )
         .await;
     assert!(imported.contains("DNSSEC enabled"), "{imported}");
     assert!(imported.contains("IN DS"), "{imported}");
 
     let signed_export = app
-        .run_cli_success(&["zone", "export", &zone_name, "--signed"])
+        .run_cli_success(&["zone", "export", &zone_name, "--signed"], None)
         .await;
     assert!(
         signed_export.contains("\tIN\tRRSIG\tSOA "),
@@ -255,15 +276,18 @@ async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-rolling.example");
     app.create_zone_cli(&zone_name, "3600").await;
-    app.run_cli_success(&[
-        "dnssec",
-        "enable",
-        &zone_name,
-        "--parent-ns-addrs",
-        "127.0.0.1:9",
-    ])
+    app.run_cli_success(
+        &[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--parent-ns-addrs",
+            "127.0.0.1:9",
+        ],
+        None,
+    )
     .await;
-    app.run_cli_success(&["dnssec", "rollover", "start", &zone_name])
+    app.run_cli_success(&["dnssec", "rollover", "start", &zone_name], None)
         .await;
 
     let before = read_key_states(&app, &zone_name).await;
@@ -281,19 +305,19 @@ async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
     let pairs = write_exported_pairs(&app, &zone_name, dir.path()).await;
     assert_eq!(pairs.len(), 2, "a rollover exports both keys");
 
-    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
     let mut args = vec!["dnssec", "keys", "import", zone_name.as_str()];
     for (key_file, private_file) in &pairs {
         args.extend(["--key", key_file, "--private", private_file]);
     }
-    app.run_cli_success(&args).await;
+    app.run_cli_success(&args, None).await;
 
     // Without the timing BIND writes into the private files, both keys would
     // land active and the rollover would be gone.
     assert_eq!(read_key_states(&app, &zone_name).await, before);
     let refused = app
-        .run_cli(&["dnssec", "rollover", "start", &zone_name])
+        .run_cli(&["dnssec", "rollover", "start", &zone_name], None)
         .await;
     assert!(!refused.status.success());
     let stderr = String::from_utf8_lossy(&refused.stderr);

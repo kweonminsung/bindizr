@@ -10,22 +10,25 @@ async fn secondary_lifecycle_via_cli() {
     let name = format!("{}-cli-ns2", app.namespace());
 
     let created = app
-        .run_cli_success(&[
-            "secondary",
-            "create",
-            &name,
-            "--address",
-            "ns2.example.net",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "secondary",
+                "create",
+                &name,
+                "--address",
+                "ns2.example.net",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
     assert_eq!(created["secondary"]["name"], name);
     assert_eq!(created["secondary"]["address"], "ns2.example.net:53");
     assert_eq!(created["secondary"]["enabled"], true);
 
-    let listed = app.run_cli_success(&["secondary", "list"]).await;
+    let listed = app.run_cli_success(&["secondary", "list"], None).await;
     let row = listed
         .lines()
         .find(|line| line.contains(&name))
@@ -36,23 +39,28 @@ async fn secondary_lifecycle_via_cli() {
     );
 
     let updated = app
-        .run_cli_success(&[
-            "secondary",
-            "update",
-            &name,
-            "--address",
-            "192.0.2.7:5300",
-            "--enabled",
-            "false",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "secondary",
+                "update",
+                &name,
+                "--address",
+                "192.0.2.7:5300",
+                "--enabled",
+                "false",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     assert_eq!(updated["secondary"]["address"], "192.0.2.7:5300");
     assert_eq!(updated["secondary"]["enabled"], false);
 
-    let fetched = app.run_cli_success(&["secondary", "get", &name]).await;
+    let fetched = app
+        .run_cli_success(&["secondary", "get", &name], None)
+        .await;
     assert!(
         fetched.contains("192.0.2.7:5300") && fetched.contains("no"),
         "{fetched}"
@@ -60,40 +68,48 @@ async fn secondary_lifecycle_via_cli() {
 
     // A NOTIFY key is named on the row and cleared with an empty name.
     let key_name = format!("{}-notify", app.namespace());
-    app.run_cli_success(&["tsig-key", "create", &key_name, "--role", "admin"])
+    app.run_cli_success(&["tsig-key", "create", &key_name, "--role", "admin"], None)
         .await;
     let keyed = app
-        .run_cli_success(&["secondary", "update", &name, "--notify-key", &key_name])
+        .run_cli_success(
+            &["secondary", "update", &name, "--notify-key", &key_name],
+            None,
+        )
         .await;
     assert!(keyed.contains(&key_name), "{keyed}");
     let cleared = app
-        .run_cli_success(&[
-            "secondary",
-            "update",
-            &name,
-            "--notify-key",
-            "",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "secondary",
+                "update",
+                &name,
+                "--notify-key",
+                "",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let cleared: Value = serde_json::from_str(&cleared).expect("CLI did not return valid JSON");
     assert_eq!(cleared["secondary"]["notify_key_name"], Value::Null);
-    app.run_cli_success(&["tsig-key", "delete", &key_name])
+    app.run_cli_success(&["tsig-key", "delete", &key_name], None)
         .await;
 
     let args = ["secondary", "update", &name];
-    let nothing = app.run_cli(&args).await;
+    let nothing = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &nothing, "nothing to update");
 
-    let deleted = app.run_cli_success(&["secondary", "delete", &name]).await;
+    let deleted = app
+        .run_cli_success(&["secondary", "delete", &name], None)
+        .await;
     assert!(
         deleted.contains(&format!("Secondary '{name}' deleted successfully")),
         "{deleted}"
     );
 
     let args = ["secondary", "get", &name];
-    let missing = app.run_cli(&args).await;
+    let missing = app.run_cli(&args, None).await;
     assert_cli_failure_contains(
         &args,
         &missing,

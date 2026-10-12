@@ -11,14 +11,14 @@ async fn notify_all_zones_and_one_zone() {
     app.assert_dns_matches_api(None).await;
 
     // No zone name means all zones.
-    let all = app.run_cli_success(&["zone", "notify"]).await;
+    let all = app.run_cli_success(&["zone", "notify"], None).await;
     assert!(
         all.contains("NOTIFY sent successfully for all zones"),
         "{all}"
     );
 
     let one = app
-        .run_cli_success(&["zone", "notify", &zone_name, "--bump-serial"])
+        .run_cli_success(&["zone", "notify", &zone_name, "--bump-serial"], None)
         .await;
     assert!(
         one.contains(&format!(

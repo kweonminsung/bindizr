@@ -890,15 +890,18 @@ async fn a_create_grant_alone_rewrites_nothing_that_exists() {
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
     let key = create_tsig_key(&app, "nsupdate-rewrite-key", KeyRole::Own).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "record:create",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:create",
+        ],
+        None,
+    )
     .await;
     let alias = format!("alias.{zone_name}.");
     let host = format!("host.{zone_name}.");
@@ -935,15 +938,18 @@ async fn a_create_grant_alone_rewrites_nothing_that_exists() {
         assert_eq!(rcode, Rcode::REFUSED, "{updates:?}");
     }
 
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "record:update,record:delete",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:update,record:delete",
+        ],
+        None,
+    )
     .await;
     for updates in [&replace, &retime] {
         let rcode = send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
@@ -981,17 +987,20 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     assert_eq!(rcode, Rcode::REFUSED);
 
     // Granting only `a` leaves every other owner name refused.
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "record:create",
-        "--pattern",
-        "a",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:create",
+            "--pattern",
+            "a",
+        ],
+        None,
+    )
     .await;
 
     let rcode = send_update_udp(
@@ -1057,19 +1066,22 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
     let key = create_tsig_key(&app, "nsupdate-prereq-key", KeyRole::Own).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "record:read,record:create",
-        "--pattern",
-        "*.dyn",
-        "--types",
-        "A",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:read,record:create",
+            "--pattern",
+            "*.dyn",
+            "--types",
+            "A",
+        ],
+        None,
+    )
     .await;
 
     // The answer must not depend on whether `secret` exists.

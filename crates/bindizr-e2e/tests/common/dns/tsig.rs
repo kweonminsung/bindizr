@@ -143,14 +143,14 @@ pub(crate) async fn create_tsig_key(app: &TestApp, name: &str, role: KeyRole) ->
     let role = match role {
         KeyRole::Admin => "admin",
         KeyRole::Own => {
-            app.run_cli_success(&["role", "create", name]).await;
+            app.run_cli_success(&["role", "create", name], None).await;
             name
         }
     };
-    app.run_cli_success(&["tsig-key", "create", name, "--role", role])
+    app.run_cli_success(&["tsig-key", "create", name, "--role", role], None)
         .await;
     let fetched = app
-        .run_cli_success(&["tsig-key", "get", name, "--output", "json"])
+        .run_cli_success(&["tsig-key", "get", name, "--output", "json"], None)
         .await;
     let fetched: serde_json::Value =
         serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");

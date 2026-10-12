@@ -194,15 +194,18 @@ async fn soa_replacement_uses_zone_permissions() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "soa-writer", KeyRole::Own).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        "soa-writer",
-        "--zone",
-        zone_name,
-        "--actions",
-        "record:create",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            "soa-writer",
+            "--zone",
+            zone_name,
+            "--actions",
+            "record:create",
+        ],
+        None,
+    )
     .await;
     let before = metadata(&app, zone_name).await;
     let updates = [UpdateRecord::AddSoa {
@@ -215,15 +218,18 @@ async fn soa_replacement_uses_zone_permissions() {
         Rcode::REFUSED
     );
     assert_eq!(metadata(&app, zone_name).await, before);
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        "soa-writer",
-        "--zone",
-        zone_name,
-        "--actions",
-        "zone:update",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            "soa-writer",
+            "--zone",
+            zone_name,
+            "--actions",
+            "zone:update",
+        ],
+        None,
+    )
     .await;
     assert_eq!(
         send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),

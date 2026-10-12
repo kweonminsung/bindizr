@@ -320,15 +320,18 @@ async fn dnssec_enable_requires_dnssec_manage() {
     // Grant the zone's records so the 403 proves the missing action, not
     // zone invisibility (which would read as 404).
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 

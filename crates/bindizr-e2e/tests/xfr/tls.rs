@@ -387,7 +387,7 @@ async fn a_reload_picks_up_a_renewed_certificate() {
     assert!(outcome.records() >= 3);
 
     let renewed = app.renew_test_certificate();
-    let output = app.run_cli_success(&["config", "reload"]).await;
+    let output = app.run_cli_success(&["config", "reload"], None).await;
     assert!(output.contains("dns.tls certificate"), "{output}");
 
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
@@ -401,7 +401,7 @@ async fn a_reload_picks_up_a_renewed_certificate() {
     // A pair that does not load refuses the whole reload and leaves the
     // renewed certificate serving.
     app.corrupt_test_certificate();
-    let output = app.run_cli(&["config", "reload"]).await;
+    let output = app.run_cli(&["config", "reload"], None).await;
     assert_cli_failure_contains(&["config", "reload"], &output, "nothing was reloaded");
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
     let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");

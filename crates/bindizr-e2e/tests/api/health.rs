@@ -81,7 +81,7 @@ async fn a_reload_picks_up_a_renewed_api_certificate() {
     let started_with = reqwest::Certificate::from_der(app.tls_cert()).unwrap();
 
     let renewed = app.renew_test_certificate();
-    let output = app.run_cli_success(&["config", "reload"]).await;
+    let output = app.run_cli_success(&["config", "reload"], None).await;
     assert!(output.contains("api.tls certificate"), "{output}");
 
     let renewed = reqwest::Certificate::from_der(&renewed).unwrap();

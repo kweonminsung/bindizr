@@ -12,19 +12,22 @@ async fn role_grant_grants_revoke() {
     let (role_name, _) = app.create_scoped_api_token().await;
 
     let granted = app
-        .run_cli_success(&[
-            "role",
-            "grant",
-            &role_name,
-            "--zone",
-            &zone_name,
-            "--actions",
-            "record:read,record:create",
-            "--types",
-            "A,AAAA",
-            "--output",
-            "json",
-        ])
+        .run_cli_success(
+            &[
+                "role",
+                "grant",
+                &role_name,
+                "--zone",
+                &zone_name,
+                "--actions",
+                "record:read,record:create",
+                "--types",
+                "A,AAAA",
+                "--output",
+                "json",
+            ],
+            None,
+        )
         .await;
     let granted: Value = serde_json::from_str(&granted).expect("CLI did not return valid JSON");
     let granted = &granted["role_grant"];
@@ -36,48 +39,52 @@ async fn role_grant_grants_revoke() {
         .expect("created grant did not contain an ID")
         .to_string();
 
-    let grants = app.run_cli_success(&["role", "grants", &role_name]).await;
+    let grants = app
+        .run_cli_success(&["role", "grants", &role_name], None)
+        .await;
     assert!(grants.contains(&zone_name), "{grants}");
     assert!(grants.contains("record:read,record:create"), "{grants}");
 
     // The built-in role cannot be changed or deleted.
     let grant_args = ["role", "grant", "admin", "--actions", "zone:read"];
-    let refused = app.run_cli(&grant_args).await;
+    let refused = app.run_cli(&grant_args, None).await;
     assert_cli_failure_contains(&grant_args, &refused, "built in");
     let delete_args = ["role", "delete", "admin"];
-    let refused = app.run_cli(&delete_args).await;
+    let refused = app.run_cli(&delete_args, None).await;
     assert_cli_failure_contains(&delete_args, &refused, "built in");
 
     let revoke_args = ["role", "revoke", &role_name, "999999"];
-    let refused = app.run_cli(&revoke_args).await;
+    let refused = app.run_cli(&revoke_args, None).await;
     assert_cli_failure_contains(&revoke_args, &refused, "not found");
 
     let revoked = app
-        .run_cli_success(&["role", "revoke", &role_name, &grant_id])
+        .run_cli_success(&["role", "revoke", &role_name, &grant_id], None)
         .await;
     assert!(
         revoked.contains("Role grant revoked successfully"),
         "{revoked}"
     );
-    let grants = app.run_cli_success(&["role", "grants", &role_name]).await;
+    let grants = app
+        .run_cli_success(&["role", "grants", &role_name], None)
+        .await;
     assert!(!grants.contains(&zone_name), "{grants}");
 
     // The token in the role keeps it from being deleted.
     let delete_args = ["role", "delete", &role_name];
-    let refused = app.run_cli(&delete_args).await;
+    let refused = app.run_cli(&delete_args, None).await;
     assert_cli_failure_contains(&delete_args, &refused, "still held");
     assert_cli_failure_contains(&delete_args, &refused, &format!("API token {role_name}"));
 
     // The role's own listing holds its token and no other.
     let listed = app
-        .run_cli_success(&["token", "list", "--role", &role_name])
+        .run_cli_success(&["token", "list", "--role", &role_name], None)
         .await;
     assert!(listed.contains(&role_name), "{listed}");
     let listed = app
-        .run_cli_success(&["tsig-key", "list", "--role", &role_name])
+        .run_cli_success(&["tsig-key", "list", "--role", &role_name], None)
         .await;
     assert!(!listed.contains(&role_name), "{listed}");
-    let roles = app.run_cli_success(&["role", "list"]).await;
+    let roles = app.run_cli_success(&["role", "list"], None).await;
     assert!(
         roles.contains("TOKENS") && roles.contains("TSIG-KEYS"),
         "{roles}"

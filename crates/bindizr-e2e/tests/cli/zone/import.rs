@@ -22,7 +22,7 @@ async fn zone_import_rejects_an_unsupported_initial_serial() {
         if dry_run {
             args.push("--dry-run");
         }
-        let output = app.run_cli_with_input(&args, Some(&content)).await;
+        let output = app.run_cli(&args, Some(&content)).await;
         assert!(!output.status.success(), "{output:?}");
         let stderr = String::from_utf8(output.stderr).expect("CLI stderr was not UTF-8");
         assert!(
@@ -30,7 +30,7 @@ async fn zone_import_rejects_an_unsupported_initial_serial() {
             "{stderr}"
         );
 
-        let output = app.run_cli(&["zone", "get", &zone_name]).await;
+        let output = app.run_cli(&["zone", "get", &zone_name], None).await;
         assert!(!output.status.success(), "{output:?}");
     }
 }
@@ -46,7 +46,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     // A record type bindizr does not store fails the whole file, and a CI step
     // must not read the rejection as a successful import.
     let output = app
-        .run_cli_with_input(
+        .run_cli(
             &["zone", "import", &zone_name, "-"],
             Some("www IN A 192.0.2.40\nbox IN HINFO \"amd64\" \"linux\"\n"),
         )
@@ -57,7 +57,9 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     assert_eq!(summary_cells(&stdout)[0], "no", "{stdout}");
 
     // Nothing landed, including the record that was valid on its own.
-    let listed = app.run_cli_success(&["record", "list", &zone_name]).await;
+    let listed = app
+        .run_cli_success(&["record", "list", &zone_name], None)
+        .await;
     assert!(!listed.contains("192.0.2.40"), "{listed}");
 }
 
@@ -70,9 +72,9 @@ async fn zone_import_zone_file_from_stdin() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let imported = app
-        .run_cli_success_with_input(
+        .run_cli_success(
             &["zone", "import", &zone_name, "-"],
-            "www IN A 192.0.2.30\nmail IN A 192.0.2.31\n",
+            Some("www IN A 192.0.2.30\nmail IN A 192.0.2.31\n"),
         )
         .await;
     assert!(
@@ -86,9 +88,9 @@ async fn zone_import_zone_file_from_stdin() {
     );
 
     let dry_run = app
-        .run_cli_success_with_input(
+        .run_cli_success(
             &["zone", "import", &zone_name, "-", "--dry-run"],
-            "extra IN A 192.0.2.32\n",
+            Some("extra IN A 192.0.2.32\n"),
         )
         .await;
     assert!(
@@ -97,9 +99,12 @@ async fn zone_import_zone_file_from_stdin() {
     );
 
     let records = app
-        .run_cli_success(&[
-            "record", "list", &zone_name, "--type", "A", "--output", "json",
-        ])
+        .run_cli_success(
+            &[
+                "record", "list", &zone_name, "--type", "A", "--output", "json",
+            ],
+            None,
+        )
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     assert_eq!(
@@ -121,16 +126,16 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
 
     // Preview renders a +/-/~ diff and, being a dry run, applies nothing.
     let dry_run = app
-        .run_cli_success_with_input(
+        .run_cli_success(
             &["zone", "import", &zone_name, "-", "--dry-run"],
-            "www IN A 192.0.2.30\nmail IN A 192.0.2.31\n",
+            Some("www IN A 192.0.2.30\nmail IN A 192.0.2.31\n"),
         )
         .await;
     assert!(dry_run.contains("+ www."), "{dry_run}");
     assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
     let records = app
-        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     // Only the apex NS seeded at creation exists.
@@ -167,35 +172,41 @@ async fn zone_import_from_server_round_trips_over_axfr() {
         "a".repeat(255),
         "b".repeat(300),
     );
-    app.run_cli_success_with_input(&["zone", "import", &zone_name, "-"], &content)
+    app.run_cli_success(&["zone", "import", &zone_name, "-"], Some(&content))
         .await;
 
     let server = format!("127.0.0.1:{}", app.dns_port());
     let dry_run = app
-        .run_cli_success(&[
-            "zone",
-            "import",
-            &zone_name,
-            "--from-server",
-            &server,
-            "--mode",
-            "replace",
-            "--dry-run",
-        ])
+        .run_cli_success(
+            &[
+                "zone",
+                "import",
+                &zone_name,
+                "--from-server",
+                &server,
+                "--mode",
+                "replace",
+                "--dry-run",
+            ],
+            None,
+        )
         .await;
     // A transfer of the zone's own content replaces it with itself.
     assert!(dry_run.contains("By name and type: +0 -0 ~0"), "{dry_run}");
 
     let applied = app
-        .run_cli_success(&[
-            "zone",
-            "import",
-            &zone_name,
-            "--from-server",
-            &server,
-            "--mode",
-            "replace",
-        ])
+        .run_cli_success(
+            &[
+                "zone",
+                "import",
+                &zone_name,
+                "--from-server",
+                &server,
+                "--mode",
+                "replace",
+            ],
+            None,
+        )
         .await;
     assert!(applied.contains("Zone imported successfully"), "{applied}");
     assert_eq!(

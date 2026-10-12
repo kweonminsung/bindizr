@@ -8,34 +8,42 @@ async fn zone_export_via_cli() {
     let zone_name = app.zone_name("export.example");
     // Zone TTL is deliberately not 3600 so an inherited TTL is distinguishable.
     app.create_zone_cli(&zone_name, "7200").await;
-    app.run_cli_success(&[
-        "record",
-        "create",
-        &zone_name,
-        "www",
-        "--type",
-        "A",
-        "--value",
-        "192.0.2.1",
-        "--ttl",
-        "300",
-    ])
+    app.run_cli_success(
+        &[
+            "record",
+            "create",
+            &zone_name,
+            "www",
+            "--type",
+            "A",
+            "--value",
+            "192.0.2.1",
+            "--ttl",
+            "300",
+        ],
+        None,
+    )
     .await;
 
     // An omitted TTL is fixed to the zone's TTL (7200) at write time.
-    app.run_cli_success(&[
-        "record",
-        "create",
-        &zone_name,
-        "nottl",
-        "--type",
-        "A",
-        "--value",
-        "192.0.2.2",
-    ])
+    app.run_cli_success(
+        &[
+            "record",
+            "create",
+            &zone_name,
+            "nottl",
+            "--type",
+            "A",
+            "--value",
+            "192.0.2.2",
+        ],
+        None,
+    )
     .await;
 
-    let exported = app.run_cli_success(&["zone", "export", &zone_name]).await;
+    let exported = app
+        .run_cli_success(&["zone", "export", &zone_name], None)
+        .await;
     assert!(
         exported.contains(&format!("$ORIGIN {zone_name}.")),
         "{exported}"
@@ -53,7 +61,7 @@ async fn zone_export_via_cli() {
 
     // Re-importing the export into the same zone changes nothing.
     let reimport = app
-        .run_cli_success_with_input(&["zone", "import", &zone_name, "-"], &exported)
+        .run_cli_success(&["zone", "import", &zone_name, "-"], Some(&exported))
         .await;
     assert_eq!(summary_row(&reimport)[1..3], ["0", "0"], "{reimport}");
 }
@@ -68,17 +76,21 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
 
     // Fed in deliberately unsorted; rows also come back from the DB in no
     // guaranteed order, so the export's own sort is what the assertion pins.
-    app.run_cli_success_with_input(
+    app.run_cli_success(
         &["zone", "import", &zone_name, "-"],
-        "b IN A 192.0.2.2\n\
+        Some(
+            "b IN A 192.0.2.2\n\
          a IN TXT \"zzz\"\n\
          a IN A 192.0.2.10\n\
          a IN A 192.0.2.2\n\
          a IN MX 10 mail.example.com.\n",
+        ),
     )
     .await;
 
-    let exported = app.run_cli_success(&["zone", "export", &zone_name]).await;
+    let exported = app
+        .run_cli_success(&["zone", "export", &zone_name], None)
+        .await;
     let ordered: Vec<&str> = exported
         .lines()
         .filter(|l| l.starts_with("a\t") || l.starts_with("b\t"))

@@ -43,13 +43,13 @@ async fn doctor_reports_healthy_installation() {
 
     // Secondaries transfer asynchronously after NOTIFY, so behind a burst of
     // zone writes doctor can catch them one catalog serial short.
-    let mut result = app.run_cli(&args).await;
+    let mut result = app.run_cli(&args, None).await;
     for _ in 0..30 {
         if result.status.success() {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        result = app.run_cli(&args).await;
+        result = app.run_cli(&args, None).await;
     }
     assert_cli_success(&args, &result);
     let output = String::from_utf8(result.stdout).expect("CLI stdout was not UTF-8");

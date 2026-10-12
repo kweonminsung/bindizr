@@ -156,7 +156,7 @@ impl TestApp {
     /// return the `(name, plaintext token)`; grant the role with `role grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
         let name = format!("{}-scoped", self.namespace);
-        self.run_cli_success(&["role", "create", &name]).await;
+        self.run_cli_success(&["role", "create", &name], None).await;
         self.create_token_with(&["token", "create", &name, "--role", &name])
             .await
     }
@@ -164,7 +164,7 @@ impl TestApp {
     /// Create a test API token using the supplied CLI options.
     async fn create_token_with(&self, args: &[&str]) -> (String, String) {
         let args = [args, &["--output", "json"]].concat();
-        let stdout = self.run_cli_success(&args).await;
+        let stdout = self.run_cli_success(&args, None).await;
         let created: Value =
             serde_json::from_str(&stdout).expect("token create did not print JSON");
         let field = |value: &Value, what: &str| {
@@ -354,32 +354,26 @@ impl TestApp {
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
-        self.run_cli_success(&[
-            "zone",
-            "create",
-            zone_name,
-            "--mname",
-            &mname,
-            "--rname",
-            &rname,
-            "--default-ttl",
-            default_ttl,
-        ])
+        self.run_cli_success(
+            &[
+                "zone",
+                "create",
+                zone_name,
+                "--mname",
+                &mname,
+                "--rname",
+                &rname,
+                "--default-ttl",
+                default_ttl,
+            ],
+            None,
+        )
         .await
-    }
-
-    /// Run a CLI command against this test application.
-    pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {
-        self.run_cli_with_input(args, None).await
     }
 
     /// Run the CLI with optional stdin; after selected zone/record writes,
     /// wait for configured secondaries to match the API.
-    pub(crate) async fn run_cli_with_input(
-        &self,
-        args: &[&str],
-        input: Option<&str>,
-    ) -> std::process::Output {
+    pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
         // Remember deleted names before the API can no longer return their identity.
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
@@ -439,15 +433,8 @@ impl TestApp {
     }
 
     /// Run a CLI command and return stdout after asserting success.
-    pub(crate) async fn run_cli_success(&self, args: &[&str]) -> String {
-        let output = self.run_cli(args).await;
-        assert_cli_success(args, &output);
-        String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
-    }
-
-    /// Run a CLI command with stdin and return stdout after asserting success.
-    pub(crate) async fn run_cli_success_with_input(&self, args: &[&str], input: &str) -> String {
-        let output = self.run_cli_with_input(args, Some(input)).await;
+    pub(crate) async fn run_cli_success(&self, args: &[&str], input: Option<&str>) -> String {
+        let output = self.run_cli(args, input).await;
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }

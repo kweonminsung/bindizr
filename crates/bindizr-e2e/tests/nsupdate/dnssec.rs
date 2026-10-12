@@ -261,17 +261,20 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let key = create_tsig_key(&app, "dnssec-prereq", KeyRole::Own).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        zone_name,
-        "--actions",
-        "record:read",
-        "--types",
-        "A",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            zone_name,
+            "--actions",
+            "record:read",
+            "--types",
+            "A",
+        ],
+        None,
+    )
     .await;
     let apex = format!("{zone_name}.");
     let sets = exported_record_sets(&app, zone_name).await;
@@ -287,15 +290,18 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
         .expect("restricted read");
     assert_eq!(rcode, Rcode::REFUSED);
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &key.name,
-        "--zone",
-        zone_name,
-        "--actions",
-        "record:read",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            zone_name,
+            "--actions",
+            "record:read",
+        ],
+        None,
+    )
     .await;
     let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
         .expect("granted read");

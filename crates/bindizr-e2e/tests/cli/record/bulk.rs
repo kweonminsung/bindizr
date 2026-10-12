@@ -15,9 +15,9 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
         {"name": "@", "type": "MX", "value": "mail.example.com", "priority": 10}
     ]"#;
     let dry_run = app
-        .run_cli_success_with_input(
+        .run_cli_success(
             &["record", "bulk-create", &zone_name, "-", "--dry-run"],
-            records,
+            Some(records),
         )
         .await;
     assert!(dry_run.contains("+ www."), "{dry_run}");
@@ -27,7 +27,7 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
 
     // Preview applies nothing.
     let listed = app
-        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
     assert!(
@@ -54,15 +54,15 @@ async fn record_bulk_insert_from_stdin() {
     ])
     .to_string();
     let dry_run = app
-        .run_cli_success_with_input(
+        .run_cli_success(
             &["record", "bulk-create", &zone_name, "-", "--dry-run"],
-            &records,
+            Some(&records),
         )
         .await;
     assert!(dry_run.contains("Dry run: 2 record(s) validated; nothing applied"));
 
     let listed = app
-        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
     // A fresh zone holds only its auto-created NS record, so the absence of A
@@ -77,20 +77,26 @@ async fn record_bulk_insert_from_stdin() {
     );
 
     let inserted = app
-        .run_cli_success_with_input(&["record", "bulk-create", &zone_name, "-"], &records)
+        .run_cli_success(&["record", "bulk-create", &zone_name, "-"], Some(&records))
         .await;
     assert!(inserted.contains("Added 2 record(s)"));
 
     let yaml_records = "- name: ftp\n  type: A\n  value: 192.0.2.22\n  ttl: 300\n";
     let inserted_yaml = app
-        .run_cli_success_with_input(&["record", "bulk-create", &zone_name, "-"], yaml_records)
+        .run_cli_success(
+            &["record", "bulk-create", &zone_name, "-"],
+            Some(yaml_records),
+        )
         .await;
     assert!(inserted_yaml.contains("Added 1 record(s)"));
 
     let listed = app
-        .run_cli_success(&[
-            "record", "list", &zone_name, "--type", "A", "--output", "json",
-        ])
+        .run_cli_success(
+            &[
+                "record", "list", &zone_name, "--type", "A", "--output", "json",
+            ],
+            None,
+        )
         .await;
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
     let names: Vec<String> = listed["items"]
