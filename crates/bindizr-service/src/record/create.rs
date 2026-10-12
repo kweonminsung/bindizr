@@ -7,7 +7,7 @@ use chrono::Utc;
 
 use super::{
     bulk::{PreparedRecord, parse_record_request},
-    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
+    validation::{normalize_record_owner_name, validate_record_constraints},
 };
 use crate::{
     Context,
@@ -87,7 +87,7 @@ pub async fn create(
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);
 
-        validate_record_add_constraints_normalized(
+        validate_record_constraints(
             &records_at_name,
             &owner_name,
             &record_type,

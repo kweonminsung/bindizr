@@ -8,7 +8,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 
 use super::validation::{
-    normalize_record_owner_name, parse_record_type, validate_record_update_constraints_normalized,
+    normalize_record_owner_name, parse_record_type, validate_record_constraints,
 };
 use crate::{
     Context,
@@ -354,10 +354,14 @@ async fn update_locked(
             created_at: existing_record.created_at,
         };
 
-        validate_record_update_constraints_normalized(
+        validate_record_constraints(
             &records_at_name,
-            &existing_record,
-            &candidate,
+            &candidate.name,
+            &candidate.record_type,
+            &candidate.value,
+            candidate.ttl,
+            candidate.priority,
+            Some(existing_record.id),
         )?;
 
         // The owner's rows frame the diff. A move spans two, and the record

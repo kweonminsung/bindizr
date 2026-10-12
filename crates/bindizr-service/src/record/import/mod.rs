@@ -22,7 +22,7 @@ use plan::{DesiredRecord, ImportPlan};
 
 use super::{
     bulk::PreparedRecord,
-    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
+    validation::{normalize_record_owner_name, validate_record_constraints},
 };
 use crate::{
     Context,
@@ -366,7 +366,7 @@ async fn reconcile_zone_file(
             let records_at_name = simulated_by_name
                 .entry(add.name.clone())
                 .or_default();
-            match validate_record_add_constraints_normalized(
+            match validate_record_constraints(
                 records_at_name,
                 &add.name,
                 &add.prepared.record_type,

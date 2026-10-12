@@ -56,8 +56,8 @@ fn has_matching_rdata<'a>(
         .any(|r| r.record_type == *record_type && r.has_rdata(value, priority))
 }
 
-/// Validate an add whose owner name has already been normalized to `stored_name`.
-pub(crate) fn validate_record_add_constraints_normalized(
+/// Validate a normalized record, excluding the row being replaced.
+pub(crate) fn validate_record_constraints(
     records: &[Record],
     stored_name: &OwnerName,
     record_type: &RecordType,
@@ -190,23 +190,6 @@ pub(crate) fn validate_record_name_in_zone(
     })
 }
 
-/// Validate an update whose new owner name is already normalized.
-pub(crate) fn validate_record_update_constraints_normalized(
-    records: &[Record],
-    existing_record: &Record,
-    updated_record: &Record,
-) -> Result<(), ServiceError> {
-    validate_record_add_constraints_normalized(
-        records,
-        &updated_record.name,
-        &updated_record.record_type,
-        &updated_record.value,
-        updated_record.ttl,
-        updated_record.priority,
-        Some(existing_record.id),
-    )
-}
-
 /// What an add resolves to against the records already in the zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AddResult {
@@ -241,7 +224,7 @@ pub(crate) async fn validate_add_tx(
         return Ok(AddResult::Duplicate);
     }
 
-    validate_record_add_constraints_normalized(
+    validate_record_constraints(
         &records_at_name,
         owner_name,
         record_type,

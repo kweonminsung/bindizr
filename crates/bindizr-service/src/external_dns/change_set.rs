@@ -20,7 +20,7 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    record::validate_record_add_constraints_normalized,
+    record::validate_record_constraints,
     ttl::validate_record_ttl,
     types::{ExternalDnsChangesRequest, ExternalDnsRecord},
 };
@@ -313,7 +313,7 @@ impl ZoneChangeSet {
                     .cloned(),
             );
 
-            validate_record_add_constraints_normalized(
+            validate_record_constraints(
                 &records_at_name,
                 &create.name,
                 &create.record_type,

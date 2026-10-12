@@ -19,7 +19,8 @@ pub use get::{count_all, get, list_with_zone_by_filter};
 pub use import::import_zone;
 pub use update::{update, update_by_name};
 pub(crate) use validation::{
-    AddResult, normalize_record_owner_name, validate_add_tx, validate_record_name_in_zone,
+    AddResult, normalize_record_owner_name, validate_add_tx, validate_record_constraints,
+    validate_record_name_in_zone,
 };
 
 use crate::{
@@ -60,5 +61,3 @@ fn build_record_response(caller: &Caller, record: &ServedRecord) -> GetRecordRes
         },
     }
 }
-
-pub(crate) use validation::validate_record_add_constraints_normalized;

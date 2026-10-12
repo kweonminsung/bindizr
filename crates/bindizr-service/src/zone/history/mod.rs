@@ -28,7 +28,7 @@ use crate::{
         zone::Zone,
     },
     pagination::{build_paginated_response, normalize_page_limit},
-    record::{self, validate_record_add_constraints_normalized, validate_record_name_in_zone},
+    record::{self, validate_record_constraints, validate_record_name_in_zone},
     serial::{generate_serial, validate_stored_serial},
     transaction,
     types::{
@@ -299,7 +299,7 @@ pub async fn rollback(
             // longer fit the names it restores.
             validate_record_name_in_zone(&target.name, &zone.name)?;
             let records_at_name = records_by_name.entry(target.name.clone()).or_default();
-            validate_record_add_constraints_normalized(
+            validate_record_constraints(
                 records_at_name,
                 &target.name,
                 &target.record_type,

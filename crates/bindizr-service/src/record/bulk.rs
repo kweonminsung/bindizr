@@ -11,7 +11,7 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::validation::{
-    normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
+    normalize_record_owner_name, parse_record_type, validate_record_constraints,
 };
 use crate::{
     Context, Transaction,
@@ -293,7 +293,7 @@ pub async fn create_bulk(
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
-            validate_record_add_constraints_normalized(
+            validate_record_constraints(
                 records_at_name,
                 &owner_name,
                 &prepared_record.record_type,

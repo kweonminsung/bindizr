@@ -43,7 +43,7 @@ fn validate_add(
     ttl: i32,
     priority: Option<i32>,
 ) -> Result<(), ServiceError> {
-    validate_record_add_constraints_normalized(
+    validate_record_constraints(
         records,
         &OwnerName::from_row(stored_name),
         record_type,
