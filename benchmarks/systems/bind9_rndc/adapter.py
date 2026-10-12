@@ -14,24 +14,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import dockerutil, zonefile  # noqa: E402
 
 DNS_PORT = 15357
 ZONE = "bench.example"
 SERVER = "127.0.0.1"
 ZONE_PATH = "/var/cache/bind/bench.example.zone"
-
-
-def _rdata(rec: dict) -> str:
-    """Render a benchmark record as zone-file record data."""
-    t, v = rec["type"], rec["value"]
-    if t == "MX":
-        return f'{rec.get("priority", 10)} {v if v.endswith(".") else v + "."}'
-    if t == "TXT":
-        return f'"{v}"'
-    if t == "CNAME":
-        return v if v.endswith(".") else v + "."
-    return v
 
 
 class Bind9RndcAdapter(DnsAdapter):
@@ -71,18 +59,6 @@ class Bind9RndcAdapter(DnsAdapter):
         """Stop the benchmark system and release its resources."""
         self.compose.down()
 
-    def _zone_text(self) -> str:
-        """Render the current zone records as a complete zone file."""
-        lines = [
-            "$TTL 3600",
-            f"@ IN SOA ns1.{ZONE}. admin.{ZONE}. ( {self.serial} 3600 600 604800 3600 )",
-            f"@ IN NS ns1.{ZONE}.",
-            "ns1 IN A 127.0.0.1",
-        ]
-        for rec in self.records.values():
-            lines.append(f'{rec["name"]} {rec.get("ttl", 3600)} IN {rec["type"]} {_rdata(rec)}')
-        return "\n".join(lines) + "\n"
-
     async def _run(self, *cmd: str) -> bool:
         """Run a control command in the benchmark system container."""
         proc = await asyncio.create_subprocess_exec(
@@ -96,7 +72,7 @@ class Bind9RndcAdapter(DnsAdapter):
 
         self.serial += 1
         with tempfile.NamedTemporaryFile("w", suffix=".zone", delete=False) as fh:
-            fh.write(self._zone_text())
+            fh.write(zonefile.build_zone_file(ZONE, self.serial, self.records.values()))
             tmp = fh.name
         # Make world-readable so BIND (uid 53) can read the root-owned copy.
         os.chmod(tmp, 0o644)

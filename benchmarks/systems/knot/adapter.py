@@ -12,23 +12,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import dockerutil, zonefile  # noqa: E402
 
 DNS_PORT = 15360
 ZONE = "bench.example"
 SERVER = "127.0.0.1"
-
-
-def _rdata(rec: dict) -> str:
-    """Render a benchmark record as zone-file record data."""
-    t, v = rec["type"], rec["value"]
-    if t == "MX":
-        return f'{rec.get("priority", 10)} {v if v.endswith(".") else v + "."}'
-    if t == "TXT":
-        return f'"{v}"'
-    if t == "CNAME":
-        return v if v.endswith(".") else v + "."
-    return v
 
 
 class KnotAdapter(DnsAdapter):
@@ -134,7 +122,7 @@ class KnotAdapter(DnsAdapter):
             chunk = records[start:start + self.update_batch]
             script = "".join(
                 f'update add {self._fqdn(r["name"])} {r.get("ttl", 3600)} '
-                f'{r["type"]} {_rdata(r)}\n'
+                f'{r["type"]} {zonefile.build_record_data(r)}\n'
                 for r in chunk
             )
             if not await self._nsupdate(script):
@@ -144,10 +132,11 @@ class KnotAdapter(DnsAdapter):
         """Create a record and return its adapter-specific handle."""
         fqdn = self._fqdn(rec["name"])
         ok = await self._nsupdate(
-            f'update add {fqdn} {rec.get("ttl", 3600)} {rec["type"]} {_rdata(rec)}\n')
+            f'update add {fqdn} {rec.get("ttl", 3600)} '
+            f'{rec["type"]} {zonefile.build_record_data(rec)}\n')
         if not ok:
             raise RuntimeError(f"nsupdate add failed: {getattr(self, '_last_err', '')!r} "
-                               f"rec={rec['type']} {_rdata(rec)}")
+                               f"rec={rec['type']} {zonefile.build_record_data(rec)}")
         return f'{fqdn}|{rec["type"]}'
 
     async def get_record(self, zone: str, handle: str) -> bool:
@@ -162,7 +151,7 @@ class KnotAdapter(DnsAdapter):
         return await self._nsupdate(
             f"update delete {fqdn} {rtype}\n"
             f'update add {fqdn} {rec.get("ttl", 3600)} {rtype} '
-            f'{_rdata({**rec, "type": rtype})}\n')
+            f'{zonefile.build_record_data({**rec, "type": rtype})}\n')
 
     async def delete_record(self, zone: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
