@@ -18,12 +18,6 @@ use crate::{
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
 };
 
-/// The period channel: the sender lives in the `Context` so a reload reaches
-/// the worker, the receiver goes to [`spawn`]. Zero stands the worker down.
-pub fn channel(interval_secs: u64) -> (watch::Sender<u64>, watch::Receiver<u64>) {
-    watch::channel(interval_secs)
-}
-
 /// Start the periodic scheduler on its own task. A zero period leaves the
 /// worker idle until a reload names one.
 pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) {

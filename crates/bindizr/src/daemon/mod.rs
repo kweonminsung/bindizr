@@ -20,6 +20,7 @@ use chrono::Utc;
 use thiserror::Error;
 use tokio::{
     signal::unix::{SignalKind, signal},
+    sync,
     task::{JoinError, JoinHandle, JoinSet},
 };
 
@@ -173,8 +174,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
     // The channels come before the context, which holds their senders; the
     // workers come after it, since they need the context back.
-    let (notify_tx, notify_rx) = queue::channel();
-    let (period_tx, period_rx) = scheduler::channel(config.dns.scheduler_interval_secs);
+    let (notify_tx, notify_rx) = sync::mpsc::unbounded_channel();
+    let (period_tx, period_rx) = sync::watch::channel(config.dns.scheduler_interval_secs);
     let authentication_required = config.api.authentication_required;
     let cx = Arc::new(Context::new(
         config,

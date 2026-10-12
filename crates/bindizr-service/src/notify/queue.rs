@@ -6,10 +6,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use bindizr_core::dns::name::ZoneName;
 use tokio::{
-    sync::{
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-        watch,
-    },
+    sync::{mpsc::UnboundedReceiver, watch},
     task::JoinHandle,
     time::{Instant, timeout},
 };
@@ -33,12 +30,6 @@ impl NotifyJob {
             },
         }
     }
-}
-
-/// The job channel: the sender goes into the `Context`, the receiver to
-/// [`spawn`].
-pub fn channel() -> (UnboundedSender<NotifyJob>, UnboundedReceiver<NotifyJob>) {
-    unbounded_channel()
 }
 
 /// The running worker, as the daemon holds it: `stop` asks it to flush what
