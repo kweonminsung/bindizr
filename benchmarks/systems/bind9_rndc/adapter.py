@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
-from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import dockerutil, zonefile  # noqa: E402
+from adapters.base import Endpoint  # noqa: E402
+from adapters.bind9_zonefile import Bind9ZoneFileAdapter  # noqa: E402
+from lib import dockerutil  # noqa: E402
 
 DNS_PORT = 15357
 ZONE = "bench.example"
@@ -22,18 +22,15 @@ SERVER = "127.0.0.1"
 ZONE_PATH = "/var/cache/bind/bench.example.zone"
 
 
-class Bind9RndcAdapter(DnsAdapter):
+class Bind9RndcAdapter(Bind9ZoneFileAdapter):
     key = "bind9_rndc"
     resource_services = ["bind9"]
     supports_ixfr = True
 
     def __init__(self, cfg: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
-        super().__init__(cfg, project)
+        super().__init__(cfg, project, Endpoint(SERVER, DNS_PORT), ZONE, ZONE_PATH)
         self.compose = dockerutil.Compose(HERE / "compose.yml", project)
-        self.records: dict[str, dict] = {}
-        self.serial = 2
-        self.cid: str | None = None
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
@@ -59,29 +56,6 @@ class Bind9RndcAdapter(DnsAdapter):
         """Stop the benchmark system and release its resources."""
         self.compose.down()
 
-    async def _run(self, *cmd: str) -> bool:
-        """Run a control command in the benchmark system container."""
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-        await proc.communicate()
-        return proc.returncode == 0
-
-    async def _flush_and_reload(self) -> bool:
-        """Write the current zone file and request a server reload."""
-        import os
-
-        self.serial += 1
-        with tempfile.NamedTemporaryFile("w", suffix=".zone", delete=False) as fh:
-            fh.write(zonefile.build_zone_file(ZONE, self.serial, self.records.values()))
-            tmp = fh.name
-        # Make world-readable so BIND (uid 53) can read the root-owned copy.
-        os.chmod(tmp, 0o644)
-        ok = await self._run("docker", "cp", tmp, f"{self.cid}:{ZONE_PATH}")
-        Path(tmp).unlink(missing_ok=True)
-        if not ok:
-            return False
-        return await self._run("docker", "exec", self.cid, "rndc", "reload", ZONE)
-
     async def create_zone(self, zone: str) -> None:
         """Create the zone used by the benchmark."""
         return
@@ -90,41 +64,3 @@ class Bind9RndcAdapter(DnsAdapter):
         """Remove the benchmark zone and its records."""
         self.records.clear()
         await self._flush_and_reload()
-
-    async def create_record(self, zone: str, rec: dict) -> str:
-        """Create a record and return its adapter-specific handle."""
-        handle = f'{rec["name"]}|{rec["type"]}'
-        self.records[handle] = rec
-        await self._flush_and_reload()
-        return handle
-
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
-        """Import a batch of records into the benchmark zone."""
-        for rec in records:
-            self.records[f'{rec["name"]}|{rec["type"]}'] = rec
-        await self._flush_and_reload()
-
-    async def get_record(self, zone: str, handle: str) -> bool:
-        """Check whether the record identified by the handle is present."""
-        name, rtype = handle.rsplit("|", 1)
-        fqdn = f"{name}.{ZONE}"
-        proc = await asyncio.create_subprocess_exec(
-            "dig", f"@{SERVER}", "-p", str(DNS_PORT), fqdn, rtype, "+short",
-            "+tries=1", "+time=3",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await proc.communicate()
-        return bool(out.decode().strip())
-
-    async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
-        """Replace the record identified by the handle with the supplied value."""
-        self.records[handle] = {**self.records.get(handle, {}), **rec}
-        return await self._flush_and_reload()
-
-    async def delete_record(self, zone: str, handle: str) -> bool:
-        """Delete the record identified by the handle."""
-        self.records.pop(handle, None)
-        return await self._flush_and_reload()
-
-    def dns_endpoint(self) -> Endpoint:
-        """Return the DNS endpoint that serves the managed zone."""
-        return Endpoint(SERVER, DNS_PORT)
