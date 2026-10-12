@@ -8,7 +8,7 @@ use domain::{
 
 use super::*;
 use crate::{
-    dns::tsig::{TsigSigningKey, verify_tsig_sequence},
+    dns::tsig::{TsigSigningKey, verify_tsig},
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
@@ -208,7 +208,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     let parsed = ParsedQuery::parse(&query, Keepalive::None).unwrap();
 
     let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR)
-        .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
+        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
 
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
@@ -251,7 +251,7 @@ fn a_signed_message_reserves_room_for_its_tsig_record() {
     let (query, _) = signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
     let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
-        .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
+        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.

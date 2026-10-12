@@ -22,11 +22,17 @@ pub(crate) struct SigningKey {
 impl SigningKey {
     /// Convert into the TSIG key `domain` signs and verifies with.
     pub(crate) fn to_tsig_key(&self) -> Result<Key, String> {
+        self.to_tsig_key_with_mac_len(Algorithm::Sha256.native_len())
+    }
+
+    /// Construct a client key that emits the requested MAC length.
+    pub(crate) fn to_tsig_key_with_mac_len(&self, mac_len: usize) -> Result<Key, String> {
         let secret = base64::engine::general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(|e| format!("TSIG secret is not base64: {e}"))?;
         let key_name = KeyName::from_str(&self.name).map_err(|e| e.to_string())?;
-        Key::new(Algorithm::Sha256, &secret, key_name, None, None).map_err(|e| e.to_string())
+        Key::new(Algorithm::Sha256, &secret, key_name, None, Some(mac_len))
+            .map_err(|e| e.to_string())
     }
 }
 

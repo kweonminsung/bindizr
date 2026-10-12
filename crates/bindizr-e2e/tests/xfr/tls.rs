@@ -231,6 +231,65 @@ async fn badtime_tls_responses_preserve_edns_and_verify() {
     }
 }
 
+/// Authenticate truncated TLS queries before applying time and length policy.
+#[tokio::test]
+#[serial]
+async fn truncated_tls_queries_follow_tsig_validation_order() {
+    let app = xot_app().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "truncated-tls-key", KeyRole::Admin).await;
+    for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
+        for (age, corrupt, expected) in [
+            (0, false, TsigRcode::BADTRUNC),
+            (3600, false, TsigRcode::BADTIME),
+            (0, true, TsigRcode::BADSIG),
+            (3600, true, TsigRcode::BADSIG),
+        ] {
+            let signed_at = Time48::from_u64(u64::from(Time48::now()) - age);
+            let mut query = edns_query(zone_name, qtype, &[(0, true)]);
+            ClientTransaction::request_with_fudge(
+                key.to_tsig_key_with_mac_len(16).unwrap(),
+                &mut query,
+                signed_at,
+                17,
+            )
+            .unwrap();
+            let mut query = query.finish();
+            if corrupt {
+                let mac_end = query.len() - 7;
+                query[mac_end] ^= 1;
+            }
+            let response = Message::from_octets(
+                exchange_xot(app.dns_tls_port(), &query, dot_client(&app)).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(response.header().id(), 3225);
+            assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+            assert!(response.opt().unwrap().dnssec_ok());
+            let tsig = response
+                .additional()
+                .unwrap()
+                .limit_to::<Tsig<_, _>>()
+                .last()
+                .unwrap()
+                .unwrap();
+            assert_eq!(tsig.data().error(), expected);
+            if corrupt {
+                assert!(tsig.data().mac().is_empty());
+            } else {
+                assert_eq!(tsig.data().mac().len(), 32);
+                verify_response_mac(&query, &response, &key).unwrap();
+            }
+            assert_eq!(
+                tsig.data().other().len(),
+                if expected == TsigRcode::BADTIME { 6 } else { 0 }
+            );
+        }
+    }
+}
+
 /// Sign FORMERR responses to multi-question queries over TLS.
 #[tokio::test]
 #[serial]

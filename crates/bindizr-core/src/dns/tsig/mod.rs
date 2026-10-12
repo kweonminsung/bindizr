@@ -67,6 +67,8 @@ pub enum VerifyAnswerError {
     Malformed(#[source] LibraryError),
     #[error("TSIG validation of the answer failed: {0}")]
     Rejected(#[source] LibraryError),
+    #[error("TSIG response MAC is shorter than the full-length policy permits")]
+    TruncatedMac,
 }
 
 /// Context for signing the response to a validated TSIG request.
@@ -108,9 +110,20 @@ pub fn sign_request(
 pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), VerifyAnswerError> {
     let mut message = Message::from_octets(response.to_vec())
         .map_err(|e| VerifyAnswerError::Malformed(Box::new(e)))?;
+    let mac_len = message.additional().ok().and_then(|additional| {
+        additional
+            .limit_to::<Tsig<_, _>>()
+            .last()?
+            .ok()
+            .map(|tsig| tsig.data().mac().len())
+    });
     signer
         .answer(&mut message, Time48::now())
-        .map_err(|e| VerifyAnswerError::Rejected(Box::new(e)))
+        .map_err(|e| VerifyAnswerError::Rejected(Box::new(e)))?;
+    if mac_len != Some(signer.key().native_len()) {
+        return Err(VerifyAnswerError::TruncatedMac);
+    }
+    Ok(())
 }
 
 /// The largest TSIG record a response can carry, so an intake cap can reserve
@@ -159,11 +172,14 @@ impl TsigKey {
             return Err(TsigError::EmptySecret);
         }
 
-        let domain =
-            Key::new(algorithm, &secret, name, None, None).map_err(|e| TsigError::InvalidKey {
+        // RFC 8945, Section 5.2: authenticate the MAC before checking local length policy.
+        let min_mac_len = 10.max(algorithm.native_len() / 2);
+        let domain = Key::new(algorithm, &secret, name, Some(min_mac_len), None).map_err(|e| {
+            TsigError::InvalidKey {
                 name: self.name.clone(),
                 source: Box::new(e),
-            })?;
+            }
+        })?;
         Ok(TsigSigningKey {
             domain: Arc::new(domain),
             hmac: hmac::Key::new(hmac_algorithm, &secret),
@@ -176,34 +192,37 @@ pub fn verify_tsig(
     query_data: &[u8],
     key: Option<TsigSigningKey>,
 ) -> Result<ResponseSigner, TsigError> {
-    verify(query_data, key, ServerTransaction::request)
-}
-
-/// Authenticate a request and prepare its transfer MAC chain.
-pub fn verify_tsig_sequence(
-    query_data: &[u8],
-    key: Option<TsigSigningKey>,
-) -> Result<TransferSigner, TsigError> {
-    verify(query_data, key, ServerSequence::request)
-}
-
-/// Verify a request's TSIG and return the authenticated signing context.
-fn verify<T>(
-    query_data: &[u8],
-    key: Option<TsigSigningKey>,
-    request: impl FnOnce(
-        &DbKeyStore,
-        &mut Message<Vec<u8>>,
-        Time48,
-    ) -> Result<Option<T>, ServerError<TsigSigningKey>>,
-) -> Result<T, TsigError> {
+    let original =
+        Message::from_octets(query_data).map_err(|e| TsigError::Malformed(Box::new(e)))?;
     let mut message =
         Message::from_octets(query_data.to_vec()).map_err(|e| TsigError::Malformed(Box::new(e)))?;
 
     let store = DbKeyStore(key);
     let now = Time48::now();
-    match request(&store, &mut message, now) {
-        Ok(Some(context)) => Ok(context),
+    match ServerTransaction::request(&store, &mut message, now) {
+        Ok(Some(context)) => {
+            let key = store.0.as_ref().ok_or(TsigError::RecordMissing)?;
+            let tsig = original
+                .additional()
+                .map_err(|e| TsigError::Malformed(Box::new(e)))?
+                .limit_to::<Tsig<_, _>>()
+                .last()
+                .ok_or(TsigError::RecordMissing)?
+                .map_err(|e| TsigError::Malformed(Box::new(e)))?;
+            if tsig.data().mac().len() < key.domain.native_len() {
+                let response =
+                    build_signed_error(&original, key, AuthenticatedError::BadTrunc, now).ok_or(
+                        TsigError::BuildResponse {
+                            rcode: TsigRcode::BADTRUNC,
+                        },
+                    )?;
+                return Err(TsigError::Rejected {
+                    rcode: TsigRcode::BADTRUNC,
+                    response,
+                });
+            }
+            Ok(context)
+        }
         Ok(None) => Err(TsigError::RecordMissing),
         Err(err) => Err(tsig_error(query_data, err, store.0.as_ref(), now)),
     }
@@ -287,13 +306,17 @@ fn tsig_error(
         Err(e) => return TsigError::Malformed(Box::new(e)),
     };
 
-    let error = err.error();
     // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2;
     // the structure was checked before verification, so that is BADSIG.
+    let error = match err.error() {
+        TsigRcode::FORMERR => TsigRcode::BADSIG,
+        error => error,
+    };
     let response = match error {
-        TsigRcode::FORMERR => build_unsigned_error(&msg, TsigRcode::BADSIG),
         // BADTIME is returned only after the request MAC has been authenticated.
-        TsigRcode::BADTIME => key.and_then(|key| build_badtime_response(&msg, key, now)),
+        TsigRcode::BADTIME => {
+            key.and_then(|key| build_signed_error(&msg, key, AuthenticatedError::BadTime, now))
+        }
         other => build_unsigned_error(&msg, other),
     };
 
@@ -306,10 +329,18 @@ fn tsig_error(
     }
 }
 
-/// Sign an authenticated BADTIME response, including EDNS (RFC 8945, Section 5.2.3).
-fn build_badtime_response(
+/// TSIG failures that follow successful MAC validation.
+#[derive(Clone, Copy)]
+enum AuthenticatedError {
+    BadTime,
+    BadTrunc,
+}
+
+/// Sign a time or truncation error, including EDNS (RFC 8945, Section 5.3.2).
+fn build_signed_error(
     msg: &Message<&[u8]>,
     key: &TsigSigningKey,
+    error: AuthenticatedError,
     now: Time48,
 ) -> Option<Vec<u8>> {
     let request_tsig = msg
@@ -329,7 +360,15 @@ fn build_badtime_response(
     // RFC 8945, Section 4.3 requires the six bytes actually carried on the wire.
     let name = key.domain.name().to_canonical_name::<Vec<u8>>();
     let algorithm = key.domain.algorithm().to_name();
-    let other = now.into_octets();
+    let (rcode, time_signed, other) = match error {
+        AuthenticatedError::BadTime => (
+            TsigRcode::BADTIME,
+            request.time_signed(),
+            Some(now.into_octets()),
+        ),
+        AuthenticatedError::BadTrunc => (TsigRcode::BADTRUNC, now, None),
+    };
+    let other = other.as_ref().map_or(&[][..], |time| time.as_slice());
     let mut digest = hmac::Context::with_key(&key.hmac);
     digest.update(&u16::try_from(request.mac().len()).ok()?.to_be_bytes());
     digest.update(request.mac());
@@ -338,11 +377,11 @@ fn build_badtime_response(
     digest.update(&Class::ANY.to_int().to_be_bytes());
     digest.update(&0u32.to_be_bytes());
     digest.update(algorithm.as_slice());
-    digest.update(&request.time_signed().into_octets());
+    digest.update(&time_signed.into_octets());
     digest.update(&request.fudge().to_be_bytes());
-    digest.update(&TsigRcode::BADTIME.to_int().to_be_bytes());
-    digest.update(&6u16.to_be_bytes());
-    digest.update(&other);
+    digest.update(&rcode.to_int().to_be_bytes());
+    digest.update(&u16::try_from(other.len()).ok()?.to_be_bytes());
+    digest.update(other);
     let mac = digest.sign();
     builder
         .push((
@@ -351,12 +390,12 @@ fn build_badtime_response(
             0,
             Tsig::new(
                 algorithm,
-                request.time_signed(),
+                time_signed,
                 request.fudge(),
                 mac.as_ref(),
                 msg.header().id(),
-                TsigRcode::BADTIME,
-                other.as_slice(),
+                rcode,
+                other,
             )
             .ok()?,
         ))

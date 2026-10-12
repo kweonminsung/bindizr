@@ -9,9 +9,7 @@ use std::net::IpAddr;
 use bindizr_core::{
     dns::{
         message::{ExtendedErrorCode, OptRcode, ParsedQuery},
-        tsig::{
-            RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
-        },
+        tsig::{RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig},
     },
     model::transfer::TransferTransport,
 };
@@ -114,15 +112,14 @@ pub(crate) async fn authenticate_tsig_key(
     let Some(tsig_key) = tsig_key else {
         // An unknown key still runs validation: the empty key store makes it
         // produce the BADKEY error response.
-        verify_tsig_sequence(query_data, None).map_err(TransferRefusal::from)?;
+        verify_tsig(query_data, None).map_err(TransferRefusal::from)?;
         return Err(TransferRefusal::refused(
             "TSIG verification passed without a key".to_string(),
             None,
         ));
     };
     let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
-    let signer =
-        verify_tsig_sequence(query_data, Some(signing_key)).map_err(TransferRefusal::from)?;
+    let signer = verify_tsig(query_data, Some(signing_key)).map_err(TransferRefusal::from)?;
     let caller = Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
         .await
         .map_err(|e| {
@@ -130,7 +127,7 @@ pub(crate) async fn authenticate_tsig_key(
         })?;
     Ok(Some(TransferIdentity {
         caller,
-        signer: Some(signer),
+        signer: Some(signer.into()),
     }))
 }
 

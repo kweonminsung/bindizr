@@ -206,18 +206,13 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
         // The MAC ends before original ID, error, and other-len (six bytes).
         let mac_end = query.len() - 7;
         query[mac_end] ^= 0xFF;
-        for err in [
-            verify_tsig(&query, Some(key.clone())).unwrap_err(),
-            verify_tsig_sequence(&query, Some(key.clone())).unwrap_err(),
-        ] {
-            // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
-            let (rcode, error, _, mac, other) =
-                extract_response_tsig(&extract_failed_response(err));
-            assert_eq!(rcode, Rcode::NOTAUTH);
-            assert_eq!(error, TsigRcode::BADSIG);
-            assert!(mac.is_empty());
-            assert!(other.is_empty());
-        }
+        let err = verify_tsig(&query, Some(key.clone())).unwrap_err();
+        // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
+        let (rcode, error, _, mac, other) = extract_response_tsig(&extract_failed_response(err));
+        assert_eq!(rcode, Rcode::NOTAUTH);
+        assert_eq!(error, TsigRcode::BADSIG);
+        assert!(mac.is_empty());
+        assert!(other.is_empty());
     }
 }
 
@@ -340,37 +335,205 @@ fn badtime_response_preserves_edns() {
                     .unwrap();
                     let query = additional.finish();
                     let before = Time48::now();
-                    for err in [
-                        verify_tsig(&query, Some(key.clone())).unwrap_err(),
-                        verify_tsig_sequence(&query, Some(key.clone())).unwrap_err(),
-                    ] {
-                        let response = extract_failed_response(err);
-                        let message = Message::from_octets(response.as_slice()).unwrap();
-                        assert_eq!(message.header().id(), 8945);
-                        assert_eq!(message.header().opcode(), opcode);
-                        assert_eq!(message.header().rcode(), Rcode::NOTAUTH);
-                        assert_eq!(
-                            message.opt().map(|opt| opt.dnssec_ok()),
-                            edns.map(|(_, do_bit)| do_bit)
-                        );
-                        let tsig = message
-                            .additional()
-                            .unwrap()
-                            .limit_to::<Tsig<_, _>>()
-                            .last()
-                            .unwrap()
-                            .unwrap();
-                        assert_eq!(tsig.data().error(), TsigRcode::BADTIME);
-                        assert_eq!(tsig.data().time_signed(), signed_at);
-                        assert_eq!(tsig.data().fudge(), 17);
-                        assert_eq!(tsig.data().other().len(), 6);
-                        let server_time = tsig.data().other_time().unwrap();
-                        assert!(server_time >= before && server_time <= Time48::now());
-                        assert_response_mac(&query, &response, algorithm);
-                    }
+                    let err = verify_tsig(&query, Some(key.clone())).unwrap_err();
+                    let response = extract_failed_response(err);
+                    let message = Message::from_octets(response.as_slice()).unwrap();
+                    assert_eq!(message.header().id(), 8945);
+                    assert_eq!(message.header().opcode(), opcode);
+                    assert_eq!(message.header().rcode(), Rcode::NOTAUTH);
+                    assert_eq!(
+                        message.opt().map(|opt| opt.dnssec_ok()),
+                        edns.map(|(_, do_bit)| do_bit)
+                    );
+                    let tsig = message
+                        .additional()
+                        .unwrap()
+                        .limit_to::<Tsig<_, _>>()
+                        .last()
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(tsig.data().error(), TsigRcode::BADTIME);
+                    assert_eq!(tsig.data().time_signed(), signed_at);
+                    assert_eq!(tsig.data().fudge(), 17);
+                    assert_eq!(tsig.data().other().len(), 6);
+                    let server_time = tsig.data().other_time().unwrap();
+                    assert!(server_time >= before && server_time <= Time48::now());
+                    assert_response_mac(&query, &response, algorithm);
                 }
             }
         }
+    }
+}
+
+/// Check MAC and time before rejecting an authenticated truncation (RFC 8945, Section 5.2).
+#[test]
+fn truncated_requests_follow_validation_order() {
+    for algorithm in [
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        let key = test_key(algorithm).to_signing_key().unwrap();
+        let native_len = key.as_ref().native_len();
+        for (mac_len, edns) in [
+            (native_len / 2, None),
+            (native_len / 2, Some(false)),
+            (native_len / 2, Some(true)),
+            (native_len - 1, Some(true)),
+            (native_len, Some(true)),
+        ] {
+            let client_key = Arc::new(
+                Key::new(
+                    key.as_ref().algorithm(),
+                    SECRET,
+                    key.as_ref().name().clone(),
+                    None,
+                    Some(mac_len),
+                )
+                .unwrap(),
+            );
+            for offset in [-3600i64, 0, 3600] {
+                for corrupt in [false, true] {
+                    let signed_at =
+                        Time48::from_u64(now_secs().checked_add_signed(offset).unwrap());
+                    let mut builder = MessageBuilder::new_vec();
+                    builder.header_mut().set_id(8945);
+                    let mut question = builder.question();
+                    question
+                        .push((
+                            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+                            Rtype::SOA,
+                        ))
+                        .unwrap();
+                    let mut query = question.additional();
+                    if let Some(dnssec_ok) = edns {
+                        query
+                            .opt(|opt| {
+                                opt.set_udp_payload_size(1232);
+                                opt.set_dnssec_ok(dnssec_ok);
+                                Ok(())
+                            })
+                            .unwrap();
+                    }
+                    ClientTransaction::request_with_fudge(
+                        client_key.clone(),
+                        &mut query,
+                        signed_at,
+                        17,
+                    )
+                    .unwrap();
+                    let mut query = query.finish();
+                    if corrupt {
+                        let mac_end = query.len() - 7;
+                        query[mac_end] ^= 1;
+                    }
+                    let expected = if corrupt {
+                        TsigRcode::BADSIG
+                    } else if offset != 0 {
+                        TsigRcode::BADTIME
+                    } else if mac_len != native_len {
+                        TsigRcode::BADTRUNC
+                    } else {
+                        TsigRcode::NOERROR
+                    };
+                    let before = now_secs();
+                    let result = verify_tsig(&query, Some(key.clone()));
+                    if expected == TsigRcode::NOERROR {
+                        result.unwrap();
+                    } else {
+                        let err = result.unwrap_err();
+                        assert!(
+                            matches!(&err, TsigError::Rejected { rcode, .. } if *rcode == expected)
+                        );
+                        let response = extract_failed_response(err);
+                        let (rcode, error, time_signed, mac, other) =
+                            extract_response_tsig(&response);
+                        assert_eq!(rcode, Rcode::NOTAUTH);
+                        assert_eq!(
+                            error, expected,
+                            "{algorithm:?}, MAC {mac_len}, offset {offset}, corrupt {corrupt}"
+                        );
+                        assert_eq!(
+                            Message::from_octets(response.as_slice())
+                                .unwrap()
+                                .opt()
+                                .map(|opt| opt.dnssec_ok()),
+                            edns
+                        );
+                        if corrupt {
+                            assert!(mac.is_empty());
+                            assert!(other.is_empty());
+                        } else {
+                            assert_eq!(mac.len(), native_len);
+                            assert_response_mac(&query, &response, algorithm);
+                            if expected == TsigRcode::BADTIME {
+                                assert_eq!(time_signed, u64::from(signed_at));
+                                assert_eq!(other.len(), 6);
+                            } else {
+                                assert!(time_signed >= before && time_signed <= now_secs());
+                                assert!(other.is_empty());
+                            }
+                        }
+                    }
+                    let unknown_key =
+                        extract_failed_response(verify_tsig(&query, None).unwrap_err());
+                    let (_, error, _, mac, _) = extract_response_tsig(&unknown_key);
+                    assert_eq!(error, TsigRcode::BADKEY);
+                    assert!(mac.is_empty());
+                }
+            }
+        }
+    }
+}
+
+/// Keep the outbound full-length policy after authenticating response MACs.
+#[test]
+fn outbound_responses_require_full_length_macs() {
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
+    for mac_len in [16, 31, 32] {
+        let server_key = Arc::new(
+            Key::new(
+                Algorithm::Sha256,
+                SECRET,
+                key.as_ref().name().clone(),
+                None,
+                Some(mac_len),
+            )
+            .unwrap(),
+        );
+        let mut question = MessageBuilder::new_vec().question();
+        question
+            .push((
+                Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+                Rtype::SOA,
+            ))
+            .unwrap();
+        let mut query = question.additional();
+        let client = sign_request(&mut query, key.clone()).unwrap();
+        let mut query = Message::from_octets(query.finish()).unwrap();
+        let server = ServerTransaction::request(&server_key, &mut query, Time48::now())
+            .unwrap()
+            .unwrap();
+        let mut response = MessageBuilder::new_vec()
+            .start_answer(&query, Rcode::NOERROR)
+            .unwrap()
+            .additional();
+        server.answer(&mut response, Time48::now()).unwrap();
+        let mut response = response.finish();
+        let result = verify_response(&client, &response);
+        if mac_len == 32 {
+            result.unwrap();
+        } else {
+            assert!(matches!(result, Err(VerifyAnswerError::TruncatedMac)));
+        }
+        let mac_end = response.len() - 7;
+        response[mac_end] ^= 1;
+        assert!(matches!(
+            verify_response(&client, &response),
+            Err(VerifyAnswerError::Rejected(_))
+        ));
     }
 }
 

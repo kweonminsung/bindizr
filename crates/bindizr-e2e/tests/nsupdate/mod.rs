@@ -1454,6 +1454,72 @@ async fn badtime_update_responses_preserve_edns_and_verify() {
     }
 }
 
+/// Authenticate truncated UPDATEs before applying time and length policy.
+#[tokio::test]
+#[serial]
+async fn truncated_updates_follow_tsig_validation_order() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "truncated-update-key", KeyRole::Admin).await;
+    for (age, corrupt, expected) in [
+        (0, false, TsigRcode::BADTRUNC),
+        (3600, false, TsigRcode::BADTIME),
+        (0, true, TsigRcode::BADSIG),
+        (3600, true, TsigRcode::BADSIG),
+    ] {
+        let signed_at = Time48::from_u64(u64::from(Time48::now()) - age);
+        let mut query = build_update(8945, zone_name, Class::IN, &[], &[]).unwrap();
+        query
+            .opt(|opt| {
+                opt.set_udp_payload_size(1232);
+                opt.set_dnssec_ok(true);
+                Ok(())
+            })
+            .unwrap();
+        ClientTransaction::request_with_fudge(
+            key.to_tsig_key_with_mac_len(16).unwrap(),
+            &mut query,
+            signed_at,
+            17,
+        )
+        .unwrap();
+        let mut query = query.finish();
+        if corrupt {
+            let mac_end = query.len() - 7;
+            query[mac_end] ^= 1;
+        }
+        for response in [
+            exchange_udp(app.dns_port(), &query).unwrap(),
+            exchange_tcp(app.dns_port(), &query).unwrap(),
+        ] {
+            let response = Message::from_octets(response).unwrap();
+            assert_eq!(response.header().id(), 8945);
+            assert_eq!(response.header().opcode(), Opcode::UPDATE);
+            assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+            assert!(response.opt().unwrap().dnssec_ok());
+            let tsig = response
+                .additional()
+                .unwrap()
+                .limit_to::<Tsig<_, _>>()
+                .last()
+                .unwrap()
+                .unwrap();
+            assert_eq!(tsig.data().error(), expected);
+            if corrupt {
+                assert!(tsig.data().mac().is_empty());
+            } else {
+                assert_eq!(tsig.data().mac().len(), 32);
+                verify_response_mac(&query, &response, &key).unwrap();
+            }
+            assert_eq!(
+                tsig.data().other().len(),
+                if expected == TsigRcode::BADTIME { 6 } else { 0 }
+            );
+        }
+    }
+}
+
 /// Verify the DNAME rules of RFC 6672: a DNAME beside a CNAME is passed
 /// over, a second DNAME replaces the first, a name below one is refused.
 #[tokio::test]

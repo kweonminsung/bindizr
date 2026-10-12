@@ -566,6 +566,9 @@ A readable OPT retains its version and DO bit even when rejected with BADVERS;
 response OPTs copy DO and clear reserved flags (RFC 3225, Section 3).
 BADTIME responses sign the complete response, including OPT, and the six-byte
 server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3).
+Bindizr requires full-length TSIG MACs. Key, MAC, and time validation precede
+this policy; authenticated truncations receive signed BADTRUNC, while invalid MACs
+receive unsigned BADSIG (RFC 8945, Sections 5.2 and 5.3.2).
 
 An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority
