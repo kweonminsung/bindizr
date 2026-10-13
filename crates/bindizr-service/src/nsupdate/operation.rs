@@ -97,9 +97,12 @@ pub(crate) async fn apply_op_tx(
             let value = if *record_type == RecordType::Txt {
                 value.to_string()
             } else {
-                record_type.encoded_value(value, *priority).map_err(|e| {
-                    NsupdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
-                })?
+                record_type
+                    .encoded_value(value, *priority)
+                    .map_err(|source| NsupdateError::RecordValue {
+                        record_type: *record_type,
+                        source,
+                    })?
             };
 
             let records_at_name =

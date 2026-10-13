@@ -10,7 +10,7 @@ use bindizr_core::{
     dns::{
         message::{ExtendedErrorCode, OptRcode, Rcode},
         nsupdate::{DEFAULT_FUDGE, build_response},
-        tsig::{RequestSignature, request_signature},
+        tsig::{RequestSignature, TsigError, request_signature},
     },
     metrics::NsupdateResult,
     model::transfer::TransferTransport,
@@ -84,8 +84,8 @@ async fn handle_nsupdate_request(
                 RequestSignature::Key { name, fudge } => {
                     match update::authenticate_tsig_key(dns_cx, &name, query_data).await {
                         Ok((_, signer)) => (Some(signer), fudge),
-                        Err(update::UpdateError::TsigFailed { msg, response }) => {
-                            log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+                        Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, response })) => {
+                            log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
                             cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
                             return Some(response);
                         }
@@ -122,8 +122,8 @@ async fn handle_nsupdate_request(
         }
         // TSIG failures carry their own complete response, built against the
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
-        Err(update::UpdateError::TsigFailed { msg, response }) => {
-            log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+        Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, response })) => {
+            log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
             cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
             return Some(response);
         }
@@ -135,42 +135,31 @@ async fn handle_nsupdate_request(
             log::info!("NSUPDATE refused from {}: {}", client_addr, msg);
             (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
-        Err(update::UpdateError::FormErr(msg)) => {
-            log::warn!("NSUPDATE formerr from {}: {}", client_addr, msg);
-            (OptRcode::FORMERR, None)
-        }
-        Err(update::UpdateError::Refused(msg)) => {
-            log::warn!("NSUPDATE refused from {}: {}", client_addr, msg);
+        Err(
+            err @ (update::UpdateError::Refused(_)
+            | update::UpdateError::Tsig(TsigError::Malformed(_))),
+        ) => {
+            log::warn!("NSUPDATE refused from {}: {}", client_addr, err);
             (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
-        Err(update::UpdateError::YxDomain(msg)) => {
-            log::warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
-            (OptRcode::YXDOMAIN, None)
-        }
-        Err(update::UpdateError::YxRrset(msg)) => {
-            log::warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
-            (OptRcode::YXRRSET, None)
-        }
-        Err(update::UpdateError::NxDomain(msg)) => {
-            log::warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
-            (OptRcode::NXDOMAIN, None)
-        }
-        Err(update::UpdateError::NxRrset(msg)) => {
-            log::warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
-            (OptRcode::NXRRSET, None)
-        }
-        Err(update::UpdateError::NotAuth(msg)) => {
-            log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+        Err(err @ (update::UpdateError::NotAuth(_) | update::UpdateError::ZoneName { .. })) => {
+            log::warn!("NSUPDATE notauth from {}: {}", client_addr, err);
             (
                 OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
             )
         }
-        Err(update::UpdateError::NotZone(msg)) => {
-            log::warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
-            (OptRcode::NOTZONE, None)
+        Err(update::UpdateError::Nsupdate(err)) => {
+            let rcode = err.rcode();
+            let ede = match rcode {
+                Rcode::REFUSED => Some(ExtendedErrorCode::PROHIBITED),
+                Rcode::NOTAUTH => Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+                _ => None,
+            };
+            log::warn!("NSUPDATE {} from {}: {}", rcode, client_addr, err);
+            (rcode.into(), ede)
         }
-        Err(err @ update::UpdateError::Internal { .. }) => {
+        Err(err @ (update::UpdateError::LoadTsigKey(_) | update::UpdateError::Tsig(_))) => {
             log::warn!("NSUPDATE internal error from {}: {}", client_addr, err);
             (OptRcode::SERVFAIL, None)
         }

@@ -23,57 +23,6 @@ const RESOLVE_FAILURE_TTL: Duration = Duration::from_secs(5);
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SecondaryAcl {
-    entries: Vec<SecondaryAclEntry>,
-}
-
-impl SecondaryAcl {
-    /// Check whether a peer IP is permitted by the secondary ACL.
-    async fn allows(&self, cache: &AddressCache, client_ip: IpAddr) -> bool {
-        // Literals first: a match there answers without reaching the resolver.
-        if self
-            .entries
-            .iter()
-            .any(|entry| matches!(entry, SecondaryAclEntry::Ip(ip) if *ip == client_ip))
-        {
-            return true;
-        }
-
-        for entry in &self.entries {
-            if let SecondaryAclEntry::HostPort(host_port) = entry
-                && resolve_acl_host(cache, host_port)
-                    .await
-                    .contains(&client_ip)
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// The ACL the given address targets name.
-    fn from_addresses<'a>(addresses: impl IntoIterator<Item = &'a AddressTarget>) -> Self {
-        let entries = addresses
-            .into_iter()
-            .map(|address| match address {
-                AddressTarget::Socket(addr) => SecondaryAclEntry::Ip(addr.ip()),
-                AddressTarget::HostPort(host_port) => {
-                    SecondaryAclEntry::HostPort(host_port.clone())
-                }
-            })
-            .collect();
-        Self { entries }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum SecondaryAclEntry {
-    Ip(IpAddr),
-    HostPort(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedAddrs {
     addrs: Vec<IpAddr>,
     expires_at: Instant,
@@ -115,34 +64,56 @@ pub(crate) async fn is_client_allowed(
     client_ip: IpAddr,
 ) -> Result<bool, ServiceError> {
     let secondaries = secondary::list_enabled(dns_cx.daemon()).await?;
-    let acl = SecondaryAcl::from_addresses(secondaries.iter().map(|s| &s.address));
-    Ok(acl.allows(&dns_cx.address_cache, client_ip).await)
+    Ok(allows_client(
+        &dns_cx.address_cache,
+        secondaries.iter().map(|secondary| &secondary.address),
+        client_ip,
+    )
+    .await)
 }
 
-/// Resolve an ACL hostname to its permitted IP addresses. The resolver logs
-/// a failure itself; here it only shortens how long the empty answer is kept.
-async fn resolve_acl_host(cache: &AddressCache, host_port: &str) -> Vec<IpAddr> {
-    if let Some(addrs) = cache.cached_addrs(host_port) {
-        return addrs;
+/// Match literal IPs first, then resolve hostnames through the ACL cache.
+async fn allows_client<'a>(
+    cache: &AddressCache,
+    addresses: impl Iterator<Item = &'a AddressTarget> + Clone,
+    client_ip: IpAddr,
+) -> bool {
+    if addresses
+        .clone()
+        .any(|address| matches!(address, AddressTarget::Socket(addr) if addr.ip() == client_ip))
+    {
+        return true;
     }
 
-    let target = AddressTarget::HostPort(host_port.to_string());
-    let (addrs, ttl) = match resolve_address_entry(&target, RESOLVE_TIMEOUT).await {
-        Ok(addrs) => (
-            addrs.into_iter().map(|addr| addr.ip()).collect::<Vec<_>>(),
-            RESOLVED_TTL,
-        ),
-        Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
-    };
-
-    cache.locked().insert(
-        host_port.to_string(),
-        CachedAddrs {
-            addrs: addrs.clone(),
-            expires_at: Instant::now() + ttl,
-        },
-    );
-    addrs
+    for address in addresses {
+        let AddressTarget::HostPort(host_port) = address else {
+            continue;
+        };
+        let addrs = match cache.cached_addrs(host_port) {
+            Some(addrs) => addrs,
+            None => {
+                let (addrs, ttl) = match resolve_address_entry(address, RESOLVE_TIMEOUT).await {
+                    Ok(addrs) => (
+                        addrs.into_iter().map(|addr| addr.ip()).collect::<Vec<_>>(),
+                        RESOLVED_TTL,
+                    ),
+                    Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
+                };
+                cache.locked().insert(
+                    host_port.clone(),
+                    CachedAddrs {
+                        addrs: addrs.clone(),
+                        expires_at: Instant::now() + ttl,
+                    },
+                );
+                addrs
+            }
+        };
+        if addrs.contains(&client_ip) {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -159,39 +130,58 @@ mod tests {
             .collect()
     }
 
-    /// Verify that secondary acl keeps hostnames for runtime resolution.
-    #[test]
-    fn secondary_acl_keeps_hostnames_for_runtime_resolution() {
-        assert_eq!(
-            SecondaryAcl::from_addresses(&targets(&["192.0.2.10:53", "bind9-0.bind9-headless:53"]))
-                .entries,
-            vec![
-                SecondaryAclEntry::Ip("192.0.2.10".parse().unwrap()),
-                SecondaryAclEntry::HostPort("bind9-0.bind9-headless:53".to_string()),
-            ]
-        );
-    }
-
-    /// Verify that literal entries answer without resolving.
+    /// Match either IP family regardless of port, without resolving earlier hostnames.
     #[tokio::test]
     async fn literal_entries_answer_without_resolving() {
-        // The unresolvable entry proves no lookup happened.
-        let acl =
-            SecondaryAcl::from_addresses(&targets(&["192.0.2.10", "no-such-host.invalid:53"]));
+        let addresses = targets(&[
+            "no-such-host.invalid:53",
+            "192.0.2.10:5353",
+            "[2001:db8::10]:853",
+        ]);
         let cache = AddressCache::new();
 
-        assert!(acl.allows(&cache, "192.0.2.10".parse().unwrap()).await);
+        for ip in ["192.0.2.10", "2001:db8::10"] {
+            assert!(allows_client(&cache, addresses.iter(), ip.parse().unwrap()).await);
+        }
         assert!(cache.locked().is_empty());
     }
 
-    /// Verify that secondary acl defaults hostname ports.
-    #[test]
-    fn secondary_acl_defaults_hostname_ports() {
-        assert_eq!(
-            SecondaryAcl::from_addresses(&targets(&["bind9-0.bind9-headless"])).entries,
-            vec![SecondaryAclEntry::HostPort(
-                "bind9-0.bind9-headless:53".to_string()
-            )]
-        );
+    /// Deny unmatched clients, including when the registry is empty.
+    #[tokio::test]
+    async fn only_configured_addresses_allow_clients() {
+        let cache = AddressCache::new();
+        let client_ip = "192.0.2.11".parse().unwrap();
+        assert!(!allows_client(&cache, targets(&[]).iter(), client_ip).await);
+        assert!(!allows_client(&cache, targets(&["192.0.2.10"]).iter(), client_ip).await);
+    }
+
+    /// Reuse successful and failed resolutions under the canonical hostname key.
+    #[tokio::test]
+    async fn hostname_entries_reuse_cached_resolutions() {
+        let addresses = targets(&["Missing.Example.", "Bind9.Example."]);
+        let cache = AddressCache::new();
+        let client_ip = "192.0.2.10".parse().unwrap();
+        let expires_at = Instant::now() + RESOLVED_TTL;
+        cache.locked().extend([
+            (
+                "missing.example:53".to_string(),
+                CachedAddrs {
+                    addrs: Vec::new(),
+                    expires_at,
+                },
+            ),
+            (
+                "bind9.example:53".to_string(),
+                CachedAddrs {
+                    addrs: vec![client_ip],
+                    expires_at,
+                },
+            ),
+        ]);
+
+        assert!(allows_client(&cache, addresses.iter(), client_ip).await);
+        assert!(!allows_client(&cache, addresses.iter(), "192.0.2.11".parse().unwrap()).await);
+        assert_eq!(cache.locked()["missing.example:53"].expires_at, expires_at);
+        assert_eq!(cache.locked()["bind9.example:53"].expires_at, expires_at);
     }
 }

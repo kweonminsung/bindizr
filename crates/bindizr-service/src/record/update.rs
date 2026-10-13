@@ -1,8 +1,5 @@
 use bindizr_core::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName},
-    },
+    dns::name::ZoneName,
     model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
@@ -42,24 +39,13 @@ enum LockTarget<'a> {
     },
 }
 
-/// The record's fields after the request has been resolved against the
-/// stored record: the owner normalized and `encoded_value` in row form.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ResolvedRecordUpdate {
-    owner_name: OwnerName,
-    record_type: RecordType,
-    encoded_value: String,
-    ttl: Ttl,
-    priority: Option<i32>,
-}
-
 /// Resolve a replacement; omitted fields require read access to the stored record.
 fn resolve_update(
     zone: &Zone,
     existing: &Record,
     request: &UpdateRecordRequest,
     can_read: bool,
-) -> Result<ResolvedRecordUpdate, ServiceError> {
+) -> Result<Record, ServiceError> {
     let record_type = request
         .record_type
         .as_deref()
@@ -128,12 +114,15 @@ fn resolve_update(
         Some(name) => normalize_record_owner_name(name, &zone.name)?,
         None => existing.name.clone(),
     };
-    Ok(ResolvedRecordUpdate {
-        owner_name,
+    Ok(Record {
+        id: existing.id,
+        name: owner_name,
         record_type,
-        encoded_value,
+        value: encoded_value,
         ttl,
         priority,
+        zone_id: zone.id,
+        created_at: existing.created_at,
     })
 }
 
@@ -285,7 +274,7 @@ async fn update_locked(
             &existing_record.name,
             Some(&existing_record.record_type),
         );
-        let resolved = resolve_update(&zone, &existing_record, request, can_read)?;
+        let candidate = resolve_update(&zone, &existing_record, request, can_read)?;
 
         // An update moves a record from its stored identity to the requested
         // one, so `record:update` must reach both.
@@ -299,8 +288,8 @@ async fn update_locked(
                 },
                 RecordAccess {
                     action: Action::RecordUpdate,
-                    relative_name: resolved.owner_name.clone(),
-                    record_type: Some(&resolved.record_type),
+                    relative_name: candidate.name.clone(),
+                    record_type: Some(&candidate.record_type),
                 },
             ],
         )?;
@@ -309,7 +298,7 @@ async fn update_locked(
         let records_at_name = match bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
-            &resolved.owner_name,
+            &candidate.name,
             LockLevel::Exclusive,
         )
         .await
@@ -322,17 +311,6 @@ async fn update_locked(
                     e,
                 ));
             }
-        };
-
-        let candidate = Record {
-            id: existing_record.id,
-            name: resolved.owner_name,
-            record_type: resolved.record_type,
-            value: resolved.encoded_value,
-            ttl: resolved.ttl,
-            priority: resolved.priority,
-            zone_id: zone.id,
-            created_at: existing_record.created_at,
         };
 
         validate_record_constraints(

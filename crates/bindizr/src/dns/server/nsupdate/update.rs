@@ -4,7 +4,7 @@
 use bindizr_core::{
     dns::{
         message::OptRcode,
-        name::ZoneName,
+        name::{ParseNameError, ZoneName},
         nsupdate::parser::UpdateRequest,
         tsig::{ResponseSigner, TsigError},
     },
@@ -12,6 +12,7 @@ use bindizr_core::{
 };
 use bindizr_service::{
     authorization::Caller,
+    error::ServiceError,
     nsupdate::{self, NsupdateError, Update},
     tsig_key,
 };
@@ -21,81 +22,27 @@ use crate::dns::server::DnsContext;
 
 #[derive(Debug, Error)]
 pub(crate) enum UpdateError {
-    /// A section breaks the shapes RFC 2136, Sections 3.2.1 and 3.4.1 fix.
-    #[error("{0}")]
-    FormErr(String),
-    /// An OPT the server cannot take: a malformed one is FORMERR, a newer
-    /// version BADVERS (RFC 6891, Sections 6.1.1 and 6.1.3).
+    /// Malformed OPT or unsupported EDNS version (RFC 6891, Section 6.1).
     #[error("unacceptable EDNS: {0}")]
     Edns(OptRcode),
-    /// An UPDATE on the TLS listener, which serves transfers alone
-    /// (RFC 9103, Section 7.8): REFUSED, Not Supported.
     #[error("{0}")]
     NotSupported(String),
     #[error("{0}")]
     Refused(String),
-    /// TSIG validation failed. Carries the complete NOTAUTH wire response,
-    /// built during validation because it must echo (or sign against) the
-    /// request's TSIG record (RFC 8945, Sections 5.2–5.3).
-    #[error("{msg}")]
-    TsigFailed { msg: String, response: Vec<u8> },
-    #[error("{0}")]
-    YxDomain(String),
-    #[error("{0}")]
-    YxRrset(String),
-    #[error("{0}")]
-    NxDomain(String),
-    #[error("{0}")]
-    NxRrset(String),
     #[error("{0}")]
     NotAuth(String),
-    #[error("{0}")]
-    NotZone(String),
-    /// A fault of the server's own, answered SERVFAIL; the failure stays
-    /// beneath it.
-    #[error("{message}: {source}")]
-    Internal {
-        message: String,
+    #[error("'{name}' is not a zone name: {source}")]
+    ZoneName {
+        name: String,
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+        source: ParseNameError,
     },
-}
-
-impl From<TsigError> for UpdateError {
-    /// Convert a failure into an nsupdate response error.
-    fn from(err: TsigError) -> Self {
-        match err {
-            TsigError::Malformed(_) => UpdateError::Refused(err.to_string()),
-            TsigError::Rejected { rcode, response } => UpdateError::TsigFailed {
-                msg: format!("TSIG validation failed: {}", rcode),
-                response,
-            },
-            other => UpdateError::Internal {
-                message: "TSIG verification failed".to_string(),
-                source: Box::new(other),
-            },
-        }
-    }
-}
-
-impl From<NsupdateError> for UpdateError {
-    /// Convert a failure into an nsupdate response error.
-    fn from(err: NsupdateError) -> Self {
-        match err {
-            NsupdateError::FormErr(msg) => UpdateError::FormErr(msg),
-            NsupdateError::Refused(msg) => UpdateError::Refused(msg),
-            NsupdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
-            NsupdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
-            NsupdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
-            NsupdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
-            NsupdateError::NotAuth(msg) => UpdateError::NotAuth(msg),
-            NsupdateError::NotZone(msg) => UpdateError::NotZone(msg),
-            NsupdateError::Internal(err) => UpdateError::Internal {
-                message: "failed to apply the update".to_string(),
-                source: Box::new(err),
-            },
-        }
-    }
+    #[error("{0}")]
+    Tsig(#[from] TsigError),
+    #[error("{0}")]
+    Nsupdate(#[from] NsupdateError),
+    #[error("failed to load TSIG key: {0}")]
+    LoadTsigKey(#[source] ServiceError),
 }
 
 /// Apply an UPDATE request, returning whether zone data actually changed. The
@@ -156,9 +103,11 @@ pub(crate) async fn apply_update(
                 "the root zone is not served here".to_string(),
             ));
         }
-        let zone_name = ZoneName::parse(&request.zone_name).map_err(|e| {
-            UpdateError::NotAuth(format!("'{}' is not a zone name: {}", request.zone_name, e))
-        })?;
+        let zone_name =
+            ZoneName::parse(&request.zone_name).map_err(|source| UpdateError::ZoneName {
+                name: request.zone_name.clone(),
+                source,
+            })?;
 
         let update = Update {
             zone_name,
@@ -184,14 +133,62 @@ pub(crate) async fn authenticate_tsig_key(
 ) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
     let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
-        .map_err(|e| UpdateError::Internal {
-            message: "failed to load TSIG key".to_string(),
-            source: Box::new(e),
-        })?;
+        .map_err(UpdateError::LoadTsigKey)?;
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
     let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
     let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key)?;
     Ok((tsig_key, signer))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use bindizr_core::dns::{message::Rcode, nsupdate::parser::UpdateShapeError};
+
+    use super::*;
+
+    /// Preserve the complete parser and backend source chains through the DNS boundary.
+    #[test]
+    fn update_errors_retain_sources_across_layers() {
+        let err = UpdateError::from(NsupdateError::from(UpdateShapeError::NonzeroTtl));
+        let nsupdate = err
+            .source()
+            .unwrap()
+            .downcast_ref::<NsupdateError>()
+            .unwrap();
+        assert_eq!(nsupdate.rcode(), Rcode::FORMERR);
+        assert_eq!(
+            nsupdate
+                .source()
+                .unwrap()
+                .downcast_ref::<UpdateShapeError>(),
+            Some(&UpdateShapeError::NonzeroTtl)
+        );
+
+        let err = UpdateError::from(NsupdateError::from(ServiceError::internal_with_source(
+            "storage failed",
+            std::io::Error::other("storage"),
+        )));
+        let nsupdate = err
+            .source()
+            .unwrap()
+            .downcast_ref::<NsupdateError>()
+            .unwrap();
+        assert_eq!(nsupdate.rcode(), Rcode::SERVFAIL);
+        let service = nsupdate
+            .source()
+            .unwrap()
+            .downcast_ref::<ServiceError>()
+            .unwrap();
+        assert!(service.source().unwrap().is::<std::io::Error>());
+
+        let err = UpdateError::from(TsigError::EmptySecret);
+        assert!(matches!(
+            err.source().unwrap().downcast_ref::<TsigError>(),
+            Some(TsigError::EmptySecret)
+        ));
+    }
 }

@@ -1,3 +1,5 @@
+use bindizr_core::dns::message::Rcode;
+
 use super::*;
 
 /// A wire record whose RDATA starts at the beginning of its test message.
@@ -24,7 +26,7 @@ fn malformed_sections_are_formerr() {
         record(Class::CH, Rtype::ANY, 0, &[]),
     ] {
         let err = decode_prerequisites(&[prerequisite], &zone, &[]).unwrap_err();
-        assert!(matches!(err, NsupdateError::FormErr(_)), "{err}");
+        assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
     }
     for update in [
         record(Class::NONE, Rtype::ANY, 0, &[]),
@@ -33,7 +35,7 @@ fn malformed_sections_are_formerr() {
         record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
     ] {
         let err = decode_updates(&[update], &zone, &[]).unwrap_err();
-        assert!(matches!(err, NsupdateError::FormErr(_)), "{err}");
+        assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
     }
 }
 
@@ -59,12 +61,12 @@ fn ignored_deletes_still_require_valid_owners_and_shapes() {
                 let mut outside = valid.clone();
                 outside.name = name.to_string();
                 let err = decode_updates(&[outside], &zone, data).unwrap_err();
-                assert!(matches!(err, NsupdateError::NotZone(_)), "{err}");
+                assert_eq!(err.rcode(), Rcode::NOTZONE, "{err}");
             }
             let mut malformed = valid;
             malformed.ttl = 1;
             let err = decode_updates(&[malformed], &zone, data).unwrap_err();
-            assert!(matches!(err, NsupdateError::FormErr(_)), "{err}");
+            assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
         }
     }
 }
@@ -78,7 +80,7 @@ fn the_complete_prescan_precedes_operation_decoding() {
     let mut outside = record(Class::ANY, Rtype::SOA, 0, &[]);
     outside.name = "outside.example.net.".to_string();
     let err = decode_updates(&[malformed_add, outside], &zone, &[]).unwrap_err();
-    assert!(matches!(err, NsupdateError::NotZone(_)), "{err}");
+    assert_eq!(err.rcode(), Rcode::NOTZONE, "{err}");
 }
 
 /// Verify that execution receives the checked owner, and an add with a

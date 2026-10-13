@@ -11,9 +11,10 @@ mod prerequisite;
 use bindizr_core::{
     dns::{
         Serial,
-        message::Class,
+        message::{Class, Rcode},
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
         nsupdate::parser::{ParseUpdateError, UpdateRecord, UpdateShapeError},
+        record::ParseRecordValueError,
     },
     model::role_grant::Action,
 };
@@ -33,15 +34,28 @@ use crate::{
     transaction, zone,
 };
 
-/// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
-/// response code.
+/// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
 pub enum NsupdateError {
-    /// A section violates the wire shapes of RFC 2136, Sections 3.2.1 and 3.4.1.
     #[error("{0}")]
     FormErr(String),
     #[error("{0}")]
-    Refused(String),
+    Shape(#[from] UpdateShapeError),
+    #[error("{0}")]
+    Parse(#[from] ParseUpdateError),
+    #[error("invalid {record_type} rdata: {source}")]
+    RecordValue {
+        record_type: RecordType,
+        #[source]
+        source: ParseRecordValueError,
+    },
+    #[error("owner '{name}' in zone '{zone_name}': {source}")]
+    Owner {
+        name: String,
+        zone_name: ZoneName,
+        #[source]
+        source: ParseNameError,
+    },
     #[error("{0}")]
     YxDomain(String),
     #[error("{0}")]
@@ -50,43 +64,33 @@ pub enum NsupdateError {
     NxDomain(String),
     #[error("{0}")]
     NxRrset(String),
-    /// The zone name and class are not served here (RFC 2136, Section 3.1).
     #[error("{0}")]
     NotAuth(String),
-    /// An owner name lies outside the zone the request named.
     #[error("{0}")]
     NotZone(String),
-    /// A fault of the server's own, kept beneath: SERVFAIL.
     #[error("{0}")]
-    Internal(#[source] ServiceError),
+    Service(#[from] ServiceError),
 }
 
-/// An update record of the wrong shape is a FORMERR (RFC 2136, Section 3.4.1).
-impl From<UpdateShapeError> for NsupdateError {
-    /// Report the shape the record lacked.
-    fn from(err: UpdateShapeError) -> Self {
-        NsupdateError::FormErr(err.to_string())
-    }
-}
-
-/// Rdata that does not decode as its type, or a type no update may carry,
-/// is a FORMERR (RFC 2136, Section 3.4.1).
-impl From<ParseUpdateError> for NsupdateError {
-    /// Report what did not decode.
-    fn from(err: ParseUpdateError) -> Self {
-        NsupdateError::FormErr(err.to_string())
-    }
-}
-
-/// A service error the requester could fix is REFUSED; a backend fault is
-/// SERVFAIL.
-impl From<ServiceError> for NsupdateError {
-    /// Map a service failure to the corresponding nsupdate error.
-    fn from(err: ServiceError) -> Self {
-        if !err.code().is_internal() {
-            NsupdateError::Refused(err.to_string())
-        } else {
-            NsupdateError::Internal(err)
+impl NsupdateError {
+    /// Classify an UPDATE failure without consuming its original cause.
+    pub fn rcode(&self) -> Rcode {
+        match self {
+            Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) => Rcode::FORMERR,
+            Self::RecordValue { .. } => Rcode::REFUSED,
+            Self::Owner {
+                source: ParseNameError::OutsideZone,
+                ..
+            }
+            | Self::NotZone(_) => Rcode::NOTZONE,
+            Self::Owner { .. } => Rcode::REFUSED,
+            Self::YxDomain(_) => Rcode::YXDOMAIN,
+            Self::YxRrset(_) => Rcode::YXRRSET,
+            Self::NxDomain(_) => Rcode::NXDOMAIN,
+            Self::NxRrset(_) => Rcode::NXRRSET,
+            Self::NotAuth(_) => Rcode::NOTAUTH,
+            Self::Service(err) if err.code().is_internal() => Rcode::SERVFAIL,
+            Self::Service(_) => Rcode::REFUSED,
         }
     }
 }
@@ -226,61 +230,12 @@ fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, Nsu
         ));
     }
 
-    OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|e| match e {
-        ParseNameError::OutsideZone => NsupdateError::NotZone(format!(
-            "owner '{}' is outside zone '{}'",
-            to_fqdn(name),
-            zone_name.to_fqdn()
-        )),
-        other => NsupdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
+    OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|source| NsupdateError::Owner {
+        name: to_fqdn(name),
+        zone_name: zone_name.clone(),
+        source,
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use bindizr_core::dns::name::ZoneName;
-
-    use super::*;
-
-    /// Verify that owner in zone reduces an in zone owner to its stored form.
-    #[test]
-    fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
-        assert_eq!(
-            parse_update_owner("www.example.com.", &ZoneName::from_row("example.com"))
-                .unwrap()
-                .to_stored(),
-            "www"
-        );
-        assert!(
-            parse_update_owner("example.com.", &ZoneName::from_row("example.com"))
-                .unwrap()
-                .is_apex()
-        );
-        // A dotted wire label is one label, so it is data rather than a boundary.
-        assert_eq!(
-            parse_update_owner(
-                r"host\.name.example.com.",
-                &ZoneName::from_row("example.com")
-            )
-            .unwrap()
-            .labels(),
-            ["host.name"]
-        );
-    }
-
-    /// Verify that `parse_update_owner` rejects owners outside the zone.
-    #[test]
-    fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
-        for owner in [
-            "aexample.com.",
-            "badexample.com.",
-            "www.badexample.com.",
-            ".",
-            // One label spelling the zone is not inside it.
-            r"evil\.example.com.",
-        ] {
-            let err = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
-            assert!(matches!(err, NsupdateError::NotZone(_)), "{owner:?}");
-        }
-    }
-}
+mod tests;

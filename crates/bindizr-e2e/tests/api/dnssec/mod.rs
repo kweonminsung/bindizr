@@ -408,6 +408,11 @@ async fn records_listing_signed_pages_the_derived_plane() {
         items.len()
     );
     assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
+    assert!(items.iter().any(|item| item["id"].is_i64()));
+    for item in items {
+        assert_eq!(item["zone_name"], zone_name);
+        assert!(item["name"].as_str().unwrap().ends_with('.'));
+    }
     let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
     for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
         assert!(
