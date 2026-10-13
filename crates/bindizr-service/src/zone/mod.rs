@@ -22,18 +22,16 @@ pub use delete::delete;
 pub use export::export;
 pub(crate) use force::force_increment_serial;
 pub use get::{count, count_all, get_by_name, list, list_by_filter, ping};
-pub(crate) use get::{
-    find_by_name_tx, find_served_by_name_tx, get_by_name_tx, lookup_by_name, lookup_by_name_tx,
-};
+pub(crate) use get::{find_by_name_tx, find_served_by_name_tx, lookup_by_name, lookup_by_name_tx};
 pub use history::{diff_versions, get_version, list_versions, rollback};
 pub use notify::notify;
 pub use status::get_status;
 pub use transfer::{
-    TransferAccess, TransferContent, TransferDelta, authorize_catalog_content,
-    authorize_transfer_by_name, authorize_transfer_content_by_name,
-    authorize_transfer_delta_by_name,
+    IxfrPlan, TransferAccess, TransferContent, authorize_catalog_content,
+    authorize_ixfr_plan_by_name, authorize_transfer_by_name, authorize_transfer_content_by_name,
 };
 pub(crate) use update::soa_replacement_changes;
 pub use update::update;
 pub use validation::normalize_name;
+pub(crate) use validation::validate_record_changes_tx;
 pub(crate) use version::{advance_serial_tx, save_version_tx};

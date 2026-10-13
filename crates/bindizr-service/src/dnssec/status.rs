@@ -19,7 +19,7 @@ use crate::{
         zone::Zone,
     },
     transaction,
-    types::{DnssecDsInfo, DnssecKeyInfo, DnssecStatusResponse, GetDnssecPolicyResponse},
+    types::{DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse, DnssecStatusResponse},
     zone,
 };
 
@@ -107,16 +107,16 @@ pub(crate) async fn build_status_tx(
     let ds_records = keys
         .iter()
         .filter(|key| key.wants_parent_ds())
-        .map(|key| build_ds_info(zone, key))
+        .map(|key| build_ds_response(zone, key))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(DnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
         enabled: !keys.is_empty(),
-        policy: policy.map(GetDnssecPolicyResponse::from),
+        policy: policy.map(DnssecPolicyResponse::from),
         keys: keys
             .iter()
-            .map(|key| DnssecKeyInfo {
+            .map(|key| DnssecKeyResponse {
                 id: key.id,
                 role: key.role,
                 state: key.state,
@@ -146,7 +146,7 @@ pub(crate) async fn build_status_tx(
 }
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
-fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
+fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, ServiceError> {
     let apex = zone
         .name
         .to_wire_name()
@@ -156,7 +156,7 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
         .map_err(ServiceError::dnssec_signing_failed)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
-    Ok(DnssecDsInfo {
+    Ok(DnssecDsResponse {
         key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
         digest_type: DS_DIGEST_TYPE,

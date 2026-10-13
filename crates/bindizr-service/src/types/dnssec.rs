@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::GetDnssecPolicyResponse;
+use super::DnssecPolicyResponse;
 use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 
 /// Whether a step that depends on the parent's DS asks the parent
@@ -85,7 +85,7 @@ pub struct UpdateDnssecSettingsRequest {
 
 /// One of the zone's SEP keys against the parent's DS records.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct DnssecDelegationKeyInfo {
+pub struct DnssecDelegationKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
     #[schema(example = 34217, value_type = u16)]
@@ -115,7 +115,7 @@ pub enum DsState {
 
 /// What the parent zone's servers answered when asked for the zone's DS.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct DnssecDelegationInfo {
+pub struct DnssecDelegationResponse {
     /// The nameservers asked, from the zone's setting.
     pub parent_ns_addrs: Vec<String>,
     pub ds_state: DsState,
@@ -123,7 +123,7 @@ pub struct DnssecDelegationInfo {
     #[schema(value_type = Vec<u16>)]
     pub ds_key_tags: Vec<KeyTag>,
     /// The zone's SEP keys, each with whether the parent serves its DS.
-    pub keys: Vec<DnssecDelegationKeyInfo>,
+    pub keys: Vec<DnssecDelegationKeyResponse>,
     /// TTL of the parent's DS records: how long caches may keep serving
     /// them once removed.
     #[schema(example = 86400)]
@@ -143,7 +143,7 @@ pub struct RolloverDnssecRequest {
 
 /// Public signing-key metadata; private material is excluded from HTTP responses.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct DnssecKeyInfo {
+pub struct DnssecKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
     pub role: DnssecKeyRole,
@@ -168,7 +168,7 @@ pub struct DnssecKeyInfo {
 
 /// A key's DS form for parent-zone registration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct DnssecDsInfo {
+pub struct DnssecDsResponse {
     #[schema(example = 34217, value_type = u16)]
     pub key_tag: KeyTag,
     #[schema(example = 13)]
@@ -193,10 +193,10 @@ pub struct DnssecStatusResponse {
     #[schema(example = true)]
     pub enabled: bool,
     /// The policy the zone signs under; absent for an unsigned zone.
-    pub policy: Option<GetDnssecPolicyResponse>,
-    pub keys: Vec<DnssecKeyInfo>,
+    pub policy: Option<DnssecPolicyResponse>,
+    pub keys: Vec<DnssecKeyResponse>,
     /// DS forms of the keys, to be registered in the parent zone.
-    pub ds_records: Vec<DnssecDsInfo>,
+    pub ds_records: Vec<DnssecDsResponse>,
     /// Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
     /// parent to drop the zone's DS.
     #[serde(default)]
@@ -207,7 +207,7 @@ pub struct DnssecStatusResponse {
     pub parent_ns_addrs: Option<Vec<String>>,
     /// The parent's answer about the zone's DS; present only when this
     /// status comes from a parent check.
-    pub delegation: Option<DnssecDelegationInfo>,
+    pub delegation: Option<DnssecDelegationResponse>,
     /// Earliest stored signature expiration; the re-signer renews before it.
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
     /// Signatures the zone serves.
@@ -226,7 +226,7 @@ pub struct DnssecStatusResponse {
 /// One key's BIND file contents. Served only over the daemon socket:
 /// private keys never transit the HTTP API.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct DnssecKeyMaterial {
+pub struct DnssecKeyMaterialResponse {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
     pub algorithm: i32,
@@ -241,7 +241,7 @@ pub struct DnssecKeyMaterial {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ExportDnssecKeysResponse {
     pub zone_name: String,
-    pub keys: Vec<DnssecKeyMaterial>,
+    pub keys: Vec<DnssecKeyMaterialResponse>,
 }
 
 /// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
@@ -256,7 +256,7 @@ pub struct ImportDnssecKeyPair {
 /// Request body importing a zone's complete key set; daemon-socket only.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct ImportDnssecKeyRequest {
+pub struct ImportDnssecKeysRequest {
     /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.
     /// The policy's layout decides the role of a SEP key.
     pub keys: Vec<ImportDnssecKeyPair>,

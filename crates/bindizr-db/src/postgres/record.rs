@@ -164,22 +164,6 @@ pub(crate) async fn list_by_name_tx(
     Ok(records)
 }
 
-/// Find an owner with a DS record but no NS delegation in the current transaction.
-pub(crate) async fn find_name_ds_without_ns_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    zone_id: ZoneId,
-) -> Result<Option<String>, DatabaseError> {
-    let name = sqlx::query_scalar::<_, String>(
-        "SELECT d.name FROM records d WHERE d.zone_id = $1 AND d.record_type = 'DS' AND NOT EXISTS (SELECT 1 FROM records n WHERE n.zone_id = $2 AND n.name = d.name AND n.record_type = 'NS') LIMIT 1",
-    )
-    .bind(zone_id)
-    .bind(zone_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    Ok(name)
-}
-
 /// List the records of the given types in the current transaction.
 pub(crate) async fn list_by_record_types_tx(
     tx: &mut Transaction<'_, Postgres>,

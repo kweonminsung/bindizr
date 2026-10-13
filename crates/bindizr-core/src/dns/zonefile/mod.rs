@@ -1,15 +1,22 @@
-//! Reading BIND master-file text into records the record API can accept.
+//! Convert BIND master files and AXFR records into import data.
 
 use domain::{
-    base::iana::{Class, Rtype},
+    base::{
+        ToName,
+        iana::{Class, Rtype},
+        name::ParsedName,
+        rdata::ParseRecordData,
+    },
+    dep::octseq::parse::Parser,
     rdata::ZoneRecordData,
-    zonefile::inplace::{self, Entry, ScannedRecord, Zonefile},
+    zonefile::inplace::{self, Entry, Zonefile},
 };
 
 use crate::{
     dns::{
         Serial, SoaInterval, Ttl,
         name::{ZoneName, to_fqdn_lowercase},
+        query::TransferRecord,
         record::NaptrRecordValue,
     },
     model::record::RecordType,
@@ -80,16 +87,18 @@ impl ParsedZoneFile {
         zonefile.set_default_class(Class::IN);
         zonefile.extend_from_slice(buffer.as_bytes());
 
-        let mut records = Vec::new();
-        let mut errors = Vec::new();
-        let mut unsupported = Vec::new();
-        let mut soa = None;
+        let mut parsed = Self {
+            records: Vec::new(),
+            soa: None,
+            errors: Vec::new(),
+            unsupported: Vec::new(),
+        };
 
         loop {
             match zonefile.next_entry() {
                 Ok(Some(Entry::Record(record))) => {
                     if record.class() != Class::IN {
-                        unsupported.push(format!(
+                        parsed.unsupported.push(format!(
                             "unsupported record class '{}' for '{}'",
                             record.class(),
                             record.owner()
@@ -97,128 +106,22 @@ impl ParsedZoneFile {
                         continue;
                     }
 
-                    let record_type = match record.rtype() {
-                        // Only the apex SOA supplies this zone's serial and timers.
-                        Rtype::SOA => {
-                            if to_fqdn_lowercase(&record.owner().to_string()) != origin_fqdn {
-                                errors.push(format!(
-                                    "SOA for '{}' does not belong to zone '{}'",
-                                    record.owner(),
-                                    origin_fqdn
-                                ));
-                            } else if soa.is_some() {
-                                errors.push(format!(
-                                    "zone '{}' carries more than one SOA",
-                                    origin_fqdn
-                                ));
-                            } else {
-                                soa = to_zone_file_soa(&record);
-                            }
-                            continue;
-                        }
-                        other => match RecordType::try_from(other) {
-                            Ok(record_type) => record_type,
-                            Err(_) => {
-                                unsupported.push(format!(
-                                    "unsupported record type '{}' for '{}'",
-                                    other,
-                                    record.owner()
-                                ));
-                                continue;
-                            }
-                        },
-                    };
-
-                    // Reject TTLs past the stored range (like the JSON and
-                    // nsupdate paths) instead of silently corrupting them.
-                    let ttl_secs = record.ttl().as_secs();
-                    let Ok(ttl) = Ttl::try_from(ttl_secs) else {
-                        errors.push(format!(
-                            "TTL {} for '{}' exceeds the maximum of {}",
-                            ttl_secs,
-                            record.owner(),
-                            i32::MAX
-                        ));
-                        continue;
-                    };
-
-                    let (value, priority) = match record.data() {
-                        // Rendered from the parsed fields: `domain` appends the
-                        // absolute dot to a name it already renders as `.`, so its
-                        // form spells a root replacement `..`.
-                        ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
-                            naptr.order(),
-                            naptr.preference(),
-                            naptr.flags().as_slice(),
-                            naptr.services().as_slice(),
-                            naptr.regexp().as_slice(),
-                            &naptr.replacement().to_string(),
-                        )
-                        .map(|value| value.canonical())
-                        {
-                            Ok(text) => (ZoneFileValue::Rdata(text), None),
-                            Err(e) => {
-                                errors.push(format!("NAPTR value for '{}': {}", record.owner(), e));
-                                continue;
-                            }
-                        },
-                        ZoneRecordData::Txt(txt) => {
-                            // Reject non-UTF-8 TXT octets; stored values must be valid UTF-8.
-                            let mut segments = Vec::new();
-                            let mut non_utf8 = false;
-                            for segment in txt.iter() {
-                                match std::str::from_utf8(segment) {
-                                    Ok(text) => segments.push(text.to_string()),
-                                    Err(_) => {
-                                        non_utf8 = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if non_utf8 {
-                                errors.push(format!(
-                                    "TXT value for '{}' is not valid UTF-8",
-                                    record.owner()
-                                ));
-                                continue;
-                            }
-                            (ZoneFileValue::Segments(segments), None)
-                        }
-                        other => {
-                            let raw = other.to_string();
-                            // Move the MX/SRV priority (first field) into the
-                            // priority column like the JSON API; both forms
-                            // canonicalize equal.
-                            match record_type {
-                                RecordType::Mx | RecordType::Srv => {
-                                    let mut fields = raw.split_whitespace();
-                                    match fields.next().and_then(|p| p.parse::<i32>().ok()) {
-                                        Some(prio) => {
-                                            let rest = fields.collect::<Vec<_>>().join(" ");
-                                            (ZoneFileValue::Rdata(rest), Some(prio))
-                                        }
-                                        None => (ZoneFileValue::Rdata(raw), None),
-                                    }
-                                }
-                                _ => (ZoneFileValue::Rdata(raw), None),
-                            }
-                        }
-                    };
-
-                    records.push(ZoneFileRecord {
-                        owner_fqdn: to_fqdn_lowercase(&record.owner().to_string()),
-                        record_type,
-                        value,
-                        ttl,
-                        priority,
-                    });
+                    parsed.push_record(
+                        &origin_fqdn,
+                        record.owner().to_string(),
+                        record.rtype(),
+                        record.ttl().as_secs(),
+                        record.data(),
+                    );
                 }
                 Ok(Some(Entry::Include { .. })) => {
-                    errors.push("$INCLUDE directives are not supported".to_string());
+                    parsed
+                        .errors
+                        .push("$INCLUDE directives are not supported".to_string());
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    errors.push(format!(
+                    parsed.errors.push(format!(
                         "failed to parse zone file: {}",
                         to_input_line_message(&e)
                     ));
@@ -228,19 +131,175 @@ impl ParsedZoneFile {
             }
         }
 
-        ParsedZoneFile {
-            records,
-            soa,
-            errors,
-            unsupported,
+        parsed
+    }
+
+    /// Convert a validated AXFR stream without a master-file text round trip.
+    pub fn from_transfer(records: &[TransferRecord], zone_name: &ZoneName) -> Self {
+        let mut parsed = Self {
+            records: Vec::new(),
+            soa: None,
+            errors: Vec::new(),
+            unsupported: Vec::new(),
+        };
+        let origin = zone_name.to_fqdn();
+        for (index, record) in records.iter().enumerate() {
+            if matches!(
+                record.rtype,
+                Rtype::RRSIG
+                    | Rtype::NSEC
+                    | Rtype::NSEC3
+                    | Rtype::NSEC3PARAM
+                    | Rtype::DNSKEY
+                    | Rtype::CDS
+                    | Rtype::CDNSKEY
+            ) {
+                continue;
+            }
+            if index > 0
+                && index + 1 == records.len()
+                && record.rtype == Rtype::SOA
+                && record.rdata == records[0].rdata
+            {
+                continue;
+            }
+            let mut parser = Parser::from_ref(record.rdata.as_bytes());
+            match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {
+                Ok(Some(data)) if parser.remaining() == 0 => parsed.push_record(
+                    &origin,
+                    record.name.clone(),
+                    record.rtype,
+                    record.ttl,
+                    &data,
+                ),
+                Ok(_) => parsed
+                    .errors
+                    .push(format!("{}: trailing RDATA bytes", record.name)),
+                Err(error) => parsed.errors.push(format!("{}: {}", record.name, error)),
+            }
         }
+        parsed
+    }
+
+    /// Convert decoded fields into import records, preserving TXT character strings.
+    fn push_record<Octs: AsRef<[u8]>, N: ToName + std::fmt::Display>(
+        &mut self,
+        origin_fqdn: &str,
+        owner: String,
+        rtype: Rtype,
+        ttl_secs: u32,
+        data: &ZoneRecordData<Octs, N>,
+    ) {
+        let record_type = match rtype {
+            // Only the apex SOA supplies this zone's serial and timers.
+            Rtype::SOA => {
+                if to_fqdn_lowercase(&owner) != origin_fqdn {
+                    self.errors.push(format!(
+                        "SOA for '{}' does not belong to zone '{}'",
+                        owner, origin_fqdn
+                    ));
+                } else if self.soa.is_some() {
+                    self.errors
+                        .push(format!("zone '{}' carries more than one SOA", origin_fqdn));
+                } else {
+                    self.soa = to_zone_file_soa(data);
+                }
+                return;
+            }
+            other => match RecordType::try_from(other) {
+                Ok(record_type) => record_type,
+                Err(_) => {
+                    self.unsupported.push(format!(
+                        "unsupported record type '{}' for '{}'",
+                        other, owner
+                    ));
+                    return;
+                }
+            },
+        };
+
+        // Reject TTLs outside the stored range, as JSON and nsupdate do.
+        let Ok(ttl) = Ttl::try_from(ttl_secs) else {
+            self.errors.push(format!(
+                "TTL {} for '{}' exceeds the maximum of {}",
+                ttl_secs,
+                owner,
+                i32::MAX
+            ));
+            return;
+        };
+
+        let (value, priority) = match data {
+            // Use parsed NAPTR fields because `domain` renders a root replacement as `..`.
+            ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
+                naptr.order(),
+                naptr.preference(),
+                naptr.flags().as_slice(),
+                naptr.services().as_slice(),
+                naptr.regexp().as_slice(),
+                &naptr.replacement().to_string(),
+            )
+            .map(|value| value.canonical())
+            {
+                Ok(text) => (ZoneFileValue::Rdata(text), None),
+                Err(e) => {
+                    self.errors
+                        .push(format!("NAPTR value for '{}': {}", owner, e));
+                    return;
+                }
+            },
+            ZoneRecordData::Srv(srv) => (
+                ZoneFileValue::Rdata(format!(
+                    "{} {} {}",
+                    srv.weight(),
+                    srv.port(),
+                    crate::dns::name::to_fqdn(&srv.target().to_string())
+                )),
+                Some(i32::from(srv.priority())),
+            ),
+            ZoneRecordData::Mx(mx) => (
+                ZoneFileValue::Rdata(crate::dns::name::to_fqdn(&mx.exchange().to_string())),
+                Some(i32::from(mx.preference())),
+            ),
+            ZoneRecordData::Txt(txt) => {
+                // Reject non-UTF-8 TXT octets; stored values must be valid UTF-8.
+                let mut segments = Vec::new();
+                let mut non_utf8 = false;
+                for segment in txt.iter() {
+                    match std::str::from_utf8(segment) {
+                        Ok(text) => segments.push(text.to_string()),
+                        Err(_) => {
+                            non_utf8 = true;
+                            break;
+                        }
+                    }
+                }
+                if non_utf8 {
+                    self.errors
+                        .push(format!("TXT value for '{}' is not valid UTF-8", owner));
+                    return;
+                }
+                (ZoneFileValue::Segments(segments), None)
+            }
+            other => (ZoneFileValue::Rdata(other.to_string()), None),
+        };
+
+        self.records.push(ZoneFileRecord {
+            owner_fqdn: to_fqdn_lowercase(&owner),
+            record_type,
+            value,
+            ttl,
+            priority,
+        });
     }
 }
 
 /// Read an SOA record's fields, or `None` when a timer does not fit the i32
 /// columns a zone stores them in.
-fn to_zone_file_soa(record: &ScannedRecord) -> Option<ZoneFileSoa> {
-    let ZoneRecordData::Soa(soa) = record.data() else {
+fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
+    data: &ZoneRecordData<Octs, N>,
+) -> Option<ZoneFileSoa> {
+    let ZoneRecordData::Soa(soa) = data else {
         return None;
     };
     let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs()).ok();

@@ -12,7 +12,7 @@ use bindizr_core::{
 };
 use thiserror::Error;
 
-use crate::dns::{error::XfrError, stream::ResponseWriter};
+use crate::dns::{error::DnsError, stream::ResponseWriter};
 
 /// Send the current SOA alone (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(
@@ -20,7 +20,7 @@ pub(crate) async fn send_soa_response(
     query: &message::ParsedQuery,
     zone: &Zone,
     signer: Option<TransferSigner>,
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
@@ -34,12 +34,12 @@ pub(crate) async fn send_soa_response(
 
 /// Outcome of a failed IXFR stream: whether any bytes reached the client yet.
 #[derive(Debug, Error)]
-pub(crate) enum IxfrSendError {
+pub(crate) enum SendIxfrError {
     /// No bytes sent; AXFR may reuse the signer.
     #[error("{error}")]
     NotStarted {
         #[source]
-        error: XfrError,
+        error: DnsError,
         /// Boxed: a signing context dwarfs the error beside it.
         signer: Option<Box<TransferSigner>>,
     },
@@ -47,7 +47,7 @@ pub(crate) enum IxfrSendError {
     #[error("{error}")]
     Partial {
         #[source]
-        error: XfrError,
+        error: DnsError,
         signer: Option<Box<TransferSigner>>,
     },
 }
@@ -61,7 +61,7 @@ pub(crate) async fn send_ixfr_response(
     changes: &[ZoneChange],
     versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
-) -> Result<(), IxfrSendError> {
+) -> Result<(), SendIxfrError> {
     let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
@@ -72,7 +72,7 @@ pub(crate) async fn send_ixfr_response(
         let current_version =
             versions_by_serial
                 .get(&zone.serial)
-                .ok_or(XfrError::MissingVersion {
+                .ok_or(DnsError::MissingVersion {
                     which: "current serial",
                     serial: zone.serial,
                 })?;
@@ -105,7 +105,7 @@ pub(crate) async fn send_ixfr_response(
             // Old SOA (deletion section marker).
             let old_soa = versions_by_serial
                 .get(&old_serial)
-                .ok_or(XfrError::MissingVersion {
+                .ok_or(DnsError::MissingVersion {
                     which: "old",
                     serial: old_serial,
                 })?;
@@ -129,7 +129,7 @@ pub(crate) async fn send_ixfr_response(
             // New SOA (addition section marker).
             let new_soa = versions_by_serial
                 .get(&serial)
-                .ok_or(XfrError::MissingVersion {
+                .ok_or(DnsError::MissingVersion {
                     which: "new",
                     serial,
                 })?;
@@ -159,7 +159,7 @@ pub(crate) async fn send_ixfr_response(
             .await?;
         messages_sent += writer.flush_if_not_empty(&mut builder).await?;
 
-        Ok::<(), XfrError>(())
+        Ok::<(), DnsError>(())
     }
     .await;
 
@@ -172,14 +172,14 @@ pub(crate) async fn send_ixfr_response(
         // so does an I/O failure on the first frame: part of it may be out.
         Err(err)
             if messages_sent > 0
-                || matches!(err, XfrError::Io(_) | XfrError::WriteTimeout { .. }) =>
+                || matches!(err, DnsError::Io(_) | DnsError::WriteTimeout { .. }) =>
         {
-            Err(IxfrSendError::Partial {
+            Err(SendIxfrError::Partial {
                 error: err,
                 signer: builder.take_signer().map(Box::new),
             })
         }
-        Err(error) => Err(IxfrSendError::NotStarted {
+        Err(error) => Err(SendIxfrError::NotStarted {
             error,
             signer: builder.take_signer().map(Box::new),
         }),

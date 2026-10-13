@@ -46,7 +46,7 @@ pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Valu
 }
 
 /// Extract the DNS owner and type used to identify a record.
-pub(crate) fn extract_dns_key(record: &Value) -> (String, u16) {
+pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
     let name = record["name"]
         .as_str()
         .expect("record did not contain a name")
@@ -161,9 +161,8 @@ fn matches_dns_values(record_type: u16, expected: &[Value], answers: &[DnsAnswer
     expected == actual
 }
 
-/// Wait until the secondary answers `name`/`record_type` with at least one
-/// record. For the DNSSEC types this harness cannot render (DNSKEY, RRSIG),
-/// presence is the assertion, so rdata stays undecoded.
+/// Wait for at least one matching record; DNSKEY/RRSIG checks assert presence
+/// without decoding RDATA.
 pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: u16) {
     eprintln!("Waiting for a type {record_type} record for {name} on 127.0.0.1:{port}...");
     for attempt in 1..=120 {

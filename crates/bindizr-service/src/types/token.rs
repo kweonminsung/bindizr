@@ -43,7 +43,7 @@ pub struct TokenFilter {
 
 /// API representation of an API token; never carries the secret.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetTokenResponse {
+pub struct TokenResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: TokenId,
     #[schema(example = "external-dns")]
@@ -57,10 +57,10 @@ pub struct GetTokenResponse {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-impl GetTokenResponse {
-    /// Build a token response with its role's name, without exposing its stored hash.
+impl TokenResponse {
+    /// Build token information with its role name, without its stored hash.
     pub(crate) fn from_token(token: &ApiToken, role_name: &str) -> Self {
-        GetTokenResponse {
+        TokenResponse {
             id: token.id,
             name: token.name.clone(),
             description: token.description.clone(),
@@ -74,14 +74,14 @@ impl GetTokenResponse {
 
 /// One token without its secret: the self lookup.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct TokenResponse {
-    pub token: GetTokenResponse,
+pub struct SingleTokenResponse {
+    pub token: TokenResponse,
 }
 
 /// The create response: the token and its secret, the one time it is shown.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct CreatedTokenResponse {
-    pub token: GetTokenResponse,
+pub struct CreateTokenResponse {
+    pub token: TokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
     pub secret: String,
 }

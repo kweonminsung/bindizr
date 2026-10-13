@@ -5,10 +5,9 @@ mod version;
 
 use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
-    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse,
-    GetZonesFilter, ImportZoneRequest, ImportZoneResponse, MessageResponse, NotifySerial,
-    PaginatedResponse, Run, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse, ZoneView,
-    ZoneWriteResponse,
+    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
+    ImportZoneResponse, MessageResponse, NotifySerial, PaginatedResponse, Run, SingleZoneResponse,
+    UpdateZoneRequest, WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse, ZoneView,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -295,9 +294,7 @@ Examples:
     },
 }
 
-/// How `zone import` reconciles parsed records with the records already in the
-/// zone. Mirrors the service-layer `ImportMode`; serialized as its lowercase
-/// wire name.
+/// CLI import mode, matching the service's `ImportMode` and lowercase wire names.
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
@@ -354,7 +351,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             dry_run,
             output,
         } => {
-            let response = client::send_command::<ZoneWriteResponse>(DaemonCommand::CreateZone(
+            let response = client::send_command::<WriteZoneResponse>(DaemonCommand::CreateZone(
                 CreateZoneRequest {
                     dry_run,
                     apex_ns: !no_apex_ns,
@@ -396,8 +393,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let response = client::send_command::<PaginatedResponse<GetZoneResponse>>(
-                DaemonCommand::ListZones(GetZonesFilter {
+            let response = client::send_command::<PaginatedResponse<ZoneResponse>>(
+                DaemonCommand::ListZones(ZoneFilter {
                     name,
                     // The HTTP API keeps an id filter; the CLI keys zones by name,
                     // which is UNIQUE, so it never sends one.
@@ -426,7 +423,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         }
         ZoneCommand::Get { name, output } => {
             let response =
-                client::send_command::<ZoneResponse>(DaemonCommand::GetZone { name }).await?;
+                client::send_command::<SingleZoneResponse>(DaemonCommand::GetZone { name }).await?;
             print_response(&response.data, output, |response| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
@@ -447,7 +444,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             output,
         } => {
             // `name` looks up the zone; `new_name` renames it.
-            let response = client::send_command::<ZoneWriteResponse>(DaemonCommand::UpdateZone {
+            let response = client::send_command::<WriteZoneResponse>(DaemonCommand::UpdateZone {
                 zone_name: name,
                 request: UpdateZoneRequest {
                     dry_run,
@@ -459,7 +456,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     retry,
                     expire,
                     minimum_ttl,
-                    serial: None,
                     enabled,
                     description,
                 },

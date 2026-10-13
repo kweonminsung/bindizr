@@ -2,7 +2,7 @@
 
 use bindizr_core::{dns::Serial, model::zone_version::VersionFilter, out, outln};
 use bindizr_service::types::{
-    PaginatedResponse, RollbackZoneResponse, Run, VersionDetailResponse, VersionDiffResponse,
+    DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse, Run,
     ZoneVersionResponse,
 };
 use clap::Subcommand;
@@ -135,7 +135,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             output,
         } => {
             let response =
-                client::send_command::<VersionDetailResponse>(DaemonCommand::GetZoneVersion {
+                client::send_command::<GetZoneVersionResponse>(DaemonCommand::GetZoneVersion {
                     name,
                     serial: Serial::from(serial),
                 })
@@ -156,7 +156,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             output,
         } => {
             let response =
-                client::send_command::<VersionDiffResponse>(DaemonCommand::DiffZoneVersions {
+                client::send_command::<DiffZoneVersionsResponse>(DaemonCommand::DiffZoneVersions {
                     name,
                     from_serial: Serial::from(from_serial),
                     to_serial: to_serial.map(Serial::from),

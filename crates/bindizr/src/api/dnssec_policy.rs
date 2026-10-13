@@ -11,7 +11,7 @@ use bindizr_service::{
     Context, dnssec_policy,
     types::{
         CreateDnssecPolicyRequest, DEFAULT_PAGE_LIMIT, DnssecPolicyResponse, ErrorResponse,
-        GetDnssecPolicyResponse, MessageResponse, PageRequest, PaginatedResponse,
+        MessageResponse, PageRequest, PaginatedResponse, SingleDnssecPolicyResponse,
         UpdateDnssecPolicyRequest,
     },
 };
@@ -50,7 +50,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(PageRequest),
         description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC3, 14-day signatures re-signed with 5 days left) is seeded at startup.",
         responses(
-            (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<GetDnssecPolicyResponse>),
+            (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<DnssecPolicyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -75,7 +75,7 @@ pub(crate) async fn list_dnssec_policies(
         description = "Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec3` by default, or `nsec`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.",
         request_body = CreateDnssecPolicyRequest,
         responses(
-            (status = 201, description = "DNSSEC policy created successfully", body = DnssecPolicyResponse),
+            (status = 201, description = "DNSSEC policy created successfully", body = SingleDnssecPolicyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -90,8 +90,8 @@ pub(crate) async fn create_dnssec_policy(
     JsonBody(body): JsonBody<CreateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::create(&cx, &caller, body).await?;
-    let response = DnssecPolicyResponse {
-        dnssec_policy: GetDnssecPolicyResponse::from(&policy),
+    let response = SingleDnssecPolicyResponse {
+        dnssec_policy: DnssecPolicyResponse::from(&policy),
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -106,7 +106,7 @@ pub(crate) async fn create_dnssec_policy(
             ("name" = String, Path, description = "The name of the DNSSEC policy.")
         ),
         responses(
-            (status = 200, description = "The DNSSEC policy", body = DnssecPolicyResponse),
+            (status = 200, description = "The DNSSEC policy", body = SingleDnssecPolicyResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "DNSSEC policy not found", body = ErrorResponse),
@@ -119,8 +119,8 @@ pub(crate) async fn get_dnssec_policy(
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::get(&cx, &caller, &params.name).await?;
-    let response = DnssecPolicyResponse {
-        dnssec_policy: GetDnssecPolicyResponse::from(&policy),
+    let response = SingleDnssecPolicyResponse {
+        dnssec_policy: DnssecPolicyResponse::from(&policy),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -137,7 +137,7 @@ pub(crate) async fn get_dnssec_policy(
         ),
         request_body = UpdateDnssecPolicyRequest,
         responses(
-            (status = 200, description = "DNSSEC policy updated", body = DnssecPolicyResponse),
+            (status = 200, description = "DNSSEC policy updated", body = SingleDnssecPolicyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -153,8 +153,8 @@ pub(crate) async fn update_dnssec_policy(
     JsonBody(body): JsonBody<UpdateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::update(&cx, &caller, &params.name, body).await?;
-    let response = DnssecPolicyResponse {
-        dnssec_policy: GetDnssecPolicyResponse::from(&policy),
+    let response = SingleDnssecPolicyResponse {
+        dnssec_policy: DnssecPolicyResponse::from(&policy),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

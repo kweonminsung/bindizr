@@ -62,7 +62,7 @@ pub struct UpdateDnssecPolicyRequest {
 
 /// API representation of a DNSSEC policy.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetDnssecPolicyResponse {
+pub struct DnssecPolicyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: PolicyId,
     #[schema(example = "default")]
@@ -85,10 +85,10 @@ pub struct GetDnssecPolicyResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl From<&DnssecPolicy> for GetDnssecPolicyResponse {
-    /// Build a public response from a stored DNSSEC policy.
+impl From<&DnssecPolicy> for DnssecPolicyResponse {
+    /// Build public policy information from its stored settings.
     fn from(policy: &DnssecPolicy) -> Self {
-        GetDnssecPolicyResponse {
+        DnssecPolicyResponse {
             id: policy.id,
             name: policy.name.clone(),
             builtin: policy.is_builtin(),
@@ -105,6 +105,6 @@ impl From<&DnssecPolicy> for GetDnssecPolicyResponse {
 
 /// A DNSSEC policy wrapped in a response envelope.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct DnssecPolicyResponse {
-    pub dnssec_policy: GetDnssecPolicyResponse,
+pub struct SingleDnssecPolicyResponse {
+    pub dnssec_policy: DnssecPolicyResponse,
 }

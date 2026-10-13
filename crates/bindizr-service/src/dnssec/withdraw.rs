@@ -41,7 +41,6 @@ pub async fn withdraw(
 
         let new_serial = super::resign_zone_tx(
             &mut tx,
-            cx,
             &signed,
             SigningPass::Refresh,
             caller.change_attribution(),
@@ -49,20 +48,27 @@ pub async fn withdraw(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        build_status_tx(
+        let response = build_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
             &signed.keys,
             new_serial,
         )
-        .await
+        .await?;
+        Ok((response, new_serial != signed.zone.serial))
     }
     .await;
-    let response = transaction::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
+    let (response, changed) =
+        transaction::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
+    if changed {
+        cx.metrics().track_serial_bumps(1);
+    }
 
     log::info!("event=dnssec_withdraw zone={}", response.zone_name);
-    crate::notify::notify_after_update(cx, zone_name).await;
+    if changed {
+        crate::notify::notify_after_update(cx, zone_name).await;
+    }
     Ok(response)
 }
 
@@ -93,7 +99,6 @@ pub async fn cancel_withdrawal(
 
         let new_serial = super::resign_zone_tx(
             &mut tx,
-            cx,
             &signed,
             SigningPass::Refresh,
             caller.change_attribution(),
@@ -101,19 +106,26 @@ pub async fn cancel_withdrawal(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        build_status_tx(
+        let response = build_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
             &signed.keys,
             new_serial,
         )
-        .await
+        .await?;
+        Ok((response, new_serial != signed.zone.serial))
     }
     .await;
-    let response = transaction::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
+    let (response, changed) =
+        transaction::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
+    if changed {
+        cx.metrics().track_serial_bumps(1);
+    }
 
     log::info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
-    crate::notify::notify_after_update(cx, zone_name).await;
+    if changed {
+        crate::notify::notify_after_update(cx, zone_name).await;
+    }
     Ok(response)
 }

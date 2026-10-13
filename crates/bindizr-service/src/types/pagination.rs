@@ -25,12 +25,12 @@ pub struct PageRequest {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
-    pub pagination: Pagination,
+    pub pagination: PaginationResponse,
 }
 
 /// Pagination window and total count for a list response.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
-pub struct Pagination {
+pub struct PaginationResponse {
     #[schema(example = 50)]
     pub limit: u32,
     #[schema(example = 0)]

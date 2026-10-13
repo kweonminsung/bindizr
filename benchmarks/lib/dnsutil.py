@@ -9,13 +9,11 @@ import subprocess
 import time
 
 
-def dig(name: str, rtype: str, server: str, port: int, tcp: bool = False,
+def dig(name: str, rtype: str, server: str, port: int,
         timeout: int = 5) -> tuple[bool, float, str]:
     """Return (answered, latency_secs, raw_output)."""
     args = ["dig", f"@{server}", "-p", str(port), name, rtype, "+tries=1",
             f"+time={timeout}", "+short"]
-    if tcp:
-        args.append("+tcp")
     t0 = time.monotonic()
     try:
         p = subprocess.run(args, text=True, capture_output=True, timeout=timeout + 2)

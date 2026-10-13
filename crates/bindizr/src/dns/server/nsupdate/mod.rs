@@ -15,21 +15,9 @@ use bindizr_core::{
     metrics::NsupdateResult,
     model::transfer::TransferTransport,
 };
-use thiserror::Error;
 use tokio::net::UdpSocket;
 
-use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
-
-/// Why an UPDATE was not answered, for the listener's log.
-#[derive(Debug, Error)]
-pub(crate) enum HandleNsupdateError {
-    #[error("failed to build NSUPDATE TCP response")]
-    BuildResponse,
-    #[error("failed to write NSUPDATE TCP response: {0}")]
-    WriteTcp(#[source] XfrError),
-    #[error("failed to write NSUPDATE UDP response: {0}")]
-    SendUdp(#[source] std::io::Error),
-}
+use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
 
 /// Apply an nsupdate received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
@@ -37,15 +25,16 @@ pub(crate) async fn handle_tcp_nsupdate(
     writer: &ResponseWriter,
     query_data: &[u8],
     client_addr: SocketAddr,
-) -> Result<(), HandleNsupdateError> {
-    log::info!("NSUPDATE TCP request from {}", client_addr);
+) -> Result<(), DnsError> {
+    log::info!(
+        "NSUPDATE {} request from {}",
+        writer.transport(),
+        client_addr
+    );
     let response = handle_nsupdate_request(dns_cx, query_data, client_addr, writer.transport())
         .await
-        .ok_or(HandleNsupdateError::BuildResponse)?;
-    writer
-        .write_message(&response)
-        .await
-        .map_err(HandleNsupdateError::WriteTcp)
+        .ok_or(DnsError::BuildNsupdateResponse)?;
+    writer.write_message(&response).await
 }
 
 /// Apply an nsupdate received over UDP and return its response.
@@ -54,7 +43,7 @@ pub(crate) async fn handle_udp_nsupdate(
     socket: &UdpSocket,
     query_data: &[u8],
     client_addr: SocketAddr,
-) -> Result<(), HandleNsupdateError> {
+) -> Result<(), DnsError> {
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
     let response = match handle_nsupdate_request(
@@ -72,10 +61,7 @@ pub(crate) async fn handle_udp_nsupdate(
         }
     };
 
-    socket
-        .send_to(&response, client_addr)
-        .await
-        .map_err(HandleNsupdateError::SendUdp)?;
+    socket.send_to(&response, client_addr).await?;
     Ok(())
 }
 

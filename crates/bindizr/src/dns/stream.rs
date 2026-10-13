@@ -1,6 +1,4 @@
-//! The stream one DNS connection arrived on, and the write half the queries
-//! in flight on it share. The plain listener and the XoT listener accept
-//! different types, and the handlers write to either alike.
+//! Plain/TLS DNS streams and the write half shared by concurrent queries.
 
 use std::{
     io,
@@ -19,7 +17,7 @@ use tokio::{
 };
 use tokio_rustls::server::TlsStream;
 
-use crate::dns::{error::XfrError, wire};
+use crate::dns::{error::DnsError, wire};
 
 /// A connection as its listener accepted it: a plain TCP socket, or a TLS
 /// session over one (XoT, RFC 9103).
@@ -118,7 +116,7 @@ impl ResponseWriter {
     }
 
     /// Write one DNS message as a TCP frame.
-    pub(crate) async fn write_message(&self, message: &[u8]) -> Result<(), XfrError> {
+    pub(crate) async fn write_message(&self, message: &[u8]) -> Result<(), DnsError> {
         let frame = encode_tcp_message(message)?;
         wire::write_frame(&mut *self.writer.lock().await, &frame).await
     }
@@ -129,7 +127,7 @@ impl ResponseWriter {
         builder: &mut DnsMessageBuilder,
         messages_sent: &mut usize,
         add_answer: F,
-    ) -> Result<(), XfrError>
+    ) -> Result<(), DnsError>
     where
         F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,
     {
@@ -140,12 +138,12 @@ impl ResponseWriter {
                 Ok(())
             }
             Ok(None) => Ok(()),
-            Err(overflow) => {
-                if let Some(frame) = overflow.frame {
+            Err(error) => {
+                if let Some(frame) = error.frame {
                     wire::write_frame(&mut *self.writer.lock().await, &frame).await?;
                     *messages_sent += 1;
                 }
-                Err(XfrError::Protocol(overflow.source))
+                Err(DnsError::Protocol(error.source))
             }
         }
     }
@@ -154,7 +152,7 @@ impl ResponseWriter {
     pub(crate) async fn flush_if_not_empty(
         &self,
         builder: &mut DnsMessageBuilder,
-    ) -> Result<usize, XfrError> {
+    ) -> Result<usize, DnsError> {
         match builder.take_frame()? {
             Some(frame) => {
                 wire::write_frame(&mut *self.writer.lock().await, &frame).await?;

@@ -15,7 +15,7 @@ use crate::{
     model::record::{Record, RecordData},
     serial::generate_serial,
     transaction,
-    types::{DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, Run},
+    types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run},
     zone::{self, diff::build_record_diff, validation::normalize_name},
 };
 
@@ -131,7 +131,7 @@ pub async fn delete(
                 .as_slice()
                 .iter()
                 .map(|record| {
-                    GetRecordResponse::from_record(
+                    RecordResponse::from_record(
                         record,
                         &zone.name,
                         caller.record_actions(zone.id, &record.name, &record.record_type),
@@ -140,11 +140,17 @@ pub async fn delete(
                 .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
+        zone::validate_record_changes_tx(
+            &mut tx,
+            &zone,
+            std::slice::from_ref(&existing_record),
+            &[],
+        )
+        .await?;
+        let new_serial = generate_serial(Some(zone.serial))?;
         if run.is_dry_run() {
             return Ok((response, zone.name));
         }
-
-        let new_serial = generate_serial(Some(zone.serial))?;
 
         super::delete_with_changes_tx(
             &mut tx,
@@ -156,17 +162,8 @@ pub async fn delete(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
-            .await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
 
-        log::info!(
-            "event=record_delete zone={} name={} type={} value={} record_id={}",
-            zone.name,
-            existing_record.name,
-            existing_record.record_type,
-            existing_record.value,
-            existing_record.id
-        );
         Ok((response, zone.name))
     }
     .await;
@@ -174,8 +171,16 @@ pub async fn delete(
     let (response, zone_name) =
         transaction::finish_tx(tx, apply_result, "failed to delete record").await?;
 
+    log::info!(
+        "event=record_delete zone={} record_id={} applied={}",
+        zone_name,
+        record_id,
+        response.applied
+    );
+
     // Announce only a committed deletion, never a preview.
     if response.applied {
+        cx.metrics().track_serial_bumps(1);
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
@@ -213,7 +218,7 @@ pub async fn delete_matching(
 
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
-        let zone = zone::get_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         let owner = normalize_record_owner_name(&request.name, &zone.name)?;
 
@@ -268,7 +273,7 @@ pub async fn delete_matching(
                 .as_slice()
                 .iter()
                 .map(|record| {
-                    GetRecordResponse::from_record(
+                    RecordResponse::from_record(
                         record,
                         &zone.name,
                         caller.record_actions(zone.id, &record.name, &record.record_type),
@@ -277,17 +282,21 @@ pub async fn delete_matching(
                 .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
+        zone::validate_record_changes_tx(&mut tx, &zone, &matched, &[]).await?;
+        let new_serial = if matched.is_empty() {
+            zone.serial
+        } else {
+            generate_serial(Some(zone.serial))?
+        };
         if !response.applied || matched.is_empty() {
             return Ok((response, owner));
         }
 
         // Apply the complete deletion and refresh signatures in the same transaction.
-        let new_serial = generate_serial(Some(zone.serial))?;
         super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Once for the whole set, so IXFR consumers see one step.
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
-            .await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
 
         Ok((response, owner))
     }
@@ -307,6 +316,7 @@ pub async fn delete_matching(
     // Announce only a committed deletion, never a preview or an empty
     // match — which applies, but writes nothing and leaves the serial.
     if response.applied && response.deleted > 0 {
+        cx.metrics().track_serial_bumps(1);
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 

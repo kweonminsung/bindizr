@@ -26,13 +26,15 @@ pub async fn notify(
             let zone = super::lookup_by_name(cx, name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, caller, target).await?;
+                super::force_increment_serial(cx, caller, name).await?;
             }
         }
         NotifyTarget::All => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, caller, target).await?;
+                for zone in super::list(cx).await? {
+                    super::force_increment_serial(cx, caller, &zone.name).await?;
+                }
             }
         }
     }

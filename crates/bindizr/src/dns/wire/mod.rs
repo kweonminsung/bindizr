@@ -8,15 +8,13 @@ use tokio::{
     time::timeout,
 };
 
-use crate::dns::error::XfrError;
+use crate::dns::error::DnsError;
 
-/// How long one frame may take to reach the client. A receiver that stops
-/// reading fills the send buffer and would otherwise hold its connection —
-/// and the slot the listener counts — for as long as it likes.
+/// Frame write deadline; prevents a stalled receiver from holding a listener slot indefinitely.
 const TCP_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Write a length-prefixed DNS TCP frame.
-pub(crate) async fn write_frame<W>(writer: &mut W, frame: &[u8]) -> Result<(), XfrError>
+pub(crate) async fn write_frame<W>(writer: &mut W, frame: &[u8]) -> Result<(), DnsError>
 where
     W: AsyncWrite + Unpin,
 {
@@ -25,8 +23,8 @@ where
         writer.flush().await
     };
     match timeout(TCP_WRITE_TIMEOUT, write).await {
-        Ok(result) => result.map_err(XfrError::Io),
-        Err(_) => Err(XfrError::WriteTimeout {
+        Ok(result) => result.map_err(DnsError::Io),
+        Err(_) => Err(DnsError::WriteTimeout {
             secs: TCP_WRITE_TIMEOUT.as_secs(),
         }),
     }
@@ -37,7 +35,7 @@ where
 pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
     reader: &mut R,
     pending: &mut Vec<u8>,
-) -> Result<Vec<u8>, XfrError> {
+) -> Result<Vec<u8>, DnsError> {
     let mut chunk = [0u8; 4096];
     loop {
         // The two-octet prefix cannot name more than the limit RFC 1035,
@@ -58,13 +56,13 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
         let read = match reader.read(&mut chunk).await {
             Ok(read) => read,
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => 0,
-            Err(e) => return Err(XfrError::Io(e)),
+            Err(e) => return Err(DnsError::Io(e)),
         };
         if read == 0 {
             return Err(match expected {
-                None if pending.is_empty() => XfrError::Closed,
-                None => XfrError::IncompletePrefix,
-                Some(expected) => XfrError::IncompleteMessage { expected },
+                None if pending.is_empty() => DnsError::PeerClosed,
+                None => DnsError::IncompletePrefix,
+                Some(expected) => DnsError::IncompleteMessage { expected },
             });
         }
         pending.extend_from_slice(&chunk[..read]);

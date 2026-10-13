@@ -10,10 +10,10 @@ use axum::{
 use bindizr_service::{
     Context, record,
     types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
-        DeleteRecordsRequest, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
-        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse, Run,
-        UpdateRecordRequest,
+        CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
+        DEFAULT_PAGE_LIMIT, DeleteRecordsRequest, DeleteRecordsResponse, ErrorResponse,
+        PaginatedResponse, RecordFilter, RecordResponse, Run, SingleRecordResponse,
+        UpdateRecordRequest, WriteRecordResponse,
     },
 };
 
@@ -48,9 +48,9 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/records",
         tag = "Record",
         summary = "List all DNS records",
-        params(GetRecordsFilter),
+        params(RecordFilter),
         responses(
-            (status = 200, description = "A list of DNS records", body = PaginatedResponse<GetRecordResponse>),
+            (status = 200, description = "A list of DNS records", body = PaginatedResponse<RecordResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -59,7 +59,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_records(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut query): Query<GetRecordsFilter>,
+    Query(mut query): Query<RecordFilter>,
 ) -> Result<Response, ApiError> {
     query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = record::list_with_zone_by_filter(&cx, &caller, query).await?;
@@ -76,7 +76,7 @@ pub(crate) async fn list_records(
             ("id" = i32, Path, description = "The ID of the DNS record to retrieve.")
         ),
         responses(
-            (status = 200, description = "Details of the DNS record", body = RecordResponse),
+            (status = 200, description = "Details of the DNS record", body = SingleRecordResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -87,7 +87,7 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
 ) -> Result<Response, ApiError> {
-    let response = RecordResponse {
+    let response = SingleRecordResponse {
         record: record::get(&cx, &caller, params.id).await?,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -101,8 +101,8 @@ pub(crate) async fn get_record(
         summary = "Create a new DNS record",
         request_body = CreateRecordRequest,
         responses(
-            (status = 201, description = "DNS record created successfully", body = RecordWriteResponse),
-            (status = 200, description = "Dry run validated successfully, nothing applied", body = RecordWriteResponse),
+            (status = 201, description = "DNS record created successfully", body = WriteRecordResponse),
+            (status = 200, description = "Dry run validated successfully, nothing applied", body = WriteRecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
@@ -139,7 +139,7 @@ pub(crate) async fn create_record(
         ),
         request_body = UpdateRecordRequest,
         responses(
-            (status = 200, description = "DNS record updated successfully", body = RecordWriteResponse),
+            (status = 200, description = "DNS record updated successfully", body = WriteRecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),
@@ -224,8 +224,8 @@ pub(crate) async fn delete_records_matching(
         description = "Insert many records into the named zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.",
         request_body = CreateBulkRecordsRequest,
         responses(
-            (status = 201, description = "DNS records created successfully", body = BulkRecordsResponse),
-            (status = 200, description = "Dry run validated successfully, nothing applied", body = BulkRecordsResponse),
+            (status = 201, description = "DNS records created successfully", body = CreateBulkRecordsResponse),
+            (status = 200, description = "Dry run validated successfully, nothing applied", body = CreateBulkRecordsResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's role does not permit this record write", body = ErrorResponse),

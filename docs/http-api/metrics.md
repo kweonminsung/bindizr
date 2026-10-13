@@ -24,7 +24,7 @@ curl http://localhost:3000/metrics
 | `bindizr_notify_sent_total{result}` | counter | NOTIFY delivery attempts to secondaries, by outcome |
 | `bindizr_nsupdate_requests_total{result}` | counter | nsupdate requests (RFC 2136), by outcome |
 | `bindizr_pruned_rows_total{table}` | counter | History rows pruned by table (`journal`/`version`); zero is expected until rows exceed the retention period |
-| `bindizr_zone_serial_bumps_total` | counter | Zone serial writes across every update path |
+| `bindizr_zone_serial_bumps_total` | counter | Committed zone serial writes across every update path |
 | `bindizr_dnssec_zones_total` | gauge | DNSSEC-signed zones, refreshed at scrape time |
 | `bindizr_dnssec_keys_total{state}` | gauge | DNSSEC keys by state (`published`/`active`/`retired`) |
 | `bindizr_dnssec_rrsigs_expiring_total` | gauge | Signatures inside the refresh window; persisting across scrapes means re-signing is falling behind |

@@ -5,9 +5,8 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{
-    bulk::{PreparedRecord, parse_record_request},
-    validation::{normalize_record_owner_name, validate_record_constraints},
+use super::validation::{
+    PreparedRecord, normalize_record_owner_name, parse_record_request, validate_record_constraints,
 };
 use crate::{
     Context,
@@ -17,8 +16,7 @@ use crate::{
     model::record::{Record, RecordData},
     serial::generate_serial,
     transaction,
-    ttl::validate_record_ttl,
-    types::{CreateRecordRequest, GetRecordResponse, RecordDiff, RecordWriteResponse},
+    types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse},
     zone::{self, diff::build_record_diff},
 };
 
@@ -28,14 +26,13 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     create_record_request: &CreateRecordRequest,
-) -> Result<RecordWriteResponse, ServiceError> {
+) -> Result<WriteRecordResponse, ServiceError> {
     let PreparedRecord {
         record_type,
         value: record_value,
         priority,
-        ..
+        ttl,
     } = parse_record_request(
-        &create_record_request.name,
         &create_record_request.record_type,
         &create_record_request.value,
         create_record_request.ttl,
@@ -44,11 +41,6 @@ pub async fn create(
 
     let zone_name = zone::normalize_name(&create_record_request.zone_name)?;
     let owner_name = normalize_record_owner_name(&create_record_request.name, &zone_name)?;
-    let ttl = create_record_request
-        .ttl
-        .map(validate_record_ttl)
-        .transpose()?;
-
     let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
     let apply_result = async {
@@ -112,20 +104,22 @@ pub async fn create(
             zone_id: zone.id,
             created_at: Utc::now(),
         };
+        zone::validate_record_changes_tx(&mut tx, &zone, &[], std::slice::from_ref(&candidate))
+            .await?;
         let mut after = before.clone();
         after.push_written(RecordData::from(candidate.clone()));
         let diff = build_record_diff(&zone, &before, &after);
 
+        let new_serial = generate_serial(Some(zone.serial))?;
+
         // The record is validated and authorized, so a dry run stops here.
         if create_record_request.dry_run {
-            return Ok::<(Record, ZoneName, RecordDiff), ServiceError>((
+            return Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
                 candidate, zone.name, diff,
             ));
         }
 
         // Persist the validated record and its signed view as one journaled serial.
-        let new_serial = generate_serial(Some(zone.serial))?;
-
         let created_record = super::create_with_changes_tx(
             &mut tx,
             zone.id,
@@ -141,10 +135,13 @@ pub async fn create(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
-            .await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiff), ServiceError>((created_record, zone.name, diff))
+        Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
+            created_record,
+            zone.name,
+            diff,
+        ))
     }
     .await;
 
@@ -166,13 +163,14 @@ pub async fn create(
 
     // Request secondary transfers only after the new record is committed.
     if !create_record_request.dry_run {
+        cx.metrics().track_serial_bumps(1);
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
-    Ok(RecordWriteResponse {
+    Ok(WriteRecordResponse {
         applied: !create_record_request.dry_run,
         dry_run: create_record_request.dry_run,
-        record: GetRecordResponse::from_record(
+        record: RecordResponse::from_record(
             &created_record,
             &zone_name,
             caller.record_actions(

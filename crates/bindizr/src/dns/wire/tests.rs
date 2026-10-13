@@ -3,7 +3,7 @@ use bindizr_core::dns::message::encode_tcp_message;
 use super::*;
 
 /// Decode a TCP DNS frame from the supplied test bytes.
-async fn read(bytes: &[u8]) -> Result<Vec<u8>, XfrError> {
+async fn read(bytes: &[u8]) -> Result<Vec<u8>, DnsError> {
     read_tcp_message(&mut &bytes[..], &mut Vec::new()).await
 }
 
@@ -47,7 +47,7 @@ async fn a_connection_closed_between_messages_is_not_a_protocol_error() {
     // transfers reads as EOF rather than a malformed length prefix.
     let error = read(b"").await.unwrap_err();
 
-    assert!(matches!(error, XfrError::Closed), "{error:?}");
+    assert!(matches!(error, DnsError::PeerClosed), "{error:?}");
 }
 
 /// An `AsyncRead` whose peer left without close_notify, as rustls
@@ -76,7 +76,7 @@ async fn a_peer_leaving_without_close_notify_is_not_a_protocol_error() {
         .await
         .unwrap_err();
 
-    assert!(matches!(error, XfrError::Closed), "{error:?}");
+    assert!(matches!(error, DnsError::PeerClosed), "{error:?}");
 }
 
 /// Verify that a truncated length prefix is a protocol error.
@@ -84,7 +84,7 @@ async fn a_peer_leaving_without_close_notify_is_not_a_protocol_error() {
 async fn a_truncated_length_prefix_is_a_protocol_error() {
     let error = read(&[0x00]).await.unwrap_err();
 
-    assert!(matches!(&error, XfrError::IncompletePrefix), "{error:?}");
+    assert!(matches!(&error, DnsError::IncompletePrefix), "{error:?}");
 }
 
 /// Verify that a body shorter than its prefix names the length it expected.
@@ -93,7 +93,7 @@ async fn a_body_shorter_than_its_prefix_names_the_length_it_expected() {
     let error = read(&[0x00, 0x04, b'a', b'b']).await.unwrap_err();
 
     assert!(
-        matches!(&error, XfrError::IncompleteMessage { expected: 4 }),
+        matches!(&error, DnsError::IncompleteMessage { expected: 4 }),
         "{error:?}"
     );
 }
@@ -119,7 +119,7 @@ async fn a_write_no_one_reads_gives_up_rather_than_holding_the_slot() {
         .expect_err("the write should have timed out");
 
     assert!(
-        matches!(&error, XfrError::WriteTimeout { secs: 30 }),
+        matches!(&error, DnsError::WriteTimeout { secs: 30 }),
         "{error}"
     );
 }

@@ -18,7 +18,6 @@ use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
 use super::{ReadTcpMessageError, ResolveAddressError};
-use crate::Context;
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -70,21 +69,10 @@ pub(crate) enum TransferZoneError {
     },
 }
 
-/// Transfer the zone from `server` within the bounds of `dns.import` and
-/// render it as zone-file text ready for the import parser.
-pub(crate) async fn fetch_zone_file(
-    cx: &Context,
-    server: &str,
-    zone_name: &ZoneName,
-) -> Result<String, TransferZoneError> {
-    let records = transfer_zone(server, zone_name, &cx.config().dns.import).await?;
-    Ok(render_zone_file(&records))
-}
-
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
 /// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
 /// Resolution and every address attempt share the import's deadline.
-async fn transfer_zone(
+pub(crate) async fn transfer_zone(
     server: &str,
     zone_name: &ZoneName,
     import: &ImportConfig,
@@ -192,43 +180,3 @@ fn owner_labels(name: &str) -> Result<Vec<String>, TransferZoneError> {
             source,
         })
 }
-
-/// Render transferred records as zone-file lines: the zone's SOA once, no
-/// DNSSEC-derived rows (bindizr signs with its own keys), and every other
-/// type as it arrived, for the parser to accept or report.
-fn render_zone_file(records: &[TransferRecord]) -> String {
-    let mut lines = String::new();
-    let mut soa_rendered = false;
-    for record in records {
-        if matches!(
-            record.rtype,
-            Rtype::RRSIG
-                | Rtype::NSEC
-                | Rtype::NSEC3
-                | Rtype::NSEC3PARAM
-                | Rtype::DNSKEY
-                | Rtype::CDS
-                | Rtype::CDNSKEY
-        ) {
-            continue;
-        }
-        // The opening delimiter is what `--create` builds the zone from; the
-        // closing repeat would read as a zone carrying two.
-        if record.rtype == Rtype::SOA {
-            if soa_rendered {
-                continue;
-            }
-            soa_rendered = true;
-        }
-        // A type bindizr does not store is rendered anyway: the parser
-        // reports it, so `--skip-unsupported` can pass over it.
-        lines.push_str(&format!(
-            "{} {} IN {} {}\n",
-            record.name, record.ttl, record.rtype, record.rdata
-        ));
-    }
-    lines
-}
-
-#[cfg(test)]
-mod tests;

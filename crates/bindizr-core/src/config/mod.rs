@@ -150,11 +150,11 @@ pub struct DatabaseConfig {
     #[serde(rename = "type")]
     pub database_type: DatabaseType,
     #[serde(default)]
-    pub mysql: MysqlConfig,
+    pub mysql: MySqlConfig,
     #[serde(default)]
     pub sqlite: SqliteConfig,
     #[serde(default)]
-    pub postgresql: PostgresqlConfig,
+    pub postgresql: PostgresConfig,
     #[serde(default)]
     pub tls: DatabaseTlsConfig,
 }
@@ -195,7 +195,7 @@ impl std::str::FromStr for DatabaseType {
 /// MySQL connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct MysqlConfig {
+pub struct MySqlConfig {
     pub url: String,
 }
 
@@ -209,7 +209,7 @@ pub struct SqliteConfig {
 /// PostgreSQL connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct PostgresqlConfig {
+pub struct PostgresConfig {
     pub url: String,
 }
 
@@ -332,14 +332,11 @@ impl From<DatabaseTlsMode> for sqlx::mysql::MySqlSslMode {
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
-    /// Name of the virtual RFC 9432 catalog zone this instance serves. A
-    /// secondary holds one zone per name, so two primaries feeding the same
-    /// secondary need two names.
+    /// Virtual RFC 9432 catalog zone name; primaries sharing a secondary need distinct names.
     #[serde(default = "default_catalog_zone_name")]
     pub catalog_zone_name: ZoneName,
-    /// Days of zone history to keep (0 = unlimited): the IXFR journal and the
-    /// versions rollback can reach. A secondary asking for a pruned serial
-    /// falls back to AXFR.
+    /// Days to retain IXFR history and rollback versions (`0` = unlimited).
+    /// Pruned serials fall back to AXFR.
     #[serde(default = "default_zone_history_retention_days")]
     pub zone_history_retention_days: u32,
     /// Seconds between scheduler passes for signing, rollover, and history pruning.
@@ -372,9 +369,8 @@ pub struct DnsConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
-    /// Window (ms) that collects one zone's changes into one NOTIFY, sent
-    /// from a queue after the write is answered. `0` sends a NOTIFY for
-    /// every change before the write is answered.
+    /// NOTIFY coalescing window in milliseconds; queued sends follow the write response.
+    /// `0` sends every change before responding.
     #[serde(default)]
     pub batch_ms: u64,
     #[serde(default = "default_notify_retries")]
@@ -406,9 +402,8 @@ impl Default for NotifyConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TransferConfig {
-    /// Records the cache of each zone's transfer content, keyed by serial,
-    /// may hold before evicting the least recently used zone. A zone larger
-    /// than this is served uncached; `0` caches nothing.
+    /// Record budget for serial-keyed transfer caches, evicting least-recently-used zones.
+    /// Oversized zones are served uncached; `0` disables caching.
     #[serde(default = "default_transfer_cache_max_records")]
     pub cache_max_records: u64,
     /// Refuse AXFR and IXFR over plain TCP and UDP (RFC 9103, Section 11);
@@ -555,9 +550,7 @@ fn default_dns_tls_listen_port() -> u16 {
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
     pub ttl: Ttl,
-    /// Bindizr drives propagation with NOTIFY, so refresh and retry stay
-    /// short: they bound how long a secondary stays stale when a NOTIFY is
-    /// lost, not the happy-path latency.
+    /// Short refresh/retry intervals limit staleness when NOTIFY is lost.
     #[serde(default = "default_zone_refresh")]
     pub refresh: SoaInterval,
     #[serde(default = "default_zone_retry")]

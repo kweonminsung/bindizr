@@ -12,8 +12,8 @@ use bindizr_service::{
     role::{self, grant},
     types::{
         CreateRoleGrantRequest, CreateRoleRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        GetRoleGrantResponse, GetRoleResponse, MessageResponse, PageRequest, PaginatedResponse,
-        RoleGrantResponse, RoleResponse,
+        MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse,
+        SingleRoleGrantResponse, SingleRoleResponse,
     },
 };
 
@@ -49,7 +49,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         summary = "List all roles",
         params(PageRequest),
         responses(
-            (status = 200, description = "All roles", body = PaginatedResponse<GetRoleResponse>),
+            (status = 200, description = "All roles", body = PaginatedResponse<RoleResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -74,7 +74,7 @@ pub(crate) async fn list_roles(
         description = "Creates a role with no grants. API tokens and TSIG keys authenticate into a role, and its grants decide what they may do.",
         request_body = CreateRoleRequest,
         responses(
-            (status = 201, description = "Role created", body = RoleResponse),
+            (status = 201, description = "Role created", body = SingleRoleResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -88,7 +88,7 @@ pub(crate) async fn create_role(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRoleRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RoleResponse {
+    let response = SingleRoleResponse {
         role: role::create(&cx, &caller, &body).await?,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
@@ -104,7 +104,7 @@ pub(crate) async fn create_role(
             ("name" = String, Path, description = "The name of the role.")
         ),
         responses(
-            (status = 200, description = "The role", body = RoleResponse),
+            (status = 200, description = "The role", body = SingleRoleResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role not found", body = ErrorResponse),
@@ -116,7 +116,7 @@ pub(crate) async fn get_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let response = RoleResponse {
+    let response = SingleRoleResponse {
         role: role::get(&cx, &caller, &params.name).await?,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -165,7 +165,7 @@ pub(crate) async fn delete_role(
             PageRequest
         ),
         responses(
-            (status = 200, description = "The role's grants", body = PaginatedResponse<GetRoleGrantResponse>),
+            (status = 200, description = "The role's grants", body = PaginatedResponse<RoleGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Role not found", body = ErrorResponse),
@@ -195,7 +195,7 @@ pub(crate) async fn list_role_grants(
         ),
         request_body = CreateRoleGrantRequest,
         responses(
-            (status = 201, description = "Role grant created", body = RoleGrantResponse),
+            (status = 201, description = "Role grant created", body = SingleRoleGrantResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -211,7 +211,7 @@ pub(crate) async fn create_role_grant(
     JsonBody(body): JsonBody<CreateRoleGrantRequest>,
 ) -> Result<Response, ApiError> {
     let role_grant = grant::create(&cx, &caller, &params.name, &body).await?;
-    let response = RoleGrantResponse { role_grant };
+    let response = SingleRoleGrantResponse { role_grant };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 

@@ -1,7 +1,6 @@
 mod plan;
 
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     time::Instant,
 };
@@ -20,61 +19,70 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 use plan::{DesiredRecord, ImportPlan};
 
-use super::{
-    bulk::PreparedRecord,
-    validation::{normalize_record_owner_name, validate_record_constraints},
-};
+use super::validation::{normalize_record_owner_name, validate_record_constraints};
 use crate::{
     Context,
     authorization::Caller,
     dnssec,
     error::ServiceError,
     model::{
-        record::{Record, RecordType},
+        record::{Record, RecordData},
         zone::Zone,
     },
     serial::{generate_serial, validate_initial_serial},
     time::elapsed_ms,
     transaction,
+    ttl::validate_soa_interval,
     types::{
-        CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
-        RecordDiff, RecordValue, Run,
+        ImportMode, ImportZoneRequest, ImportZoneResponse, ImportZoneSummaryResponse,
+        RecordDiffResponse, RecordValue, Run,
     },
     zone,
 };
 
-/// The request a zone file's SOA describes. The serial carries over so
-/// secondaries holding the old primary's serial accept the transfer. An
-/// unsupported initial serial rejects the import before the zone is created.
-fn build_create_zone_request(
+/// Resolve a new zone from the imported SOA and configured creation defaults.
+fn prepare_zone(
+    cx: &Context,
     zone_name: &ZoneName,
     soa: &ZoneFileSoa,
-) -> Result<CreateZoneRequest, ServiceError> {
+    default_ttl: Ttl,
+) -> Result<Zone, ServiceError> {
+    zone::validation::reject_catalog_zone_name(cx, zone_name)?;
     let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))
         .to_email()
         .map_err(|e| {
             ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
         })?;
-    Ok(CreateZoneRequest {
-        dry_run: false,
-        // The zone file carries its own NS records.
-        apex_ns: false,
-        name: zone_name.to_string(),
-        mname: soa.mname.clone(),
-        rname,
-        default_ttl: None,
-        serial: Some(validate_initial_serial(soa.serial)?),
-        refresh: Some(i32::from(soa.refresh)),
-        retry: Some(i32::from(soa.retry)),
-        expire: Some(i32::from(soa.expire)),
-        minimum_ttl: Some(i32::from(soa.minimum_ttl)),
+    let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i32::from(default_ttl))?;
+    Ok(Zone {
+        id: ZoneId::UNWRITTEN,
+        name: zone_name.clone(),
+        mname: normalized.mname,
+        rname: normalized.rname,
+        default_ttl: normalized.ttl,
+        serial: validate_initial_serial(soa.serial)?,
+        refresh: validate_soa_interval(i32::from(soa.refresh), "refresh")?,
+        retry: validate_soa_interval(i32::from(soa.retry), "retry")?,
+        expire: validate_soa_interval(i32::from(soa.expire), "expire")?,
+        minimum_ttl: validate_soa_interval(i32::from(soa.minimum_ttl), "minimum_ttl")?,
+        dnssec_policy_id: None,
+        parent_ns_addrs: None,
+        enabled: true,
         description: None,
+        created_at: Utc::now(),
     })
+}
+
+/// Text needs the locked zone's default TTL; AXFR carries every TTL explicitly.
+#[derive(Debug)]
+enum ImportSource<'a> {
+    Text(&'a str),
+    Transfer(ParsedZoneFile),
 }
 
 /// Outcome of the transactional part of a zone-file import.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct AppliedImport {
+struct ImportResult {
     response: ImportZoneResponse,
     zone_name: ZoneName,
     changed: bool,
@@ -118,8 +126,8 @@ pub async fn import_zone(
         }
     }
 
-    let content: Cow<'_, str> = match (&request.content, &request.from_server) {
-        (Some(content), None) => Cow::Borrowed(content.as_str()),
+    let source = match (&request.content, &request.from_server) {
+        (Some(content), None) => ImportSource::Text(content),
         (None, Some(server)) => {
             let server = server.trim();
             if !is_address_target(server) {
@@ -127,19 +135,18 @@ pub async fn import_zone(
                     "from_server must name one server as host[:port]",
                 ));
             }
-            // Checked before the outbound fetch so neither a mistyped name nor
-            // an unauthorized role starts a transfer; the transaction decides
-            // again.
+            // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
             if !request.create {
                 let zone = zone::lookup_by_name(cx, zone_name).await?;
                 authorize_import(caller, mode, &zone)?;
             }
-            let content = crate::dns_client::axfr::fetch_zone_file(cx, server, zone_name)
-                .await
-                .map_err(|e| {
-                    ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
-                })?;
-            Cow::Owned(content)
+            let records =
+                crate::dns_client::axfr::transfer_zone(server, zone_name, &cx.config().dns.import)
+                    .await
+                    .map_err(|e| {
+                        ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
+                    })?;
+            ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name))
         }
         (Some(_), Some(_)) => {
             return Err(ServiceError::invalid_input(
@@ -150,7 +157,7 @@ pub async fn import_zone(
             return Err(ServiceError::invalid_input("give content or from_server"));
         }
     };
-    reconcile_zone_file(cx, caller, zone_name, &content, request, mode).await
+    reconcile(cx, caller, zone_name, source, request, mode).await
 }
 
 /// The record actions an import mode performs.
@@ -169,18 +176,15 @@ fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<()
     Ok(())
 }
 
-/// Preview or apply a zone-file reconciliation in its own transaction; a
-/// missing zone is created from the file's SOA as `caller` when the request
-/// says to.
-async fn reconcile_zone_file(
+/// Preview or apply an import atomically, creating a missing zone from its SOA when requested.
+async fn reconcile(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    content: &str,
+    source: ImportSource<'_>,
     request: &ImportZoneRequest,
     mode: ImportMode,
 ) -> Result<ImportZoneResponse, ServiceError> {
-    let attribution = caller.change_attribution();
     let run = Run::from_dry_run(request.dry_run);
     let t_total = Instant::now();
 
@@ -188,41 +192,39 @@ async fn reconcile_zone_file(
 
     let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
-    let apply_result: Result<AppliedImport, ServiceError> = async {
+    let apply_result: Result<ImportResult, ServiceError> = async {
         let t = Instant::now();
-        let mut created = false;
         let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        // The fetch above may have run long; the grants decide as they stand now.
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
-        let zone = match (existing, request.create) {
-            (Some(zone), _) => zone,
-            // Created in this transaction, so a dry run rolls it back with
-            // the records and an apply commits both at once.
-            (None, true) => {
-                let soa = ParsedZoneFile::parse(content, zone_name, Ttl::from_secs(0))
-                    .soa
-                    .ok_or_else(|| {
-                        ServiceError::invalid_input(
-                            "the zone file carries no SOA to create the zone from; create it with `zone create` first",
-                        )
-                    })?;
-                created = true;
-                zone::create_tx(
-                    &mut tx,
-                    cx,
-                    caller,
-                    &build_create_zone_request(zone_name, &soa)?,
-                )
-                .await?
+        let created = existing.is_none();
+        let default_ttl = if let Some(zone) = &existing {
+            authorize_import(caller, mode, zone)?;
+            zone.default_ttl
+        } else if request.create {
+            caller.authorize_action(Action::ZoneCreate)?;
+            for action in import_actions(mode) {
+                caller.authorize_all_whole_zones(*action)?;
             }
-            (None, false) => return Err(ServiceError::zone_not_found(zone_name)),
+            cx.config().dns.zone_defaults.ttl
+        } else {
+            return Err(ServiceError::zone_not_found(zone_name));
         };
-        authorize_import(caller, mode, &zone)?;
         timings.load_zone_ms = elapsed_ms(t);
 
         let t = Instant::now();
-        // Relative owners and omitted TTLs must use the zone this transaction locked.
-        let parsed = ParsedZoneFile::parse(content, &zone.name, zone.default_ttl);
+        let parsed = match source {
+            ImportSource::Text(content) => ParsedZoneFile::parse(content, zone_name, default_ttl),
+            ImportSource::Transfer(parsed) => parsed,
+        };
+        let mut zone = match existing {
+            Some(zone) => zone,
+            None => {
+                let soa = parsed.soa.as_ref().ok_or_else(|| ServiceError::invalid_input(
+                    "the zone file carries no SOA to create the zone from; create it with `zone create` first",
+                ))?;
+                prepare_zone(cx, zone_name, soa, default_ttl)?
+            }
+        };
         timings.parse_ms = elapsed_ms(t);
         let mut errors = parsed.errors;
         let mut skipped = 0usize;
@@ -246,9 +248,7 @@ async fn reconcile_zone_file(
         for record in parsed.records {
             let requested = match record.value {
                 ZoneFileValue::Rdata(rdata) => RecordValue::Text(rdata),
-                ZoneFileValue::Segments(segments) => {
-                    RecordValue::Segments(segments)
-                }
+                ZoneFileValue::Segments(segments) => RecordValue::Segments(segments),
             };
             let value = match requested.to_encoded_value(&record.record_type, record.priority) {
                 Ok(value) => value,
@@ -257,8 +257,7 @@ async fn reconcile_zone_file(
                     continue;
                 }
             };
-            let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
-            {
+            let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
                 Ok(stored_name) => stored_name,
                 Err(e) => {
                     errors.push(format!("{}: {}", record.owner_fqdn, e));
@@ -269,17 +268,17 @@ async fn reconcile_zone_file(
             let name_key = stored_name.clone();
             let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
                 idxs.iter().copied().find(|&i| {
-                    desired[i].prepared.record_type == record.record_type
+                    desired[i].data.record_type == record.record_type
                         && record.record_type.values_equal(
-                            &desired[i].prepared.value,
-                            desired[i].prepared.priority,
+                            &desired[i].data.value,
+                            desired[i].data.priority,
                             &value,
                             record.priority,
                         )
                 })
             });
             if let Some(kept) = duplicate_in_file {
-                let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.default_ttl);
+                let kept_ttl = desired[kept].data.ttl;
                 let this_ttl = record.ttl;
                 // The same record at two TTLs is a mixed-TTL record set (RFC 2181,
                 // Section 5.2); deduplication must not swallow the conflict.
@@ -299,40 +298,42 @@ async fn reconcile_zone_file(
                 .or_default()
                 .push(desired.len());
             desired.push(DesiredRecord {
-                prepared: PreparedRecord {
-                    raw_name: record.owner_fqdn,
+                source_name: record.owner_fqdn,
+                data: RecordData {
+                    name: stored_name,
                     priority: record.record_type.stored_priority(record.priority),
                     record_type: record.record_type,
                     value,
-                    ttl: Some(record.ttl),
+                    ttl: record.ttl,
                 },
-                name: stored_name,
             });
         }
 
         timings.normalize_ms = elapsed_ms(t);
         let parsed_count = desired.len();
 
-        // Append never deletes, so only rows sharing an owner name with the
-        // file can matter; load just those. Replace and upsert must see
-        // every row to compute their implied deletions.
+        // Append checks only matching owners; replace/upsert need all rows to find deletions.
         let t = Instant::now();
-        let existing_records = match mode {
-            ImportMode::Append => {
-                let mut names: Vec<OwnerName> =
-                    desired.iter().map(|d| d.name.clone()).collect();
-                names.sort();
-                names.dedup();
-                bindizr_db::record::list_by_names_tx(
-                    &mut tx,
-                    zone.id,
-                    &names,
-                    LockLevel::Exclusive,
-                )
-                .await
-            }
-            ImportMode::Replace | ImportMode::Upsert => {
-                bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
+        let existing_records = if created {
+            Ok(Vec::new())
+        } else {
+            match mode {
+                ImportMode::Append => {
+                    let mut names: Vec<OwnerName> =
+                        desired.iter().map(|d| d.data.name.clone()).collect();
+                    names.sort();
+                    names.dedup();
+                    bindizr_db::record::list_by_names_tx(
+                        &mut tx,
+                        zone.id,
+                        &names,
+                        LockLevel::Exclusive,
+                    )
+                    .await
+                }
+                ImportMode::Replace | ImportMode::Upsert => {
+                    bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
+                }
             }
         }
         .map_err(|e| {
@@ -341,72 +342,69 @@ async fn reconcile_zone_file(
         })?;
         timings.load_existing_ms = elapsed_ms(t);
 
-        let effective_ttl = |ttl: Option<Ttl>| ttl.unwrap_or(zone.default_ttl);
-
         let t = Instant::now();
-        let plan = ImportPlan::compute(mode, &zone, &existing_records, &desired);
+        let plan = ImportPlan::compute(mode, &existing_records, &desired);
         timings.reconcile_ms = elapsed_ms(t);
 
-        // Validate additions against an in-memory copy so constraint
-        // violations are caught without writing anything. Simulated records
-        // are indexed by name so each check scans only same-name candidates.
+        let mut all_dels = plan.dels.clone();
+        all_dels.extend_from_slice(&plan.ttl_dels);
+        let mut to_insert: Vec<Record> = plan
+            .adds
+            .iter()
+            .map(|add| Record {
+                id: RecordId::UNWRITTEN,
+                name: add.data.name.clone(),
+                record_type: add.data.record_type,
+                value: add.data.value.clone(),
+                ttl: add.data.ttl,
+                priority: add.data.priority,
+                zone_id: zone.id,
+                created_at: Utc::now(),
+            })
+            .collect();
+
+        // Validate additions without writes, indexing simulated records by owner for conflict checks.
         let t = Instant::now();
-        let del_ids: HashSet<RecordId> = plan.dels.iter().chain(&plan.ttl_dels).map(|d| d.id).collect();
+        let del_ids: HashSet<RecordId> = all_dels.iter().map(|record| record.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
             HashMap::with_capacity(existing_records.len());
-        for e in existing_records.iter() {
-            if !del_ids.contains(&e.id) {
+        for record in &existing_records {
+            if !del_ids.contains(&record.id) {
                 simulated_by_name
-                    .entry(e.name.clone())
+                    .entry(record.name.clone())
                     .or_default()
-                    .push(e.clone());
+                    .push(record.clone());
             }
         }
-        for add in &plan.adds {
+        for (add, candidate) in plan.adds.iter().zip(&to_insert) {
             let records_at_name = simulated_by_name
-                .entry(add.name.clone())
+                .entry(add.data.name.clone())
                 .or_default();
             match validate_record_constraints(
                 records_at_name,
-                &add.name,
-                &add.prepared.record_type,
-                &add.prepared.value,
-                effective_ttl(add.prepared.ttl),
-                add.prepared.priority,
+                &add.data.name,
+                &add.data.record_type,
+                &add.data.value,
+                add.data.ttl,
+                add.data.priority,
                 None,
             ) {
-                // In-memory comparison only; the negative id keeps the
-                // placeholder distinct from persisted rows.
-                Ok(()) => records_at_name.push(Record {
-                    id: RecordId::from(-1),
-                    name: add.name.clone(),
-                    record_type: add.prepared.record_type,
-                    value: add.prepared.value.clone(),
-                    ttl: effective_ttl(add.prepared.ttl),
-                    priority: add.prepared.priority,
-                    zone_id: ZoneId::UNWRITTEN,
-                    created_at: Utc::now(),
-                }),
-                Err(e) => {
-                    errors.push(format!("{}: {}", add.prepared.raw_name, e))
-                }
+                Ok(()) => records_at_name.push(candidate.clone()),
+                Err(e) => errors.push(format!("{}: {}", add.source_name, e)),
             }
         }
-        // Mirror of the version-time delegation check, so a dry run
-        // reports the violation per name instead of failing the apply.
-        for (name, rows) in &simulated_by_name {
-            if rows.iter().any(|r| r.record_type == RecordType::Ds)
-                && !rows.iter().any(|r| r.record_type == RecordType::Ns)
-            {
-                errors.push(format!(
-                    "'{}': DS records require delegation NS records at the same name",
-                    name
-                ));
+        if errors.is_empty()
+            && let Err(error) =
+                zone::validate_record_changes_tx(&mut tx, &zone, &all_dels, &to_insert).await
+        {
+            if error.code().is_internal() {
+                return Err(error);
             }
+            errors.push(error.to_string());
         }
         timings.validate_ms = elapsed_ms(t);
 
-        let summary = ImportSummary {
+        let summary = ImportZoneSummaryResponse {
             parsed: parsed_count as u64,
             // Additions also carry the re-inserted TTL-reconciled records,
             // which are reported under `updated` instead.
@@ -422,47 +420,33 @@ async fn reconcile_zone_file(
         let diff = if run.is_dry_run() && errors.is_empty() {
             plan.diff(caller, &zone, &existing_records)
         } else {
-            RecordDiff::default()
+            RecordDiffResponse::default()
         };
 
         let will_apply = errors.is_empty() && !run.is_dry_run();
         let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
 
-        // Only a valid, nonempty apply writes rows and advances the serial.
+        let new_serial = if has_changes && errors.is_empty() {
+            generate_serial(Some(zone.serial))?
+        } else {
+            zone.serial
+        };
+        if will_apply && created {
+            zone = zone::create_tx(&mut tx, zone).await?;
+            for record in &mut to_insert {
+                record.zone_id = zone.id;
+            }
+            zone::save_version_tx(&mut tx, &zone, zone.serial, caller.change_attribution()).await?;
+        }
         if will_apply && has_changes {
-            let new_serial = generate_serial(Some(zone.serial))?;
-
             let t = Instant::now();
-            let mut all_dels = plan.dels;
-            all_dels.extend(plan.ttl_dels);
-            super::delete_with_changes_tx(
-                &mut tx, zone.id, new_serial, &all_dels,
-            )
-            .await?;
-
-            let to_insert: Vec<Record> = plan.adds
-                .iter()
-                .map(|add| Record {
-                    id: RecordId::UNWRITTEN,
-                    name: add.name.clone(),
-                    record_type: add.prepared.record_type,
-                    value: add.prepared.value.clone(),
-                    ttl: effective_ttl(add.prepared.ttl),
-                    priority: add.prepared.priority,
-                    zone_id: zone.id,
-                    created_at: Utc::now(),
-                })
-                .collect();
-            super::create_with_changes_tx(
-                &mut tx, zone.id, new_serial, &to_insert,
-            )
-            .await?;
+            super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
+            super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
             timings.db_write_ms = elapsed_ms(t);
 
             let t = Instant::now();
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
-            // Advance the serial once so IXFR consumers detect the import.
-            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, attribution).await?;
+            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
             timings.serial_ms = elapsed_ms(t);
         }
 
@@ -475,7 +459,7 @@ async fn reconcile_zone_file(
             skipped_records,
         };
 
-        Ok(AppliedImport {
+        Ok(ImportResult {
             response,
             zone_name: zone.name,
             changed: will_apply && has_changes,
@@ -484,22 +468,12 @@ async fn reconcile_zone_file(
     }
     .await;
 
-    // Only an applied import commits: a dry run and a rejected one both
-    // answer `applied: false`, so neither may leave the zone `create` made.
-    let discard = run.is_dry_run()
-        || !apply_result
-            .as_ref()
-            .is_ok_and(|import| import.response.applied);
-    let AppliedImport {
+    let ImportResult {
         response,
         zone_name,
         changed,
         created,
-    } = if discard {
-        transaction::discard_tx(tx, apply_result).await?
-    } else {
-        transaction::finish_tx(tx, apply_result, "failed to import zone file").await?
-    };
+    } = transaction::finish_tx(tx, apply_result, "failed to import zone file").await?;
 
     log::info!(
         "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
@@ -517,6 +491,8 @@ async fn reconcile_zone_file(
     let t = Instant::now();
     // The catalog goes first: a secondary that has not seen the new member
     // there cannot act on the zone's own NOTIFY below.
+    cx.metrics()
+        .track_serial_bumps(u64::from(created) + u64::from(changed));
     let config = cx.config();
     if created {
         crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;

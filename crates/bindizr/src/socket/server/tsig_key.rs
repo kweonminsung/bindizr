@@ -4,7 +4,7 @@ use bindizr_service::{
     error::ServiceError,
     tsig_key,
     types::{
-        CreateTsigKeyRequest, GetTsigKeyResponse, MessageResponse, PaginatedResponse,
+        CreateTsigKeyRequest, MessageResponse, PaginatedResponse, SingleTsigKeyResponse,
         TsigKeyFilter, TsigKeyResponse,
     },
 };
@@ -15,7 +15,7 @@ use crate::socket::types::DaemonResponse;
 pub(crate) async fn create_tsig_key(
     cx: &Context,
     request: &CreateTsigKeyRequest,
-) -> Result<DaemonResponse<TsigKeyResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
     let data = tsig_key::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
@@ -27,7 +27,7 @@ pub(crate) async fn create_tsig_key(
 pub(crate) async fn list_tsig_keys(
     cx: &Context,
     filter: &TsigKeyFilter,
-) -> Result<DaemonResponse<PaginatedResponse<GetTsigKeyResponse>>, ServiceError> {
+) -> Result<DaemonResponse<PaginatedResponse<TsigKeyResponse>>, ServiceError> {
     let response = tsig_key::list(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
@@ -39,7 +39,7 @@ pub(crate) async fn list_tsig_keys(
 pub(crate) async fn get_tsig_key(
     cx: &Context,
     name: &str,
-) -> Result<DaemonResponse<TsigKeyResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
     let data = tsig_key::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),

@@ -27,9 +27,7 @@ pub(crate) async fn begin_read_tx(
     })
 }
 
-/// Commit on success, roll back on failure. `E` is the caller's error
-/// type, so a front end with its own error taxonomy keeps this one
-/// transaction helper.
+/// Commit on success or roll back on failure, preserving the caller's error type.
 pub(crate) async fn finish_tx<T, E: From<ServiceError>>(
     tx: Transaction<'static>,
     apply_result: Result<T, E>,
@@ -50,15 +48,4 @@ pub(crate) async fn finish_tx<T, E: From<ServiceError>>(
             Err(err)
         }
     }
-}
-
-/// Roll back however the work ended: a preview writes only to plan against.
-pub(crate) async fn discard_tx<T, E: From<ServiceError>>(
-    tx: Transaction<'static>,
-    apply_result: Result<T, E>,
-) -> Result<T, E> {
-    if let Err(e) = tx.rollback().await {
-        log::error!("Failed to rollback transaction: {}", e);
-    }
-    apply_result
 }

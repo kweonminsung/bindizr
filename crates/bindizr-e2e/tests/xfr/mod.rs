@@ -15,7 +15,7 @@ use common::{build_edns_query, build_ixfr_query, build_multi_question_query, cou
 use domain::{
     base::{
         Message, MessageBuilder, Name, Ttl,
-        iana::{Class, OptRcode, Rcode, Rtype, TsigRcode},
+        iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode},
     },
     rdata::{
         A, Soa,
@@ -556,9 +556,7 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
     }
 }
 
-/// Verify that the transfers Bindizr served a secondary, and the refusals
-/// before it was registered, are read back per zone and beside the zone's
-/// status.
+/// Verify per-zone transfer history, including refusals before secondary registration.
 #[tokio::test]
 #[serial]
 async fn the_transfers_served_a_secondary_are_read_back() {
@@ -1201,6 +1199,57 @@ async fn pipelined_transfers_on_one_connection_both_complete() {
 
     assert_eq!(soas.get(&1), Some(&2));
     assert_eq!(soas.get(&2), Some(&2));
+}
+
+/// Rejected queries do not prevent later requests on the same TCP connection.
+#[tokio::test]
+#[serial]
+async fn rejected_queries_keep_the_tcp_connection_usable() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let mut stream = TcpStream::connect(("127.0.0.1", app.dns_port())).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+
+    let mut malformed = build_edns_query(zone_name, Rtype::SOA, &[]).finish();
+    malformed.truncate(12);
+    malformed[4..6].copy_from_slice(&2u16.to_be_bytes());
+    write_frame(&mut stream, &malformed).unwrap();
+    let frame = read_frame(&mut stream).unwrap().expect("FORMERR response");
+    assert_eq!(
+        Message::from_octets(frame).unwrap().header().rcode(),
+        Rcode::FORMERR
+    );
+
+    for (opcode, qtype, qclass, expected) in [
+        (Opcode::STATUS, Rtype::SOA, Class::IN, Rcode::NOTIMP),
+        (Opcode::QUERY, Rtype::A, Class::IN, Rcode::REFUSED),
+        (Opcode::QUERY, Rtype::SOA, Class::CH, Rcode::NOTAUTH),
+    ] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(1234);
+        builder.header_mut().set_opcode(opcode);
+        let mut question = builder.question();
+        question
+            .push((&parse_name(zone_name).unwrap(), qtype, qclass))
+            .unwrap();
+        write_frame(&mut stream, &question.finish()).unwrap();
+        let frame = read_frame(&mut stream).unwrap().expect("refusal response");
+        let response = Message::from_octets(frame).unwrap();
+        assert_eq!(response.header().id(), 1234);
+        assert_eq!(response.header().rcode(), expected);
+
+        let query = build_edns_query(zone_name, Rtype::SOA, &[]).finish();
+        write_frame(&mut stream, &query).unwrap();
+        let frame = read_frame(&mut stream)
+            .unwrap()
+            .expect("SOA response after refusal");
+        let response = Message::from_octets(frame).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        assert_eq!(response.header_counts().ancount(), 1);
+    }
 }
 
 /// Verify that a question of another class is NOTAUTH, its class echoed

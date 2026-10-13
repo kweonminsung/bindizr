@@ -526,13 +526,13 @@ fn outbound_responses_require_full_length_macs() {
         if mac_len == 32 {
             result.unwrap();
         } else {
-            assert!(matches!(result, Err(VerifyAnswerError::TruncatedMac)));
+            assert!(matches!(result, Err(VerifyResponseError::TruncatedMac)));
         }
         let mac_end = response.len() - 7;
         response[mac_end] ^= 1;
         assert!(matches!(
             verify_response(&client, &response),
-            Err(VerifyAnswerError::Rejected(_))
+            Err(VerifyResponseError::Rejected(_))
         ));
     }
 }

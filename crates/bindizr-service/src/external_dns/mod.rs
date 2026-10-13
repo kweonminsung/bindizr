@@ -19,25 +19,23 @@ use crate::{
     error::ServiceError,
     grant_pattern::pattern_domain,
     model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey},
-    types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
+    types::{AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse, ExternalDnsRecord},
 };
 
-/// Rows per round trip: enough that an ordinary zone takes one or two, few
-/// enough that the rows in flight stay under the group they fold into. Only
-/// the read is paged; the protocol wants every endpoint in one answer.
+/// DB read page size; the protocol still returns all endpoints in one response.
 const RECORD_READ_PAGE: u32 = 5_000;
 
 /// Normalize desired records with the apply flow's rules for AdjustEndpoints.
 /// No caller is needed: only the request's own payload is read.
 pub fn adjust_records(
-    request: &ExternalDnsAdjustRequest,
-) -> Result<ExternalDnsAdjustResponse, ServiceError> {
+    request: &AdjustExternalDnsRecordsRequest,
+) -> Result<AdjustExternalDnsRecordsResponse, ServiceError> {
     let records = request
         .records
         .iter()
         .map(change_set::adjust_record_set)
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(ExternalDnsAdjustResponse { records })
+    Ok(AdjustExternalDnsRecordsResponse { records })
 }
 
 /// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
@@ -69,9 +67,7 @@ pub async fn list_managed_domains(
             .collect());
     };
 
-    // Deduplicated and ordered: two grants can name one domain. A pattern
-    // lacking a sync action for every type the provider writes would fail
-    // every sync it reaches.
+    // Deduplicate grant domains and require sync actions for every writable type.
     let mut domains = BTreeSet::new();
     for zone in &zones {
         for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, EXTERNAL_DNS_RECORD_TYPES) {
@@ -83,9 +79,8 @@ pub async fn list_managed_domains(
     Ok(domains.into_iter().collect())
 }
 
-/// Records of all zones the caller may manage, restricted to the
-/// ExternalDNS-supported record types: one per name and type, with absolute
-/// owner names and sorted presentation-form values.
+/// List manageable ExternalDNS records grouped by name/type, with absolute
+/// owners and sorted presentation values.
 pub async fn list_records(
     cx: &Context,
     caller: &Caller,

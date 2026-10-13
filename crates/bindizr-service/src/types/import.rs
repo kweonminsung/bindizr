@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::version::RecordDiff;
+use super::version::RecordDiffResponse;
 
 /// How parsed records are reconciled with the records already in the zone.
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
@@ -45,12 +45,10 @@ pub struct ImportZoneRequest {
     /// file; they are counted as skipped and listed in `skipped_records`.
     #[serde(default)]
     pub skip_unsupported: bool,
-    /// Create the zone from the file's SOA when it does not exist yet, which
-    /// needs `zone:create` and the mode's record actions in all zones. Its
-    /// initial serial must be 1..=2137483647; an unsupported serial rejects
-    /// both a dry run and an apply without creating the zone. Applying record
-    /// changes advances the serial once. Without this a missing zone is an
-    /// error, so a typo creates nothing.
+    /// Create a missing zone from the SOA; otherwise a missing zone is an error.
+    /// Requires `zone:create` and the mode's record actions in all zones.
+    /// The initial serial must be 1..=2137483647 for previews and writes alike;
+    /// applying record changes advances it once.
     #[serde(default)]
     pub create: bool,
 }
@@ -62,9 +60,9 @@ pub struct ImportZoneResponse {
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
-    pub summary: ImportSummary,
+    pub summary: ImportZoneSummaryResponse,
     /// The reconcile as a record diff, for previewing the change.
-    pub diff: RecordDiff,
+    pub diff: RecordDiffResponse,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
     /// Records passed over under `skip_unsupported`.
@@ -80,11 +78,9 @@ impl ImportZoneResponse {
     }
 }
 
-/// Counts of records parsed, added, deleted, updated, unchanged, and skipped
-/// during import. `updated` is a TTL-only reconcile and is never also counted
-/// as `unchanged`.
+/// Import record counts; `updated` counts TTL-only changes and excludes `unchanged`.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
-pub struct ImportSummary {
+pub struct ImportZoneSummaryResponse {
     #[schema(example = 12)]
     pub parsed: u64,
     #[schema(example = 8)]

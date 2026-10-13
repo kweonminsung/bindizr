@@ -22,12 +22,10 @@ use crate::{
     },
     record::validate_record_constraints,
     ttl::validate_record_ttl,
-    types::{ExternalDnsChangesRequest, ExternalDnsRecord},
+    types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord},
 };
 
-/// One desired record set operation as the request spells it: values are
-/// row-encoded, but the owner is still an absolute lookup name with no zone
-/// resolved yet.
+/// A desired operation with row-encoded values and an absolute owner, before zone resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordSetOp {
     pub(crate) name: String,
@@ -134,9 +132,8 @@ pub(crate) fn parse_record_set_op(record: &ExternalDnsRecord) -> Result<RecordSe
     })
 }
 
-/// One record in the canonical form `apply_changes` would store and
-/// `list_records` return. Unparseable values pass through so apply reports
-/// its ordinary error; the name is echoed as sent.
+/// Canonicalize a desired record for apply/list, preserving the submitted name.
+/// Leave invalid values for apply to report through its normal validation.
 pub(crate) fn adjust_record_set(
     record: &ExternalDnsRecord,
 ) -> Result<ExternalDnsRecord, ServiceError> {
@@ -167,7 +164,7 @@ pub(crate) fn adjust_record_set(
 /// Flatten the request into ordered operations; an update becomes
 /// delete(old) + add(new), with unchanged pairs canceling later.
 pub(crate) fn parse_changes_request(
-    request: &ExternalDnsChangesRequest,
+    request: &ApplyExternalDnsChangesRequest,
 ) -> Result<Vec<PendingOp>, ServiceError> {
     let mut ops = Vec::new();
     for record_set in &request.deletes {

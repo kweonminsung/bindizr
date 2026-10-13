@@ -40,7 +40,7 @@ pub use status::{
 pub use withdraw::{cancel_withdrawal, withdraw};
 
 use crate::{
-    Context, Transaction,
+    Transaction,
     authorization::Caller,
     error::ServiceError,
     model::{
@@ -65,10 +65,8 @@ pub(crate) struct SignedZone {
     pub(crate) keys: Vec<DnssecKey>,
 }
 
-/// Recompute the zone's signed view inside the caller's mutation
-/// transaction, journaling the delta under `new_serial`. No-op for an
-/// unsigned zone. The caller holds the zone row lock and calls this after
-/// its record writes, before `advance_serial_tx`.
+/// Sign and journal under `new_serial`; unsigned zones are unchanged.
+/// Call with the zone locked, after record writes and before `advance_serial_tx`.
 pub(crate) async fn sign_zone_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -83,12 +81,10 @@ pub(crate) async fn sign_zone_tx(
     Ok(())
 }
 
-/// Re-sign the locked zone under a freshly advanced serial, riding the
-/// same serial/IXFR mechanics as any record change; `None` (serial kept)
-/// when nothing needed replacing.
+/// Re-sign the locked zone and advance its serial/history only if signatures changed.
+/// Return `None` and keep the serial when nothing needed replacing.
 async fn resign_zone_tx(
     tx: &mut Transaction<'_>,
-    cx: &Context,
     signed: &SignedZone,
     pass: SigningPass,
     attribution: &ChangeAttribution,
@@ -106,7 +102,7 @@ async fn resign_zone_tx(
     {
         return Ok(None);
     }
-    zone::advance_serial_tx(tx, cx, &signed.zone, new_serial, attribution).await?;
+    zone::advance_serial_tx(tx, &signed.zone, new_serial, attribution).await?;
     Ok(Some(new_serial))
 }
 

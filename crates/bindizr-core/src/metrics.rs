@@ -183,7 +183,7 @@ impl Metrics {
 
         let zone_serial_bumps_total = IntCounter::new(
             "bindizr_zone_serial_bumps_total",
-            "Zone serial writes across every update path.",
+            "Committed zone serial writes across every update path.",
         )
         .map_err(RegisterMetricsError)?;
         register(&registry, &zone_serial_bumps_total)?;
@@ -523,9 +523,9 @@ impl Metrics {
             .inc_by(version_rows);
     }
 
-    /// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
-    pub fn track_serial_bump(&self) {
-        self.zone_serial_bumps_total.inc();
+    /// Count serial versions only after their transaction commits.
+    pub fn track_serial_bumps(&self, count: u64) {
+        self.zone_serial_bumps_total.inc_by(count);
     }
 
     /// Increment the counter for a DNSSEC scheduler pass result.

@@ -1,6 +1,6 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateTsigKeyRequest, GetTsigKeyResponse, MessageResponse, PaginatedResponse, TsigKeyFilter,
+    CreateTsigKeyRequest, MessageResponse, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter,
     TsigKeyResponse,
 };
 use clap::Subcommand;
@@ -92,7 +92,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             role,
             output,
         } => {
-            let res = client::send_command::<TsigKeyResponse>(DaemonCommand::CreateTsigKey(
+            let res = client::send_command::<SingleTsigKeyResponse>(DaemonCommand::CreateTsigKey(
                 CreateTsigKeyRequest {
                     name,
                     algorithm,
@@ -110,7 +110,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<GetTsigKeyResponse>>(
+            let res = client::send_command::<PaginatedResponse<TsigKeyResponse>>(
                 DaemonCommand::ListTsigKeys(TsigKeyFilter {
                     role_name: role,
                     limit,
@@ -123,13 +123,15 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
         }
         TsigKeyCommand::Get { name, output } => {
             let res =
-                client::send_command::<TsigKeyResponse>(DaemonCommand::GetTsigKey { name }).await?;
+                client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
+                    .await?;
             log::debug!("TSIG key get result: {:?}", res);
             print_response(&res.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::Export { name } => {
             let res =
-                client::send_command::<TsigKeyResponse>(DaemonCommand::GetTsigKey { name }).await?;
+                client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
+                    .await?;
             print_bind_key(&res.data);
         }
         TsigKeyCommand::Delete { name, output } => {
@@ -148,7 +150,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
 /// The `key` statement BIND, Knot and NSD all read a TSIG key from, so the
 /// secret reaches a secondary as something to paste rather than reformat.
-fn print_bind_key(key: &TsigKeyResponse) {
+fn print_bind_key(key: &SingleTsigKeyResponse) {
     outln!("key \"{}\" {{", key.tsig_key.name);
     outln!("    algorithm {};", key.tsig_key.algorithm);
     outln!("    secret \"{}\";", key.secret);

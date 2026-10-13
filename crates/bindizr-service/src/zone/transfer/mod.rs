@@ -4,9 +4,9 @@
 use bindizr_core::{dns::name::ZoneName, model::role_grant::Action};
 use bindizr_db::LockLevel;
 
-mod delta;
+mod ixfr;
 
-pub use delta::{TransferDelta, authorize_transfer_delta_by_name};
+pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
 use crate::{
     Context, Transaction,

@@ -1,6 +1,4 @@
-//! Outbound queries and the responses they expect: building a question,
-//! and reading back NOTIFY acknowledgements, SOA serials, parent DS answers,
-//! and zone-transfer records.
+//! Build outbound DNS questions and parse NOTIFY, SOA, DS, and transfer responses.
 
 use domain::{
     base::{
@@ -13,7 +11,11 @@ use domain::{
 };
 use thiserror::Error;
 
-use crate::dns::{LibraryError, dnssec::KeyTag};
+use crate::dns::{
+    LibraryError,
+    dnssec::KeyTag,
+    record::{EncodeRdataError, Rdata},
+};
 
 /// Why an answer bindizr asked for could not be read as one.
 #[derive(Debug, Error)]
@@ -40,6 +42,8 @@ pub enum ReadResponseError {
     MalformedAnswerRecord(#[source] LibraryError),
     #[error("transfer carries a class {class} record for {owner}")]
     ForeignClass { class: Class, owner: String },
+    #[error(transparent)]
+    Rdata(#[from] EncodeRdataError),
     /// The NOTIFY acknowledgement did not read as one; the source says why.
     #[error("NOTIFY {0}")]
     Notify(#[source] Box<ReadResponseError>),
@@ -162,15 +166,14 @@ fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, Read
     Ok(message)
 }
 
-/// One answer record from a zone-transfer response, in presentation form.
+/// One answer record with uncompressed, canonical RDATA.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferRecord {
     /// Owner name as an absolute presentation name (trailing dot).
     pub name: String,
     pub rtype: Rtype,
     pub ttl: u32,
-    /// RDATA in standard presentation form.
-    pub rdata: String,
+    pub rdata: Rdata,
 }
 
 /// Validate one AXFR response message and collect every answer record; the
@@ -214,33 +217,15 @@ pub fn extract_transfer_records(
                 owner: record.owner().to_string(),
             });
         }
-        // Every embedded rdata name renders absolute except the SRV
-        // target; left bare, re-parsing would requalify it.
-        let rdata = match record.data() {
-            AllRecordData::Srv(srv) => {
-                let target = srv.target().to_string();
-                let target = if target == "." {
-                    target
-                } else {
-                    format!("{}.", target)
-                };
-                format!(
-                    "{} {} {} {}",
-                    srv.priority(),
-                    srv.weight(),
-                    srv.port(),
-                    target
-                )
-            }
-            data => data.to_string(),
-        };
+        let mut rdata = Vec::new();
+        let Ok(()) = record.data().compose_canonical_rdata(&mut rdata);
         records.push(TransferRecord {
             // Display omits the root dot; the absolute form keeps the
             // import parser from re-qualifying the name.
             name: format!("{}.", record.owner()),
             rtype: record.rtype(),
             ttl: record.ttl().as_secs(),
-            rdata,
+            rdata: Rdata::new(rdata)?,
         });
     }
     Ok(records)
@@ -323,9 +308,8 @@ pub struct DsRecord {
     pub rdata: Vec<u8>,
 }
 
-/// Read a parent server's answer to a DS question: `Some` with the record set,
-/// `None` for an authoritative NODATA or NXDOMAIN. A non-authoritative
-/// answer is refused: a cache may lag the parent.
+/// Read an authoritative DS answer, or `None` for NODATA/NXDOMAIN.
+/// Reject non-authoritative answers because cached parent data may be stale.
 pub fn extract_ds_record_set(
     query_id: u16,
     qname: &Name<Vec<u8>>,

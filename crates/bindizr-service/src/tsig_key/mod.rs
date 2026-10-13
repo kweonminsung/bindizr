@@ -20,7 +20,8 @@ use crate::{
     text::MAX_COLUMN_TEXT_LEN,
     transaction,
     types::{
-        CreateTsigKeyRequest, GetTsigKeyResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
+        CreateTsigKeyRequest, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter,
+        TsigKeyResponse,
     },
 };
 
@@ -34,7 +35,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateTsigKeyRequest,
-) -> Result<TsigKeyResponse, ServiceError> {
+) -> Result<SingleTsigKeyResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_key_name(&request.name)?;
@@ -92,7 +93,7 @@ pub async fn create(
     .await;
     let tsig_key = transaction::finish_tx(tx, result, "failed to create TSIG key").await?;
 
-    Ok(TsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
+    Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
 }
 
 /// List the TSIG keys, every one or one role's.
@@ -100,7 +101,7 @@ pub async fn list(
     cx: &Context,
     caller: &Caller,
     filter: &TsigKeyFilter,
-) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
+) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let keys = match &filter.role_name {
@@ -119,7 +120,7 @@ pub async fn list(
         keys.iter()
             .map(|tsig_key| {
                 let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
-                GetTsigKeyResponse::from_tsig_key(tsig_key, role_name)
+                TsigKeyResponse::from_tsig_key(tsig_key, role_name)
             })
             .collect(),
         filter.limit,
@@ -132,14 +133,14 @@ pub async fn get(
     cx: &Context,
     caller: &Caller,
     name: &str,
-) -> Result<TsigKeyResponse, ServiceError> {
+) -> Result<SingleTsigKeyResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let tsig_key = lookup_by_name(cx, name).await?;
     let role = bindizr_db::role::get(cx.db(), tsig_key.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(tsig_key.role_id))?;
-    Ok(TsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
+    Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
 }
 
 /// Fetch one TSIG key by name. This is the unchecked lookup for

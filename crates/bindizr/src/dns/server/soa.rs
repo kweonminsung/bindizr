@@ -19,7 +19,7 @@ use bindizr_service::{
 use tokio::net::UdpSocket;
 
 use crate::dns::{
-    error::XfrError,
+    error::DnsError,
     server::{
         DnsContext,
         auth::{TransferIdentity, TransferRefusal, authenticate_transfer, authorize_transport},
@@ -36,7 +36,7 @@ pub(crate) async fn handle_tcp_soa(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let (response, outcome) = handle_soa_request(
         dns_cx,
@@ -63,7 +63,7 @@ pub(crate) async fn handle_udp_soa(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let (response, outcome) = handle_soa_request(
         dns_cx,
@@ -91,7 +91,7 @@ pub(crate) async fn handle_udp_ixfr(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let (response, outcome) = handle_soa_request(
         dns_cx,
@@ -141,7 +141,7 @@ async fn handle_soa_request(
     query_data: &[u8],
     transport: TransferTransport,
     max_len: usize,
-) -> Result<(Vec<u8>, SoaResult), XfrError> {
+) -> Result<(Vec<u8>, SoaResult), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 

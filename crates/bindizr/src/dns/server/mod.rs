@@ -23,16 +23,14 @@ use bindizr_core::{
 };
 use bindizr_service::{Context, transfer};
 
-use crate::dns::{error::XfrError, stream::ResponseWriter};
+use crate::dns::{error::DnsError, stream::ResponseWriter};
 
-/// The DNS front end's context: the daemon's, plus the caches only this
-/// front end reads. A handler takes it first as `dns_cx` and binds the
-/// daemon's from it as `cx`.
+/// DNS-specific caches and daemon context; handlers take `dns_cx` and derive `cx`.
 #[derive(Debug)]
 pub(crate) struct DnsContext {
     daemon: Arc<Context>,
     pub(crate) transfer_cache: transfer_cache::TransferCache,
-    pub(crate) acl: acl::ResolvedAddrs,
+    pub(crate) address_cache: acl::AddressCache,
 }
 
 impl DnsContext {
@@ -41,7 +39,7 @@ impl DnsContext {
         DnsContext {
             daemon,
             transfer_cache: transfer_cache::TransferCache::new(),
-            acl: acl::ResolvedAddrs::new(),
+            address_cache: acl::AddressCache::new(),
         }
     }
 
@@ -65,7 +63,7 @@ pub(crate) async fn handle_tcp_xfr(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let client_ip = client_addr.ip();
     let transport = writer.transport();
@@ -121,7 +119,7 @@ pub(crate) async fn handle_tcp_xfr(
         Rtype::IXFR => ixfr::handle_ixfr(dns_cx, writer, query, client_ip, &mut identity).await,
         _ => {
             log::warn!("Unsupported query type: {:?}", query.qtype);
-            return Err(XfrError::InvalidQuery(format!(
+            return Err(DnsError::InvalidQuery(format!(
                 "Unsupported query type: {:?}",
                 query.qtype
             )));
@@ -135,7 +133,7 @@ pub(crate) async fn handle_tcp_xfr(
             track_result(XfrResult::Ok);
             Ok(())
         }
-        Err(XfrError::NotAuth(_)) => {
+        Err(DnsError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
             let response = query.build_signed_error_response(
                 OptRcode::NOTAUTH,
@@ -145,7 +143,7 @@ pub(crate) async fn handle_tcp_xfr(
             writer.write_message(&response).await?;
             Ok(())
         }
-        Err(XfrError::Refused(reason)) => {
+        Err(DnsError::Refused(reason)) => {
             track_result(XfrResult::Refused);
             log::warn!(
                 "Refused XFR {} query from {}: {}",

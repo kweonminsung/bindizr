@@ -10,8 +10,8 @@ use axum::{
 use bindizr_service::{
     Context, tsig_key,
     types::{
-        CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetTsigKeyResponse,
-        MessageResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
+        CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, MessageResponse,
+        PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse,
     },
 };
 
@@ -42,7 +42,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(TsigKeyFilter),
         description = "Lists TSIG keys without their secrets, every one or only those authenticating into `role_name`. Fetch a single key to read the secret.",
         responses(
-            (status = 200, description = "All TSIG keys", body = PaginatedResponse<GetTsigKeyResponse>),
+            (status = 200, description = "All TSIG keys", body = PaginatedResponse<TsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -67,7 +67,7 @@ pub(crate) async fn list_tsig_keys(
         description = "Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). The key authenticates into `role_name`, whose grants decide what updates and transfers it may sign. The response includes the secret.",
         request_body = CreateTsigKeyRequest,
         responses(
-            (status = 201, description = "TSIG key created successfully", body = TsigKeyResponse),
+            (status = 201, description = "TSIG key created successfully", body = SingleTsigKeyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -96,7 +96,7 @@ pub(crate) async fn create_tsig_key(
             ("name" = String, Path, description = "The name of the TSIG key.")
         ),
         responses(
-            (status = 200, description = "The TSIG key", body = TsigKeyResponse),
+            (status = 200, description = "The TSIG key", body = SingleTsigKeyResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),

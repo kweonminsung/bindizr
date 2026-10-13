@@ -12,8 +12,8 @@ use bindizr_service::{
     role::grant,
     token,
     types::{
-        CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        GetRoleGrantResponse, GetTokenResponse, MessageResponse, PageRequest, PaginatedResponse,
+        CreateTokenRequest, CreateTokenResponse, DEFAULT_PAGE_LIMIT, ErrorResponse,
+        MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, SingleTokenResponse,
         TokenFilter, TokenResponse,
     },
 };
@@ -46,7 +46,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(TokenFilter),
         description = "Lists API tokens without their secrets, every one or only those authenticating into `role_name`; a secret is shown once, in the create response.",
         responses(
-            (status = 200, description = "All API tokens", body = PaginatedResponse<GetTokenResponse>),
+            (status = 200, description = "All API tokens", body = PaginatedResponse<TokenResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -71,7 +71,7 @@ pub(crate) async fn list_tokens(
         description = "Creates an API token in a role and returns its secret, the one time it is shown. The role's grants decide what the token may do.",
         request_body = CreateTokenRequest,
         responses(
-            (status = 201, description = "API token created; the response carries the secret", body = CreatedTokenResponse),
+            (status = 201, description = "API token created; the response carries the secret", body = CreateTokenResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -86,7 +86,7 @@ pub(crate) async fn create_token(
     JsonBody(body): JsonBody<CreateTokenRequest>,
 ) -> Result<Response, ApiError> {
     let (token, secret) = token::create(&cx, &caller, &body).await?;
-    let response = CreatedTokenResponse { token, secret };
+    let response = CreateTokenResponse { token, secret };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -98,7 +98,7 @@ pub(crate) async fn create_token(
         summary = "Describe the API token making the request",
         description = "The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.",
         responses(
-            (status = 200, description = "The calling token", body = TokenResponse),
+            (status = 200, description = "The calling token", body = SingleTokenResponse),
             (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -107,7 +107,7 @@ pub(crate) async fn get_self_token(
     State(cx): State<Arc<Context>>,
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
-    let response = TokenResponse {
+    let response = SingleTokenResponse {
         token: token::get_self(&cx, &token).await?,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -122,7 +122,7 @@ pub(crate) async fn get_self_token(
         params(PageRequest),
         description = "The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 401.",
         responses(
-            (status = 200, description = "The calling token's grants", body = PaginatedResponse<GetRoleGrantResponse>),
+            (status = 200, description = "The calling token's grants", body = PaginatedResponse<RoleGrantResponse>),
             (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

@@ -10,7 +10,7 @@ use bindizr_service::{
 };
 
 use super::{auth::TransferIdentity, catalog, transfer_cache};
-use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
+use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
 
 /// Send AXFR content with the original QTYPE, including IXFR fallback.
 /// Claim the signer only after authorization, leaving it available for refusal responses.
@@ -21,7 +21,7 @@ pub(crate) async fn handle_axfr(
     client_ip: IpAddr,
     response_qtype: Rtype,
     identity: &mut TransferIdentity,
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
@@ -34,8 +34,10 @@ pub(crate) async fn handle_axfr(
     if cx.config().dns.is_catalog_zone(zone_name_str) {
         let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
             TransferAccess::Granted(zones) => zones,
-            TransferAccess::NotAuth => return Err(XfrError::NotAuth(zone_name_str.to_string())),
-            TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
+            TransferAccess::NotAuth => {
+                return Err(DnsError::NotAuth(zone_name_str.to_string()));
+            }
+            TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
         };
         return catalog::handle_catalog_transfer(
             dns_cx,
@@ -59,9 +61,9 @@ pub(crate) async fn handle_axfr(
     let (zone, content) = match access {
         TransferAccess::Granted(found) => found,
         TransferAccess::NotAuth => {
-            return Err(XfrError::NotAuth(zone_name_str.to_string()));
+            return Err(DnsError::NotAuth(zone_name_str.to_string()));
         }
-        TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
+        TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
     };
 
     log::info!(
@@ -110,7 +112,7 @@ pub(crate) async fn handle_axfr(
             })
             .await?;
         messages_sent += writer.flush_if_not_empty(&mut builder).await?;
-        Ok::<usize, XfrError>(messages_sent)
+        Ok::<usize, DnsError>(messages_sent)
     }
     .await;
     // Handed back so a failure's SERVFAIL is signed too.

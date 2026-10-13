@@ -5,9 +5,9 @@ use bindizr_service::{
     error::ServiceError,
     record,
     types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
-        DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse,
-        RecordResponse, RecordWriteResponse, Run, UpdateRecordRequest,
+        CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
+        DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, RecordFilter,
+        RecordResponse, Run, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
     },
     zone,
 };
@@ -18,19 +18,19 @@ use crate::socket::types::DaemonResponse;
 pub(crate) async fn get_record(
     cx: &Context,
     id: RecordId,
-) -> Result<DaemonResponse<RecordResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleRecordResponse>, ServiceError> {
     let record = record::get(cx, &Caller::socket(), id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
-        data: RecordResponse { record },
+        data: SingleRecordResponse { record },
     })
 }
 
 /// Return records matching the request filters.
 pub(crate) async fn list_records(
     cx: &Context,
-    filter: GetRecordsFilter,
-) -> Result<DaemonResponse<PaginatedResponse<GetRecordResponse>>, ServiceError> {
+    filter: RecordFilter,
+) -> Result<DaemonResponse<PaginatedResponse<RecordResponse>>, ServiceError> {
     let response = record::list_with_zone_by_filter(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Records retrieved successfully".to_string(),
@@ -42,7 +42,7 @@ pub(crate) async fn list_records(
 pub(crate) async fn create_record(
     cx: &Context,
     request: &CreateRecordRequest,
-) -> Result<DaemonResponse<RecordWriteResponse>, ServiceError> {
+) -> Result<DaemonResponse<WriteRecordResponse>, ServiceError> {
     let response = record::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
@@ -59,7 +59,7 @@ pub(crate) async fn update_record(
     cx: &Context,
     id: RecordId,
     request: &UpdateRecordRequest,
-) -> Result<DaemonResponse<RecordWriteResponse>, ServiceError> {
+) -> Result<DaemonResponse<WriteRecordResponse>, ServiceError> {
     let response = record::update(cx, &Caller::socket(), id, request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
@@ -77,7 +77,7 @@ pub(crate) async fn update_record_by_name(
     zone_name: &str,
     record_name: &str,
     request: &UpdateRecordRequest,
-) -> Result<DaemonResponse<RecordWriteResponse>, ServiceError> {
+) -> Result<DaemonResponse<WriteRecordResponse>, ServiceError> {
     let response = record::update_by_name(
         cx,
         &Caller::socket(),
@@ -100,7 +100,7 @@ pub(crate) async fn update_record_by_name(
 pub(crate) async fn create_records_bulk(
     cx: &Context,
     request: &CreateBulkRecordsRequest,
-) -> Result<DaemonResponse<BulkRecordsResponse>, ServiceError> {
+) -> Result<DaemonResponse<CreateBulkRecordsResponse>, ServiceError> {
     let response = record::create_bulk(cx, &Caller::socket(), request).await?;
     let message = if response.dry_run {
         format!(

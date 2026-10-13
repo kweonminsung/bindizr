@@ -42,15 +42,15 @@ fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32)
     }
 }
 
-/// Build a desired imported record with an optional explicit TTL.
-fn desired(name: &str, record_type: RecordType, value: &str, ttl: Option<i32>) -> DesiredRecord {
+/// Build an imported record with its resolved TTL.
+fn desired(name: &str, record_type: RecordType, value: &str, ttl: i32) -> DesiredRecord {
     DesiredRecord {
-        name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
-        prepared: PreparedRecord {
-            raw_name: name.to_string(),
+        source_name: name.to_string(),
+        data: RecordData {
+            name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
             record_type,
             value: value.to_string(),
-            ttl: ttl.map(|ttl| Ttl::try_from(ttl).unwrap()),
+            ttl: Ttl::try_from(ttl).unwrap(),
             priority: None,
         },
     }
@@ -63,19 +63,16 @@ fn ids(records: &[Record]) -> Vec<RecordId> {
 
 /// Collect values added by an import plan.
 fn added<'a>(plan: &ImportPlan<'a>) -> Vec<&'a str> {
-    plan.adds
-        .iter()
-        .map(|a| a.prepared.value.as_str())
-        .collect()
+    plan.adds.iter().map(|a| a.data.value.as_str()).collect()
 }
 
 /// Verify that append never deletes what it did not ask about.
 #[test]
 fn append_never_deletes_what_it_did_not_ask_about() {
     let rows = [existing(1, "old", RecordType::A, "192.0.2.9", 300)];
-    let want = [desired("new", RecordType::A, "192.0.2.1", None)];
+    let want = [desired("new", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Append, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &rows, &want);
 
     assert!(plan.dels.is_empty());
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -89,9 +86,9 @@ fn replace_deletes_every_row_the_file_does_not_name() {
         existing(2, "drop", RecordType::A, "192.0.2.9", 300),
         existing(3, "drop", RecordType::Txt, "\"x\"", 300),
     ];
-    let want = [desired("keep", RecordType::A, "192.0.2.1", None)];
+    let want = [desired("keep", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
 
     assert_eq!(ids(&plan.dels), [RecordId::from(2), RecordId::from(3)]);
     assert_eq!(plan.unchanged, 1);
@@ -108,9 +105,9 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
         existing(2, "www", RecordType::Txt, "\"x\"", 300),
         existing(3, "other", RecordType::A, "192.0.2.8", 300),
     ];
-    let want = [desired("www", RecordType::A, "192.0.2.1", None)];
+    let want = [desired("www", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Upsert, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &rows, &want);
 
     assert_eq!(ids(&plan.dels), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -121,9 +118,9 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
 fn a_ttl_change_rewrites_the_row_rather_than_editing_it() {
     // RFC 2181, Section 5.2: the records of one name and type share a TTL.
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
-    let want = [desired("www", RecordType::A, "192.0.2.1", Some(600))];
+    let want = [desired("www", RecordType::A, "192.0.2.1", 600)];
 
-    let plan = ImportPlan::compute(ImportMode::Upsert, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &rows, &want);
 
     assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -135,9 +132,9 @@ fn a_ttl_change_rewrites_the_row_rather_than_editing_it() {
 #[test]
 fn append_keeps_a_ttl_it_disagrees_with() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
-    let want = [desired("www", RecordType::A, "192.0.2.1", Some(600))];
+    let want = [desired("www", RecordType::A, "192.0.2.1", 600)];
 
-    let plan = ImportPlan::compute(ImportMode::Append, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &rows, &want);
 
     assert!(plan.ttl_dels.is_empty());
     assert_eq!(plan.unchanged, 1);
@@ -149,9 +146,9 @@ fn an_omitted_ttl_is_the_zones_default_not_a_wildcard() {
     // A file that leaves the TTL out still reconciles against the default,
     // so a row at another TTL is stale rather than unchanged.
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 900)];
-    let want = [desired("www", RecordType::A, "192.0.2.1", None)];
+    let want = [desired("www", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
 
     assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
     assert_eq!(plan.updated, 1);
@@ -171,10 +168,10 @@ fn a_value_the_file_spells_differently_is_the_same_record() {
         "alias",
         RecordType::Cname,
         "Target.Example.COM",
-        None,
+        300,
     )];
 
-    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
 
     assert!(plan.dels.is_empty());
     assert_eq!(plan.unchanged, 1);

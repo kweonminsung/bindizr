@@ -4,8 +4,8 @@ use bindizr_service::{
     dnssec_policy,
     error::ServiceError,
     types::{
-        CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
-        PageRequest, PaginatedResponse, UpdateDnssecPolicyRequest,
+        CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
+        PaginatedResponse, SingleDnssecPolicyResponse, UpdateDnssecPolicyRequest,
     },
 };
 
@@ -15,12 +15,12 @@ use crate::socket::types::DaemonResponse;
 pub(crate) async fn create_dnssec_policy(
     cx: &Context,
     request: CreateDnssecPolicyRequest,
-) -> Result<DaemonResponse<DnssecPolicyResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
     let policy = dnssec_policy::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "DNSSEC policy created successfully".to_string(),
-        data: DnssecPolicyResponse {
-            dnssec_policy: GetDnssecPolicyResponse::from(&policy),
+        data: SingleDnssecPolicyResponse {
+            dnssec_policy: DnssecPolicyResponse::from(&policy),
         },
     })
 }
@@ -29,7 +29,7 @@ pub(crate) async fn create_dnssec_policy(
 pub(crate) async fn list_dnssec_policies(
     cx: &Context,
     page: PageRequest,
-) -> Result<DaemonResponse<PaginatedResponse<GetDnssecPolicyResponse>>, ServiceError> {
+) -> Result<DaemonResponse<PaginatedResponse<DnssecPolicyResponse>>, ServiceError> {
     let response = dnssec_policy::list(cx, &Caller::socket(), page).await?;
     Ok(DaemonResponse {
         message: "DNSSEC policies retrieved successfully".to_string(),
@@ -41,12 +41,12 @@ pub(crate) async fn list_dnssec_policies(
 pub(crate) async fn get_dnssec_policy(
     cx: &Context,
     name: &str,
-) -> Result<DaemonResponse<DnssecPolicyResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
     let policy = dnssec_policy::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "DNSSEC policy retrieved successfully".to_string(),
-        data: DnssecPolicyResponse {
-            dnssec_policy: GetDnssecPolicyResponse::from(&policy),
+        data: SingleDnssecPolicyResponse {
+            dnssec_policy: DnssecPolicyResponse::from(&policy),
         },
     })
 }
@@ -56,12 +56,12 @@ pub(crate) async fn update_dnssec_policy(
     cx: &Context,
     name: &str,
     request: UpdateDnssecPolicyRequest,
-) -> Result<DaemonResponse<DnssecPolicyResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
     let policy = dnssec_policy::update(cx, &Caller::socket(), name, request).await?;
     Ok(DaemonResponse {
         message: "DNSSEC policy updated successfully".to_string(),
-        data: DnssecPolicyResponse {
-            dnssec_policy: GetDnssecPolicyResponse::from(&policy),
+        data: SingleDnssecPolicyResponse {
+            dnssec_policy: DnssecPolicyResponse::from(&policy),
         },
     })
 }

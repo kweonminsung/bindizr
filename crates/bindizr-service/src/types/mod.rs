@@ -18,51 +18,52 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse, Run};
 pub use dnssec::{
-    DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecDsInfo, DnssecKeyInfo, DnssecKeyMaterial,
-    DnssecStatusResponse, DsCheck, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
-    Holddown, ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
-    UpdateDnssecSettingsRequest,
+    DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecDsResponse,
+    DnssecKeyMaterialResponse, DnssecKeyResponse, DnssecStatusResponse, DsCheck, DsState,
+    EnableDnssecRequest, ExportDnssecKeysResponse, Holddown, ImportDnssecKeyPair,
+    ImportDnssecKeysRequest, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
 };
 pub use dnssec_policy::{
-    CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse,
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, SingleDnssecPolicyResponse,
     UpdateDnssecPolicyRequest,
 };
 pub use external_dns::{
-    ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
-    ExternalDnsChangesResponse, ExternalDnsDomainsResponse, ExternalDnsRecord,
-    ExternalDnsRecordUpdate, ExternalDnsRecordsResponse,
+    AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
+    ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, ExternalDnsRecord,
+    ExternalDnsRecordUpdate, ListExternalDnsDomainsResponse, ListExternalDnsRecordsResponse,
 };
 pub use import::{
-    ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, ParseImportModeError,
+    ImportMode, ImportZoneRequest, ImportZoneResponse, ImportZoneSummaryResponse,
+    ParseImportModeError,
 };
-pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, Pagination};
+pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, PaginationResponse};
 pub use permission::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 pub(crate) use record::build_display_value;
 pub use record::{
-    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
-    DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter,
-    RecordResponse, RecordValue, RecordWriteResponse, ServedRecordType, UpdateRecordRequest,
+    BulkRecordItem, CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
+    DeleteRecordsRequest, DeleteRecordsResponse, RecordFilter, RecordResponse, RecordValue,
+    ServedRecordType, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
 };
 pub use role::{
-    CreateRoleGrantRequest, CreateRoleRequest, GetRoleGrantResponse, GetRoleResponse,
-    RoleGrantResponse, RoleResponse,
+    CreateRoleGrantRequest, CreateRoleRequest, RoleGrantResponse, RoleResponse,
+    SingleRoleGrantResponse, SingleRoleResponse,
 };
 pub use secondary::{
-    CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, NotifyCheckResponse,
-    SecondaryCheckResponse, SecondaryResponse, SecondaryTransferSummary,
-    SecondaryTransfersResponse, TransferResponse, TransferSummary, UpdateSecondaryRequest,
+    CheckNotifyResponse, CheckSecondaryResponse, CreateSecondaryRequest, SecondaryResponse,
+    SecondaryTransferFilter, SecondaryTransferSummaryResponse, SecondaryTransfersResponse,
+    SingleSecondaryResponse, TransferResponse, TransferSummaryResponse, UpdateSecondaryRequest,
 };
 pub use token::{
-    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenFilter, TokenResponse,
+    CreateTokenRequest, CreateTokenResponse, SingleTokenResponse, TokenFilter, TokenResponse,
 };
-pub use tsig::{CreateTsigKeyRequest, GetTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
+pub use tsig::{CreateTsigKeyRequest, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
 pub use version::{
-    RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
-    RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,
-    ZoneVersionResponse,
+    DiffZoneVersionsResponse, GetZoneVersionResponse, RecordChange, RecordDiffEntryResponse,
+    RecordDiffResponse, RecordDiffSummaryResponse, RecordDiffValueResponse, RollbackZoneResponse,
+    RollbackZoneSummaryResponse, VersionRecordResponse, ZoneVersionResponse,
 };
 pub use zone::{
-    CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    NotifySerial, SecondaryStatus, SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse,
-    ZoneStatusResponse, ZoneView, ZoneWriteResponse, build_notify_message,
+    CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, NotifySerial, SecondaryStatus,
+    SecondaryStatusResponse, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter,
+    ZoneResponse, ZoneStatusResponse, ZoneView, build_notify_message,
 };

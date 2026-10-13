@@ -111,9 +111,8 @@ pub struct Update<'a> {
     pub message: &'a [u8],
 }
 
-/// Apply an update as one transaction for `caller`, reporting whether it
-/// changed anything; on a change the zone serial advances once and a NOTIFY
-/// follows the commit.
+/// Apply an authorized UPDATE atomically; changes advance the serial once and
+/// trigger NOTIFY after commit.
 pub async fn apply(
     cx: &Context,
     caller: &Caller,
@@ -184,20 +183,15 @@ pub async fn apply(
         }
 
         if changed {
+            zone::validate_record_changes_tx(&mut tx, &plan.zone, &[], &[]).await?;
             if plan.soa_changed {
                 let changes = zone::soa_replacement_changes(&zone, &plan.zone, new_serial)?;
                 bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
             }
             let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
             dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
-            zone::save_version_tx(
-                &mut tx,
-                cx,
-                &updated,
-                new_serial,
-                caller.change_attribution(),
-            )
-            .await?;
+            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_attribution())
+                .await?;
         }
 
         Ok((changed, zone, new_serial))
@@ -208,6 +202,7 @@ pub async fn apply(
         transaction::finish_tx(tx, apply_result, "failed to commit NSUPDATE transaction").await?;
 
     if changed {
+        cx.metrics().track_serial_bumps(1);
         log::info!(
             "event=nsupdate_apply zone={} serial={}",
             zone.name,

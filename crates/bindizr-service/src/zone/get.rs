@@ -1,5 +1,5 @@
 use bindizr_core::dns::name::ZoneName;
-use bindizr_db::{LockLevel, zone::ZoneFilter};
+use bindizr_db::LockLevel;
 
 use crate::{
     Context, Transaction,
@@ -8,7 +8,7 @@ use crate::{
     model::zone::Zone,
     pagination::{build_paginated_response, normalize_page_limit, parse_setting},
     serial::validate_stored_serial,
-    types::{GetZoneResponse, GetZonesFilter, PaginatedResponse},
+    types::{PaginatedResponse, ZoneFilter, ZoneResponse},
 };
 
 /// The DNS plane's view of a zone: a disabled one is absent rather than
@@ -23,9 +23,8 @@ pub(crate) async fn find_served_by_name_tx(
         .filter(|zone| zone.enabled))
 }
 
-/// Fetch a zone by name within the caller's transaction at `lock_level`,
-/// whether or not it is served. The import reads it this way because a
-/// disabled zone still takes records.
+/// Read a zone in the caller's transaction at `lock_level`, including disabled zones
+/// so imports can still write their records.
 pub(crate) async fn find_by_name_tx(
     tx: &mut Transaction<'_>,
     zone_name: &ZoneName,
@@ -51,16 +50,16 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
 
 /// All zones, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(bindizr_db::zone::count_by_filter(cx.db(), ZoneFilter::default()).await?)
+    Ok(bindizr_db::zone::count_by_filter(cx.db(), bindizr_db::zone::ZoneFilter::default()).await?)
 }
 
 /// Count the zones visible to `caller`.
 pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
     Ok(bindizr_db::zone::count_by_filter(
         cx.db(),
-        ZoneFilter {
+        bindizr_db::zone::ZoneFilter {
             scope_role_id: caller.scope_role_id(),
-            ..ZoneFilter::default()
+            ..bindizr_db::zone::ZoneFilter::default()
         },
     )
     .await?)
@@ -71,8 +70,8 @@ pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
 pub async fn list_by_filter(
     cx: &Context,
     caller: &Caller,
-    filter: GetZonesFilter,
-) -> Result<PaginatedResponse<GetZoneResponse>, ServiceError> {
+    filter: ZoneFilter,
+) -> Result<PaginatedResponse<ZoneResponse>, ServiceError> {
     let scope_role_id = caller.scope_role_id();
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;
@@ -80,7 +79,7 @@ pub async fn list_by_filter(
     let min_serial = filter.min_serial.map(validate_stored_serial).transpose()?;
     let max_serial = filter.max_serial.map(validate_stored_serial).transpose()?;
 
-    let zone_filter = ZoneFilter {
+    let zone_filter = bindizr_db::zone::ZoneFilter {
         name: filter.name,
         id: filter.id,
         mname: filter.mname,
@@ -105,7 +104,7 @@ pub async fn list_by_filter(
 
     let total = bindizr_db::zone::count_by_filter(cx.db(), zone_filter.clone()).await?;
     let zones = bindizr_db::zone::list_by_filter(cx.db(), zone_filter).await?;
-    let items = zones.iter().map(GetZoneResponse::from).collect();
+    let items = zones.iter().map(ZoneResponse::from).collect();
     Ok(build_paginated_response(items, limit, offset, total))
 }
 
@@ -130,19 +129,6 @@ pub(crate) async fn lookup_by_name(
     bindizr_db::zone::get_by_name(cx.db(), zone_name)
         .await?
         .ok_or_else(|| ServiceError::zone_not_found(zone_name))
-}
-
-/// Fetch and lock a zone for `caller`, returning `NotFound` when invisible.
-/// Check visibility on the locked row so same-name recreation cannot substitute another zone.
-pub(crate) async fn get_by_name_tx(
-    tx: &mut Transaction<'_>,
-    caller: &Caller,
-    zone_name: &ZoneName,
-    lock_level: LockLevel,
-) -> Result<Zone, ServiceError> {
-    let zone = lookup_by_name_tx(tx, zone_name, lock_level).await?;
-    caller.authorize_zone_visible(&zone)?;
-    Ok(zone)
 }
 
 /// Fetch a zone without a visibility check inside the flow's transaction at

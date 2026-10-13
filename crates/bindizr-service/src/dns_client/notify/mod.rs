@@ -14,7 +14,7 @@ use thiserror::Error;
 use super::{ExchangeError, ResolveAddressError};
 use crate::{
     Context, error::ServiceError, model::secondary::Secondary, secondary,
-    types::NotifyCheckResponse,
+    types::CheckNotifyResponse,
 };
 
 /// Why one NOTIFY to one address was not acknowledged.
@@ -25,7 +25,7 @@ pub enum SendNotifyError {
     #[error(transparent)]
     Exchange(#[from] ExchangeError),
     #[error(transparent)]
-    Verify(#[from] bindizr_core::dns::tsig::VerifyAnswerError),
+    Verify(#[from] bindizr_core::dns::tsig::VerifyResponseError),
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ReadResponseError),
     #[error("NOTIFY task failed: {0}")]
@@ -78,7 +78,7 @@ pub(crate) async fn send_zone_notify(
 pub async fn send_notify_to_secondaries(
     cx: &Context,
     zone_name: &ZoneName,
-) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
     send_notify(cx, zone_name, secondaries).await
 }
@@ -89,7 +89,7 @@ pub async fn send_notify_to_secondary(
     cx: &Context,
     zone_name: &ZoneName,
     secondary: &Secondary,
-) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
     send_notify(cx, zone_name, vec![secondary.clone()]).await
 }
 
@@ -99,7 +99,7 @@ async fn send_notify(
     cx: &Context,
     zone_name: &ZoneName,
     secondaries: Vec<Secondary>,
-) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
     // The zone name is a stored row, so one that does not parse is the
     // server's fault.
     let qname = zone_name
@@ -108,9 +108,7 @@ async fn send_notify(
     let timeout = cx.config().dns.notify.timeout();
     let retries = cx.config().dns.notify.retries;
 
-    // A secondary that never answers must cost its own timeouts, not the
-    // others': each sends on a task of its own, the key lookup and metrics
-    // stay on this one.
+    // Send concurrently so an unresponsive secondary cannot delay the others.
     let mut reports = Vec::new();
     let mut tasks = Vec::with_capacity(secondaries.len());
     for secondary in secondaries {
@@ -118,7 +116,7 @@ async fn send_notify(
             Ok(tsig_key) => tsig_key,
             Err(e) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
-                reports.push(NotifyCheckResponse {
+                reports.push(CheckNotifyResponse {
                     address: secondary.address.to_string(),
                     error: Some(e.to_string()),
                 });
@@ -147,7 +145,7 @@ async fn send_notify(
             Ok(Ok(outcomes)) => outcomes,
             Ok(Err(e)) => {
                 cx.metrics().track_notify(NotifyResult::ResolveFailed);
-                reports.push(NotifyCheckResponse {
+                reports.push(CheckNotifyResponse {
                     address: address.to_string(),
                     error: Some(format!("failed to resolve: {}", e)),
                 });
@@ -155,7 +153,7 @@ async fn send_notify(
             }
             Err(e) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
-                reports.push(NotifyCheckResponse {
+                reports.push(CheckNotifyResponse {
                     address: address.to_string(),
                     error: Some(SendNotifyError::TaskFailed(e).to_string()),
                 });
@@ -175,7 +173,7 @@ async fn send_notify(
                     Some(e.to_string())
                 }
             };
-            reports.push(NotifyCheckResponse {
+            reports.push(CheckNotifyResponse {
                 address: addr.to_string(),
                 error,
             });

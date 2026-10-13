@@ -3,43 +3,15 @@ use bindizr_db::LockLevel;
 
 use crate::{
     Context, authorization::Caller, dnssec, error::ServiceError, model::zone::Zone,
-    notify::NotifyTarget, serial::generate_serial, transaction,
+    serial::generate_serial, transaction,
 };
 
-/// Force-increment the serial of one zone by name, or of all zones, as far as
-/// `caller` may update each.
+/// Advance a named zone's serial and save its signed version atomically.
 pub(crate) async fn force_increment_serial(
     cx: &Context,
     caller: &Caller,
-    target: NotifyTarget<'_>,
-) -> Result<Vec<Zone>, ServiceError> {
-    match target {
-        NotifyTarget::Zone(name) => {
-            let zone = force_increment_serial_by_name(cx, caller, name).await?;
-            Ok(vec![zone])
-        }
-        NotifyTarget::All => {
-            let zones = super::list(cx).await?;
-            let mut bumped_zones = Vec::with_capacity(zones.len());
-
-            for zone in zones {
-                // Bump each zone in its own transaction so the new serial
-                // derives from the current row and a concurrent edit to other
-                // fields is not clobbered.
-                bumped_zones.push(force_increment_serial_by_name(cx, caller, &zone.name).await?);
-            }
-
-            Ok(bumped_zones)
-        }
-    }
-}
-
-/// Advance a named zone's serial and save its signed version atomically.
-async fn force_increment_serial_by_name(
-    cx: &Context,
-    caller: &Caller,
     zone_name: &ZoneName,
-) -> Result<Zone, ServiceError> {
+) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to force increment zone serial").await?;
 
     let apply_result = async {
@@ -68,7 +40,6 @@ async fn force_increment_serial_by_name(
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
         super::save_version_tx(
             &mut tx,
-            cx,
             &updated_zone,
             new_serial,
             caller.change_attribution(),
@@ -82,6 +53,7 @@ async fn force_increment_serial_by_name(
     let updated_zone =
         transaction::finish_tx(tx, apply_result, "failed to force increment zone serial").await?;
 
+    cx.metrics().track_serial_bumps(1);
     log::info!(
         "event=zone_force_serial zone={} new_serial={} zone_id={}",
         updated_zone.name,
@@ -89,5 +61,5 @@ async fn force_increment_serial_by_name(
         updated_zone.id
     );
 
-    Ok(updated_zone)
+    Ok(())
 }

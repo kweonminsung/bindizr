@@ -360,8 +360,7 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
          www IN A 192.0.2.10\n"
     );
 
-    // A dry run plans against a zone it creates in the same transaction, and
-    // discards both.
+    // A dry run plans the new zone and records without inserting either.
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -402,6 +401,16 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
     assert_eq!(zone["minimum_ttl"], 300);
     // The import advanced it once for the records it added.
     assert_eq!(zone["serial"], 2026091602);
+    let default_ttl = zone["default_ttl"].clone();
+    let (status, records) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(records["items"][0]["ttl"], default_ttl);
 }
 
 /// Reject unsupported source serials without creating a zone, in previews and applies.

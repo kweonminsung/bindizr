@@ -16,7 +16,7 @@ use bindizr_core::{
 use bindizr_service::{authorization::Caller, tsig_key};
 
 use super::acl;
-use crate::dns::{error::XfrError, server::DnsContext};
+use crate::dns::{error::DnsError, server::DnsContext};
 
 /// A refused transfer and the response it owes the client: a TSIG failure
 /// its own error record, a malformed TSIG an unsigned FORMERR (RFC 8945,
@@ -56,7 +56,7 @@ impl TransferRefusal {
     }
 
     /// Convert the refusal into a DNS response.
-    pub(crate) fn into_response(mut self, query: &ParsedQuery) -> Result<Vec<u8>, XfrError> {
+    pub(crate) fn into_response(mut self, query: &ParsedQuery) -> Result<Vec<u8>, DnsError> {
         if let Some(response) = self.response {
             return Ok(response);
         }
@@ -200,7 +200,7 @@ pub(crate) async fn refuse_query(
     query_data: &[u8],
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
-) -> Result<Vec<u8>, XfrError> {
+) -> Result<Vec<u8>, DnsError> {
     match authenticate_tsig_key(dns_cx, query_data).await {
         Ok(identity) => {
             let mut signer = identity.and_then(|identity| identity.signer);

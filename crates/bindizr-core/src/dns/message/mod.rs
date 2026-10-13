@@ -53,21 +53,20 @@ pub enum EncodeMessageError {
     Sign(#[source] LibraryError),
 }
 
-/// A size failure that may still carry a frame: the caller must send it so
-/// its message count reflects what reached the client before the failure.
+/// An answer or encoding failure that may carry a frame to send first.
 #[derive(Debug, Error)]
 #[error("{source}")]
-pub struct Overflow {
+pub struct AddAnswerError {
     /// The answers buffered before the oversized one, if there were any.
     pub frame: Option<Vec<u8>>,
     #[source]
     pub source: EncodeMessageError,
 }
 
-impl Overflow {
-    /// Build an overflow error without a pending TCP frame.
+impl AddAnswerError {
+    /// Build an answer error without a pending TCP frame.
     fn without_frame(source: EncodeMessageError) -> Self {
-        Overflow {
+        AddAnswerError {
             frame: None,
             source,
         }
@@ -137,9 +136,8 @@ impl DnsMessageBuilder {
         self
     }
 
-    /// Hand the signer back to a caller answering the request another way:
-    /// before the first frame, or after a failure, where the MAC chain goes
-    /// on with the error (RFC 8945, Section 5.3.1).
+    /// Return the signer for an alternate response, preserving the MAC chain
+    /// through errors (RFC 8945, Section 5.3.1).
     pub fn take_signer(&mut self) -> Option<TransferSigner> {
         self.signer.take()
     }
@@ -207,11 +205,14 @@ impl DnsMessageBuilder {
 
     /// Buffer one answer; on overflow, return the preceding answers as a TCP
     /// frame and retain this answer for the next frame.
-    pub fn add_answer_or_overflow<F>(&mut self, add_answer: F) -> Result<Option<Vec<u8>>, Overflow>
+    pub fn add_answer_or_overflow<F>(
+        &mut self,
+        add_answer: F,
+    ) -> Result<Option<Vec<u8>>, AddAnswerError>
     where
         F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,
     {
-        add_answer(self).map_err(Overflow::without_frame)?;
+        add_answer(self).map_err(AddAnswerError::without_frame)?;
 
         if self.message_len() <= DNS_TCP_MAX_SIZE {
             return Ok(None);
@@ -220,18 +221,18 @@ impl DnsMessageBuilder {
         // Keep the overflowing answer out of the frame built from earlier answers.
         let last_answer = self
             .pop_last_answer()
-            .ok_or_else(|| Overflow::without_frame(EncodeMessageError::NoAnswers))?;
+            .ok_or_else(|| AddAnswerError::without_frame(EncodeMessageError::NoAnswers))?;
 
         if self.answer_count() == 0 {
             self.push_answer(last_answer);
-            return Err(Overflow::without_frame(self.answer_too_large()));
+            return Err(AddAnswerError::without_frame(self.answer_too_large()));
         }
 
-        let frame = self.take_frame().map_err(Overflow::without_frame)?;
+        let frame = self.take_frame().map_err(AddAnswerError::without_frame)?;
 
         self.push_answer(last_answer);
         if self.message_len() > DNS_TCP_MAX_SIZE {
-            return Err(Overflow {
+            return Err(AddAnswerError {
                 frame,
                 source: self.answer_too_large(),
             });
@@ -258,9 +259,7 @@ impl DnsMessageBuilder {
         }
     }
 
-    /// Compose the buffered answers into one authoritative response, signed
-    /// when the request was. Built through `domain`, which composes the
-    /// additional section a TSIG record needs.
+    /// Compose the buffered answers into an authoritative response, signing when configured.
     fn build_message(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();

@@ -22,7 +22,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     ttl::validate_record_ttl,
-    types::{GetRecordResponse, RecordDiff, RecordWriteResponse, Run, UpdateRecordRequest},
+    types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse},
     zone::{self, diff::build_record_diff},
 };
 
@@ -53,92 +53,88 @@ struct ResolvedRecordUpdate {
     priority: Option<i32>,
 }
 
-/// Merge `request` onto the stored record: an omitted field keeps the
-/// record's current value. Shared, so both entry points resolve it alike.
-///
-/// An omitted field is read from the stored record, so `inherit` is that
-/// record only when the caller may read it; `None` requires every field and
-/// names nothing of the record.
+/// Resolve a replacement; omitted fields require read access to the stored record.
 fn resolve_update(
+    zone: &Zone,
+    existing: &Record,
     request: &UpdateRecordRequest,
-) -> impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError> + '_
-{
-    move |zone, existing, inherit| {
-        if inherit.is_none() {
-            let mut missing = Vec::new();
-            if request.name.is_none() {
-                missing.push("name");
-            }
-            if request.record_type.is_none() {
-                missing.push("type");
-            }
-            if request.value.is_none() {
-                missing.push("value");
-            }
-            if request.ttl.is_none() {
-                missing.push("ttl");
-            }
-            let takes_priority = request
-                .record_type
-                .as_deref()
-                .and_then(|record_type| parse_record_type(record_type).ok())
-                .is_some_and(|record_type| matches!(record_type, RecordType::Mx | RecordType::Srv));
-            if takes_priority && request.priority.is_none() {
-                missing.push("priority");
-            }
-            if !missing.is_empty() {
-                return Err(ServiceError::forbidden(format!(
-                    "an update without 'record:read' on the record must give every field; missing: {}",
-                    missing.join(", ")
-                )));
-            }
+    can_read: bool,
+) -> Result<ResolvedRecordUpdate, ServiceError> {
+    let record_type = request
+        .record_type
+        .as_deref()
+        .map(parse_record_type)
+        .transpose();
+    if !can_read {
+        let mut missing = Vec::new();
+        if request.name.is_none() {
+            missing.push("name");
         }
-        let record_type = match &request.record_type {
-            Some(record_type) => parse_record_type(record_type)?,
-            None => existing.record_type,
-        };
-        // Each type has its own stored grammar (TXT uses quoted presentation),
-        // so a type change requires a fresh value.
-        if record_type != existing.record_type && request.value.is_none() {
-            return Err(ServiceError::invalid_input(
-                "value is required when changing a record's type".to_string(),
-            ));
+        if request.record_type.is_none() {
+            missing.push("type");
         }
-        // Only MX/SRV carry a priority: given for another type it is the
-        // error creation gives, and retyping to another type clears it.
-        let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
-            record_type.stored_priority(request.priority.or(existing.priority))
-        } else if request.priority.is_some() {
-            return Err(ServiceError::invalid_record_value(format!(
-                "{} records do not take a priority",
-                record_type
+        if request.value.is_none() {
+            missing.push("value");
+        }
+        if request.ttl.is_none() {
+            missing.push("ttl");
+        }
+        let takes_priority = record_type
+            .as_ref()
+            .ok()
+            .and_then(|record_type| *record_type)
+            .is_some_and(|record_type| matches!(record_type, RecordType::Mx | RecordType::Srv));
+        if takes_priority && request.priority.is_none() {
+            missing.push("priority");
+        }
+        if !missing.is_empty() {
+            return Err(ServiceError::forbidden(format!(
+                "an update without 'record:read' on the record must give every field; missing: {}",
+                missing.join(", ")
             )));
-        } else {
-            None
-        };
-        let encoded_value = match &request.value {
-            Some(value) => value
-                .to_encoded_value(&record_type, priority)
-                .map_err(ServiceError::invalid_record_value)?,
-            None => existing.value.clone(),
-        };
-        let ttl = match request.ttl {
-            Some(ttl) => validate_record_ttl(ttl)?,
-            None => existing.ttl,
-        };
-        // An omitted name keeps the stored owner, which needs no reparse.
-        let owner_name = match &request.name {
-            Some(name) => normalize_record_owner_name(name, &zone.name)?,
-            None => existing.name.clone(),
-        };
-        Ok(ResolvedRecordUpdate {
-            owner_name,
-            record_type,
-            encoded_value,
-            ttl,
-            priority,
-        })
+        }
     }
+    let record_type = record_type?.unwrap_or(existing.record_type);
+    // Each type has its own stored grammar (TXT uses quoted presentation),
+    // so a type change requires a fresh value.
+    if record_type != existing.record_type && request.value.is_none() {
+        return Err(ServiceError::invalid_input(
+            "value is required when changing a record's type".to_string(),
+        ));
+    }
+    // Reject explicit priority outside MX/SRV; changing away from them clears it.
+    let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
+        record_type.stored_priority(request.priority.or(existing.priority))
+    } else if request.priority.is_some() {
+        return Err(ServiceError::invalid_record_value(format!(
+            "{} records do not take a priority",
+            record_type
+        )));
+    } else {
+        None
+    };
+    let encoded_value = match &request.value {
+        Some(value) => value
+            .to_encoded_value(&record_type, priority)
+            .map_err(ServiceError::invalid_record_value)?,
+        None => existing.value.clone(),
+    };
+    let ttl = match request.ttl {
+        Some(ttl) => validate_record_ttl(ttl)?,
+        None => existing.ttl,
+    };
+    // An omitted name keeps the stored owner, which needs no reparse.
+    let owner_name = match &request.name {
+        Some(name) => normalize_record_owner_name(name, &zone.name)?,
+        None => existing.name.clone(),
+    };
+    Ok(ResolvedRecordUpdate {
+        owner_name,
+        record_type,
+        encoded_value,
+        ttl,
+        priority,
+    })
 }
 
 /// Merge omitted fields from the record loaded and authorized inside the transaction.
@@ -147,7 +143,7 @@ pub async fn update(
     caller: &Caller,
     record_id: RecordId,
     request: &UpdateRecordRequest,
-) -> Result<RecordWriteResponse, ServiceError> {
+) -> Result<WriteRecordResponse, ServiceError> {
     // Non-locking read for the zone_id, so the tx locks zone before record
     // (the create/bulk/import order); the reverse can deadlock.
     let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
@@ -161,14 +157,7 @@ pub async fn update(
             ));
         }
     };
-    update_locked(
-        cx,
-        caller,
-        LockTarget::Id { record_id, zone_id },
-        Run::from_dry_run(request.dry_run),
-        resolve_update(request),
-    )
-    .await
+    update_locked(cx, caller, LockTarget::Id { record_id, zone_id }, request).await
 }
 
 /// Update the one record at `name` in `zone_name`. The match is resolved
@@ -179,25 +168,18 @@ pub async fn update_by_name(
     zone_name: &ZoneName,
     name: &str,
     request: &UpdateRecordRequest,
-) -> Result<RecordWriteResponse, ServiceError> {
-    update_locked(
-        cx,
-        caller,
-        LockTarget::Name { zone_name, name },
-        Run::from_dry_run(request.dry_run),
-        resolve_update(request),
-    )
-    .await
+) -> Result<WriteRecordResponse, ServiceError> {
+    update_locked(cx, caller, LockTarget::Name { zone_name, name }, request).await
 }
+
 /// Load the record inside the transaction, resolve the update against it,
 /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
 async fn update_locked(
     cx: &Context,
     caller: &Caller,
     target: LockTarget<'_>,
-    run: Run,
-    resolve: impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError>,
-) -> Result<RecordWriteResponse, ServiceError> {
+    request: &UpdateRecordRequest,
+) -> Result<WriteRecordResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
     let apply_result = async {
@@ -257,8 +239,9 @@ async fn update_locked(
             }
             LockTarget::Name { zone_name, name } => {
                 let zone =
-                    zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
+                    zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
+                caller.authorize_zone_visible(&zone)?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.
@@ -297,14 +280,12 @@ async fn update_locked(
         let caller = &caller;
 
         // Inheriting an omitted field reads the record.
-        let inherit = caller
-            .sees_record(
-                zone.id,
-                &existing_record.name,
-                Some(&existing_record.record_type),
-            )
-            .then_some(&existing_record);
-        let resolved = resolve(&zone, &existing_record, inherit)?;
+        let can_read = caller.sees_record(
+            zone.id,
+            &existing_record.name,
+            Some(&existing_record.record_type),
+        );
+        let resolved = resolve_update(&zone, &existing_record, request, can_read)?;
 
         // An update moves a record from its stored identity to the requested
         // one, so `record:update` must reach both.
@@ -390,15 +371,24 @@ async fn update_locked(
         after.push_written(RecordData::from(candidate.clone()));
         let diff = build_record_diff(&zone, &before, &after);
 
+        zone::validate_record_changes_tx(
+            &mut tx,
+            &zone,
+            std::slice::from_ref(&existing_record),
+            std::slice::from_ref(&candidate),
+        )
+        .await?;
+
+        let new_serial = generate_serial(Some(zone.serial))?;
+
         // The merge is resolved and validated, so a dry run stops here.
-        if run.is_dry_run() {
-            return Ok::<(Record, ZoneName, RecordDiff), ServiceError>((
+        if request.dry_run {
+            return Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
                 candidate, zone.name, diff,
             ));
         }
 
         // Store the validated replacement, signatures, and journal under one serial.
-        let new_serial = generate_serial(Some(zone.serial))?;
         let zone_name = zone.name.clone();
 
         let updated_record =
@@ -406,10 +396,13 @@ async fn update_locked(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
-            .await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiff), ServiceError>((updated_record, zone_name, diff))
+        Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
+            updated_record,
+            zone_name,
+            diff,
+        ))
     }
     .await;
 
@@ -417,7 +410,7 @@ async fn update_locked(
         transaction::finish_tx(tx, apply_result, "failed to update record").await?;
 
     log::info!(
-        "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",
+        "event=record_update zone={} name={} type={} ttl={} priority={} record_id={} dry_run={}",
         zone_name,
         updated_record.name,
         updated_record.record_type,
@@ -425,18 +418,20 @@ async fn update_locked(
         updated_record
             .priority
             .map_or("null".to_string(), |v| v.to_string()),
-        updated_record.id
+        updated_record.id,
+        request.dry_run
     );
 
     // Request secondary transfers only after the replacement is committed.
-    if !run.is_dry_run() {
+    if !request.dry_run {
+        cx.metrics().track_serial_bumps(1);
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
-    Ok(RecordWriteResponse {
-        applied: !run.is_dry_run(),
-        dry_run: run.is_dry_run(),
-        record: GetRecordResponse::from_record(
+    Ok(WriteRecordResponse {
+        applied: !request.dry_run,
+        dry_run: request.dry_run,
+        record: RecordResponse::from_record(
             &updated_record,
             &zone_name,
             caller.record_actions(

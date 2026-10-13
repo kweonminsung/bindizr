@@ -15,7 +15,7 @@ use crate::{
     pagination::build_page,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     transaction,
-    types::{CreateRoleRequest, GetRoleResponse, PageRequest, PaginatedResponse},
+    types::{CreateRoleRequest, PageRequest, PaginatedResponse, RoleResponse},
 };
 
 /// Create a role holding no grants yet.
@@ -23,7 +23,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateRoleRequest,
-) -> Result<GetRoleResponse, ServiceError> {
+) -> Result<RoleResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_role_name(&request.name)?;
@@ -66,7 +66,7 @@ pub async fn create(
     }
     .await;
     let role = transaction::finish_tx(tx, result, "failed to create role").await?;
-    Ok(GetRoleResponse {
+    Ok(RoleResponse {
         id: role.id,
         builtin: role.is_builtin(),
         name: role.name,
@@ -83,7 +83,7 @@ pub async fn list(
     cx: &Context,
     caller: &Caller,
     page: PageRequest,
-) -> Result<PaginatedResponse<GetRoleResponse>, ServiceError> {
+) -> Result<PaginatedResponse<RoleResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let roles = bindizr_db::role::list_all(cx.db()).await?;
@@ -104,7 +104,7 @@ pub async fn list(
     build_page(
         roles
             .into_iter()
-            .map(|role| GetRoleResponse {
+            .map(|role| RoleResponse {
                 id: role.id,
                 builtin: role.is_builtin(),
                 grant_count: grants.get(&role.id).copied().unwrap_or(0),
@@ -121,18 +121,14 @@ pub async fn list(
 }
 
 /// Fetch one role by name, with how many grants, tokens, and keys it has.
-pub async fn get(
-    cx: &Context,
-    caller: &Caller,
-    name: &str,
-) -> Result<GetRoleResponse, ServiceError> {
+pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let role = lookup_by_name(cx, name).await?;
     let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), role.id).await?;
     let tokens = bindizr_db::api_token::list_by_role_id(cx.db(), role.id).await?;
     let keys = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?;
-    Ok(GetRoleResponse {
+    Ok(RoleResponse {
         id: role.id,
         builtin: role.is_builtin(),
         grant_count: grants.len() as u64,

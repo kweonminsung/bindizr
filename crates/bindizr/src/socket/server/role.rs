@@ -5,8 +5,8 @@ use bindizr_service::{
     error::ServiceError,
     role::{self, grant},
     types::{
-        CreateRoleGrantRequest, CreateRoleRequest, GetRoleGrantResponse, GetRoleResponse,
-        MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse,
+        CreateRoleGrantRequest, CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse,
+        RoleGrantResponse, RoleResponse, SingleRoleGrantResponse, SingleRoleResponse,
     },
 };
 
@@ -16,10 +16,10 @@ use crate::socket::types::DaemonResponse;
 pub(crate) async fn create_role(
     cx: &Context,
     request: &CreateRoleRequest,
-) -> Result<DaemonResponse<RoleResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
     Ok(DaemonResponse {
         message: "Role created successfully".to_string(),
-        data: RoleResponse {
+        data: SingleRoleResponse {
             role: role::create(cx, &Caller::socket(), request).await?,
         },
     })
@@ -29,7 +29,7 @@ pub(crate) async fn create_role(
 pub(crate) async fn list_roles(
     cx: &Context,
     page: PageRequest,
-) -> Result<DaemonResponse<PaginatedResponse<GetRoleResponse>>, ServiceError> {
+) -> Result<DaemonResponse<PaginatedResponse<RoleResponse>>, ServiceError> {
     let response = role::list(cx, &Caller::socket(), page).await?;
     Ok(DaemonResponse {
         message: "Roles retrieved successfully".to_string(),
@@ -41,10 +41,10 @@ pub(crate) async fn list_roles(
 pub(crate) async fn get_role(
     cx: &Context,
     name: &str,
-) -> Result<DaemonResponse<RoleResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleRoleResponse>, ServiceError> {
     Ok(DaemonResponse {
         message: "Role retrieved successfully".to_string(),
-        data: RoleResponse {
+        data: SingleRoleResponse {
             role: role::get(cx, &Caller::socket(), name).await?,
         },
     })
@@ -68,11 +68,11 @@ pub(crate) async fn create_role_grant(
     cx: &Context,
     role_name: &str,
     request: &CreateRoleGrantRequest,
-) -> Result<DaemonResponse<RoleGrantResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleRoleGrantResponse>, ServiceError> {
     let role_grant = grant::create(cx, &Caller::socket(), role_name, request).await?;
     Ok(DaemonResponse {
         message: "Role grant created successfully".to_string(),
-        data: RoleGrantResponse { role_grant },
+        data: SingleRoleGrantResponse { role_grant },
     })
 }
 
@@ -81,7 +81,7 @@ pub(crate) async fn list_role_grants(
     cx: &Context,
     role_name: &str,
     page: PageRequest,
-) -> Result<DaemonResponse<PaginatedResponse<GetRoleGrantResponse>>, ServiceError> {
+) -> Result<DaemonResponse<PaginatedResponse<RoleGrantResponse>>, ServiceError> {
     let response = grant::list(cx, &Caller::socket(), role_name, page).await?;
     Ok(DaemonResponse {
         message: "Role grants retrieved successfully".to_string(),

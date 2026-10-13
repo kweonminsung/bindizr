@@ -27,7 +27,7 @@ pub(crate) use dns::{
     FakeParent, ServedDs, TransferOutcome, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
     probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
 };
-use verify::{PreviousDnsKey, to_fqdn};
+use verify::{PreviousRecordKey, to_fqdn};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 /// Every record action, the grant a test role needs to read and change a zone's records.
@@ -217,7 +217,7 @@ impl TestApp {
         body: Option<Value>,
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
-        let mut previous_dns_key = self.read_previous_dns_key(&method, path).await;
+        let mut previous_record_key = self.read_previous_record_key(&method, path).await;
         let updated_zone_name = (method == Method::PUT)
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
@@ -227,11 +227,11 @@ impl TestApp {
             && response.0.is_success()
             && response.1["zone"]["name"].as_str() == Some(previous_zone_name)
         {
-            previous_dns_key = None;
+            previous_record_key = None;
         }
 
         if should_verify_dns && response.0.is_success() {
-            self.assert_dns_matches_api(previous_dns_key).await;
+            self.assert_dns_matches_api(previous_record_key).await;
         }
 
         response
@@ -375,12 +375,12 @@ impl TestApp {
     /// wait for configured secondaries to match the API.
     pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
         // Remember deleted names before the API can no longer return their identity.
-        let previous_dns_key = match args {
+        let previous_record_key = match args {
             ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
-                self.read_previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
+                self.read_previous_record_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
-            ["zone", "delete", zone_name, ..] => Some(PreviousDnsKey {
+            ["zone", "delete", zone_name, ..] => Some(PreviousRecordKey {
                 zone_name: to_fqdn(zone_name),
                 name: to_fqdn(zone_name),
                 record_type: 6,
@@ -426,7 +426,7 @@ impl TestApp {
                 ]
             )
         {
-            self.assert_dns_matches_api(previous_dns_key).await;
+            self.assert_dns_matches_api(previous_record_key).await;
         }
 
         output

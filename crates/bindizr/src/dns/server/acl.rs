@@ -29,7 +29,7 @@ struct SecondaryAcl {
 
 impl SecondaryAcl {
     /// Check whether a peer IP is permitted by the secondary ACL.
-    async fn allows(&self, resolved: &ResolvedAddrs, client_ip: IpAddr) -> bool {
+    async fn allows(&self, cache: &AddressCache, client_ip: IpAddr) -> bool {
         // Literals first: a match there answers without reaching the resolver.
         if self
             .entries
@@ -41,7 +41,7 @@ impl SecondaryAcl {
 
         for entry in &self.entries {
             if let SecondaryAclEntry::HostPort(host_port) = entry
-                && resolve_acl_host(resolved, host_port)
+                && resolve_acl_host(cache, host_port)
                     .await
                     .contains(&client_ip)
             {
@@ -79,14 +79,13 @@ struct CachedAddrs {
     expires_at: Instant,
 }
 
-/// The hostnames the ACL resolved lately, so a transfer request waits on the
-/// resolver once per window rather than once per query.
+/// Hostname resolutions reused by secondary ACL checks until they expire.
 #[derive(Debug, Default)]
-pub(crate) struct ResolvedAddrs {
+pub(crate) struct AddressCache {
     cache: Mutex<HashMap<String, CachedAddrs>>,
 }
 
-impl ResolvedAddrs {
+impl AddressCache {
     /// An empty resolution cache.
     pub(crate) fn new() -> Self {
         Self::default()
@@ -117,13 +116,13 @@ pub(crate) async fn is_client_allowed(
 ) -> Result<bool, ServiceError> {
     let secondaries = secondary::list_enabled(dns_cx.daemon()).await?;
     let acl = SecondaryAcl::from_addresses(secondaries.iter().map(|s| &s.address));
-    Ok(acl.allows(&dns_cx.acl, client_ip).await)
+    Ok(acl.allows(&dns_cx.address_cache, client_ip).await)
 }
 
 /// Resolve an ACL hostname to its permitted IP addresses. The resolver logs
 /// a failure itself; here it only shortens how long the empty answer is kept.
-async fn resolve_acl_host(resolved: &ResolvedAddrs, host_port: &str) -> Vec<IpAddr> {
-    if let Some(addrs) = resolved.cached_addrs(host_port) {
+async fn resolve_acl_host(cache: &AddressCache, host_port: &str) -> Vec<IpAddr> {
+    if let Some(addrs) = cache.cached_addrs(host_port) {
         return addrs;
     }
 
@@ -136,7 +135,7 @@ async fn resolve_acl_host(resolved: &ResolvedAddrs, host_port: &str) -> Vec<IpAd
         Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
     };
 
-    resolved.locked().insert(
+    cache.locked().insert(
         host_port.to_string(),
         CachedAddrs {
             addrs: addrs.clone(),
@@ -179,10 +178,10 @@ mod tests {
         // The unresolvable entry proves no lookup happened.
         let acl =
             SecondaryAcl::from_addresses(&targets(&["192.0.2.10", "no-such-host.invalid:53"]));
-        let resolved = ResolvedAddrs::new();
+        let cache = AddressCache::new();
 
-        assert!(acl.allows(&resolved, "192.0.2.10".parse().unwrap()).await);
-        assert!(resolved.locked().is_empty());
+        assert!(acl.allows(&cache, "192.0.2.10".parse().unwrap()).await);
+        assert!(cache.locked().is_empty());
     }
 
     /// Verify that secondary acl defaults hostname ports.

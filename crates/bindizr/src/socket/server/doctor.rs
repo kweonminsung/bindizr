@@ -7,7 +7,7 @@ use bindizr_service::{
     dns_client::{notify, probe},
     error::ServiceError,
     secondary,
-    types::SecondaryTransferSummary,
+    types::SecondaryTransferSummaryResponse,
     zone,
 };
 use tokio::net::TcpStream;
@@ -123,7 +123,7 @@ pub(crate) async fn check_installation(
             notify::send_notify_to_secondaries(cx, &config.dns.catalog_zone_name).await?;
         let mut transfers = Vec::new();
         for secondary in secondary::list_enabled(cx).await? {
-            transfers.push(SecondaryTransferSummary {
+            transfers.push(SecondaryTransferSummaryResponse {
                 summary: secondary::transfer_summary(cx, &secondary).await?,
                 secondary_name: secondary.name,
                 address: secondary.address.to_string(),

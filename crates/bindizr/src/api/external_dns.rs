@@ -10,9 +10,9 @@ use axum::{
 use bindizr_service::{
     Context, external_dns,
     types::{
-        ErrorResponse, ExternalDnsAdjustRequest, ExternalDnsAdjustResponse,
-        ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsDomainsResponse,
-        ExternalDnsRecordsResponse,
+        AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
+        ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, ErrorResponse,
+        ListExternalDnsDomainsResponse, ListExternalDnsRecordsResponse,
     },
 };
 
@@ -56,7 +56,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         summary = "List the names ExternalDNS may manage",
         description = "Returns every existing zone name when authentication is disabled. Otherwise, includes zones or subtrees covered by a grant containing all three actions: `record:read`, `record:create`, and `record:delete`. Entries are deduplicated. Each entry includes its descendants, so record-type and exact-name restrictions still need to be enforced when changes are applied.",
         responses(
-            (status = 200, description = "Manageable names", body = ExternalDnsDomainsResponse),
+            (status = 200, description = "Manageable names", body = ListExternalDnsDomainsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -66,7 +66,11 @@ pub(crate) async fn list_external_dns_domains(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let domains = external_dns::list_managed_domains(&cx, &caller).await?;
-    Ok((StatusCode::OK, Json(ExternalDnsDomainsResponse { domains })).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(ListExternalDnsDomainsResponse { domains }),
+    )
+        .into_response())
 }
 
 /// List the records of all zones the ExternalDNS caller may manage.
@@ -77,7 +81,7 @@ pub(crate) async fn list_external_dns_domains(
         summary = "List the records of every ExternalDNS-managed zone",
         description = "Records of all zones the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.",
         responses(
-            (status = 200, description = "Records of the allowed zones", body = ExternalDnsRecordsResponse),
+            (status = 200, description = "Records of the allowed zones", body = ListExternalDnsRecordsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -87,7 +91,11 @@ pub(crate) async fn list_external_dns_records(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let records = external_dns::list_records(&cx, &caller).await?;
-    Ok((StatusCode::OK, Json(ExternalDnsRecordsResponse { records })).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(ListExternalDnsRecordsResponse { records }),
+    )
+        .into_response())
 }
 
 /// Canonicalize desired records for the ExternalDNS adapter's adjust step.
@@ -97,9 +105,9 @@ pub(crate) async fn list_external_dns_records(
         tag = "ExternalDNS",
         summary = "Canonicalize desired records without applying them",
         description = "Backs the adapter's AdjustEndpoints step: returns each desired record in the canonical form applying it would store (uppercase type, sorted deduplicated presentation values), so external-dns compares desired state against the exact spelling GET /external-dns/records returns.",
-        request_body = ExternalDnsAdjustRequest,
+        request_body = AdjustExternalDnsRecordsRequest,
         responses(
-            (status = 200, description = "Canonicalized records, in request order", body = ExternalDnsAdjustResponse),
+            (status = 200, description = "Canonicalized records, in request order", body = AdjustExternalDnsRecordsResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
@@ -108,7 +116,7 @@ pub(crate) async fn list_external_dns_records(
 )]
 pub(crate) async fn adjust_external_dns_records(
     RequestCaller(_caller): RequestCaller,
-    JsonBody(body): JsonBody<ExternalDnsAdjustRequest>,
+    JsonBody(body): JsonBody<AdjustExternalDnsRecordsRequest>,
 ) -> Result<Response, ApiError> {
     let response = external_dns::adjust_records(&body)?;
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -121,9 +129,9 @@ pub(crate) async fn adjust_external_dns_records(
         tag = "ExternalDNS",
         summary = "Apply an ExternalDNS change set atomically",
         description = "Applies creates, updates, and deletes in one transaction. Idempotent operations resolve to no change; only zones with a remaining delta advance their serial (once per request) and record IXFR history.",
-        request_body = ExternalDnsChangesRequest,
+        request_body = ApplyExternalDnsChangesRequest,
         responses(
-            (status = 200, description = "Change set applied (or resolved to a no-op)", body = ExternalDnsChangesResponse),
+            (status = 200, description = "Change set applied (or resolved to a no-op)", body = ApplyExternalDnsChangesResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token is not allowed to manage a target record", body = ErrorResponse),
@@ -136,7 +144,7 @@ pub(crate) async fn adjust_external_dns_records(
 pub(crate) async fn apply_external_dns_changes(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    JsonBody(body): JsonBody<ExternalDnsChangesRequest>,
+    JsonBody(body): JsonBody<ApplyExternalDnsChangesRequest>,
 ) -> Result<Response, ApiError> {
     let response = external_dns::apply_changes(&cx, &caller, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())

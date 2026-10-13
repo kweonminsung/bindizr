@@ -35,8 +35,6 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // The commit-time delegation invariant only runs on apply, so the dry run
-    // must reject the same batch itself to keep its validation promise.
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [

@@ -23,7 +23,7 @@ use crate::{
         zone::Zone,
     },
     transaction,
-    types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecStatusResponse, DsState},
+    types::{DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState},
 };
 
 /// Ask the zone's parent whether it serves the zone's DS, reporting the
@@ -67,21 +67,21 @@ pub async fn check_ds(
 pub(crate) async fn probe_delegation(
     cx: &Context,
     signed: &SignedZone,
-) -> Result<DnssecDelegationInfo, ServiceError> {
+) -> Result<DnssecDelegationResponse, ServiceError> {
     let parent = probe_parent_ds(cx, &signed.zone)
         .await
         .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
 
-    build_delegation_info(&signed.zone, &signed.keys, parent)
+    build_delegation_response(&signed.zone, &signed.keys, parent)
 }
 
 /// Match parent answers against SEP keys: any DS blocks disabling, all servers must confirm promotion.
 /// This keeps both transitions safe while parent changes propagate.
-fn build_delegation_info(
+fn build_delegation_response(
     zone: &Zone,
     keys: &[DnssecKey],
     parent: ParentDs,
-) -> Result<DnssecDelegationInfo, ServiceError> {
+) -> Result<DnssecDelegationResponse, ServiceError> {
     let served: Vec<&DsRecordSet> = parent.answers.iter().flatten().collect();
     let mut ds_key_tags: Vec<KeyTag> = served
         .iter()
@@ -97,9 +97,8 @@ fn build_delegation_info(
 
     let mut delegation_keys = Vec::new();
     for key in keys.iter().filter(|key| key.role.is_sep()) {
-        // Whole RDATA, since keys can share a tag; in the digest types
-        // the parent serves, since the parent picks; at every server, so
-        // a laggard cannot promote a key early.
+        // Compare full RDATA to avoid key-tag collisions, using the parent's digest types.
+        // Require every server to agree before promoting a key.
         let mut digest_types: Vec<u8> = served
             .iter()
             .flat_map(|record_set| record_set.records.iter())
@@ -143,7 +142,7 @@ fn build_delegation_info(
                 })
             });
 
-        delegation_keys.push(DnssecDelegationKeyInfo {
+        delegation_keys.push(DnssecDelegationKeyResponse {
             id: key.id,
             key_tag: key.key_tag,
             role: key.role,
@@ -154,7 +153,7 @@ fn build_delegation_info(
         });
     }
 
-    Ok(DnssecDelegationInfo {
+    Ok(DnssecDelegationResponse {
         parent_ns_addrs: parent.ns_addrs,
         ds_state: if served.is_empty() {
             DsState::Hidden

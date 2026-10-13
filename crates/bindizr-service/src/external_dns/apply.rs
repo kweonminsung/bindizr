@@ -14,18 +14,17 @@ use crate::{
     serial::generate_serial,
     time::elapsed_ms,
     transaction,
-    types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse},
+    types::{ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse},
     zone,
 };
 
-/// Apply an ExternalDNS change set atomically: all zones' changes commit
-/// together or none do. Only zones with a remaining delta advance their
-/// serial (once per request) and record IXFR history.
+/// Apply all zones' ExternalDNS changes atomically, advancing serial/history
+/// once per changed zone.
 pub async fn apply_changes(
     cx: &Context,
     caller: &Caller,
-    request: &ExternalDnsChangesRequest,
-) -> Result<ExternalDnsChangesResponse, ServiceError> {
+    request: &ApplyExternalDnsChangesRequest,
+) -> Result<ApplyExternalDnsChangesResponse, ServiceError> {
     let started = std::time::Instant::now();
 
     let ops = parse_changes_request(request)?;
@@ -33,7 +32,7 @@ pub async fn apply_changes(
 
     if ops.is_empty() {
         log::info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
-        return Ok(ExternalDnsChangesResponse {
+        return Ok(ApplyExternalDnsChangesResponse {
             changed_zones: Vec::new(),
             added: 0,
             deleted: 0,
@@ -99,6 +98,14 @@ pub async fn apply_changes(
                 continue;
             }
 
+            zone::validate_record_changes_tx(
+                &mut tx,
+                &zone,
+                &change_set.deletes,
+                &change_set.creates,
+            )
+            .await?;
+
             // Apply the remaining delta and its signatures under one zone serial.
             let new_serial = generate_serial(Some(zone.serial))?;
             record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &change_set.deletes)
@@ -107,7 +114,7 @@ pub async fn apply_changes(
                 .await?;
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution())
                 .await?;
 
             deleted += change_set.deletes.len() as u64;
@@ -123,6 +130,7 @@ pub async fn apply_changes(
         transaction::finish_tx(tx, apply_result, "failed to apply ExternalDNS changes").await?;
 
     // Every affected zone must commit before any secondary is asked to transfer.
+    cx.metrics().track_serial_bumps(changed_zones.len() as u64);
     for zone_name in &changed_zones {
         crate::notify::notify_after_update(cx, zone_name).await;
     }
@@ -138,7 +146,7 @@ pub async fn apply_changes(
         elapsed_ms(started),
     );
 
-    Ok(ExternalDnsChangesResponse {
+    Ok(ApplyExternalDnsChangesResponse {
         changed_zones,
         added,
         deleted,

@@ -5,7 +5,7 @@ use bindizr_service::{
     error::ServiceError,
     types::{
         DnssecStatusResponse, DsCheck, EnableDnssecRequest, ExportDnssecKeysResponse, Holddown,
-        ImportDnssecKeyRequest, MessageResponse, RolloverDnssecRequest,
+        ImportDnssecKeysRequest, MessageResponse, RolloverDnssecRequest,
         UpdateDnssecSettingsRequest,
     },
     zone,
@@ -164,7 +164,7 @@ pub(crate) async fn export_dnssec_keys(
 pub(crate) async fn import_dnssec_keys(
     cx: &Context,
     zone_name: &str,
-    request: ImportDnssecKeyRequest,
+    request: ImportDnssecKeysRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
     let status = dnssec::import_keys(
         cx,

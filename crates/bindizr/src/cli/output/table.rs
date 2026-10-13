@@ -10,11 +10,10 @@ use bindizr_core::{
     },
 };
 use bindizr_service::types::{
-    CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
-    GetRoleGrantResponse, GetRoleResponse, GetSecondaryResponse, GetTokenResponse,
-    GetTsigKeyResponse, GetZoneResponse, ImportZoneResponse, RollbackZoneResponse,
-    SecondaryStatusResponse, TransferResponse, TsigKeyResponse, VersionRecordResponse,
-    ZoneStatusResponse, ZoneVersionResponse,
+    CreateTokenResponse, DnssecKeyResponse, DnssecPolicyResponse, ImportZoneResponse,
+    RecordResponse, RoleGrantResponse, RoleResponse, RollbackZoneResponse, SecondaryResponse,
+    SecondaryStatusResponse, SingleTsigKeyResponse, TokenResponse, TransferResponse,
+    TsigKeyResponse, VersionRecordResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -51,9 +50,9 @@ pub(crate) struct ZoneRow {
     pub(crate) description: String,
 }
 
-impl From<&GetZoneResponse> for ZoneRow {
+impl From<&ZoneResponse> for ZoneRow {
     /// Build a CLI table row from the zone response.
-    fn from(zone: &GetZoneResponse) -> Self {
+    fn from(zone: &ZoneResponse) -> Self {
         ZoneRow {
             id: zone.id,
             name: zone.name.clone(),
@@ -91,10 +90,10 @@ pub(crate) struct RecordRow {
     pub(crate) zone_name: String,
 }
 
-impl From<&GetRecordResponse> for RecordRow {
+impl From<&RecordResponse> for RecordRow {
     /// Build a listing row, with the value shortened so one long record does
     /// not widen the column.
-    fn from(record: &GetRecordResponse) -> Self {
+    fn from(record: &RecordResponse) -> Self {
         RecordRow {
             value: display_record_value(&record.value),
             ..Self::whole(record)
@@ -104,7 +103,7 @@ impl From<&GetRecordResponse> for RecordRow {
 
 impl RecordRow {
     /// Build the row for a single record, whose whole value is the point.
-    pub(crate) fn whole(record: &GetRecordResponse) -> Self {
+    pub(crate) fn whole(record: &RecordResponse) -> Self {
         RecordRow {
             id: record.id,
             name: record.name.clone(),
@@ -140,9 +139,9 @@ pub(crate) struct DnssecKeyRow {
     pub(crate) created_at: String,
 }
 
-impl From<&DnssecKeyInfo> for DnssecKeyRow {
+impl From<&DnssecKeyResponse> for DnssecKeyRow {
     /// Build a CLI table row from the DNSSEC key info.
-    fn from(key: &DnssecKeyInfo) -> Self {
+    fn from(key: &DnssecKeyResponse) -> Self {
         DnssecKeyRow {
             id: key.id,
             role: key.role.to_string(),
@@ -179,9 +178,9 @@ pub(crate) struct DnssecPolicyRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
+impl From<&DnssecPolicyResponse> for DnssecPolicyRow {
     /// Build a CLI table row from the DNSSEC policy response.
-    fn from(policy: &GetDnssecPolicyResponse) -> Self {
+    fn from(policy: &DnssecPolicyResponse) -> Self {
         DnssecPolicyRow {
             id: policy.id,
             name: policy.name.clone(),
@@ -216,9 +215,9 @@ pub(crate) struct SecondaryRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetSecondaryResponse> for SecondaryRow {
+impl From<&SecondaryResponse> for SecondaryRow {
     /// Build a CLI table row from the secondary response.
-    fn from(secondary: &GetSecondaryResponse) -> Self {
+    fn from(secondary: &SecondaryResponse) -> Self {
         SecondaryRow {
             id: secondary.id,
             name: secondary.name.clone(),
@@ -447,9 +446,9 @@ pub(crate) struct TokenRow {
     pub(crate) last_used_at: String,
 }
 
-impl From<&GetTokenResponse> for TokenRow {
+impl From<&TokenResponse> for TokenRow {
     /// Build a CLI table row from the token response.
-    fn from(token: &GetTokenResponse) -> Self {
+    fn from(token: &TokenResponse) -> Self {
         TokenRow {
             id: token.id,
             name: token.name.clone(),
@@ -466,9 +465,9 @@ impl From<&GetTokenResponse> for TokenRow {
     }
 }
 
-impl From<&CreatedTokenResponse> for TokenRow {
+impl From<&CreateTokenResponse> for TokenRow {
     /// Build a CLI table row from the newly created token.
-    fn from(created: &CreatedTokenResponse) -> Self {
+    fn from(created: &CreateTokenResponse) -> Self {
         TokenRow {
             token: created.secret.clone(),
             ..TokenRow::from(&created.token)
@@ -493,9 +492,9 @@ pub(crate) struct TsigKeyRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetTsigKeyResponse> for TsigKeyRow {
+impl From<&TsigKeyResponse> for TsigKeyRow {
     /// Build a CLI table row from the TSIG key response.
-    fn from(key: &GetTsigKeyResponse) -> Self {
+    fn from(key: &TsigKeyResponse) -> Self {
         TsigKeyRow {
             id: key.id,
             name: key.name.clone(),
@@ -507,9 +506,9 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
     }
 }
 
-impl From<&TsigKeyResponse> for TsigKeyRow {
+impl From<&SingleTsigKeyResponse> for TsigKeyRow {
     /// Build a CLI table row from the TSIG key response.
-    fn from(key: &TsigKeyResponse) -> Self {
+    fn from(key: &SingleTsigKeyResponse) -> Self {
         TsigKeyRow {
             secret: key.secret.clone(),
             ..TsigKeyRow::from(&key.tsig_key)
@@ -537,9 +536,9 @@ pub(crate) struct RoleRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetRoleResponse> for RoleRow {
+impl From<&RoleResponse> for RoleRow {
     /// Build a CLI table row from the role response.
-    fn from(role: &GetRoleResponse) -> Self {
+    fn from(role: &RoleResponse) -> Self {
         RoleRow {
             id: role.id,
             name: role.name.clone(),
@@ -572,9 +571,9 @@ pub(crate) struct RoleGrantRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetRoleGrantResponse> for RoleGrantRow {
+impl From<&RoleGrantResponse> for RoleGrantRow {
     /// Build a CLI table row from the role grant response.
-    fn from(grant: &GetRoleGrantResponse) -> Self {
+    fn from(grant: &RoleGrantResponse) -> Self {
         RoleGrantRow {
             id: grant.id,
             role_name: grant.role_name.clone(),

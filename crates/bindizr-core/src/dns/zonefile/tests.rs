@@ -1,8 +1,12 @@
-//! Zone file parsing: TTL units, the slots the pre-pass may touch, and the
-//! line numbers errors report.
+//! Master-file and AXFR import parsing, including names, values, and errors.
+
+use domain::{
+    base::rdata::ComposeRecordData,
+    zonefile::inplace::{Entry, Zonefile},
+};
 
 use super::*;
-use crate::dns::name::ZoneName;
+use crate::dns::{name::ZoneName, query::TransferRecord, record::Rdata};
 
 /// Verify that TXT rejects non UTF8 octets.
 #[test]
@@ -163,4 +167,154 @@ fn a_soa_outside_the_apex_is_refused() {
         "{:?}",
         parsed.errors
     );
+}
+
+/// Build one transferred record with canonical wire RDATA.
+fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
+    let mut zonefile = Zonefile::new();
+    zonefile.extend_from_slice(format!("{name} 300 IN {rtype} {rdata}\n").as_bytes());
+    let Entry::Record(record) = zonefile.next_entry().unwrap().unwrap() else {
+        panic!("record");
+    };
+    let mut bytes = Vec::new();
+    let Ok(()) = record.data().compose_canonical_rdata(&mut bytes);
+    TransferRecord {
+        name: crate::dns::name::to_fqdn(&record.owner().to_string()),
+        rtype,
+        ttl: 300,
+        rdata: Rdata::new(bytes).unwrap(),
+    }
+}
+
+/// Keep the opening SOA and discard its closing delimiter.
+#[test]
+fn transfer_keeps_one_soa_for_creation() {
+    // The closing SOA is a transfer delimiter, not a second zone definition.
+    const SOA: &str = "ns1.example.com. admin.example.com. 7 300 60 3600000 86400";
+    let records = [
+        transfer_record("example.com.", Rtype::SOA, SOA),
+        transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
+        transfer_record("example.com.", Rtype::SOA, SOA),
+    ];
+
+    let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
+
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert_eq!(parsed.soa.expect("the opening SOA").serial, Serial::from(7));
+    // The SOA is the zone's own, never one of its records.
+    assert_eq!(parsed.records.len(), 1);
+}
+
+/// Verify that a type bindizr cannot store reaches the parser as unsupported.
+#[test]
+fn transfer_reports_unsupported_records() {
+    let records = [
+        transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
+        transfer_record("example.com.", Rtype::HINFO, r#""rfc" "8482""#),
+    ];
+
+    let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
+
+    assert_eq!(parsed.records.len(), 1);
+    assert_eq!(parsed.unsupported.len(), 1, "{:?}", parsed.unsupported);
+    assert!(
+        parsed.unsupported[0].contains("HINFO"),
+        "{:?}",
+        parsed.unsupported
+    );
+}
+
+/// Wire conversion preserves label boundaries.
+#[test]
+fn transfer_preserves_escaped_names() {
+    let records = [
+        (r"a\.b.example.com.", Rtype::CNAME, "target.example.com."),
+        (r"0/25.example.com.", Rtype::NS, "ns.example.com."),
+        (
+            "rfc.example.com.",
+            Rtype::CNAME,
+            "1.0/25.2.0.192.in-addr.arpa.",
+        ),
+        ("example.com.", Rtype::CAA, r#"0 issue "a\"b\\c""#),
+    ]
+    .map(|(name, rtype, rdata)| transfer_record(name, rtype, rdata));
+
+    let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
+
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);
+    let carried: Vec<_> = parsed
+        .records
+        .iter()
+        .map(|record| (record.owner_fqdn.as_str(), &record.value))
+        .collect();
+    assert_eq!(
+        carried,
+        [
+            (
+                r"a\046b.example.com.",
+                &ZoneFileValue::Rdata("target.example.com.".to_string())
+            ),
+            (
+                "0/25.example.com.",
+                &ZoneFileValue::Rdata("ns.example.com.".to_string())
+            ),
+            (
+                "rfc.example.com.",
+                &ZoneFileValue::Rdata("1.0/25.2.0.192.in-addr.arpa.".to_string())
+            ),
+            (
+                "example.com.",
+                &ZoneFileValue::Rdata(r#"0 issue "a\"b\\c""#.to_string())
+            ),
+        ]
+    );
+}
+
+/// Preserve TXT segments and root targets across import sources.
+#[test]
+fn transfer_preserves_record_values_and_rejects_unstorable_octets() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let records = [
+        transfer_record(
+            "txt.example.com.",
+            Rtype::TXT,
+            r#""Mixed CASE" "a\"b\\c" """#,
+        ),
+        transfer_record("srv.example.com.", Rtype::SRV, "10 5 5060 ."),
+        transfer_record(
+            "naptr.example.com.",
+            Rtype::NAPTR,
+            r#"10 20 "U" "E2U+sip" "!^.*$!sip:a@example.net!" ."#,
+        ),
+        transfer_record("example.com.", Rtype::MX, "0 ."),
+    ];
+    let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert_eq!(
+        parsed.records[0].value,
+        ZoneFileValue::Segments(vec!["Mixed CASE".into(), "a\"b\\c".into(), "".into()])
+    );
+    assert_eq!(
+        parsed.records[1].value,
+        ZoneFileValue::Rdata("5 5060 .".into())
+    );
+    assert_eq!(parsed.records[1].priority, Some(10));
+    assert!(
+        matches!(&parsed.records[2].value, ZoneFileValue::Rdata(value) if value.ends_with(" ."))
+    );
+    assert_eq!(parsed.records[3].value, ZoneFileValue::Rdata(".".into()));
+    assert_eq!(parsed.records[3].priority, Some(0));
+    let text = ParsedZoneFile::parse("@ 300 IN MX 0 .\n", &zone, Ttl::try_from(300).unwrap());
+    assert_eq!(text.records, parsed.records[3..]);
+
+    let invalid = TransferRecord {
+        name: "txt.example.com.".into(),
+        rtype: Rtype::TXT,
+        ttl: 300,
+        rdata: Rdata::new(vec![1, 255]).unwrap(),
+    };
+    let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone);
+    assert!(parsed.records.is_empty());
+    assert!(parsed.errors[0].contains("UTF-8"));
 }

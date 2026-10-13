@@ -53,7 +53,7 @@ impl NotifySerial {
 
 /// API representation of a zone.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetZoneResponse {
+pub struct ZoneResponse {
     /// Absent on a dry run, where nothing was written to carry one.
     #[schema(example = 1, value_type = Option<i32>)]
     pub id: Option<ZoneId>,
@@ -82,10 +82,10 @@ pub struct GetZoneResponse {
     pub description: Option<String>,
 }
 
-impl From<&Zone> for GetZoneResponse {
-    /// Build a zone response from its stored settings.
+impl From<&Zone> for ZoneResponse {
+    /// Build zone information from its stored settings.
     fn from(zone: &Zone) -> Self {
-        GetZoneResponse {
+        ZoneResponse {
             id: zone.id.written(),
             name: zone.name.to_string(),
             mname: zone.mname.clone(),
@@ -150,7 +150,7 @@ fn default_apex_ns() -> bool {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub struct GetZonesFilter {
+pub struct ZoneFilter {
     /// Filter by zone name.
     #[schema(example = "example.com")]
     pub name: Option<String>,
@@ -214,9 +214,8 @@ pub struct GetZonesFilter {
     pub offset: Option<u64>,
 }
 
-/// Request body for updating a zone; an omitted field keeps the current
-/// value, merged inside the update transaction. `serial` is carried only to
-/// be rejected: it is fixed at creation.
+/// Update a zone, resolving omitted fields from the locked row.
+/// `serial` is accepted only at creation and is not an update field.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateZoneRequest {
@@ -245,9 +244,6 @@ pub struct UpdateZoneRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 3600)]
     pub minimum_ttl: Option<i32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 42)]
-    pub serial: Option<u32>,
     /// `false` stops the DNS plane serving the zone without deleting it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = true)]
@@ -284,7 +280,7 @@ pub struct DeleteZoneResponse {
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
-    pub zone: GetZoneResponse,
+    pub zone: ZoneResponse,
     /// Records the zone holds, all of which go with it.
     #[schema(example = 1240)]
     pub records_deleted: u64,
@@ -293,23 +289,22 @@ pub struct DeleteZoneResponse {
     pub versions_deleted: u64,
 }
 
-/// A single zone wrapped in a response envelope. A dry run answers with the
-/// zone as it would stand and `applied: false`.
+/// A single zone wrapped in a response envelope.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ZoneResponse {
-    pub zone: GetZoneResponse,
+pub struct SingleZoneResponse {
+    pub zone: ZoneResponse,
 }
 
 /// What a zone write left behind. The zone's own fields are the change, so
 /// unlike a record write this carries no diff.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ZoneWriteResponse {
+pub struct WriteZoneResponse {
     /// Whether this call wrote; a dry run answers `false`.
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
-    pub zone: GetZoneResponse,
+    pub zone: ZoneResponse,
 }
 
 /// A zone rendered as BIND master-file text. Only the daemon socket wraps the

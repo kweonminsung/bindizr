@@ -18,7 +18,40 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
+    ttl::validate_record_ttl,
+    types::RecordValue,
 };
+
+/// Parsed record fields; an omitted TTL is resolved under the zone lock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PreparedRecord {
+    pub(crate) record_type: RecordType,
+    pub(crate) value: String,
+    pub(crate) ttl: Option<Ttl>,
+    pub(crate) priority: Option<i32>,
+}
+
+/// Parse the record type and encode the value into its record-row form.
+pub(crate) fn parse_record_request(
+    record_type: &str,
+    value: &RecordValue,
+    ttl: Option<i32>,
+    priority: Option<i32>,
+) -> Result<PreparedRecord, ServiceError> {
+    let record_type = parse_record_type(record_type)?;
+    let ttl = ttl.map(validate_record_ttl).transpose()?;
+    let priority = record_type.stored_priority(priority);
+    let value = value
+        .to_encoded_value(&record_type, priority)
+        .map_err(ServiceError::invalid_record_value)?;
+
+    Ok(PreparedRecord {
+        record_type,
+        value,
+        ttl,
+        priority,
+    })
+}
 
 /// Parse a supported record type from request text.
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
@@ -154,7 +187,7 @@ pub(crate) fn validate_record_constraints(
     }
 
     // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
-    // DS lives in its parent. The NS coupling is checked at versioning.
+    // DS lives in its parent; the final-state check verifies its NS delegation.
     if *record_type == RecordType::Ds && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "DS records secure a child delegation; the zone's own DS belongs in the parent zone"

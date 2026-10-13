@@ -25,7 +25,7 @@ pub struct CreateRoleRequest {
 
 /// API representation of a role.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetRoleResponse {
+pub struct RoleResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: RoleId,
     #[schema(example = "external-dns-prod")]
@@ -48,8 +48,8 @@ pub struct GetRoleResponse {
 
 /// A single role wrapped in a response envelope.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct RoleResponse {
-    pub role: GetRoleResponse,
+pub struct SingleRoleResponse {
+    pub role: RoleResponse,
 }
 
 /// Request body for granting a role actions in one zone or all zones.
@@ -75,7 +75,7 @@ pub struct CreateRoleGrantRequest {
 
 /// API representation of a role grant.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetRoleGrantResponse {
+pub struct RoleGrantResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: RoleGrantId,
     #[schema(example = "external-dns-prod")]
@@ -91,14 +91,14 @@ pub struct GetRoleGrantResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetRoleGrantResponse {
-    /// Build a grant response with its role and zone names; no zone means all zones.
+impl RoleGrantResponse {
+    /// Build grant information with its role and zone names; no zone means all zones.
     pub(crate) fn from_grant(
         grant: &RoleGrant,
         role_name: &str,
         zone_name: Option<&ZoneName>,
     ) -> Self {
-        GetRoleGrantResponse {
+        RoleGrantResponse {
             id: grant.id,
             role_name: role_name.to_string(),
             zone_name: zone_name.map(|name| name.to_string()),
@@ -112,6 +112,6 @@ impl GetRoleGrantResponse {
 
 /// A single role grant wrapped in a response envelope.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct RoleGrantResponse {
-    pub role_grant: GetRoleGrantResponse,
+pub struct SingleRoleGrantResponse {
+    pub role_grant: RoleGrantResponse,
 }

@@ -1830,14 +1830,22 @@ async fn record_reject_dname_and_alias_target_rules() {
         ),
     ];
     for (name, record_type, value, priority, expected) in cases {
-        let (status, body) = app
-            .send_request(
-                Method::POST,
-                "/records",
-                Some(create(name, record_type, value.clone(), priority)),
-            )
-            .await;
-        assert_eq!(status, expected, "{name} {record_type} {value}: {body}");
+        for dry_run in [true, false] {
+            let mut request = create(name, record_type, value.clone(), priority);
+            request["dry_run"] = json!(dry_run);
+            let (status, body) = app
+                .send_request(Method::POST, "/records", Some(request))
+                .await;
+            let expected = if dry_run && expected == StatusCode::CREATED {
+                StatusCode::OK
+            } else {
+                expected
+            };
+            assert_eq!(
+                status, expected,
+                "{name} {record_type} {value}, dry_run={dry_run}: {body}"
+            );
+        }
     }
 
     // A DNAME at the apex is allowed beside the zone's own SOA and NS, and
@@ -1868,4 +1876,81 @@ async fn record_reject_dname_and_alias_target_rules() {
             .await;
         assert_eq!(status, expected, "{name} {record_type}: {body}");
     }
+}
+
+/// Preview and apply reject the same cross-owner conflicts without changing the zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_mutations_validate_the_complete_proposed_state() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, seeded) = app
+        .send_request(
+            Method::POST,
+            "/records/bulk",
+            Some(json!({
+                "zone_name": zone_name,
+                "records": [
+                    {"name": "child", "type": "NS", "value": "ns.example.net."},
+                    {"name": "child", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab"},
+                    {"name": "redirect", "type": "DNAME", "value": "target.example.net."}
+                ]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{seeded}");
+    let ns_id = seeded["records"][0]["id"].as_i64().unwrap();
+    let serial = app.read_zone_serial(zone_name).await;
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &format!("/records/{ns_id}"),
+                Some(json!({"name": "moved", "dry_run": dry_run})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        for path in [
+            format!("/records/{ns_id}?dry_run={dry_run}"),
+            format!("/records?zone_name={zone_name}&name=child&type=NS&dry_run={dry_run}"),
+        ] {
+            let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        }
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records/bulk",
+                Some(json!({
+                    "zone_name": zone_name, "dry_run": dry_run,
+                    "records": [{"name": "leaf.redirect", "type": "A", "value": "192.0.2.5"}]
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(json!({
+                    "content": "leaf.redirect IN A 192.0.2.5\n", "dry_run": dry_run
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["applied"], false);
+        assert!(!body["errors"].as_array().unwrap().is_empty());
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+    // Removing the delegation and its DS together leaves a valid final state.
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!("/records?zone_name={zone_name}&name=child"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"], 2);
 }

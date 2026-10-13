@@ -6,14 +6,14 @@ use bindizr_service::zone;
 use chrono::Utc;
 use ring::digest::{Context, SHA256};
 
-use crate::dns::{error::XfrError, server::DnsContext, stream::ResponseWriter};
+use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
 
 /// Generates the catalog zone and its member zone list from `zones`, the
 /// served zones loaded where the transfer was authorized.
 pub(crate) async fn generate_catalog_zone(
     dns_cx: &DnsContext,
     zones: Vec<Zone>,
-) -> Result<(Zone, Vec<String>), XfrError> {
+) -> Result<(Zone, Vec<String>), DnsError> {
     let cx = dns_cx.daemon();
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
@@ -85,7 +85,7 @@ pub(crate) async fn handle_catalog_transfer(
     response_qtype: Rtype,
     signer: &mut Option<TransferSigner>,
     zones: Vec<Zone>,
-) -> Result<(), XfrError> {
+) -> Result<(), DnsError> {
     log::info!(
         "{} request for catalog zone: {}",
         response_qtype,
@@ -143,7 +143,7 @@ pub(crate) async fn handle_catalog_transfer(
             })
             .await?;
         messages_sent += writer.flush_if_not_empty(&mut builder).await?;
-        Ok::<usize, XfrError>(messages_sent)
+        Ok::<usize, DnsError>(messages_sent)
     }
     .await;
     // Handed back so a failure's SERVFAIL is signed too.

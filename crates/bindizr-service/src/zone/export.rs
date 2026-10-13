@@ -26,7 +26,7 @@ pub async fn export(
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
     let load_result = async {
-        let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
             .await?

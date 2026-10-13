@@ -202,7 +202,21 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
         body["error"]
             .as_str()
             .unwrap()
-            .contains("managed automatically")
+            .contains("unknown field `serial`")
+    );
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(json!({"serial": null})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("unknown field `serial`")
     );
 }
 

@@ -9,46 +9,38 @@ mod update;
 mod validation;
 
 pub use bulk::create_bulk;
-pub(crate) use bulk::{
-    PreparedRecord, create_with_changes_tx, delete_with_changes_tx, parse_record_request,
-    update_with_changes_tx,
-};
+pub(crate) use bulk::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
 pub use create::create;
 pub use delete::{delete, delete_matching};
 pub use get::{count_all, get, list_with_zone_by_filter};
 pub use import::import_zone;
 pub use update::{update, update_by_name};
 pub(crate) use validation::{
-    AddResult, normalize_record_owner_name, validate_add_tx, validate_record_constraints,
-    validate_record_name_in_zone,
+    AddResult, validate_add_tx, validate_record_constraints, validate_record_name_in_zone,
 };
 
 use crate::{
     authorization::Caller,
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
-    types::{GetRecordResponse, RecordValue},
+    types::{RecordResponse, RecordValue},
 };
 
-/// A record the zone serves, as the record API shows it: a user record or,
-/// behind the `signed` flag, a row of the derived DNSSEC plane. The SOA is
-/// the zone's own and not among them.
+/// An API-visible user or derived DNSSEC record; SOA stays in zone metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ServedRecord {
     User(RecordWithZone),
     Derived(DnssecRecordWithZone),
 }
 
-/// Render a listed row for the API: a user record keeps its id and the
-/// caller's actions on it, a derived DNSSEC row carries neither and renders
-/// its RDATA in presentation form.
-fn build_record_response(caller: &Caller, record: &ServedRecord) -> GetRecordResponse {
+/// Render a served record; derived DNSSEC rows have presentation RDATA but no id or actions.
+fn build_record_response(caller: &Caller, record: &ServedRecord) -> RecordResponse {
     match record {
-        ServedRecord::User(record) => GetRecordResponse::from_record(
+        ServedRecord::User(record) => RecordResponse::from_record(
             &record.record(),
             &record.zone_name,
             caller.record_actions(record.zone_id, &record.name, &record.record_type),
         ),
-        ServedRecord::Derived(row) => GetRecordResponse {
+        ServedRecord::Derived(row) => RecordResponse {
             id: None,
             name: row.name.to_fqdn(&row.zone_name),
             record_type: row.record_type.into(),

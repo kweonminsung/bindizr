@@ -1,6 +1,7 @@
 //! DNS front end: the TCP, UDP, and XoT listeners, plus zone transfer
 //! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
 
+mod connection;
 pub(crate) mod error;
 pub(crate) mod server;
 mod stream;
@@ -18,7 +19,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use self::{server::DnsContext, tcp::Handshake};
+use self::server::DnsContext;
 use crate::{shutdown::Shutdown, tls::TlsCertificate};
 
 /// Why a DNS listener could not come up.
@@ -117,7 +118,7 @@ pub(crate) async fn initialize(
     let tcp_stop = shutdown.waiter();
     let tcp_cx = dns_cx.clone();
     let tcp_task = tokio::spawn(async move {
-        if let Err(e) = tcp::run_tcp_server(tcp_cx, tcp_listener, Handshake::None, tcp_stop).await {
+        if let Err(e) = tcp::run_tcp_server(tcp_cx, tcp_listener, tcp_stop).await {
             log::error!("DNS TCP server error: {}", e);
         }
     });
@@ -127,9 +128,7 @@ pub(crate) async fn initialize(
         let tls_stop = shutdown.waiter();
         let tls_cx = dns_cx.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                tcp::run_tcp_server(tls_cx, listener, Handshake::Tls(server_config), tls_stop).await
-            {
+            if let Err(e) = tls::run_tls_server(tls_cx, listener, server_config, tls_stop).await {
                 log::error!("DNS TLS server error: {}", e);
             }
         })

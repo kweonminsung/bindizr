@@ -26,7 +26,7 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    types::{ExternalDnsChangesRequest, ExternalDnsRecord, ExternalDnsRecordUpdate},
+    types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord, ExternalDnsRecordUpdate},
 };
 
 /// Build a zone fixture for the test.
@@ -296,7 +296,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
         test_zone(1, "example.com"),
         test_zone(2, "internal.example.com"),
     ];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set(
             "api.internal.example.com",
             "A",
@@ -321,7 +321,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
 #[test]
 fn group_ops_rejects_names_without_authoritative_zone() {
     let zones = vec![test_zone(1, "example.com")];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.other.org", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
@@ -360,7 +360,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
             created_at: Utc::now(),
         }],
     );
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set(
             "api.internal.example.com",
             "A",
@@ -382,7 +382,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
 }
 
 /// Resolve an external-dns change request into operations for the test zone.
-fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
+fn zone_ops(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
     let ops = parse_changes_request(request).unwrap();
     let grouped = group_ops_by_zone(
         &Caller::unauthenticated_api(),
@@ -397,7 +397,7 @@ fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
 #[test]
 fn change_set_creates_new_records_with_zone_default_ttl() {
     let zone = test_zone(1, "example.com");
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
@@ -415,7 +415,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
 #[test]
 fn change_set_skips_existing_values_regardless_of_ttl() {
     let zone = test_zone(1, "example.com");
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
@@ -437,7 +437,7 @@ fn change_set_skips_existing_values_regardless_of_ttl() {
 fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set("app.example.com", "A", Some(300), &["192.0.2.1"]),
@@ -458,7 +458,7 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
 #[test]
 fn change_set_skips_deletes_of_absent_records() {
     let zone = test_zone(1, "example.com");
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![],
         deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
@@ -478,7 +478,7 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
         test_record(10, "app", RecordType::A, "192.0.2.1", 3600),
         test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
     ];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
@@ -501,7 +501,7 @@ fn change_set_replaces_rows_when_update_changes_targets() {
         test_record(10, "app", RecordType::A, "192.0.2.1", 3600),
         test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
     ];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
@@ -528,7 +528,7 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
         test_record(10, "app", RecordType::A, "192.0.2.1", 3600),
         test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
     ];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set(
@@ -564,7 +564,7 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
 fn change_set_enforces_cname_exclusivity() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set(
             "app.example.com",
             "CNAME",
@@ -584,7 +584,7 @@ fn change_set_enforces_cname_exclusivity() {
 fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
-    let request = ExternalDnsChangesRequest {
+    let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set(
             "app.example.com",
             "CNAME",

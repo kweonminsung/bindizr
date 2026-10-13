@@ -4,7 +4,7 @@ use bindizr_db::ParseSortError;
 
 use crate::{
     error::ServiceError,
-    types::{PaginatedResponse, Pagination},
+    types::{PaginatedResponse, PaginationResponse},
 };
 
 /// Bounds one call to a page rather than a whole table.
@@ -44,7 +44,7 @@ pub(crate) fn build_paginated_response<T>(
 ) -> PaginatedResponse<T> {
     PaginatedResponse {
         items,
-        pagination: Pagination {
+        pagination: PaginationResponse {
             limit: limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32),
             offset: offset.unwrap_or(0),
             total,

@@ -62,7 +62,7 @@ pub struct SignRequestError(#[source] LibraryError);
 
 /// The answer to a signed request did not verify under the key.
 #[derive(Debug, Error)]
-pub enum VerifyAnswerError {
+pub enum VerifyResponseError {
     #[error("invalid DNS message: {0}")]
     Malformed(#[source] LibraryError),
     #[error("TSIG validation of the answer failed: {0}")]
@@ -107,9 +107,9 @@ pub fn sign_request(
 
 /// Check the answer to a signed request against the key that signed it
 /// (RFC 8945, Section 5.4.2).
-pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), VerifyAnswerError> {
+pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), VerifyResponseError> {
     let mut message = Message::from_octets(response.to_vec())
-        .map_err(|e| VerifyAnswerError::Malformed(Box::new(e)))?;
+        .map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
     let mac_len = message.additional().ok().and_then(|additional| {
         additional
             .limit_to::<Tsig<_, _>>()
@@ -119,9 +119,9 @@ pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), Ve
     });
     signer
         .answer(&mut message, Time48::now())
-        .map_err(|e| VerifyAnswerError::Rejected(Box::new(e)))?;
+        .map_err(|e| VerifyResponseError::Rejected(Box::new(e)))?;
     if mac_len != Some(signer.key().native_len()) {
-        return Err(VerifyAnswerError::TruncatedMac);
+        return Err(VerifyResponseError::TruncatedMac);
     }
     Ok(())
 }
@@ -140,9 +140,9 @@ pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
 /// Store holding the one key the request names, or nothing when that key is
 /// unknown so validation yields the BADKEY error response.
 #[derive(Debug, Clone)]
-struct DbKeyStore(Option<TsigSigningKey>);
+struct RequestKeyStore(Option<TsigSigningKey>);
 
-impl KeyStore for DbKeyStore {
+impl KeyStore for RequestKeyStore {
     type Key = TsigSigningKey;
 
     /// Find a stored TSIG key matching the requested name and algorithm.
@@ -197,7 +197,7 @@ pub fn verify_tsig(
     let mut message =
         Message::from_octets(query_data.to_vec()).map_err(|e| TsigError::Malformed(Box::new(e)))?;
 
-    let store = DbKeyStore(key);
+    let store = RequestKeyStore(key);
     let now = Time48::now();
     match ServerTransaction::request(&store, &mut message, now) {
         Ok(Some(context)) => {

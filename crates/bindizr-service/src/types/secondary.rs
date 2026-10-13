@@ -51,7 +51,7 @@ pub struct UpdateSecondaryRequest {
 
 /// API representation of a secondary.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetSecondaryResponse {
+pub struct SecondaryResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: SecondaryId,
     #[schema(example = "ns2")]
@@ -66,11 +66,11 @@ pub struct GetSecondaryResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetSecondaryResponse {
+impl SecondaryResponse {
     /// Build the API representation from a stored secondary and its NOTIFY
     /// key's name.
     pub fn from_secondary(secondary: &Secondary, notify_key_name: Option<&str>) -> Self {
-        GetSecondaryResponse {
+        SecondaryResponse {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.to_string(),
@@ -83,25 +83,23 @@ impl GetSecondaryResponse {
 
 /// A secondary wrapped in a response envelope.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct SecondaryResponse {
-    pub secondary: GetSecondaryResponse,
+pub struct SingleSecondaryResponse {
+    pub secondary: SecondaryResponse,
 }
 
 /// One NOTIFY sent to a resolved address during a check; `error` is null
 /// when the server accepted it.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct NotifyCheckResponse {
+pub struct CheckNotifyResponse {
     #[schema(example = "10.0.0.14:53")]
     pub address: String,
     pub error: Option<String>,
 }
 
-/// What a secondary answered when checked: where its address resolves, the
-/// catalog zone serial it serves against Bindizr's, and whether it accepted
-/// a NOTIFY.
+/// Secondary check results: resolved addresses, catalog serial comparison, and NOTIFY outcome.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct SecondaryCheckResponse {
-    pub secondary: GetSecondaryResponse,
+pub struct CheckSecondaryResponse {
+    pub secondary: SecondaryResponse,
     /// Socket addresses the registered `host[:port]` resolves to now.
     #[schema(example = json!(["10.0.0.14:53"]))]
     pub addresses: Vec<String>,
@@ -117,9 +115,9 @@ pub struct SecondaryCheckResponse {
     /// The secondary's catalog probe, classified against `catalog_serial`.
     pub catalog: SecondaryStatusResponse,
     /// The NOTIFY sent for the catalog zone, one per resolved address.
-    pub notifies: Vec<NotifyCheckResponse>,
+    pub notifies: Vec<CheckNotifyResponse>,
     /// How Bindizr served the secondary's transfers.
-    pub transfers: TransferSummary,
+    pub transfers: TransferSummaryResponse,
 }
 
 /// One transfer Bindizr answered, refused, or failed for a secondary's address.
@@ -167,7 +165,7 @@ impl From<&TransferWithZone> for TransferResponse {
 
 /// How the zones a secondary asked for were last served, counted by zone.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
-pub struct TransferSummary {
+pub struct TransferSummaryResponse {
     #[schema(example = 12)]
     pub zones: u64,
     #[schema(example = 1)]
@@ -184,7 +182,7 @@ pub struct TransferSummary {
     pub failed: u64,
 }
 
-impl From<&[TransferWithZone]> for TransferSummary {
+impl From<&[TransferWithZone]> for TransferSummaryResponse {
     /// Count each zone by its latest transfer among `transfers`.
     fn from(transfers: &[TransferWithZone]) -> Self {
         let mut latest: HashMap<&str, &TransferWithZone> = HashMap::new();
@@ -196,7 +194,7 @@ impl From<&[TransferWithZone]> for TransferSummary {
                 *entry = transfer;
             }
         }
-        let mut summary = TransferSummary {
+        let mut summary = TransferSummaryResponse {
             zones: latest.len() as u64,
             axfr: 0,
             ixfr_full: 0,
@@ -224,26 +222,26 @@ pub struct SecondaryTransfersResponse {
     pub secondary_name: String,
     #[schema(example = "ns2.example.net:53")]
     pub address: String,
-    pub summary: TransferSummary,
+    pub summary: TransferSummaryResponse,
     /// Newest first, at most the requested `limit`.
     pub transfers: Vec<TransferResponse>,
 }
 
 /// One secondary's transfer summary, as `doctor` reports it.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct SecondaryTransferSummary {
+pub struct SecondaryTransferSummaryResponse {
     #[schema(example = "ns2")]
     pub secondary_name: String,
     #[schema(example = "ns2.example.net:53")]
     pub address: String,
-    pub summary: TransferSummary,
+    pub summary: TransferSummaryResponse,
 }
 
 /// Query parameters of a secondary's transfer listing.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub struct GetSecondaryTransfersFilter {
+pub struct SecondaryTransferFilter {
     /// At most this many transfers, newest first; 1000 when omitted.
     #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
@@ -253,7 +251,7 @@ pub struct GetSecondaryTransfersFilter {
     pub zone_name: Option<String>,
 }
 
-impl SecondaryCheckResponse {
+impl CheckSecondaryResponse {
     /// Whether every part of the check passed: resolved, in sync, and every
     /// NOTIFY accepted. The transfer summary is information, not a verdict.
     pub fn is_healthy(&self) -> bool {

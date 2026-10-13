@@ -5,10 +5,10 @@ use bindizr_service::{
     error::ServiceError,
     record,
     types::{
-        CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse,
-        GetZonesFilter, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
-        RollbackZoneResponse, Run, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
-        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneView, ZoneWriteResponse,
+        CreateZoneRequest, DeleteZoneResponse, DiffZoneVersionsResponse, ExportZoneFileResponse,
+        GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
+        RollbackZoneResponse, Run, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse,
+        ZoneFilter, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneView,
     },
     zone,
 };
@@ -19,12 +19,12 @@ use crate::socket::types::DaemonResponse;
 pub(crate) async fn get_zone(
     cx: &Context,
     name: &str,
-) -> Result<DaemonResponse<ZoneResponse>, ServiceError> {
+) -> Result<DaemonResponse<SingleZoneResponse>, ServiceError> {
     let zone = zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: ZoneResponse {
-            zone: GetZoneResponse::from(&zone),
+        data: SingleZoneResponse {
+            zone: ZoneResponse::from(&zone),
         },
     })
 }
@@ -32,8 +32,8 @@ pub(crate) async fn get_zone(
 /// Return zones matching the request filters.
 pub(crate) async fn list_zones(
     cx: &Context,
-    filter: GetZonesFilter,
-) -> Result<DaemonResponse<PaginatedResponse<GetZoneResponse>>, ServiceError> {
+    filter: ZoneFilter,
+) -> Result<DaemonResponse<PaginatedResponse<ZoneResponse>>, ServiceError> {
     let response = zone::list_by_filter(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Zones retrieved successfully".to_string(),
@@ -45,7 +45,7 @@ pub(crate) async fn list_zones(
 pub(crate) async fn create_zone(
     cx: &Context,
     request: &CreateZoneRequest,
-) -> Result<DaemonResponse<ZoneWriteResponse>, ServiceError> {
+) -> Result<DaemonResponse<WriteZoneResponse>, ServiceError> {
     let response = zone::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
@@ -62,7 +62,7 @@ pub(crate) async fn update_zone(
     cx: &Context,
     zone_name: &str,
     request: &UpdateZoneRequest,
-) -> Result<DaemonResponse<ZoneWriteResponse>, ServiceError> {
+) -> Result<DaemonResponse<WriteZoneResponse>, ServiceError> {
     let response = zone::update(
         cx,
         &Caller::socket(),
@@ -150,7 +150,7 @@ pub(crate) async fn get_zone_version(
     cx: &Context,
     name: &str,
     serial: Serial,
-) -> Result<DaemonResponse<VersionDetailResponse>, ServiceError> {
+) -> Result<DaemonResponse<GetZoneVersionResponse>, ServiceError> {
     let response =
         zone::get_version(cx, &Caller::socket(), &zone::normalize_name(name)?, serial).await?;
     Ok(DaemonResponse {
@@ -165,7 +165,7 @@ pub(crate) async fn diff_zone_versions(
     name: &str,
     from_serial: Serial,
     to_serial: Option<Serial>,
-) -> Result<DaemonResponse<VersionDiffResponse>, ServiceError> {
+) -> Result<DaemonResponse<DiffZoneVersionsResponse>, ServiceError> {
     let response = zone::diff_versions(
         cx,
         &Caller::socket(),

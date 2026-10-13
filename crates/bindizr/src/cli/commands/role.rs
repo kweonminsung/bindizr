@@ -1,7 +1,7 @@
 use bindizr_core::{model::role_grant::RoleGrantId, outln};
 use bindizr_service::types::{
-    CreateRoleGrantRequest, CreateRoleRequest, GetRoleGrantResponse, GetRoleResponse,
-    MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse,
+    CreateRoleGrantRequest, CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse,
+    RoleGrantResponse, RoleResponse, SingleRoleGrantResponse, SingleRoleResponse,
 };
 use clap::Subcommand;
 
@@ -156,7 +156,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             description,
             output,
         } => {
-            let res = client::send_command::<RoleResponse>(DaemonCommand::CreateRole(
+            let res = client::send_command::<SingleRoleResponse>(DaemonCommand::CreateRole(
                 CreateRoleRequest { name, description },
             ))
             .await?;
@@ -169,14 +169,15 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<GetRoleResponse>>(
+            let res = client::send_command::<PaginatedResponse<RoleResponse>>(
                 DaemonCommand::ListRoles(PageRequest { limit, offset }),
             )
             .await?;
             print_page(&res.data, output, |item| RoleRow::from(item))?;
         }
         RoleCommand::Get { name, output } => {
-            let res = client::send_command::<RoleResponse>(DaemonCommand::GetRole { name }).await?;
+            let res =
+                client::send_command::<SingleRoleResponse>(DaemonCommand::GetRole { name }).await?;
             print_response(&res.data, output, |response| {
                 vec![RoleRow::from(&response.role)]
             })?;
@@ -197,16 +198,17 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             types,
             output,
         } => {
-            let res = client::send_command::<RoleGrantResponse>(DaemonCommand::CreateRoleGrant {
-                role_name: name,
-                request: CreateRoleGrantRequest {
-                    zone_name: zone,
-                    actions,
-                    record_name_pattern: pattern,
-                    record_types: types,
-                },
-            })
-            .await?;
+            let res =
+                client::send_command::<SingleRoleGrantResponse>(DaemonCommand::CreateRoleGrant {
+                    role_name: name,
+                    request: CreateRoleGrantRequest {
+                        zone_name: zone,
+                        actions,
+                        record_name_pattern: pattern,
+                        record_types: types,
+                    },
+                })
+                .await?;
             print_response(&res.data, output, |response| {
                 vec![RoleGrantRow::from(&response.role_grant)]
             })?;
@@ -217,7 +219,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<GetRoleGrantResponse>>(
+            let res = client::send_command::<PaginatedResponse<RoleGrantResponse>>(
                 DaemonCommand::ListRoleGrants {
                     role_name: name,
                     page: PageRequest { limit, offset },

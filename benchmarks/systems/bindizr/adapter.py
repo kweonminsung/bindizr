@@ -201,27 +201,22 @@ class BindizrAdapter(DnsAdapter):
             item["priority"] = rec["priority"]
         return item
 
-    async def _post_with_retry(self, url: str, body: dict, count: int,
-                               check_applied: bool = False) -> int:
-        """POST a batch with transient retries and return the failed-record count.
-
-        With `check_applied`, treat HTTP 200 with `applied=false` as a deterministic
-        rejection and do not retry."""
+    async def _post_json_with_retry(self, url: str, body: dict) -> dict | None:
+        """Return the JSON response object, or None after exhausting retries."""
         delay = 0.05
         for attempt in range(POST_ATTEMPTS):
             try:
                 async with self.session.post(url, json=body) as r:
                     if r.status in (200, 201):
-                        if not check_applied:
-                            return 0
                         data = await r.json()
-                        return 0 if data.get("applied") else count
+                        if isinstance(data, dict):
+                            return data
             except Exception:
                 pass
             if attempt < POST_ATTEMPTS - 1:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 1.0)
-        return count
+        return None
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
         """Bulk-insert via Bindizr's `/records/bulk` API in single-transaction
@@ -232,7 +227,8 @@ class BindizrAdapter(DnsAdapter):
             chunk = records[start:start + self.bulk_chunk]
             body = {"zone_name": zone.rstrip("."),
                     "records": [self._bulk_item(r) for r in chunk]}
-            self.bulk_errors += await self._post_with_retry(url, body, len(chunk))
+            if await self._post_json_with_retry(url, body) is None:
+                self.bulk_errors += len(chunk)
 
     def _zone_line(self, rec: dict) -> str:
         """Render a benchmark record as a zone-file line."""
@@ -253,8 +249,9 @@ class BindizrAdapter(DnsAdapter):
             chunk = records[start:start + self.import_chunk]
             content = "\n".join(self._zone_line(r) for r in chunk) + "\n"
             body = {"content": content, "mode": "append"}
-            self.import_errors += await self._post_with_retry(
-                url, body, len(chunk), check_applied=True)
+            data = await self._post_json_with_retry(url, body)
+            if data is None or not data.get("applied"):
+                self.import_errors += len(chunk)
 
     def dns_endpoint(self) -> Endpoint:
         """Return the DNS endpoint that serves the managed zone."""

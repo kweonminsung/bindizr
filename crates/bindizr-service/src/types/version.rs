@@ -45,8 +45,7 @@ pub struct ZoneVersionResponse {
 impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
     type Error = ServiceError;
 
-    /// Build a zone-version response from its stored metadata; a stored
-    /// mailbox or serial that does not decode is a server fault.
+    /// Render stored version metadata; an invalid SOA mailbox is a server fault.
     fn try_from(version: &ZoneVersion) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
@@ -89,8 +88,7 @@ pub struct VersionRecordResponse {
 }
 
 impl VersionRecordResponse {
-    /// Build a version-record response from a record's data, its owner
-    /// rendered absolute within `zone_name`.
+    /// Render a version record with an absolute owner name.
     pub(crate) fn from_record_and_zone_name(record: &RecordData, zone_name: &ZoneName) -> Self {
         VersionRecordResponse {
             name: record.name.to_fqdn(zone_name),
@@ -105,7 +103,7 @@ impl VersionRecordResponse {
 
 /// One version plus the records rewound to that serial.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct VersionDetailResponse {
+pub struct GetZoneVersionResponse {
     pub version: ZoneVersionResponse,
     pub records: Vec<VersionRecordResponse>,
 }
@@ -113,7 +111,7 @@ pub struct VersionDetailResponse {
 /// One record on one side of a diff. Rendering (zone-file rdata, priority
 /// placement) is left to the client; the value is in display form.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct RecordDiffValue {
+pub struct RecordDiffValueResponse {
     pub value: RecordValue,
     #[schema(example = 300, value_type = i32)]
     pub ttl: Ttl,
@@ -144,20 +142,20 @@ impl std::fmt::Display for RecordChange {
 /// The records of one name and type that differ, with those present on
 /// each side. `from` is empty for `added`, `to` for `removed`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct RecordDiffEntry {
+pub struct RecordDiffEntryResponse {
     pub change: RecordChange,
     #[schema(example = "www.example.com.")]
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: RecordType,
-    pub from: Vec<RecordDiffValue>,
-    pub to: Vec<RecordDiffValue>,
+    pub from: Vec<RecordDiffValueResponse>,
+    pub to: Vec<RecordDiffValueResponse>,
 }
 
 /// How many name-and-type groups of records were added, removed, and changed.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
-pub struct RecordDiffSummary {
+pub struct RecordDiffSummaryResponse {
     #[schema(example = 1)]
     pub added: u64,
     #[schema(example = 1)]
@@ -169,25 +167,25 @@ pub struct RecordDiffSummary {
 /// Record differences grouped by name and type. Version comparisons always
 /// populate this; mutation responses populate it only for dry-run previews.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
-pub struct RecordDiff {
-    pub entries: Vec<RecordDiffEntry>,
-    pub summary: RecordDiffSummary,
+pub struct RecordDiffResponse {
+    pub entries: Vec<RecordDiffEntryResponse>,
+    pub summary: RecordDiffSummaryResponse,
 }
 
 /// The difference between two of a zone's serials.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct VersionDiffResponse {
+pub struct DiffZoneVersionsResponse {
     #[schema(example = 41, value_type = u32)]
     pub from_serial: Serial,
     #[schema(example = 42, value_type = u32)]
     pub to_serial: Serial,
-    pub diff: RecordDiff,
+    pub diff: RecordDiffResponse,
 }
 
 /// Counts of what a rollback changes. TTL-only differences count as one
 /// delete plus one add.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
-pub struct RollbackSummary {
+pub struct RollbackZoneSummaryResponse {
     #[schema(example = 2)]
     pub added: u64,
     #[schema(example = 3)]
@@ -210,7 +208,7 @@ pub struct RollbackZoneResponse {
     pub target_serial: Serial,
     #[schema(example = 13, value_type = u32)]
     pub new_serial: Serial,
-    pub summary: RollbackSummary,
+    pub summary: RollbackZoneSummaryResponse,
 }
 
 impl RecordChange {

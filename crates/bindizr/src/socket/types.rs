@@ -3,14 +3,14 @@ use bindizr_core::{
     model::{record::RecordId, role_grant::RoleGrantId, zone_version::VersionFilter},
 };
 use bindizr_service::types::{
-    CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateRecordRequest,
+    CheckNotifyResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateRecordRequest,
     CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest, CreateTokenRequest,
     CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck, EnableDnssecRequest,
-    GetRecordsFilter, GetSecondaryTransfersFilter, GetZonesFilter, Holddown,
-    ImportDnssecKeyRequest, ImportZoneRequest, NotifyCheckResponse, NotifySerial, PageRequest,
-    RolloverDnssecRequest, Run, SecondaryStatusResponse, SecondaryTransferSummary, TokenFilter,
-    TsigKeyFilter, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
-    UpdateSecondaryRequest, UpdateZoneRequest, ZoneView,
+    Holddown, ImportDnssecKeysRequest, ImportZoneRequest, NotifySerial, PageRequest, RecordFilter,
+    RolloverDnssecRequest, Run, SecondaryStatusResponse, SecondaryTransferFilter,
+    SecondaryTransferSummaryResponse, TokenFilter, TsigKeyFilter, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
+    ZoneFilter, ZoneView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +75,7 @@ pub(crate) enum DaemonCommand {
     },
     ListSecondaryTransfers {
         name: String,
-        filter: GetSecondaryTransfersFilter,
+        filter: SecondaryTransferFilter,
     },
     CreateDnssecPolicy(CreateDnssecPolicyRequest),
     ListDnssecPolicies(PageRequest),
@@ -90,7 +90,7 @@ pub(crate) enum DaemonCommand {
         name: String,
     },
     CreateZone(CreateZoneRequest),
-    ListZones(GetZonesFilter),
+    ListZones(ZoneFilter),
     GetZone {
         name: String,
     },
@@ -143,7 +143,7 @@ pub(crate) enum DaemonCommand {
     },
     CreateRecord(CreateRecordRequest),
     CreateRecordsBulk(CreateBulkRecordsRequest),
-    ListRecords(GetRecordsFilter),
+    ListRecords(RecordFilter),
     GetRecord {
         id: RecordId,
     },
@@ -204,7 +204,7 @@ pub(crate) enum DaemonCommand {
     },
     ImportDnssecKeys {
         zone_name: String,
-        request: ImportDnssecKeyRequest,
+        request: ImportDnssecKeysRequest,
     },
 }
 
@@ -238,9 +238,8 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) database_error: Option<String>,
 }
 
-/// Daemon-side installation checks returned by the `Doctor` command. The
-/// secondaries are classified against the catalog zone's serial, the way
-/// `zone status` classifies them against a member zone's.
+/// Daemon installation checks; secondaries are compared with the catalog serial
+/// as `zone status` compares them with a member zone.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheck,
@@ -251,9 +250,9 @@ pub(crate) struct DaemonDoctorResponse {
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<Serial>,
     pub(crate) secondaries: Vec<SecondaryStatusResponse>,
-    pub(crate) notifies: Vec<NotifyCheckResponse>,
+    pub(crate) notifies: Vec<CheckNotifyResponse>,
     /// How Bindizr served each enabled secondary.
-    pub(crate) transfers: Vec<SecondaryTransferSummary>,
+    pub(crate) transfers: Vec<SecondaryTransferSummaryResponse>,
 }
 
 /// One check's outcome.

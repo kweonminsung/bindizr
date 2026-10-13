@@ -1,9 +1,8 @@
-//! One cell of CLI output for what no type of ours renders itself: an absent
-//! value, a flag, a timestamp, a duration, a cut value, and a cell built from
-//! several fields. A value with a `Display` is written with `{}` instead.
+//! Shared CLI cells for absent values, flags, time, truncation, and combined fields.
+//! Use a type's `Display` where available.
 
 use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
-use bindizr_service::types::{RecordValue, TransferResponse, TransferSummary};
+use bindizr_service::types::{RecordValue, TransferResponse, TransferSummaryResponse};
 use chrono::Utc;
 
 /// What a cell shows for a value that is absent.
@@ -97,7 +96,7 @@ pub(crate) fn display_transfer(transfer: &TransferResponse) -> String {
 }
 
 /// How a secondary's zones were last served.
-pub(crate) fn display_transfer_summary(summary: &TransferSummary) -> String {
+pub(crate) fn display_transfer_summary(summary: &TransferSummaryResponse) -> String {
     if summary.zones == 0 {
         return "no transfers".to_string();
     }
