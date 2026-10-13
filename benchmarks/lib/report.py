@@ -38,7 +38,7 @@ def _load_all() -> dict[str, dict]:
     return data
 
 
-def _md_table(headers: list[str], rows: list[list[Any]]) -> str:
+def _render_markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
     """Render headers and rows as a Markdown table."""
     line = "| " + " | ".join(headers) + " |\n"
     line += "| " + " | ".join("---" for _ in headers) + " |\n"
@@ -222,7 +222,7 @@ def _render_b07(rows: list[dict]) -> str:
             r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
         ] for r in crud]
-        out.append(_md_table(
+        out.append(_render_markdown_table(
             ["Pairing", "Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
              "Read p95 (ms)", "Error Rate", "Peak mem (MB)",
              "Bindizr mem (MB)", "DB mem (MB)", "Runs"], crud_rows))
@@ -244,7 +244,7 @@ def _render_b07(rows: list[dict]) -> str:
             r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
         ] for r in bulk]
-        out.append(_md_table(
+        out.append(_render_markdown_table(
             ["Pairing", "Backend", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
             bulk_rows))
@@ -281,7 +281,7 @@ def _render_markdown(env: dict, data: dict) -> str:
     hw = env["hardware"]
     out = ["# Bindizr Benchmark Results\n"]
     out.append("## Test Environment\n")
-    out.append(_md_table(
+    out.append(_render_markdown_table(
         ["Component", "Value"],
         [
             ["CPU", f"{hw['cpu']} ({hw['cpu_cores']} cores)"],
@@ -295,7 +295,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         ],
     ))
     out.append("\n### Software Versions\n")
-    out.append(_md_table(["Software", "Version"],
+    out.append(_render_markdown_table(["Software", "Version"],
                          [[k, v] for k, v in env["software"].items()]))
 
     if "b01_crud_tps" in data:
@@ -308,7 +308,7 @@ def _render_markdown(env: dict, data: dict) -> str:
                 _pm(r, "read_p95_ms", 2), f'{r.get("error_rate", 0) * 100:.2f}%',
                 r.get("runs", 1),
             ])
-        out.append(_md_table(
+        out.append(_render_markdown_table(
             ["Product", "Create TPS", "Update TPS", "Delete TPS", "Read TPS",
              "Read p95 (ms)", "Error Rate", "Runs"], rows))
 
@@ -325,7 +325,7 @@ def _render_markdown(env: dict, data: dict) -> str:
                 r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
                 r.get("runs", 1),
             ])
-        out.append(_md_table(
+        out.append(_render_markdown_table(
             ["System", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Runs"], rows))
         out.append(_bulk_linearity_note(results))
@@ -346,7 +346,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         out.append(f"\n## {title}\n")
         headers = _union_headers(results)
         rows = [[r.get(h, "-") for h in headers] for r in results]
-        out.append(_md_table(headers, rows))
+        out.append(_render_markdown_table(headers, rows))
 
     if "b07_database" in data:
         out.append(_render_b07(_rows(data, "b07_database")))
@@ -373,7 +373,7 @@ def _render_markdown(env: dict, data: dict) -> str:
             rows.append([r["system"], r.get("qps", "-"), r.get("avg_latency_ms", "-"),
                          r.get("p95_ms", "-"), r.get("p99_ms", "-"),
                          _b08_query_delta(r, comparable)])
-        out.append(_md_table(
+        out.append(_render_markdown_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
              "QPS vs. same server standalone"], rows))
         if failed:
@@ -388,7 +388,7 @@ def _render_markdown(env: dict, data: dict) -> str:
             out.append("\n## Benchmark 9 — Resource Usage\n")
             headers = _union_headers(results)
             rows = [[r.get(h, "-") for h in headers] for r in results]
-            out.append(_md_table(headers, rows))
+            out.append(_render_markdown_table(headers, rows))
     return "\n".join(out)
 
 

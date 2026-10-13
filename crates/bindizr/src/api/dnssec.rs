@@ -11,7 +11,7 @@ use bindizr_service::{
     Context, dnssec,
     types::{
         DnssecStatusResponse, DsCheck, EnableDnssecRequest, ErrorResponse, Holddown,
-        MessageResponse, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
+        MessageResponse, StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
     },
     zone,
 };
@@ -41,7 +41,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         )
         .route(
             "/zones/{name}/dnssec/rollover/ds-seen",
-            routing::post(ds_seen_dnssec_rollover),
+            routing::post(advance_dnssec_rollover),
         )
         .route(
             "/zones/{name}/dnssec/withdraw",
@@ -201,7 +201,7 @@ pub(crate) async fn sign_zone(
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
-        request_body = RolloverDnssecRequest,
+        request_body = StartDnssecRolloverRequest,
         responses(
             (status = 200, description = "Rollover started, replacement key pre-published", body = DnssecStatusResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -217,7 +217,7 @@ pub(crate) async fn start_dnssec_rollover(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    JsonBody(body): JsonBody<RolloverDnssecRequest>,
+    JsonBody(body): JsonBody<StartDnssecRolloverRequest>,
 ) -> Result<Response, ApiError> {
     let status =
         dnssec::start_rollover(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
@@ -256,7 +256,7 @@ pub(crate) struct AdvanceDnssecRolloverQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn ds_seen_dnssec_rollover(
+pub(crate) async fn advance_dnssec_rollover(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,

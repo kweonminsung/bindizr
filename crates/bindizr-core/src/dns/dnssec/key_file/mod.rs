@@ -209,7 +209,7 @@ impl DnssecKey {
         let algorithm = algorithm
             .parse::<i32>()
             .ok()
-            .and_then(DnssecAlgorithm::from_int)
+            .and_then(DnssecAlgorithm::from_i32)
             .ok_or_else(|| ImportKeyError::Algorithm {
                 value: algorithm.to_string(),
             })?;
@@ -230,7 +230,7 @@ impl DnssecKey {
         let dnskey = domain::rdata::Dnskey::new(
             flags,
             3,
-            SecurityAlgorithm::from_int(algorithm.to_int() as u8),
+            SecurityAlgorithm::from_int(algorithm.as_i32() as u8),
             public_key,
         )
         .map_err(|e| ImportKeyError::Dnskey(Box::new(e)))?;

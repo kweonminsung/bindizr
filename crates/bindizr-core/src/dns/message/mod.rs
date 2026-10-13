@@ -16,7 +16,7 @@ use thiserror::Error;
 
 use crate::dns::{
     ConvertSerialError, DNS_TCP_MAX_SIZE, LibraryError,
-    dnssec::WireNameError,
+    dnssec::EncodeWireNameError,
     name::EncodeNameError,
     record::{EncodeRdataError, Rdata},
     tsig::{TransferSigner, signature_len},
@@ -28,7 +28,7 @@ pub enum EncodeMessageError {
     #[error("invalid raw rdata: {0}")]
     RawRdata(#[source] LibraryError),
     #[error(transparent)]
-    Owner(#[from] WireNameError),
+    Owner(#[from] EncodeWireNameError),
     #[error(transparent)]
     Name(#[from] EncodeNameError),
     #[error(transparent)]

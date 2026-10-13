@@ -6,7 +6,7 @@ use thiserror::Error;
 
 /// Why BIND would refuse a NAPTR regexp, with the expression it refuses.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum NaptrRegexpError {
+pub enum ValidateNaptrRegexpError {
     #[error("NAPTR regexp delimiter must not be a digit, a backslash, or a flag: {regexp}")]
     Delimiter { regexp: String },
     #[error("NAPTR regexp must not contain a NUL byte")]
@@ -27,7 +27,7 @@ pub enum NaptrRegexpError {
     Ere {
         regexp: String,
         #[source]
-        source: EreError,
+        source: ValidateEreError,
     },
     #[error(
         "NAPTR regexp replacement refers to \\{backref} but the regular expression has {groups} groups: {regexp}"
@@ -42,7 +42,7 @@ pub enum NaptrRegexpError {
 /// Why the regular expression half is not a valid POSIX ERE, in the words
 /// BIND's validator uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum EreError {
+pub enum ValidateEreError {
     #[error("bad back reference")]
     BadBackReference,
     #[error("bad parse bound")]
@@ -89,12 +89,12 @@ pub enum EreError {
 
 /// Validate a NAPTR regexp as the substitution expression of RFC 3402,
 /// Section 3.2, by the rules BIND's `txt_valid_regex` applies.
-pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), NaptrRegexpError> {
+pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), ValidateNaptrRegexpError> {
     let Some((&delim, rest)) = regexp.as_bytes().split_first() else {
         return Ok(());
     };
     if delim.is_ascii_digit() || matches!(delim, b'\\' | b'i' | 0) {
-        return Err(NaptrRegexpError::Delimiter {
+        return Err(ValidateNaptrRegexpError::Delimiter {
             regexp: regexp.to_string(),
         });
     }
@@ -106,7 +106,7 @@ pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), NaptrRegexpError
     let mut bytes = rest.iter().copied();
     while let Some(byte) = bytes.next() {
         if byte == 0 {
-            return Err(NaptrRegexpError::Nul);
+            return Err(ValidateNaptrRegexpError::Nul);
         }
         if byte == delim {
             if !in_replacement {
@@ -114,7 +114,7 @@ pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), NaptrRegexpError
             } else if !in_flags {
                 in_flags = true;
             } else {
-                return Err(NaptrRegexpError::ExtraDelimiter {
+                return Err(ValidateNaptrRegexpError::ExtraDelimiter {
                     regexp: regexp.to_string(),
                 });
             }
@@ -125,7 +125,7 @@ pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), NaptrRegexpError
             if byte == b'i' {
                 continue;
             }
-            return Err(NaptrRegexpError::Flags {
+            return Err(ValidateNaptrRegexpError::Flags {
                 regexp: regexp.to_string(),
             });
         }
@@ -134,17 +134,17 @@ pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), NaptrRegexpError
         }
         if byte == b'\\' {
             let Some(escaped) = bytes.next() else {
-                return Err(NaptrRegexpError::DanglingEscape {
+                return Err(ValidateNaptrRegexpError::DanglingEscape {
                     regexp: regexp.to_string(),
                 });
             };
             if escaped == 0 {
-                return Err(NaptrRegexpError::Nul);
+                return Err(ValidateNaptrRegexpError::Nul);
             }
             if in_replacement {
                 match escaped {
                     b'0' => {
-                        return Err(NaptrRegexpError::BackrefZero {
+                        return Err(ValidateNaptrRegexpError::BackrefZero {
                             regexp: regexp.to_string(),
                         });
                     }
@@ -157,17 +157,17 @@ pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), NaptrRegexpError
         }
     }
     if !in_flags {
-        return Err(NaptrRegexpError::Shape {
+        return Err(ValidateNaptrRegexpError::Shape {
             regexp: regexp.to_string(),
         });
     }
 
-    let groups = validate_ere(&regex).map_err(|source| NaptrRegexpError::Ere {
+    let groups = validate_ere(&regex).map_err(|source| ValidateNaptrRegexpError::Ere {
         regexp: regexp.to_string(),
         source,
     })?;
     if backref > groups {
-        return Err(NaptrRegexpError::Backref {
+        return Err(ValidateNaptrRegexpError::Backref {
             backref,
             groups,
             regexp: regexp.to_string(),
@@ -205,9 +205,9 @@ enum State {
 
 /// Validate a POSIX extended regular expression in the C locale and report
 /// its subexpression count, step for step as BIND's `isc_regex_validate` does.
-fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
+fn validate_ere(regex: &[u8]) -> Result<usize, ValidateEreError> {
     if regex.is_empty() {
-        return Err(EreError::EmptyString);
+        return Err(ValidateEreError::EmptyString);
     }
     // Reading past the end yields the NUL terminator BIND's C string has.
     let at = |index: usize| regex.get(index).copied().unwrap_or(0);
@@ -239,10 +239,10 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                     match at(i) {
                         b'1'..=b'9' => {
                             if usize::from(at(i) - b'0') > sub {
-                                return Err(EreError::BadBackReference);
+                                return Err(ValidateEreError::BadBackReference);
                             }
                         }
-                        0 => return Err(EreError::EscapedEndOfString),
+                        0 => return Err(ValidateEreError::EscapedEndOfString),
                         _ => {}
                     }
                     have_atom = true;
@@ -258,10 +258,10 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                 }
                 b'{' if at(i + 1).is_ascii_digit() => {
                     if !have_atom {
-                        return Err(EreError::NoAtom);
+                        return Err(ValidateEreError::NoAtom);
                     }
                     if was_multiple {
-                        return Err(EreError::WasMultiple);
+                        return Err(ValidateEreError::WasMultiple);
                     }
                     seen_comma = false;
                     seen_high = false;
@@ -282,7 +282,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                 }
                 b')' => {
                     if group != 0 && !have_atom && !empty_ok {
-                        return Err(EreError::EmptyAlternative);
+                        return Err(ValidateEreError::EmptyAlternative);
                     }
                     have_atom = true;
                     was_multiple = false;
@@ -291,7 +291,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                 }
                 b'|' => {
                     if !have_atom {
-                        return Err(EreError::NoAtom);
+                        return Err(ValidateEreError::NoAtom);
                     }
                     have_atom = false;
                     empty_ok = false;
@@ -305,10 +305,10 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                 }
                 b'+' | b'*' | b'?' => {
                     if was_multiple {
-                        return Err(EreError::WasMultiple);
+                        return Err(ValidateEreError::WasMultiple);
                     }
                     if !have_atom {
-                        return Err(EreError::NoAtom);
+                        return Err(ValidateEreError::NoAtom);
                     }
                     have_atom = true;
                     was_multiple = true;
@@ -328,31 +328,31 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                         seen_high = true;
                         high = high * 10 + digit;
                         if high > 255 {
-                            return Err(EreError::UpperBoundTooBig);
+                            return Err(ValidateEreError::UpperBoundTooBig);
                         }
                     } else {
                         low = low * 10 + digit;
                         if low > 255 {
-                            return Err(EreError::LowerBoundTooBig);
+                            return Err(ValidateEreError::LowerBoundTooBig);
                         }
                     }
                     i += 1;
                 }
                 b',' => {
                     if seen_comma {
-                        return Err(EreError::MultipleCommas);
+                        return Err(ValidateEreError::MultipleCommas);
                     }
                     seen_comma = true;
                     i += 1;
                 }
                 b'}' => {
                     if seen_high && low > high {
-                        return Err(EreError::BadParseBound);
+                        return Err(ValidateEreError::BadParseBound);
                     }
                     state = State::Outside;
                     i += 1;
                 }
-                _ => return Err(EreError::NonDigitComma),
+                _ => return Err(ValidateEreError::NonDigitComma),
             },
             State::Bracket => match at(i) {
                 b'^' if !seen_char && !neg => {
@@ -361,7 +361,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                 }
                 b'-' if range != 2 && seen_char => {
                     if range == 1 {
-                        return Err(EreError::BadRange);
+                        return Err(ValidateEreError::BadRange);
                     }
                     range = 2;
                     i += 1;
@@ -377,7 +377,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                         }
                         b'=' => {
                             if range == 2 {
-                                return Err(EreError::EquivalenceClassInRange);
+                                return Err(ValidateEreError::EquivalenceClassInRange);
                             }
                             i += 1;
                             state = State::EquivalenceClass;
@@ -385,7 +385,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                         }
                         b':' => {
                             if range == 2 {
-                                return Err(EreError::CharacterClassInRange);
+                                return Err(ValidateEreError::CharacterClassInRange);
                             }
                             class_start = i;
                             i += 1;
@@ -401,13 +401,13 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                     have_atom = true;
                     state = State::Outside;
                 }
-                b']' if at(i + 1) == 0 => return Err(EreError::UnfinishedBrace),
+                b']' if at(i + 1) == 0 => return Err(ValidateEreError::UnfinishedBrace),
                 // A leading `]`, a `^` past the start, or a `-` at an edge is
                 // a member of the set.
                 byte => {
                     seen_char = true;
                     if range == 2 && u16::from(byte) < range_start {
-                        return Err(EreError::OutOfOrderRange);
+                        return Err(ValidateEreError::OutOfOrderRange);
                     }
                     range = range.saturating_sub(1);
                     range_start = u16::from(byte);
@@ -419,7 +419,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                     i += 1;
                     if at(i) == b']' {
                         if !seen_ce {
-                            return Err(EreError::EmptyCe);
+                            return Err(ValidateEreError::EmptyCe);
                         }
                         i += 1;
                         state = State::Bracket;
@@ -439,7 +439,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                     i += 1;
                     if at(i) == b']' {
                         if !seen_ec {
-                            return Err(EreError::NoEc);
+                            return Err(ValidateEreError::NoEc);
                         }
                         i += 1;
                         state = State::Bracket;
@@ -457,7 +457,7 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
                     i += 1;
                     if at(i) == b']' {
                         if !CHARACTER_CLASSES.contains(&&regex[class_start..i]) {
-                            return Err(EreError::UnknownCc);
+                            return Err(ValidateEreError::UnknownCc);
                         }
                         i += 1;
                         state = State::Bracket;
@@ -470,13 +470,13 @@ fn validate_ere(regex: &[u8]) -> Result<usize, EreError> {
     }
 
     if group != 0 {
-        return Err(EreError::GroupOpen);
+        return Err(ValidateEreError::GroupOpen);
     }
     if state != State::Outside {
-        return Err(EreError::Incomplete);
+        return Err(ValidateEreError::Incomplete);
     }
     if !have_atom {
-        return Err(EreError::NoAtom);
+        return Err(ValidateEreError::NoAtom);
     }
     Ok(sub)
 }

@@ -134,7 +134,7 @@ pub struct DnssecDelegationResponse {
 /// Request body for starting a key rollover.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct RolloverDnssecRequest {
+pub struct StartDnssecRolloverRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
     /// omitted for CSK zones.
     #[schema(example = "zsk")]

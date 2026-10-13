@@ -13,14 +13,14 @@ use bindizr_core::{
         Serial,
         message::{Class, Rcode},
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
-        nsupdate::parser::{ParseUpdateError, UpdateRecord, UpdateShapeError},
+        nsupdate::parser::{ParseUpdateError, UpdateRecord, ValidateUpdateShapeError},
         record::ParseRecordValueError,
     },
     model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
 use decode::{decode_prerequisites, decode_updates};
-use operation::apply_op_tx;
+use operation::apply_record_operation_tx;
 use plan::UpdateOperation;
 use prerequisite::{Prerequisite, evaluate_prerequisites_tx};
 use thiserror::Error;
@@ -40,7 +40,7 @@ pub enum NsupdateError {
     #[error("{0}")]
     FormErr(String),
     #[error("{0}")]
-    Shape(#[from] UpdateShapeError),
+    Shape(#[from] ValidateUpdateShapeError),
     #[error("{0}")]
     Parse(#[from] ParseUpdateError),
     #[error("invalid {record_type} rdata: {source}")]
@@ -183,7 +183,8 @@ pub async fn apply(
         let mut changed = plan.soa_changed;
 
         for op in &plan.records {
-            changed |= apply_op_tx(&mut tx, &plan.zone, op, new_serial, caller).await?;
+            changed |=
+                apply_record_operation_tx(&mut tx, &plan.zone, op, new_serial, caller).await?;
         }
 
         if changed {

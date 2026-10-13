@@ -102,7 +102,7 @@ pub(crate) enum StartApiError {
 /// Bind the HTTP API listener and spawn the server in the background, over TLS
 /// when `api.tls` named a certificate and key. The returned
 /// handle finishes once `shutdown` fires and in-flight requests are answered.
-pub(crate) async fn initialize(
+pub(crate) async fn start(
     cx: Arc<Context>,
     shutdown: &Shutdown,
     certificate: Option<Arc<TlsCertificate>>,

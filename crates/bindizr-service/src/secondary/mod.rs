@@ -148,7 +148,7 @@ pub async fn get(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
-    build_response(cx, secondary).await
+    load_response(cx, secondary).await
 }
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
@@ -229,7 +229,7 @@ pub async fn update(
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
-    build_response(cx, secondary).await
+    load_response(cx, secondary).await
 }
 
 /// Check one secondary, enabled or not: resolve it, compare its catalog serial
@@ -264,10 +264,10 @@ pub async fn check(
     };
     let catalog = probe::probe_secondary(cx, &catalog_zone, &secondary, catalog_serial).await?;
     let notifies = notify::send_notify_to_secondary(cx, &catalog_zone, &secondary).await?;
-    let transfers = transfer_summary(cx, &secondary).await?;
+    let transfers = summarize_transfers(cx, &secondary).await?;
 
     Ok(CheckSecondaryResponse {
-        secondary: build_response(cx, secondary).await?,
+        secondary: load_response(cx, secondary).await?,
         addresses,
         resolve_error,
         catalog_zone_name: catalog_zone.to_string(),
@@ -296,7 +296,7 @@ pub async fn list_transfers(
         .map(zone::normalize_name)
         .transpose()?;
 
-    let served = transfer::list_by_clients(cx, &resolved_ips(cx, &secondary).await).await?;
+    let served = transfer::list_by_clients(cx, &resolve_ips(cx, &secondary).await).await?;
     let summary = TransferSummaryResponse::from(served.as_slice());
     let transfers = served
         .iter()
@@ -317,17 +317,17 @@ pub async fn list_transfers(
 }
 
 /// How Bindizr served `secondary`, for the check and doctor.
-pub async fn transfer_summary(
+pub async fn summarize_transfers(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<TransferSummaryResponse, ServiceError> {
-    let served = transfer::list_by_clients(cx, &resolved_ips(cx, secondary).await).await?;
+    let served = transfer::list_by_clients(cx, &resolve_ips(cx, secondary).await).await?;
     Ok(TransferSummaryResponse::from(served.as_slice()))
 }
 
 /// The addresses the secondary resolves to now, which key the transfer
 /// rows; none when it does not resolve.
-async fn resolved_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
+async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
     match resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs.iter().map(|addr| addr.ip()).collect(),
@@ -364,11 +364,11 @@ pub async fn list_enabled(cx: &Context) -> Result<Vec<Secondary>, ServiceError> 
 
 /// The key a secondary's NOTIFY is signed with, ready to sign; `None`
 /// for one notified unsigned. The FK keeps a referenced key present.
-pub(crate) async fn notify_signing_key(
+pub(crate) async fn find_notify_signing_key(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<Option<TsigSigningKey>, ServiceError> {
-    match notify_tsig_key(cx, secondary).await? {
+    match find_notify_tsig_key(cx, secondary).await? {
         Some(tsig_key) => tsig_key.to_signing_key().map(Some).map_err(|e| {
             ServiceError::internal_with_source(
                 format!("NOTIFY key '{}' is unusable: {:?}", tsig_key.name, e),
@@ -380,7 +380,7 @@ pub(crate) async fn notify_signing_key(
 }
 
 /// The stored key a secondary's NOTIFY is signed with, if any.
-async fn notify_tsig_key(
+async fn find_notify_tsig_key(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<Option<TsigKey>, ServiceError> {
@@ -395,11 +395,11 @@ async fn notify_tsig_key(
 }
 
 /// The API form of a secondary, naming its NOTIFY key.
-async fn build_response(
+async fn load_response(
     cx: &Context,
     secondary: Secondary,
 ) -> Result<SecondaryResponse, ServiceError> {
-    let tsig_key = notify_tsig_key(cx, &secondary).await?;
+    let tsig_key = find_notify_tsig_key(cx, &secondary).await?;
     Ok(SecondaryResponse::from_secondary(
         &secondary,
         tsig_key.as_ref().map(|tsig_key| tsig_key.name.as_str()),

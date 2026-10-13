@@ -41,7 +41,7 @@ pub async fn get_status(
             .authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
-        build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
+        load_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to read DNSSEC status").await
@@ -74,7 +74,7 @@ pub async fn count_rrsigs_expired(cx: &Context, now: DateTime<Utc>) -> Result<u6
 
 /// Assemble the zone's status on the caller's transaction: the earliest
 /// signature expiry and any pending withdrawal join the rows already loaded.
-pub(crate) async fn build_status_tx(
+pub(crate) async fn load_status_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: Option<&DnssecPolicy>,
@@ -127,7 +127,7 @@ pub(crate) async fn build_status_tx(
                 dnskey: format!(
                     "{} 3 {} {}",
                     key.role.flags(),
-                    key.algorithm.to_int(),
+                    key.algorithm.as_i32(),
                     key.public_key
                 ),
                 created_at: key.created_at,
@@ -158,14 +158,14 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
 
     Ok(DnssecDsResponse {
         key_tag: key.key_tag,
-        algorithm: key.algorithm.to_int() as u8,
+        algorithm: key.algorithm.as_i32() as u8,
         digest_type: DS_DIGEST_TYPE,
         digest: digest.clone(),
         presentation: format!(
             "{} IN DS {} {} {} {}",
             zone.name.to_fqdn(),
             key.key_tag,
-            key.algorithm.to_int(),
+            key.algorithm.as_i32(),
             DS_DIGEST_TYPE,
             digest
         ),

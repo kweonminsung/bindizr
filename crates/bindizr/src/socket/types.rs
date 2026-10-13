@@ -7,8 +7,8 @@ use bindizr_service::types::{
     CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest, CreateTokenRequest,
     CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck, EnableDnssecRequest,
     Holddown, ImportDnssecKeysRequest, ImportZoneRequest, NotifySerial, PageRequest, RecordFilter,
-    RolloverDnssecRequest, Run, SecondaryStatusResponse, SecondaryTransferFilter,
-    SecondaryTransferSummaryResponse, TokenFilter, TsigKeyFilter, UpdateDnssecPolicyRequest,
+    Run, SecondaryStatusResponse, SecondaryTransferFilter, SecondaryTransferSummaryResponse,
+    StartDnssecRolloverRequest, TokenFilter, TsigKeyFilter, UpdateDnssecPolicyRequest,
     UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
     ZoneFilter, ZoneView,
 };
@@ -142,7 +142,8 @@ pub(crate) enum DaemonCommand {
         run: Run,
     },
     CreateRecord(CreateRecordRequest),
-    CreateRecordsBulk(CreateBulkRecordsRequest),
+    #[serde(rename = "create_records_bulk")]
+    CreateBulkRecords(CreateBulkRecordsRequest),
     ListRecords(RecordFilter),
     GetRecord {
         id: RecordId,
@@ -162,7 +163,8 @@ pub(crate) enum DaemonCommand {
         id: RecordId,
         run: Run,
     },
-    DeleteRecordsMatching(DeleteRecordsRequest),
+    #[serde(rename = "delete_records_matching")]
+    DeleteMatchingRecords(DeleteRecordsRequest),
     EnableDnssec {
         zone_name: String,
         request: EnableDnssecRequest,
@@ -179,9 +181,10 @@ pub(crate) enum DaemonCommand {
     },
     StartDnssecRollover {
         zone_name: String,
-        request: RolloverDnssecRequest,
+        request: StartDnssecRolloverRequest,
     },
-    DsSeenDnssecRollover {
+    #[serde(rename = "ds_seen_dnssec_rollover")]
+    AdvanceDnssecRollover {
         zone_name: String,
         ds_check: DsCheck,
         holddown: Holddown,
@@ -242,10 +245,10 @@ pub(crate) struct DaemonStatusResponse {
 /// as `zone status` compares them with a member zone.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DaemonDoctorResponse {
-    pub(crate) database: DoctorCheck,
-    pub(crate) dns_server: DoctorCheck,
+    pub(crate) database: DoctorCheckResponse,
+    pub(crate) dns_server: DoctorCheckResponse,
     /// The XoT listener's reachability, when one is configured.
-    pub(crate) dns_tls_server: Option<DoctorCheck>,
+    pub(crate) dns_tls_server: Option<DoctorCheckResponse>,
     pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<Serial>,
@@ -278,7 +281,7 @@ impl std::fmt::Display for DoctorCheckStatus {
 
 /// One installation check, worded as `doctor` reports it.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorCheck {
+pub(crate) struct DoctorCheckResponse {
     pub(crate) status: DoctorCheckStatus,
     pub(crate) message: String,
 }
@@ -304,6 +307,47 @@ impl serde::Serialize for DoctorCheckStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Keep socket command strings stable when Rust variants are renamed.
+    #[test]
+    fn command_names_preserve_the_wire_contract() {
+        for (command, expected) in [
+            (
+                DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
+                    zone_name: "example.com".into(),
+                    records: Vec::new(),
+                    dry_run: true,
+                }),
+                "create_records_bulk",
+            ),
+            (
+                DaemonCommand::DeleteMatchingRecords(DeleteRecordsRequest {
+                    zone_name: "example.com".into(),
+                    name: "www".into(),
+                    record_type: None,
+                    value: None,
+                    priority: None,
+                    dry_run: true,
+                }),
+                "delete_records_matching",
+            ),
+            (
+                DaemonCommand::AdvanceDnssecRollover {
+                    zone_name: "example.com".into(),
+                    ds_check: DsCheck::Probe,
+                    holddown: Holddown::Wait,
+                },
+                "ds_seen_dnssec_rollover",
+            ),
+        ] {
+            let value = serde_json::to_value(&command).unwrap();
+            assert_eq!(value["command"], expected);
+            assert_eq!(
+                serde_json::from_value::<DaemonCommand>(value).unwrap(),
+                command
+            );
+        }
+    }
 
     /// Verify the canonical spelling and round-trip of every DoctorCheckStatus variant.
     #[test]

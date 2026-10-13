@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::wire::{BindizrChanges, BindizrRecord};
+use crate::wire::{ApplyExternalDnsChangesRequest, BindizrRecord};
 
 /// A bindizr API failure, split for the webhook error mapping in `server`.
 #[derive(Debug, Error)]
@@ -45,7 +45,7 @@ pub(crate) enum BuildClientError {
 
 /// The `error` message a bindizr API error response carries.
 #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
-struct UpstreamErrorBody {
+struct UpstreamErrorResponse {
     error: String,
 }
 
@@ -97,27 +97,27 @@ impl UpstreamClient {
     /// Fetch domain names available to the adapter's token.
     pub(crate) async fn list_domains(&self) -> Result<Vec<String>, UpstreamError> {
         #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
-        struct DomainsBody {
+        struct ListExternalDnsDomainsResponse {
             domains: Vec<String>,
         }
-        let body: DomainsBody = self.fetch_json("/external-dns/domains").await?;
+        let body: ListExternalDnsDomainsResponse = self.fetch_json("/external-dns/domains").await?;
         Ok(body.domains)
     }
 
     /// Fetch the records visible through the bindizr external-dns API.
     pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
-        struct RecordsBody {
+        struct ListExternalDnsRecordsResponse {
             records: Vec<BindizrRecord>,
         }
-        let body: RecordsBody = self.fetch_json("/external-dns/records").await?;
+        let body: ListExternalDnsRecordsResponse = self.fetch_json("/external-dns/records").await?;
         Ok(body.records)
     }
 
     /// Submit a record change set to the bindizr API.
     pub(crate) async fn apply_changes(
         &self,
-        changes: &BindizrChanges,
+        changes: &ApplyExternalDnsChangesRequest,
     ) -> Result<(), UpstreamError> {
         let request = self
             .build_request(reqwest::Method::POST, "/external-dns/changes")
@@ -133,20 +133,20 @@ impl UpstreamClient {
         records: &[BindizrRecord],
     ) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
-        struct AdjustRequest<'a> {
+        struct AdjustExternalDnsRecordsRequest<'a> {
             records: std::borrow::Cow<'a, [BindizrRecord]>,
         }
         #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
-        struct AdjustBody {
+        struct AdjustExternalDnsRecordsResponse {
             records: Vec<BindizrRecord>,
         }
         let request = self
             .build_request(reqwest::Method::POST, "/external-dns/adjust")
-            .json(&AdjustRequest {
+            .json(&AdjustExternalDnsRecordsRequest {
                 records: records.into(),
             });
         let response = self.send(request).await?;
-        let body: AdjustBody = response
+        let body: AdjustExternalDnsRecordsResponse = response
             .json()
             .await
             .map_err(UpstreamError::InvalidResponse)?;
@@ -202,7 +202,7 @@ impl UpstreamClient {
 
         // Surface the bindizr error body's message; never the token.
         let message = response
-            .json::<UpstreamErrorBody>()
+            .json::<UpstreamErrorResponse>()
             .await
             .map(|body| body.error)
             .unwrap_or_else(|_| format!("bindizr responded with status {}", status.as_u16()));

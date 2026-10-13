@@ -17,33 +17,33 @@ use super::{
 
 /// Transferred record count or refusal details.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub(crate) enum TransferOutcome {
+pub(crate) enum TransferResult {
     Records(usize),
     Refused { rcode: Rcode, signed: bool },
 }
 
-impl TransferOutcome {
+impl TransferResult {
     /// The record count of a transfer that ran, panicking on a refusal.
     pub(crate) fn records(self) -> usize {
         match self {
-            TransferOutcome::Records(count) => count,
-            TransferOutcome::Refused { rcode, .. } => panic!("transfer refused with {rcode}"),
+            TransferResult::Records(count) => count,
+            TransferResult::Refused { rcode, .. } => panic!("transfer refused with {rcode}"),
         }
     }
 
     /// The RCODE of a refused transfer, panicking if it ran.
     pub(crate) fn refusal(self) -> Rcode {
         match self {
-            TransferOutcome::Refused { rcode, .. } => rcode,
-            TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
+            TransferResult::Refused { rcode, .. } => rcode,
+            TransferResult::Records(count) => panic!("transfer returned {count} record(s)"),
         }
     }
 
     /// Whether a refusal carried TSIG, panicking if the transfer ran.
     pub(crate) fn refusal_signed(self) -> bool {
         match self {
-            TransferOutcome::Refused { signed, .. } => signed,
-            TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
+            TransferResult::Refused { signed, .. } => signed,
+            TransferResult::Records(count) => panic!("transfer returned {count} record(s)"),
         }
     }
 }
@@ -53,7 +53,7 @@ pub(crate) fn axfr(
     port: u16,
     zone: &str,
     key: Option<&SigningKey>,
-) -> Result<TransferOutcome, String> {
+) -> Result<TransferResult, String> {
     let mut stream = connect_tcp(port)?;
     transfer(&mut stream, zone, key)
 }
@@ -64,7 +64,7 @@ pub(crate) fn xot(
     zone: &str,
     key: Option<&SigningKey>,
     client: ClientConfig,
-) -> Result<TransferOutcome, String> {
+) -> Result<TransferResult, String> {
     transfer(&mut connect_tls(port, client)?, zone, key)
 }
 
@@ -73,7 +73,7 @@ fn transfer<S: Read + Write>(
     stream: &mut S,
     zone: &str,
     key: Option<&SigningKey>,
-) -> Result<TransferOutcome, String> {
+) -> Result<TransferResult, String> {
     let query_id = (std::process::id() as u16).wrapping_add(7);
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
@@ -106,7 +106,7 @@ fn transfer<S: Read + Write>(
         };
         let mut message = Message::from_octets(frame).map_err(|e| e.to_string())?;
         if message.header().rcode() != Rcode::NOERROR {
-            return Ok(TransferOutcome::Refused {
+            return Ok(TransferResult::Refused {
                 rcode: message.header().rcode(),
                 signed: is_signed(&message)?,
             });
@@ -130,5 +130,5 @@ fn transfer<S: Read + Write>(
             .done()
             .map_err(|e| format!("the signed transfer did not close cleanly: {e}"))?;
     }
-    Ok(TransferOutcome::Records(records))
+    Ok(TransferResult::Records(records))
 }

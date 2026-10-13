@@ -14,7 +14,7 @@ use tokio::net::TcpStream;
 
 use crate::{
     daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},
+    socket::types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResponse, DoctorCheckStatus},
 };
 
 /// The daemon-side installation checks. The catalog zone is the one probed
@@ -28,18 +28,18 @@ pub(crate) async fn check_installation(
     let caller = Caller::socket();
     let zones_probe = zone::count(cx, &caller);
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
-        Ok(Ok(total)) => DoctorCheck {
+        Ok(Ok(total)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Ok,
             message: format!(
                 "Database connected: {} ({} zones)",
                 config.database.database_type, total
             ),
         },
-        Ok(Err(e)) => DoctorCheck {
+        Ok(Err(e)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
             message: format!("Database not reachable: {}", e),
         },
-        Err(_) => DoctorCheck {
+        Err(_) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
             message: format!(
                 "Database not reachable: timed out after {} seconds",
@@ -58,7 +58,7 @@ pub(crate) async fn check_installation(
     let (dns_server, catalog_serial) =
         match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
             Ok(serial) => (
-                DoctorCheck {
+                DoctorCheckResponse {
                     status: DoctorCheckStatus::Ok,
                     message: format!(
                         "DNS server reachable: {} (catalog zone {} at serial {})",
@@ -68,7 +68,7 @@ pub(crate) async fn check_installation(
                 Some(serial),
             ),
             Err(e) => (
-                DoctorCheck {
+                DoctorCheckResponse {
                     status: DoctorCheckStatus::Failed,
                     message: format!("DNS server not reachable: {}: {}", dns_addr, e),
                 },
@@ -86,18 +86,18 @@ pub(crate) async fn check_installation(
             );
             Some(
                 match tokio::time::timeout(timeout, TcpStream::connect(dns_tls_addr)).await {
-                    Ok(Ok(_)) => DoctorCheck {
+                    Ok(Ok(_)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Ok,
                         message: format!(
                             "DNS TLS server listening: {} (TLS handshake not attempted)",
                             dns_tls_addr
                         ),
                     },
-                    Ok(Err(e)) => DoctorCheck {
+                    Ok(Err(e)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
                         message: format!("DNS TLS server not reachable: {}: {}", dns_tls_addr, e),
                     },
-                    Err(_) => DoctorCheck {
+                    Err(_) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
                         message: format!(
                             "DNS TLS server not reachable: {}: timed out",
@@ -124,7 +124,7 @@ pub(crate) async fn check_installation(
         let mut transfers = Vec::new();
         for secondary in secondary::list_enabled(cx).await? {
             transfers.push(SecondaryTransferSummaryResponse {
-                summary: secondary::transfer_summary(cx, &secondary).await?,
+                summary: secondary::summarize_transfers(cx, &secondary).await?,
                 secondary_name: secondary.name,
                 address: secondary.address.to_string(),
             });

@@ -17,16 +17,16 @@ use crate::{
     },
     socket::{
         client,
-        types::{DaemonCommand, DoctorCheck, DoctorCheckStatus},
+        types::{DaemonCommand, DoctorCheckResponse, DoctorCheckStatus},
     },
 };
 
 /// The whole run, as `--output json` reports it.
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
-struct DoctorReport {
+struct DoctorResponse {
     healthy: bool,
     failures: usize,
-    checks: Vec<DoctorCheck>,
+    checks: Vec<DoctorCheckResponse>,
 }
 
 /// Collects check outcomes for the exit code, printing each as it lands
@@ -34,14 +34,14 @@ struct DoctorReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Report {
     format: OutputFormat,
-    checks: Vec<DoctorCheck>,
+    checks: Vec<DoctorCheckResponse>,
     failures: usize,
 }
 
 impl Report {
     /// Record a successful diagnostic check.
     pub(crate) fn ok(&mut self, message: impl fmt::Display) {
-        self.push(DoctorCheck {
+        self.push(DoctorCheckResponse {
             status: DoctorCheckStatus::Ok,
             message: message.to_string(),
         });
@@ -49,7 +49,7 @@ impl Report {
 
     /// Record a failed diagnostic check.
     pub(crate) fn fail(&mut self, message: impl fmt::Display) {
-        self.push(DoctorCheck {
+        self.push(DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
             message: message.to_string(),
         });
@@ -57,14 +57,14 @@ impl Report {
 
     /// Record a skipped diagnostic check.
     pub(crate) fn skip(&mut self, message: impl fmt::Display) {
-        self.push(DoctorCheck {
+        self.push(DoctorCheckResponse {
             status: DoctorCheckStatus::Skipped,
             message: message.to_string(),
         });
     }
 
     /// Store one check, counting a failure and printing it now in table form.
-    pub(crate) fn push(&mut self, check: DoctorCheck) {
+    pub(crate) fn push(&mut self, check: DoctorCheckResponse) {
         if check.status == DoctorCheckStatus::Failed {
             self.failures += 1;
         }
@@ -132,7 +132,7 @@ pub(crate) async fn handle_command(
             outln!("Result: installation looks {}", color::green("healthy"));
         }
     } else {
-        let document = DoctorReport {
+        let document = DoctorResponse {
             healthy: report.failures == 0,
             failures: report.failures,
             checks: report.checks,

@@ -47,11 +47,13 @@ fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
 /// Preserve parser failures while retaining their FORMERR classification.
 #[test]
 fn parser_errors_retain_their_sources() {
-    let shape = UpdateShapeError::NonzeroTtl;
+    let shape = ValidateUpdateShapeError::NonzeroTtl;
     let err = NsupdateError::from(shape);
     assert_eq!(err.rcode(), Rcode::FORMERR);
     assert_eq!(
-        err.source().unwrap().downcast_ref::<UpdateShapeError>(),
+        err.source()
+            .unwrap()
+            .downcast_ref::<ValidateUpdateShapeError>(),
         Some(&shape)
     );
 

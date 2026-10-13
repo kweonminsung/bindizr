@@ -77,7 +77,7 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
                     ok = False
                 t1 = clock()
                 if t1 >= warmup_until:
-                    rec.record(t1 - t0, ok=ok)
+                    rec.track_latency(t1 - t0, ok=ok)
         finally:
             sock.close()
 

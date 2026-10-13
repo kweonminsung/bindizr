@@ -9,7 +9,7 @@ use domain::{
     dep::octseq::parse::Parser,
     rdata::tsig::Tsig,
 };
-pub use record::{UpdateRecord, UpdateShapeError};
+pub use record::{UpdateRecord, ValidateUpdateShapeError};
 use thiserror::Error;
 
 use crate::{

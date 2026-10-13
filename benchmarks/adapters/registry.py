@@ -46,7 +46,7 @@ def is_bindizr(key: str) -> bool:
     return key in BINDIZR_SYSTEMS
 
 
-def build(key: str, cfg: dict, project: str, **kwargs):
+def build_adapter(key: str, cfg: dict, project: str, **kwargs):
     """Construct the adapter for a benchmark system and project."""
     mod = _load_adapter_module(key)
     cls = getattr(mod, _CLASS[key])

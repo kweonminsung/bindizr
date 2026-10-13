@@ -12,8 +12,8 @@ use bindizr_core::{
     },
 };
 use change_set::{
-    ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
-    parse_record_set_op,
+    ZoneChangeSet, ZoneOperations, adjust_record_set, group_operations_by_zone,
+    parse_changes_request, parse_record_set,
 };
 use chrono::Utc;
 use policy::{authoritative_zone, normalize_lookup_name};
@@ -133,21 +133,21 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
     assert!(normalize_lookup_name("bad name.example.com").is_err());
 }
 
-/// Verify that `parse_record_set_op` rejects unsupported types.
+/// Verify that `parse_record_set` rejects unsupported types.
 #[test]
 fn parse_record_set_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
-        let err = parse_record_set_op(&record_set("a.example.com", record_type, None, &["x"]))
-            .unwrap_err();
+        let err =
+            parse_record_set(&record_set("a.example.com", record_type, None, &["x"])).unwrap_err();
         assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
-    assert!(parse_record_set_op(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
+    assert!(parse_record_set(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
 
-/// Verify that `parse_record_set_op` rejects multi value CNAME and empty values.
+/// Verify that `parse_record_set` rejects multi value CNAME and empty values.
 #[test]
 fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
-    let err = parse_record_set_op(&record_set(
+    let err = parse_record_set(&record_set(
         "a.example.com",
         "CNAME",
         None,
@@ -156,34 +156,32 @@ fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
     .unwrap_err();
     assert_eq!(err.code(), ErrorCode::InvalidRecordValue);
 
-    let err = parse_record_set_op(&record_set("a.example.com", "A", None, &[])).unwrap_err();
+    let err = parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
     assert_eq!(err.code(), ErrorCode::InvalidInput);
 }
 
-/// Verify that `parse_record_set_op` normalizes TTL.
+/// Verify that `parse_record_set` normalizes TTL.
 #[test]
 fn parse_record_set_op_normalizes_ttl() {
     assert_eq!(
-        parse_record_set_op(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
+        parse_record_set(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         None
     );
     assert_eq!(
-        parse_record_set_op(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
+        parse_record_set(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         Some(Ttl::from_secs(300))
     );
-    assert!(
-        parse_record_set_op(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err()
-    );
+    assert!(parse_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
 }
 
-/// Verify that `parse_record_set_op` deduplicates equivalent ipv6 spellings.
+/// Verify that `parse_record_set` deduplicates equivalent ipv6 spellings.
 #[test]
 fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
-    let op = parse_record_set_op(&record_set(
+    let op = parse_record_set(&record_set(
         "a.example.com",
         "AAAA",
         None,
@@ -197,7 +195,7 @@ fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
 /// Verify that parse RRSET op parses quoted TXT values.
 #[test]
 fn parse_record_set_op_parses_quoted_txt_values() {
-    let op = parse_record_set_op(&record_set(
+    let op = parse_record_set(&record_set(
         "a.example.com",
         "TXT",
         None,
@@ -211,7 +209,7 @@ fn parse_record_set_op_parses_quoted_txt_values() {
         "\"heritage=external-dns,external-dns/owner=default\""
     );
     assert!(
-        parse_record_set_op(&record_set(
+        parse_record_set(&record_set(
             "a.example.com",
             "TXT",
             None,
@@ -289,7 +287,7 @@ fn adjust_record_set_rejects_unsupported_shapes() {
     assert!(adjust_record_set(&record_set("a.example.com", "CNAME", None, &["a.", "b."])).is_err());
 }
 
-/// Verify that group ops resolves subzone without parent fallback.
+/// Verify that group operations resolves subzone without parent fallback.
 #[test]
 fn group_ops_resolves_subzone_without_parent_fallback() {
     let zones = vec![
@@ -306,9 +304,10 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
         updates: vec![],
         deletes: vec![],
     };
-    let ops = parse_changes_request(&request).unwrap();
+    let operations = parse_changes_request(&request).unwrap();
 
-    let grouped = group_ops_by_zone(&Caller::unauthenticated_api(), &zones, ops).unwrap();
+    let grouped =
+        group_operations_by_zone(&Caller::unauthenticated_api(), &zones, operations).unwrap();
     assert_eq!(grouped.len(), 1);
     assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
@@ -317,7 +316,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
     );
 }
 
-/// Verify that group ops rejects names without authoritative zone.
+/// Verify that group operations rejects names without authoritative zone.
 #[test]
 fn group_ops_rejects_names_without_authoritative_zone() {
     let zones = vec![test_zone(1, "example.com")];
@@ -326,13 +325,14 @@ fn group_ops_rejects_names_without_authoritative_zone() {
         updates: vec![],
         deletes: vec![],
     };
-    let ops = parse_changes_request(&request).unwrap();
+    let operations = parse_changes_request(&request).unwrap();
 
-    let err = group_ops_by_zone(&Caller::unauthenticated_api(), &zones, ops).unwrap_err();
+    let err =
+        group_operations_by_zone(&Caller::unauthenticated_api(), &zones, operations).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 
-/// Verify that group ops reads a hidden zone as absent instead of its granted parent.
+/// Verify that group operations reads a hidden zone as absent instead of its granted parent.
 #[test]
 fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     let zones = vec![
@@ -370,9 +370,9 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
         updates: vec![],
         deletes: vec![],
     };
-    let ops = parse_changes_request(&request).unwrap();
+    let operations = parse_changes_request(&request).unwrap();
 
-    let err = group_ops_by_zone(&caller, &zones, ops).unwrap_err();
+    let err = group_operations_by_zone(&caller, &zones, operations).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
     assert!(
         err.to_string()
@@ -382,12 +382,12 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
 }
 
 /// Resolve an external-dns change request into operations for the test zone.
-fn zone_ops(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
-    let ops = parse_changes_request(request).unwrap();
-    let grouped = group_ops_by_zone(
+fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOperations {
+    let operations = parse_changes_request(request).unwrap();
+    let grouped = group_operations_by_zone(
         &Caller::unauthenticated_api(),
         std::slice::from_ref(zone),
-        ops,
+        operations,
     )
     .unwrap();
     grouped.into_values().next().unwrap_or_default()
@@ -403,7 +403,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &[]).unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
@@ -425,7 +425,7 @@ fn change_set_skips_existing_values_regardless_of_ttl() {
     for ttl in [3600, 300] {
         let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", ttl)];
         let change_set =
-            ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+            ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
         assert!(change_set.deletes.is_empty(), "TTL {ttl}");
         assert!(change_set.creates.is_empty(), "TTL {ttl}");
     }
@@ -446,7 +446,8 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+    let change_set =
+        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.deletes[0].id, RecordId::from(10));
@@ -464,7 +465,7 @@ fn change_set_skips_deletes_of_absent_records() {
         deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &[]).unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -487,7 +488,8 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+    let change_set =
+        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -510,7 +512,8 @@ fn change_set_replaces_rows_when_update_changes_targets() {
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+    let change_set =
+        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(
         change_set.deletes.iter().map(|r| r.id).collect::<Vec<_>>(),
@@ -547,7 +550,8 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+    let change_set =
+        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 2);
     assert_eq!(change_set.creates.len(), 2);
@@ -575,7 +579,8 @@ fn change_set_enforces_cname_exclusivity() {
         deletes: vec![],
     };
 
-    let err = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap_err();
+    let err =
+        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap_err();
     assert_eq!(err.code(), ErrorCode::RecordConflict);
 }
 
@@ -595,7 +600,8 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
         deletes: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+    let change_set =
+        ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.creates.len(), 1);

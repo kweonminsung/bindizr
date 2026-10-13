@@ -23,7 +23,7 @@ use super::{WireName, WireRecord};
 use crate::{
     dns::{
         ConvertTtlError, LibraryError, Serial, Ttl,
-        dnssec::{KeyRdataError, KeyTag, WireNameError},
+        dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag},
         name::{OwnerName, ParseNameError, ZoneName},
         record::{EncodeRdataError, Rdata},
     },
@@ -78,9 +78,9 @@ pub enum SignZoneError {
     #[error("NSEC generation failed: {reason}")]
     Nsec { reason: String },
     #[error(transparent)]
-    WireName(#[from] WireNameError),
+    WireName(#[from] EncodeWireNameError),
     #[error(transparent)]
-    Key(#[from] KeyRdataError),
+    Key(#[from] EncodeKeyRdataError),
     #[error(transparent)]
     EncodeRdata(#[from] EncodeRdataError),
     #[error(transparent)]
@@ -430,7 +430,7 @@ impl<'a> Signer<'a> {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
             key_tag: KeyTag::from(dnskey.key_tag()),
-            algorithm: key.algorithm.to_int() as u8,
+            algorithm: key.algorithm.as_i32() as u8,
             dnskey,
         })
     }

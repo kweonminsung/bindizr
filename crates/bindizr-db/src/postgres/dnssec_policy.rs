@@ -18,7 +18,7 @@ pub(crate) async fn create_tx(
         "#,
     )
     .bind(&policy.name)
-    .bind(policy.algorithm.to_int())
+    .bind(policy.algorithm.as_i32())
     .bind(policy.denial.as_str())
     .bind(policy.split_keys)
     .bind(policy.signature_validity_days)

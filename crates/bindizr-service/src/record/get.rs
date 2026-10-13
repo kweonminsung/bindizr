@@ -53,7 +53,7 @@ pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
 /// List records with zone names, applying caller grants and pagination in SQL.
 /// Signed records follow user records, support name search, and reject value filters.
 /// Priority filters omit signed records; unknown or invisible zones yield empty pages for scoped callers.
-pub async fn list_with_zone_by_filter(
+pub async fn list_by_filter_with_zone(
     cx: &Context,
     caller: &Caller,
     filter: RecordFilter,

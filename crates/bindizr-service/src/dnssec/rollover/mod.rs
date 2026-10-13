@@ -11,7 +11,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use super::status::build_status_tx;
+use super::status::load_status_tx;
 use crate::{
     Context, Transaction,
     authorization::Caller,
@@ -24,7 +24,8 @@ use crate::{
     },
     transaction,
     types::{
-        DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown, RolloverDnssecRequest,
+        DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
+        StartDnssecRolloverRequest,
     },
 };
 
@@ -34,7 +35,7 @@ pub async fn start_rollover(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    request: &RolloverDnssecRequest,
+    request: &StartDnssecRolloverRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let role = request
         .role
@@ -100,7 +101,7 @@ pub async fn start_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -215,7 +216,7 @@ pub async fn advance_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

@@ -47,7 +47,7 @@ pub enum DnssecAlgorithm {
 
 impl DnssecAlgorithm {
     /// IANA algorithm number, the storage form.
-    pub fn to_int(self) -> i32 {
+    pub fn as_i32(self) -> i32 {
         match self {
             DnssecAlgorithm::RsaSha256 => 8,
             DnssecAlgorithm::RsaSha512 => 10,
@@ -59,7 +59,7 @@ impl DnssecAlgorithm {
     }
 
     /// Parse a supported DNSSEC algorithm number.
-    pub fn from_int(value: i32) -> Option<Self> {
+    pub fn from_i32(value: i32) -> Option<Self> {
         match value {
             8 => Some(DnssecAlgorithm::RsaSha256),
             10 => Some(DnssecAlgorithm::RsaSha512),
@@ -127,7 +127,7 @@ impl TryFrom<i32> for DnssecAlgorithm {
 
     /// Validate and convert the stored value into a DNSSEC algorithm.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        DnssecAlgorithm::from_int(value).ok_or(ParseDnssecKeyError::AlgorithmNumber { value })
+        DnssecAlgorithm::from_i32(value).ok_or(ParseDnssecKeyError::AlgorithmNumber { value })
     }
 }
 

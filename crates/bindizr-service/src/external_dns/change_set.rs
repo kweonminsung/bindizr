@@ -25,9 +25,9 @@ use crate::{
     types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord},
 };
 
-/// A desired operation with row-encoded values and an absolute owner, before zone resolution.
+/// Desired records with row-encoded values and an absolute owner before zone resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordSetOp {
+pub(crate) struct RecordSet {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
@@ -36,15 +36,14 @@ pub(crate) struct RecordSetOp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PendingOp {
-    pub(crate) op: RecordSetOp,
+pub(crate) struct RecordSetOperation {
+    pub(crate) record_set: RecordSet,
     pub(crate) is_delete: bool,
 }
 
-/// The same operation once grouping has decided which zone owns it, so the
-/// owner is relative to that zone.
+/// Desired records whose owner is relative to their resolved zone.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ZoneRecordSetOp {
+pub(crate) struct ZoneRecordSet {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
     pub(crate) ttl: Option<Ttl>,
@@ -53,9 +52,9 @@ pub(crate) struct ZoneRecordSetOp {
 
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct ZoneOps {
-    pub(crate) adds: Vec<ZoneRecordSetOp>,
-    pub(crate) dels: Vec<ZoneRecordSetOp>,
+pub(crate) struct ZoneOperations {
+    pub(crate) adds: Vec<ZoneRecordSet>,
+    pub(crate) deletes: Vec<ZoneRecordSet>,
 }
 
 /// The record rows one zone's operations resolve to.
@@ -103,8 +102,8 @@ fn validate_record_set_shape(
     Ok(())
 }
 
-/// Convert an external-dns record group into a validated change operation.
-pub(crate) fn parse_record_set_op(record: &ExternalDnsRecord) -> Result<RecordSetOp, ServiceError> {
+/// Parse and validate an ExternalDNS record group.
+pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let name = normalize_lookup_name(&record.name)?;
     let ttl = normalize_ttl(record.ttl)?;
@@ -124,7 +123,7 @@ pub(crate) fn parse_record_set_op(record: &ExternalDnsRecord) -> Result<RecordSe
         }
     }
 
-    Ok(RecordSetOp {
+    Ok(RecordSet {
         name,
         record_type,
         ttl,
@@ -165,64 +164,64 @@ pub(crate) fn adjust_record_set(
 /// delete(old) + add(new), with unchanged pairs canceling later.
 pub(crate) fn parse_changes_request(
     request: &ApplyExternalDnsChangesRequest,
-) -> Result<Vec<PendingOp>, ServiceError> {
-    let mut ops = Vec::new();
+) -> Result<Vec<RecordSetOperation>, ServiceError> {
+    let mut operations = Vec::new();
     for record_set in &request.deletes {
-        ops.push(PendingOp {
-            op: parse_record_set_op(record_set)?,
+        operations.push(RecordSetOperation {
+            record_set: parse_record_set(record_set)?,
             is_delete: true,
         });
     }
     for update in &request.updates {
-        ops.push(PendingOp {
-            op: parse_record_set_op(&update.old)?,
+        operations.push(RecordSetOperation {
+            record_set: parse_record_set(&update.old)?,
             is_delete: true,
         });
-        ops.push(PendingOp {
-            op: parse_record_set_op(&update.new)?,
+        operations.push(RecordSetOperation {
+            record_set: parse_record_set(&update.new)?,
             is_delete: false,
         });
     }
     for record_set in &request.creates {
-        ops.push(PendingOp {
-            op: parse_record_set_op(record_set)?,
+        operations.push(RecordSetOperation {
+            record_set: parse_record_set(record_set)?,
             is_delete: false,
         });
     }
-    Ok(ops)
+    Ok(operations)
 }
 
 /// Resolve every operation to its most-specific authoritative zone; the
 /// caller's write authorization is checked per zone inside the transaction.
-pub(crate) fn group_ops_by_zone(
+pub(crate) fn group_operations_by_zone(
     caller: &Caller,
     zones: &[Zone],
-    ops: Vec<PendingOp>,
-) -> Result<BTreeMap<ZoneName, ZoneOps>, ServiceError> {
-    let mut grouped: BTreeMap<ZoneName, ZoneOps> = BTreeMap::new();
+    operations: Vec<RecordSetOperation>,
+) -> Result<BTreeMap<ZoneName, ZoneOperations>, ServiceError> {
+    let mut grouped: BTreeMap<ZoneName, ZoneOperations> = BTreeMap::new();
 
-    for pending in ops {
+    for pending in operations {
         // From all zones, so a hidden subzone still shadows a granted parent.
-        let (zone, name) = authoritative_zone(zones, &pending.op.name)
+        let (zone, name) = authoritative_zone(zones, &pending.record_set.name)
             .filter(|(zone, _)| caller.sees_zone(zone.id))
             .ok_or_else(|| {
                 ServiceError::ZoneNotFound(format!(
                     "no zone is authoritative for '{}'",
-                    pending.op.name
+                    pending.record_set.name
                 ))
             })?;
 
-        let op = ZoneRecordSetOp {
+        let record_set = ZoneRecordSet {
             name,
-            record_type: pending.op.record_type,
-            ttl: pending.op.ttl,
-            values: pending.op.values,
+            record_type: pending.record_set.record_type,
+            ttl: pending.record_set.ttl,
+            values: pending.record_set.values,
         };
         let entry = grouped.entry(zone.name.clone()).or_default();
         if pending.is_delete {
-            entry.dels.push(op);
+            entry.deletes.push(record_set);
         } else {
-            entry.adds.push(op);
+            entry.adds.push(record_set);
         }
     }
 
@@ -233,12 +232,12 @@ impl ZoneChangeSet {
     /// Resolve one zone's operations against its current records; idempotent
     /// operations cancel out, so an effect-free request yields an empty set.
     pub(crate) fn compute(
-        ops: &ZoneOps,
+        operations: &ZoneOperations,
         zone: &Zone,
         existing: &[Record],
     ) -> Result<Self, ServiceError> {
         let mut deletes: Vec<Record> = Vec::new();
-        for del in &ops.dels {
+        for del in &operations.deletes {
             for value in &del.values {
                 for row in existing {
                     if row.name == del.name
@@ -253,7 +252,7 @@ impl ZoneChangeSet {
         }
 
         let mut creates: Vec<Record> = Vec::new();
-        for add in &ops.adds {
+        for add in &operations.adds {
             let ttl = add.ttl.unwrap_or(zone.default_ttl);
             for value in &add.values {
                 let same_rdata = |record: &Record| {

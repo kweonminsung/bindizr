@@ -67,10 +67,10 @@ async def run(adapter, cfg, ctx) -> list:
 
         recs = generate(size, cfg["seed"], zone)
         t = time.monotonic()
-        await adapter.bulk_import(zone, recs)
+        await adapter.import_records(zone, recs)
         populate_secs = time.monotonic() - t
 
-        # The secondary pulls asynchronously (bulk_import returns after
+        # The secondary pulls asynchronously (import_records returns after
         # commit+NOTIFY, not after the transfer lands), so poll until the count
         # covers the set before timing the export; scale the bound with size.
         deadline = time.monotonic() + max(120, size / 500)

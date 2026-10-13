@@ -15,7 +15,7 @@ use super::*;
 
 /// Verify that parse DNS response renders values in harness comparison format.
 #[test]
-fn parse_dns_response_renders_values_in_harness_comparison_format() {
+fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(7);
     builder.header_mut().set_qr(true);
@@ -74,8 +74,8 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
             .unwrap();
     }
 
-    let answers = parse_dns_response(7, &answer.finish()).unwrap();
-    let values: Vec<(u16, Option<Value>)> = answers
+    let records = extract_dns_records(7, &answer.finish()).unwrap();
+    let values: Vec<(u16, Option<Value>)> = records
         .into_iter()
         .map(|answer| (answer.record_type, answer.value))
         .collect();
@@ -97,24 +97,24 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
 /// Verify that a refused response includes the exact "REFUSED RCODE" text recognized by
 /// `is_deleted_zone_absence`.
 #[test]
-fn parse_dns_response_names_refused_rcode_in_error() {
+fn extract_dns_records_names_refused_rcode_in_error() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(9);
     builder.header_mut().set_qr(true);
     builder.header_mut().set_rcode(Rcode::REFUSED);
 
-    let err = parse_dns_response(9, &builder.finish()).unwrap_err();
+    let err = extract_dns_records(9, &builder.finish()).unwrap_err();
     assert!(err.contains("REFUSED RCODE (5)"), "unexpected error: {err}");
 }
 
-/// Verify that `parse_dns_response` treats nxdomain as no answers.
+/// Verify that `extract_dns_records` treats nxdomain as no records.
 #[test]
-fn parse_dns_response_treats_nxdomain_as_no_answers() {
+fn extract_dns_records_treats_nxdomain_as_no_records() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(9);
     builder.header_mut().set_qr(true);
     builder.header_mut().set_rcode(Rcode::NXDOMAIN);
 
-    let answers = parse_dns_response(9, &builder.finish()).unwrap();
-    assert!(answers.is_empty());
+    let records = extract_dns_records(9, &builder.finish()).unwrap();
+    assert!(records.is_empty());
 }

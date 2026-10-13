@@ -592,7 +592,7 @@ implementation to share, and any new arguments or branches before merging.
 
 Do not pre-split a function for a caller that has not arrived: extract the
 shared helper when the second caller appears (`validate_record_set_shape` left
-`parse_record_set_op` only when `adjust_record_set` needed it too). A single-caller
+`parse_record_set` only when `adjust_record_set` needed it too). A single-caller
 helper is justified by its contract, never by call count: the name plus a
 narrow signature must let the caller be read without opening the body
 (`normalize_ttl`). A name that merely labels a section of its one caller, or
@@ -620,7 +620,7 @@ not by itself make an operation belong to it (`C-METHOD`, `C-CTOR`).
 | Construct `Self` or `Result<Self, _>` | `new`, `parse`, `generate`, `import`, `compute`, `connect`, `load`, `spawn`; error/refusal constructors name the condition (`zone_not_found`, `refused`). A module-owned value uses its constructor and module error (`ImportPlan::compute`, `DnssecKey::generate`); free `generate_` produces standard/foreign material (`generate_serial`). |
 | Convert or access representation | `From` / `TryFrom`, `from_<source>`, `as_` / `to_` / `into_`, sqlx, serde, `Display`; see [Conversions](#conversions). |
 | Derive from or test the receiver | `is_` / `has_` / `matches_` or a meaningful phrase (`key.wants_parent_ds()`); plain inputs and peers are allowed (`zone.soa_metadata_differs(&other)`). |
-| Enforce the type's wire/protocol rule | `UpdateRecord::validate_delete_shape`, `OwnerName::to_wire`, `RecordType::validate_value`, using the module's error. A front end maps that error and does not wrap the method just to rename it; `ParsedQuery::build_signed_error_response` takes its optional signer itself. |
+| Enforce the type's wire/protocol rule | `UpdateRecord::validate_update_shape`, `OwnerName::to_wire`, `RecordType::validate_value`, using the module's error. A front end maps that error and does not wrap the method just to rename it; `ParsedQuery::build_signed_error_response` takes its optional signer itself. |
 | Operate a builder or owned resource | `&mut self` builder steps, `Transaction::commit`, `UpstreamClient::send`, `NotifyWorker::stop`. |
 | Authorize the caller | `Caller::authorize_*`, retaining `ServiceError`. |
 
@@ -782,7 +782,13 @@ not `CreatedTokenResponse`; `WriteZoneResponse`, not `ZoneWriteResponse`.
 Request/response pairs share their stem (`CreateBulkRecordsRequest` /
 `CreateBulkRecordsResponse`). Protocol qualifiers are part of the subject
 (`AdjustExternalDnsRecordsRequest`). The same order applies to query types
-(`ListZoneVersionsQuery`, `DiffZoneVersionsQuery`).
+(`ListZoneVersionsQuery`, `DiffZoneVersionsQuery`), entity handlers, and internal
+command variants (`create_bulk_records`, `CreateBulkRecords`). Preserve existing
+wire command names with explicit serde renames when internal names change.
+
+These payload rules also cover socket/CLI JSON and adapter request serializers
+and response deserializers. A response payload uses `Response`, not `Body`;
+transport extractors such as `JsonBody` keep their distinct role.
 
 Share a response when operations have the same contract (`WriteZoneResponse` for
 create/update); do not clone it into operation-specific types. Reusable data and

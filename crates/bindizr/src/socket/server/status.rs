@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Return the daemon's current status as JSON.
-pub(crate) async fn handle_status(
+pub(crate) async fn get_daemon_status(
     cx: &Context,
 ) -> Result<DaemonResponse<DaemonStatusResponse>, ServiceError> {
     let config = cx.config();
@@ -84,7 +84,7 @@ pub(crate) fn reload_config(
 }
 
 /// Return the daemon's effective configuration.
-pub(crate) fn config(cx: &Context) -> DaemonResponse<Arc<Config>> {
+pub(crate) fn get_config(cx: &Context) -> DaemonResponse<Arc<Config>> {
     DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),
         data: cx.config(),

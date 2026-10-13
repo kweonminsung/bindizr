@@ -9,9 +9,9 @@ use domain::{
     base::{Message, MessageBuilder, Name, Rtype, iana::Rcode, name::ParsedName},
     rdata::AllRecordData,
 };
-pub(crate) use parent::{FakeParent, ServedDs};
+pub(crate) use parent::{DsRecord, FakeParent};
 use serde_json::{Value, json};
-pub(crate) use transfer::{TransferOutcome, axfr, xot};
+pub(crate) use transfer::{TransferResult, axfr, xot};
 pub(crate) use transport::{
     exchange_request, exchange_tcp, exchange_udp, exchange_xot, read_frame, write_frame,
 };
@@ -92,14 +92,14 @@ pub(crate) async fn wait_for_dns_records(
         "Waiting for {expected_count} type {record_type} record(s) for {name} on 127.0.0.1:{port}..."
     );
     for attempt in 1..=120 {
-        match query_dns_record(port, name, record_type) {
-            Ok(answers)
-                if answers
+        match query_dns_records(port, name, record_type) {
+            Ok(records)
+                if records
                     .iter()
                     .filter(|answer| answer.record_type == record_type)
                     .count()
                     == expected_count
-                    && matches_dns_values(record_type, expected, &answers) =>
+                    && matches_dns_values(record_type, expected, &records) =>
             {
                 eprintln!("{name} type {record_type} propagated through 127.0.0.1:{port}.");
                 return;
@@ -130,15 +130,15 @@ fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) ->
     record_type == 6 && expected.is_empty() && error.contains("REFUSED RCODE")
 }
 
-/// One answer record, as its type number and the comparison form of its rdata.
+/// A response record, including referrals, in the harness comparison form.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DnsAnswer {
+pub(crate) struct DnsRecord {
     pub(crate) record_type: u16,
     pub(crate) value: Option<Value>,
 }
 
-/// Compare DNS answers with expected values for the record type.
-fn matches_dns_values(record_type: u16, expected: &[Value], answers: &[DnsAnswer]) -> bool {
+/// Compare response records with expected values for the record type.
+fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord]) -> bool {
     if record_type == 6 {
         return true;
     }
@@ -151,7 +151,7 @@ fn matches_dns_values(record_type: u16, expected: &[Value], answers: &[DnsAnswer
         }
     };
     let mut expected = expected.iter().map(normalize).collect::<Vec<_>>();
-    let mut actual = answers
+    let mut actual = records
         .iter()
         .filter(|answer| answer.record_type == record_type)
         .filter_map(|answer| answer.value.as_ref().map(normalize))
@@ -186,13 +186,13 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
 /// Whether the DNS plane serves `zone_name`: a zone it does not know answers
 /// REFUSED, which `validate_response_header` reports as an error.
 pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
-    matches!(query_dns_record(port, zone_name, 6), Ok(answers) if !answers.is_empty())
+    matches!(query_dns_records(port, zone_name, 6), Ok(records) if !records.is_empty())
 }
 
-/// Query DNS and decode the returned answers.
-fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAnswer>, String> {
+/// Query DNS and decode answer or referral records.
+fn query_dns_records(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsRecord>, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
-    parse_dns_response(query_id, &response)
+    extract_dns_records(query_id, &response)
 }
 
 /// Query DNS and count the returned answers.
@@ -246,19 +246,22 @@ pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_str(trimmed).map_err(|e| format!("invalid DNS name '{name}': {e}"))
 }
 
-/// Validate a DNS response and decode its answers.
-pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
+/// Validate a DNS response and extract answer or referral records.
+pub(crate) fn extract_dns_records(
+    query_id: u16,
+    response: &[u8],
+) -> Result<Vec<DnsRecord>, String> {
     let message = Message::from_octets(response).map_err(|e| e.to_string())?;
     if !validate_response_header(query_id, &message)? {
         return Ok(Vec::new());
     }
 
     let answer = message.answer().map_err(|e| e.to_string())?;
-    let mut answers = Vec::new();
+    let mut records = Vec::new();
     for record in answer.limit_to::<AllRecordData<_, _>>() {
         let record = record.map_err(|e| e.to_string())?;
         let record_type = record.rtype().to_int();
-        answers.push(DnsAnswer {
+        records.push(DnsRecord {
             record_type,
             value: decode_dns_value(record.data(), record_type)?,
         });
@@ -266,19 +269,19 @@ pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<D
 
     // A delegation NS record set comes back as a referral: NOERROR with an empty
     // answer section and the NS rows in authority (RFC 1034, Section 4.3.2).
-    if answers.is_empty() {
+    if records.is_empty() {
         let authority = message.authority().map_err(|e| e.to_string())?;
         for record in authority.limit_to::<AllRecordData<_, _>>() {
             let record = record.map_err(|e| e.to_string())?;
             let record_type = record.rtype().to_int();
-            answers.push(DnsAnswer {
+            records.push(DnsRecord {
                 record_type,
                 value: decode_dns_value(record.data(), record_type)?,
             });
         }
     }
 
-    Ok(answers)
+    Ok(records)
 }
 
 /// Validate the response's id, QR bit, and rcode; `false` is a well-formed

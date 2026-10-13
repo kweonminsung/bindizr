@@ -77,7 +77,7 @@ impl RecordOperation {
 }
 
 /// Apply one authorized nsupdate operation in the current transaction.
-pub(crate) async fn apply_op_tx(
+pub(crate) async fn apply_record_operation_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     op: &RecordOperation,

@@ -96,7 +96,7 @@ async def _bulk_backend(adapter, cfg, zone, backend, size, pairing) -> dict:
     sampler = sampler_for(adapter, cfg)
     sampler.start()
     t0 = time.monotonic()
-    await adapter.bulk_import(zone, records)
+    await adapter.import_records(zone, records)
     elapsed = time.monotonic() - t0
     res = sampler.stop()
 
@@ -131,7 +131,7 @@ async def run(_adapter, cfg, ctx) -> list:
     for backend in cfg["databases"]:
         proj = f"bench-{system.replace('_', '-')}-db-{backend}"
         # notify off: isolate database write throughput from NOTIFY/XFR cost.
-        adapter = registry.build(system, cfg, proj, db_type=backend,
+        adapter = registry.build_adapter(system, cfg, proj, db_type=backend,
                                  notify_after_update=False)
         try:
             print(f"    backend {backend}: setup...", flush=True)

@@ -11,7 +11,7 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::validation::{
-    normalize_record_owner_name, parse_record_request, validate_record_constraints,
+    normalize_record_owner_name, parse_record_fields, validate_record_constraints,
 };
 use crate::{
     Context, Transaction,
@@ -158,7 +158,7 @@ pub async fn create_bulk(
     let t = Instant::now();
     let prepared = items
         .iter()
-        .map(|item| parse_record_request(&item.record_type, &item.value, item.ttl, item.priority))
+        .map(|item| parse_record_fields(&item.record_type, &item.value, item.ttl, item.priority))
         .collect::<Result<Vec<_>, _>>()?;
     let owners: Vec<_> = items
         .iter()

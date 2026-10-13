@@ -35,10 +35,10 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         .route("/records", routing::post(create_record))
         .route("/records/{id}", routing::put(update_record))
         .route("/records/{id}", routing::delete(delete_record))
-        .route("/records", routing::delete(delete_records_matching))
+        .route("/records", routing::delete(delete_matching_records))
         .route(
             "/records/bulk",
-            routing::post(create_records_bulk).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+            routing::post(create_bulk_records).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
         )
 }
 
@@ -62,7 +62,7 @@ pub(crate) async fn list_records(
     Query(mut query): Query<RecordFilter>,
 ) -> Result<Response, ApiError> {
     query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = record::list_with_zone_by_filter(&cx, &caller, query).await?;
+    let response = record::list_by_filter_with_zone(&cx, &caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -206,7 +206,7 @@ pub(crate) async fn delete_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn delete_records_matching(
+pub(crate) async fn delete_matching_records(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(request): Query<DeleteRecordsRequest>,
@@ -235,7 +235,7 @@ pub(crate) async fn delete_records_matching(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn create_records_bulk(
+pub(crate) async fn create_bulk_records(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,

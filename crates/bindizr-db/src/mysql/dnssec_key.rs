@@ -25,7 +25,7 @@ pub(crate) async fn create_tx(
     )
     .bind(key.zone_id)
     .bind(key.role.as_str())
-    .bind(key.algorithm.to_int())
+    .bind(key.algorithm.as_i32())
     .bind(key.key_tag)
     .bind(&key.public_key)
     .bind(&key.private_key)

@@ -5,7 +5,7 @@ use bindizr_service::{
     error::ServiceError,
     types::{
         DnssecStatusResponse, DsCheck, EnableDnssecRequest, ExportDnssecKeysResponse, Holddown,
-        ImportDnssecKeysRequest, MessageResponse, RolloverDnssecRequest,
+        ImportDnssecKeysRequest, MessageResponse, StartDnssecRolloverRequest,
         UpdateDnssecSettingsRequest,
     },
     zone,
@@ -81,7 +81,7 @@ pub(crate) async fn sign_zone(
 pub(crate) async fn start_dnssec_rollover(
     cx: &Context,
     zone_name: &str,
-    request: &RolloverDnssecRequest,
+    request: &StartDnssecRolloverRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
     let status = dnssec::start_rollover(
         cx,
@@ -97,7 +97,7 @@ pub(crate) async fn start_dnssec_rollover(
 }
 
 /// Confirm the parent DS and advance the requested rollover.
-pub(crate) async fn ds_seen_dnssec_rollover(
+pub(crate) async fn advance_dnssec_rollover(
     cx: &Context,
     zone_name: &str,
     ds_check: DsCheck,

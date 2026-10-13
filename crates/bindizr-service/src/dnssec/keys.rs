@@ -8,7 +8,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::status::build_status_tx;
+use super::status::load_status_tx;
 use crate::{
     Context,
     authorization::Caller,
@@ -52,13 +52,13 @@ pub async fn export_keys(
                 .iter()
                 .map(|key| DnssecKeyMaterialResponse {
                     role: key.role,
-                    algorithm: key.algorithm.to_int(),
+                    algorithm: key.algorithm.as_i32(),
                     key_tag: key.key_tag,
                     dnskey_record: format!(
                         "{}. IN DNSKEY {} 3 {} {}",
                         zone.name.as_str(),
                         key.role.flags(),
-                        key.algorithm.to_int(),
+                        key.algorithm.as_i32(),
                         key.public_key
                     ),
                     private_key: key.to_bind_private_file(),
@@ -177,7 +177,7 @@ pub async fn import_keys(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

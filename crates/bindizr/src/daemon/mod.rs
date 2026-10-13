@@ -204,7 +204,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
-    let dns_servers = dns::initialize(cx.clone(), &shutdown, tls.dns.clone()).await?;
+    let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
 
     let (control_tx, mut control_rx) = socket::server::control::channel();
     let socket_cx = Arc::new(socket::server::SocketContext::new(
@@ -213,7 +213,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         tls.clone(),
     ));
     let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
-    let api_task = api::initialize(cx.clone(), &shutdown, tls.api.clone()).await?;
+    let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
 
     // A front end that stops on its own ends the daemon: the control socket
     // would otherwise keep answering for a process serving nothing.

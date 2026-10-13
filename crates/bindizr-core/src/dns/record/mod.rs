@@ -28,7 +28,7 @@ pub use dname::DnameRecordValue;
 pub use ds::DsRecordValue;
 pub use error::ParseRecordValueError;
 pub use mx::MxRecordValue;
-pub use naptr::{NaptrRecordValue, NaptrRegexpError};
+pub use naptr::{NaptrRecordValue, ValidateNaptrRegexpError};
 pub use ns::NsRecordValue;
 pub use ptr::PtrRecordValue;
 pub(crate) use rdata::EncodedRdata;

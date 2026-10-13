@@ -55,7 +55,7 @@ async def run(adapter, cfg, ctx) -> list:
 
         rows.append(await _measure(
             adapter, zone, size, ctx["label"],
-            lambda: adapter.bulk_import(zone, records),
+            lambda: adapter.import_records(zone, records),
             lambda: getattr(adapter, "bulk_errors", 0)))
 
         # Bindizr also supports importing a BIND zone file; report it alongside.

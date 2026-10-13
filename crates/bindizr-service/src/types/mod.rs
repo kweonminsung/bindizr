@@ -21,7 +21,7 @@ pub use dnssec::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecDsResponse,
     DnssecKeyMaterialResponse, DnssecKeyResponse, DnssecStatusResponse, DsCheck, DsState,
     EnableDnssecRequest, ExportDnssecKeysResponse, Holddown, ImportDnssecKeyPair,
-    ImportDnssecKeysRequest, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
+    ImportDnssecKeysRequest, StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
 };
 pub use dnssec_policy::{
     CreateDnssecPolicyRequest, DnssecPolicyResponse, SingleDnssecPolicyResponse,

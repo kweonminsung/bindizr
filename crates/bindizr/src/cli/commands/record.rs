@@ -397,7 +397,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 CliError::request_with_source(format!("invalid record in '{}': {}", file, e), e)
             })?;
             let response = client::send_command::<CreateBulkRecordsResponse>(
-                DaemonCommand::CreateRecordsBulk(CreateBulkRecordsRequest {
+                DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
                     zone_name: zone,
                     records,
                     dry_run,
@@ -564,7 +564,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             let response = client::send_command::<DeleteRecordsResponse>(
-                DaemonCommand::DeleteRecordsMatching(DeleteRecordsRequest {
+                DaemonCommand::DeleteMatchingRecords(DeleteRecordsRequest {
                     zone_name: zone,
                     name,
                     record_type,

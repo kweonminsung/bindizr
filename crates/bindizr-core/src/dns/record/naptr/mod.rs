@@ -1,6 +1,6 @@
 mod regexp;
 
-pub use regexp::NaptrRegexpError;
+pub use regexp::ValidateNaptrRegexpError;
 use regexp::validate_naptr_regexp;
 
 use super::{

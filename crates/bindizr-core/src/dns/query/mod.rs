@@ -17,9 +17,9 @@ use crate::dns::{
     record::{EncodeRdataError, Rdata},
 };
 
-/// Why an answer bindizr asked for could not be read as one.
+/// Why a DNS response could not be parsed or matched to its request.
 #[derive(Debug, Error)]
-pub enum ReadResponseError {
+pub enum ParseResponseError {
     #[error("malformed response: {0}")]
     Malformed(#[source] LibraryError),
     #[error("response ID mismatch: expected {expected}, got {got}")]
@@ -46,7 +46,7 @@ pub enum ReadResponseError {
     Rdata(#[from] EncodeRdataError),
     /// The NOTIFY acknowledgement did not read as one; the source says why.
     #[error("NOTIFY {0}")]
-    Notify(#[source] Box<ReadResponseError>),
+    Notify(#[source] Box<ParseResponseError>),
     #[error("NOTIFY response opcode mismatch: expected {}, got {got}", Opcode::NOTIFY.to_int())]
     NotifyOpcode { got: u8 },
     #[error("NOTIFY response returned RCODE {0}")]
@@ -110,58 +110,57 @@ pub fn is_truncated(response: &[u8]) -> bool {
 
 /// `parse_response`, plus the echoed question must be ours (`qname`, `rtype`,
 /// class IN).
-fn parse_answer<'a>(
+fn parse_question_response<'a>(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     rtype: Rtype,
     response: &'a [u8],
-) -> Result<Message<&'a [u8]>, ReadResponseError> {
+) -> Result<Message<&'a [u8]>, ParseResponseError> {
     let message = parse_response(query_id, response)?;
     let question = message
         .sole_question()
-        .map_err(|e| ReadResponseError::MalformedQuestion(Box::new(e)))?;
+        .map_err(|e| ParseResponseError::MalformedQuestion(Box::new(e)))?;
     if !question.qname().name_eq(qname)
         || question.qtype() != rtype
         || question.qclass() != Class::IN
     {
-        return Err(ReadResponseError::OtherQuestion);
+        return Err(ParseResponseError::OtherQuestion);
     }
     Ok(message)
 }
 
-/// `parse_answer`, and the answer must be the server's own (AA), not a
-/// cache's.
-fn parse_authoritative_answer<'a>(
+/// Parse a matching question response and require the authoritative (AA) flag.
+fn parse_authoritative_response<'a>(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     rtype: Rtype,
     response: &'a [u8],
-) -> Result<Message<&'a [u8]>, ReadResponseError> {
-    let message = parse_answer(query_id, qname, rtype, response)?;
+) -> Result<Message<&'a [u8]>, ParseResponseError> {
+    let message = parse_question_response(query_id, qname, rtype, response)?;
     if !message.header().aa() {
-        return Err(ReadResponseError::NotAuthoritative);
+        return Err(ParseResponseError::NotAuthoritative);
     }
     Ok(message)
 }
 
 /// Check a response answers our question: our id, QR set, not truncated.
 /// The RCODE is the caller's, since NXDOMAIN answers some questions.
-fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, ReadResponseError> {
+fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, ParseResponseError> {
     let message =
-        Message::from_octets(response).map_err(|e| ReadResponseError::Malformed(Box::new(e)))?;
+        Message::from_octets(response).map_err(|e| ParseResponseError::Malformed(Box::new(e)))?;
 
     let header = message.header();
     if header.id() != query_id {
-        return Err(ReadResponseError::IdMismatch {
+        return Err(ParseResponseError::IdMismatch {
             expected: query_id,
             got: header.id(),
         });
     }
     if !header.qr() {
-        return Err(ReadResponseError::NotResponse);
+        return Err(ParseResponseError::NotResponse);
     }
     if header.tc() {
-        return Err(ReadResponseError::Truncated);
+        return Err(ParseResponseError::Truncated);
     }
     Ok(message)
 }
@@ -185,34 +184,34 @@ pub fn extract_transfer_records(
     qname: &Name<Vec<u8>>,
     position: TransferMessagePosition,
     response: &[u8],
-) -> Result<Vec<TransferRecord>, ReadResponseError> {
+) -> Result<Vec<TransferRecord>, ParseResponseError> {
     use domain::rdata::AllRecordData;
 
     let message = if position == TransferMessagePosition::First {
-        parse_authoritative_answer(query_id, qname, Rtype::AXFR, response)?
+        parse_authoritative_response(query_id, qname, Rtype::AXFR, response)?
     } else if parse_response(query_id, response)?
         .header_counts()
         .qdcount()
         == 1
     {
-        parse_answer(query_id, qname, Rtype::AXFR, response)?
+        parse_question_response(query_id, qname, Rtype::AXFR, response)?
     } else {
         parse_response(query_id, response)?
     };
     if message.header().rcode() != Rcode::NOERROR {
-        return Err(ReadResponseError::Rcode(message.header().rcode().to_int()));
+        return Err(ParseResponseError::Rcode(message.header().rcode().to_int()));
     }
 
     let answer = message
         .answer()
-        .map_err(|e| ReadResponseError::MalformedAnswer(Box::new(e)))?;
+        .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
     let mut records = Vec::new();
     for record in answer.limit_to::<AllRecordData<_, _>>() {
-        let record = record.map_err(|e| ReadResponseError::MalformedAnswerRecord(Box::new(e)))?;
+        let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
         // A zone transfer is single-class; rendering would rewrite any other
         // class as IN.
         if record.class() != Class::IN {
-            return Err(ReadResponseError::ForeignClass {
+            return Err(ParseResponseError::ForeignClass {
                 class: record.class(),
                 owner: record.owner().to_string(),
             });
@@ -236,23 +235,23 @@ pub fn validate_notify_response(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     response: &[u8],
-) -> Result<(), ReadResponseError> {
+) -> Result<(), ParseResponseError> {
     let message =
-        parse_response(query_id, response).map_err(|e| ReadResponseError::Notify(Box::new(e)))?;
+        parse_response(query_id, response).map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
     let header = message.header();
     if header.opcode() != Opcode::NOTIFY {
-        return Err(ReadResponseError::NotifyOpcode {
+        return Err(ParseResponseError::NotifyOpcode {
             got: header.opcode().to_int(),
         });
     }
     // A refusal may omit the question (NSD 4.6's NOTAUTH does), so its RCODE
     // is read first.
     if header.rcode() != Rcode::NOERROR {
-        return Err(ReadResponseError::NotifyRcode(header.rcode().to_int()));
+        return Err(ParseResponseError::NotifyRcode(header.rcode().to_int()));
     }
     // The acknowledgement copies the request's question (RFC 1996, Section 3.7).
-    parse_answer(query_id, qname, Rtype::SOA, response)
-        .map_err(|e| ReadResponseError::Notify(Box::new(e)))?;
+    parse_question_response(query_id, qname, Rtype::SOA, response)
+        .map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
     Ok(())
 }
 
@@ -262,21 +261,21 @@ pub fn extract_soa_serial(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     response: &[u8],
-) -> Result<u32, ReadResponseError> {
-    let message = parse_authoritative_answer(query_id, qname, Rtype::SOA, response)?;
+) -> Result<u32, ParseResponseError> {
+    let message = parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
     if message.header().rcode() != Rcode::NOERROR {
-        return Err(ReadResponseError::Rcode(message.header().rcode().to_int()));
+        return Err(ParseResponseError::Rcode(message.header().rcode().to_int()));
     }
 
     let answer = message
         .answer()
-        .map_err(|e| ReadResponseError::MalformedAnswer(Box::new(e)))?;
+        .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
     answer
         .limit_to::<Soa<_>>()
         .filter_map(|record| record.ok())
         .find(|record| record.owner().name_eq(qname))
         .map(|record| record.data().serial().into_int())
-        .ok_or(ReadResponseError::NoSoa)
+        .ok_or(ParseResponseError::NoSoa)
 }
 
 /// The DS record set a parent-zone server holds for a child.
@@ -314,21 +313,21 @@ pub fn extract_ds_record_set(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     response: &[u8],
-) -> Result<Option<DsRecordSet>, ReadResponseError> {
-    let message = parse_authoritative_answer(query_id, qname, Rtype::DS, response)?;
+) -> Result<Option<DsRecordSet>, ParseResponseError> {
+    let message = parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
     match message.header().rcode() {
         Rcode::NOERROR => {}
         Rcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
-        rcode => return Err(ReadResponseError::Rcode(rcode.to_int())),
+        rcode => return Err(ParseResponseError::Rcode(rcode.to_int())),
     }
 
     let answer = message
         .answer()
-        .map_err(|e| ReadResponseError::MalformedAnswer(Box::new(e)))?;
+        .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
     let mut records = Vec::new();
     let mut ttl: Option<u32> = None;
     for record in answer.limit_to::<Ds<_>>() {
-        let record = record.map_err(|e| ReadResponseError::MalformedAnswerRecord(Box::new(e)))?;
+        let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
         // Only DS records at the child's own name are its delegation.
         if !record.owner().name_eq(qname) {
             continue;
@@ -355,18 +354,18 @@ pub fn extract_ds_record_set(
 fn validate_parent_soa(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,
-) -> Result<(), ReadResponseError> {
+) -> Result<(), ParseResponseError> {
     let authority = message
         .authority()
-        .map_err(|e| ReadResponseError::MalformedAuthority(Box::new(e)))?;
+        .map_err(|e| ParseResponseError::MalformedAuthority(Box::new(e)))?;
     for record in authority.limit_to::<Soa<_>>() {
         let record =
-            record.map_err(|e| ReadResponseError::MalformedAuthorityRecord(Box::new(e)))?;
+            record.map_err(|e| ParseResponseError::MalformedAuthorityRecord(Box::new(e)))?;
         if qname.ends_with(record.owner()) && !qname.name_eq(record.owner()) {
             return Ok(());
         }
     }
-    Err(ReadResponseError::NoParentSoa)
+    Err(ParseResponseError::NoParentSoa)
 }
 
 #[cfg(test)]

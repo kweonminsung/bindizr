@@ -139,7 +139,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
             count
         );
     }
-    let prerequisite = PrereqRecord::SoaEquals {
+    let prerequisite = PrerequisiteRecord::SoaEquals {
         name: format!("{zone_name}."),
         soa: replacement(zone_name, serial + 20),
     };
@@ -314,7 +314,7 @@ async fn soa_replacement_refusals_are_atomic() {
         assert_eq!(metadata(&app, zone_name).await, before);
         assert_eq!(app.list_records(zone_name).await, records);
     }
-    let prerequisites = [PrereqRecord::NameInUse {
+    let prerequisites = [PrerequisiteRecord::NameInUse {
         name: format!("absent.{zone_name}."),
     }];
     let updates = [UpdateRecord::AddSoa {
@@ -438,7 +438,7 @@ async fn soa_replacement_updates_the_signed_zone() {
             .iter()
             .all(|sig| sig.original_ttl() == Ttl::from_secs(900))
     );
-    let prerequisites = [PrereqRecord::SoaEquals {
+    let prerequisites = [PrerequisiteRecord::SoaEquals {
         name: format!("{zone_name}."),
         soa,
     }];

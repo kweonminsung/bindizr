@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use serial_test::serial;
 
 use crate::common::{
-    TestApp, TransferOutcome, axfr,
+    TestApp, TransferResult, axfr,
     dns::{
         exchange_request, exchange_udp,
         nsupdate::{UpdateRecord, send_update_udp},
@@ -394,7 +394,7 @@ async fn an_unknown_key_is_refused_rather_than_falling_back_to_the_address() {
     };
     let outcome = axfr(app.dns_port(), zone_name, Some(&stranger));
     assert!(
-        outcome.is_err() || matches!(outcome, Ok(TransferOutcome::Refused { .. })),
+        outcome.is_err() || matches!(outcome, Ok(TransferResult::Refused { .. })),
         "an unknown key was accepted: {outcome:?}"
     );
 }

@@ -6,7 +6,7 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::validation::{
-    PreparedRecord, normalize_record_owner_name, parse_record_request, validate_record_constraints,
+    ParsedRecord, normalize_record_owner_name, parse_record_fields, validate_record_constraints,
 };
 use crate::{
     Context,
@@ -27,12 +27,12 @@ pub async fn create(
     caller: &Caller,
     create_record_request: &CreateRecordRequest,
 ) -> Result<WriteRecordResponse, ServiceError> {
-    let PreparedRecord {
+    let ParsedRecord {
         record_type,
         value: record_value,
         priority,
         ttl,
-    } = parse_record_request(
+    } = parse_record_fields(
         &create_record_request.record_type,
         &create_record_request.value,
         create_record_request.ttl,

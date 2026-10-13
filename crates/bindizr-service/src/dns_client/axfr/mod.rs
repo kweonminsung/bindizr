@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use bindizr_core::{
     config::ImportConfig,
     dns::{
-        dnssec::WireNameError,
+        dnssec::EncodeWireNameError,
         message::{Name, Opcode, Rtype, encode_tcp_message},
         name::{ZoneName, decode_name_labels, to_fqdn},
         query::{
@@ -21,9 +21,9 @@ use super::{ReadTcpMessageError, ResolveAddressError};
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
-pub(crate) enum TransferZoneError {
+pub(crate) enum FetchZoneError {
     #[error("invalid zone name: {0}")]
-    ZoneName(#[from] WireNameError),
+    ZoneName(#[from] EncodeWireNameError),
     #[error("{server}: resolution timed out")]
     ResolutionTimedOut { server: String },
     #[error("failed to resolve {entry}: {source}")]
@@ -37,7 +37,7 @@ pub(crate) enum TransferZoneError {
     Server {
         addr: SocketAddr,
         #[source]
-        source: Box<TransferZoneError>,
+        source: Box<FetchZoneError>,
     },
     #[error("{addr}: transfer timed out")]
     TimedOut { addr: SocketAddr },
@@ -52,7 +52,7 @@ pub(crate) enum TransferZoneError {
     #[error("read failed before the closing SOA: {0}")]
     Read(#[source] ReadTcpMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    Response(#[from] bindizr_core::dns::query::ParseResponseError),
     #[error("transfer does not start with the zone's SOA")]
     NoOpeningSoa,
     #[error("transfer opens with the SOA of {found}, not {expected}")]
@@ -72,11 +72,11 @@ pub(crate) enum TransferZoneError {
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
 /// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
 /// Resolution and every address attempt share the import's deadline.
-pub(crate) async fn transfer_zone(
+pub(crate) async fn fetch_zone(
     server: &str,
     zone_name: &ZoneName,
     import: &ImportConfig,
-) -> Result<Vec<TransferRecord>, TransferZoneError> {
+) -> Result<Vec<TransferRecord>, FetchZoneError> {
     let qname = zone_name.to_wire_name()?;
 
     let deadline = tokio::time::Instant::now() + import.timeout();
@@ -85,47 +85,50 @@ pub(crate) async fn transfer_zone(
         super::resolve_address_entries(server, import.timeout()),
     )
     .await
-    .map_err(|_| TransferZoneError::ResolutionTimedOut {
+    .map_err(|_| FetchZoneError::ResolutionTimedOut {
         server: server.to_string(),
     })?;
     let mut last = None;
     for (entry, result) in entries {
-        let addrs = result.map_err(|source| TransferZoneError::Unresolved { entry, source })?;
+        let addrs = result.map_err(|source| FetchZoneError::Unresolved { entry, source })?;
         for addr in addrs {
-            match tokio::time::timeout_at(deadline, transfer_from(addr, &qname, import.max_records))
-                .await
+            match tokio::time::timeout_at(
+                deadline,
+                fetch_zone_from_address(addr, &qname, import.max_records),
+            )
+            .await
             {
                 Ok(Ok(records)) => return Ok(records),
                 Ok(Err(e)) => {
-                    last = Some(TransferZoneError::Server {
+                    last = Some(FetchZoneError::Server {
                         addr,
                         source: Box::new(e),
                     })
                 }
                 // The deadline is absolute; later attempts would time out too.
-                Err(_) => return Err(TransferZoneError::TimedOut { addr }),
+                Err(_) => return Err(FetchZoneError::TimedOut { addr }),
             }
         }
     }
-    Err(last.unwrap_or(TransferZoneError::NoAddress))
+    Err(last.unwrap_or(FetchZoneError::NoAddress))
 }
 
 /// One AXFR over TCP: read length-prefixed response messages until the
 /// closing SOA repeats the opening one.
-async fn transfer_from(
+async fn fetch_zone_from_address(
     addr: SocketAddr,
     qname: &Name<Vec<u8>>,
     max_records: usize,
-) -> Result<Vec<TransferRecord>, TransferZoneError> {
+) -> Result<Vec<TransferRecord>, FetchZoneError> {
     let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR, None);
     let query = builder.finish();
     let mut stream = tokio::net::TcpStream::connect(addr)
         .await
-        .map_err(TransferZoneError::Connect)?;
+        .map_err(FetchZoneError::Connect)?;
     stream
         .write_all(&encode_tcp_message(&query)?)
         .await
-        .map_err(TransferZoneError::Send)?;
+        .map_err(FetchZoneError::Send)?;
 
     let expected_owner = to_fqdn(&qname.to_string());
     let expected_labels = owner_labels(&expected_owner)?;
@@ -133,7 +136,7 @@ async fn transfer_from(
     loop {
         let response = super::read_tcp_message(&mut stream)
             .await
-            .map_err(TransferZoneError::Read)?;
+            .map_err(FetchZoneError::Read)?;
 
         let position = if records.is_empty() {
             TransferMessagePosition::First
@@ -144,10 +147,10 @@ async fn transfer_from(
         for record in batch {
             if records.is_empty() {
                 if record.rtype != Rtype::SOA {
-                    return Err(TransferZoneError::NoOpeningSoa);
+                    return Err(FetchZoneError::NoOpeningSoa);
                 }
                 if owner_labels(&record.name)? != expected_labels {
-                    return Err(TransferZoneError::WrongZone {
+                    return Err(FetchZoneError::WrongZone {
                         found: record.name,
                         expected: expected_owner,
                     });
@@ -158,24 +161,24 @@ async fn transfer_from(
                 if owner_labels(&record.name)? != owner_labels(&opening.name)?
                     || record.rdata != opening.rdata
                 {
-                    return Err(TransferZoneError::ForeignClosingSoa);
+                    return Err(FetchZoneError::ForeignClosingSoa);
                 }
                 records.push(record);
                 return Ok(records);
             }
             records.push(record);
             if records.len() > max_records {
-                return Err(TransferZoneError::TooManyRecords { limit: max_records });
+                return Err(FetchZoneError::TooManyRecords { limit: max_records });
             }
         }
     }
 }
 
 /// Owner names compare as labels, never as text (RFC 4343 case, escapes).
-fn owner_labels(name: &str) -> Result<Vec<String>, TransferZoneError> {
+fn owner_labels(name: &str) -> Result<Vec<String>, FetchZoneError> {
     decode_name_labels(name)
         .map(|(labels, _)| labels)
-        .map_err(|source| TransferZoneError::OwnerName {
+        .map_err(|source| FetchZoneError::OwnerName {
             name: name.to_string(),
             source,
         })

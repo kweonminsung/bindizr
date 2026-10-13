@@ -114,7 +114,7 @@ class CoreDnsAdapter(DnsAdapter):
         self.records.clear()
         await self._flush_and_reload()
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Write the whole set in one rewrite so the reload cost is paid once."""
         self.bulk_errors = 0
         for rec in records:

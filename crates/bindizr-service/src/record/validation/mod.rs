@@ -24,7 +24,7 @@ use crate::{
 
 /// Parsed record fields; an omitted TTL is resolved under the zone lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PreparedRecord {
+pub(crate) struct ParsedRecord {
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
     pub(crate) ttl: Option<Ttl>,
@@ -32,12 +32,12 @@ pub(crate) struct PreparedRecord {
 }
 
 /// Parse the record type and encode the value into its record-row form.
-pub(crate) fn parse_record_request(
+pub(crate) fn parse_record_fields(
     record_type: &str,
     value: &RecordValue,
     ttl: Option<i32>,
     priority: Option<i32>,
-) -> Result<PreparedRecord, ServiceError> {
+) -> Result<ParsedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;
     let ttl = ttl.map(validate_record_ttl).transpose()?;
     let priority = record_type.stored_priority(priority);
@@ -45,7 +45,7 @@ pub(crate) fn parse_record_request(
         .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
-    Ok(PreparedRecord {
+    Ok(ParsedRecord {
         record_type,
         value,
         ttl,

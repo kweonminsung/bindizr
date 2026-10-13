@@ -1,5 +1,4 @@
-//! Client-side SOA probing of the enabled secondaries, each answer classified
-//! against the serial Bindizr serves.
+//! SOA probes for server diagnostics and secondary serial comparisons.
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -8,14 +7,14 @@ use std::{
 
 use bindizr_core::dns::{
     Serial,
-    dnssec::WireNameError,
+    dnssec::EncodeWireNameError,
     message::{Name, Opcode, Rtype},
     name::ZoneName,
     query::{build_question, extract_soa_serial},
 };
 use thiserror::Error;
 
-use super::{ExchangeError, ResolveAddressError};
+use super::{ExchangeMessageError, ResolveAddressError};
 use crate::{
     Context,
     error::ServiceError,
@@ -24,26 +23,26 @@ use crate::{
     types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse},
 };
 
-/// Why a secondary's serial could not be read.
+/// Why a server's SOA serial could not be read.
 #[derive(Debug, Error)]
-pub enum ProbeError {
+pub enum ProbeSoaError {
     #[error("invalid zone name: {0}")]
-    ZoneName(#[from] WireNameError),
+    ZoneName(#[from] EncodeWireNameError),
     #[error("failed to resolve: {0}")]
     Resolve(#[source] ResolveAddressError),
     #[error(transparent)]
-    Exchange(#[from] ExchangeError),
+    Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    Response(#[from] bindizr_core::dns::query::ParseResponseError),
     #[error("probe task failed: {0}")]
     TaskFailed(#[source] tokio::task::JoinError),
 }
 
 /// A probe that failed before any secondary answered is the server's fault:
 /// the zone name is a stored row, the task a runtime.
-impl From<ProbeError> for ServiceError {
+impl From<ProbeSoaError> for ServiceError {
     /// Report the probe failure as an internal error, keeping it as source.
-    fn from(err: ProbeError) -> Self {
+    fn from(err: ProbeSoaError) -> Self {
         ServiceError::Internal {
             message: err.to_string(),
             source: Some(Box::new(err)),
@@ -57,7 +56,7 @@ impl From<ProbeError> for ServiceError {
 fn build_secondary_status(
     address: String,
     expected_serial: Option<Serial>,
-    result: Result<Serial, ProbeError>,
+    result: Result<Serial, ProbeSoaError>,
 ) -> SecondaryStatusResponse {
     match result {
         Ok(visible) => {
@@ -125,7 +124,7 @@ pub async fn probe_secondaries(
             Err(e) => probes.push(build_secondary_status(
                 address,
                 expected_serial,
-                Err(ProbeError::TaskFailed(e)),
+                Err(ProbeSoaError::TaskFailed(e)),
             )),
         }
     }
@@ -155,7 +154,7 @@ async fn probe_addresses(
     secondary: &Secondary,
     timeout: Duration,
     expected_serial: Option<Serial>,
-) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), ProbeError> {
+) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), ProbeSoaError> {
     let qname = zone_name.to_wire_name()?;
 
     let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
@@ -165,7 +164,7 @@ async fn probe_addresses(
                 build_secondary_status(
                     secondary.address.to_string(),
                     expected_serial,
-                    Err(ProbeError::Resolve(e)),
+                    Err(ProbeSoaError::Resolve(e)),
                 ),
                 Vec::new(),
             ));
@@ -177,7 +176,7 @@ async fn probe_addresses(
         build_secondary_status(
             secondary.address.to_string(),
             expected_serial,
-            Err(ProbeError::Resolve(ResolveAddressError::NoAddresses)),
+            Err(ProbeSoaError::Resolve(ResolveAddressError::NoAddresses)),
         )
     });
     Ok((probe, clients))
@@ -211,9 +210,9 @@ pub async fn probe_server(
     server_addr: SocketAddr,
     zone_name: &ZoneName,
     timeout: Duration,
-) -> Result<Serial, ProbeError> {
+) -> Result<Serial, ProbeSoaError> {
     let qname = zone_name.to_wire_name()?;
-    probe_one(&qname, server_addr, timeout).await
+    probe_address(&qname, server_addr, timeout).await
 }
 
 /// Probe addresses in order; return the first answer or last failure and the addresses tried.
@@ -227,7 +226,7 @@ async fn probe_entry(
     let clients: Vec<IpAddr> = addrs.iter().map(|addr| addr.ip()).collect();
     let mut last = None;
     for addr in addrs {
-        match probe_one(qname, addr, timeout).await {
+        match probe_address(qname, addr, timeout).await {
             Ok(serial) => {
                 last = Some(build_secondary_status(
                     addr.to_string(),
@@ -249,12 +248,12 @@ async fn probe_entry(
     (last, clients)
 }
 
-/// Query one secondary server for its SOA status.
-async fn probe_one(
+/// Query one address for the zone's authoritative SOA serial.
+async fn probe_address(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
-) -> Result<Serial, ProbeError> {
+) -> Result<Serial, ProbeSoaError> {
     let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA, None);
     let query = builder.finish();
     let (received, response) =

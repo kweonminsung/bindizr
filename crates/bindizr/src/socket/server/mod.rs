@@ -287,8 +287,8 @@ async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathErro
 async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> String {
     let cx = socket_cx.daemon();
     match command {
-        DaemonCommand::Status => encode_response(status::handle_status(cx).await),
-        DaemonCommand::Config => encode_response(Ok(status::config(cx))),
+        DaemonCommand::Status => encode_response(status::get_daemon_status(cx).await),
+        DaemonCommand::Config => encode_response(Ok(status::get_config(cx))),
         DaemonCommand::ReloadConfig => encode_response(status::reload_config(socket_cx)),
         DaemonCommand::Doctor => encode_response(doctor::check_installation(cx).await),
         DaemonCommand::Shutdown => encode_response(Ok(control::shutdown(socket_cx))),
@@ -409,8 +409,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::CreateRecord(request) => {
             encode_response(record::create_record(cx, &request).await)
         }
-        DaemonCommand::CreateRecordsBulk(request) => {
-            encode_response(record::create_records_bulk(cx, &request).await)
+        DaemonCommand::CreateBulkRecords(request) => {
+            encode_response(record::create_bulk_records(cx, &request).await)
         }
         DaemonCommand::ListRecords(filter) => {
             encode_response(record::list_records(cx, filter).await)
@@ -429,8 +429,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteRecord { id, run } => {
             encode_response(record::delete_record(cx, id, run).await)
         }
-        DaemonCommand::DeleteRecordsMatching(request) => {
-            encode_response(record::delete_records_matching(cx, &request).await)
+        DaemonCommand::DeleteMatchingRecords(request) => {
+            encode_response(record::delete_matching_records(cx, &request).await)
         }
         DaemonCommand::EnableDnssec { zone_name, request } => {
             encode_response(dnssec::enable_dnssec(cx, &zone_name, &request).await)
@@ -446,12 +446,12 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::StartDnssecRollover { zone_name, request } => {
             encode_response(dnssec::start_dnssec_rollover(cx, &zone_name, &request).await)
         }
-        DaemonCommand::DsSeenDnssecRollover {
+        DaemonCommand::AdvanceDnssecRollover {
             zone_name,
             ds_check,
             holddown,
         } => encode_response(
-            dnssec::ds_seen_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
+            dnssec::advance_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
         ),
         DaemonCommand::WithdrawDnssec { name } => {
             encode_response(dnssec::withdraw_dnssec(cx, &name).await)

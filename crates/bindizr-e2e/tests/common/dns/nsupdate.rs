@@ -67,7 +67,7 @@ pub(crate) enum UpdateRecord {
 
 /// One prerequisite (RFC 2136, Section 2.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PrereqRecord {
+pub(crate) enum PrerequisiteRecord {
     /// CLASS ANY, TYPE ANY: the owner name must exist.
     NameInUse { name: String },
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
@@ -96,7 +96,7 @@ pub(crate) enum PrereqRecord {
 pub(crate) fn send_update_udp(
     port: u16,
     zone: &str,
-    prerequisites: &[PrereqRecord],
+    prerequisites: &[PrerequisiteRecord],
     updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
@@ -112,7 +112,7 @@ pub(crate) fn send_update_udp(
 pub(crate) fn send_update_tcp(
     port: u16,
     zone: &str,
-    prerequisites: &[PrereqRecord],
+    prerequisites: &[PrerequisiteRecord],
     updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
@@ -178,7 +178,7 @@ pub(crate) fn build_update(
     query_id: u16,
     zone: &str,
     zone_class: Class,
-    prerequisites: &[PrereqRecord],
+    prerequisites: &[PrerequisiteRecord],
     updates: &[UpdateRecord],
 ) -> Result<AdditionalBuilder<Vec<u8>>, String> {
     let mut builder = MessageBuilder::new_vec();
@@ -193,19 +193,19 @@ pub(crate) fn build_update(
     let mut answer = question.answer();
     for prerequisite in prerequisites {
         match prerequisite {
-            PrereqRecord::NameInUse { name: owner } => answer
+            PrerequisiteRecord::NameInUse { name: owner } => answer
                 .push(empty_record(owner, Rtype::ANY, Class::ANY)?)
                 .map_err(|e| e.to_string())?,
-            PrereqRecord::NameNotInUse { name: owner } => answer
+            PrerequisiteRecord::NameNotInUse { name: owner } => answer
                 .push(empty_record(owner, Rtype::ANY, Class::NONE)?)
                 .map_err(|e| e.to_string())?,
-            PrereqRecord::RecordSetInUse { name: owner, rtype } => answer
+            PrerequisiteRecord::RecordSetInUse { name: owner, rtype } => answer
                 .push(empty_record(owner, *rtype, Class::ANY)?)
                 .map_err(|e| e.to_string())?,
-            PrereqRecord::RecordSetNotInUse { name: owner, rtype } => answer
+            PrerequisiteRecord::RecordSetNotInUse { name: owner, rtype } => answer
                 .push(empty_record(owner, *rtype, Class::NONE)?)
                 .map_err(|e| e.to_string())?,
-            PrereqRecord::SoaEquals { name: owner, soa } => answer
+            PrerequisiteRecord::SoaEquals { name: owner, soa } => answer
                 .push(Record::new(
                     parse_name(owner)?,
                     Class::IN,
@@ -213,13 +213,13 @@ pub(crate) fn build_update(
                     soa.clone(),
                 ))
                 .map_err(|e| e.to_string())?,
-            PrereqRecord::AEquals { name: owner, addr } => {
+            PrerequisiteRecord::AEquals { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 answer
                     .push(Record::new(parse_name(owner)?, Class::IN, Ttl::ZERO, data))
                     .map_err(|e| e.to_string())?;
             }
-            PrereqRecord::RecordEquals { name, rtype, rdata } => {
+            PrerequisiteRecord::RecordEquals { name, rtype, rdata } => {
                 let data = UnknownRecordData::from_octets(*rtype, rdata.clone())
                     .map_err(|e| e.to_string())?;
                 answer

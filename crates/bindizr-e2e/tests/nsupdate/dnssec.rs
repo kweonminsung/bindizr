@@ -52,24 +52,24 @@ async fn dnssec_prerequisites_see_derived_records() {
         let rtype: Rtype = row["type"].as_str().unwrap().parse().unwrap();
         for (prerequisite, expected) in [
             (
-                PrereqRecord::RecordSetInUse {
+                PrerequisiteRecord::RecordSetInUse {
                     name: name.clone(),
                     rtype,
                 },
                 Rcode::NOERROR,
             ),
             (
-                PrereqRecord::RecordSetNotInUse {
+                PrerequisiteRecord::RecordSetNotInUse {
                     name: name.clone(),
                     rtype,
                 },
                 Rcode::YXRRSET,
             ),
             (
-                PrereqRecord::NameInUse { name: name.clone() },
+                PrerequisiteRecord::NameInUse { name: name.clone() },
                 Rcode::NOERROR,
             ),
-            (PrereqRecord::NameNotInUse { name }, Rcode::YXDOMAIN),
+            (PrerequisiteRecord::NameNotInUse { name }, Rcode::YXDOMAIN),
         ] {
             let updates = if expected == Rcode::NOERROR {
                 &[][..]
@@ -154,7 +154,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         for ((name, rtype), values) in &sets {
             let prerequisites: Vec<_> = values
                 .iter()
-                .map(|rdata| PrereqRecord::RecordEquals {
+                .map(|rdata| PrerequisiteRecord::RecordEquals {
                     name: name.clone(),
                     rtype: *rtype,
                     rdata: rdata.clone(),
@@ -186,7 +186,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         ] {
             let prerequisites: Vec<_> = values
                 .into_iter()
-                .map(|rdata| PrereqRecord::RecordEquals {
+                .map(|rdata| PrerequisiteRecord::RecordEquals {
                     name: apex.clone(),
                     rtype: Rtype::DNSKEY,
                     rdata,
@@ -203,7 +203,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         // Re-signing must make the old RRSIG prerequisite fail.
         let signatures: Vec<_> = sets[&(apex.clone(), Rtype::RRSIG)]
             .iter()
-            .map(|rdata| PrereqRecord::RecordEquals {
+            .map(|rdata| PrerequisiteRecord::RecordEquals {
                 name: apex.clone(),
                 rtype: Rtype::RRSIG,
                 rdata: rdata.clone(),
@@ -281,7 +281,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     let values = &sets[&(apex.clone(), Rtype::DNSKEY)];
     let prerequisites: Vec<_> = values
         .iter()
-        .map(|rdata| PrereqRecord::RecordEquals {
+        .map(|rdata| PrerequisiteRecord::RecordEquals {
             name: apex.clone(),
             rtype: Rtype::DNSKEY,
             rdata: rdata.clone(),
@@ -310,7 +310,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
         (Rtype::DNSKEY, vec![1, 1, 3], Rcode::FORMERR),
         (Rtype::from_int(65280), vec![], Rcode::NXRRSET),
     ] {
-        let prerequisite = PrereqRecord::RecordEquals {
+        let prerequisite = PrerequisiteRecord::RecordEquals {
             name: apex.clone(),
             rtype,
             rdata,

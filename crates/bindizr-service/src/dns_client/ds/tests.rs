@@ -19,7 +19,7 @@ const RTYPE_SOA: u16 = 6;
 /// the same but truncated over UDP so only TCP carries them, NXDOMAIN, or
 /// nothing at all.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Answer {
+enum ServerBehavior {
     Ds { aa: bool, records: Vec<(u16, u32)> },
     DsTruncatedOverUdp { records: Vec<(u16, u32)> },
     Nxdomain,
@@ -76,7 +76,7 @@ fn build_response(
     buf
 }
 
-/// The SOA of the queried name's parent zone, as a negative answer's
+/// The SOA of the queried name's parent zone, as a negative response's
 /// authority section carries it.
 fn parent_soa_record(query: &[u8]) -> Vec<u8> {
     let (qname, _) = decode_question(query);
@@ -128,19 +128,19 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
     }
 }
 
-/// The whole answer to `query`, as TCP always carries it.
-fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
+/// Build the complete response selected by the fake server behavior.
+fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8>> {
     let authority = [parent_soa_record(query)];
-    match answer {
-        Answer::Silence => None,
-        Answer::Nxdomain => Some(build_response(
+    match behavior {
+        ServerBehavior::Silence => None,
+        ServerBehavior::Nxdomain => Some(build_response(
             query,
             FLAG_AA,
             RCODE_NXDOMAIN,
             &[],
             &authority,
         )),
-        Answer::Ds { aa, records } => {
+        ServerBehavior::Ds { aa, records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
                 .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
@@ -153,7 +153,7 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
                 &authority,
             ))
         }
-        Answer::DsTruncatedOverUdp { records } => {
+        ServerBehavior::DsTruncatedOverUdp { records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
                 .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
@@ -163,9 +163,9 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
     }
 }
 
-/// A server answering every question with `answer` over UDP and TCP on one
+/// Start a fake server with the selected behavior over UDP and TCP on one
 /// port, until dropped.
-async fn fake_server(answer: Answer) -> SocketAddr {
+async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
     // A port the kernel hands out for UDP may be taken for TCP, so the pair
     // is retried until both sides bind.
     let (socket, listener) = loop {
@@ -177,7 +177,7 @@ async fn fake_server(answer: Answer) -> SocketAddr {
         }
     };
     let addr = socket.local_addr().unwrap();
-    let udp_answer = answer.clone();
+    let udp_behavior = behavior.clone();
     tokio::spawn(async move {
         let mut buf = [0u8; 4096];
         loop {
@@ -185,8 +185,8 @@ async fn fake_server(answer: Answer) -> SocketAddr {
                 return;
             };
             let query = &buf[..len];
-            let response = match &udp_answer {
-                Answer::DsTruncatedOverUdp { .. } => {
+            let response = match &udp_behavior {
+                ServerBehavior::DsTruncatedOverUdp { .. } => {
                     build_response(query, FLAG_AA | FLAG_TC, 0, &[], &[])
                 }
                 other => match build_full_response(query, other) {
@@ -210,7 +210,7 @@ async fn fake_server(answer: Answer) -> SocketAddr {
             if stream.read_exact(&mut query).await.is_err() {
                 continue;
             }
-            let Some(response) = build_full_response(&query, &answer) else {
+            let Some(response) = build_full_response(&query, &behavior) else {
                 continue;
             };
             let mut frame = (response.len() as u16).to_be_bytes().to_vec();
@@ -237,12 +237,12 @@ fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
 /// Verify that `query_ds` reports each server apart.
 #[tokio::test]
 async fn query_ds_reports_each_server_apart() {
-    let a = fake_server(Answer::Ds {
+    let a = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(34217, 3600)],
     })
     .await;
-    let b = fake_server(Answer::Ds {
+    let b = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(34217, 3600), (2371, 86400)],
     })
@@ -266,10 +266,10 @@ async fn query_ds_reports_each_server_apart() {
     );
 }
 
-/// Verify that query DS retries a truncated answer over TCP.
+/// Verify that query DS retries a truncated response over TCP.
 #[tokio::test]
-async fn query_ds_retries_a_truncated_answer_over_tcp() {
-    let server = fake_server(Answer::DsTruncatedOverUdp {
+async fn query_ds_retries_a_truncated_response_over_tcp() {
+    let server = fake_server(ServerBehavior::DsTruncatedOverUdp {
         records: vec![(34217, 3600)],
     })
     .await;
@@ -289,13 +289,13 @@ async fn query_ds_retries_a_truncated_answer_over_tcp() {
 /// Verify that `query_ds` reports absence per server.
 #[tokio::test]
 async fn query_ds_reports_absence_per_server() {
-    let absent = fake_server(Answer::Ds {
+    let absent = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![],
     })
     .await;
-    let nxdomain = fake_server(Answer::Nxdomain).await;
-    let present = fake_server(Answer::Ds {
+    let nxdomain = fake_server(ServerBehavior::Nxdomain).await;
+    let present = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(1, 300)],
     })
@@ -330,12 +330,12 @@ async fn query_ds_reports_absence_per_server() {
 /// Verify that query DS fails when a server is silent or not authoritative.
 #[tokio::test]
 async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
-    let absent = fake_server(Answer::Ds {
+    let absent = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![],
     })
     .await;
-    let silent = fake_server(Answer::Silence).await;
+    let silent = fake_server(ServerBehavior::Silence).await;
     let err = query_ds(
         &zone_name("example.com"),
         &servers(&[absent, silent]),
@@ -346,7 +346,7 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     assert!(err.to_string().contains(&silent.to_string()), "{err}");
     assert!(err.to_string().contains("timeout"), "{err}");
 
-    let cache = fake_server(Answer::Ds {
+    let cache = fake_server(ServerBehavior::Ds {
         aa: false,
         records: vec![],
     })
@@ -360,8 +360,8 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
 /// Verify that `query_ds` falls through to the next address of a server.
 #[tokio::test]
 async fn query_ds_falls_through_to_the_next_address_of_a_server() {
-    let silent = fake_server(Answer::Silence).await;
-    let present = fake_server(Answer::Ds {
+    let silent = fake_server(ServerBehavior::Silence).await;
+    let present = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(7, 60)],
     })

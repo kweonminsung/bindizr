@@ -4,7 +4,7 @@ use super::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::{
     dns::{
         Serial, Ttl,
-        dnssec::WireNameError,
+        dnssec::EncodeWireNameError,
         name::{OwnerName, ZoneName, encode_name, to_fqdn},
         record::{EncodedRdata, SoaRecordValue, TxtRecordValue},
     },
@@ -230,5 +230,5 @@ impl DnsMessageBuilder {
 /// Parses a presentation-form name through the one core name encoding.
 fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
     let wire = encode_name(name)?;
-    Name::from_octets(wire).map_err(|e| WireNameError::Octets(Box::new(e)).into())
+    Name::from_octets(wire).map_err(|e| EncodeWireNameError::Octets(Box::new(e)).into())
 }

@@ -47,7 +47,7 @@ class Bind9ZoneFileAdapter(DnsAdapter):
         await self._flush_and_reload()
         return handle
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Write the supplied records in one zone-file rewrite and reload."""
         for rec in records:
             self.records[f'{rec["name"]}|{rec["type"]}'] = rec

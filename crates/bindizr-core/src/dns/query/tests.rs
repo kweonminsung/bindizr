@@ -136,7 +136,7 @@ fn transfer_rejects_a_non_in_record() {
     let err =
         extract_transfer_records(7, &name, TransferMessagePosition::Following, &wire).unwrap_err();
     assert!(
-        matches!(err, ReadResponseError::ForeignClass { .. }),
+        matches!(err, ParseResponseError::ForeignClass { .. }),
         "{err}"
     );
 }
@@ -166,13 +166,13 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     let cached = build_transfer_message(7, &apex, true, false);
     assert!(matches!(
         extract_transfer_records(7, &apex, TransferMessagePosition::First, &cached).unwrap_err(),
-        ReadResponseError::NotAuthoritative
+        ParseResponseError::NotAuthoritative
     ));
 
     let other = build_transfer_message(7, &name("other.com"), true, true);
     assert!(matches!(
         extract_transfer_records(7, &apex, TransferMessagePosition::Following, &other).unwrap_err(),
-        ReadResponseError::OtherQuestion
+        ParseResponseError::OtherQuestion
     ));
 }
 
@@ -284,7 +284,7 @@ fn extract_ds_record_set_rejects_a_negative_answer_without_a_parent_soa() {
         assert!(
             matches!(
                 extract_ds_record_set(42, &child, &response).unwrap_err(),
-                ReadResponseError::NoParentSoa
+                ParseResponseError::NoParentSoa
             ),
             "{authority_soa:?}"
         );
@@ -309,7 +309,7 @@ fn extract_ds_record_set_rejects_an_answer_to_another_question() {
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ReadResponseError::OtherQuestion
+        ParseResponseError::OtherQuestion
     ));
 }
 
@@ -346,7 +346,7 @@ fn extract_ds_record_set_rejects_a_non_authoritative_answer() {
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ReadResponseError::NotAuthoritative
+        ParseResponseError::NotAuthoritative
     ));
 }
 
@@ -366,7 +366,7 @@ fn extract_ds_record_set_rejects_a_truncated_answer() {
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ReadResponseError::Truncated
+        ParseResponseError::Truncated
     ));
 }
 
@@ -386,7 +386,7 @@ fn extract_ds_record_set_rejects_an_error_rcode() {
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ReadResponseError::Rcode(5)
+        ParseResponseError::Rcode(5)
     ));
 }
 

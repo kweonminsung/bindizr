@@ -22,7 +22,7 @@ use crate::common::{
     dns::{
         exchange_request, exchange_udp,
         nsupdate::{
-            PrereqRecord, UpdateRecord, build_update, send_signed_update_with_edns_version,
+            PrerequisiteRecord, UpdateRecord, build_update, send_signed_update_with_edns_version,
             send_signed_update_with_two_zones, send_update_tcp, send_update_udp,
         },
         parse_name,
@@ -80,7 +80,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
     for (index, rdata) in values.iter().enumerate() {
         let prerequisites: Vec<_> = values[index..]
             .iter()
-            .map(|rdata| PrereqRecord::RecordEquals {
+            .map(|rdata| PrerequisiteRecord::RecordEquals {
                 name: owner.clone(),
                 rtype: Rtype::CAA,
                 rdata: rdata.clone(),
@@ -183,7 +183,7 @@ async fn nsupdate_unserved_zone_classes_are_notauth_over_udp() {
         (vec![], vec![]),
         (vec![], vec![add.clone()]),
         (
-            vec![PrereqRecord::NameInUse {
+            vec![PrerequisiteRecord::NameInUse {
                 name: format!("absent.{zone_name}."),
             }],
             vec![add.clone()],
@@ -434,7 +434,7 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     let rcode = send_update_udp(
         port,
         &zone_name,
-        &[PrereqRecord::NameInUse {
+        &[PrerequisiteRecord::NameInUse {
             name: owner.clone(),
         }],
         &[UpdateRecord::AddA {
@@ -452,7 +452,7 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     let rcode = send_update_udp(
         port,
         &zone_name,
-        &[PrereqRecord::NameNotInUse {
+        &[PrerequisiteRecord::NameNotInUse {
             name: owner.clone(),
         }],
         &[UpdateRecord::AddA {
@@ -504,7 +504,7 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
     let rcode = send_update_udp(
         port,
         &zone_name,
-        &[PrereqRecord::AEquals {
+        &[PrerequisiteRecord::AEquals {
             name: owner.clone(),
             addr: "192.0.2.1".to_string(),
         }],
@@ -520,11 +520,11 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
         port,
         &zone_name,
         &[
-            PrereqRecord::AEquals {
+            PrerequisiteRecord::AEquals {
                 name: owner.clone(),
                 addr: "192.0.2.2".to_string(),
             },
-            PrereqRecord::AEquals {
+            PrerequisiteRecord::AEquals {
                 name: owner.clone(),
                 addr: "192.0.2.1".to_string(),
             },
@@ -555,21 +555,21 @@ async fn a_prerequisite_may_name_the_zone_soa() {
 
     for (prerequisites, expected) in [
         (
-            vec![PrereqRecord::RecordSetInUse {
+            vec![PrerequisiteRecord::RecordSetInUse {
                 name: apex.clone(),
                 rtype: Rtype::SOA,
             }],
             Rcode::NOERROR,
         ),
         (
-            vec![PrereqRecord::RecordSetNotInUse {
+            vec![PrerequisiteRecord::RecordSetNotInUse {
                 name: apex.clone(),
                 rtype: Rtype::SOA,
             }],
             Rcode::YXRRSET,
         ),
         (
-            vec![PrereqRecord::RecordSetInUse {
+            vec![PrerequisiteRecord::RecordSetInUse {
                 name: host.clone(),
                 rtype: Rtype::SOA,
             }],
@@ -601,7 +601,7 @@ async fn a_prerequisite_may_name_the_zone_soa() {
         let rcode = send_update_udp(
             app.dns_port(),
             zone_name,
-            &[PrereqRecord::SoaEquals {
+            &[PrerequisiteRecord::SoaEquals {
                 name: apex.clone(),
                 soa,
             }],
@@ -1085,7 +1085,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     .await;
 
     // The answer must not depend on whether `secret` exists.
-    let secret = || PrereqRecord::NameNotInUse {
+    let secret = || PrerequisiteRecord::NameNotInUse {
         name: format!("secret.{zone_name}."),
     };
     let rcode = send_update_udp(port, &zone_name, &[secret()], &[], Some(&key)).expect("send");
@@ -1109,7 +1109,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
 
     // Inside the grant the prerequisite is answered, before and after the add.
     let host = format!("host.dyn.{zone_name}.");
-    let equals = || PrereqRecord::AEquals {
+    let equals = || PrerequisiteRecord::AEquals {
         name: host.clone(),
         addr: "192.0.2.60".to_string(),
     };

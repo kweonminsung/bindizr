@@ -7,7 +7,7 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 
-use super::status::build_status_tx;
+use super::status::load_status_tx;
 use crate::{
     Context, authorization::Caller, error::ServiceError, transaction, types::DnssecStatusResponse,
 };
@@ -48,7 +48,7 @@ pub async fn withdraw(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -106,7 +106,7 @@ pub async fn cancel_withdrawal(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

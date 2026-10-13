@@ -146,14 +146,14 @@ pub(crate) async fn authenticate_tsig_key(
 mod tests {
     use std::error::Error;
 
-    use bindizr_core::dns::{message::Rcode, nsupdate::parser::UpdateShapeError};
+    use bindizr_core::dns::{message::Rcode, nsupdate::parser::ValidateUpdateShapeError};
 
     use super::*;
 
     /// Preserve the complete parser and backend source chains through the DNS boundary.
     #[test]
     fn update_errors_retain_sources_across_layers() {
-        let err = UpdateError::from(NsupdateError::from(UpdateShapeError::NonzeroTtl));
+        let err = UpdateError::from(NsupdateError::from(ValidateUpdateShapeError::NonzeroTtl));
         let nsupdate = err
             .source()
             .unwrap()
@@ -164,8 +164,8 @@ mod tests {
             nsupdate
                 .source()
                 .unwrap()
-                .downcast_ref::<UpdateShapeError>(),
-            Some(&UpdateShapeError::NonzeroTtl)
+                .downcast_ref::<ValidateUpdateShapeError>(),
+            Some(&ValidateUpdateShapeError::NonzeroTtl)
         );
 
         let err = UpdateError::from(NsupdateError::from(ServiceError::internal_with_source(

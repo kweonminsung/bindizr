@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use super::naptr::NaptrRegexpError;
+use super::naptr::ValidateNaptrRegexpError;
 use crate::{dns::name::ParseNameError, model::record::RecordType};
 
 /// A record value that is not what its type's presentation form spells. The
@@ -120,7 +120,7 @@ pub enum ParseRecordValueError {
     #[error("NAPTR record replacement must be '.' when the regexp is set (RFC 3403, Section 4.1)")]
     NaptrReplacementWithRegexp,
     #[error(transparent)]
-    NaptrRegexp(#[from] NaptrRegexpError),
+    NaptrRegexp(#[from] ValidateNaptrRegexpError),
     #[error("{record_type} records do not take a priority")]
     PriorityNotTaken { record_type: RecordType },
     #[error("stored TXT value is not in presentation form: {value}")]

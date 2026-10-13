@@ -21,7 +21,7 @@ use serde_json::Value;
 
 /// A DS record for the fake parent to serve.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ServedDs {
+pub(crate) struct DsRecord {
     key_tag: u16,
     algorithm: u8,
     digest_type: u8,
@@ -29,7 +29,7 @@ pub(crate) struct ServedDs {
     ttl: u32,
 }
 
-impl ServedDs {
+impl DsRecord {
     /// The DS of key `key_tag` as a status payload's `ds_records` lists it.
     pub(crate) fn from_status(dnssec: &Value, key_tag: u16, ttl: u32) -> Self {
         let record = dnssec["ds_records"]
@@ -111,7 +111,7 @@ impl ServedDs {
 #[derive(Debug)]
 pub(crate) struct FakeParent {
     addr: SocketAddr,
-    ds: Arc<Mutex<Vec<ServedDs>>>,
+    ds: Arc<Mutex<Vec<DsRecord>>>,
 }
 
 impl FakeParent {
@@ -121,7 +121,7 @@ impl FakeParent {
         let addr = socket
             .local_addr()
             .expect("failed to read the fake parent's port");
-        let ds: Arc<Mutex<Vec<ServedDs>>> = Arc::new(Mutex::new(Vec::new()));
+        let ds: Arc<Mutex<Vec<DsRecord>>> = Arc::new(Mutex::new(Vec::new()));
         let served = Arc::clone(&ds);
 
         thread::spawn(move || {
@@ -198,7 +198,7 @@ impl FakeParent {
     }
 
     /// Replace the DS records served.
-    pub(crate) fn set_ds(&self, records: Vec<ServedDs>) {
+    pub(crate) fn set_ds(&self, records: Vec<DsRecord>) {
         *self.ds.lock().expect("ds lock") = records;
     }
 }

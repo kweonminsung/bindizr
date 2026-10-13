@@ -405,19 +405,19 @@ fn a_malformed_delete_names_what_it_lacks() {
     for (record, expected) in [
         (
             update_record(Rtype::A, Class::ANY, 60, Vec::new()),
-            UpdateShapeError::NonzeroTtl,
+            ValidateUpdateShapeError::NonzeroTtl,
         ),
         (
             update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
-            UpdateShapeError::AnyClassRdata,
+            ValidateUpdateShapeError::AnyClassRdata,
         ),
         (
             update_record(Rtype::A, Class::NONE, 0, Vec::new()),
-            UpdateShapeError::NoneClassNoRdata,
+            ValidateUpdateShapeError::NoneClassNoRdata,
         ),
         (
             update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
-            UpdateShapeError::RecordType {
+            ValidateUpdateShapeError::RecordType {
                 record_type: Rtype::ANY,
             },
         ),
@@ -453,7 +453,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
             } else {
                 assert_eq!(
                     result,
-                    Err(UpdateShapeError::RecordType { record_type: rtype })
+                    Err(ValidateUpdateShapeError::RecordType { record_type: rtype })
                 );
             }
         }
@@ -468,7 +468,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
     }
     assert_eq!(
         update_record(Rtype::A, Class::CH, 0, vec![192, 0, 2, 1]).validate_update_shape(),
-        Err(UpdateShapeError::Class { class: Class::CH })
+        Err(ValidateUpdateShapeError::Class { class: Class::CH })
     );
     // TTL normalization belongs to additions, never to the delete shape.
     update_record(Rtype::A, Class::IN, u32::MAX, vec![192, 0, 2, 1])

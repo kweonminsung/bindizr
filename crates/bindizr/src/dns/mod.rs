@@ -48,7 +48,7 @@ pub(crate) struct DnsServers {
 
 /// Bring the DNS front end up: prepare the catalog zone and spawn the TCP,
 /// UDP, and (with a certificate) TLS servers, handing back their accept loops.
-pub(crate) async fn initialize(
+pub(crate) async fn start(
     cx: Arc<Context>,
     shutdown: &Shutdown,
     certificate: Option<Arc<TlsCertificate>>,

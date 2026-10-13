@@ -89,7 +89,7 @@ class TechnitiumAdapter(DnsAdapter):
         """Remove the benchmark zone and its records."""
         await self._get("/zones/delete", {"zone": zone.rstrip(".")})
 
-    def _value_params(self, rec: dict) -> dict:
+    def _build_record_params(self, rec: dict) -> dict:
         """Map a benchmark record value to Technitium request parameters."""
         t = rec["type"]
         v = rec["value"]
@@ -103,12 +103,12 @@ class TechnitiumAdapter(DnsAdapter):
             return {"exchange": v.rstrip("."), "preference": rec.get("priority", 10)}
         return {"rdata": v}
 
-    def _handle(self, zone: str, rec: dict) -> str:
+    def _encode_record_handle(self, zone: str, rec: dict) -> str:
         """Encode the record identity and value into a reusable adapter handle."""
         return SEP.join([self._fqdn(zone, rec["name"]), rec["type"], rec["value"],
                          str(rec.get("priority", ""))])
 
-    def _parse(self, handle: str) -> dict:
+    def _decode_record_handle(self, handle: str) -> dict:
         """Decode a record handle into its stored identity and value."""
         fqdn, rtype, value, prio = handle.split(SEP)
         rec = {"fqdn": fqdn, "type": rtype, "value": value}
@@ -123,16 +123,16 @@ class TechnitiumAdapter(DnsAdapter):
             "zone": zone.rstrip("."),
             "type": rec["type"],
             "ttl": rec.get("ttl", 3600),
-            **self._value_params(rec),
+            **self._build_record_params(rec),
         }
         data = await self._get("/zones/records/add", params)
         if data.get("status") != "ok":
             raise RuntimeError(f"add record failed: {data}")
-        return self._handle(zone, rec)
+        return self._encode_record_handle(zone, rec)
 
     async def get_record(self, zone: str, handle: str) -> bool:
         """Fetch the handle's record information and report API success."""
-        r = self._parse(handle)
+        r = self._decode_record_handle(handle)
         data = await self._get("/zones/records/get",
                                {"domain": r["fqdn"], "zone": zone.rstrip("."),
                                 "listZone": "false"})
@@ -140,7 +140,7 @@ class TechnitiumAdapter(DnsAdapter):
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
-        r = self._parse(handle)
+        r = self._decode_record_handle(handle)
         t = r["type"]
         params = {
             "domain": r["fqdn"],
@@ -149,7 +149,7 @@ class TechnitiumAdapter(DnsAdapter):
             "ttl": rec.get("ttl", 3600),
         }
         # Technitium update needs the current value plus new* value fields.
-        vp = self._value_params({"type": t, "value": r["value"],
+        vp = self._build_record_params({"type": t, "value": r["value"],
                                  "priority": r.get("priority", 10)})
         params.update(vp)
         for k, val in vp.items():
@@ -159,12 +159,12 @@ class TechnitiumAdapter(DnsAdapter):
 
     async def delete_record(self, zone: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
-        r = self._parse(handle)
+        r = self._decode_record_handle(handle)
         params = {
             "domain": r["fqdn"],
             "zone": zone.rstrip("."),
             "type": r["type"],
-            **self._value_params({"type": r["type"], "value": r["value"],
+            **self._build_record_params({"type": r["type"], "value": r["value"],
                                   "priority": r.get("priority", 10)}),
         }
         data = await self._get("/zones/records/delete", params)

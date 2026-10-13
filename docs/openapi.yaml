@@ -738,7 +738,7 @@ paths:
       - Record
       summary: Delete records by name
       description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
-      operationId: delete_records_matching
+      operationId: delete_matching_records
       parameters:
       - name: zone_name
         in: query
@@ -821,7 +821,7 @@ paths:
       - Record
       summary: Bulk insert DNS records into a zone
       description: Insert many records into the named zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
-      operationId: create_records_bulk
+      operationId: create_bulk_records
       requestBody:
         content:
           application/json:
@@ -2927,7 +2927,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RolloverDnssecRequest'
+              $ref: '#/components/schemas/StartDnssecRolloverRequest'
         required: true
       responses:
         '200':
@@ -2984,7 +2984,7 @@ paths:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
       description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
-      operationId: ds_seen_dnssec_rollover
+      operationId: advance_dnssec_rollover
       parameters:
       - name: name
         in: path
@@ -5912,19 +5912,6 @@ components:
           format: int64
           example: 5
           minimum: 0
-    RolloverDnssecRequest:
-      type: object
-      description: Request body for starting a key rollover.
-      properties:
-        role:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Which key to roll: required for split-key zones (`ksk` or `zsk`),
-            omitted for CSK zones.
-          example: zsk
-      additionalProperties: false
     SecondaryResponse:
       type: object
       description: API representation of a secondary.
@@ -6109,6 +6096,19 @@ components:
       properties:
         zone:
           $ref: '#/components/schemas/ZoneResponse'
+    StartDnssecRolloverRequest:
+      type: object
+      description: Request body for starting a key rollover.
+      properties:
+        role:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Which key to roll: required for split-key zones (`ksk` or `zsk`),
+            omitted for CSK zones.
+          example: zsk
+      additionalProperties: false
     TokenResponse:
       type: object
       description: API representation of an API token; never carries the secret.

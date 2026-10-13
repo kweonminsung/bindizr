@@ -10,7 +10,7 @@ import abc
 import asyncio
 from dataclasses import dataclass
 
-# Attempts per record in the default bulk_import before it is counted as failed.
+# Attempts per record in the default import_records before it is counted as failed.
 BULK_ATTEMPTS = 4
 
 
@@ -24,9 +24,9 @@ class DnsAdapter(abc.ABC):
     key: str = "base"
     #: container/compose service names whose resources should be measured
     resource_services: list[str] = []
-    #: concurrency used by the default bulk_import
+    #: concurrency used by the default import_records
     bulk_concurrency: int = 32
-    #: populated by bulk_import
+    #: populated by import_records
     bulk_errors: int = 0
     supports_ixfr: bool = True
 
@@ -71,7 +71,7 @@ class DnsAdapter(abc.ABC):
         """Delete the record identified by the handle."""
         ...
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Create records concurrently, retry transient failures, and count unrecovered bulk errors.
 
         Adapters may override this worker-pool fallback with a batch API."""

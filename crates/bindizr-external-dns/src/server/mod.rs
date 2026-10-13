@@ -227,7 +227,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         }
     };
 
-    let bindizr_changes = match changes.to_bindizr_changes() {
+    let bindizr_changes = match changes.to_apply_changes_request() {
         Ok(converted) => converted,
         Err(message) => {
             log::warn!("event=records_apply rejected={}", message);

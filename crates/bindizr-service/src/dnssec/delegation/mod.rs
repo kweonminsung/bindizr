@@ -11,7 +11,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::status::build_status_tx;
+use super::status::load_status_tx;
 use crate::{
     Context,
     authorization::Caller,
@@ -43,7 +43,7 @@ pub async fn check_ds(
             LockLevel::Shared,
         )
         .await?;
-        let status = build_status_tx(
+        let status = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

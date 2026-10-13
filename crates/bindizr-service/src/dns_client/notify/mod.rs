@@ -11,7 +11,7 @@ use bindizr_core::{
 };
 use thiserror::Error;
 
-use super::{ExchangeError, ResolveAddressError};
+use super::{ExchangeMessageError, ResolveAddressError};
 use crate::{
     Context, error::ServiceError, model::secondary::Secondary, secondary,
     types::CheckNotifyResponse,
@@ -23,11 +23,11 @@ pub enum SendNotifyError {
     #[error(transparent)]
     Sign(#[from] bindizr_core::dns::tsig::SignRequestError),
     #[error(transparent)]
-    Exchange(#[from] ExchangeError),
+    Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
     Verify(#[from] bindizr_core::dns::tsig::VerifyResponseError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    Response(#[from] bindizr_core::dns::query::ParseResponseError),
     #[error("NOTIFY task failed: {0}")]
     TaskFailed(#[source] tokio::task::JoinError),
 }
@@ -112,7 +112,7 @@ async fn send_notify(
     let mut reports = Vec::new();
     let mut tasks = Vec::with_capacity(secondaries.len());
     for secondary in secondaries {
-        let tsig_key = match secondary::notify_signing_key(cx, &secondary).await {
+        let tsig_key = match secondary::find_notify_signing_key(cx, &secondary).await {
             Ok(tsig_key) => tsig_key,
             Err(e) => {
                 cx.metrics().track_notify(NotifyResult::Failed);

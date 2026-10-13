@@ -33,7 +33,7 @@ pub struct UpdateRecord {
 /// A wire shape the IN-zone update section cannot carry (RFC 2136,
 /// Section 3.4.1). This is independent of whether the RR can change stored data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum UpdateShapeError {
+pub enum ValidateUpdateShapeError {
     #[error("unsupported update class: {class}")]
     Class { class: Class },
     #[error("type {record_type} is not permitted in this update")]
@@ -49,25 +49,25 @@ pub enum UpdateShapeError {
 impl UpdateRecord {
     /// Check the class, type, TTL and RDATA shape before interpreting an
     /// IN-zone update (RFC 2136, Section 3.4.1.2).
-    pub fn validate_update_shape(&self) -> Result<(), UpdateShapeError> {
+    pub fn validate_update_shape(&self) -> Result<(), ValidateUpdateShapeError> {
         if !matches!(self.class, Class::IN | Class::ANY | Class::NONE) {
-            return Err(UpdateShapeError::Class { class: self.class });
+            return Err(ValidateUpdateShapeError::Class { class: self.class });
         }
         // RFC 6895, Section 3.1 reserves 128-255 for query/meta types;
         // OPT is the meta type outside that range. ANY is permitted only
         // as the CLASS ANY whole-name delete (RFC 2136, Section 2.5.3).
         let delete_name = self.class == Class::ANY && self.record_type == Rtype::ANY;
         if !delete_name && matches!(self.record_type.to_int(), 0 | 41 | 128..=255 | 65535) {
-            return Err(UpdateShapeError::RecordType {
+            return Err(ValidateUpdateShapeError::RecordType {
                 record_type: self.record_type,
             });
         }
         if self.class != Class::IN && self.ttl != 0 {
-            return Err(UpdateShapeError::NonzeroTtl);
+            return Err(ValidateUpdateShapeError::NonzeroTtl);
         }
         match self.class {
-            Class::ANY if !self.rdata.is_empty() => Err(UpdateShapeError::AnyClassRdata),
-            Class::NONE if self.rdata.is_empty() => Err(UpdateShapeError::NoneClassNoRdata),
+            Class::ANY if !self.rdata.is_empty() => Err(ValidateUpdateShapeError::AnyClassRdata),
+            Class::NONE if self.rdata.is_empty() => Err(ValidateUpdateShapeError::NoneClassNoRdata),
             _ => Ok(()),
         }
     }

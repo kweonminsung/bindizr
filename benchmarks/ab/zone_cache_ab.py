@@ -56,7 +56,7 @@ async def run_variant(transfer_cache: bool) -> dict:
     """Run the transfer workload with one transfer-cache configuration."""
     label = "on" if transfer_cache else "off"
     proj = f"bench-zc-{label}"
-    adapter = registry.build("bindizr", {"resources": {"sample_interval_secs": 1}}, proj,
+    adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}}, proj,
                              notify_after_update=False, transfer_cache=transfer_cache)
     try:
         print(f"[transfer_cache={label}] setup...", flush=True)
@@ -64,7 +64,7 @@ async def run_variant(transfer_cache: bool) -> dict:
         transfer_key = await create_transfer_key(adapter)
         await adapter.create_zone(ZONE)
         print(f"[transfer_cache={label}] importing {RECORDS} records...", flush=True)
-        await adapter.bulk_import(ZONE, generate(RECORDS, 1337, ZONE))
+        await adapter.import_records(ZONE, generate(RECORDS, 1337, ZONE))
 
         bind9_cid = adapter.compose.resolve_container_id("bind9")
         if not bind9_cid:

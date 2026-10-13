@@ -82,7 +82,7 @@ class KnotAdapter(NsupdateAdapter):
         await self._knotc("zone-reload", ZONE)
         await self._wait_dns()
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Batch adds into as few UPDATE transactions as the message size allows."""
         self.bulk_errors = 0
         for start in range(0, len(records), self.update_batch):

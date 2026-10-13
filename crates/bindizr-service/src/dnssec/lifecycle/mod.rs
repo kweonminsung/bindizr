@@ -8,7 +8,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx};
+use super::{parent_ns_addrs::normalize_parent_ns_addrs, status::load_status_tx};
 use crate::{
     Context,
     authorization::Caller,
@@ -135,7 +135,7 @@ pub async fn enable(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -248,7 +248,7 @@ pub async fn update_settings(
             .await?;
         }
         let response =
-            build_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial).await?;
+            load_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial).await?;
         Ok((response, new_serial != candidate.serial))
     }
     .await;

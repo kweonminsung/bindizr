@@ -6,7 +6,7 @@ use std::net::UdpSocket;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{FakeParent, ServedDs, TestApp};
+use crate::common::{DsRecord, FakeParent, TestApp};
 
 /// A `host:port` nothing listens on, standing in for an unreachable parent.
 fn closed_parent_addr() -> String {
@@ -50,7 +50,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    parent.set_ds(vec![ServedDs::from_status(&body, old_key_tag, 60)]);
+    parent.set_ds(vec![DsRecord::from_status(&body, old_key_tag, 60)]);
 
     let (status, body) = app
         .send_request(
@@ -117,8 +117,8 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     );
 
     parent.set_ds(vec![
-        ServedDs::from_status(&body, old_key_tag, 60),
-        ServedDs::from_status(&body, new_key_tag, 60),
+        DsRecord::from_status(&body, old_key_tag, 60),
+        DsRecord::from_status(&body, new_key_tag, 60),
     ]);
     let (status, body) = app
         .send_request(
@@ -158,7 +158,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(body["parent_ns_addrs"], json!([parent.addr()]));
     assert!(body["delegation"].is_null(), "{body}");
     let key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    parent.set_ds(vec![ServedDs::from_status(&body, key_tag, 3600)]);
+    parent.set_ds(vec![DsRecord::from_status(&body, key_tag, 3600)]);
 
     // The parent still delegates trust: dropping the signatures now would
     // make the zone bogus.
@@ -362,7 +362,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    let old_ds = ServedDs::from_status(&body, old_key_tag, 60);
+    let old_ds = DsRecord::from_status(&body, old_key_tag, 60);
     first_parent.set_ds(vec![old_ds.clone()]);
     second_parent.set_ds(vec![old_ds.clone()]);
 
@@ -382,7 +382,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
         .expect("rollover start pre-publishes the replacement key")["key_tag"]
         .as_u64()
         .unwrap() as u16;
-    let new_ds = ServedDs::from_status(&body, new_key_tag, 60);
+    let new_ds = DsRecord::from_status(&body, new_key_tag, 60);
 
     let ds_seen_path = format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true");
     let new_key_published = |body: &serde_json::Value| {
@@ -472,7 +472,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    let old_ds = ServedDs::from_status(&body, old_key_tag, 60);
+    let old_ds = DsRecord::from_status(&body, old_key_tag, 60);
     parent.set_ds(vec![old_ds.clone()]);
 
     let (status, body) = app
@@ -493,7 +493,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
         .unwrap() as u16;
     // Only a SHA-1 DS, as a parent digesting the DNSKEY itself may
     // register; status never renders one.
-    let new_ds = ServedDs::sha1_from_status(&body, zone_name, new_key_tag, 60);
+    let new_ds = DsRecord::sha1_from_status(&body, zone_name, new_key_tag, 60);
     parent.set_ds(vec![old_ds, new_ds]);
 
     let (status, body) = app
@@ -563,7 +563,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    let old_ds = ServedDs::from_status(&body, old_key_tag, 60);
+    let old_ds = DsRecord::from_status(&body, old_key_tag, 60);
     parent.set_ds(vec![old_ds.clone()]);
 
     let (status, body) = app
@@ -584,7 +584,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .unwrap() as u16;
     // Digest type 3 is GOST R 34.11-94, which bindizr does not compute, so
     // it cannot tell whether this DS matches the key.
-    let new_ds = ServedDs::from_status(&body, new_key_tag, 60).with_digest_type(3);
+    let new_ds = DsRecord::from_status(&body, new_key_tag, 60).with_digest_type(3);
     parent.set_ds(vec![old_ds, new_ds]);
 
     let (status, body) = app
@@ -648,7 +648,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    let ds = ServedDs::from_status(&body, key_tag, 60);
+    let ds = DsRecord::from_status(&body, key_tag, 60);
     // One server answers in a digest type bindizr computes, the other only in
     // one it cannot; flattening the two would hide the second.
     first_parent.set_ds(vec![ds.clone()]);

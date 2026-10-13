@@ -29,7 +29,7 @@ use crate::{
 
 /// Outcome of the transactional part of a zone update.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ZoneUpdateResult {
+struct UpdateZoneResult {
     zone: Zone,
     /// Whether the update changed what the catalog publishes: its members are
     /// the enabled zones, listed by name.
@@ -113,7 +113,7 @@ pub async fn update(
         .transpose();
     let mut tx = transaction::begin_tx(cx, "failed to update zone").await?;
 
-    let apply_result: Result<ZoneUpdateResult, ServiceError> = async {
+    let apply_result: Result<UpdateZoneResult, ServiceError> = async {
         // Lock the zone row so the serial computed below stays ahead of
         // concurrent record mutations and nsupdate on the same zone.
         let existing_zone =
@@ -188,7 +188,7 @@ pub async fn update(
 
         // The change is validated, so a dry run stops here.
         if request.dry_run {
-            return Ok(ZoneUpdateResult {
+            return Ok(UpdateZoneResult {
                 zone: candidate,
                 catalog_changed: false,
             });
@@ -228,7 +228,7 @@ pub async fn update(
         )
         .await?;
 
-        Ok(ZoneUpdateResult {
+        Ok(UpdateZoneResult {
             catalog_changed: existing_zone.name != updated_zone.name
                 || existing_zone.enabled != updated_zone.enabled,
             zone: updated_zone,
@@ -236,7 +236,7 @@ pub async fn update(
     }
     .await;
 
-    let ZoneUpdateResult {
+    let UpdateZoneResult {
         zone: updated_zone,
         catalog_changed,
     } = transaction::finish_tx(tx, apply_result, "failed to update zone").await?;

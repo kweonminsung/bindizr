@@ -4,7 +4,7 @@
 use bindizr_core::{dns::name::OwnerName, model::role_grant::Action};
 use bindizr_db::LockLevel;
 
-use super::change_set::{ZoneChangeSet, group_ops_by_zone, parse_changes_request};
+use super::change_set::{ZoneChangeSet, group_operations_by_zone, parse_changes_request};
 use crate::{
     Context,
     authorization::{Caller, RecordAccess},
@@ -27,10 +27,10 @@ pub async fn apply_changes(
 ) -> Result<ApplyExternalDnsChangesResponse, ServiceError> {
     let started = std::time::Instant::now();
 
-    let ops = parse_changes_request(request)?;
-    let requested_ops = ops.len();
+    let operations = parse_changes_request(request)?;
+    let requested_ops = operations.len();
 
-    if ops.is_empty() {
+    if operations.is_empty() {
         log::info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
         return Ok(ApplyExternalDnsChangesResponse {
             changed_zones: Vec::new(),
@@ -45,7 +45,7 @@ pub async fn apply_changes(
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
-        let zone_ops = group_ops_by_zone(caller, &zones, ops)?;
+        let zone_operations = group_operations_by_zone(caller, &zones, operations)?;
 
         let mut changed_zones = Vec::new();
         let mut added = 0u64;
@@ -53,17 +53,20 @@ pub async fn apply_changes(
 
         // BTreeMap iteration locks zones in name order, so concurrent
         // multi-zone requests cannot deadlock on row locks.
-        for (zone_name, ops) in &zone_ops {
+        for (zone_name, operations) in &zone_operations {
             let zone = bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
 
             // Authorize the requested operations before idempotent pairs cancel;
             // a no-op must not bypass grants or reveal existing records.
-            let adds = ops.adds.iter().map(|op| (Action::RecordCreate, op));
-            let dels = ops.dels.iter().map(|op| (Action::RecordDelete, op));
+            let adds = operations.adds.iter().map(|op| (Action::RecordCreate, op));
+            let deletes = operations
+                .deletes
+                .iter()
+                .map(|op| (Action::RecordDelete, op));
             let writes: Vec<RecordAccess<'_>> = adds
-                .chain(dels)
+                .chain(deletes)
                 .map(|(action, op)| RecordAccess {
                     action,
                     relative_name: op.name.clone(),
@@ -77,10 +80,10 @@ pub async fn apply_changes(
 
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.
-            let mut names: Vec<OwnerName> = ops
+            let mut names: Vec<OwnerName> = operations
                 .adds
                 .iter()
-                .chain(ops.dels.iter())
+                .chain(operations.deletes.iter())
                 .map(|op| op.name.clone())
                 .collect();
             names.sort();
@@ -93,7 +96,7 @@ pub async fn apply_changes(
             )
             .await?;
 
-            let change_set = ZoneChangeSet::compute(ops, &zone, &records_at_names)?;
+            let change_set = ZoneChangeSet::compute(operations, &zone, &records_at_names)?;
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                 continue;
             }
