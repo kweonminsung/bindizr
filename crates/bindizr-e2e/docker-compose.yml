@@ -30,7 +30,7 @@ services:
   # bindizr service so bind9-1 verifies it (strict TLS). Kept on a volume, so
   # a restarted stack keeps the pair bind9-1 trusts.
   xot-certs:
-    image: alpine:3.21
+    image: alpine:3.24
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
