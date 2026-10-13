@@ -144,3 +144,33 @@ Keep `allow-notify` on `NOKEY` unless the secondary is registered with
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
 for creating the key in a role that holds `zone:transfer` in all zones.
+
+## Transfers over TLS
+
+NSD 4.3.7 or newer pulls over TLS. `tls-auth` names what Bindizr's
+certificate must carry, `tls-cert-bundle` the issuers NSD trusts, and
+`request-xfr` takes the key and the `tls-auth` beside Bindizr's address,
+port 853, in the pattern and the catalog zone:
+
+```text
+server:
+    tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"
+
+tls-auth:
+    name: "bindizr"
+    auth-domain-name: "bindizr.example.net"
+
+pattern:
+    name: "catalog-member"
+    zonefile: "members/%s.zone"
+    allow-notify: 10.0.0.5 NOKEY
+    request-xfr: 10.0.0.5@853 xfr-key bindizr
+
+zone:
+    name: "catalog.bindizr"
+    zonefile: "catalog.bindizr.zone"
+    catalog: consumer
+    catalog-member-pattern: "catalog-member"
+    allow-notify: 10.0.0.5 NOKEY
+    request-xfr: 10.0.0.5@853 xfr-key bindizr
+```

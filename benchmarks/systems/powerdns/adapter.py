@@ -120,7 +120,7 @@ class PowerDnsAdapter(DnsAdapter):
             raise RuntimeError(f'create_record failed for {rec["name"]} {rec["type"]}')
         return f'{self._fqdn(zone, rec["name"])}|{rec["type"]}'
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Import records in batched PowerDNS PATCH requests for throughput."""
         z = zone if zone.endswith(".") else zone + "."
         batch = 500

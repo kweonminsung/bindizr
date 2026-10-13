@@ -15,24 +15,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import dockerutil, zonefile  # noqa: E402
 
 DNS_PORT = 15359
 ZONE = "bench.example"
 SERVER = "127.0.0.1"
 ZONE_PATH = "/zones/bench.example.zone"
-
-
-def _rdata(rec: dict) -> str:
-    """Render a benchmark record as zone-file record data."""
-    t, v = rec["type"], rec["value"]
-    if t == "MX":
-        return f'{rec.get("priority", 10)} {v if v.endswith(".") else v + "."}'
-    if t == "TXT":
-        return f'"{v}"'
-    if t == "CNAME":
-        return v if v.endswith(".") else v + "."
-    return v
 
 
 class CoreDnsAdapter(DnsAdapter):
@@ -89,24 +77,12 @@ class CoreDnsAdapter(DnsAdapter):
                 return None
         return None
 
-    def _zone_text(self) -> str:
-        """Render the current zone records as a complete zone file."""
-        lines = [
-            "$TTL 3600",
-            f"@ IN SOA ns1.{ZONE}. admin.{ZONE}. ( {self.serial} 3600 600 604800 3600 )",
-            f"@ IN NS ns1.{ZONE}.",
-            "ns1 IN A 127.0.0.1",
-        ]
-        for rec in self.records.values():
-            lines.append(f'{rec["name"]} {rec.get("ttl", 3600)} IN {rec["type"]} {_rdata(rec)}')
-        return "\n".join(lines) + "\n"
-
     async def _flush_and_reload(self, timeout: float = 30.0) -> bool:
         """Rewrite the zone file, then wait until CoreDNS's poll has picked it up
         (confirmed by the SOA serial advancing) so callers observe a settled zone."""
         self.serial += 1
         with tempfile.NamedTemporaryFile("w", suffix=".zone", delete=False) as fh:
-            fh.write(self._zone_text())
+            fh.write(zonefile.build_zone_file(ZONE, self.serial, self.records.values()))
             tmp = fh.name
         os.chmod(tmp, 0o644)  # docker cp preserves perms; CoreDNS must be able to read it
         proc = await asyncio.create_subprocess_exec(
@@ -138,7 +114,7 @@ class CoreDnsAdapter(DnsAdapter):
         self.records.clear()
         await self._flush_and_reload()
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Write the whole set in one rewrite so the reload cost is paid once."""
         self.bulk_errors = 0
         for rec in records:

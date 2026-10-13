@@ -19,7 +19,9 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 
 `algorithm`
 :   `ecdsap256sha256` (default), `ecdsap384sha384`, `ed25519`, `ed448`,
-    `rsasha256`, or `rsasha512`.
+    `rsasha256`, or `rsasha512`. RFC 8624 recommends against signing with
+    `rsasha512`; it is offered for a zone that must stay on it. Every DS and
+    CDS carries a SHA-256 digest, the one a delegation must accept.
 
 `denial`
 :   `nsec3` (default, RFC 9276 parameters) or `nsec`. NSEC lets anyone walk

@@ -1,9 +1,9 @@
 use bindizr_core::{model::record::RecordId, out, outln};
 use bindizr_service::types::{
-    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
-    DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter,
-    PaginatedResponse, Pagination, RecordResponse, RecordValue, RecordWriteResponse, Run,
-    UpdateRecordRequest,
+    BulkRecordItem, CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
+    DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, PaginationResponse,
+    RecordFilter, RecordResponse, RecordValue, Run, SingleRecordResponse, UpdateRecordRequest,
+    WriteRecordResponse,
 };
 use clap::Subcommand;
 
@@ -313,7 +313,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             dry_run,
             output,
         } => {
-            let response = client::send_command::<RecordWriteResponse>(
+            let response = client::send_command::<WriteRecordResponse>(
                 DaemonCommand::CreateRecord(CreateRecordRequest {
                     dry_run,
                     name,
@@ -348,8 +348,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             offset,
             output,
         } => {
-            let response = client::send_command::<PaginatedResponse<GetRecordResponse>>(
-                DaemonCommand::ListRecords(GetRecordsFilter {
+            let response = client::send_command::<PaginatedResponse<RecordResponse>>(
+                DaemonCommand::ListRecords(RecordFilter {
                     zone_name: zone,
                     name,
                     record_type,
@@ -396,8 +396,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let records: Vec<BulkRecordItem> = serde_json::from_value(records).map_err(|e| {
                 CliError::request_with_source(format!("invalid record in '{}': {}", file, e), e)
             })?;
-            let response = client::send_command::<BulkRecordsResponse>(
-                DaemonCommand::CreateRecordsBulk(CreateBulkRecordsRequest {
+            let response = client::send_command::<CreateBulkRecordsResponse>(
+                DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
                     zone_name: zone,
                     records,
                     dry_run,
@@ -423,7 +423,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            let response = client::send_command::<RecordResponse>(DaemonCommand::GetRecord {
+            let response = client::send_command::<SingleRecordResponse>(DaemonCommand::GetRecord {
                 id: RecordId::from(id),
             })
             .await?;
@@ -438,15 +438,15 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             // This command promises every record at the owner, so traverse all pages.
-            let mut items: Vec<GetRecordResponse> = Vec::new();
+            let mut items: Vec<RecordResponse> = Vec::new();
             let mut offset = 0u64;
             let total = loop {
-                let page = client::send_command::<PaginatedResponse<GetRecordResponse>>(
-                    DaemonCommand::ListRecords(GetRecordsFilter {
+                let page = client::send_command::<PaginatedResponse<RecordResponse>>(
+                    DaemonCommand::ListRecords(RecordFilter {
                         zone_name: zone.clone(),
                         name: Some(name.clone()),
                         offset: Some(offset),
-                        ..GetRecordsFilter::default()
+                        ..RecordFilter::default()
                     }),
                 )
                 .await?
@@ -460,7 +460,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             };
             let page = PaginatedResponse {
                 items,
-                pagination: Pagination {
+                pagination: PaginationResponse {
                     limit: u32::try_from(total).unwrap_or(u32::MAX),
                     offset: 0,
                     total,
@@ -485,7 +485,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             let response =
-                client::send_command::<RecordWriteResponse>(DaemonCommand::UpdateRecord {
+                client::send_command::<WriteRecordResponse>(DaemonCommand::UpdateRecord {
                     id: RecordId::from(id),
                     request: UpdateRecordRequest {
                         dry_run,
@@ -514,7 +514,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             let response =
-                client::send_command::<RecordWriteResponse>(DaemonCommand::UpdateRecordByName {
+                client::send_command::<WriteRecordResponse>(DaemonCommand::UpdateRecordByName {
                     zone_name: zone,
                     record_name: name,
                     request: UpdateRecordRequest {
@@ -564,7 +564,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             let response = client::send_command::<DeleteRecordsResponse>(
-                DaemonCommand::DeleteRecordsMatching(DeleteRecordsRequest {
+                DaemonCommand::DeleteMatchingRecords(DeleteRecordsRequest {
                     zone_name: zone,
                     name,
                     record_type,

@@ -6,8 +6,8 @@ use std::str::FromStr;
 use chrono::Utc;
 use sqlx::{
     MySql, Pool, Postgres, Sqlite,
-    mysql::MySqlPoolOptions,
-    postgres::PgPoolOptions,
+    mysql::{MySqlConnectOptions, MySqlPoolOptions},
+    postgres::{PgConnectOptions, PgPoolOptions},
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 
@@ -69,9 +69,11 @@ impl Db {
     /// calls this once and holds the value.
     pub async fn connect(database: &config::DatabaseConfig) -> Result<Db, DatabaseError> {
         let backend = match database.database_type {
-            config::DatabaseType::MySql => Backend::connect_mysql(&database.mysql.url).await?,
+            config::DatabaseType::MySql => {
+                Backend::connect_mysql(&database.mysql.url, &database.tls).await?
+            }
             config::DatabaseType::Postgres => {
-                Backend::connect_postgres(&database.postgresql.url).await?
+                Backend::connect_postgres(&database.postgresql.url, &database.tls).await?
             }
             config::DatabaseType::Sqlite => {
                 // The file is created on a clean install, so its directory is too.
@@ -142,7 +144,7 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
         config::DatabaseType::MySql => {
             let pool = MySqlPoolOptions::new()
                 .max_connections(1)
-                .connect(&database.mysql.url)
+                .connect_with(mysql_connect_options(&database.mysql.url, &database.tls)?)
                 .await
                 .map_err(DatabaseError::MySqlConnect)?;
             sqlx::query("SELECT 1").execute(&pool).await?;
@@ -150,7 +152,10 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
         config::DatabaseType::Postgres => {
             let pool = PgPoolOptions::new()
                 .max_connections(1)
-                .connect(&database.postgresql.url)
+                .connect_with(postgres_connect_options(
+                    &database.postgresql.url,
+                    &database.tls,
+                )?)
                 .await
                 .map_err(DatabaseError::PostgresConnect)?;
             sqlx::query("SELECT 1").execute(&pool).await?;
@@ -177,6 +182,38 @@ fn sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseErr
     SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
 }
 
+/// Parse the MySQL URL and lay `[database.tls]` over it: a set key replaces
+/// the URL's own parameter.
+fn mysql_connect_options(
+    url: &str,
+    tls: &config::DatabaseTlsConfig,
+) -> Result<MySqlConnectOptions, DatabaseError> {
+    let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
+    if let Some(mode) = tls.mode {
+        options = options.ssl_mode(mode.into());
+    }
+    if let Some(ca_file) = &tls.ca_file {
+        options = options.ssl_ca(ca_file);
+    }
+    Ok(options)
+}
+
+/// Parse the PostgreSQL URL and lay `[database.tls]` over it: a set key
+/// replaces the URL's own parameter.
+fn postgres_connect_options(
+    url: &str,
+    tls: &config::DatabaseTlsConfig,
+) -> Result<PgConnectOptions, DatabaseError> {
+    let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
+    if let Some(mode) = tls.mode {
+        options = options.ssl_mode(mode.into());
+    }
+    if let Some(ca_file) = &tls.ca_file {
+        options = options.ssl_root_cert(ca_file);
+    }
+    Ok(options)
+}
+
 /// How full the connection pool is. sqlx counts held connections, not waiters,
 /// so saturation shows as `connections` reaching `max`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,7 +235,10 @@ fn pool_max_connections() -> u32 {
 
 impl Backend {
     /// Connect to MySQL and return the pool.
-    async fn connect_mysql(url: &str) -> Result<Self, DatabaseError> {
+    async fn connect_mysql(
+        url: &str,
+        tls: &config::DatabaseTlsConfig,
+    ) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -211,7 +251,7 @@ impl Backend {
                         .map(|_| ())
                 })
             })
-            .connect(url)
+            .connect_with(mysql_connect_options(url, tls)?)
             .await
             .map_err(DatabaseError::MySqlConnect)?;
 
@@ -219,7 +259,10 @@ impl Backend {
     }
 
     /// Connect to PostgreSQL and return the pool.
-    async fn connect_postgres(url: &str) -> Result<Self, DatabaseError> {
+    async fn connect_postgres(
+        url: &str,
+        tls: &config::DatabaseTlsConfig,
+    ) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -233,7 +276,7 @@ impl Backend {
                     .map(|_| ())
                 })
             })
-            .connect(url)
+            .connect_with(postgres_connect_options(url, tls)?)
             .await
             .map_err(DatabaseError::PostgresConnect)?;
 

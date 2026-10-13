@@ -23,7 +23,7 @@ pub(crate) fn summary_row(stdout: &str) -> Vec<&str> {
 /// Read a test zone's DNSSEC status through the CLI.
 pub(crate) async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     let status = app
-        .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
+        .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"], None)
         .await;
     serde_json::from_str(&status).expect("CLI did not return valid JSON")
 }

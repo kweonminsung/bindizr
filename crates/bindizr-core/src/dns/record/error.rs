@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use super::naptr::NaptrRegexpError;
+use super::naptr::ValidateNaptrRegexpError;
 use crate::{dns::name::ParseNameError, model::record::RecordType};
 
 /// A record value that is not what its type's presentation form spells. The
@@ -59,12 +59,8 @@ pub enum ParseRecordValueError {
     SrvShape { value: String },
     #[error("CAA record value must be '<flags> <tag> <value>': {value}")]
     CaaShape { value: String },
-    #[error("CAA tag must be 1-15 alphanumeric characters: {tag}")]
+    #[error("CAA tag must be 1-255 ASCII letters or digits: {tag}")]
     CaaTag { tag: String },
-    #[error("CAA value must not be empty")]
-    CaaValueEmpty,
-    #[error("CAA value must not contain control characters")]
-    CaaValueControl,
     #[error("CAA value must be at most {max} bytes, got {len}")]
     CaaValueTooLong { max: usize, len: usize },
     #[error("DS record value must be '<key tag> <algorithm> <digest type> <digest>': {value}")]
@@ -119,10 +115,12 @@ pub enum ParseRecordValueError {
     NaptrShape { value: String },
     #[error("NAPTR record value ends before {field}")]
     NaptrEndsBefore { field: &'static str },
+    #[error("NAPTR flags must contain only ASCII letters or digits")]
+    NaptrFlags,
     #[error("NAPTR record replacement must be '.' when the regexp is set (RFC 3403, Section 4.1)")]
     NaptrReplacementWithRegexp,
     #[error(transparent)]
-    NaptrRegexp(#[from] NaptrRegexpError),
+    NaptrRegexp(#[from] ValidateNaptrRegexpError),
     #[error("{record_type} records do not take a priority")]
     PriorityNotTaken { record_type: RecordType },
     #[error("stored TXT value is not in presentation form: {value}")]

@@ -67,7 +67,7 @@ impl Zone {
     pub fn soa_rdata(&self, serial: Serial) -> Result<Rdata, EncodeRdataError> {
         let rname = self.soa_mailbox()?;
         SoaRecordValue {
-            mname: &self.mname,
+            mname: self.mname.as_str(),
             rname: rname.as_str(),
             serial: serial.as_u32(),
             refresh: self.refresh.as_secs(),

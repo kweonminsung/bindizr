@@ -34,7 +34,7 @@ clap_mangen.workspace = true
 hex.workspace = true
 log.workspace = true
 ring.workspace = true
-# For its `ring` feature alone; axum-server builds the config.
+# The XoT listener builds its own server config; axum-server builds the API's.
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -42,6 +42,7 @@ serde_norway.workspace = true
 thiserror.workspace = true
 tabled.workspace = true
 tokio.workspace = true
+tokio-rustls.workspace = true
 tower-http.workspace = true
 utoipa.workspace = true
 

@@ -5,6 +5,59 @@ use crate::common::TestApp;
 
 mod bulk;
 
+/// Preserve CAA empty and binary values through record writes and reads.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn caa_values_preserve_empty_and_binary_properties() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let long_tag = format!("0 {} \"\"", "a".repeat(255));
+    for (input, expected) in [
+        (r#"0 ISSUE """#, r#"0 issue """#),
+        (r#"0 issuewild """#, r#"0 issuewild """#),
+        (
+            r"128 custom \000\255\010\034\092",
+            r#"128 custom "\000\255\010\"\\""#,
+        ),
+        ("0 issue a\\ ", r#"0 issue "a ""#),
+        (long_tag.as_str(), long_tag.as_str()),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({"zone_name": zone_name, "name": "@", "type": "CAA", "value": input})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{input}: {body}");
+        assert_eq!(body["record"]["value"], expected);
+        let id = body["record"]["id"].as_i64().unwrap();
+        let path = format!("/records/{id}");
+        let (status, body) = app.send_request(Method::GET, &path, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["record"]["value"], expected);
+
+        let (status, body) = app
+            .send_request(Method::PUT, &path, Some(json!({"value": "0 custom \"\""})))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["record"]["value"], "0 custom \"\"");
+        let serial = app.read_zone_serial(zone_name).await;
+        for invalid in ["0 custom", "0 custom a b", r"0 custom \256"] {
+            let (status, body) = app
+                .send_request(Method::PUT, &path, Some(json!({"value": invalid})))
+                .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}: {body}");
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        }
+        let (_, body) = app.send_request(Method::GET, &path, None).await;
+        assert_eq!(body["record"]["value"], "0 custom \"\"");
+        let (status, _) = app.send_request(Method::DELETE, &path, None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+}
+
 /// Percent-encode a query value byte by byte; `;`, `\` and UTF-8 would
 /// otherwise be taken apart.
 fn encode(value: &str) -> String {
@@ -945,6 +998,75 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
     assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
 }
 
+/// Reject invalid NAPTR flags on create and update.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn naptr_flags_are_checked_on_create_and_update() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let original = r#"10 10 "uZ9" "app" "" target.example."#;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "zone_name": zone_name,
+                "name": "naptr",
+                "type": "NAPTR",
+                "value": original,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["record"]["value"], original);
+    let id = body["record"]["id"].as_i64().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+
+    for flags in ["!", "S-", " ", r"\000", r"\033", "é"] {
+        for replacement in [".", "target.example."] {
+            let invalid = format!("10 10 \"{flags}\" \"app\" \"\" {replacement}");
+            for (method, path, request) in [
+                (
+                    Method::POST,
+                    "/records".to_string(),
+                    json!({
+                        "zone_name": zone_name, "name": "invalid", "type": "NAPTR", "value": invalid,
+                    }),
+                ),
+                (
+                    Method::PUT,
+                    format!("/records/{id}"),
+                    json!({"value": invalid}),
+                ),
+            ] {
+                let (status, body) = app.send_request(method, &path, Some(request)).await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{flags}: {body}");
+                assert_eq!(body["code"], "INVALID_RECORD_VALUE");
+                assert!(
+                    body["error"].as_str().unwrap().contains("NAPTR flags"),
+                    "{body}"
+                );
+            }
+        }
+    }
+    assert_eq!(app.list_records(zone_name).await, before);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/records/{id}"),
+            Some(json!({"value": r#"10 10 "" "app" "" target.example."#})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["record"]["value"],
+        r#"10 10 "" "app" "" target.example."#
+    );
+}
+
 /// Verify that a NAPTR regexp BIND refuses is rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -1569,4 +1691,266 @@ async fn record_reject_cname_conflicts() {
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
+}
+
+/// Verify the DNAME rules of RFC 6672, Section 2.4 and the alias-target rule
+/// of RFC 2181, Section 10.3 and RFC 2782, in either order of arrival.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_reject_dname_and_alias_target_rules() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let create = |name: &str, record_type: &str, value: String, priority: Option<u16>| {
+        json!({
+            "name": name,
+            "type": record_type,
+            "value": value,
+            "ttl": 3600,
+            "priority": priority,
+            "zone_name": zone_name
+        })
+    };
+
+    let cases = [
+        // A DNAME keeps other data at its own name, but is a singleton and no delegation.
+        (
+            "sub",
+            "DNAME",
+            "one.example.net.".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "sub",
+            "A",
+            "192.0.2.1".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "sub",
+            "DNAME",
+            "two.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "sub",
+            "NS",
+            "ns.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "del",
+            "NS",
+            "ns.example.net.".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "del",
+            "DNAME",
+            "one.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        // Nothing below a DNAME, whichever arrives first.
+        (
+            "leaf.sub",
+            "A",
+            "192.0.2.2".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "leaf.top",
+            "A",
+            "192.0.2.3".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "top",
+            "DNAME",
+            "one.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        // An NS, MX, or SRV may not name a CNAME of this zone, whichever arrives first.
+        (
+            "cn",
+            "CNAME",
+            "www.example.net.".to_string(),
+            None,
+            StatusCode::CREATED,
+        ),
+        (
+            "@",
+            "MX",
+            format!("cn.{zone_name}."),
+            Some(10),
+            StatusCode::CONFLICT,
+        ),
+        (
+            "@",
+            "NS",
+            format!("cn.{zone_name}."),
+            None,
+            StatusCode::CONFLICT,
+        ),
+        (
+            "_sip._tcp",
+            "SRV",
+            format!("5 5060 cn.{zone_name}."),
+            Some(10),
+            StatusCode::CONFLICT,
+        ),
+        (
+            "@",
+            "MX",
+            "mail.example.net.".to_string(),
+            Some(10),
+            StatusCode::CREATED,
+        ),
+        (
+            "@",
+            "MX",
+            format!("mx2.{zone_name}."),
+            Some(20),
+            StatusCode::CREATED,
+        ),
+        (
+            "mx2",
+            "CNAME",
+            "www.example.net.".to_string(),
+            None,
+            StatusCode::CONFLICT,
+        ),
+    ];
+    for (name, record_type, value, priority, expected) in cases {
+        for dry_run in [true, false] {
+            let mut request = create(name, record_type, value.clone(), priority);
+            request["dry_run"] = json!(dry_run);
+            let (status, body) = app
+                .send_request(Method::POST, "/records", Some(request))
+                .await;
+            let expected = if dry_run && expected == StatusCode::CREATED {
+                StatusCode::OK
+            } else {
+                expected
+            };
+            assert_eq!(
+                status, expected,
+                "{name} {record_type} {value}, dry_run={dry_run}: {body}"
+            );
+        }
+    }
+
+    // A DNAME at the apex is allowed beside the zone's own SOA and NS, and
+    // then nothing else may exist in the zone.
+    let apex_zone_name = app.zone_name("apex-dname.example");
+    app.create_zone_cli(&apex_zone_name, "3600").await;
+    for (name, record_type, expected) in [
+        ("@", "DNAME", StatusCode::CREATED),
+        ("host", "A", StatusCode::CONFLICT),
+    ] {
+        let value = if record_type == "A" {
+            "192.0.2.4"
+        } else {
+            "one.example.net."
+        };
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name,
+                    "type": record_type,
+                    "value": value,
+                    "ttl": 3600,
+                    "zone_name": apex_zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, expected, "{name} {record_type}: {body}");
+    }
+}
+
+/// Preview and apply reject the same cross-owner conflicts without changing the zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_mutations_validate_the_complete_proposed_state() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, seeded) = app
+        .send_request(
+            Method::POST,
+            "/records/bulk",
+            Some(json!({
+                "zone_name": zone_name,
+                "records": [
+                    {"name": "child", "type": "NS", "value": "ns.example.net."},
+                    {"name": "child", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab"},
+                    {"name": "redirect", "type": "DNAME", "value": "target.example.net."}
+                ]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{seeded}");
+    let ns_id = seeded["records"][0]["id"].as_i64().unwrap();
+    let serial = app.read_zone_serial(zone_name).await;
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &format!("/records/{ns_id}"),
+                Some(json!({"name": "moved", "dry_run": dry_run})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        for path in [
+            format!("/records/{ns_id}?dry_run={dry_run}"),
+            format!("/records?zone_name={zone_name}&name=child&type=NS&dry_run={dry_run}"),
+        ] {
+            let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        }
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records/bulk",
+                Some(json!({
+                    "zone_name": zone_name, "dry_run": dry_run,
+                    "records": [{"name": "leaf.redirect", "type": "A", "value": "192.0.2.5"}]
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(json!({
+                    "content": "leaf.redirect IN A 192.0.2.5\n", "dry_run": dry_run
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["applied"], false);
+        assert!(!body["errors"].as_array().unwrap().is_empty());
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+    // Removing the delegation and its DS together leaves a valid final state.
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!("/records?zone_name={zone_name}&name=child"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"], 2);
 }

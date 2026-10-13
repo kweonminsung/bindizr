@@ -112,7 +112,7 @@ pub(crate) struct BindizrRecord {
 
 /// `POST /external-dns/changes` request body of the bindizr API.
 #[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BindizrChanges {
+pub(crate) struct ApplyExternalDnsChangesRequest {
     creates: Vec<BindizrRecord>,
     updates: Vec<BindizrRecordUpdate>,
     deletes: Vec<BindizrRecord>,
@@ -203,7 +203,9 @@ impl Endpoint {
 impl Changes {
     /// Convert into one bindizr change-set request. `updateOld[i]` and
     /// `updateNew[i]` pair positionally, per the plan contract.
-    pub(crate) fn to_bindizr_changes(&self) -> Result<BindizrChanges, ConvertChangesError> {
+    pub(crate) fn to_apply_changes_request(
+        &self,
+    ) -> Result<ApplyExternalDnsChangesRequest, ConvertChangesError> {
         if self.update_old.len() != self.update_new.len() {
             return Err(ConvertChangesError::UnpairedUpdates {
                 old: self.update_old.len(),
@@ -211,7 +213,7 @@ impl Changes {
             });
         }
 
-        Ok(BindizrChanges {
+        Ok(ApplyExternalDnsChangesRequest {
             creates: to_bindizr_records(&self.create)?,
             updates: self
                 .update_old

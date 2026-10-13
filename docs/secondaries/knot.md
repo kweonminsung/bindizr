@@ -98,3 +98,24 @@ secondary with `--notify-key`. See
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
 for creating the key in a role that holds `zone:transfer` in all zones.
+
+## Transfers over TLS
+
+Knot DNS 3.4 or newer pulls over TLS. Knot pins the server's public key
+(`cert-key`), computed from Bindizr's certificate:
+
+```bash
+openssl x509 -in /etc/bindizr/tls/xot.crt -pubkey -noout \
+    | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+```
+
+Then on the `bindizr` remote, port 853:
+
+```yaml
+remote:
+  - id: bindizr
+    address: 10.0.0.5@853
+    tls: on
+    cert-key: <pin from above>
+    key: xfr-key
+```

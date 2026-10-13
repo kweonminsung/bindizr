@@ -1,9 +1,8 @@
-//! One cell of CLI output for what no type of ours renders itself: an absent
-//! value, a flag, a timestamp, a duration, a cut value, and a cell built from
-//! several fields. A value with a `Display` is written with `{}` instead.
+//! Shared CLI cells for absent values, flags, time, truncation, and combined fields.
+//! Use a type's `Display` where available.
 
-use bindizr_core::model::transfer::{TransferKind, TransferResult};
-use bindizr_service::types::{RecordValue, TransferResponse, TransferSummary};
+use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
+use bindizr_service::types::{RecordValue, TransferResponse, TransferSummaryResponse};
 use chrono::Utc;
 
 /// What a cell shows for a value that is absent.
@@ -80,18 +79,24 @@ pub(crate) fn display_transfer_kind(transfer: &TransferResponse) -> String {
     }
 }
 
-/// A served transfer as one cell: what it was, the serial reached, and when.
+/// A served transfer as one cell: what it was, the serial reached, when, and
+/// `over TLS` when it was.
 pub(crate) fn display_transfer(transfer: &TransferResponse) -> String {
+    let over_tls = match transfer.transport {
+        TransferTransport::Tls => " over TLS",
+        TransferTransport::Udp | TransferTransport::Tcp => "",
+    };
     format!(
-        "{} {} at {}",
+        "{} {} at {}{}",
         display_transfer_kind(transfer),
         display_option(&transfer.serial),
-        display_time(transfer.at)
+        display_time(transfer.at),
+        over_tls
     )
 }
 
 /// How a secondary's zones were last served.
-pub(crate) fn display_transfer_summary(summary: &TransferSummary) -> String {
+pub(crate) fn display_transfer_summary(summary: &TransferSummaryResponse) -> String {
     if summary.zones == 0 {
         return "no transfers".to_string();
     }

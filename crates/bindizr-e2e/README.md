@@ -11,7 +11,8 @@ cargo test -p bindizr-e2e
 
 Set `BINDIZR_E2E_VERIFY_DNS=true` to select the Docker Compose environment instead. In this mode
 the host SQLite database and local Bindizr process are not initialized. The record CRUD scenario
-also verifies that create, update, and delete results reach both BIND secondaries:
+also verifies that create, update, and delete results reach both BIND secondaries; `bind9-1`
+pulls over TLS (XoT) under a TSIG key, `bind9-2` over plain TCP by address:
 
 ```sh
 BINDIZR_E2E_VERIFY_DNS=true cargo test -p bindizr-e2e

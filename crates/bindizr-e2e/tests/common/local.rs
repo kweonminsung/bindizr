@@ -1,4 +1,5 @@
-//! Local daemon startup with a temporary database and optional API TLS.
+//! Local daemon startup with a temporary database and optional TLS, for the
+//! API or the XoT listener, under one certificate generated for the run.
 
 use std::{
     fs,
@@ -10,6 +11,7 @@ use std::{
 };
 
 use reqwest::{Client, StatusCode};
+use rustls::pki_types::CertificateDer;
 
 use super::{TestApp, TestAppOptions, TestRuntime, reserve_tcp_port, test_namespace};
 
@@ -21,9 +23,12 @@ impl TestApp {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         let config_path = temp_dir.path().join("bindizr.conf.toml");
-        let (scheme, client) = match options.tls {
-            true => ("https", tls_client(write_test_certificate(temp_dir.path()))),
-            false => ("http", Client::new()),
+        // One certificate serves both TLS listeners; none is written otherwise.
+        let tls_cert =
+            (options.tls || options.dns_tls).then(|| write_test_certificate(temp_dir.path()));
+        let (scheme, client) = match (&tls_cert, options.tls) {
+            (Some(cert), true) => ("https", tls_client(cert)),
+            _ => ("http", Client::new()),
         };
 
         // A reserved port is released before the daemon binds it, so another
@@ -32,7 +37,15 @@ impl TestApp {
         for _ in 0..3 {
             let api_port = reserve_tcp_port();
             let dns_port = reserve_dns_port();
-            write_config(&config_path, api_port, dns_port, &db_path, &options);
+            let dns_tls_port = options.dns_tls.then(reserve_tcp_port);
+            write_config(
+                &config_path,
+                api_port,
+                dns_port,
+                dns_tls_port,
+                &db_path,
+                &options,
+            );
 
             let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"))
                 .arg("start")
@@ -52,6 +65,8 @@ impl TestApp {
                         client,
                         base_url,
                         dns_port: Some(dns_port),
+                        dns_tls_port,
+                        tls_cert: tls_cert.clone(),
                         dns_secondary_ports: Vec::new(),
                         namespace: test_namespace(),
                         auth_token: None,
@@ -92,23 +107,21 @@ fn reserve_dns_port() -> u16 {
 }
 
 /// A self-signed certificate for `127.0.0.1`, written beside the config as
-/// `tls.crt`/`tls.key`; returns the PEM a client must trust to reach it.
-fn write_test_certificate(dir: &Path) -> String {
+/// `tls.crt`/`tls.key`; returns the certificate a client must trust to reach it.
+fn write_test_certificate(dir: &Path) -> CertificateDer<'static> {
     let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
         .expect("generate a test certificate");
-    let cert_pem = certified.cert.pem();
-    std::fs::write(dir.join("tls.crt"), &cert_pem).expect("write tls.crt");
+    std::fs::write(dir.join("tls.crt"), certified.cert.pem()).expect("write tls.crt");
     std::fs::write(dir.join("tls.key"), certified.signing_key.serialize_pem())
         .expect("write tls.key");
-    cert_pem
+    certified.cert.der().clone()
 }
 
 /// Build an HTTP client that trusts the test TLS certificate.
-fn tls_client(cert_pem: String) -> Client {
+fn tls_client(cert: &CertificateDer<'static>) -> Client {
     Client::builder()
         .add_root_certificate(
-            reqwest::Certificate::from_pem(cert_pem.as_bytes())
-                .expect("parse the test certificate"),
+            reqwest::Certificate::from_der(cert).expect("parse the test certificate"),
         )
         .build()
         .expect("build the TLS client")
@@ -119,9 +132,15 @@ fn write_config(
     config_path: &Path,
     api_port: u16,
     dns_port: u16,
+    dns_tls_port: Option<u16>,
     db_path: &Path,
     options: &TestAppOptions,
 ) {
+    // The certificate pair sits beside the config file.
+    let dir = config_path
+        .parent()
+        .expect("config has a directory")
+        .display();
     let config = format!(
         r#"
 [api]
@@ -147,12 +166,15 @@ url = ""
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
-nsupdate_tsig_required = {nsupdate_tsig_required}
-
+{dns_tls}
+{dns_transfer}
 
 [dns.notify]
 retries = 0
 timeout_secs = 1
+
+[dns.nsupdate]
+tsig_required = {nsupdate_tsig_required}
 
 [logging]
 level = "error"
@@ -164,13 +186,21 @@ level = "error"
         openapi_enabled = options.openapi_enabled,
         tls = match options.tls {
             true => {
-                let dir = config_path
-                    .parent()
-                    .expect("config has a directory")
-                    .display();
-                format!("tls_cert_file = \"{dir}/tls.crt\"\ntls_key_file = \"{dir}/tls.key\"\n")
+                format!(
+                    "\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n"
+                )
             }
             false => String::new(),
+        },
+        dns_tls = match dns_tls_port {
+            Some(port) => format!(
+                "\n[dns.tls]\nlisten_port = {port}\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n"
+            ),
+            None => String::new(),
+        },
+        dns_transfer = match options.dns_transfer_require_tls {
+            true => "\n[dns.transfer]\nrequire_tls = true\n",
+            false => "",
         },
     );
 
@@ -209,4 +239,26 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
         let _ = pipe.read_to_string(&mut stderr);
     }
     Err(format!("{failure}\n{stderr}"))
+}
+
+impl TestApp {
+    /// Replace the run's certificate pair on disk, as a renewal does; returns
+    /// the certificate a client trusts after `config reload`.
+    pub(crate) fn renew_test_certificate(&self) -> CertificateDer<'static> {
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("the compose stack's certificate is fixed");
+        };
+        write_test_certificate(temp_dir.path())
+    }
+}
+
+impl TestApp {
+    /// Overwrite the run's private key with text no key parser reads, as a
+    /// broken renewal does.
+    pub(crate) fn corrupt_test_certificate(&self) {
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("the compose stack's certificate is fixed");
+        };
+        std::fs::write(temp_dir.path().join("tls.key"), "not a key").expect("write tls.key");
+    }
 }

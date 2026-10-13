@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 
-use super::version::RecordDiff;
+use super::version::RecordDiffResponse;
 use crate::model::record::{Record, RecordType};
 
 /// A request value that has no record-row form.
@@ -165,10 +165,8 @@ pub struct UpdateRecordRequest {
     pub dry_run: bool,
 }
 
-/// Request to delete matching records or preview the deletion, narrowing from
-/// a whole name to one record as in RFC 2136, Section 2.5.2.
-/// `zone_name` and `name` are both required: without a name this would be a
-/// second, quieter way to empty a zone, which `DELETE /zones/{name}` owns.
+/// Delete or preview records at a required `zone_name` and `name`
+/// (RFC 2136, Section 2.5.2); whole-zone deletion belongs to `DELETE /zones/{name}`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
@@ -182,9 +180,7 @@ pub struct DeleteRecordsRequest {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
-    /// Narrows to one record, named the way a create names it: one string,
-    /// or the segments of a TXT record. Compared canonically, so a value
-    /// spelled another way still matches. Requires `type`.
+    /// Canonical value match: one string or TXT segments, as in a create request. Requires `type`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "192.0.2.1")]
     pub value: Option<RecordValue>,
@@ -198,9 +194,7 @@ pub struct DeleteRecordsRequest {
     pub dry_run: bool,
 }
 
-/// What a conditional delete removed, or would have. Matching nothing is not
-/// an error: the zone already reads the way the request asked for, so the
-/// serial does not move and no NOTIFY goes out.
+/// Deleted records or their preview; no matches leave the serial unchanged and send no NOTIFY.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DeleteRecordsResponse {
     /// Whether this call wrote; a filter that matched nothing still ran, and
@@ -211,16 +205,16 @@ pub struct DeleteRecordsResponse {
     pub dry_run: bool,
     #[schema(example = 3)]
     pub deleted: u64,
-    pub records: Vec<GetRecordResponse>,
+    pub records: Vec<RecordResponse>,
     /// The removal as a record diff, for previewing the change.
-    pub diff: RecordDiff,
+    pub diff: RecordDiffResponse,
 }
 
 /// Query filters and pagination for listing records.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub struct GetRecordsFilter {
+pub struct RecordFilter {
     /// The name of the DNS zone to filter records by.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
@@ -261,12 +255,9 @@ pub struct GetRecordsFilter {
     /// `asc` (the default) or `desc`.
     #[schema(example = "asc")]
     pub order: Option<String>,
-    /// Append the zone's derived DNSSEC records (RRSIG, DNSKEY,
-    /// NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the
-    /// same pagination. Derived rows carry no id, and `type` also accepts a
-    /// derived type. A search narrows them by name only, a priority filter
-    /// leaves them out, and a value filter is refused rather than answered
-    /// without them.
+    /// Include derived DNSSEC records after user records in the same pagination.
+    /// Derived rows have no id; `type` accepts derived types and search matches names only.
+    /// Priority filters exclude derived rows; value filters are rejected.
     #[schema(example = false)]
     pub signed: Option<bool>,
     /// Records per page; defaults to 50 when omitted, 1000 is the largest
@@ -279,11 +270,9 @@ pub struct GetRecordsFilter {
     pub offset: Option<u64>,
 }
 
-/// API representation of a record. `name` is the owner's absolute name with
-/// its trailing dot, as name-valued rdata is rendered; `zone_name` is the
-/// zone's bare name, the spelling `/zones/{name}` takes.
+/// Record data with absolute, trailing-dot owner/RDATA names and a bare `zone_name`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetRecordResponse {
+pub struct RecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
     /// addressable records.
     #[schema(example = 1, value_type = Option<i32>)]
@@ -308,11 +297,10 @@ pub struct GetRecordResponse {
     pub actions: Vec<Action>,
 }
 
-impl GetRecordResponse {
-    /// Build a response from a [`Record`], rendering owner/value as display
-    /// names within `zone_name`, with the `actions` the caller holds on it.
+impl RecordResponse {
+    /// Render a record response with absolute names and the caller's actions.
     pub(crate) fn from_record(record: &Record, zone_name: &ZoneName, actions: Vec<Action>) -> Self {
-        GetRecordResponse {
+        RecordResponse {
             id: record.id.written(),
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.into(),
@@ -328,38 +316,36 @@ impl GetRecordResponse {
 
 /// A single record wrapped in a response envelope.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct RecordResponse {
-    pub record: GetRecordResponse,
+pub struct SingleRecordResponse {
+    pub record: RecordResponse,
 }
 
 /// What a record write left behind, in the shape every previewable operation
 /// answers with: whether it wrote, and the change as a record diff.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct RecordWriteResponse {
+pub struct WriteRecordResponse {
     /// Whether this call wrote; a dry run answers `false`.
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
-    pub record: GetRecordResponse,
+    pub record: RecordResponse,
     /// The write as a record diff, for previewing it.
-    pub diff: RecordDiff,
+    pub diff: RecordDiffResponse,
 }
 
-/// Response for a bulk insert: the count added and the created records. On a
-/// dry run `records` holds the validated would-be records (with placeholder
-/// IDs) and nothing is added.
+/// Bulk-create result; previews contain validated records with placeholder IDs and write nothing.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct BulkRecordsResponse {
+pub struct CreateBulkRecordsResponse {
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
     #[schema(example = 3)]
     pub added: u64,
-    pub records: Vec<GetRecordResponse>,
+    pub records: Vec<RecordResponse>,
     /// Dry-run diff; adding a value at an existing name and type is a changed group.
-    pub diff: RecordDiff,
+    pub diff: RecordDiffResponse,
 }
 
 /// The type of a record the zone serves: a user record type, or a

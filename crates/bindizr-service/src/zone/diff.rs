@@ -12,8 +12,8 @@ use crate::{
         zone::Zone,
     },
     types::{
-        RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
-        build_display_value,
+        RecordChange, RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,
+        RecordDiffValueResponse, build_display_value,
     },
 };
 
@@ -29,7 +29,7 @@ struct MemberIdentity {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct RecordSetMember {
     identity: MemberIdentity,
-    value: RecordDiffValue,
+    value: RecordDiffValueResponse,
 }
 
 /// Group records into record sets. Two records are the same iff their canonical
@@ -52,7 +52,7 @@ fn group_record_sets(
                     .into_owned(),
                 ttl: record.ttl,
             },
-            value: RecordDiffValue {
+            value: RecordDiffValueResponse {
                 value: build_display_value(&record.value, &record.record_type),
                 ttl: record.ttl,
                 priority: record.priority,
@@ -70,7 +70,7 @@ fn record_set_identities(record_set: &[RecordSetMember]) -> Vec<&MemberIdentity>
 }
 
 /// Collect the record values belonging to an owner and type.
-fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValue> {
+fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValueResponse> {
     record_set.into_iter().map(|r| r.value).collect()
 }
 
@@ -81,7 +81,7 @@ pub(crate) fn build_record_diff(
     zone: &Zone,
     before: &ReadableRecords<RecordData>,
     after: &ReadableRecords<RecordData>,
-) -> RecordDiff {
+) -> RecordDiffResponse {
     let mut before_record_sets = group_record_sets(zone, before.as_slice());
     let mut after_record_sets = group_record_sets(zone, after.as_slice());
 
@@ -105,7 +105,7 @@ pub(crate) fn build_record_diff(
         match (before, after) {
             (None, Some(after)) => {
                 added += 1;
-                entries.push(RecordDiffEntry {
+                entries.push(RecordDiffEntryResponse {
                     change: RecordChange::Added,
                     name,
                     record_type,
@@ -115,7 +115,7 @@ pub(crate) fn build_record_diff(
             }
             (Some(before), None) => {
                 removed += 1;
-                entries.push(RecordDiffEntry {
+                entries.push(RecordDiffEntryResponse {
                     change: RecordChange::Removed,
                     name,
                     record_type,
@@ -126,7 +126,7 @@ pub(crate) fn build_record_diff(
             (Some(before), Some(after)) => {
                 if record_set_identities(&before) != record_set_identities(&after) {
                     changed += 1;
-                    entries.push(RecordDiffEntry {
+                    entries.push(RecordDiffEntryResponse {
                         change: RecordChange::Changed,
                         name,
                         record_type,
@@ -139,9 +139,9 @@ pub(crate) fn build_record_diff(
         }
     }
 
-    RecordDiff {
+    RecordDiffResponse {
         entries,
-        summary: RecordDiffSummary {
+        summary: RecordDiffSummaryResponse {
             added,
             removed,
             changed,

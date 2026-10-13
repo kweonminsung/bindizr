@@ -29,12 +29,17 @@ async fn tsig_key_create_read_delete() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["secret"], generated_secret.as_str());
 
-    // ...but omitted from the list response.
+    // ...but omitted from the list response, which the compose stack's own
+    // key may share.
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["items"].as_array().unwrap();
-    assert_eq!(keys.len(), 1);
-    assert!(keys[0].get("secret").is_none());
+    let listed = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["name"] == "update-key")
+        .expect("the key is listed");
+    assert!(listed.get("secret").is_none());
 
     let (status, _) = app
         .send_request(

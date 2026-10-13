@@ -1,6 +1,4 @@
-//! Secondary servers: one registry behind NOTIFY fan-out, the unsigned
-//! transfer ACL, and the serial probes, so a server that hears a change is
-//! also the one allowed to pull it.
+//! Shared secondary registry for NOTIFY, unsigned-transfer ACLs, and serial probes.
 
 use std::{
     collections::HashMap,
@@ -28,9 +26,9 @@ use crate::{
     text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
     transaction, transfer, tsig_key,
     types::{
-        CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, PageRequest,
-        PaginatedResponse, SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse,
-        TransferSummary, UpdateSecondaryRequest,
+        CheckSecondaryResponse, CreateSecondaryRequest, PageRequest, PaginatedResponse,
+        SecondaryResponse, SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse,
+        TransferSummaryResponse, UpdateSecondaryRequest,
     },
     zone,
 };
@@ -41,13 +39,13 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateSecondaryRequest,
-) -> Result<GetSecondaryResponse, ServiceError> {
+) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
     let name = normalize_secondary_name(&request.name)?;
     let address = normalize_secondary_address(&request.address)?;
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_key = match request.notify_key_name.as_deref() {
+    let notify_tsig_key = match request.notify_key_name.as_deref() {
         Some(key_name) => Some(tsig_key::lookup_by_name(cx, key_name).await?),
         None => None,
     };
@@ -82,7 +80,7 @@ pub async fn create(
                 name: name.clone(),
                 address: address.clone(),
                 enabled: true,
-                notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
+                notify_tsig_key_id: notify_tsig_key.as_ref().map(|tsig_key| tsig_key.id),
                 created_at: Utc::now(),
             },
         )
@@ -101,9 +99,11 @@ pub async fn create(
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
-    Ok(GetSecondaryResponse::from_secondary(
+    Ok(SecondaryResponse::from_secondary(
         &secondary,
-        notify_key.as_ref().map(|key| key.name.as_str()),
+        notify_tsig_key
+            .as_ref()
+            .map(|tsig_key| tsig_key.name.as_str()),
     ))
 }
 
@@ -112,7 +112,7 @@ pub async fn list(
     cx: &Context,
     caller: &Caller,
     page: PageRequest,
-) -> Result<PaginatedResponse<GetSecondaryResponse>, ServiceError> {
+) -> Result<PaginatedResponse<SecondaryResponse>, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
 
     let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
@@ -120,13 +120,13 @@ pub async fn list(
     let key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
-        .map(|key| (key.id, key.name))
+        .map(|tsig_key| (tsig_key.id, tsig_key.name))
         .collect();
     build_page(
         secondaries
             .iter()
             .map(|secondary| {
-                GetSecondaryResponse::from_secondary(
+                SecondaryResponse::from_secondary(
                     secondary,
                     secondary
                         .notify_tsig_key_id
@@ -145,10 +145,10 @@ pub async fn get(
     cx: &Context,
     caller: &Caller,
     name: &str,
-) -> Result<GetSecondaryResponse, ServiceError> {
+) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
-    build_response(cx, secondary).await
+    load_response(cx, secondary).await
 }
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
@@ -158,7 +158,7 @@ pub async fn update(
     caller: &Caller,
     name: &str,
     request: UpdateSecondaryRequest,
-) -> Result<GetSecondaryResponse, ServiceError> {
+) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
     let name = normalize_secondary_name(name)?;
@@ -173,7 +173,7 @@ pub async fn update(
         ));
     }
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
+    let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
         None => None,
         Some("") => Some(None),
         Some(key_name) => Some(Some(tsig_key::lookup_by_name(cx, key_name).await?)),
@@ -207,8 +207,8 @@ pub async fn update(
             Secondary {
                 address: address.clone(),
                 enabled: request.enabled.unwrap_or(secondary.enabled),
-                notify_tsig_key_id: match &notify_key {
-                    Some(key) => key.as_ref().map(|key| key.id),
+                notify_tsig_key_id: match &notify_tsig_key {
+                    Some(tsig_key) => tsig_key.as_ref().map(|tsig_key| tsig_key.id),
                     None => secondary.notify_tsig_key_id,
                 },
                 ..secondary
@@ -229,17 +229,16 @@ pub async fn update(
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
-    build_response(cx, secondary).await
+    load_response(cx, secondary).await
 }
 
-/// Check one secondary, enabled or not: resolve its address, compare the
-/// catalog zone serial it serves with the one Bindizr's own listener
-/// serves, and send it a NOTIFY for the catalog zone.
+/// Check one secondary, enabled or not: resolve it, compare its catalog serial
+/// with Bindizr's listener, and send catalog NOTIFY.
 pub async fn check(
     cx: &Context,
     caller: &Caller,
     name: &str,
-) -> Result<SecondaryCheckResponse, ServiceError> {
+) -> Result<CheckSecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
     let secondary = lookup_by_name(cx, name).await?;
 
@@ -265,10 +264,10 @@ pub async fn check(
     };
     let catalog = probe::probe_secondary(cx, &catalog_zone, &secondary, catalog_serial).await?;
     let notifies = notify::send_notify_to_secondary(cx, &catalog_zone, &secondary).await?;
-    let transfers = transfer_summary(cx, &secondary).await?;
+    let transfers = summarize_transfers(cx, &secondary).await?;
 
-    Ok(SecondaryCheckResponse {
-        secondary: build_response(cx, secondary).await?,
+    Ok(CheckSecondaryResponse {
+        secondary: load_response(cx, secondary).await?,
         addresses,
         resolve_error,
         catalog_zone_name: catalog_zone.to_string(),
@@ -286,7 +285,7 @@ pub async fn list_transfers(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    filter: GetSecondaryTransfersFilter,
+    filter: SecondaryTransferFilter,
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
@@ -297,8 +296,8 @@ pub async fn list_transfers(
         .map(zone::normalize_name)
         .transpose()?;
 
-    let served = transfer::list_by_clients(cx, &resolved_ips(cx, &secondary).await).await?;
-    let summary = TransferSummary::from(served.as_slice());
+    let served = transfer::list_by_clients(cx, &resolve_ips(cx, &secondary).await).await?;
+    let summary = TransferSummaryResponse::from(served.as_slice());
     let transfers = served
         .iter()
         .filter(|transfer| {
@@ -318,17 +317,17 @@ pub async fn list_transfers(
 }
 
 /// How Bindizr served `secondary`, for the check and doctor.
-pub async fn transfer_summary(
+pub async fn summarize_transfers(
     cx: &Context,
     secondary: &Secondary,
-) -> Result<TransferSummary, ServiceError> {
-    let served = transfer::list_by_clients(cx, &resolved_ips(cx, secondary).await).await?;
-    Ok(TransferSummary::from(served.as_slice()))
+) -> Result<TransferSummaryResponse, ServiceError> {
+    let served = transfer::list_by_clients(cx, &resolve_ips(cx, secondary).await).await?;
+    Ok(TransferSummaryResponse::from(served.as_slice()))
 }
 
 /// The addresses the secondary resolves to now, which key the transfer
 /// rows; none when it does not resolve.
-async fn resolved_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
+async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
     match resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs.iter().map(|addr| addr.ip()).collect(),
@@ -365,14 +364,14 @@ pub async fn list_enabled(cx: &Context) -> Result<Vec<Secondary>, ServiceError> 
 
 /// The key a secondary's NOTIFY is signed with, ready to sign; `None`
 /// for one notified unsigned. The FK keeps a referenced key present.
-pub(crate) async fn notify_signing_key(
+pub(crate) async fn find_notify_signing_key(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<Option<TsigSigningKey>, ServiceError> {
-    match notify_key(cx, secondary).await? {
-        Some(key) => key.to_domain_key().map(Some).map_err(|e| {
+    match find_notify_tsig_key(cx, secondary).await? {
+        Some(tsig_key) => tsig_key.to_signing_key().map(Some).map_err(|e| {
             ServiceError::internal_with_source(
-                format!("NOTIFY key '{}' is unusable: {:?}", key.name, e),
+                format!("NOTIFY key '{}' is unusable: {:?}", tsig_key.name, e),
                 e,
             )
         }),
@@ -381,7 +380,10 @@ pub(crate) async fn notify_signing_key(
 }
 
 /// The stored key a secondary's NOTIFY is signed with, if any.
-async fn notify_key(cx: &Context, secondary: &Secondary) -> Result<Option<TsigKey>, ServiceError> {
+async fn find_notify_tsig_key(
+    cx: &Context,
+    secondary: &Secondary,
+) -> Result<Option<TsigKey>, ServiceError> {
     match secondary.notify_tsig_key_id {
         Some(id) => Ok(Some(
             bindizr_db::tsig_key::get(cx.db(), id)
@@ -393,14 +395,14 @@ async fn notify_key(cx: &Context, secondary: &Secondary) -> Result<Option<TsigKe
 }
 
 /// The API form of a secondary, naming its NOTIFY key.
-async fn build_response(
+async fn load_response(
     cx: &Context,
     secondary: Secondary,
-) -> Result<GetSecondaryResponse, ServiceError> {
-    let key = notify_key(cx, &secondary).await?;
-    Ok(GetSecondaryResponse::from_secondary(
+) -> Result<SecondaryResponse, ServiceError> {
+    let tsig_key = find_notify_tsig_key(cx, &secondary).await?;
+    Ok(SecondaryResponse::from_secondary(
         &secondary,
-        key.as_ref().map(|key| key.name.as_str()),
+        tsig_key.as_ref().map(|tsig_key| tsig_key.name.as_str()),
     ))
 }
 
@@ -418,9 +420,8 @@ pub(crate) fn normalize_secondary_name(value: &str) -> Result<String, ServiceErr
     normalize_identifier(value, "secondary name", MAX_COLUMN_TEXT_LEN)
 }
 
-/// A `host[:port]` entry in its stored form, the port spelled out and a
-/// hostname lowercased without its root dot, so one server has one row under
-/// UNIQUE(address).
+/// Canonicalize `host[:port]` with an explicit port and a lowercase host without a trailing dot
+/// so `UNIQUE(address)` identifies one secondary.
 pub(crate) fn normalize_secondary_address(value: &str) -> Result<AddressTarget, ServiceError> {
     let address = value.trim();
 

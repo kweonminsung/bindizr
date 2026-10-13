@@ -2,7 +2,7 @@ use bindizr_core::{
     dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation},
     model::record::RecordId,
 };
-use bindizr_db::{dnssec_record::DnssecRecordFilter, record::RecordFilter};
+use bindizr_db::dnssec_record::DnssecRecordFilter;
 
 use super::ServedRecord;
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     error::ServiceError,
     model::{dnssec_record::DnssecRecordType, record::RecordType},
     pagination::{build_paginated_response, normalize_page_limit, parse_setting},
-    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView},
+    types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView},
     zone::{self, validation::normalize_name},
 };
 
@@ -44,17 +44,20 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
 
 /// Every record, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(bindizr_db::record::count_by_filter(cx.db(), RecordFilter::default()).await?)
+    Ok(
+        bindizr_db::record::count_by_filter(cx.db(), bindizr_db::record::RecordFilter::default())
+            .await?,
+    )
 }
 
 /// List records with zone names, applying caller grants and pagination in SQL.
 /// Signed records follow user records, support name search, and reject value filters.
 /// Priority filters omit signed records; unknown or invisible zones yield empty pages for scoped callers.
-pub async fn list_with_zone_by_filter(
+pub async fn list_by_filter_with_zone(
     cx: &Context,
     caller: &Caller,
-    filter: GetRecordsFilter,
-) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
+    filter: RecordFilter,
+) -> Result<PaginatedResponse<RecordResponse>, ServiceError> {
     let scope_role_id = caller.scope_role_id();
     let zone_name = filter
         .zone_name
@@ -93,7 +96,7 @@ pub async fn list_with_zone_by_filter(
         && filter.min_priority.is_none()
         && filter.max_priority.is_none();
 
-    let record_filter = RecordFilter {
+    let record_filter = bindizr_db::record::RecordFilter {
         zone_name: zone_name.clone(),
         name: name.clone(),
         record_type: match &type_filter {
@@ -188,7 +191,7 @@ pub async fn get(
     cx: &Context,
     caller: &Caller,
     record_id: RecordId,
-) -> Result<GetRecordResponse, ServiceError> {
+) -> Result<RecordResponse, ServiceError> {
     let record = match bindizr_db::record::get_with_zone(cx.db(), record_id).await {
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
@@ -240,9 +243,7 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             });
         };
 
-        // The query compares the filter against both the stored owner and the
-        // FQDN it builds from it, so spell it the way rows do. Anything that is
-        // not a name passes through to match literally.
+        // Use stored owner spelling for SQL owner/FQDN matching; pass non-names through literally.
         if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone) {
             return Some(owner.to_fqdn(zone));
         }

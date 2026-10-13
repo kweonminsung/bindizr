@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
-    PageRequest, PaginatedResponse, UpdateDnssecPolicyRequest,
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
+    PaginatedResponse, SingleDnssecPolicyResponse, UpdateDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
@@ -126,7 +126,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             output,
         } => {
-            let res = client::send_command::<DnssecPolicyResponse>(
+            let res = client::send_command::<SingleDnssecPolicyResponse>(
                 DaemonCommand::CreateDnssecPolicy(CreateDnssecPolicyRequest {
                     name,
                     algorithm,
@@ -146,7 +146,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<GetDnssecPolicyResponse>>(
+            let res = client::send_command::<PaginatedResponse<DnssecPolicyResponse>>(
                 DaemonCommand::ListDnssecPolicies(PageRequest { limit, offset }),
             )
             .await?;
@@ -154,11 +154,10 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             print_page(&res.data, output, |item| DnssecPolicyRow::from(item))?;
         }
         DnssecPolicyCommand::Get { name, output } => {
-            let res =
-                client::send_command::<DnssecPolicyResponse>(DaemonCommand::GetDnssecPolicy {
-                    name,
-                })
-                .await?;
+            let res = client::send_command::<SingleDnssecPolicyResponse>(
+                DaemonCommand::GetDnssecPolicy { name },
+            )
+            .await?;
             log::debug!("DNSSEC policy get result: {:?}", res);
             print_policy(&res.data, output)?;
         }
@@ -169,16 +168,17 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             output,
         } => {
-            let res =
-                client::send_command::<DnssecPolicyResponse>(DaemonCommand::UpdateDnssecPolicy {
+            let res = client::send_command::<SingleDnssecPolicyResponse>(
+                DaemonCommand::UpdateDnssecPolicy {
                     name,
                     request: UpdateDnssecPolicyRequest {
                         signature_validity_days,
                         signature_refresh_days,
                         zsk_lifetime_days,
                     },
-                })
-                .await?;
+                },
+            )
+            .await?;
             log::debug!("DNSSEC policy update result: {:?}", res);
             print_policy(&res.data, output)?;
         }
@@ -198,7 +198,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
 /// Print a DNSSEC policy in the selected output format.
 fn print_policy(
-    response: &DnssecPolicyResponse,
+    response: &SingleDnssecPolicyResponse,
     output: OutputFormat,
 ) -> Result<(), RenderOutputError> {
     print_response(response, output, |response| {

@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::common::{
     RECORD_PAGE_LIMIT, TestApp,
-    dns::{build_dns_expected_value, dns_record_type, extract_dns_key, wait_for_dns_records},
+    dns::{build_dns_expected_value, dns_record_type, extract_record_key, wait_for_dns_records},
 };
 
 /// Render a name with the trailing dot record payloads carry, so a zone taken
@@ -20,7 +20,7 @@ pub(crate) fn to_fqdn(name: &str) -> String {
 /// The record a mutation is about to replace or remove, kept with the zone it
 /// sits in, which decides whether DNS can be asked about it at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PreviousDnsKey {
+pub(crate) struct PreviousRecordKey {
     pub(crate) zone_name: String,
     pub(crate) name: String,
     pub(crate) record_type: u16,
@@ -28,11 +28,11 @@ pub(crate) struct PreviousDnsKey {
 
 impl TestApp {
     /// Capture the record owner, type, and zone before an API mutation.
-    pub(crate) async fn read_previous_dns_key(
+    pub(crate) async fn read_previous_record_key(
         &self,
         method: &Method,
         path: &str,
-    ) -> Option<PreviousDnsKey> {
+    ) -> Option<PreviousRecordKey> {
         if !matches!(*method, Method::PUT | Method::DELETE) {
             return None;
         }
@@ -41,8 +41,8 @@ impl TestApp {
             let (status, body) = self.send_http(Method::GET, path, None).await;
             return status.is_success().then(|| {
                 let record = &body["record"];
-                let (name, record_type) = extract_dns_key(record);
-                PreviousDnsKey {
+                let (name, record_type) = extract_record_key(record);
+                PreviousRecordKey {
                     zone_name: record["zone_name"]
                         .as_str()
                         .expect("record did not contain a zone name")
@@ -54,7 +54,7 @@ impl TestApp {
         }
 
         if let Some(zone_name) = path.strip_prefix("/zones/") {
-            return Some(PreviousDnsKey {
+            return Some(PreviousRecordKey {
                 zone_name: to_fqdn(zone_name),
                 name: to_fqdn(zone_name),
                 record_type: 6,
@@ -65,14 +65,15 @@ impl TestApp {
     }
 
     /// Wait until secondary DNS answers match the API's records.
-    pub(crate) async fn assert_dns_matches_api(&self, previous_dns_key: Option<PreviousDnsKey>) {
+    pub(crate) async fn assert_dns_matches_api(
+        &self,
+        previous_record_key: Option<PreviousRecordKey>,
+    ) {
         if self.dns_secondary_ports.is_empty() {
             return;
         }
 
-        // Use the API's current records as the expected state for all
-        // secondaries. Read every page: one short of the whole set would call
-        // a propagated record missing, or a split record set half-served.
+        // Read every API page so all secondaries are checked against the complete zone.
         let mut records = Vec::new();
         let mut offset = 0u64;
         loop {
@@ -106,11 +107,17 @@ impl TestApp {
             }
         }
 
-        // BIND9 loads no zone whose apex carries no NS, and bindizr leaves
-        // that record to the operator, so such a zone reaches no secondary.
+        // BIND9 requires an apex NS; Bindizr leaves its creation to the operator.
+        // Listed record names are absolute, while zone names are bare.
+        let is_apex = |record: &Value| {
+            record["name"]
+                .as_str()
+                .map(|name| name.trim_end_matches('.'))
+                == record["zone_name"].as_str()
+        };
         let served_zones = records
             .iter()
-            .filter(|record| record["type"] == "NS" && record["name"] == record["zone_name"])
+            .filter(|record| record["type"] == "NS" && is_apex(record))
             .filter_map(|record| record["zone_name"].as_str().map(str::to_string))
             .collect::<HashSet<_>>();
 
@@ -144,7 +151,7 @@ impl TestApp {
         }
 
         // A deleted name/type is absent from the API list but must also disappear in DNS.
-        if let Some(previous) = previous_dns_key
+        if let Some(previous) = previous_record_key
             && served_zones.contains(&previous.zone_name)
             && !expected.contains_key(&(previous.name.clone(), previous.record_type))
         {

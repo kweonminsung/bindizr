@@ -4,8 +4,8 @@ use bindizr_service::{
     error::ServiceError,
     token,
     types::{
-        CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse,
-        PaginatedResponse, TokenFilter,
+        CreateTokenRequest, CreateTokenResponse, MessageResponse, PaginatedResponse, TokenFilter,
+        TokenResponse,
     },
 };
 
@@ -15,11 +15,11 @@ use crate::socket::types::DaemonResponse;
 pub(crate) async fn create_token(
     cx: &Context,
     request: &CreateTokenRequest,
-) -> Result<DaemonResponse<CreatedTokenResponse>, ServiceError> {
+) -> Result<DaemonResponse<CreateTokenResponse>, ServiceError> {
     let (token, secret) = token::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: CreatedTokenResponse { token, secret },
+        data: CreateTokenResponse { token, secret },
     })
 }
 
@@ -27,7 +27,7 @@ pub(crate) async fn create_token(
 pub(crate) async fn list_tokens(
     cx: &Context,
     filter: &TokenFilter,
-) -> Result<DaemonResponse<PaginatedResponse<GetTokenResponse>>, ServiceError> {
+) -> Result<DaemonResponse<PaginatedResponse<TokenResponse>>, ServiceError> {
     let response = token::list(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),

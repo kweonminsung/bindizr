@@ -97,7 +97,7 @@ deny rules. How grants combine, and what each operation needs, is in
 | --- | --- |
 | `zone:read` | `zone status` and the version list; a zone's details come with any grant reaching it |
 | `zone:create` | Creating zones, including `zone import --create`, and with `zone:update` renaming one — needs all zones |
-| `zone:update` | Zone settings, rollback (with whole-zone `record:read`, `record:create` and `record:delete`), NOTIFY; a rename also needs `zone:create` |
+| `zone:update` | Zone settings (including nsupdate SOA), rollback (with whole-zone `record:read`, `record:create` and `record:delete`), NOTIFY; a rename also needs `zone:create` |
 | `zone:delete` | Deleting zones |
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
 | `record:read` | Listing and reading records; export, version detail, diffs, and rollback |
@@ -153,7 +153,7 @@ to, per zone, as a client deciding what to offer needs. See the
 
 ## TSIG keys
 
-TSIG keys authenticate [dynamic updates](nsupdate.md), zone transfers, and
+TSIG keys authenticate [nsupdate](nsupdate.md), zone transfers, and
 the NOTIFY Bindizr sends to a secondary registered with `--notify-key` — see
 [Signed NOTIFY](secondaries.md#signed-notify). A key's name is what appears
 on the wire.
@@ -180,8 +180,8 @@ bindizr tsig-key delete update-key
 
 Over HTTP the same is `/tsig-keys`, with the role in the body's `role_name`.
 
-A key exercises only `record:read`, `record:create`, and `record:delete` (for
-nsupdate) and `zone:transfer` (for AXFR/IXFR); an empty role is enough to sign
+A key exercises `record:*` (for ordinary nsupdate records), `zone:update`
+(for nsupdate SOA), and `zone:transfer` (for AXFR/IXFR); an empty role is enough to sign
 NOTIFY. See
 [Which actions each credential exercises](advanced.md#which-actions-each-credential-exercises)
 and [Signing zone transfers](advanced.md#signing-zone-transfers).

@@ -2,7 +2,7 @@
 
 use bindizr_core::outln;
 use bindizr_service::types::{
-    DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
+    DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeysRequest,
 };
 use clap::Subcommand;
 
@@ -28,11 +28,8 @@ zone.")]
         #[arg(value_name = "ZONE_NAME")]
         name: String,
     },
-    /// Import the zone's key set as BIND key pairs and sign it: one CSK
-    /// pair, or a KSK pair and a ZSK pair for a split-key policy, plus any
-    /// key a rollover still holds — each private file's timing places it.
-    /// The migration path for a zone signed elsewhere; the zone must be
-    /// unsigned
+    /// Import BIND key pairs and sign an unsigned zone: active CSK or KSK/ZSK,
+    /// plus optional rollover keys whose state follows their private-file timings
     #[command(after_help = "\
 Examples:
   bindizr dnssec keys import example.com \\
@@ -106,7 +103,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             let response =
                 client::send_command::<DnssecStatusResponse>(DaemonCommand::ImportDnssecKeys {
                     zone_name: name,
-                    request: ImportDnssecKeyRequest {
+                    request: ImportDnssecKeysRequest {
                         keys,
                         policy_name: policy,
                     },

@@ -9,12 +9,11 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     transaction,
-    types::{DeleteZoneResponse, GetZoneResponse, Run},
+    types::{DeleteZoneResponse, Run, ZoneResponse},
 };
 
-/// Delete a zone by name and NOTIFY the catalog zone after commit. A dry
-/// run reports what the zone holds and removes nothing, since the delete
-/// takes the records and the rollback history with it.
+/// Delete a zone, records, and rollback history; NOTIFY the catalog after commit.
+/// A dry run reports the contents without removing them.
 pub async fn delete(
     cx: &Context,
     caller: &Caller,
@@ -44,7 +43,7 @@ pub async fn delete(
         let response = DeleteZoneResponse {
             applied: !run.is_dry_run(),
             dry_run: run.is_dry_run(),
-            zone: GetZoneResponse::from(&zone),
+            zone: ZoneResponse::from(&zone),
             records_deleted: records,
             versions_deleted: versions,
         };
@@ -58,12 +57,17 @@ pub async fn delete(
                 log::error!("Failed to delete zone: {}", e);
                 ServiceError::internal_with_source("failed to delete zone", e)
             })?;
-        log::info!("event=zone_delete zone={} zone_id={}", zone.name, zone.id);
         Ok(response)
     }
     .await;
 
     let response = transaction::finish_tx(tx, apply_result, "failed to delete zone").await?;
+
+    log::info!(
+        "event=zone_delete zone={} applied={}",
+        zone_name,
+        response.applied
+    );
 
     // Send catalog NOTIFY so secondaries drop the removed zone
     let config = cx.config();

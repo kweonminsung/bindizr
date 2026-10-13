@@ -43,7 +43,7 @@ pub struct TsigKeyFilter {
 
 /// API representation of a TSIG key; never carries the secret.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetTsigKeyResponse {
+pub struct TsigKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: TsigKeyId,
     #[schema(example = "update-key")]
@@ -56,33 +56,33 @@ pub struct GetTsigKeyResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetTsigKeyResponse {
-    /// Build a TSIG key response with its role's name, without the secret.
-    pub(crate) fn from_key(key: &TsigKey, role_name: &str) -> Self {
-        GetTsigKeyResponse {
-            id: key.id,
-            name: key.name.clone(),
-            algorithm: key.algorithm,
+impl TsigKeyResponse {
+    /// Build TSIG key information with its role name, without the secret.
+    pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
+        TsigKeyResponse {
+            id: tsig_key.id,
+            name: tsig_key.name.clone(),
+            algorithm: tsig_key.algorithm,
             role_name: role_name.to_string(),
-            created_at: key.created_at,
+            created_at: tsig_key.created_at,
         }
     }
 }
 
 /// A key with its secret: the create and get responses.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct TsigKeyResponse {
-    pub tsig_key: GetTsigKeyResponse,
+pub struct SingleTsigKeyResponse {
+    pub tsig_key: TsigKeyResponse,
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: String,
 }
 
-impl TsigKeyResponse {
+impl SingleTsigKeyResponse {
     /// Build a TSIG key response, with its secret and its role's name.
-    pub(crate) fn from_key(key: &TsigKey, role_name: &str) -> Self {
-        TsigKeyResponse {
-            tsig_key: GetTsigKeyResponse::from_key(key, role_name),
-            secret: key.secret.clone(),
+    pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
+        SingleTsigKeyResponse {
+            tsig_key: TsigKeyResponse::from_tsig_key(tsig_key, role_name),
+            secret: tsig_key.secret.clone(),
         }
     }
 }

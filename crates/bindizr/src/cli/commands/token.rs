@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse, PaginatedResponse,
-    TokenFilter,
+    CreateTokenRequest, CreateTokenResponse, MessageResponse, PaginatedResponse, TokenFilter,
+    TokenResponse,
 };
 use clap::Subcommand;
 
@@ -76,7 +76,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             role,
             output,
         } => {
-            let res = client::send_command::<CreatedTokenResponse>(DaemonCommand::CreateToken(
+            let res = client::send_command::<CreateTokenResponse>(DaemonCommand::CreateToken(
                 CreateTokenRequest {
                     name,
                     description,
@@ -94,7 +94,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<GetTokenResponse>>(
+            let res = client::send_command::<PaginatedResponse<TokenResponse>>(
                 DaemonCommand::ListTokens(TokenFilter {
                     role_name: role,
                     limit,

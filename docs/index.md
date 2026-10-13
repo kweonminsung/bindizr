@@ -60,7 +60,7 @@ DNS queries.
 
 - **[Zones and records](cli/zones.md)**: Bulk changes, zone-file import/export,
   dry-run previews, version diffs, and rollback.
-- **[Dynamic updates](cli/nsupdate.md)**: RFC 2136 updates authenticated with TSIG keys.
+- **[nsupdate](cli/nsupdate.md)**: RFC 2136 updates authenticated with TSIG keys.
 - **[Access control](cli/access-control.md)**: Roles limit API tokens and TSIG keys
   by zone, action, record name, and type.
 - **[DNSSEC](dnssec/index.md)**: Automatic signing, signature renewal, key rollover,

@@ -32,6 +32,12 @@ impl Serial {
         self.0
     }
 
+    /// Whether this serial advances `other` under RFC 1982, Section 3.2.
+    /// The undefined half-range distance does not establish an advance.
+    pub fn is_newer_than(self, other: Serial) -> bool {
+        matches!(self.0.wrapping_sub(other.0), 1..=0x7fff_ffff)
+    }
+
     /// The serial one step ahead, or `None` at the stored ceiling: a
     /// saturating step would repeat a serial silently.
     pub fn next(self) -> Option<Serial> {
@@ -120,5 +126,30 @@ where
         Ok(Serial::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Serial;
+
+    /// Check ordinary, wrapped, equal, and undefined serial comparisons.
+    #[test]
+    fn newer_follows_rfc1982_arithmetic() {
+        for (candidate, current, newer) in [
+            (11, 10, true),
+            (10, 10, false),
+            (9, 10, false),
+            (0, u32::MAX, true),
+            (u32::MAX, 0, false),
+            (0x8000_0000, 0, false),
+            (0, 0x8000_0000, false),
+            (0x7fff_ffff, 0, true),
+        ] {
+            assert_eq!(
+                Serial::from(candidate).is_newer_than(Serial::from(current)),
+                newer
+            );
+        }
     }
 }

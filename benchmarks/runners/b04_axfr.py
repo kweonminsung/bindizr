@@ -63,7 +63,7 @@ async def run(adapter, cfg, ctx) -> list:
             continue
 
         await adapter.create_zone(zone)
-        await adapter.bulk_import(zone, generate(size, cfg["seed"], zone))
+        await adapter.import_records(zone, generate(size, cfg["seed"], zone))
 
         # Wait until the zone is fully transferable — Bindizr's secondary pulls
         # asynchronously. Poll until the AXFR count stops growing and covers the

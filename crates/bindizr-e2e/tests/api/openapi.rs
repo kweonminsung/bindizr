@@ -28,6 +28,12 @@ async fn openapi_documents_need_no_token_when_enabled() {
     let (status, body) = app.send_request(Method::GET, "/openapi.json", None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["paths"]["/zones"]["get"].is_object());
+    assert!(body["components"]["schemas"]["CreateZoneRequest"]["properties"]["serial"].is_object());
+    assert!(
+        body["components"]["schemas"]["UpdateZoneRequest"]["properties"]
+            .get("serial")
+            .is_none()
+    );
 
     // YAML is not JSON, so the harness hands it back as a plain string.
     let (status, body) = app.send_request(Method::GET, "/openapi.yaml", None).await;

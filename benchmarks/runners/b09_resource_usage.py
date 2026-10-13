@@ -25,7 +25,7 @@ async def run(adapter, cfg, ctx) -> dict:
     await adapter.create_zone(zone)
     records = [r for r in generate(size * 2, cfg["seed"], zone)
                if r["type"] == "A"][:size]
-    await adapter.bulk_import(zone, records)
+    await adapter.import_records(zone, records)
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 

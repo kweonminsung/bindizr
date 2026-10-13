@@ -3,7 +3,7 @@
 
 use crate::{
     cli::common::read_dnssec_status,
-    common::{FakeParent, ServedDs, TestApp, assert_cli_failure_contains},
+    common::{DsRecord, FakeParent, TestApp, assert_cli_failure_contains},
 };
 
 /// Verify parent DS checks through the CLI.
@@ -18,13 +18,16 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
 
     // Enable signing against the test parent, then publish the active key's DS there.
     let enabled = app
-        .run_cli_success(&[
-            "dnssec",
-            "enable",
-            &zone_name,
-            "--parent-ns-addrs",
-            &parent_addr,
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "enable",
+                &zone_name,
+                "--parent-ns-addrs",
+                &parent_addr,
+            ],
+            None,
+        )
         .await;
     assert!(
         enabled.contains(&format!("Parent nameservers: {parent_addr}")),
@@ -32,15 +35,15 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     );
     let status = read_dnssec_status(&app, &zone_name).await;
     let key_tag = status["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    parent.set_ds(vec![ServedDs::from_status(&status, key_tag, 3600)]);
+    parent.set_ds(vec![DsRecord::from_status(&status, key_tag, 3600)]);
 
     // A served DS keeps disable blocked and must appear in the CLI's parent check.
     let disable_args = ["dnssec", "disable", &zone_name];
-    let refused = app.run_cli(&disable_args).await;
+    let refused = app.run_cli(&disable_args, None).await;
     assert_cli_failure_contains(&disable_args, &refused, "still serves DS records");
 
     let checked = app
-        .run_cli_success(&["dnssec", "check-ds", &zone_name])
+        .run_cli_success(&["dnssec", "check-ds", &zone_name], None)
         .await;
     assert!(
         checked.contains(&format!(
@@ -55,13 +58,16 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
 
     // Verify the parent address can also be set through the settings command.
     let set = app
-        .run_cli_success(&[
-            "dnssec",
-            "set",
-            &zone_name,
-            "--parent-ns-addrs",
-            &parent_addr,
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "set",
+                &zone_name,
+                "--parent-ns-addrs",
+                &parent_addr,
+            ],
+            None,
+        )
         .await;
     assert!(
         set.contains(&format!("Parent nameservers: {parent_addr}")),
@@ -71,13 +77,13 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     // With the parent DS removed, the CLI reports its absence and permits disable.
     parent.set_ds(Vec::new());
     let checked = app
-        .run_cli_success(&["dnssec", "check-ds", &zone_name])
+        .run_cli_success(&["dnssec", "check-ds", &zone_name], None)
         .await;
     assert!(
         checked.contains(&format!("Parent DS: none served by {parent_addr}")),
         "{checked}"
     );
-    let disabled = app.run_cli_success(&disable_args).await;
+    let disabled = app.run_cli_success(&disable_args, None).await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 }
 
@@ -89,21 +95,24 @@ async fn zone_dnssec_disable_skip_ds_check_via_cli() {
     let zone_name = app.zone_name("dnssec-skip-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
     // Nothing listens on the loopback discard port, so the parent never answers.
-    app.run_cli_success(&[
-        "dnssec",
-        "enable",
-        &zone_name,
-        "--parent-ns-addrs",
-        "127.0.0.1:9",
-    ])
+    app.run_cli_success(
+        &[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--parent-ns-addrs",
+            "127.0.0.1:9",
+        ],
+        None,
+    )
     .await;
 
     let disable_args = ["dnssec", "disable", &zone_name];
-    let refused = app.run_cli(&disable_args).await;
+    let refused = app.run_cli(&disable_args, None).await;
     assert_cli_failure_contains(&disable_args, &refused, "could not verify");
 
     let disabled = app
-        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 }

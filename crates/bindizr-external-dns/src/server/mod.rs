@@ -94,7 +94,7 @@ impl IntoResponse for UpstreamError {
 }
 
 /// Encode a webhook reply as JSON under the negotiated media type.
-fn json_response<T: serde::Serialize>(value: &T) -> Response {
+fn build_json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,
         // so success responses carry the exact media-type string.
@@ -186,7 +186,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
         }
         Ok(domains) => {
             log::info!("event=negotiate domains={}", domains.len());
-            json_response(&DomainFilter { include: domains })
+            build_json_response(&DomainFilter { include: domains })
         }
         Err(e) => e.into_response(),
     }
@@ -206,7 +206,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
         Ok(records) => {
             let endpoints: Vec<Endpoint> = records.into_iter().map(Endpoint::from).collect();
             log::info!("event=records_get endpoints={}", endpoints.len());
-            json_response(&endpoints)
+            build_json_response(&endpoints)
         }
         Err(e) => e.into_response(),
     }
@@ -227,7 +227,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         }
     };
 
-    let bindizr_changes = match changes.to_bindizr_changes() {
+    let bindizr_changes = match changes.to_apply_changes_request() {
         Ok(converted) => converted,
         Err(message) => {
             log::warn!("event=records_apply rejected={}", message);
@@ -285,7 +285,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
             .into_response(),
         Ok(adjusted) => {
             log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
-            json_response(&build_adjusted_endpoints(endpoints, adjusted))
+            build_json_response(&build_adjusted_endpoints(endpoints, adjusted))
         }
         Err(e) => e.into_response(),
     }

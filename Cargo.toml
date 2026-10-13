@@ -56,6 +56,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_norway = "0.9"
 serial_test = "4"
+# TLS to the database over the same ring-backed rustls.
 sqlx = { version = "0.9", features = [
     "runtime-tokio",
     "mysql",
@@ -63,11 +64,14 @@ sqlx = { version = "0.9", features = [
     "postgres",
     "sqlite",
     "chrono",
+    "tls-rustls-ring-native-roots",
 ] }
 tabled = { version = "0.22", default-features = false, features = ["derive"] }
 tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["full"] }
+# Over the same ring-backed rustls; the default aws-lc-rs provider stays out.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
 utoipa = { version = "6.0", features = ["axum_extras", "chrono"] }
 

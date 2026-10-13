@@ -1,11 +1,8 @@
-use bindizr_core::{
-    dns::Serial,
-    model::{zone::ZoneId, zone_version::ZoneVersionId},
-};
+use bindizr_core::{dns::Serial, model::zone_version::ZoneVersionId};
 use chrono::Utc;
 
 use crate::{
-    Context, Transaction,
+    Transaction,
     error::ServiceError,
     model::{
         zone::Zone,
@@ -21,17 +18,6 @@ pub(crate) struct ChangeAttribution {
 }
 
 impl ChangeAttribution {
-    /// An RFC 2136 update, named by the TSIG key that signed it; unsigned
-    /// updates reach here only through an address ACL, which names nobody.
-    pub(crate) fn nsupdate(key_name: Option<&str>) -> Self {
-        ChangeAttribution {
-            source: ChangeSource::Nsupdate,
-            actor: key_name.map(|name| ChangeActor::TsigKey {
-                name: name.to_string(),
-            }),
-        }
-    }
-
     /// The scheduler, acting on nobody's request.
     pub(crate) fn system() -> Self {
         ChangeAttribution {
@@ -45,7 +31,6 @@ impl ChangeAttribution {
 /// version it in the same transaction.
 pub(crate) async fn advance_serial_tx(
     tx: &mut Transaction<'_>,
-    cx: &Context,
     zone: &Zone,
     new_serial: Serial,
     attribution: &ChangeAttribution,
@@ -57,40 +42,16 @@ pub(crate) async fn advance_serial_tx(
             ServiceError::internal_with_source("failed to update zone serial", e)
         })?;
 
-    save_version_tx(tx, cx, zone, new_serial, attribution).await
-}
-
-/// Reject DS records without an NS delegation at the same owner: a DS identifies a child
-/// zone's key (RFC 4034, Section 5).
-///
-/// The owner goes unnamed, as a delete by id may orphan it for a caller who
-/// cannot read it; bulk and import name the owners they touch first.
-async fn validate_delegations_tx(
-    tx: &mut Transaction<'_>,
-    zone_id: ZoneId,
-) -> Result<(), ServiceError> {
-    if bindizr_db::record::find_name_ds_without_ns_tx(tx, zone_id)
-        .await?
-        .is_some()
-    {
-        return Err(ServiceError::record_conflict(
-            "DS records require delegation NS records at the same name",
-        ));
-    }
-    Ok(())
+    save_version_tx(tx, zone, new_serial, attribution).await
 }
 
 /// Save a version of the zone's SOA data for historical tracking.
-/// Every mutation path ends here, so the cross-row invariants are
-/// checked once, against the final state, order-independently.
 pub(crate) async fn save_version_tx(
     tx: &mut Transaction<'_>,
-    cx: &Context,
     zone: &Zone,
     serial: Serial,
     attribution: &ChangeAttribution,
 ) -> Result<(), ServiceError> {
-    validate_delegations_tx(tx, zone.id).await?;
     bindizr_db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
@@ -117,9 +78,6 @@ pub(crate) async fn save_version_tx(
         log::error!("Failed to save SOA version: {}", e);
         ServiceError::internal_with_source("failed to save SOA version", e)
     })?;
-
-    // Every serial-advancing path funnels through this version write.
-    cx.metrics().track_serial_bump();
 
     Ok(())
 }

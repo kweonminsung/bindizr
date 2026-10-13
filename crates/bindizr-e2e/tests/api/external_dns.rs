@@ -78,15 +78,18 @@ const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
 /// Grant the test token access to a zone.
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        token_name,
-        "--zone",
-        zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            token_name,
+            "--zone",
+            zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+        ],
+        None,
+    )
     .await;
 }
 
@@ -182,17 +185,20 @@ async fn external_dns_domain_listing_unions_split_grants() {
         let role = scoped_name.clone();
         let app = &app;
         async move {
-            app.run_cli_success(&[
-                "role",
-                "grant",
-                &role,
-                "--zone",
-                &zone,
-                "--actions",
-                actions,
-                "--pattern",
-                pattern,
-            ])
+            app.run_cli_success(
+                &[
+                    "role",
+                    "grant",
+                    &role,
+                    "--zone",
+                    &zone,
+                    "--actions",
+                    actions,
+                    "--pattern",
+                    pattern,
+                ],
+                None,
+            )
             .await;
         }
     };
@@ -231,17 +237,20 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     let zone_name = app.zone_name("narrowed.com");
     app.create_named_zone(&zone_name).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "*.k8s",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+            "--pattern",
+            "*.k8s",
+        ],
+        None,
+    )
     .await;
 
     // The filter carries the granted subtree, not the zone: ExternalDNS plans
@@ -264,33 +273,39 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
         ("record:create,record:delete", "*.blind"),
         ("record:read,record:create", "*.append"),
     ] {
-        app.run_cli_success(&[
+        app.run_cli_success(
+            &[
+                "role",
+                "grant",
+                &scoped_name,
+                "--zone",
+                &zone_name,
+                "--actions",
+                actions,
+                "--pattern",
+                pattern,
+            ],
+            None,
+        )
+        .await;
+    }
+    // So does one holding them only for a type the provider never writes.
+    app.run_cli_success(
+        &[
             "role",
             "grant",
             &scoped_name,
             "--zone",
             &zone_name,
             "--actions",
-            actions,
+            RECORD_ACTIONS,
             "--pattern",
-            pattern,
-        ])
-        .await;
-    }
-    // So does one holding them only for a type the provider never writes.
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "*.mail",
-        "--types",
-        "MX",
-    ])
+            "*.mail",
+            "--types",
+            "MX",
+        ],
+        None,
+    )
     .await;
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)

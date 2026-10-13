@@ -73,7 +73,7 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
     // Under TLS the probe stops at the connection: a listening daemon has
     // already loaded the pair, and speaking TLS here would mean trusting
     // whatever it presents.
-    if config.api.tls_files().is_some() {
+    if config.api.tls.tls_files().is_some() {
         match tokio::time::timeout(API_CHECK_TIMEOUT, TcpStream::connect(addr)).await {
             Ok(Ok(_)) => report.ok(format!(
                 "API listening: https://{} (TLS handshake not attempted)",
@@ -156,6 +156,9 @@ pub(crate) async fn check_services(report: &mut Report) {
     let database_failed = doctor.database.status == DoctorCheckStatus::Failed;
     report.push(doctor.database);
     report.push(doctor.dns_server);
+    if let Some(check) = doctor.dns_tls_server {
+        report.push(check);
+    }
 
     if database_failed {
         report.skip("Secondary checks skipped: the database did not answer");

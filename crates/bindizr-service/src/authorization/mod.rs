@@ -2,8 +2,9 @@
 //! denied operations as 403.
 //!
 //! Management entry points authorize their [`Caller`]; the local socket passes
-//! [`Caller::socket`]. DNS operations authorize through the ACL and the TSIG
-//! key's role instead.
+//! [`Caller::socket`]. The DNS plane authenticates its TSIG key into a
+//! [`Caller`] as well, or takes [`Caller::unsigned_dns`] where the address
+//! ACL or the configuration admits an unsigned request.
 
 use bindizr_core::{
     dns::name::OwnerName,
@@ -23,6 +24,7 @@ use crate::{
     model::{
         api_token::ApiToken,
         record::{Record, RecordData, RecordType},
+        tsig_key::{TsigKey, TsigKeyId},
         zone::Zone,
         zone_version::{ChangeActor, ChangeSource},
     },
@@ -41,18 +43,26 @@ pub struct Caller {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CallerScope {
     Global,
-    /// A role's caller, through the token that authenticated it.
+    /// A role's caller, through the credential that authenticated it.
     Role {
         id: RoleId,
-        token_id: TokenId,
+        credential: Credential,
         grants: RoleGrants,
     },
 }
 
-/// One record write to authorize, its owner relative to the zone (stored form).
-/// A `None` type matches only grants that constrain no type.
+/// The credential a role's caller proved itself with, re-read by every
+/// transaction that acts for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Credential {
+    Token(TokenId),
+    TsigKey(TsigKeyId),
+}
+
+/// One record action to authorize, its owner relative to the zone (stored
+/// form). A `None` type matches only grants that constrain no type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordWrite<'a> {
+pub(crate) struct RecordAccess<'a> {
     pub(crate) action: Action,
     pub(crate) relative_name: OwnerName,
     pub(crate) record_type: Option<&'a RecordType>,
@@ -146,12 +156,25 @@ impl Caller {
         }
     }
 
+    /// Build the DNS plane's caller for a request no key signed, which the
+    /// address ACL or `dns.nsupdate.tsig_required = false` admitted: global,
+    /// as they already decided.
+    pub fn unsigned_dns() -> Self {
+        Self {
+            scope: CallerScope::Global,
+            attribution: ChangeAttribution {
+                source: ChangeSource::Nsupdate,
+                actor: None,
+            },
+        }
+    }
+
     /// Build an API caller from an authenticated token and its role's loaded grants.
     pub(crate) fn from_token(token: &ApiToken, grants: Vec<RoleGrant>) -> Self {
         Self {
             scope: CallerScope::Role {
                 id: token.role_id,
-                token_id: token.id,
+                credential: Credential::Token(token.id),
                 grants: grants.into(),
             },
             attribution: ChangeAttribution {
@@ -168,15 +191,84 @@ impl Caller {
         &self.attribution
     }
 
-    /// Validate a Bearer token and preload its role's grants. Record mutations
-    /// reload and lock them inside their transaction.
-    pub async fn authenticate(
+    /// Build the DNS plane's caller from a verified key and its role's loaded
+    /// grants; a key's writes are nsupdates, so that is its attribution.
+    pub(crate) fn from_tsig_key(tsig_key: &TsigKey, grants: Vec<RoleGrant>) -> Self {
+        Self {
+            scope: CallerScope::Role {
+                id: tsig_key.role_id,
+                credential: Credential::TsigKey(tsig_key.id),
+                grants: grants.into(),
+            },
+            attribution: ChangeAttribution {
+                source: ChangeSource::Nsupdate,
+                actor: Some(ChangeActor::TsigKey {
+                    name: tsig_key.name.clone(),
+                }),
+            },
+        }
+    }
+
+    /// Validate a Bearer token, stamping `last_used_at`, and preload its
+    /// role's grants; a mutation reloads and locks them in its transaction.
+    pub async fn authenticate_token(
         cx: &Context,
         bearer_token: &str,
     ) -> Result<(Caller, ApiToken), ServiceError> {
-        let token = authenticate_token(cx, bearer_token).await?;
+        let token_hash = hash_token(bearer_token);
+        let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
+            Ok(Some(token)) => token,
+            Ok(None) => {
+                return Err(ServiceError::invalid_token(
+                    "invalid or expired token".to_string(),
+                ));
+            }
+            Err(e) => {
+                log::error!("Failed to validate token: {}", e);
+                return Err(ServiceError::internal_with_source(
+                    "failed to validate token",
+                    e,
+                ));
+            }
+        };
+
+        if let Some(expires_at) = &stored_token.expires_at
+            && Utc::now() >= *expires_at
+        {
+            return Err(ServiceError::invalid_token("token has expired"));
+        }
+
+        let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
+            Utc::now() - last_used < Duration::seconds(LAST_USED_STAMP_INTERVAL_SECS)
+        });
+        let token = if stamp_is_fresh {
+            stored_token
+        } else {
+            let last_used_at = Utc::now();
+            bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to update last_used_at: {}", e);
+                    ServiceError::internal_with_source("failed to update last_used_at", e)
+                })?;
+            ApiToken {
+                last_used_at: Some(last_used_at),
+                ..stored_token
+            }
+        };
+
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), token.role_id).await?;
         Ok((Caller::from_token(&token, grants), token))
+    }
+
+    /// Preload the grants of a key whose signature verified, as
+    /// `authenticate_token` does for a token.
+    pub async fn authenticate_tsig_key(
+        cx: &Context,
+        tsig_key: &TsigKey,
+    ) -> Result<Caller, ServiceError> {
+        let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), tsig_key.role_id).await?;
+        Ok(Caller::from_tsig_key(tsig_key, grants))
     }
 
     /// Authorize an action on something no zone owns, which only an all-zones grant carries.
@@ -255,7 +347,34 @@ impl Caller {
     ) -> Result<Caller, ServiceError> {
         match &self.scope {
             CallerScope::Global => Ok(self.clone()),
-            CallerScope::Role { token_id, .. } => {
+            CallerScope::Role {
+                credential: Credential::TsigKey(key_id),
+                ..
+            } => {
+                // The key that signed may have been deleted since; locked, a
+                // deletion waits for this transaction.
+                let tsig_key = bindizr_db::tsig_key::get_tx(tx, *key_id, LockLevel::Shared)
+                    .await?
+                    .ok_or_else(|| ServiceError::invalid_token("TSIG key no longer exists"))?;
+                let grants = bindizr_db::role_grant::list_by_role_id_tx(
+                    tx,
+                    tsig_key.role_id,
+                    LockLevel::Shared,
+                )
+                .await?;
+                Ok(Caller {
+                    scope: CallerScope::Role {
+                        id: tsig_key.role_id,
+                        credential: Credential::TsigKey(tsig_key.id),
+                        grants: grants.into(),
+                    },
+                    attribution: self.attribution.clone(),
+                })
+            }
+            CallerScope::Role {
+                credential: Credential::Token(token_id),
+                ..
+            } => {
                 let token = bindizr_db::api_token::get_tx(tx, *token_id, LockLevel::Shared)
                     .await?
                     .filter(|token| {
@@ -273,7 +392,7 @@ impl Caller {
                 Ok(Caller {
                     scope: CallerScope::Role {
                         id: token.role_id,
-                        token_id: token.id,
+                        credential: Credential::Token(token.id),
                         grants: grants.into(),
                     },
                     attribution: self.attribution.clone(),
@@ -282,12 +401,12 @@ impl Caller {
         }
     }
 
-    /// Authorize record writes in `zone`; a zone no grant reaches reads as
-    /// `NotFound`.
-    pub(crate) fn authorize_record_writes(
+    /// Authorize record reads and writes in `zone`; a zone no grant reaches
+    /// reads as `NotFound`.
+    pub(crate) fn authorize_record_access(
         &self,
         zone: &Zone,
-        writes: &[RecordWrite<'_>],
+        writes: &[RecordAccess<'_>],
     ) -> Result<(), ServiceError> {
         let Some(grants) = self.grants() else {
             return Ok(());
@@ -407,11 +526,11 @@ impl Caller {
     }
 }
 
-/// Check whether the supplied grants cover every write's action, name and type.
+/// Check whether the supplied grants cover every action at its name and type.
 fn authorize_with_grants(
     grants: &RoleGrants,
     zone: &Zone,
-    writes: &[RecordWrite<'_>],
+    writes: &[RecordAccess<'_>],
 ) -> Result<(), ServiceError> {
     for write in writes {
         if !grants.covers_record(
@@ -438,52 +557,6 @@ fn authorize_with_grants(
 /// How long a `last_used_at` stamp stays fresh; stamping every request would
 /// put a database write on the hot path for no added precision.
 const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
-
-/// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
-async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, ServiceError> {
-    let token_hash = hash_token(token_str);
-    let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            return Err(ServiceError::invalid_token(
-                "invalid or expired token".to_string(),
-            ));
-        }
-        Err(e) => {
-            log::error!("Failed to validate token: {}", e);
-            return Err(ServiceError::internal_with_source(
-                "failed to validate token",
-                e,
-            ));
-        }
-    };
-
-    if let Some(expires_at) = &stored_token.expires_at
-        && Utc::now() >= *expires_at
-    {
-        return Err(ServiceError::invalid_token("token has expired"));
-    }
-
-    let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
-        Utc::now() - last_used < Duration::seconds(LAST_USED_STAMP_INTERVAL_SECS)
-    });
-    if stamp_is_fresh {
-        return Ok(stored_token);
-    }
-
-    let last_used_at = Utc::now();
-    bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to update last_used_at: {}", e);
-            ServiceError::internal_with_source("failed to update last_used_at", e)
-        })?;
-
-    Ok(ApiToken {
-        last_used_at: Some(last_used_at),
-        ..stored_token
-    })
-}
 
 #[cfg(test)]
 mod tests;

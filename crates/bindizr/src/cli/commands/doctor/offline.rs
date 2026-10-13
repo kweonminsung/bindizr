@@ -65,6 +65,18 @@ pub(crate) async fn check_listen_ports(config: &Config, report: &mut Report) {
         "BIND on this host? change dns.listen_port",
     );
 
+    if config.dns.tls.tls_files().is_some() {
+        let dns_tls = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
+        let bound = TcpListener::bind(dns_tls).await.map(|_| ());
+        check_port(
+            report,
+            "DNS TLS",
+            dns_tls,
+            bound,
+            "change dns.tls.listen_port",
+        );
+    }
+
     let api = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
     let bound = TcpListener::bind(api).await.map(|_| ());
     check_port(report, "API", api, bound, "change api.listen_port");

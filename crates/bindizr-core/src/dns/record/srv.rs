@@ -58,6 +58,11 @@ impl<'a> SrvRecordValue<'a> {
         validate_domain_record_value("SRV record target", self.target)
     }
 
+    /// The host this record names, as stored; `.` when the service is absent.
+    pub fn target(&self) -> &'a str {
+        self.target
+    }
+
     /// Render the SRV value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(

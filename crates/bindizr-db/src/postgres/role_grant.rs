@@ -1,4 +1,4 @@
-use bindizr_core::model::{role::RoleId, role_grant::RoleGrantId, zone::ZoneId};
+use bindizr_core::model::{role::RoleId, role_grant::RoleGrantId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
@@ -89,26 +89,6 @@ pub(crate) async fn list_by_role_id_tx(
         lock_level.clause(),
     )))
     .bind(role_id)
-    .fetch_all(&mut **tx)
-    .await?;
-
-    Ok(grants)
-}
-
-/// List a role's grants that reach a zone, its all-zones grants included, in
-/// the current transaction.
-pub(crate) async fn list_by_role_id_covering_zone_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    role_id: RoleId,
-    zone_id: ZoneId,
-    lock_level: LockLevel,
-) -> Result<Vec<RoleGrant>, DatabaseError> {
-    let grants = sqlx::query_as::<_, RoleGrant>(AssertSqlSafe(format!(
-        "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE role_id = $1 AND (zone_id IS NULL OR zone_id = $2) ORDER BY id{}",
-        lock_level.clause(),
-    )))
-    .bind(role_id)
-    .bind(zone_id)
     .fetch_all(&mut **tx)
     .await?;
 

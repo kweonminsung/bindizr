@@ -1,6 +1,5 @@
-//! The operator-driven half of key rollover: pre-publish a replacement, then
-//! promote it once the parent DS is confirmed. ZSK promotion, which needs no
-//! parent interaction, is the scheduler's.
+//! Operator-driven key pre-publication and promotion after parent DS confirmation.
+//! The scheduler promotes ZSKs without parent interaction.
 
 use bindizr_core::{
     dns::{
@@ -12,7 +11,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use super::status::build_status_tx;
+use super::status::load_status_tx;
 use crate::{
     Context, Transaction,
     authorization::Caller,
@@ -25,7 +24,8 @@ use crate::{
     },
     transaction,
     types::{
-        DnssecDelegationKeyInfo, DnssecStatusResponse, DsCheck, Holddown, RolloverDnssecRequest,
+        DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
+        StartDnssecRolloverRequest,
     },
 };
 
@@ -35,7 +35,7 @@ pub async fn start_rollover(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    request: &RolloverDnssecRequest,
+    request: &StartDnssecRolloverRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let role = request
         .role
@@ -94,7 +94,6 @@ pub async fn start_rollover(
 
         let new_serial = super::resign_zone_tx(
             &mut tx,
-            cx,
             &signed,
             SigningPass::Refresh,
             caller.change_attribution(),
@@ -102,22 +101,29 @@ pub async fn start_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
             &signed.keys,
             new_serial,
         )
-        .await
+        .await?;
+        Ok((response, new_serial != signed.zone.serial))
     }
     .await;
-    let response = transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+    let (response, changed) =
+        transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+    if changed {
+        cx.metrics().track_serial_bumps(1);
+    }
 
     log::info!("event=dnssec_rollover_start zone={}", response.zone_name);
 
     // Announce the pre-published key after the signed view commits.
-    crate::notify::notify_after_update(cx, zone_name).await;
+    if changed {
+        crate::notify::notify_after_update(cx, zone_name).await;
+    }
     Ok(response)
 }
 
@@ -173,7 +179,7 @@ pub async fn advance_rollover(
         if ds_check == DsCheck::Probe {
             let delegation = super::probe_delegation(cx, &signed).await?;
             parent_ds_ttl = delegation.ds_ttl;
-            let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
+            let unconfirmed: Vec<&DnssecDelegationKeyResponse> = delegation
                 .keys
                 .iter()
                 .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
@@ -203,7 +209,6 @@ pub async fn advance_rollover(
 
         let new_serial = super::resign_zone_tx(
             &mut tx,
-            cx,
             &signed,
             SigningPass::Refresh,
             caller.change_attribution(),
@@ -211,17 +216,22 @@ pub async fn advance_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        build_status_tx(
+        let response = load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
             &signed.keys,
             new_serial,
         )
-        .await
+        .await?;
+        Ok((response, new_serial != signed.zone.serial))
     }
     .await;
-    let response = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+    let (response, changed) =
+        transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+    if changed {
+        cx.metrics().track_serial_bumps(1);
+    }
 
     if ds_check == DsCheck::Skip {
         log::warn!(
@@ -236,12 +246,14 @@ pub async fn advance_rollover(
         );
     }
     log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
-    crate::notify::notify_after_update(cx, zone_name).await;
+    if changed {
+        crate::notify::notify_after_update(cx, zone_name).await;
+    }
     Ok(response)
 }
 
-/// Publish a replacement for `template` with `algorithm`. Promotion waits
-/// for the DNSKEY TTL; algorithm rollovers may require signing before then.
+/// Publish a replacement for `template` with `algorithm`; promotion waits
+/// Ipub, the DNSKEY TTL plus propagation (RFC 7583, Section 3.2.1).
 pub(crate) async fn publish_replacement_key_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -249,7 +261,11 @@ pub(crate) async fn publish_replacement_key_tx(
     algorithm: DnssecAlgorithm,
 ) -> Result<DnssecKey, ServiceError> {
     let now = Utc::now();
-    let publish_wait = Duration::seconds(i64::from(zone.default_ttl.as_secs()));
+    // The SOA refresh is the propagation delay: how long a secondary that
+    // missed the NOTIFY takes to catch up.
+    let publish_wait = Duration::seconds(
+        i64::from(zone.default_ttl.as_secs()) + i64::from(zone.refresh.as_secs()),
+    );
     let new_key = DnssecKey::generate(
         zone,
         algorithm,
@@ -282,7 +298,7 @@ pub(crate) async fn promote_published_keys_tx(
     let retire_wait = keys
         .iter()
         .filter(|key| key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role))
-        .map(|key| key.retirement_interval_secs(parent_ds_ttl))
+        .map(|key| key.retirement_interval_secs(parent_ds_ttl, zone.refresh.as_secs()))
         .max()
         .unwrap_or(0);
 
@@ -311,11 +327,6 @@ pub(crate) async fn promote_published_keys_tx(
         updated.push(key);
     }
 
-    log::info!(
-        "Promoted {} pre-published DNSSEC key(s) for zone {}",
-        promoted.len(),
-        zone.name
-    );
     Ok(updated)
 }
 

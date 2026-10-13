@@ -43,7 +43,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetDnssecPolicyResponse'
+                $ref: '#/components/schemas/PaginatedResponse_DnssecPolicyResponse'
         '401':
           description: Unauthorized
           content:
@@ -80,7 +80,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DnssecPolicyResponse'
+                $ref: '#/components/schemas/SingleDnssecPolicyResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -136,7 +136,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DnssecPolicyResponse'
+                $ref: '#/components/schemas/SingleDnssecPolicyResponse'
         '401':
           description: Unauthorized
           content:
@@ -186,7 +186,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DnssecPolicyResponse'
+                $ref: '#/components/schemas/SingleDnssecPolicyResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -290,7 +290,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExternalDnsAdjustRequest'
+              $ref: '#/components/schemas/AdjustExternalDnsRecordsRequest'
         required: true
       responses:
         '200':
@@ -298,7 +298,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExternalDnsAdjustResponse'
+                $ref: '#/components/schemas/AdjustExternalDnsRecordsResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -334,7 +334,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExternalDnsChangesRequest'
+              $ref: '#/components/schemas/ApplyExternalDnsChangesRequest'
         required: true
       responses:
         '200':
@@ -342,7 +342,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExternalDnsChangesResponse'
+                $ref: '#/components/schemas/ApplyExternalDnsChangesResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -398,7 +398,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExternalDnsDomainsResponse'
+                $ref: '#/components/schemas/ListExternalDnsDomainsResponse'
         '401':
           description: Unauthorized
           content:
@@ -424,7 +424,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExternalDnsRecordsResponse'
+                $ref: '#/components/schemas/ListExternalDnsRecordsResponse'
         '401':
           description: Unauthorized
           content:
@@ -617,12 +617,9 @@ paths:
       - name: signed
         in: query
         description: |-
-          Append the zone's derived DNSSEC records (RRSIG, DNSKEY,
-          NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the
-          same pagination. Derived rows carry no id, and `type` also accepts a
-          derived type. A search narrows them by name only, a priority filter
-          leaves them out, and a value filter is refused rather than answered
-          without them.
+          Include derived DNSSEC records after user records in the same pagination.
+          Derived rows have no id; `type` accepts derived types and search matches names only.
+          Priority filters exclude derived rows; value filters are rejected.
         required: false
         schema:
           type: boolean
@@ -651,7 +648,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetRecordResponse'
+                $ref: '#/components/schemas/PaginatedResponse_RecordResponse'
         '400':
           description: Bad request, invalid pagination
           content:
@@ -687,13 +684,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordWriteResponse'
+                $ref: '#/components/schemas/WriteRecordResponse'
         '201':
           description: DNS record created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordWriteResponse'
+                $ref: '#/components/schemas/WriteRecordResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -741,7 +738,7 @@ paths:
       - Record
       summary: Delete records by name
       description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
-      operationId: delete_records_matching
+      operationId: delete_matching_records
       parameters:
       - name: zone_name
         in: query
@@ -762,10 +759,7 @@ paths:
           type: string
       - name: value
         in: query
-        description: |-
-          Narrows to one record, named the way a create names it: one string,
-          or the segments of a TXT record. Compared canonically, so a value
-          spelled another way still matches. Requires `type`.
+        description: 'Canonical value match: one string or TXT segments, as in a create request. Requires `type`.'
         required: false
         schema:
           $ref: '#/components/schemas/RecordValue'
@@ -827,7 +821,7 @@ paths:
       - Record
       summary: Bulk insert DNS records into a zone
       description: Insert many records into the named zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
-      operationId: create_records_bulk
+      operationId: create_bulk_records
       requestBody:
         content:
           application/json:
@@ -840,13 +834,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkRecordsResponse'
+                $ref: '#/components/schemas/CreateBulkRecordsResponse'
         '201':
           description: DNS records created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkRecordsResponse'
+                $ref: '#/components/schemas/CreateBulkRecordsResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -909,7 +903,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordResponse'
+                $ref: '#/components/schemas/SingleRecordResponse'
         '401':
           description: Unauthorized
           content:
@@ -954,7 +948,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordWriteResponse'
+                $ref: '#/components/schemas/WriteRecordResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1086,7 +1080,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetRoleResponse'
+                $ref: '#/components/schemas/PaginatedResponse_RoleResponse'
         '401':
           description: Unauthorized
           content:
@@ -1123,7 +1117,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleResponse'
+                $ref: '#/components/schemas/SingleRoleResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1179,7 +1173,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleResponse'
+                $ref: '#/components/schemas/SingleRoleResponse'
         '401':
           description: Unauthorized
           content:
@@ -1299,7 +1293,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetRoleGrantResponse'
+                $ref: '#/components/schemas/PaginatedResponse_RoleGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -1349,7 +1343,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleGrantResponse'
+                $ref: '#/components/schemas/SingleRoleGrantResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1477,7 +1471,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetSecondaryResponse'
+                $ref: '#/components/schemas/PaginatedResponse_SecondaryResponse'
         '401':
           description: Unauthorized
           content:
@@ -1514,7 +1508,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SecondaryResponse'
+                $ref: '#/components/schemas/SingleSecondaryResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1570,7 +1564,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SecondaryResponse'
+                $ref: '#/components/schemas/SingleSecondaryResponse'
         '401':
           description: Unauthorized
           content:
@@ -1620,7 +1614,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SecondaryResponse'
+                $ref: '#/components/schemas/SingleSecondaryResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1727,7 +1721,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SecondaryCheckResponse'
+                $ref: '#/components/schemas/CheckSecondaryResponse'
         '401':
           description: Unauthorized
           content:
@@ -1848,7 +1842,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTokenResponse'
+                $ref: '#/components/schemas/PaginatedResponse_TokenResponse'
         '401':
           description: Unauthorized
           content:
@@ -1885,7 +1879,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreatedTokenResponse'
+                $ref: '#/components/schemas/CreateTokenResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1935,7 +1929,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenResponse'
+                $ref: '#/components/schemas/SingleTokenResponse'
         '401':
           description: Unauthorized, or no token presented
           content:
@@ -1982,7 +1976,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetRoleGrantResponse'
+                $ref: '#/components/schemas/PaginatedResponse_RoleGrantResponse'
         '401':
           description: Unauthorized, or no token presented
           content:
@@ -2076,7 +2070,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTsigKeyResponse'
+                $ref: '#/components/schemas/PaginatedResponse_TsigKeyResponse'
         '401':
           description: Unauthorized
           content:
@@ -2113,7 +2107,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigKeyResponse'
+                $ref: '#/components/schemas/SingleTsigKeyResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2170,7 +2164,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigKeyResponse'
+                $ref: '#/components/schemas/SingleTsigKeyResponse'
         '401':
           description: Unauthorized
           content:
@@ -2391,7 +2385,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetZoneResponse'
+                $ref: '#/components/schemas/PaginatedResponse_ZoneResponse'
         '400':
           description: Bad request, invalid pagination
           content:
@@ -2427,13 +2421,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneWriteResponse'
+                $ref: '#/components/schemas/WriteZoneResponse'
         '201':
           description: DNS zone created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneWriteResponse'
+                $ref: '#/components/schemas/WriteZoneResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2490,7 +2484,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneResponse'
+                $ref: '#/components/schemas/SingleZoneResponse'
         '401':
           description: Unauthorized
           content:
@@ -2534,7 +2528,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneWriteResponse'
+                $ref: '#/components/schemas/WriteZoneResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2933,7 +2927,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RolloverDnssecRequest'
+              $ref: '#/components/schemas/StartDnssecRolloverRequest'
         required: true
       responses:
         '200':
@@ -2990,7 +2984,7 @@ paths:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
       description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
-      operationId: ds_seen_dnssec_rollover
+      operationId: advance_dnssec_rollover
       parameters:
       - name: name
         in: path
@@ -3524,7 +3518,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VersionDiffResponse'
+                $ref: '#/components/schemas/DiffZoneVersionsResponse'
         '401':
           description: Unauthorized
           content:
@@ -3571,7 +3565,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VersionDetailResponse'
+                $ref: '#/components/schemas/GetZoneVersionResponse'
         '401':
           description: Unauthorized
           content:
@@ -3670,7 +3664,7 @@ components:
 
         - `zone:read` — read a zone's status and version history
         - `zone:create` — create zones, and with `zone:update` rename one; all zones only
-        - `zone:update` — change a zone's settings and send NOTIFY; with unnarrowed
+        - `zone:update` — change zone settings (including nsupdate SOA) and send NOTIFY; with unnarrowed
           `record:read`, `record:create` and `record:delete`, roll back a version
         - `zone:delete` — delete zones
         - `zone:transfer` — answer a TSIG-signed AXFR/IXFR; TSIG keys only
@@ -3703,6 +3697,71 @@ components:
       - secondary:read
       - secondary:manage
       - access:manage
+    AdjustExternalDnsRecordsRequest:
+      type: object
+      description: Request body for canonicalizing desired records without applying them.
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRecord'
+      additionalProperties: false
+    AdjustExternalDnsRecordsResponse:
+      type: object
+      description: The request's records in the canonical form applying them would store.
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRecord'
+    ApplyExternalDnsChangesRequest:
+      type: object
+      description: Request body for applying an ExternalDNS change set atomically.
+      properties:
+        creates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRecord'
+        deletes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRecord'
+        updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRecordUpdate'
+      additionalProperties: false
+    ApplyExternalDnsChangesResponse:
+      type: object
+      description: Summary of an applied ExternalDNS change set.
+      required:
+      - changed_zones
+      - added
+      - deleted
+      properties:
+        added:
+          type: integer
+          format: int64
+          description: Counted one per value written, not per name and type.
+          example: 2
+          minimum: 0
+        changed_zones:
+          type: array
+          items:
+            type: string
+          description: Zones whose serial advanced; empty when the request was a no-op.
+          example:
+          - example.com
+        deleted:
+          type: integer
+          format: int64
+          description: Counted one per value removed, not per name and type.
+          example: 1
+          minimum: 0
     BulkRecordItem:
       type: object
       description: |-
@@ -3738,37 +3797,6 @@ components:
         value:
           $ref: '#/components/schemas/RecordValue'
       additionalProperties: false
-    BulkRecordsResponse:
-      type: object
-      description: |-
-        Response for a bulk insert: the count added and the created records. On a
-        dry run `records` holds the validated would-be records (with placeholder
-        IDs) and nothing is added.
-      required:
-      - applied
-      - dry_run
-      - added
-      - records
-      - diff
-      properties:
-        added:
-          type: integer
-          format: int64
-          example: 3
-          minimum: 0
-        applied:
-          type: boolean
-          example: true
-        diff:
-          $ref: '#/components/schemas/RecordDiff'
-          description: Dry-run diff; adding a value at an existing name and type is a changed group.
-        dry_run:
-          type: boolean
-          example: false
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetRecordResponse'
     ChangeActor:
       oneOf:
       - type: object
@@ -3802,6 +3830,74 @@ components:
       - socket
       - nsupdate
       - system
+    CheckNotifyResponse:
+      type: object
+      description: |-
+        One NOTIFY sent to a resolved address during a check; `error` is null
+        when the server accepted it.
+      required:
+      - address
+      properties:
+        address:
+          type: string
+          example: 10.0.0.14:53
+        error:
+          type:
+          - string
+          - 'null'
+    CheckSecondaryResponse:
+      type: object
+      description: 'Secondary check results: resolved addresses, catalog serial comparison, and NOTIFY outcome.'
+      required:
+      - secondary
+      - addresses
+      - catalog_zone_name
+      - catalog
+      - notifies
+      - transfers
+      properties:
+        addresses:
+          type: array
+          items:
+            type: string
+          description: Socket addresses the registered `host[:port]` resolves to now.
+          example:
+          - 10.0.0.14:53
+        catalog:
+          $ref: '#/components/schemas/SecondaryStatusResponse'
+          description: The secondary's catalog probe, classified against `catalog_serial`.
+        catalog_serial:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            The serial Bindizr's own listener serves the catalog zone at; absent
+            with `listener_error`, and `catalog` is then `reachable` at best.
+          example: 42
+          minimum: 0
+        catalog_zone_name:
+          type: string
+          description: The catalog zone the secondary was asked for.
+          example: catalog.bindizr
+        listener_error:
+          type:
+          - string
+          - 'null'
+        notifies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckNotifyResponse'
+          description: The NOTIFY sent for the catalog zone, one per resolved address.
+        resolve_error:
+          type:
+          - string
+          - 'null'
+        secondary:
+          $ref: '#/components/schemas/SecondaryResponse'
+        transfers:
+          $ref: '#/components/schemas/TransferSummaryResponse'
+          description: How Bindizr served the secondary's transfers.
     CreateBulkRecordsRequest:
       type: object
       description: Request body for bulk-inserting records into a zone.
@@ -3820,6 +3916,34 @@ components:
           type: string
           example: example.com
       additionalProperties: false
+    CreateBulkRecordsResponse:
+      type: object
+      description: Bulk-create result; previews contain validated records with placeholder IDs and write nothing.
+      required:
+      - applied
+      - dry_run
+      - added
+      - records
+      - diff
+      properties:
+        added:
+          type: integer
+          format: int64
+          example: 3
+          minimum: 0
+        applied:
+          type: boolean
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiffResponse'
+          description: Dry-run diff; adding a value at an existing name and type is a changed group.
+        dry_run:
+          type: boolean
+          example: false
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordResponse'
     CreateDnssecPolicyRequest:
       type: object
       description: |-
@@ -4033,6 +4157,18 @@ components:
           description: The role whose grants decide what the token may do.
           example: external-dns-prod
       additionalProperties: false
+    CreateTokenResponse:
+      type: object
+      description: 'The create response: the token and its secret, the one time it is shown.'
+      required:
+      - token
+      - secret
+      properties:
+        secret:
+          type: string
+          example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
+        token:
+          $ref: '#/components/schemas/TokenResponse'
     CreateTsigKeyRequest:
       type: object
       description: Request body for creating a TSIG key. Omitting `secret` generates one.
@@ -4138,24 +4274,9 @@ components:
           example: 42
           minimum: 0
       additionalProperties: false
-    CreatedTokenResponse:
-      type: object
-      description: 'The create response: the token and its secret, the one time it is shown.'
-      required:
-      - token
-      - secret
-      properties:
-        secret:
-          type: string
-          example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
-        token:
-          $ref: '#/components/schemas/GetTokenResponse'
     DeleteRecordsResponse:
       type: object
-      description: |-
-        What a conditional delete removed, or would have. Matching nothing is not
-        an error: the zone already reads the way the request asked for, so the
-        serial does not move and no NOTIFY goes out.
+      description: Deleted records or their preview; no matches leave the serial unchanged and send no NOTIFY.
       required:
       - applied
       - dry_run
@@ -4175,7 +4296,7 @@ components:
           example: 3
           minimum: 0
         diff:
-          $ref: '#/components/schemas/RecordDiff'
+          $ref: '#/components/schemas/RecordDiffResponse'
           description: The removal as a record diff, for previewing the change.
         dry_run:
           type: boolean
@@ -4183,7 +4304,7 @@ components:
         records:
           type: array
           items:
-            $ref: '#/components/schemas/GetRecordResponse'
+            $ref: '#/components/schemas/RecordResponse'
     DeleteZoneResponse:
       type: object
       description: |-
@@ -4216,7 +4337,27 @@ components:
           example: 12
           minimum: 0
         zone:
-          $ref: '#/components/schemas/GetZoneResponse'
+          $ref: '#/components/schemas/ZoneResponse'
+    DiffZoneVersionsResponse:
+      type: object
+      description: The difference between two of a zone's serials.
+      required:
+      - from_serial
+      - to_serial
+      - diff
+      properties:
+        diff:
+          $ref: '#/components/schemas/RecordDiffResponse'
+        from_serial:
+          type: integer
+          format: int32
+          example: 41
+          minimum: 0
+        to_serial:
+          type: integer
+          format: int32
+          example: 42
+          minimum: 0
     DnssecAlgorithm:
       type: string
       description: Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
@@ -4227,49 +4368,7 @@ components:
       - ecdsap384sha384
       - ed25519
       - ed448
-    DnssecDelegationInfo:
-      type: object
-      description: What the parent zone's servers answered when asked for the zone's DS.
-      required:
-      - parent_ns_addrs
-      - ds_state
-      - ds_key_tags
-      - keys
-      - checked_at
-      properties:
-        checked_at:
-          type: string
-          format: date-time
-        ds_key_tags:
-          type: array
-          items:
-            type: integer
-            format: int32
-            minimum: 0
-          description: Key tags of the DS records the parent serves.
-        ds_state:
-          $ref: '#/components/schemas/DsState'
-        ds_ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: |-
-            TTL of the parent's DS records: how long caches may keep serving
-            them once removed.
-          example: 86400
-          minimum: 0
-        keys:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecDelegationKeyInfo'
-          description: The zone's SEP keys, each with whether the parent serves its DS.
-        parent_ns_addrs:
-          type: array
-          items:
-            type: string
-          description: The nameservers asked, from the zone's setting.
-    DnssecDelegationKeyInfo:
+    DnssecDelegationKeyResponse:
       type: object
       description: One of the zone's SEP keys against the parent's DS records.
       required:
@@ -4312,13 +4411,55 @@ components:
           $ref: '#/components/schemas/DnssecKeyRole'
         state:
           $ref: '#/components/schemas/DnssecKeyState'
+    DnssecDelegationResponse:
+      type: object
+      description: What the parent zone's servers answered when asked for the zone's DS.
+      required:
+      - parent_ns_addrs
+      - ds_state
+      - ds_key_tags
+      - keys
+      - checked_at
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        ds_key_tags:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Key tags of the DS records the parent serves.
+        ds_state:
+          $ref: '#/components/schemas/DsState'
+        ds_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            TTL of the parent's DS records: how long caches may keep serving
+            them once removed.
+          example: 86400
+          minimum: 0
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/DnssecDelegationKeyResponse'
+          description: The zone's SEP keys, each with whether the parent serves its DS.
+        parent_ns_addrs:
+          type: array
+          items:
+            type: string
+          description: The nameservers asked, from the zone's setting.
     DnssecDenial:
       type: string
       description: How a signed zone proves nonexistence (denial of existence).
       enum:
       - nsec
       - nsec3
-    DnssecDsInfo:
+    DnssecDsResponse:
       type: object
       description: A key's DS form for parent-zone registration.
       required:
@@ -4351,7 +4492,7 @@ components:
           type: string
           description: 'Full presentation form: `<zone>. IN DS <tag> <alg> <digest_type> <digest>`.'
           example: example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
-    DnssecKeyInfo:
+    DnssecKeyResponse:
       type: object
       description: Public signing-key metadata; private material is excluded from HTTP responses.
       required:
@@ -4421,12 +4562,56 @@ components:
       - retired
     DnssecPolicyResponse:
       type: object
-      description: A DNSSEC policy wrapped in a response envelope.
+      description: API representation of a DNSSEC policy.
       required:
-      - dnssec_policy
+      - id
+      - name
+      - builtin
+      - algorithm
+      - denial
+      - split_keys
+      - signature_validity_days
+      - signature_refresh_days
+      - zsk_lifetime_days
+      - created_at
       properties:
-        dnssec_policy:
-          $ref: '#/components/schemas/GetDnssecPolicyResponse'
+        algorithm:
+          $ref: '#/components/schemas/DnssecAlgorithm'
+        builtin:
+          type: boolean
+          description: Whether this is the built-in `default` policy, which cannot be deleted.
+          example: true
+        created_at:
+          type: string
+          format: date-time
+        denial:
+          $ref: '#/components/schemas/DnssecDenial'
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: default
+        signature_refresh_days:
+          type: integer
+          format: int32
+          example: 5
+          minimum: 0
+        signature_validity_days:
+          type: integer
+          format: int32
+          example: 14
+          minimum: 0
+        split_keys:
+          type: boolean
+          example: false
+        zsk_lifetime_days:
+          type: integer
+          format: int32
+          description: 0 disables scheduled ZSK rollovers.
+          example: 0
+          minimum: 0
     DnssecRecordType:
       type: string
       description: |-
@@ -4454,7 +4639,7 @@ components:
       properties:
         delegation:
           oneOf:
-          - $ref: '#/components/schemas/DnssecDelegationInfo'
+          - $ref: '#/components/schemas/DnssecDelegationResponse'
             description: |-
               The parent's answer about the zone's DS; present only when this
               status comes from a parent check.
@@ -4462,7 +4647,7 @@ components:
         ds_records:
           type: array
           items:
-            $ref: '#/components/schemas/DnssecDsInfo'
+            $ref: '#/components/schemas/DnssecDsResponse'
           description: DS forms of the keys, to be registered in the parent zone.
         earliest_signature_expires_at:
           type:
@@ -4484,7 +4669,7 @@ components:
         keys:
           type: array
           items:
-            $ref: '#/components/schemas/DnssecKeyInfo'
+            $ref: '#/components/schemas/DnssecKeyResponse'
         next_resign_at:
           type:
           - string
@@ -4503,7 +4688,7 @@ components:
           - b.gtld-servers.net
         policy:
           oneOf:
-          - $ref: '#/components/schemas/GetDnssecPolicyResponse'
+          - $ref: '#/components/schemas/DnssecPolicyResponse'
             description: The policy the zone signs under; absent for an unsigned zone.
           - type: 'null'
         serial:
@@ -4615,85 +4800,6 @@ components:
         error:
           type: string
           example: zone with name 'example.com' not found
-    ExternalDnsAdjustRequest:
-      type: object
-      description: Request body for canonicalizing desired records without applying them.
-      required:
-      - records
-      properties:
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExternalDnsRecord'
-      additionalProperties: false
-    ExternalDnsAdjustResponse:
-      type: object
-      description: The request's records in the canonical form applying them would store.
-      required:
-      - records
-      properties:
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExternalDnsRecord'
-    ExternalDnsChangesRequest:
-      type: object
-      description: Request body for applying an ExternalDNS change set atomically.
-      properties:
-        creates:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExternalDnsRecord'
-        deletes:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExternalDnsRecord'
-        updates:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExternalDnsRecordUpdate'
-      additionalProperties: false
-    ExternalDnsChangesResponse:
-      type: object
-      description: Summary of an applied ExternalDNS change set.
-      required:
-      - changed_zones
-      - added
-      - deleted
-      properties:
-        added:
-          type: integer
-          format: int64
-          description: Counted one per value written, not per name and type.
-          example: 2
-          minimum: 0
-        changed_zones:
-          type: array
-          items:
-            type: string
-          description: Zones whose serial advanced; empty when the request was a no-op.
-          example:
-          - example.com
-        deleted:
-          type: integer
-          format: int64
-          description: Counted one per value removed, not per name and type.
-          example: 1
-          minimum: 0
-    ExternalDnsDomainsResponse:
-      type: object
-      description: |-
-        The names the ExternalDNS caller may manage under its grants, each
-        covering itself and everything under it.
-      required:
-      - domains
-      properties:
-        domains:
-          type: array
-          items:
-            type: string
-          example:
-          - example.com
     ExternalDnsRecord:
       type: object
       description: |-
@@ -4736,371 +4842,19 @@ components:
         old:
           $ref: '#/components/schemas/ExternalDnsRecord'
       additionalProperties: false
-    ExternalDnsRecordsResponse:
+    GetZoneVersionResponse:
       type: object
-      description: |-
-        Records of every ExternalDNS-managed zone, one per name and type, in a
-        deterministic order.
+      description: One version plus the records rewound to that serial.
       required:
+      - version
       - records
       properties:
         records:
           type: array
           items:
-            $ref: '#/components/schemas/ExternalDnsRecord'
-    GetDnssecPolicyResponse:
-      type: object
-      description: API representation of a DNSSEC policy.
-      required:
-      - id
-      - name
-      - builtin
-      - algorithm
-      - denial
-      - split_keys
-      - signature_validity_days
-      - signature_refresh_days
-      - zsk_lifetime_days
-      - created_at
-      properties:
-        algorithm:
-          $ref: '#/components/schemas/DnssecAlgorithm'
-        builtin:
-          type: boolean
-          description: Whether this is the built-in `default` policy, which cannot be deleted.
-          example: true
-        created_at:
-          type: string
-          format: date-time
-        denial:
-          $ref: '#/components/schemas/DnssecDenial'
-        id:
-          type: integer
-          format: int32
-          example: 1
-        name:
-          type: string
-          example: default
-        signature_refresh_days:
-          type: integer
-          format: int32
-          example: 5
-          minimum: 0
-        signature_validity_days:
-          type: integer
-          format: int32
-          example: 14
-          minimum: 0
-        split_keys:
-          type: boolean
-          example: false
-        zsk_lifetime_days:
-          type: integer
-          format: int32
-          description: 0 disables scheduled ZSK rollovers.
-          example: 0
-          minimum: 0
-    GetRecordResponse:
-      type: object
-      description: |-
-        API representation of a record. `name` is the owner's absolute name with
-        its trailing dot, as name-valued rdata is rendered; `zone_name` is the
-        zone's bare name, the spelling `/zones/{name}` takes.
-      required:
-      - name
-      - type
-      - value
-      - ttl
-      - zone_id
-      - zone_name
-      - actions
-      properties:
-        actions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Action'
-          description: |-
-            The record actions the caller may take on this record; empty on a
-            derived DNSSEC row.
-        id:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: |-
-            Absent on the derived DNSSEC rows of a signed listing, which are not
-            addressable records.
-          example: 1
-        name:
-          type: string
-          example: www.example.com.
-        priority:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 10
-        ttl:
-          type: integer
-          format: int32
-          example: 3600
-        type:
-          $ref: '#/components/schemas/ServedRecordType'
-        value:
-          $ref: '#/components/schemas/RecordValue'
-        zone_id:
-          type: integer
-          format: int32
-          example: 1
-        zone_name:
-          type: string
-          example: example.com
-    GetRoleGrantResponse:
-      type: object
-      description: API representation of a role grant.
-      required:
-      - id
-      - role_name
-      - actions
-      - record_name_pattern
-      - record_types
-      - created_at
-      properties:
-        actions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Action'
-        created_at:
-          type: string
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        record_name_pattern:
-          type: string
-          example: '*.apps'
-        record_types:
-          type: string
-          example: A,AAAA,CNAME,TXT
-        role_name:
-          type: string
-          example: external-dns-prod
-        zone_name:
-          type:
-          - string
-          - 'null'
-          description: The zone the grant covers; `null` covers all zones.
-          example: example.com
-    GetRoleResponse:
-      type: object
-      description: API representation of a role.
-      required:
-      - id
-      - name
-      - builtin
-      - grant_count
-      - token_count
-      - tsig_key_count
-      - created_at
-      properties:
-        builtin:
-          type: boolean
-          description: Whether this is the built-in `admin` role, which can be neither changed nor deleted.
-          example: false
-        created_at:
-          type: string
-          format: date-time
-        description:
-          type:
-          - string
-          - 'null'
-        grant_count:
-          type: integer
-          format: int64
-          description: The grants the role holds.
-          example: 2
-          minimum: 0
-        id:
-          type: integer
-          format: int32
-          example: 1
-        name:
-          type: string
-          example: external-dns-prod
-        token_count:
-          type: integer
-          format: int64
-          description: The API tokens authenticating into the role.
-          example: 3
-          minimum: 0
-        tsig_key_count:
-          type: integer
-          format: int64
-          description: The TSIG keys authenticating into the role.
-          example: 0
-          minimum: 0
-    GetSecondaryResponse:
-      type: object
-      description: API representation of a secondary.
-      required:
-      - id
-      - name
-      - address
-      - enabled
-      - created_at
-      properties:
-        address:
-          type: string
-          example: ns2.example.net:53
-        created_at:
-          type: string
-          format: date-time
-        enabled:
-          type: boolean
-          example: true
-        id:
-          type: integer
-          format: int32
-          example: 1
-        name:
-          type: string
-          example: ns2
-        notify_key_name:
-          type:
-          - string
-          - 'null'
-          description: The TSIG key NOTIFY to this server is signed with, if any.
-          example: notify-key
-    GetTokenResponse:
-      type: object
-      description: API representation of an API token; never carries the secret.
-      required:
-      - id
-      - name
-      - role_name
-      - created_at
-      properties:
-        created_at:
-          type: string
-          format: date-time
-        description:
-          type:
-          - string
-          - 'null'
-        expires_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        last_used_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-        name:
-          type: string
-          example: external-dns
-        role_name:
-          type: string
-          description: The role the token authenticates into.
-          example: external-dns-prod
-    GetTsigKeyResponse:
-      type: object
-      description: API representation of a TSIG key; never carries the secret.
-      required:
-      - id
-      - name
-      - algorithm
-      - role_name
-      - created_at
-      properties:
-        algorithm:
-          $ref: '#/components/schemas/TsigAlgorithm'
-        created_at:
-          type: string
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        name:
-          type: string
-          example: update-key
-        role_name:
-          type: string
-          description: The role the key authenticates into.
-          example: rfc2136-legacy
-    GetZoneResponse:
-      type: object
-      description: API representation of a zone.
-      required:
-      - name
-      - mname
-      - rname
-      - default_ttl
-      - serial
-      - refresh
-      - retry
-      - expire
-      - minimum_ttl
-      - enabled
-      properties:
-        default_ttl:
-          type: integer
-          format: int32
-          example: 3600
-        description:
-          type:
-          - string
-          - 'null'
-        enabled:
-          type: boolean
-          description: |-
-            Whether the DNS plane serves the zone. A disabled one stays editable but
-            leaves the catalog and answers no transfer, so secondaries drop it.
-          example: true
-        expire:
-          type: integer
-          format: int32
-          example: 604800
-        id:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Absent on a dry run, where nothing was written to carry one.
-          example: 1
-        minimum_ttl:
-          type: integer
-          format: int32
-          example: 3600
-        mname:
-          type: string
-          example: ns1.example.com
-        name:
-          type: string
-          example: example.com
-        refresh:
-          type: integer
-          format: int32
-          example: 7200
-        retry:
-          type: integer
-          format: int32
-          example: 3600
-        rname:
-          type: string
-          example: admin@example.com
-        serial:
-          type: integer
-          format: int32
-          example: 42
-          minimum: 0
+            $ref: '#/components/schemas/VersionRecordResponse'
+        version:
+          $ref: '#/components/schemas/ZoneVersionResponse'
     HealthResponse:
       type: object
       description: Health probe response.
@@ -5122,12 +4876,83 @@ components:
       - append
       - upsert
       - replace
-    ImportSummary:
+    ImportZoneRequest:
       type: object
       description: |-
-        Counts of records parsed, added, deleted, updated, unchanged, and skipped
-        during import. `updated` is a TTL-only reconcile and is never also counted
-        as `unchanged`.
+        Request body for importing records into a zone: BIND zone file text in
+        `content`, or a transfer from `from_server`; exactly one of the two.
+      properties:
+        content:
+          type:
+          - string
+          - 'null'
+          description: Raw BIND zone file text.
+          example: |
+            www IN A 192.0.2.1
+            mail IN A 192.0.2.2
+        create:
+          type: boolean
+          description: |-
+            Create a missing zone from the SOA; otherwise a missing zone is an error.
+            Requires `zone:create` and the mode's record actions in all zones.
+            The initial serial must be 1..=2137483647 for previews and writes alike;
+            applying record changes advances it once.
+        dry_run:
+          type: boolean
+          description: When true, parse and validate without applying any change.
+        from_server:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Transfer source (`host[:port]`, port 53 default) to pull the zone
+            from over AXFR; its SOA seeds a missing zone when `create` is true.
+            SOA and DNSSEC-derived records are not imported as ordinary records.
+          example: 192.0.2.1:53
+        mode:
+          $ref: '#/components/schemas/ImportMode'
+          description: 'Reconciliation mode: `append` (default), `upsert`, or `replace`.'
+          default: append
+        skip_unsupported:
+          type: boolean
+          description: |-
+            Pass over records bindizr has no type for instead of failing the whole
+            file; they are counted as skipped and listed in `skipped_records`.
+      additionalProperties: false
+    ImportZoneResponse:
+      type: object
+      description: Result of a zone import, including a summary and any validation errors.
+      required:
+      - applied
+      - dry_run
+      - summary
+      - diff
+      - errors
+      properties:
+        applied:
+          type: boolean
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiffResponse'
+          description: The reconcile as a record diff, for previewing the change.
+        dry_run:
+          type: boolean
+          example: false
+        errors:
+          type: array
+          items:
+            type: string
+          description: Per-record validation errors. When non-empty nothing is applied.
+        skipped_records:
+          type: array
+          items:
+            type: string
+          description: Records passed over under `skip_unsupported`.
+        summary:
+          $ref: '#/components/schemas/ImportZoneSummaryResponse'
+    ImportZoneSummaryResponse:
+      type: object
+      description: Import record counts; `updated` counts TTL-only changes and excludes `unchanged`.
       required:
       - parsed
       - added
@@ -5166,82 +4991,32 @@ components:
           format: int64
           example: 1
           minimum: 0
-    ImportZoneRequest:
+    ListExternalDnsDomainsResponse:
       type: object
       description: |-
-        Request body for importing records into a zone: BIND zone file text in
-        `content`, or a transfer from `from_server`; exactly one of the two.
-      properties:
-        content:
-          type:
-          - string
-          - 'null'
-          description: Raw BIND zone file text.
-          example: |
-            www IN A 192.0.2.1
-            mail IN A 192.0.2.2
-        create:
-          type: boolean
-          description: |-
-            Create the zone from the file's SOA when it does not exist yet, which
-            needs `zone:create` and the mode's record actions in all zones. Its
-            initial serial must be 1..=2137483647; an unsupported serial rejects
-            both a dry run and an apply without creating the zone. Applying record
-            changes advances the serial once. Without this a missing zone is an
-            error, so a typo creates nothing.
-        dry_run:
-          type: boolean
-          description: When true, parse and validate without applying any change.
-        from_server:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Transfer source (`host[:port]`, port 53 default) to pull the zone
-            from over AXFR; its SOA seeds a missing zone when `create` is true.
-            SOA and DNSSEC-derived records are not imported as ordinary records.
-          example: 192.0.2.1:53
-        mode:
-          $ref: '#/components/schemas/ImportMode'
-          description: 'Reconciliation mode: `append` (default), `upsert`, or `replace`.'
-          default: append
-        skip_unsupported:
-          type: boolean
-          description: |-
-            Pass over records bindizr has no type for instead of failing the whole
-            file; they are counted as skipped and listed in `skipped_records`.
-      additionalProperties: false
-    ImportZoneResponse:
-      type: object
-      description: Result of a zone import, including a summary and any validation errors.
+        The names the ExternalDNS caller may manage under its grants, each
+        covering itself and everything under it.
       required:
-      - applied
-      - dry_run
-      - summary
-      - diff
-      - errors
+      - domains
       properties:
-        applied:
-          type: boolean
-          example: true
-        diff:
-          $ref: '#/components/schemas/RecordDiff'
-          description: The reconcile as a record diff, for previewing the change.
-        dry_run:
-          type: boolean
-          example: false
-        errors:
+        domains:
           type: array
           items:
             type: string
-          description: Per-record validation errors. When non-empty nothing is applied.
-        skipped_records:
+          example:
+          - example.com
+    ListExternalDnsRecordsResponse:
+      type: object
+      description: |-
+        Records of every ExternalDNS-managed zone, one per name and type, in a
+        deterministic order.
+      required:
+      - records
+      properties:
+        records:
           type: array
           items:
-            type: string
-          description: Records passed over under `skip_unsupported`.
-        summary:
-          $ref: '#/components/schemas/ImportSummary'
+            $ref: '#/components/schemas/ExternalDnsRecord'
     MessageResponse:
       type: object
       description: Generic success message response.
@@ -5251,22 +5026,7 @@ components:
         message:
           type: string
           example: Deleted successfully
-    NotifyCheckResponse:
-      type: object
-      description: |-
-        One NOTIFY sent to a resolved address during a check; `error` is null
-        when the server accepted it.
-      required:
-      - address
-      properties:
-        address:
-          type: string
-          example: 10.0.0.14:53
-        error:
-          type:
-          - string
-          - 'null'
-    PaginatedResponse_GetDnssecPolicyResponse:
+    PaginatedResponse_DnssecPolicyResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5328,8 +5088,8 @@ components:
                 example: 0
                 minimum: 0
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetRecordResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_RecordResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5340,10 +5100,7 @@ components:
           type: array
           items:
             type: object
-            description: |-
-              API representation of a record. `name` is the owner's absolute name with
-              its trailing dot, as name-valued rdata is rendered; `zone_name` is the
-              zone's bare name, the spelling `/zones/{name}` takes.
+            description: Record data with absolute, trailing-dot owner/RDATA names and a bare `zone_name`.
             required:
             - name
             - type
@@ -5394,8 +5151,8 @@ components:
                 type: string
                 example: example.com
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetRoleGrantResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_RoleGrantResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5442,8 +5199,8 @@ components:
                 description: The zone the grant covers; `null` covers all zones.
                 example: example.com
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetRoleResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_RoleResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5501,8 +5258,8 @@ components:
                 example: 0
                 minimum: 0
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetSecondaryResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_SecondaryResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5544,8 +5301,8 @@ components:
                 description: The TSIG key NOTIFY to this server is signed with, if any.
                 example: notify-key
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetTokenResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_TokenResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5592,8 +5349,8 @@ components:
                 description: The role the token authenticates into.
                 example: external-dns-prod
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetTsigKeyResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_TsigKeyResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5629,8 +5386,8 @@ components:
                 description: The role the key authenticates into.
                 example: rfc2136-legacy
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetZoneResponse:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginatedResponse_ZoneResponse:
       type: object
       description: A page of items together with its pagination metadata.
       required:
@@ -5706,7 +5463,7 @@ components:
                 example: 42
                 minimum: 0
         pagination:
-          $ref: '#/components/schemas/Pagination'
+          $ref: '#/components/schemas/PaginationResponse'
     PaginatedResponse_ZoneVersionResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -5778,8 +5535,8 @@ components:
                 example: 7
                 minimum: 0
         pagination:
-          $ref: '#/components/schemas/Pagination'
-    Pagination:
+          $ref: '#/components/schemas/PaginationResponse'
+    PaginationResponse:
       type: object
       description: Pagination window and total count for a list response.
       required:
@@ -5842,22 +5599,7 @@ components:
       - added
       - removed
       - changed
-    RecordDiff:
-      type: object
-      description: |-
-        Record differences grouped by name and type. Version comparisons always
-        populate this; mutation responses populate it only for dry-run previews.
-      required:
-      - entries
-      - summary
-      properties:
-        entries:
-          type: array
-          items:
-            $ref: '#/components/schemas/RecordDiffEntry'
-        summary:
-          $ref: '#/components/schemas/RecordDiffSummary'
-    RecordDiffEntry:
+    RecordDiffEntryResponse:
       type: object
       description: |-
         The records of one name and type that differ, with those present on
@@ -5874,17 +5616,32 @@ components:
         from:
           type: array
           items:
-            $ref: '#/components/schemas/RecordDiffValue'
+            $ref: '#/components/schemas/RecordDiffValueResponse'
         name:
           type: string
           example: www.example.com.
         to:
           type: array
           items:
-            $ref: '#/components/schemas/RecordDiffValue'
+            $ref: '#/components/schemas/RecordDiffValueResponse'
         type:
           $ref: '#/components/schemas/RecordType'
-    RecordDiffSummary:
+    RecordDiffResponse:
+      type: object
+      description: |-
+        Record differences grouped by name and type. Version comparisons always
+        populate this; mutation responses populate it only for dry-run previews.
+      required:
+      - entries
+      - summary
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffEntryResponse'
+        summary:
+          $ref: '#/components/schemas/RecordDiffSummaryResponse'
+    RecordDiffSummaryResponse:
       type: object
       description: How many name-and-type groups of records were added, removed, and changed.
       required:
@@ -5907,7 +5664,7 @@ components:
           format: int64
           example: 1
           minimum: 0
-    RecordDiffValue:
+    RecordDiffValueResponse:
       type: object
       description: |-
         One record on one side of a diff. Rendering (zone-file rdata, priority
@@ -5930,12 +5687,56 @@ components:
           $ref: '#/components/schemas/RecordValue'
     RecordResponse:
       type: object
-      description: A single record wrapped in a response envelope.
+      description: Record data with absolute, trailing-dot owner/RDATA names and a bare `zone_name`.
       required:
-      - record
+      - name
+      - type
+      - value
+      - ttl
+      - zone_id
+      - zone_name
+      - actions
       properties:
-        record:
-          $ref: '#/components/schemas/GetRecordResponse'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+          description: |-
+            The record actions the caller may take on this record; empty on a
+            derived DNSSEC row.
+        id:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            Absent on the derived DNSSEC rows of a signed listing, which are not
+            addressable records.
+          example: 1
+        name:
+          type: string
+          example: www.example.com.
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 10
+        ttl:
+          type: integer
+          format: int32
+          example: 3600
+        type:
+          $ref: '#/components/schemas/ServedRecordType'
+        value:
+          $ref: '#/components/schemas/RecordValue'
+        zone_id:
+          type: integer
+          format: int32
+          example: 1
+        zone_name:
+          type: string
+          example: example.com
     RecordType:
       type: string
       description: The record types bindizr stores.
@@ -5967,46 +5768,122 @@ components:
       description: |-
         A record value as the API spells it, in requests and responses alike:
         a single string or TXT segments.
-    RecordWriteResponse:
+    RoleGrantResponse:
+      type: object
+      description: API representation of a role grant.
+      required:
+      - id
+      - role_name
+      - actions
+      - record_name_pattern
+      - record_types
+      - created_at
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        record_name_pattern:
+          type: string
+          example: '*.apps'
+        record_types:
+          type: string
+          example: A,AAAA,CNAME,TXT
+        role_name:
+          type: string
+          example: external-dns-prod
+        zone_name:
+          type:
+          - string
+          - 'null'
+          description: The zone the grant covers; `null` covers all zones.
+          example: example.com
+    RoleResponse:
+      type: object
+      description: API representation of a role.
+      required:
+      - id
+      - name
+      - builtin
+      - grant_count
+      - token_count
+      - tsig_key_count
+      - created_at
+      properties:
+        builtin:
+          type: boolean
+          description: Whether this is the built-in `admin` role, which can be neither changed nor deleted.
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type:
+          - string
+          - 'null'
+        grant_count:
+          type: integer
+          format: int64
+          description: The grants the role holds.
+          example: 2
+          minimum: 0
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: external-dns-prod
+        token_count:
+          type: integer
+          format: int64
+          description: The API tokens authenticating into the role.
+          example: 3
+          minimum: 0
+        tsig_key_count:
+          type: integer
+          format: int64
+          description: The TSIG keys authenticating into the role.
+          example: 0
+          minimum: 0
+    RollbackZoneResponse:
       type: object
       description: |-
-        What a record write left behind, in the shape every previewable operation
-        answers with: whether it wrote, and the change as a record diff.
+        Result of a zone rollback. The zone's state returns to `target_serial`
+        while its serial advances to `new_serial` (serials never go backward).
       required:
       - applied
       - dry_run
-      - record
-      - diff
+      - target_serial
+      - new_serial
+      - summary
       properties:
         applied:
           type: boolean
-          description: Whether this call wrote; a dry run answers `false`.
           example: true
-        diff:
-          $ref: '#/components/schemas/RecordDiff'
-          description: The write as a record diff, for previewing it.
         dry_run:
           type: boolean
           example: false
-        record:
-          $ref: '#/components/schemas/GetRecordResponse'
-    RoleGrantResponse:
-      type: object
-      description: A single role grant wrapped in a response envelope.
-      required:
-      - role_grant
-      properties:
-        role_grant:
-          $ref: '#/components/schemas/GetRoleGrantResponse'
-    RoleResponse:
-      type: object
-      description: A single role wrapped in a response envelope.
-      required:
-      - role
-      properties:
-        role:
-          $ref: '#/components/schemas/GetRoleResponse'
-    RollbackSummary:
+        new_serial:
+          type: integer
+          format: int32
+          example: 13
+          minimum: 0
+        summary:
+          $ref: '#/components/schemas/RollbackZoneSummaryResponse'
+        target_serial:
+          type: integer
+          format: int32
+          example: 7
+          minimum: 0
+    RollbackZoneSummaryResponse:
       type: object
       description: |-
         Counts of what a rollback changes. TTL-only differences count as one
@@ -6035,113 +5912,38 @@ components:
           format: int64
           example: 5
           minimum: 0
-    RollbackZoneResponse:
-      type: object
-      description: |-
-        Result of a zone rollback. The zone's state returns to `target_serial`
-        while its serial advances to `new_serial` (serials never go backward).
-      required:
-      - applied
-      - dry_run
-      - target_serial
-      - new_serial
-      - summary
-      properties:
-        applied:
-          type: boolean
-          example: true
-        dry_run:
-          type: boolean
-          example: false
-        new_serial:
-          type: integer
-          format: int32
-          example: 13
-          minimum: 0
-        summary:
-          $ref: '#/components/schemas/RollbackSummary'
-        target_serial:
-          type: integer
-          format: int32
-          example: 7
-          minimum: 0
-    RolloverDnssecRequest:
-      type: object
-      description: Request body for starting a key rollover.
-      properties:
-        role:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Which key to roll: required for split-key zones (`ksk` or `zsk`),
-            omitted for CSK zones.
-          example: zsk
-      additionalProperties: false
-    SecondaryCheckResponse:
-      type: object
-      description: |-
-        What a secondary answered when checked: where its address resolves, the
-        catalog zone serial it serves against Bindizr's, and whether it accepted
-        a NOTIFY.
-      required:
-      - secondary
-      - addresses
-      - catalog_zone_name
-      - catalog
-      - notifies
-      - transfers
-      properties:
-        addresses:
-          type: array
-          items:
-            type: string
-          description: Socket addresses the registered `host[:port]` resolves to now.
-          example:
-          - 10.0.0.14:53
-        catalog:
-          $ref: '#/components/schemas/SecondaryStatusResponse'
-          description: The secondary's catalog probe, classified against `catalog_serial`.
-        catalog_serial:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: |-
-            The serial Bindizr's own listener serves the catalog zone at; absent
-            with `listener_error`, and `catalog` is then `reachable` at best.
-          example: 42
-          minimum: 0
-        catalog_zone_name:
-          type: string
-          description: The catalog zone the secondary was asked for.
-          example: catalog.bindizr
-        listener_error:
-          type:
-          - string
-          - 'null'
-        notifies:
-          type: array
-          items:
-            $ref: '#/components/schemas/NotifyCheckResponse'
-          description: The NOTIFY sent for the catalog zone, one per resolved address.
-        resolve_error:
-          type:
-          - string
-          - 'null'
-        secondary:
-          $ref: '#/components/schemas/GetSecondaryResponse'
-        transfers:
-          $ref: '#/components/schemas/TransferSummary'
-          description: How Bindizr served the secondary's transfers.
     SecondaryResponse:
       type: object
-      description: A secondary wrapped in a response envelope.
+      description: API representation of a secondary.
       required:
-      - secondary
+      - id
+      - name
+      - address
+      - enabled
+      - created_at
       properties:
-        secondary:
-          $ref: '#/components/schemas/GetSecondaryResponse'
+        address:
+          type: string
+          example: ns2.example.net:53
+        created_at:
+          type: string
+          format: date-time
+        enabled:
+          type: boolean
+          example: true
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: ns2
+        notify_key_name:
+          type:
+          - string
+          - 'null'
+          description: The TSIG key NOTIFY to this server is signed with, if any.
+          example: notify-key
     SecondaryStatus:
       type: string
       description: How the serial a secondary serves compares with the one Bindizr serves.
@@ -6181,7 +5983,7 @@ components:
           format: int32
           example: 42
           minimum: 0
-    SecondaryTransferSummary:
+    SecondaryTransferSummaryResponse:
       type: object
       description: One secondary's transfer summary, as `doctor` reports it.
       required:
@@ -6196,7 +5998,7 @@ components:
           type: string
           example: ns2
         summary:
-          $ref: '#/components/schemas/TransferSummary'
+          $ref: '#/components/schemas/TransferSummaryResponse'
     SecondaryTransfersResponse:
       type: object
       description: The transfers Bindizr served one secondary.
@@ -6213,7 +6015,7 @@ components:
           type: string
           example: ns2
         summary:
-          $ref: '#/components/schemas/TransferSummary'
+          $ref: '#/components/schemas/TransferSummaryResponse'
         transfers:
           type: array
           items:
@@ -6226,14 +6028,124 @@ components:
       description: |-
         The type of a record the zone serves: a user record type, or a
         signer-generated one on a derived row.
-    TokenResponse:
+    SingleDnssecPolicyResponse:
+      type: object
+      description: A DNSSEC policy wrapped in a response envelope.
+      required:
+      - dnssec_policy
+      properties:
+        dnssec_policy:
+          $ref: '#/components/schemas/DnssecPolicyResponse'
+    SingleRecordResponse:
+      type: object
+      description: A single record wrapped in a response envelope.
+      required:
+      - record
+      properties:
+        record:
+          $ref: '#/components/schemas/RecordResponse'
+    SingleRoleGrantResponse:
+      type: object
+      description: A single role grant wrapped in a response envelope.
+      required:
+      - role_grant
+      properties:
+        role_grant:
+          $ref: '#/components/schemas/RoleGrantResponse'
+    SingleRoleResponse:
+      type: object
+      description: A single role wrapped in a response envelope.
+      required:
+      - role
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleResponse'
+    SingleSecondaryResponse:
+      type: object
+      description: A secondary wrapped in a response envelope.
+      required:
+      - secondary
+      properties:
+        secondary:
+          $ref: '#/components/schemas/SecondaryResponse'
+    SingleTokenResponse:
       type: object
       description: 'One token without its secret: the self lookup.'
       required:
       - token
       properties:
         token:
-          $ref: '#/components/schemas/GetTokenResponse'
+          $ref: '#/components/schemas/TokenResponse'
+    SingleTsigKeyResponse:
+      type: object
+      description: 'A key with its secret: the create and get responses.'
+      required:
+      - tsig_key
+      - secret
+      properties:
+        secret:
+          type: string
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
+        tsig_key:
+          $ref: '#/components/schemas/TsigKeyResponse'
+    SingleZoneResponse:
+      type: object
+      description: A single zone wrapped in a response envelope.
+      required:
+      - zone
+      properties:
+        zone:
+          $ref: '#/components/schemas/ZoneResponse'
+    StartDnssecRolloverRequest:
+      type: object
+      description: Request body for starting a key rollover.
+      properties:
+        role:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Which key to roll: required for split-key zones (`ksk` or `zsk`),
+            omitted for CSK zones.
+          example: zsk
+      additionalProperties: false
+    TokenResponse:
+      type: object
+      description: API representation of an API token; never carries the secret.
+      required:
+      - id
+      - name
+      - role_name
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type:
+          - string
+          - 'null'
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        last_used_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        name:
+          type: string
+          example: external-dns
+        role_name:
+          type: string
+          description: The role the token authenticates into.
+          example: external-dns-prod
     TransferKind:
       type: string
       description: Which transfer a client asked for.
@@ -6248,6 +6160,7 @@ components:
       - zone_name
       - kind
       - result
+      - transport
       - incremental
       - at
       properties:
@@ -6282,6 +6195,9 @@ components:
           description: The serial the answer reached; absent when nothing was transferred.
           example: 42
           minimum: 0
+        transport:
+          $ref: '#/components/schemas/TransferTransport'
+          description: Plain TCP or TLS (XoT).
         zone_name:
           type: string
           example: example.com
@@ -6294,7 +6210,7 @@ components:
       - ok
       - refused
       - failed
-    TransferSummary:
+    TransferSummaryResponse:
       type: object
       description: How the zones a secondary asked for were last served, counted by zone.
       required:
@@ -6337,6 +6253,15 @@ components:
           format: int64
           example: 12
           minimum: 0
+    TransferTransport:
+      type: string
+      description: |-
+        What a request arrived over, in DNS's own transport words. `Udp` reaches
+        the metrics alone: a UDP question is answered with TC or the SOA, never saved.
+      enum:
+      - udp
+      - tcp
+      - tls
     TsigAlgorithm:
       type: string
       description: TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
@@ -6346,16 +6271,30 @@ components:
       - hmac-sha512
     TsigKeyResponse:
       type: object
-      description: 'A key with its secret: the create and get responses.'
+      description: API representation of a TSIG key; never carries the secret.
       required:
-      - tsig_key
-      - secret
+      - id
+      - name
+      - algorithm
+      - role_name
+      - created_at
       properties:
-        secret:
+        algorithm:
+          $ref: '#/components/schemas/TsigAlgorithm'
+        created_at:
           type: string
-          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
-        tsig_key:
-          $ref: '#/components/schemas/GetTsigKeyResponse'
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: update-key
+        role_name:
+          type: string
+          description: The role the key authenticates into.
+          example: rfc2136-legacy
     UpdateDnssecPolicyRequest:
       type: object
       description: |-
@@ -6479,9 +6418,8 @@ components:
     UpdateZoneRequest:
       type: object
       description: |-
-        Request body for updating a zone; an omitted field keeps the current
-        value, merged inside the update transaction. `serial` is carried only to
-        be rejected: it is fixed at creation.
+        Update a zone, resolving omitted fields from the locked row.
+        `serial` is accepted only at creation and is not an update field.
       properties:
         default_ttl:
           type:
@@ -6545,47 +6483,7 @@ components:
           - string
           - 'null'
           example: admin@example.com
-        serial:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 42
-          minimum: 0
       additionalProperties: false
-    VersionDetailResponse:
-      type: object
-      description: One version plus the records rewound to that serial.
-      required:
-      - version
-      - records
-      properties:
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/VersionRecordResponse'
-        version:
-          $ref: '#/components/schemas/ZoneVersionResponse'
-    VersionDiffResponse:
-      type: object
-      description: The difference between two of a zone's serials.
-      required:
-      - from_serial
-      - to_serial
-      - diff
-      properties:
-        diff:
-          $ref: '#/components/schemas/RecordDiff'
-        from_serial:
-          type: integer
-          format: int32
-          example: 41
-          minimum: 0
-        to_serial:
-          type: integer
-          format: int32
-          example: 42
-          minimum: 0
     VersionRecordResponse:
       type: object
       description: |-
@@ -6614,6 +6512,48 @@ components:
           $ref: '#/components/schemas/RecordType'
         value:
           $ref: '#/components/schemas/RecordValue'
+    WriteRecordResponse:
+      type: object
+      description: |-
+        What a record write left behind, in the shape every previewable operation
+        answers with: whether it wrote, and the change as a record diff.
+      required:
+      - applied
+      - dry_run
+      - record
+      - diff
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call wrote; a dry run answers `false`.
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiffResponse'
+          description: The write as a record diff, for previewing it.
+        dry_run:
+          type: boolean
+          example: false
+        record:
+          $ref: '#/components/schemas/RecordResponse'
+    WriteZoneResponse:
+      type: object
+      description: |-
+        What a zone write left behind. The zone's own fields are the change, so
+        unlike a record write this carries no diff.
+      required:
+      - applied
+      - dry_run
+      - zone
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call wrote; a dry run answers `false`.
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        zone:
+          $ref: '#/components/schemas/ZoneResponse'
     ZonePermissionsResponse:
       type: object
       description: The caller's actions in one zone that differ from its all-zones actions.
@@ -6635,14 +6575,70 @@ components:
           example: example.com
     ZoneResponse:
       type: object
-      description: |-
-        A single zone wrapped in a response envelope. A dry run answers with the
-        zone as it would stand and `applied: false`.
+      description: API representation of a zone.
       required:
-      - zone
+      - name
+      - mname
+      - rname
+      - default_ttl
+      - serial
+      - refresh
+      - retry
+      - expire
+      - minimum_ttl
+      - enabled
       properties:
-        zone:
-          $ref: '#/components/schemas/GetZoneResponse'
+        default_ttl:
+          type: integer
+          format: int32
+          example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+        enabled:
+          type: boolean
+          description: |-
+            Whether the DNS plane serves the zone. A disabled one stays editable but
+            leaves the catalog and answers no transfer, so secondaries drop it.
+          example: true
+        expire:
+          type: integer
+          format: int32
+          example: 604800
+        id:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Absent on a dry run, where nothing was written to carry one.
+          example: 1
+        minimum_ttl:
+          type: integer
+          format: int32
+          example: 3600
+        mname:
+          type: string
+          example: ns1.example.com
+        name:
+          type: string
+          example: example.com
+        refresh:
+          type: integer
+          format: int32
+          example: 7200
+        retry:
+          type: integer
+          format: int32
+          example: 3600
+        rname:
+          type: string
+          example: admin@example.com
+        serial:
+          type: integer
+          format: int32
+          example: 42
+          minimum: 0
     ZoneStatusResponse:
       type: object
       description: |-
@@ -6726,25 +6722,6 @@ components:
           format: int32
           example: 7
           minimum: 0
-    ZoneWriteResponse:
-      type: object
-      description: |-
-        What a zone write left behind. The zone's own fields are the change, so
-        unlike a record write this carries no diff.
-      required:
-      - applied
-      - dry_run
-      - zone
-      properties:
-        applied:
-          type: boolean
-          description: Whether this call wrote; a dry run answers `false`.
-          example: true
-        dry_run:
-          type: boolean
-          example: false
-        zone:
-          $ref: '#/components/schemas/GetZoneResponse'
   securitySchemes:
     bearer_auth:
       type: http

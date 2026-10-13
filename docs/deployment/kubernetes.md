@@ -136,7 +136,7 @@ Hand out further tokens from this one, each in a role granted only what it
 needs — see [Access Control](../cli/access-control.md). Clients that update zones themselves
 (cert-manager's DNS-01 solver, a DHCP server) sign with a TSIG key instead,
 created over the HTTP API with this token — see
-[Dynamic Updates](../cli/nsupdate.md#the-first-key).
+[nsupdate](../cli/nsupdate.md#the-first-key).
 
 ## Production: external database
 
@@ -154,6 +154,12 @@ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 ```
 
 For MySQL, add `--set bindizr.database.type=mysql`.
+
+A database reached over a network is verified with
+`--set bindizr.database.tls.mode=verify-full`; a private issuer's certificate
+goes in a Secret holding `ca.crt`, named by
+`--set bindizr.database.tls.existingSecret=<name>`. See
+[Configuration](../configuration.md#configuration-file).
 
 !!! note "SQLite is not supported by the Helm chart"
 
@@ -214,9 +220,30 @@ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-rc.2 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
 ```
 
-The readiness probe follows to HTTPS on its own. Leave the value empty when
+The readiness probe follows to HTTPS on its own. cert-manager renews the
+Secret in place and the kubelet refreshes the mounted files within about a
+minute; `kubectl exec -n bindizr deploy/bindizr-bindizr-chart -- bindizr
+config reload` then serves the renewed certificate without a restart. Leave
+the value empty when
 an Ingress terminates TLS in front instead; with `bindizr.api.service.type`
 left at `ClusterIP`, Bindizr's own port is then never reachable from outside.
+
+## Serving zone transfers over TLS
+
+A secondary outside the cluster can pull over TLS (XoT, RFC 9103). Point the
+chart at a Secret holding `tls.crt` and `tls.key` whose certificate names
+the address the secondary connects to:
+
+```bash
+helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --version 0.1.0-rc.2 -n bindizr --reuse-values --set bindizr.dns.tls.existingSecret=bindizr-xot-tls
+```
+
+The DNS Service gains a `dns-tls` port (853); expose it as you do the plain
+one, and a renewed Secret is picked up by `bindizr config reload` as above.
+The secondary needs a key beside its registration, as
+[Transfers over TLS](../secondaries/index.md#transfers-over-tls) says; the
+chart's own BIND pods keep plain TCP inside the cluster.
 
 ## Trying it on kind
 

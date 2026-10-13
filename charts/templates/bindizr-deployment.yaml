@@ -52,6 +52,11 @@ spec:
             - name: dns-udp
               containerPort: {{ .Values.bindizr.dns.port }}
               protocol: UDP
+            {{- if .Values.bindizr.dns.tls.existingSecret }}
+            - name: dns-tls
+              containerPort: {{ .Values.bindizr.dns.tls.port }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: BINDIZR_DATABASE_URL
               valueFrom:
@@ -130,6 +135,16 @@ spec:
               mountPath: /etc/bindizr/tls
               readOnly: true
             {{- end }}
+            {{- with .Values.bindizr.database.tls.existingSecret }}
+            - name: database-tls
+              mountPath: /etc/bindizr/db-tls
+              readOnly: true
+            {{- end }}
+            {{- with .Values.bindizr.dns.tls.existingSecret }}
+            - name: dns-tls
+              mountPath: /etc/bindizr/dns-tls
+              readOnly: true
+            {{- end }}
             # The daemon's control socket: the only path a read-only root
             # filesystem has to open.
             - name: runtime
@@ -140,6 +155,16 @@ spec:
             name: {{ include "bindizr-chart.fullname" . }}-config
         {{- with .Values.bindizr.api.tls.existingSecret }}
         - name: api-tls
+          secret:
+            secretName: {{ . }}
+        {{- end }}
+        {{- with .Values.bindizr.database.tls.existingSecret }}
+        - name: database-tls
+          secret:
+            secretName: {{ . }}
+        {{- end }}
+        {{- with .Values.bindizr.dns.tls.existingSecret }}
+        - name: dns-tls
           secret:
             secretName: {{ . }}
         {{- end }}

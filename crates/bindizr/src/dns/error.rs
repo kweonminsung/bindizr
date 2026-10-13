@@ -2,9 +2,9 @@ use bindizr_core::dns::{ConvertSerialError, Serial, message::EncodeMessageError}
 use bindizr_service::error::ServiceError;
 use thiserror::Error;
 
-/// Errors produced while handling zone transfers, NOTIFY, and DNS wire I/O.
+/// Causes of DNS listener, message I/O, and query handling failures.
 #[derive(Debug, Error)]
-pub(crate) enum XfrError {
+pub(crate) enum DnsError {
     /// No enabled zone carries the name: answered NOTAUTH.
     #[error("not authoritative for zone: {0}")]
     NotAuth(String),
@@ -13,9 +13,7 @@ pub(crate) enum XfrError {
     #[error("transfer refused: {0}")]
     Refused(String),
 
-    /// The DNS plane passes no caller, so a service failure here is never a
-    /// client fault: it surfaces as an infrastructure error.
-    #[error("database error: {0}")]
+    #[error("service error: {0}")]
     Service(#[from] ServiceError),
 
     #[error("IO error: {0}")]
@@ -29,24 +27,30 @@ pub(crate) enum XfrError {
 
     /// The connection closed before a message began.
     #[error("connection closed")]
-    Closed,
+    PeerClosed,
+
+    #[error("connection slots are closed: {0}")]
+    ConnectionSlotsClosed(#[from] tokio::sync::AcquireError),
 
     /// The client read nothing for the whole write timeout.
     #[error("the client read nothing for {secs} seconds")]
     WriteTimeout { secs: u64 },
 
     /// A TCP frame that ended before its two-octet length prefix did.
-    #[error("DNS protocol error: Incomplete DNS TCP length prefix")]
+    #[error("DNS protocol error: incomplete DNS TCP length prefix")]
     IncompletePrefix,
 
     /// A TCP frame shorter than its length prefix announced.
-    #[error("DNS protocol error: Incomplete DNS TCP message: expected {expected} bytes")]
+    #[error("DNS protocol error: incomplete DNS TCP message: expected {expected} bytes")]
     IncompleteMessage { expected: usize },
 
     /// An IXFR whose version rows do not cover a serial the journal names.
-    #[error("DNS protocol error: Missing {which} SOA version for serial {serial}")]
+    #[error("DNS protocol error: missing {which} SOA version for serial {serial}")]
     MissingVersion { which: &'static str, serial: Serial },
 
     #[error("invalid query: {0}")]
     InvalidQuery(String),
+
+    #[error("failed to build NSUPDATE response")]
+    BuildNsupdateResponse,
 }

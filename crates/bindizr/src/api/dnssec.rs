@@ -11,7 +11,7 @@ use bindizr_service::{
     Context, dnssec,
     types::{
         DnssecStatusResponse, DsCheck, EnableDnssecRequest, ErrorResponse, Holddown,
-        MessageResponse, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
+        MessageResponse, StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
     },
     zone,
 };
@@ -41,7 +41,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         )
         .route(
             "/zones/{name}/dnssec/rollover/ds-seen",
-            routing::post(ds_seen_dnssec_rollover),
+            routing::post(advance_dnssec_rollover),
         )
         .route(
             "/zones/{name}/dnssec/withdraw",
@@ -201,7 +201,7 @@ pub(crate) async fn sign_zone(
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
-        request_body = RolloverDnssecRequest,
+        request_body = StartDnssecRolloverRequest,
         responses(
             (status = 200, description = "Rollover started, replacement key pre-published", body = DnssecStatusResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -217,7 +217,7 @@ pub(crate) async fn start_dnssec_rollover(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    JsonBody(body): JsonBody<RolloverDnssecRequest>,
+    JsonBody(body): JsonBody<StartDnssecRolloverRequest>,
 ) -> Result<Response, ApiError> {
     let status =
         dnssec::start_rollover(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
@@ -228,7 +228,7 @@ pub(crate) async fn start_dnssec_rollover(
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DsSeenQuery {
+pub(crate) struct AdvanceDnssecRolloverQuery {
     /// Skip the parent DS check.
     skip_ds_check: Option<bool>,
     /// Promote before the publish hold-down has passed.
@@ -244,7 +244,7 @@ pub(crate) struct DsSeenQuery {
         description = "Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            DsSeenQuery
+            AdvanceDnssecRolloverQuery
         ),
         responses(
             (status = 200, description = "Rollover advanced, new key promoted", body = DnssecStatusResponse),
@@ -256,11 +256,11 @@ pub(crate) struct DsSeenQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn ds_seen_dnssec_rollover(
+pub(crate) async fn advance_dnssec_rollover(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(query): Query<DsSeenQuery>,
+    Query(query): Query<AdvanceDnssecRolloverQuery>,
 ) -> Result<Response, ApiError> {
     let status = dnssec::advance_rollover(
         &cx,

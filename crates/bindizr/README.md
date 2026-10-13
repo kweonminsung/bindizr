@@ -15,7 +15,7 @@ there.
 - **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
-- **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests and managed keys.
+- **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
@@ -42,8 +42,10 @@ authentication_required = true # Require an API token; `bindizr token create` ma
 metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
 external_dns_enabled = false  # ExternalDNS provider API at /external-dns
 openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
-# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the API is
-# tls_key_file = "/etc/bindizr/tls/tls.key"   # plain HTTP and its tokens travel in the clear
+
+[api.tls]                     # Set both files to serve HTTPS
+# cert_file = "/etc/bindizr/tls/tls.crt"
+# key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -57,30 +59,42 @@ file_path = "/var/lib/bindizr/bindizr.db"
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
 
+[database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
+# mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
+# ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
+
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
-nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
-# zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
-# scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
+# catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
+# zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
+# scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
 
 [dns.notify]                  # NOTIFY to the secondaries
-# batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
-# retries = 3                 # Retries after the first attempt
+# batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
+# retries = 3
 # timeout_secs = 3            # Seconds to wait for each NOTIFY
 
-[dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
-# max_records = 500000        # Records the cache holds; a larger zone is served uncached (0 = no cache)
+[dns.nsupdate]                # nsupdate (RFC 2136)
+tsig_required = true          # false admits unsigned updates from anyone
+
+[dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
+# listen_port = 853           # On dns.listen_addr
+# cert_file = "/etc/bindizr/tls/xot.crt"
+# key_file = "/etc/bindizr/tls/xot.key"
+
+[dns.transfer]                # Zone transfers
+# cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
-refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
+refresh = 300                 # SOA refresh; NOTIFY drives propagation, this only bounds a lost one
 retry = 60                    # SOA retry
 expire = 3600000              # SOA expire
 minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-level = "debug"               # error, warn, info, debug, trace
+level = "info"                # error, warn, info, debug, trace
 # format = "text"             # text, or json for one object per line
 ```
 

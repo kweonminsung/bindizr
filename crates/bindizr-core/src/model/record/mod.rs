@@ -11,9 +11,9 @@ use crate::{
         name::{OwnerName, ZoneName, to_fqdn_lowercase},
         record::{
             ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-            DnameRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
-            ParseRecordValueError, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
-            TlsaRecordValue, TxtContent, TxtRecordValue,
+            DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
+            NaptrRecordValue, NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata,
+            SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
         },
     },
     model::zone::ZoneId,
@@ -50,6 +50,11 @@ pub struct RecordKey {
 }
 
 impl Record {
+    /// Encode RDATA using the transfer and signer encoder.
+    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+        Ok(EncodedRdata::from_columns(&self.record_type, &self.value, self.priority)?.rdata)
+    }
+
     /// Match an RFC 2136, Section 2.5.2 delete by type, canonical value, and priority.
     /// MX and SRV priorities narrow separately because they occupy their own column.
     pub fn matches(
@@ -455,7 +460,7 @@ impl RecordType {
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Caa => {
-                let parsed = CaaRecordValue::parse(trimmed)?;
+                let parsed = CaaRecordValue::parse(value)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }

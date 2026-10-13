@@ -29,7 +29,7 @@ async def measure(adapter, prepop: int) -> dict:
     pool = generate(prepop, 1337)
     for i, rec in enumerate(pool):
         rec["name"] = f"pool{i:07d}"
-    await adapter.bulk_import(ZONE, pool)
+    await adapter.import_records(ZONE, pool)
 
     create_recs = generate(300_000, 4242)
 
@@ -49,7 +49,7 @@ async def measure(adapter, prepop: int) -> dict:
 async def main() -> None:
     """Run and print the record-creation sweep across zone sizes."""
     label = sys.argv[1] if len(sys.argv) > 1 else "build"
-    adapter = registry.build("bindizr", {"resources": {"sample_interval_secs": 1}},
+    adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}},
                              f"bench-lz-{label}", notify_after_update=False)
     rows = []
     try:

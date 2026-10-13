@@ -5,16 +5,16 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     dns::{
-        dnssec::WireNameError,
-        message::{Name, Rtype},
+        dnssec::EncodeWireNameError,
+        message::{Name, Opcode, Rtype},
         name::ZoneName,
-        query::{DsRecordSet, build_edns_question, extract_ds_record_set},
+        query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
     },
     model::zone::Zone,
 };
 use thiserror::Error;
 
-use super::{ExchangeError, ResolveAddressError};
+use super::{ExchangeMessageError, ResolveAddressError};
 use crate::Context;
 
 /// Why the parent could not be asked, or what it failed to answer.
@@ -31,7 +31,7 @@ pub(crate) enum ProbeParentDsError {
     #[error("the zone's parent nameserver addresses name no server")]
     NoServers,
     #[error("invalid zone name: {0}")]
-    ZoneName(#[from] WireNameError),
+    ZoneName(#[from] EncodeWireNameError),
     /// Every server that failed, in `parent_ns_addrs` order.
     #[error("{}", failures.iter().map(|(entry, error)| format!("{entry}: {error}")).collect::<Vec<_>>().join("; "))]
     Unanswered {
@@ -43,9 +43,9 @@ pub(crate) enum ProbeParentDsError {
 #[derive(Debug, Error)]
 pub(crate) enum QueryDsError {
     #[error(transparent)]
-    Exchange(#[from] ExchangeError),
+    Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    Response(#[from] bindizr_core::dns::query::ParseResponseError),
     #[error("no address")]
     NoAddress,
     #[error("probe task failed: {0}")]
@@ -149,7 +149,15 @@ async fn query_ds_at(
 ) -> Result<Option<DsRecordSet>, QueryDsError> {
     let mut last_error = None;
     for addr in addrs {
-        let (query_id, query) = build_edns_question(false, qname, Rtype::DS);
+        let (query_id, builder) = build_question(
+            Opcode::QUERY,
+            false,
+            false,
+            qname,
+            Rtype::DS,
+            Some(EDNS_UDP_PAYLOAD_SIZE),
+        );
+        let query = builder.finish();
         let result = match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
         {

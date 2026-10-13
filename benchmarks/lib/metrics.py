@@ -17,7 +17,7 @@ class LatencyRecorder:
     started_at: float | None = None
     ended_at: float | None = None
 
-    def record(self, latency_secs: float, ok: bool = True) -> None:
+    def track_latency(self, latency_secs: float, ok: bool = True) -> None:
         """Record a successful latency sample or increment the error count."""
         if ok:
             self.latencies_ms.append(latency_secs * 1000.0)

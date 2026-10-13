@@ -39,6 +39,9 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                 }
             );
             outln!("DNS: {}", status.dns_addr);
+            if let Some(addr) = &status.dns_tls_addr {
+                outln!("DNS TLS: {}", addr);
+            }
             match (&status.database_error, status.zones) {
                 (Some(e), _) => outln!("Database: {} ({})", status.database_type, color::red(e)),
                 (None, Some(1)) => outln!("Database: {} (1 zone)", status.database_type),

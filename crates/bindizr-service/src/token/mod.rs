@@ -16,7 +16,7 @@ use crate::{
     role,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     transaction,
-    types::{CreateTokenRequest, GetTokenResponse, PaginatedResponse, TokenFilter},
+    types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -32,7 +32,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateTokenRequest,
-) -> Result<(GetTokenResponse, String), ServiceError> {
+) -> Result<(TokenResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_token_name(&request.name)?;
@@ -92,10 +92,7 @@ pub async fn create(
     .await;
     let created = transaction::finish_tx(tx, result, "failed to create token").await?;
 
-    Ok((
-        GetTokenResponse::from_token(&created, &role.name),
-        raw_token,
-    ))
+    Ok((TokenResponse::from_token(&created, &role.name), raw_token))
 }
 
 /// List the API tokens, every one or one role's.
@@ -103,7 +100,7 @@ pub async fn list(
     cx: &Context,
     caller: &Caller,
     filter: &TokenFilter,
-) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
+) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let tokens = match &filter.role_name {
@@ -123,7 +120,7 @@ pub async fn list(
             .iter()
             .map(|token| {
                 let role_name = role_names.get(&token.role_id).map_or("", String::as_str);
-                GetTokenResponse::from_token(token, role_name)
+                TokenResponse::from_token(token, role_name)
             })
             .collect(),
         filter.limit,
@@ -132,11 +129,11 @@ pub async fn list(
 }
 
 /// Describe `token` with its role's name; any token may read itself.
-pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<GetTokenResponse, ServiceError> {
+pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, ServiceError> {
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
-    Ok(GetTokenResponse::from_token(token, &role.name))
+    Ok(TokenResponse::from_token(token, &role.name))
 }
 
 /// The number of API tokens, read for the daemon's startup hint.

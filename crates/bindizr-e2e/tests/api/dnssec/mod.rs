@@ -320,15 +320,18 @@ async fn dnssec_enable_requires_dnssec_manage() {
     // Grant the zone's records so the 403 proves the missing action, not
     // zone invisibility (which would read as 404).
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 
@@ -405,6 +408,11 @@ async fn records_listing_signed_pages_the_derived_plane() {
         items.len()
     );
     assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
+    assert!(items.iter().any(|item| item["id"].is_i64()));
+    for item in items {
+        assert_eq!(item["zone_name"], zone_name);
+        assert!(item["name"].as_str().unwrap().ends_with('.'));
+    }
     let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
     for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
         assert!(
@@ -519,8 +527,8 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_lifecycle() {
     let app = TestApp::start().await;
-    // A short zone TTL is the whole publish wait, so the rollover reaches
-    // promotion inside the test.
+    // The publish wait is the zone TTL plus the SOA refresh (RFC 7583,
+    // Section 3.2.1); both short, the rollover reaches promotion inside the test.
     let zone_name = app.zone_name("rollover.example");
     let (status, body) = app
         .send_request(
@@ -531,6 +539,7 @@ async fn dnssec_csk_rollover_lifecycle() {
                 "mname": format!("ns1.{zone_name}"),
                 "rname": "admin@example.com",
                 "default_ttl": 60,
+                "refresh": 1,
                 "serial": 10,
             })),
         )
@@ -612,7 +621,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         let (status, _) = app.send_request(Method::POST, &path, None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
     }
-    tokio::time::sleep(std::time::Duration::from_secs(61)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(62)).await;
 
     // No parent stands in here, so the DS is taken on the caller's word.
     let (status, body) = app

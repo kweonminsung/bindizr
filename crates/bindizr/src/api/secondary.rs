@@ -10,9 +10,9 @@ use axum::{
 use bindizr_service::{
     Context, secondary,
     types::{
-        CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetSecondaryResponse,
-        GetSecondaryTransfersFilter, MessageResponse, PageRequest, PaginatedResponse,
-        SecondaryCheckResponse, SecondaryResponse, SecondaryTransfersResponse,
+        CheckSecondaryResponse, CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
+        MessageResponse, PageRequest, PaginatedResponse, SecondaryResponse,
+        SecondaryTransferFilter, SecondaryTransfersResponse, SingleSecondaryResponse,
         UpdateSecondaryRequest,
     },
 };
@@ -50,7 +50,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         params(PageRequest),
         description = "Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for all zones, may pull zones unsigned from its address, and is probed for the serial it serves.",
         responses(
-            (status = 200, description = "All secondaries", body = PaginatedResponse<GetSecondaryResponse>),
+            (status = 200, description = "All secondaries", body = PaginatedResponse<SecondaryResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -75,7 +75,7 @@ pub(crate) async fn list_secondaries(
         description = "Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries. With `notify_key_name`, every NOTIFY to it is signed with that TSIG key and the answer's signature checked.",
         request_body = CreateSecondaryRequest,
         responses(
-            (status = 201, description = "Secondary registered successfully", body = SecondaryResponse),
+            (status = 201, description = "Secondary registered successfully", body = SingleSecondaryResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -90,7 +90,7 @@ pub(crate) async fn create_secondary(
     JsonBody(body): JsonBody<CreateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
     let secondary = secondary::create(&cx, &caller, &body).await?;
-    let response = SecondaryResponse { secondary };
+    let response = SingleSecondaryResponse { secondary };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -104,7 +104,7 @@ pub(crate) async fn create_secondary(
             ("name" = String, Path, description = "The name of the secondary.")
         ),
         responses(
-            (status = 200, description = "The secondary", body = SecondaryResponse),
+            (status = 200, description = "The secondary", body = SingleSecondaryResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
@@ -117,7 +117,7 @@ pub(crate) async fn get_secondary(
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let secondary = secondary::get(&cx, &caller, &params.name).await?;
-    let response = SecondaryResponse { secondary };
+    let response = SingleSecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -133,7 +133,7 @@ pub(crate) async fn get_secondary(
         ),
         request_body = UpdateSecondaryRequest,
         responses(
-            (status = 200, description = "Secondary updated successfully", body = SecondaryResponse),
+            (status = 200, description = "Secondary updated successfully", body = SingleSecondaryResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -150,7 +150,7 @@ pub(crate) async fn update_secondary(
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
     let secondary = secondary::update(&cx, &caller, &params.name, body).await?;
-    let response = SecondaryResponse { secondary };
+    let response = SingleSecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -195,7 +195,7 @@ pub(crate) async fn delete_secondary(
             ("name" = String, Path, description = "The name of the secondary.")
         ),
         responses(
-            (status = 200, description = "What the secondary answered", body = SecondaryCheckResponse),
+            (status = 200, description = "What the secondary answered", body = CheckSecondaryResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
@@ -220,7 +220,7 @@ pub(crate) async fn check_secondary(
     description = "The transfers Bindizr served the secondary's addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and client address. A secondary with multiple addresses can have several entries for one zone.",
     params(
         ("name" = String, Path, description = "The name of the secondary."),
-        GetSecondaryTransfersFilter
+        SecondaryTransferFilter
     ),
     responses(
         (status = 200, description = "The transfers served", body = SecondaryTransfersResponse),
@@ -234,7 +234,7 @@ pub(crate) async fn list_secondary_transfers(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(query): Query<GetSecondaryTransfersFilter>,
+    Query(query): Query<SecondaryTransferFilter>,
 ) -> Result<Response, ApiError> {
     let transfers = secondary::list_transfers(&cx, &caller, &params.name, query).await?;
     Ok((StatusCode::OK, Json(transfers)).into_response())

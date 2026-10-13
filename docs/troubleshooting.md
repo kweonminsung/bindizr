@@ -29,6 +29,7 @@ On a package install, run these commands with `sudo`.
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial: the catalog zone's for `doctor`, a member zone's for `zone status`, so the two can disagree for the moment a transfer takes. Persisting, BIND's log names the reason it refused or deferred the transfer. |
 | `NOTIFY rejected` | doctor | Allow Bindizr's source address in the secondary's NOTIFY ACL. If the secondary requires TSIG, register it with the matching `--notify-key`; see [Signed NOTIFY](cli/secondaries.md#signed-notify). |
 | A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not registered or is disabled (`bindizr secondary list`), its address changed since it was registered (register it by [hostname](cli/secondaries.md#addresses) instead), or it signs with a key Bindizr does not know or whose role lacks `zone:transfer` for the zone — see [Signing zone transfers](cli/advanced.md#signing-zone-transfers). |
+| A transfer over TLS is `REFUSED` or its handshake fails | Bindizr's log, the secondary's log | Over TLS the secondary must be registered *and* sign with a key. A handshake fails when the certificate lacks the name the secondary checks, or the secondary offers TLS 1.2 or an ALPN other than `dot`; see [Transfers over TLS](secondaries/index.md#transfers-over-tls). |
 
 ## The HTTP API
 
@@ -39,9 +40,9 @@ On a package install, run these commands with `sudo`.
 | `403` on a write | The zone is visible but no grant of the token's role covers the operation: the action is missing, or the record falls outside its name pattern or types. See [what an operation needs](cli/advanced.md#what-an-operation-needs). |
 | `503` from `/health` | The database did not answer within the probe's timeout; see the database row above. |
 
-## Dynamic updates and DNSSEC
+## nsupdate and DNSSEC
 
 | Symptom | Fix |
 | --- | --- |
-| `unsigned NSUPDATE refused` | Sign the request with a TSIG key Bindizr knows, whose role covers the records the update touches — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate_tsig_required` is for testing only. |
+| `unsigned NSUPDATE refused` | Sign the request with a TSIG key Bindizr knows, whose role covers the records the update touches — see [nsupdate](cli/nsupdate.md). Turning off `dns.nsupdate.tsig_required` is for testing only. |
 | `dnssec disable` refused | The parent still serves the zone's DS, or could not be asked. Remove the DS at the parent and wait out its TTL, or pass `--skip-ds-check` when the parent is known to be clear — see [DNSSEC](dnssec/index.md). |

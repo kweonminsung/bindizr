@@ -20,7 +20,10 @@ use domain::{
 };
 
 use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord, to_rdata};
-use crate::{dns::record::EncodedRdata, model::dnssec_policy::DnssecDenial};
+use crate::{
+    dns::record::EncodedRdata,
+    model::{dnssec_key::DS_DIGEST_TYPE, dnssec_policy::DnssecDenial},
+};
 
 impl SignedViewParams<'_> {
     /// User records, the synthesized SOA, and the apex key record sets in canonical
@@ -52,10 +55,7 @@ impl SignedViewParams<'_> {
             if signer.key.wants_parent_ds() && !self.withdraw_parent_ds {
                 let cds = UnknownRecordData::from_octets(
                     Rtype::CDS,
-                    signer
-                        .key
-                        .ds_rdata(apex, signer.key.algorithm.ds_digest_type())?
-                        .into_bytes(),
+                    signer.key.ds_rdata(apex, DS_DIGEST_TYPE)?.into_bytes(),
                 )
                 .map_err(|e| SignZoneError::Rdata {
                     rtype: "CDS",

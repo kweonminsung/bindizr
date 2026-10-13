@@ -359,15 +359,18 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
     app.create_named_zone(&granted_zone).await;
     app.create_named_zone(&hidden_zone).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &granted_zone,
-        "--actions",
-        RECORD_ACTIONS,
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &granted_zone,
+            "--actions",
+            RECORD_ACTIONS,
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 
@@ -431,17 +434,20 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
     let outside_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "*.dyn",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+            "--pattern",
+            "*.dyn",
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 
@@ -537,17 +543,20 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
 
     // Granting runs over the daemon socket, which carries no token.
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "@",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+            "--pattern",
+            "@",
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 
@@ -568,19 +577,22 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
 
     assert_eq!(listed(&app).await, (1, 1));
 
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "*.dyn",
-        "--types",
-        "A",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+            "--pattern",
+            "*.dyn",
+            "--types",
+            "A",
+        ],
+        None,
+    )
     .await;
     // The apex grant still stands, so its one row comes with the one A record
     // under `dyn`; the dotted label is stored as `a\046dyn`, so SQL leaves it
@@ -634,15 +646,18 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let ungranted_record_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &granted_zone,
-        "--actions",
-        RECORD_ACTIONS,
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &granted_zone,
+            "--actions",
+            RECORD_ACTIONS,
+        ],
+        None,
+    )
     .await;
 
     app.set_auth_token(scoped_token);
@@ -777,19 +792,22 @@ async fn role_grants_enforce_name_patterns_and_types() {
     app.create_named_zone(&zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "*.dyn",
-        "--types",
-        "A,TXT",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+            "--pattern",
+            "*.dyn",
+            "--types",
+            "A,TXT",
+        ],
+        None,
+    )
     .await;
 
     app.set_auth_token(scoped_token);
@@ -846,19 +864,22 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
     app.create_named_zone(&zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        RECORD_ACTIONS,
-        "--pattern",
-        "*.dyn",
-        "--types",
-        "A,TXT",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            RECORD_ACTIONS,
+            "--pattern",
+            "*.dyn",
+            "--types",
+            "A,TXT",
+        ],
+        None,
+    )
     .await;
 
     // The answer must not depend on whether the record exists.
@@ -1015,15 +1036,18 @@ async fn a_record_read_grant_reads_the_zone_but_cannot_change_it() {
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "record:read",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:read",
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 
@@ -1112,7 +1136,7 @@ async fn permissions_report_what_each_zone_allows() {
             "record:read",
         ],
     ] {
-        app.run_cli_success(&args).await;
+        app.run_cli_success(&args, None).await;
     }
     app.set_auth_token(scoped_token);
 
@@ -1208,25 +1232,31 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
     {
         let role = app.zone_name(&format!("parity{index}"));
         app.set_auth_token(admin_token.clone());
-        app.run_cli_success(&["role", "create", &role]).await;
-        app.run_cli_success(&[
-            "role",
-            "grant",
-            &role,
-            "--zone",
-            &zone_name,
-            "--actions",
-            "record:read",
-            "--pattern",
-            pattern,
-            "--types",
-            types,
-        ])
+        app.run_cli_success(&["role", "create", &role], None).await;
+        app.run_cli_success(
+            &[
+                "role",
+                "grant",
+                &role,
+                "--zone",
+                &zone_name,
+                "--actions",
+                "record:read",
+                "--pattern",
+                pattern,
+                "--types",
+                types,
+            ],
+            None,
+        )
         .await;
         let created = app
-            .run_cli_success(&[
-                "token", "create", &role, "--role", &role, "--output", "json",
-            ])
+            .run_cli_success(
+                &[
+                    "token", "create", &role, "--role", &role, "--output", "json",
+                ],
+                None,
+            )
             .await;
         let created: serde_json::Value = serde_json::from_str(&created).unwrap();
         app.set_auth_token(created["secret"].as_str().unwrap().to_string());
@@ -1303,19 +1333,22 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
 
     // An ACME-style client: it writes its challenge records and reads nothing.
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &scoped_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "record:create,record:update,record:delete",
-        "--pattern",
-        "_acme-challenge",
-        "--types",
-        "TXT",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:create,record:update,record:delete",
+            "--pattern",
+            "_acme-challenge",
+            "--types",
+            "TXT",
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
 
@@ -1387,10 +1420,13 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
 
 /// Create role `name` and a token in it, returning the token's secret.
 async fn create_role_with_token(app: &TestApp, name: &str) -> String {
-    app.run_cli_success(&["role", "create", name]).await;
+    app.run_cli_success(&["role", "create", name], None).await;
     let created: serde_json::Value = serde_json::from_str(
-        &app.run_cli_success(&["token", "create", name, "--role", name, "--output", "json"])
-            .await,
+        &app.run_cli_success(
+            &["token", "create", name, "--role", name, "--output", "json"],
+            None,
+        )
+        .await,
     )
     .unwrap();
     created["secret"].as_str().unwrap().to_string()
@@ -1477,19 +1513,22 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
         ),
         ("record:read", "www", "A"),
     ] {
-        app.run_cli_success(&[
-            "role",
-            "grant",
-            &challenge_role,
-            "--zone",
-            &zone_name,
-            "--actions",
-            actions,
-            "--pattern",
-            pattern,
-            "--types",
-            types,
-        ])
+        app.run_cli_success(
+            &[
+                "role",
+                "grant",
+                &challenge_role,
+                "--zone",
+                &zone_name,
+                "--actions",
+                actions,
+                "--pattern",
+                pattern,
+                "--types",
+                types,
+            ],
+            None,
+        )
         .await;
     }
     let creator_role = format!("{}-creator", app.namespace());
@@ -1503,26 +1542,32 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
             "zone:update,record:create,record:update,record:delete",
         ),
     ] {
-        app.run_cli_success(&[
-            "role",
-            "grant",
-            role,
-            "--zone",
-            &zone_name,
-            "--actions",
-            actions,
-        ])
+        app.run_cli_success(
+            &[
+                "role",
+                "grant",
+                role,
+                "--zone",
+                &zone_name,
+                "--actions",
+                actions,
+            ],
+            None,
+        )
         .await;
     }
     let renamer_role = format!("{}-renamer", app.namespace());
     let renamer_token = create_role_with_token(&app, &renamer_role).await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &renamer_role,
-        "--actions",
-        "zone:update,zone:create",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &renamer_role,
+            "--actions",
+            "zone:update,zone:create",
+        ],
+        None,
+    )
     .await;
 
     let zone = &zone_name;
@@ -1697,8 +1742,11 @@ async fn a_zone_creating_import_needs_its_record_rights_before_fetching() {
     app.set_auth_token(admin_token.clone());
 
     let (role_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&["role", "grant", &role_name, "--actions", "zone:create"])
-        .await;
+    app.run_cli_success(
+        &["role", "grant", &role_name, "--actions", "zone:create"],
+        None,
+    )
+    .await;
     app.set_auth_token(scoped_token.clone());
 
     // Nothing listens there: a refusal before the fetch is 403, an attempted
@@ -1722,13 +1770,16 @@ async fn a_zone_creating_import_needs_its_record_rights_before_fetching() {
 
     // The grants are read per request, so the same token sees the new one.
     app.set_auth_token(admin_token);
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &role_name,
-        "--actions",
-        "record:create,record:delete",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &role_name,
+            "--actions",
+            "record:create,record:delete",
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token);
     let (status, body) = app
@@ -1766,15 +1817,18 @@ async fn renaming_a_zone_needs_zone_create() {
     app.create_named_zone(&other_zone).await;
 
     let (role_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "role",
-        "grant",
-        &role_name,
-        "--zone",
-        &zone_name,
-        "--actions",
-        "zone:update",
-    ])
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &role_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "zone:update",
+        ],
+        None,
+    )
     .await;
     app.set_auth_token(scoped_token.clone());
 
@@ -1806,8 +1860,11 @@ async fn renaming_a_zone_needs_zone_create() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     app.set_auth_token(admin_token);
-    app.run_cli_success(&["role", "grant", &role_name, "--actions", "zone:create"])
-        .await;
+    app.run_cli_success(
+        &["role", "grant", &role_name, "--actions", "zone:create"],
+        None,
+    )
+    .await;
     app.set_auth_token(scoped_token);
     let (status, body) = app
         .send_request(
@@ -1844,28 +1901,34 @@ async fn an_import_stops_when_its_credential_is_revoked_mid_transfer() {
         // `zone:read` keeps the zone visible, so a revoked grant reads as 403.
         let role_name = format!("{}-revoked-{revocation}", app.namespace());
         let token = create_role_with_token(&app, &role_name).await;
-        app.run_cli_success(&[
-            "role",
-            "grant",
-            &role_name,
-            "--zone",
-            &zone_name,
-            "--actions",
-            "zone:read",
-        ])
-        .await;
-        let granted: serde_json::Value = serde_json::from_str(
-            &app.run_cli_success(&[
+        app.run_cli_success(
+            &[
                 "role",
                 "grant",
                 &role_name,
                 "--zone",
                 &zone_name,
                 "--actions",
-                "record:create",
-                "--output",
-                "json",
-            ])
+                "zone:read",
+            ],
+            None,
+        )
+        .await;
+        let granted: serde_json::Value = serde_json::from_str(
+            &app.run_cli_success(
+                &[
+                    "role",
+                    "grant",
+                    &role_name,
+                    "--zone",
+                    &zone_name,
+                    "--actions",
+                    "record:create",
+                    "--output",
+                    "json",
+                ],
+                None,
+            )
             .await,
         )
         .unwrap();
@@ -1898,7 +1961,7 @@ async fn an_import_stops_when_its_credential_is_revoked_mid_transfer() {
         );
         let revoking = async {
             accepted_rx.await.unwrap();
-            app.run_cli_success(&revoke).await;
+            app.run_cli_success(&revoke, None).await;
             release_tx.send(()).unwrap();
         };
         let ((status, body), ()) = tokio::join!(import, revoking);

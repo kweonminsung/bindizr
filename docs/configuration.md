@@ -24,8 +24,9 @@ rejected and the current configuration stays active.
 
 | Settings | Reload behavior |
 | --- | --- |
-| `[logging]` and `[dns]` except the three settings below | Reloadable |
-| `[api]`, `[database]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` | Restart required |
+| `[logging]` and `[dns]` except the settings below | Reloadable |
+| `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name`, `dns.tcp_max_connections` | Restart required |
+| The certificate and key files `[api.tls]` and `[dns.tls]` name | Re-read on reload, so a renewed pair serves without a restart; the paths stay fixed |
 
 A reload names the sections it changed; a refusal names the settings that
 would need a restart and leaves the running configuration alone.
@@ -44,8 +45,10 @@ authentication_required = true # Require an API token; `bindizr token create` ma
 metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
 external_dns_enabled = false  # ExternalDNS provider API at /external-dns
 openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
-# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both TLS files to serve HTTPS
-# tls_key_file = "/etc/bindizr/tls/tls.key"
+
+[api.tls]                     # Set both files to serve HTTPS
+# cert_file = "/etc/bindizr/tls/tls.crt"
+# key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -59,25 +62,43 @@ file_path = "/var/lib/bindizr/bindizr.db"
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
 
+[database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
+# mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
+# ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
+
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
-# catalog_zone_name = "catalog.bindizr"  # Must match the secondary's catalog configuration
-nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
-# zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
-# scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
+# catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
+# zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
+# scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
+# tcp_idle_timeout_secs = 30             # Idle time between queries before a TCP or TLS connection closes; advertised as edns-tcp-keepalive (RFC 7828)
+# tcp_max_connections = 128              # Connections served at once on each listener, TCP and TLS; the rest wait in the accept backlog
 
 [dns.notify]                  # NOTIFY to the secondaries
-# batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
-# retries = 3                 # Retries after the first attempt
-# timeout_secs = 3            # Seconds to wait for each NOTIFY
+# batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
+# retries = 3
+# timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
-[dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
-# max_records = 500000        # Records the cache holds; a larger zone is served uncached (0 = no cache)
+[dns.nsupdate]                # nsupdate (RFC 2136)
+tsig_required = true          # false admits unsigned updates from anyone
+
+[dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
+# listen_port = 853           # On dns.listen_addr
+# cert_file = "/etc/bindizr/tls/xot.crt"
+# key_file = "/etc/bindizr/tls/xot.key"
+
+[dns.transfer]                # Zone transfers
+# cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
+# require_tls = false         # Refuse AXFR/IXFR over plain TCP and UDP; needs [dns.tls], SOA queries still answer
+
+[dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
+# timeout_secs = 30
+# max_records = 200000        # A larger zone is refused
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
-refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
+refresh = 300                 # SOA refresh; NOTIFY drives propagation, this only bounds a lost one
 retry = 60                    # SOA retry
 expire = 3600000              # SOA expire
 minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
@@ -91,6 +112,16 @@ A reserved character in the user, password, or database of a database `url`
 (`#`, `@`, `:`, `/`, `?`, a space) is percent-encoded, `p@ss` as `p%40ss`;
 Bindizr decodes the components before connecting. The Helm chart encodes
 the credentials it assembles from the bundled database's `auth` values.
+
+`[database.tls]` is the connection to a MySQL or PostgreSQL server, which a
+managed database usually requires over TLS. Without a `mode`, TLS is used
+when the server offers it and the certificate is not checked; `require`
+insists on TLS and checks nothing either. A server reached over a network
+should be verified: `verify-full` checks the chain and the host name against
+the system's roots, or against `ca_file` when the issuer is private, as the
+certificate bundles of RDS and Cloud SQL are. The URL's own parameters
+(`sslmode`, `ssl-mode`) still work; a set key overrides them, and `ca_file`
+needs its verifying `mode` beside it rather than in the URL.
 
 Use distinct catalog names for independent Bindizr deployments feeding the
 same secondary. Configure [TLS](http-api/index.md#tls) before exposing the API
@@ -110,23 +141,33 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
 | `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
 | `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | Describes the whole API surface; off by default |
-| `BINDIZR_API_TLS_CERT_FILE` | `api.tls_cert_file` | Empty clears it |
-| `BINDIZR_API_TLS_KEY_FILE` | `api.tls_key_file` | Empty clears it |
+| `BINDIZR_API_TLS_CERT_FILE` | `api.tls.cert_file` | Empty clears it |
+| `BINDIZR_API_TLS_KEY_FILE` | `api.tls.key_file` | Empty clears it |
 | `BINDIZR_DATABASE_TYPE` | `database.type` | `mysql`, `postgresql`, or `sqlite` |
 | `BINDIZR_DATABASE_URL` | the URL for the selected backend | Ignored when the type is `sqlite` |
 | `BINDIZR_DATABASE_MYSQL_URL` | `database.mysql.url` | |
 | `BINDIZR_DATABASE_POSTGRESQL_URL` | `database.postgresql.url` | |
 | `BINDIZR_DATABASE_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
+| `BINDIZR_DATABASE_TLS_MODE` | `database.tls.mode` | Empty leaves it to the URL |
+| `BINDIZR_DATABASE_TLS_CA_FILE` | `database.tls.ca_file` | Empty clears it |
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
-| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [nsupdate](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
-| `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |
-| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | also bounds the SOA probes of `zone status` and the parent-NS queries of `dnssec check-ds` |
+| `BINDIZR_DNS_TLS_LISTEN_PORT` | `dns.tls.listen_port` | |
+| `BINDIZR_DNS_TLS_CERT_FILE` | `dns.tls.cert_file` | Empty clears it |
+| `BINDIZR_DNS_TLS_KEY_FILE` | `dns.tls.key_file` | Empty clears it |
+| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer.cache_max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_TRANSFER_REQUIRE_TLS` | `dns.transfer.require_tls` | needs `[dns.tls]` |
+| `BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS` | `dns.tcp_idle_timeout_secs` | 1 to 6553 |
+| `BINDIZR_DNS_TCP_MAX_CONNECTIONS` | `dns.tcp_max_connections` | |
+| `BINDIZR_DNS_IMPORT_TIMEOUT_SECS` | `dns.import.timeout_secs` | |
+| `BINDIZR_DNS_IMPORT_MAX_RECORDS` | `dns.import.max_records` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |

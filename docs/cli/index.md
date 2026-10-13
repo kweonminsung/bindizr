@@ -23,7 +23,7 @@ no remote mode; use the [HTTP API](../http-api/index.md) for remote access.
 | `secondary` | The secondary servers: who receives NOTIFY and may pull zones | [Secondaries](secondaries.md) |
 | `role` | Roles and the grants that decide what their tokens and keys may do | [Access Control](access-control.md) |
 | `token` | API tokens, each authenticating into one role | [Access Control](access-control.md#api-tokens) |
-| `tsig-key` | TSIG keys, each authenticating into one role, for nsupdate and transfers | [Access Control](access-control.md#tsig-keys), [Dynamic Updates](nsupdate.md) |
+| `tsig-key` | TSIG keys, each authenticating into one role, for nsupdate and transfers | [Access Control](access-control.md#tsig-keys), [nsupdate](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec/index.md) |
 
 Result commands support `-o json` and `-o yaml` for scripting. Exports,

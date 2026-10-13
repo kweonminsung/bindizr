@@ -1,8 +1,47 @@
 use super::*;
 use crate::{
-    dns::message::{Class, Rtype},
+    dns::message::{Class, Edns, Rtype},
     model::record::RecordType,
 };
+
+/// Decode compressed SOA names and unsigned fields without crossing RDLENGTH.
+#[test]
+fn soa_update_decodes_compression_and_checks_rdata_length() {
+    let mut message = minimal_update_with_ztype(6);
+    let start = message.len();
+    message.extend_from_slice(&[3, b'n', b's', b'1', 0xc0, 12]);
+    message.extend_from_slice(&[
+        11, b'h', b'o', b's', b't', b'.', b'm', b'a', b's', b't', b'e', b'r', 0xc0, 12,
+    ]);
+    for field in [u32::MAX, 7200, 3600, 604800, 86400] {
+        message.extend_from_slice(&field.to_be_bytes());
+    }
+    let mut record = UpdateRecord {
+        name: "example.com.".to_string(),
+        record_type: Rtype::SOA,
+        class: Class::IN,
+        ttl: 300,
+        rdata: message[start..].to_vec(),
+        rdata_start: start,
+    };
+    let soa = record.to_soa_value(&message).unwrap();
+    assert_eq!(soa.mname, "ns1.example.com.");
+    assert_eq!(soa.rname, r"host\046master.example.com.");
+    assert_eq!(soa.serial, u32::MAX);
+    assert_eq!(
+        [soa.refresh, soa.retry, soa.expire, soa.minimum],
+        [7200, 3600, 604800, 86400]
+    );
+    let length = record.rdata.len();
+    for length in 0..length {
+        record.rdata.truncate(length);
+        assert!(record.to_soa_value(&message).is_err());
+        record.rdata = message[start..].to_vec();
+    }
+    record.rdata.push(0);
+    message.push(0);
+    assert!(record.to_soa_value(&message).is_err());
+}
 
 /// Build a minimal UPDATE message with the requested zone type.
 pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
@@ -49,7 +88,10 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
         0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x01, // Time signed
         0x01, 0x2c, // Fudge
-        0x00, 0x00, // MAC size
+        0x00, 0x20, // MAC size: the 32 octets hmac-sha256 produces
+    ]);
+    rdata.extend_from_slice(&[0u8; 32]);
+    rdata.extend_from_slice(&[
         0x12, 0x34, // Original ID
         0x00, 0x00, // Error
         0x00, 0x00, // Other len
@@ -65,20 +107,57 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
-/// Verify that `UpdateRequest::parse` rejects non SOA zone type.
+/// Reject non-SOA zone types before the service considers authority.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
-    let message = minimal_update_with_ztype(1);
-    let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
+    for class in [Class::IN, Class::CH, Class::HS, Class::from_int(65280)] {
+        let mut message = minimal_update_with_ztype(1);
+        let class_start = message.len() - 2;
+        message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
+        let err = UpdateRequest::parse(&message).unwrap_err();
+        assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
+    }
 }
 
-/// Verify that `UpdateRequest::parse` accepts SOA zone type.
+/// Preserve ZCLASS so the service can decide whether the zone is served.
 #[test]
-fn parse_update_request_accepts_soa_zone_type() {
+fn parse_update_request_preserves_zone_class() {
+    for class in [
+        Class::IN,
+        Class::CH,
+        Class::HS,
+        Class::NONE,
+        Class::ANY,
+        Class::from_int(0),
+        Class::from_int(65280),
+        Class::from_int(u16::MAX),
+    ] {
+        let mut message = minimal_update_with_ztype(6);
+        let class_start = message.len() - 2;
+        message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
+        let request = UpdateRequest::parse(&message).unwrap();
+        assert_eq!(request.zone_name, "example.com.");
+        assert_eq!(request.zone_class, class);
+        for count in [0u16, 2] {
+            message[4..6].copy_from_slice(&count.to_be_bytes());
+            assert!(matches!(
+                UpdateRequest::parse(&message),
+                Err(ParseUpdateError::InvalidHeader)
+            ));
+        }
+    }
+}
+
+/// A missing class field is malformed, not an unsupported zone class.
+#[test]
+fn parse_update_request_rejects_truncated_zone_class() {
     let message = minimal_update_with_ztype(6);
-    let request = UpdateRequest::parse(&message).unwrap();
-    assert_eq!(request.zone_name, "example.com.");
+    for missing in [1, 2] {
+        assert!(matches!(
+            UpdateRequest::parse(&message[..message.len() - missing]),
+            Err(ParseUpdateError::InvalidZoneSection)
+        ));
+    }
 }
 
 /// Verify that `UpdateRequest::parse` accepts opt additional without TSIG.
@@ -185,6 +264,29 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
     assert!(!RecordType::Txt.values_equal(&first_value, None, &second_value, None));
 }
 
+/// Keep RDLENGTH-delimited values from consuming the following record or TSIG.
+#[test]
+fn variable_length_rdata_stops_before_the_next_record() {
+    for (rtype, rdata) in [
+        (Rtype::CAA, b"\x00\x05issue".to_vec()),
+        (Rtype::DS, [vec![0, 1, 13, 2], vec![0xAB; 32]].concat()),
+        (Rtype::SSHFP, [vec![4, 2], vec![0xAB; 32]].concat()),
+        (Rtype::TLSA, [vec![3, 1, 1], vec![0xAB; 32]].concat()),
+    ] {
+        let mut record = update_record(rtype, Class::IN, 300, rdata.clone());
+        let expected = record.to_record_value(&rdata).unwrap();
+        let mut message = vec![0; 12];
+        record.rdata_start = message.len();
+        message.extend_from_slice(&rdata);
+        message.extend_from_slice(b"following record or TSIG");
+        assert_eq!(
+            record.to_record_value(&message).unwrap(),
+            expected,
+            "{rtype}"
+        );
+    }
+}
+
 /// Verify that `to_record_value` follows compression pointer in name RDATA.
 #[test]
 fn to_record_value_follows_compression_pointer_in_name_rdata() {
@@ -272,20 +374,8 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
     assert_eq!(priority, Some(10));
 }
 
-/// Build a dynamic update record with the requested wire fields.
+/// Build an nsupdate record with the requested wire fields.
 fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
-    UpdateRecord {
-        name: "www.example.com.".to_string(),
-        record_type,
-        class,
-        ttl,
-        rdata,
-        rdata_start: 0,
-    }
-}
-
-/// Build a dynamic update record with the requested wire fields.
-fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
         record_type,
@@ -301,11 +391,11 @@ fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
 /// naming one record's RDATA.
 #[test]
 fn a_well_formed_delete_passes_the_shape_check() {
-    delete_record(Rtype::A, Class::ANY, 0, Vec::new())
-        .validate_delete_shape()
+    update_record(Rtype::A, Class::ANY, 0, Vec::new())
+        .validate_update_shape()
         .unwrap();
-    delete_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1])
-        .validate_delete_shape()
+    update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1])
+        .validate_update_shape()
         .unwrap();
 }
 
@@ -314,22 +404,115 @@ fn a_well_formed_delete_passes_the_shape_check() {
 fn a_malformed_delete_names_what_it_lacks() {
     for (record, expected) in [
         (
-            delete_record(Rtype::A, Class::ANY, 60, Vec::new()),
-            DeleteShapeError::NonzeroTtl,
+            update_record(Rtype::A, Class::ANY, 60, Vec::new()),
+            ValidateUpdateShapeError::NonzeroTtl,
         ),
         (
-            delete_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
-            DeleteShapeError::AnyClassRdata,
+            update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
+            ValidateUpdateShapeError::AnyClassRdata,
         ),
         (
-            delete_record(Rtype::A, Class::NONE, 0, Vec::new()),
-            DeleteShapeError::NoneClassNoRdata,
+            update_record(Rtype::A, Class::NONE, 0, Vec::new()),
+            ValidateUpdateShapeError::NoneClassNoRdata,
         ),
         (
-            delete_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
-            DeleteShapeError::NoneClassTypeAny,
+            update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
+            ValidateUpdateShapeError::RecordType {
+                record_type: Rtype::ANY,
+            },
         ),
     ] {
-        assert_eq!(record.validate_delete_shape().unwrap_err(), expected);
+        assert_eq!(record.validate_update_shape().unwrap_err(), expected);
     }
+}
+
+/// Verify that query/meta types are rejected in every update class, while
+/// ANY remains the whole-name delete (RFC 2136, Section 3.4.1.2).
+#[test]
+fn update_shapes_distinguish_data_from_query_and_meta_types() {
+    for class in [Class::IN, Class::ANY, Class::NONE] {
+        for rtype in [
+            Rtype::OPT,
+            Rtype::TKEY,
+            Rtype::TSIG,
+            Rtype::IXFR,
+            Rtype::AXFR,
+            Rtype::MAILB,
+            Rtype::MAILA,
+            Rtype::ANY,
+            Rtype::from_int(0),
+            Rtype::from_int(128),
+            Rtype::from_int(248),
+            Rtype::from_int(65535),
+        ] {
+            let data = if class == Class::ANY { vec![] } else { vec![1] };
+            let record = update_record(rtype, class, 0, data);
+            let result = record.validate_update_shape();
+            if class == Class::ANY && rtype == Rtype::ANY {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(
+                    result,
+                    Err(ValidateUpdateShapeError::RecordType { record_type: rtype })
+                );
+            }
+        }
+        // A valid data type may be absent from the storage model; its
+        // deletion still has a well-formed wire shape (RFC 3597, Section 2).
+        for rtype in [Rtype::A, Rtype::SOA, Rtype::HINFO, Rtype::from_int(65280)] {
+            let data = if class == Class::ANY { vec![] } else { vec![1] };
+            update_record(rtype, class, 0, data)
+                .validate_update_shape()
+                .unwrap();
+        }
+    }
+    assert_eq!(
+        update_record(Rtype::A, Class::CH, 0, vec![192, 0, 2, 1]).validate_update_shape(),
+        Err(ValidateUpdateShapeError::Class { class: Class::CH })
+    );
+    // TTL normalization belongs to additions, never to the delete shape.
+    update_record(Rtype::A, Class::IN, u32::MAX, vec![192, 0, 2, 1])
+        .validate_update_shape()
+        .unwrap();
+}
+
+/// Verify that the OPT record is read as RFC 6891 asks: one is kept, two
+/// are malformed, and a version above 0 is unsupported.
+#[test]
+fn parse_update_request_reads_the_opt_record() {
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 1);
+    append_opt_record(&mut message);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Present {
+            udp_payload_size: 1232,
+            version: 0,
+            dnssec_ok: false,
+        }
+    );
+
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 2);
+    append_opt_record(&mut message);
+    append_opt_record(&mut message);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Malformed
+    );
+
+    let mut message = minimal_update_with_ztype(6);
+    set_arcount(&mut message, 1);
+    // The TTL's second octet is the EDNS version.
+    message.extend_from_slice(&[
+        0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    assert_eq!(
+        UpdateRequest::parse(&message).unwrap().edns,
+        Edns::Present {
+            udp_payload_size: 1232,
+            version: 1,
+            dnssec_ok: false,
+        }
+    );
 }

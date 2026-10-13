@@ -21,7 +21,7 @@ use crate::{
     grant_pattern::{normalize_pattern, normalize_types},
     pagination::build_page,
     transaction,
-    types::{CreateRoleGrantRequest, GetRoleGrantResponse, PageRequest, PaginatedResponse},
+    types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse},
     zone,
 };
 
@@ -32,7 +32,7 @@ pub async fn create(
     caller: &Caller,
     role_name: &str,
     request: &CreateRoleGrantRequest,
-) -> Result<GetRoleGrantResponse, ServiceError> {
+) -> Result<RoleGrantResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let role = super::lookup_by_name(cx, role_name).await?;
@@ -105,7 +105,7 @@ pub async fn create(
     .await;
     let grant = transaction::finish_tx(tx, result, "failed to create role grant").await?;
 
-    Ok(GetRoleGrantResponse::from_grant(
+    Ok(RoleGrantResponse::from_grant(
         &grant,
         &role.name,
         zone.as_ref().map(|zone| &zone.name),
@@ -118,7 +118,7 @@ pub async fn list(
     caller: &Caller,
     role_name: &str,
     page: PageRequest,
-) -> Result<PaginatedResponse<GetRoleGrantResponse>, ServiceError> {
+) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let role = super::lookup_by_name(cx, role_name).await?;
@@ -130,7 +130,7 @@ pub async fn list_self(
     cx: &Context,
     token: &ApiToken,
     page: PageRequest,
-) -> Result<PaginatedResponse<GetRoleGrantResponse>, ServiceError> {
+) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
@@ -171,7 +171,7 @@ async fn list_by_role(
     cx: &Context,
     role: &Role,
     page: PageRequest,
-) -> Result<PaginatedResponse<GetRoleGrantResponse>, ServiceError> {
+) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), role.id).await?;
     let zone_names: HashMap<ZoneId, ZoneName> = bindizr_db::zone::list_all(cx.db())
         .await?
@@ -187,7 +187,7 @@ async fn list_by_role(
                     .zone_scope
                     .zone_id()
                     .and_then(|zone_id| zone_names.get(&zone_id));
-                GetRoleGrantResponse::from_grant(grant, &role.name, zone_name)
+                RoleGrantResponse::from_grant(grant, &role.name, zone_name)
             })
             .collect(),
         page.limit,

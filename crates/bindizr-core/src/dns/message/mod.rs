@@ -3,12 +3,12 @@
 
 pub use domain::base::{
     Name,
-    iana::{Class, Opcode, Rcode, Rtype},
+    iana::{Class, Opcode, OptRcode, Rcode, Rtype},
 };
 use domain::{
     base::{
-        MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
-        record::ComposeRecord, wire::Composer,
+        MessageBuilder, ToName, Ttl, UnknownRecordData, opt::keepalive::TcpKeepalive,
+        rdata::ComposeRecordData, record::ComposeRecord, wire::Composer,
     },
     rdata::tsig::Time48,
 };
@@ -16,7 +16,7 @@ use thiserror::Error;
 
 use crate::dns::{
     ConvertSerialError, DNS_TCP_MAX_SIZE, LibraryError,
-    dnssec::WireNameError,
+    dnssec::EncodeWireNameError,
     name::EncodeNameError,
     record::{EncodeRdataError, Rdata},
     tsig::{TransferSigner, signature_len},
@@ -28,7 +28,7 @@ pub enum EncodeMessageError {
     #[error("invalid raw rdata: {0}")]
     RawRdata(#[source] LibraryError),
     #[error(transparent)]
-    Owner(#[from] WireNameError),
+    Owner(#[from] EncodeWireNameError),
     #[error(transparent)]
     Name(#[from] EncodeNameError),
     #[error(transparent)]
@@ -53,21 +53,20 @@ pub enum EncodeMessageError {
     Sign(#[source] LibraryError),
 }
 
-/// A size failure that may still carry a frame: the caller must send it so
-/// its message count reflects what reached the client before the failure.
+/// An answer or encoding failure that may carry a frame to send first.
 #[derive(Debug, Error)]
 #[error("{source}")]
-pub struct Overflow {
+pub struct AddAnswerError {
     /// The answers buffered before the oversized one, if there were any.
     pub frame: Option<Vec<u8>>,
     #[source]
     pub source: EncodeMessageError,
 }
 
-impl Overflow {
-    /// Build an overflow error without a pending TCP frame.
+impl AddAnswerError {
+    /// Build an answer error without a pending TCP frame.
     fn without_frame(source: EncodeMessageError) -> Self {
-        Overflow {
+        AddAnswerError {
             frame: None,
             source,
         }
@@ -94,24 +93,39 @@ pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,
     qtype: u16,
+    qclass: Class,
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
     /// Signs every message this builder produces, carrying one MAC chain
     /// across the envelopes of a transfer.
     signer: Option<TransferSigner>,
+    /// The query's RD, copied into every message (RFC 1035, Section 4.1.1).
+    rd: bool,
+    /// Request EDNS metadata, echoed in each frame (RFC 9103, Section 6.3.4).
+    edns: Edns,
+    /// The keepalive that OPT carries over TCP (RFC 7828, Section 3.3.2).
+    keepalive: Option<TcpKeepalive>,
+    /// Set once the answers were dropped to fit a UDP limit.
+    truncated: bool,
 }
 
 impl DnsMessageBuilder {
-    /// Create a DNS response builder for the supplied question.
-    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
+    /// Create a response builder answering `query` under `qtype`, which an
+    /// IXFR falling back to AXFR keeps as asked.
+    pub fn new(query: &ParsedQuery, qtype: Rtype) -> Self {
         Self {
-            query_id,
-            qname: qname.clone(),
+            query_id: query.query_id,
+            qname: query.qname.clone(),
             qtype: qtype.to_int(),
+            qclass: query.qclass,
             answers: Vec::new(),
             answers_len: 0,
             signer: None,
+            rd: query.rd,
+            edns: query.edns,
+            keepalive: query.tcp_keepalive(),
+            truncated: false,
         }
     }
 
@@ -122,8 +136,8 @@ impl DnsMessageBuilder {
         self
     }
 
-    /// Hand the signer back to a caller answering the request another way.
-    /// Only sound before the first frame: a MAC chain cannot be rewound.
+    /// Return the signer for an alternate response, preserving the MAC chain
+    /// through errors (RFC 8945, Section 5.3.1).
     pub fn take_signer(&mut self) -> Option<TransferSigner> {
         self.signer.take()
     }
@@ -156,10 +170,16 @@ impl DnsMessageBuilder {
         self.answers.len()
     }
 
-    /// Calculate the response size including the question and optional TSIG.
+    /// Calculate the response size including the question, the OPT an EDNS
+    /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, signature_len);
-        12 + self.qname.len() + 4 + self.answers_len + signature
+        let opt = if self.edns != Edns::Absent {
+            OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
+        } else {
+            0
+        };
+        12 + self.qname.len() + 4 + self.answers_len + opt + signature
     }
 
     /// Remove the last answer and update the buffered byte count.
@@ -185,11 +205,14 @@ impl DnsMessageBuilder {
 
     /// Buffer one answer; on overflow, return the preceding answers as a TCP
     /// frame and retain this answer for the next frame.
-    pub fn add_answer_or_overflow<F>(&mut self, add_answer: F) -> Result<Option<Vec<u8>>, Overflow>
+    pub fn add_answer_or_overflow<F>(
+        &mut self,
+        add_answer: F,
+    ) -> Result<Option<Vec<u8>>, AddAnswerError>
     where
         F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,
     {
-        add_answer(self).map_err(Overflow::without_frame)?;
+        add_answer(self).map_err(AddAnswerError::without_frame)?;
 
         if self.message_len() <= DNS_TCP_MAX_SIZE {
             return Ok(None);
@@ -198,18 +221,18 @@ impl DnsMessageBuilder {
         // Keep the overflowing answer out of the frame built from earlier answers.
         let last_answer = self
             .pop_last_answer()
-            .ok_or_else(|| Overflow::without_frame(EncodeMessageError::NoAnswers))?;
+            .ok_or_else(|| AddAnswerError::without_frame(EncodeMessageError::NoAnswers))?;
 
         if self.answer_count() == 0 {
             self.push_answer(last_answer);
-            return Err(Overflow::without_frame(self.answer_too_large()));
+            return Err(AddAnswerError::without_frame(self.answer_too_large()));
         }
 
-        let frame = self.take_frame().map_err(Overflow::without_frame)?;
+        let frame = self.take_frame().map_err(AddAnswerError::without_frame)?;
 
         self.push_answer(last_answer);
         if self.message_len() > DNS_TCP_MAX_SIZE {
-            return Err(Overflow {
+            return Err(AddAnswerError {
                 frame,
                 source: self.answer_too_large(),
             });
@@ -236,19 +259,19 @@ impl DnsMessageBuilder {
         }
     }
 
-    /// Compose the buffered answers into one authoritative response, signed
-    /// when the request was. Built through `domain`, which composes the
-    /// additional section a TSIG record needs.
+    /// Compose the buffered answers into an authoritative response, signing when configured.
     fn build_message(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
         header.set_aa(true);
+        header.set_rd(self.rd);
+        header.set_tc(self.truncated);
 
         let mut question = builder.question();
         question
-            .push((&self.qname, Rtype::from_int(self.qtype), Class::IN))
+            .push((&self.qname, Rtype::from_int(self.qtype), self.qclass))
             .map_err(|e| EncodeMessageError::ComposeQuestion(Box::new(e)))?;
 
         let mut answer = question.answer();
@@ -258,7 +281,10 @@ impl DnsMessageBuilder {
                 .map_err(|e| EncodeMessageError::ComposeAnswer(Box::new(e)))?;
         }
 
+        // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
+        self.edns
+            .push_response(&mut additional, OptRcode::NOERROR, None, self.keepalive);
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .answer(&mut additional, Time48::now())
@@ -273,8 +299,13 @@ impl DnsMessageBuilder {
         encode_tcp_message(&message)
     }
 
-    /// Consume the builder and serialize its DNS response.
-    pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
+    /// Build the response within `max_len`: over it, the answers are dropped
+    /// and TC set (RFC 6891, Section 6.2.5 keeps the header, question, and OPT).
+    pub fn build(mut self, max_len: usize) -> Result<Vec<u8>, EncodeMessageError> {
+        if self.message_len() > max_len {
+            self.clear_answers();
+            self.truncated = true;
+        }
         self.build_message()
     }
 }
@@ -292,10 +323,11 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
     Ok(result)
 }
 
-mod query;
+pub(crate) mod query;
 mod records;
 
-pub use query::{ParseQueryError, ParsedQuery, is_response};
+pub use query::{Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery, is_response};
+use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 
 #[cfg(test)]
 mod tests;

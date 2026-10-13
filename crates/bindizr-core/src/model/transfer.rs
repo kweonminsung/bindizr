@@ -17,6 +17,8 @@ pub enum ParseTransferError {
     Kind(String),
     #[error("unsupported transfer result '{0}'")]
     Result(String),
+    #[error("unsupported transfer transport '{0}'")]
+    Transport(String),
 }
 
 /// Which transfer a client asked for.
@@ -133,6 +135,66 @@ impl TryFrom<String> for TransferResult {
     }
 }
 
+/// What a request arrived over, in DNS's own transport words. `Udp` reaches
+/// the metrics alone: a UDP question is answered with TC or the SOA, never saved.
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum TransferTransport {
+    Udp,
+    Tcp,
+    Tls,
+}
+
+impl TransferTransport {
+    /// Every transport, for the metric series registered up front.
+    pub const ALL: [Self; 3] = [Self::Udp, Self::Tcp, Self::Tls];
+
+    /// Storage name, as the column, the API, and the metric label spell it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TransferTransport::Udp => "udp",
+            TransferTransport::Tcp => "tcp",
+            TransferTransport::Tls => "tls",
+        }
+    }
+}
+
+impl std::fmt::Display for TransferTransport {
+    /// Write the transport as its DNS mnemonic.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TransferTransport::Udp => "UDP",
+            TransferTransport::Tcp => "TCP",
+            TransferTransport::Tls => "TLS",
+        })
+    }
+}
+
+impl std::str::FromStr for TransferTransport {
+    type Err = ParseTransferError;
+
+    /// Parse a transport from its text representation.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "udp" => Ok(TransferTransport::Udp),
+            "tcp" => Ok(TransferTransport::Tcp),
+            "tls" => Ok(TransferTransport::Tls),
+            _ => Err(ParseTransferError::Transport(s.to_string())),
+        }
+    }
+}
+
+impl TryFrom<String> for TransferTransport {
+    type Error = ParseTransferError;
+
+    /// Validate and convert the stored value into a transport.
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
 /// The latest transfer served to one client address for one zone, as it is
 /// written; a refusal or failure keeps its reason and no serial.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,6 +204,8 @@ pub struct Transfer {
     /// The transfer the client asked for.
     pub kind: TransferKind,
     pub result: TransferResult,
+    /// Plain TCP or TLS; a transfer never completes over UDP.
+    pub transport: TransferTransport,
     /// Whether the answer was a delta; an IXFR the journal could not serve
     /// went out as the whole zone.
     pub incremental: bool,
@@ -160,6 +224,8 @@ pub struct TransferWithZone {
     pub kind: TransferKind,
     #[sqlx(try_from = "String")]
     pub result: TransferResult,
+    #[sqlx(try_from = "String")]
+    pub transport: TransferTransport,
     pub incremental: bool,
     pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
@@ -183,6 +249,23 @@ mod tests {
                 value
             );
             assert_eq!(value.as_str().parse::<TransferKind>().unwrap(), value);
+        }
+    }
+
+    /// Verify that `TransferTransport` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn transfer_transport_spells_itself_once() {
+        for value in [
+            TransferTransport::Udp,
+            TransferTransport::Tcp,
+            TransferTransport::Tls,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<TransferTransport>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<TransferTransport>().unwrap(), value);
         }
     }
 

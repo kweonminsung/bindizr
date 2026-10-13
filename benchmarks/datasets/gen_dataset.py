@@ -12,36 +12,31 @@ Type mix mirrors a realistic zone: mostly A/AAAA, some CNAME/TXT/MX.
 from __future__ import annotations
 
 import random
-from typing import Iterator
 
 ZONE = "bench.example."
 
 
-def _ip4(rng: random.Random) -> str:
+def _generate_ipv4(rng: random.Random) -> str:
     """Generate an IPv4 value for a benchmark record."""
     return f"10.{rng.randint(0, 255)}.{rng.randint(0, 255)}.{rng.randint(1, 254)}"
 
 
-def _ip6(rng: random.Random) -> str:
+def _generate_ipv6(rng: random.Random) -> str:
     """Generate an IPv6 value for a benchmark record."""
     return "2001:db8::" + ":".join(f"{rng.randint(0, 0xffff):x}" for _ in range(3))
 
 
 def generate(count: int, seed: int, zone: str = ZONE) -> list[dict]:
     """Generate a reproducible list of benchmark records."""
-    return list(iter_records(count, seed, zone))
-
-
-def iter_records(count: int, seed: int, zone: str = ZONE) -> Iterator[dict]:
-    """Yield a reproducible stream of benchmark records."""
     rng = random.Random(seed)
+    records = []
     for i in range(count):
         name = f"host{i:06d}"
         roll = rng.random()
         if roll < 0.60:
-            rec = {"name": name, "type": "A", "value": _ip4(rng), "ttl": 3600}
+            rec = {"name": name, "type": "A", "value": _generate_ipv4(rng), "ttl": 3600}
         elif roll < 0.80:
-            rec = {"name": name, "type": "AAAA", "value": _ip6(rng), "ttl": 3600}
+            rec = {"name": name, "type": "AAAA", "value": _generate_ipv6(rng), "ttl": 3600}
         elif roll < 0.90:
             target = f"host{rng.randint(0, max(i, 1)):06d}.{zone}"
             rec = {"name": name, "type": "CNAME", "value": target, "ttl": 3600}
@@ -50,7 +45,8 @@ def iter_records(count: int, seed: int, zone: str = ZONE) -> Iterator[dict]:
         else:
             rec = {"name": name, "type": "MX", "value": f"mail{i % 5}.{zone}",
                    "ttl": 3600, "priority": 10}
-        yield rec
+        records.append(rec)
+    return records
 
 
 if __name__ == "__main__":

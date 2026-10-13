@@ -1,0 +1,102 @@
+use bindizr_core::dns::message::Rcode;
+
+use super::*;
+
+/// A wire record whose RDATA starts at the beginning of its test message.
+fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
+    UpdateRecord {
+        name: "host.example.com.".to_string(),
+        record_type,
+        class,
+        ttl,
+        rdata: rdata.to_vec(),
+        rdata_start: 0,
+    }
+}
+
+/// Verify the prerequisite and update shapes are reported as FORMERR
+/// (RFC 2136, Sections 3.2.1 and 3.4.1).
+#[test]
+fn malformed_sections_are_formerr() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    for prerequisite in [
+        record(Class::ANY, Rtype::ANY, 1, &[]),
+        record(Class::ANY, Rtype::A, 0, &[1, 2, 3, 4]),
+        record(Class::IN, Rtype::ANY, 0, &[]),
+        record(Class::CH, Rtype::ANY, 0, &[]),
+    ] {
+        let err = decode_prerequisites(&[prerequisite], &zone, &[]).unwrap_err();
+        assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
+    }
+    for update in [
+        record(Class::NONE, Rtype::ANY, 0, &[]),
+        record(Class::ANY, Rtype::A, 0, &[1, 2, 3, 4]),
+        record(Class::IN, Rtype::AXFR, 0, &[]),
+        record(Class::CH, Rtype::A, 0, &[1, 2, 3, 4]),
+    ] {
+        let err = decode_updates(&[update], &zone, &[]).unwrap_err();
+        assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
+    }
+}
+
+/// Verify that ineffective deletes still pass every prescan check, including
+/// names whose escaped dots cannot act as zone boundaries (RFC 2136, Section 3.4.1).
+#[test]
+fn ignored_deletes_still_require_valid_owners_and_shapes() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    for (rtype, data) in [
+        (Rtype::SOA, vec![0; 22]),
+        (Rtype::HINFO, vec![0; 2]),
+        (Rtype::from_int(65280), vec![1]),
+    ] {
+        for class in [Class::ANY, Class::NONE] {
+            let data = if class == Class::ANY { &[][..] } else { &data };
+            let valid = record(class, rtype, 0, data);
+            assert!(
+                decode_updates(std::slice::from_ref(&valid), &zone, data)
+                    .unwrap()
+                    .is_empty()
+            );
+            for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
+                let mut outside = valid.clone();
+                outside.name = name.to_string();
+                let err = decode_updates(&[outside], &zone, data).unwrap_err();
+                assert_eq!(err.rcode(), Rcode::NOTZONE, "{err}");
+            }
+            let mut malformed = valid;
+            malformed.ttl = 1;
+            let err = decode_updates(&[malformed], &zone, data).unwrap_err();
+            assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
+        }
+    }
+}
+
+/// Verify that every record is prescanned before RDATA is decoded or an
+/// ineffective delete is omitted (RFC 2136, Section 3.4.1).
+#[test]
+fn the_complete_prescan_precedes_operation_decoding() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let malformed_add = record(Class::IN, Rtype::A, 0, &[]);
+    let mut outside = record(Class::ANY, Rtype::SOA, 0, &[]);
+    outside.name = "outside.example.net.".to_string();
+    let err = decode_updates(&[malformed_add, outside], &zone, &[]).unwrap_err();
+    assert_eq!(err.rcode(), Rcode::NOTZONE, "{err}");
+}
+
+/// Verify that execution receives the checked owner, and an add with a
+/// high-bit TTL still reads as zero (RFC 2181, Section 8).
+#[test]
+fn decoded_operations_carry_checked_owners() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let message = [192, 0, 2, 1];
+    let mut add = record(Class::IN, Rtype::A, u32::MAX, &message);
+    add.name = r"host\.name.example.com.".to_string();
+    let operations = decode_updates(&[add], &zone, &message).unwrap();
+    match &operations[0] {
+        UpdateOperation::Record(RecordOperation::AddRecord { name, ttl, .. }) => {
+            assert_eq!(name.labels(), ["host.name"]);
+            assert_eq!(ttl.as_secs(), 0);
+        }
+        other => panic!("{other:?}"),
+    }
+}

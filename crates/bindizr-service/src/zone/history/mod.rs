@@ -28,12 +28,12 @@ use crate::{
         zone::Zone,
     },
     pagination::{build_paginated_response, normalize_page_limit},
-    record::{self, validate_record_add_constraints_normalized, validate_record_name_in_zone},
+    record::{self, validate_record_constraints, validate_record_name_in_zone},
     serial::{generate_serial, validate_stored_serial},
     transaction,
     types::{
-        PaginatedResponse, RollbackSummary, RollbackZoneResponse, Run, VersionDetailResponse,
-        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse,
+        DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
+        RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,
     },
 };
 
@@ -93,12 +93,12 @@ pub async fn get_version(
     caller: &Caller,
     zone_name: &ZoneName,
     serial: Serial,
-) -> Result<VersionDetailResponse, ServiceError> {
+) -> Result<GetZoneVersionResponse, ServiceError> {
     let serial = validate_stored_serial(serial)?;
     let mut tx = transaction::begin_read_tx(cx, "failed to load version").await?;
 
     let result = async {
-        let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let read = caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -122,7 +122,7 @@ pub async fn get_version(
 
     let (zone, version, records) =
         transaction::finish_tx(tx, result, "failed to load version").await?;
-    Ok(VersionDetailResponse {
+    Ok(GetZoneVersionResponse {
         version: ZoneVersionResponse::try_from(&version)?,
         records: records
             .as_slice()
@@ -132,22 +132,20 @@ pub async fn get_version(
     })
 }
 
-/// Compute the record-level difference between two of a zone's serials;
-/// `to_serial` defaults to the current one. Each serial must be the
-/// current one or an existing version.
+/// Diff two zone serials, each current or saved; `to_serial` defaults to current.
 pub async fn diff_versions(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
     from_serial: Serial,
     to_serial: Option<Serial>,
-) -> Result<VersionDiffResponse, ServiceError> {
+) -> Result<DiffZoneVersionsResponse, ServiceError> {
     let from = validate_stored_serial(from_serial)?;
     let to = to_serial.map(validate_stored_serial).transpose()?;
     let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
     let result = async {
-        let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let read = caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -160,7 +158,7 @@ pub async fn diff_versions(
         let from_records = list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
         let to_records = list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
 
-        Ok::<_, ServiceError>(VersionDiffResponse {
+        Ok::<_, ServiceError>(DiffZoneVersionsResponse {
             from_serial,
             to_serial: to,
             diff: build_record_diff(
@@ -299,7 +297,7 @@ pub async fn rollback(
             // longer fit the names it restores.
             validate_record_name_in_zone(&target.name, &zone.name)?;
             let records_at_name = records_by_name.entry(target.name.clone()).or_default();
-            validate_record_add_constraints_normalized(
+            validate_record_constraints(
                 records_at_name,
                 &target.name,
                 &target.record_type,
@@ -322,7 +320,9 @@ pub async fn rollback(
             to_insert.push(record);
         }
 
-        let summary = RollbackSummary {
+        super::validate_record_changes_tx(&mut tx, &restored_zone, &dels, &to_insert).await?;
+
+        let summary = RollbackZoneSummaryResponse {
             added: to_insert.len() as u64,
             deleted: dels.len() as u64,
             unchanged: unchanged as u64,
@@ -359,7 +359,6 @@ pub async fn rollback(
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
         super::save_version_tx(
             &mut tx,
-            cx,
             &restored_zone,
             new_serial,
             caller.change_attribution(),
@@ -385,6 +384,7 @@ pub async fn rollback(
 
     // Announce only an applied rollback after its new version has committed.
     if applied {
+        cx.metrics().track_serial_bumps(1);
         log::info!(
             "event=zone_rollback zone={} target_serial={} new_serial={} added={} deleted={}",
             zone_name,

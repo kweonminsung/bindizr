@@ -12,7 +12,7 @@ use domain::base::{Name, iana::Rtype};
 pub use key::GenerateKeyError;
 pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
-pub use rdata::{DS_DIGEST_TYPES, KeyRdataError};
+pub use rdata::{DS_DIGEST_TYPES, EncodeKeyRdataError};
 pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};
 use thiserror::Error;
 
@@ -26,7 +26,7 @@ use crate::{
 
 /// A typed name whose wire bytes the `domain` crate did not accept.
 #[derive(Debug, Error)]
-pub enum WireNameError {
+pub enum EncodeWireNameError {
     #[error(transparent)]
     Name(#[from] ParseNameError),
     #[error("invalid wire name: {0}")]
@@ -40,13 +40,13 @@ pub type WireName = Name<Vec<u8>>;
 pub(crate) type WireRecord<D> = domain::base::Record<WireName, D>;
 
 /// A typed name's wire bytes into the domain form.
-fn to_wire_name(wire: Vec<u8>) -> Result<WireName, WireNameError> {
-    Name::from_octets(wire).map_err(|e| WireNameError::Octets(Box::new(e)))
+fn to_wire_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {
+    Name::from_octets(wire).map_err(|e| EncodeWireNameError::Octets(Box::new(e)))
 }
 
 impl ZoneName {
     /// The zone apex in the domain form the DNSSEC machinery takes.
-    pub fn to_wire_name(&self) -> Result<WireName, WireNameError> {
+    pub fn to_wire_name(&self) -> Result<WireName, EncodeWireNameError> {
         to_wire_name(self.to_wire()?)
     }
 }
@@ -54,7 +54,7 @@ impl ZoneName {
 impl OwnerName {
     /// The owner, absolute within `zone_name`, in the domain form the DNSSEC
     /// machinery takes.
-    pub fn to_wire_name(&self, zone_name: &ZoneName) -> Result<WireName, WireNameError> {
+    pub fn to_wire_name(&self, zone_name: &ZoneName) -> Result<WireName, EncodeWireNameError> {
         to_wire_name(self.to_wire(zone_name)?)
     }
 }

@@ -24,8 +24,8 @@ tokio.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
-# `tsig` so the harness can sign an nsupdate request the way a client does.
-domain = { workspace = true, features = ["tsig"] }
+# Sign client requests and read exported zone data independently of production code.
+domain = { workspace = true, features = ["tsig", "zonefile"] }
 rcgen.workspace = true
 reqwest = { workspace = true, features = ["rustls-no-provider"] }
 ring.workspace = true

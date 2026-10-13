@@ -9,8 +9,9 @@ bindizr dnssec rollover start example.com --role zsk # split-key zones
 
 `start` pre-publishes a replacement with the same algorithm: it joins the
 `DNSKEY` records (and, for CSK/KSK, the CDS/CDNSKEY records) but signs nothing
-yet, for as long as a resolver can still hold a `DNSKEY` answer without it —
-the zone's TTL. Then:
+yet, for as long as a resolver can still hold a `DNSKEY` answer without it:
+the zone's TTL, plus the SOA refresh for a secondary that missed the NOTIFY to
+catch up (RFC 7583, Section 3.2.1). Then:
 
 - **ZSK:** the scheduler promotes the key after the publish wait. Set the
   policy's `zsk_lifetime_days` to also start ZSK rollovers automatically;
@@ -33,8 +34,8 @@ overrides for a recovery procedure where you have checked the consequences.
 
 A retired key stays published until what points at it has drained from
 caches: the longest TTL it signed, and for a KSK or CSK the parent's DS TTL,
-read from the same answer that confirmed the promotion. Then the scheduler
-removes it. `status` shows every key's state
+read from the same answer that confirmed the promotion, plus the SOA refresh
+again. Then the scheduler removes it. `status` shows every key's state
 (`published`/`active`/`retired`) throughout.
 
 ## Algorithm rollover

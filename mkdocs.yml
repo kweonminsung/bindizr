@@ -130,7 +130,7 @@ nav:
       - Commands: cli/index.md
       - Zones and Records: cli/zones.md
       - Secondaries: cli/secondaries.md
-      - Dynamic Updates: cli/nsupdate.md
+      - nsupdate: cli/nsupdate.md
       - Access Control: cli/access-control.md
       - Advanced: cli/advanced.md
   - HTTP API:

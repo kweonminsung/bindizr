@@ -23,7 +23,7 @@ use tokio::{
 /// Why one exchange with a server produced no response. `what` names the
 /// operation (`"NOTIFY"`, `"SOA probe"`) so the message stands on its own.
 #[derive(Debug, Error)]
-pub enum ExchangeError {
+pub enum ExchangeMessageError {
     #[error(transparent)]
     Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
     #[error(transparent)]
@@ -70,7 +70,7 @@ pub(crate) async fn exchange_with_tcp_fallback(
     timeout: Duration,
     request: &[u8],
     what: &'static str,
-) -> Result<Vec<u8>, ExchangeError> {
+) -> Result<Vec<u8>, ExchangeMessageError> {
     let (received, response) = exchange_over_udp(server_addr, timeout, request, what).await?;
     if !is_truncated(&response[..received]) {
         return Ok(response[..received].to_vec());
@@ -85,7 +85,7 @@ pub(crate) async fn exchange_over_tcp(
     timeout: Duration,
     request: &[u8],
     what: &'static str,
-) -> Result<Vec<u8>, ExchangeError> {
+) -> Result<Vec<u8>, ExchangeMessageError> {
     let frame = encode_tcp_message(request)?;
     let exchange = async {
         let mut stream = TcpStream::connect(server_addr).await?;
@@ -94,7 +94,7 @@ pub(crate) async fn exchange_over_tcp(
     };
     tokio::time::timeout(timeout, exchange)
         .await
-        .map_err(|_| ExchangeError::TcpTimedOut { what })?
+        .map_err(|_| ExchangeMessageError::TcpTimedOut { what })?
 }
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
@@ -115,7 +115,7 @@ pub(crate) async fn exchange_over_udp(
     timeout: Duration,
     request: &[u8],
     what: &'static str,
-) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeError> {
+) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
     } else {
@@ -127,9 +127,9 @@ pub(crate) async fn exchange_over_udp(
 
     let sent = tokio::time::timeout(timeout, socket.send(request))
         .await
-        .map_err(|_| ExchangeError::SendTimedOut { what })??;
+        .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
     if sent != request.len() {
-        return Err(ExchangeError::IncompleteSend {
+        return Err(ExchangeMessageError::IncompleteSend {
             what,
             server: server_addr,
             sent,
@@ -140,7 +140,7 @@ pub(crate) async fn exchange_over_udp(
     let mut response = [0u8; UDP_RESPONSE_BUF];
     let received = tokio::time::timeout(timeout, socket.recv(&mut response))
         .await
-        .map_err(|_| ExchangeError::ResponseTimedOut {
+        .map_err(|_| ExchangeMessageError::ResponseTimedOut {
             what,
             server: server_addr,
         })??;

@@ -5,7 +5,7 @@ mod keys;
 use bindizr_core::outln;
 use bindizr_service::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, Holddown, MessageResponse,
-    RolloverDnssecRequest, UpdateDnssecSettingsRequest,
+    StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
 };
 use clap::Subcommand;
 pub(crate) use keys::DnssecKeysCommand;
@@ -309,7 +309,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 let response = client::send_command::<DnssecStatusResponse>(
                     DaemonCommand::StartDnssecRollover {
                         zone_name: name,
-                        request: RolloverDnssecRequest { role },
+                        request: StartDnssecRolloverRequest { role },
                     },
                 )
                 .await?;
@@ -322,7 +322,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 output,
             } => {
                 let response = client::send_command::<DnssecStatusResponse>(
-                    DaemonCommand::DsSeenDnssecRollover {
+                    DaemonCommand::AdvanceDnssecRollover {
                         zone_name: name,
                         ds_check: DsCheck::from_skip_ds_check(skip_ds_check),
                         holddown: Holddown::from_skip_holddown(skip_holddown),

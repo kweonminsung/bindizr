@@ -15,9 +15,8 @@ use crate::{
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RecordFilter {
-    /// Matched through a subquery on `zones.name`, so the filter still lands
-    /// on `records.zone_id` and keeps the listing on `idx_records_zone_name`
-    /// while resolving the name as of the query rather than an earlier read.
+    /// Resolve `zones.name` in the query while filtering `records.zone_id`
+    /// through `idx_records_zone_name`.
     pub zone_name: Option<ZoneName>,
     pub name: Option<String>,
     pub record_type: Option<RecordType>,
@@ -29,9 +28,7 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
-    /// Restrict to what this role's grants reach, joined against
-    /// `role_grants` in SQL so the bind count stays fixed; `None` is
-    /// unrestricted.
+    /// Restrict by role grants in SQL to keep bind counts fixed; `None` is unrestricted.
     pub scope_role_id: Option<RoleId>,
     pub sort: RecordSortField,
     pub order: SortOrder,
@@ -116,21 +113,35 @@ pub async fn list_by_name_tx(
     }
 }
 
-/// Find any DS owner without an NS record, in row form (empty at the apex).
-/// One violation rejects the write; ordering is unspecified. The type-first
-/// predicate uses `idx_records_zone_type` on every zone mutation.
-pub async fn find_name_ds_without_ns_tx(
+/// List the records of the given types, in the current transaction; the
+/// cross-owner validation reads only the types it relates.
+pub async fn list_by_record_types_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
-) -> Result<Option<String>, DatabaseError> {
+    record_types: &[RecordType],
+) -> Result<Vec<Record>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::record::find_name_ds_without_ns_tx(tx, zone_id).await,
+        TransactionKind::MySql(tx) => {
+            mysql::record::list_by_record_types_tx(tx, zone_id, record_types).await
+        }
         TransactionKind::Postgres(tx) => {
-            postgres::record::find_name_ds_without_ns_tx(tx, zone_id).await
+            postgres::record::list_by_record_types_tx(tx, zone_id, record_types).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::record::find_name_ds_without_ns_tx(tx, zone_id).await
+            sqlite::record::list_by_record_types_tx(tx, zone_id, record_types).await
         }
+    }
+}
+
+/// List the owner names of a zone, each once.
+pub async fn list_names_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+) -> Result<Vec<OwnerName>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::record::list_names_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::record::list_names_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::list_names_tx(tx, zone_id).await,
     }
 }
 

@@ -1,4 +1,4 @@
-use bindizr_core::model::{role::RoleId, role_grant::RoleGrantId, zone::ZoneId};
+use bindizr_core::model::{role::RoleId, role_grant::RoleGrantId};
 
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::role_grant::RoleGrant, mysql,
@@ -61,30 +61,6 @@ pub async fn list_by_role_id_tx(
         }
         TransactionKind::Sqlite(tx) => {
             sqlite::role_grant::list_by_role_id_tx(tx, role_id, lock_level).await
-        }
-    }
-}
-
-/// A role's grants that reach `zone_id`, its all-zones grants included, for
-/// write authorization inside the caller's transaction.
-pub async fn list_by_role_id_covering_zone_tx(
-    tx: &mut Transaction<'_>,
-    role_id: RoleId,
-    zone_id: ZoneId,
-    lock_level: LockLevel,
-) -> Result<Vec<RoleGrant>, DatabaseError> {
-    match &mut tx.0 {
-        TransactionKind::MySql(tx) => {
-            mysql::role_grant::list_by_role_id_covering_zone_tx(tx, role_id, zone_id, lock_level)
-                .await
-        }
-        TransactionKind::Postgres(tx) => {
-            postgres::role_grant::list_by_role_id_covering_zone_tx(tx, role_id, zone_id, lock_level)
-                .await
-        }
-        TransactionKind::Sqlite(tx) => {
-            sqlite::role_grant::list_by_role_id_covering_zone_tx(tx, role_id, zone_id, lock_level)
-                .await
         }
     }
 }

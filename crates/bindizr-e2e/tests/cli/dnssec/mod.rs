@@ -15,17 +15,22 @@ async fn zone_dnssec_lifecycle_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let enabled = app
-        .run_cli_success(&[
-            "dnssec",
-            "enable",
-            &zone_name,
-            "--parent-ns-addrs",
-            "127.0.0.1:9",
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "enable",
+                &zone_name,
+                "--parent-ns-addrs",
+                "127.0.0.1:9",
+            ],
+            None,
+        )
         .await;
     assert!(enabled.contains("DNSSEC enabled"), "{enabled}");
 
-    let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
+    let status = app
+        .run_cli_success(&["dnssec", "status", &zone_name], None)
+        .await;
     assert!(status.contains("DNSSEC enabled"));
     let key_tag = read_signing_key_tag(&app, &zone_name).await;
     assert!(key_tag > 0);
@@ -35,18 +40,24 @@ async fn zone_dnssec_lifecycle_via_cli() {
     // Same algorithm, denial, and key layout as `default`: the move only
     // changes the timing, so no rollover starts.
     let policy_name = format!("{}-long", app.namespace());
-    app.run_cli_success(&[
-        "dnssec-policy",
-        "create",
-        &policy_name,
-        "--signature-validity-days",
-        "30",
-        "--zsk-lifetime-days",
-        "90",
-    ])
+    app.run_cli_success(
+        &[
+            "dnssec-policy",
+            "create",
+            &policy_name,
+            "--signature-validity-days",
+            "30",
+            "--zsk-lifetime-days",
+            "90",
+        ],
+        None,
+    )
     .await;
     let moved = app
-        .run_cli_success(&["dnssec", "set", &zone_name, "--policy", &policy_name])
+        .run_cli_success(
+            &["dnssec", "set", &zone_name, "--policy", &policy_name],
+            None,
+        )
         .await;
     // The policy row of the status output carries the new timing.
     assert!(
@@ -56,7 +67,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     assert!(!moved.contains("published"), "{moved}");
 
     let signed_export = app
-        .run_cli_success(&["zone", "export", &zone_name, "--signed"])
+        .run_cli_success(&["zone", "export", &zone_name, "--signed"], None)
         .await;
     assert!(
         signed_export.contains("\tIN\tDNSKEY\t257 3 "),
@@ -68,26 +79,30 @@ async fn zone_dnssec_lifecycle_via_cli() {
     );
 
     let withdrawn = app
-        .run_cli_success(&["dnssec", "withdraw", "start", &zone_name])
+        .run_cli_success(&["dnssec", "withdraw", "start", &zone_name], None)
         .await;
     assert!(withdrawn.contains("DS withdrawal published"), "{withdrawn}");
     let cancelled = app
-        .run_cli_success(&["dnssec", "withdraw", "cancel", &zone_name])
+        .run_cli_success(&["dnssec", "withdraw", "cancel", &zone_name], None)
         .await;
     assert!(
         !cancelled.contains("DS withdrawal published"),
         "{cancelled}"
     );
 
-    let signed = app.run_cli_success(&["dnssec", "sign", &zone_name]).await;
+    let signed = app
+        .run_cli_success(&["dnssec", "sign", &zone_name], None)
+        .await;
     assert!(signed.contains("Zone signed successfully"));
 
     let disabled = app
-        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 
-    let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
+    let status = app
+        .run_cli_success(&["dnssec", "status", &zone_name], None)
+        .await;
     assert!(status.contains("DNSSEC disabled"));
 }
 
@@ -100,28 +115,36 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let policy_name = format!("{}-nsec3", app.namespace());
-    app.run_cli_success(&["dnssec-policy", "create", &policy_name, "--denial", "nsec3"])
-        .await;
+    app.run_cli_success(
+        &["dnssec-policy", "create", &policy_name, "--denial", "nsec3"],
+        None,
+    )
+    .await;
     let enabled = app
-        .run_cli_success(&[
-            "dnssec",
-            "enable",
-            &zone_name,
-            "--policy",
-            &policy_name,
-            "--parent-ns-addrs",
-            "127.0.0.1:9",
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "enable",
+                &zone_name,
+                "--policy",
+                &policy_name,
+                "--parent-ns-addrs",
+                "127.0.0.1:9",
+            ],
+            None,
+        )
         .await;
     assert!(enabled.contains("NSEC3 denial"), "{enabled}");
 
     let started = app
-        .run_cli_success(&["dnssec", "rollover", "start", &zone_name])
+        .run_cli_success(&["dnssec", "rollover", "start", &zone_name], None)
         .await;
     // The pre-published replacement key joins the key table.
     assert!(started.contains("published"), "{started}");
 
-    let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
+    let status = app
+        .run_cli_success(&["dnssec", "status", &zone_name], None)
+        .await;
     assert!(status.contains("NSEC3 denial"));
     assert!(status.contains("published"), "{status}");
     assert!(status.contains("active"), "{status}");
@@ -129,7 +152,7 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     // The API test covers the far side of the hold-down wait;
     // `--skip-ds-check` skips only the parent check, never the hold-down.
     let ds_seen = app
-        .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name])
+        .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name], None)
         .await;
     assert!(!ds_seen.status.success());
     let unchecked = [
@@ -139,19 +162,22 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
         &zone_name,
         "--skip-ds-check",
     ];
-    let ds_seen = app.run_cli(&unchecked).await;
+    let ds_seen = app.run_cli(&unchecked, None).await;
     assert_cli_failure_contains(&unchecked, &ds_seen, "must stay published");
 
     // No parent stands in, so both skips promote at once.
     let promoted = app
-        .run_cli_success(&[
-            "dnssec",
-            "rollover",
-            "ds-seen",
-            &zone_name,
-            "--skip-ds-check",
-            "--skip-holddown",
-        ])
+        .run_cli_success(
+            &[
+                "dnssec",
+                "rollover",
+                "ds-seen",
+                &zone_name,
+                "--skip-ds-check",
+                "--skip-holddown",
+            ],
+            None,
+        )
         .await;
     assert!(promoted.contains("retired"), "{promoted}");
     assert!(!promoted.contains("published"), "{promoted}");

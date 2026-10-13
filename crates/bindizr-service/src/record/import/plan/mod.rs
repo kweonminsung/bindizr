@@ -10,8 +10,7 @@ use crate::{
         record::{Record, RecordData},
         zone::Zone,
     },
-    record::bulk::PreparedRecord,
-    types::{ImportMode, RecordDiff},
+    types::{ImportMode, RecordDiffResponse},
     zone::diff::build_record_diff,
 };
 
@@ -19,16 +18,16 @@ use crate::{
 /// it can be compared against existing records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesiredRecord {
-    pub(crate) prepared: PreparedRecord,
-    pub(crate) name: OwnerName,
+    pub(crate) data: RecordData,
+    pub(crate) source_name: String,
 }
 
 impl DesiredRecord {
     /// Whether `existing` has the desired identity; TTL is reconciled separately.
     fn matches(&self, existing: &Record) -> bool {
-        existing.name == self.name
-            && existing.record_type == self.prepared.record_type
-            && existing.has_rdata(&self.prepared.value, self.prepared.priority)
+        existing.name == self.data.name
+            && existing.record_type == self.data.record_type
+            && existing.has_rdata(&self.data.value, self.data.priority)
     }
 }
 
@@ -48,7 +47,6 @@ impl<'a> ImportPlan<'a> {
     /// by owner name so each one is compared only against same-name rows.
     pub(crate) fn compute(
         mode: ImportMode,
-        zone: &Zone,
         existing_records: &[Record],
         desired: &'a [DesiredRecord],
     ) -> Self {
@@ -64,7 +62,7 @@ impl<'a> ImportPlan<'a> {
             HashMap::with_capacity(desired.len());
         for record in desired {
             desired_by_name
-                .entry(&record.name)
+                .entry(&record.data.name)
                 .or_default()
                 .push(record);
         }
@@ -78,7 +76,7 @@ impl<'a> ImportPlan<'a> {
         let desired_key_matches_existing = |existing: &Record| {
             desired_by_name.get(&existing.name).is_some_and(|ds| {
                 ds.iter()
-                    .any(|d| d.prepared.record_type == existing.record_type)
+                    .any(|d| d.data.record_type == existing.record_type)
             })
         };
         let dels: Vec<Record> = match mode {
@@ -103,10 +101,10 @@ impl<'a> ImportPlan<'a> {
         let mut unchanged = 0;
         let mut updated = 0;
         for d in desired {
-            let desired_ttl = d.prepared.ttl.unwrap_or(zone.default_ttl);
+            let desired_ttl = d.data.ttl;
             let mut present = false;
             let mut stale = false;
-            if let Some(es) = existing_by_name.get(&d.name) {
+            if let Some(es) = existing_by_name.get(&d.data.name) {
                 for e in es {
                     if d.matches(e) {
                         present = true;
@@ -142,7 +140,12 @@ impl<'a> ImportPlan<'a> {
 impl ImportPlan<'_> {
     /// Preview against the same zone and record snapshot used to compute
     /// this plan, showing the existing rows `caller` may read.
-    pub(crate) fn diff(&self, caller: &Caller, zone: &Zone, existing: &[Record]) -> RecordDiff {
+    pub(crate) fn diff(
+        &self,
+        caller: &Caller,
+        zone: &Zone,
+        existing: &[Record],
+    ) -> RecordDiffResponse {
         let deleted_ids: HashSet<RecordId> = self
             .dels
             .iter()
@@ -161,13 +164,7 @@ impl ImportPlan<'_> {
                 .map(RecordData::from),
         );
         for add in &self.adds {
-            after.push_written(RecordData {
-                name: add.name.clone(),
-                record_type: add.prepared.record_type,
-                value: add.prepared.value.clone(),
-                ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
-                priority: add.prepared.priority,
-            });
+            after.push_written(add.data.clone());
         }
 
         build_record_diff(zone, &before, &after)

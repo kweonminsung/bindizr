@@ -19,7 +19,7 @@ pub use ttl::{ConvertTtlError, Ttl};
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix,
 /// RFC 1035, Section 4.2.2). The record-value size caps derive from it.
-pub(crate) const DNS_TCP_MAX_SIZE: usize = 65_535;
+pub const DNS_TCP_MAX_SIZE: usize = 65_535;
 
 /// An error of the `domain` crate, carried boxed: its error types vary across
 /// versions and nothing here matches on them, so only the chain is kept.

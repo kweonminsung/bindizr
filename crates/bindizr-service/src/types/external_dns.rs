@@ -31,20 +31,20 @@ pub struct ExternalDnsRecordUpdate {
 /// Request body for canonicalizing desired records without applying them.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ExternalDnsAdjustRequest {
+pub struct AdjustExternalDnsRecordsRequest {
     pub records: Vec<ExternalDnsRecord>,
 }
 
 /// The request's records in the canonical form applying them would store.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ExternalDnsAdjustResponse {
+pub struct AdjustExternalDnsRecordsResponse {
     pub records: Vec<ExternalDnsRecord>,
 }
 
 /// Request body for applying an ExternalDNS change set atomically.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ExternalDnsChangesRequest {
+pub struct ApplyExternalDnsChangesRequest {
     #[serde(default)]
     pub creates: Vec<ExternalDnsRecord>,
     #[serde(default)]
@@ -55,7 +55,7 @@ pub struct ExternalDnsChangesRequest {
 
 /// Summary of an applied ExternalDNS change set.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ExternalDnsChangesResponse {
+pub struct ApplyExternalDnsChangesResponse {
     /// Zones whose serial advanced; empty when the request was a no-op.
     #[schema(example = json!(["example.com"]))]
     pub changed_zones: Vec<String>,
@@ -70,7 +70,7 @@ pub struct ExternalDnsChangesResponse {
 /// The names the ExternalDNS caller may manage under its grants, each
 /// covering itself and everything under it.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ExternalDnsDomainsResponse {
+pub struct ListExternalDnsDomainsResponse {
     #[schema(example = json!(["example.com"]))]
     pub domains: Vec<String>,
 }
@@ -78,6 +78,6 @@ pub struct ExternalDnsDomainsResponse {
 /// Records of every ExternalDNS-managed zone, one per name and type, in a
 /// deterministic order.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ExternalDnsRecordsResponse {
+pub struct ListExternalDnsRecordsResponse {
     pub records: Vec<ExternalDnsRecord>,
 }

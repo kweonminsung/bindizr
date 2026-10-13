@@ -8,7 +8,7 @@ async fn token_create_rejects_duplicate_name() {
     let (name, _) = app.create_api_token().await;
 
     let output = app
-        .run_cli(&["token", "create", &name, "--role", "admin"])
+        .run_cli(&["token", "create", &name, "--role", "admin"], None)
         .await;
     assert!(!output.status.success());
 }
@@ -21,6 +21,6 @@ async fn token_create_needs_an_existing_role() {
     let name = app.zone_name("roleless");
 
     let args = ["token", "create", &name, "--role", "no-such-role"];
-    let refused = app.run_cli(&args).await;
+    let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "not found");
 }

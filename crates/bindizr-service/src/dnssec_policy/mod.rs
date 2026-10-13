@@ -21,7 +21,7 @@ use crate::{
     text::normalize_identifier,
     transaction,
     types::{
-        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageRequest, PaginatedResponse,
+        CreateDnssecPolicyRequest, DnssecPolicyResponse, PageRequest, PaginatedResponse,
         UpdateDnssecPolicyRequest,
     },
 };
@@ -59,7 +59,7 @@ pub async fn create(
     let signature_validity_days = request.signature_validity_days.unwrap_or(14);
     let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);
     let zsk_lifetime_days = request.zsk_lifetime_days.unwrap_or(0);
-    let (signature_validity_days, signature_refresh_days, zsk_lifetime_days) = validate_timing(
+    let timings = validate_timings(
         signature_validity_days,
         signature_refresh_days,
         zsk_lifetime_days,
@@ -87,9 +87,9 @@ pub async fn create(
                 algorithm,
                 denial,
                 split_keys: request.split_keys,
-                signature_validity_days,
-                signature_refresh_days,
-                zsk_lifetime_days,
+                signature_validity_days: timings.signature_validity_days,
+                signature_refresh_days: timings.signature_refresh_days,
+                zsk_lifetime_days: timings.zsk_lifetime_days,
                 created_at: Utc::now(),
             },
         )
@@ -113,12 +113,12 @@ pub async fn list(
     cx: &Context,
     caller: &Caller,
     page: PageRequest,
-) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
+) -> Result<PaginatedResponse<DnssecPolicyResponse>, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
 
     let policies = bindizr_db::dnssec_policy::list_all(cx.db()).await?;
     build_page(
-        policies.iter().map(GetDnssecPolicyResponse::from).collect(),
+        policies.iter().map(DnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
     )
@@ -140,9 +140,8 @@ pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<DnssecPol
         .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))
 }
 
-/// Edit the policy's timing fields; the key layout, algorithm, and
-/// denial mode are fixed at creation. Zones under the policy pick the
-/// new values up on their next signing pass or scheduler scan.
+/// Update policy timings for the next signing pass or scheduler scan.
+/// Key layout, algorithm, and denial mode stay fixed.
 pub async fn update(
     cx: &Context,
     caller: &Caller,
@@ -173,7 +172,7 @@ pub async fn update(
         let zsk_lifetime_days = request
             .zsk_lifetime_days
             .unwrap_or(policy.zsk_lifetime_days.as_days());
-        let (signature_validity_days, signature_refresh_days, zsk_lifetime_days) = validate_timing(
+        let timings = validate_timings(
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
@@ -182,9 +181,9 @@ pub async fn update(
         Ok(bindizr_db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
-                signature_validity_days,
-                signature_refresh_days,
-                zsk_lifetime_days,
+                signature_validity_days: timings.signature_validity_days,
+                signature_refresh_days: timings.signature_refresh_days,
+                zsk_lifetime_days: timings.zsk_lifetime_days,
                 ..policy
             },
         )
@@ -243,13 +242,21 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
     normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
+/// A policy's validated timers, in the columns they are stored as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SigningTimings {
+    signature_validity_days: Days,
+    signature_refresh_days: Days,
+    zsk_lifetime_days: Days,
+}
+
 /// Validate signing timings, requiring refresh below validity so the scheduler
 /// does not re-sign on every pass.
-fn validate_timing(
+fn validate_timings(
     signature_validity_days: u32,
     signature_refresh_days: u32,
     zsk_lifetime_days: u32,
-) -> Result<(Days, Days, Days), ServiceError> {
+) -> Result<SigningTimings, ServiceError> {
     if signature_validity_days == 0 {
         return Err(ServiceError::invalid_input(
             "signature_validity_days must be greater than 0",
@@ -279,16 +286,16 @@ fn validate_timing(
         )));
     }
     let days = |value: u32| Days::try_from(value).map_err(ServiceError::invalid_input);
-    Ok((
-        days(signature_validity_days)?,
-        days(signature_refresh_days)?,
-        days(zsk_lifetime_days)?,
-    ))
+    Ok(SigningTimings {
+        signature_validity_days: days(signature_validity_days)?,
+        signature_refresh_days: days(signature_refresh_days)?,
+        zsk_lifetime_days: days(zsk_lifetime_days)?,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_policy_name, validate_timing};
+    use super::{normalize_policy_name, validate_timings};
 
     /// Verify that `normalize_policy_name` lowercases and trims.
     #[test]
@@ -305,16 +312,16 @@ mod tests {
         assert!(normalize_policy_name(&"x".repeat(65)).is_err());
     }
 
-    /// Verify that `validate_timing` requires refresh below validity.
+    /// Verify that `validate_timings` requires refresh below validity.
     #[test]
-    fn validate_timing_requires_refresh_below_validity() {
-        assert!(validate_timing(14, 5, 0).is_ok());
-        assert!(validate_timing(5, 5, 0).is_err());
-        assert!(validate_timing(0, 1, 0).is_err());
-        assert!(validate_timing(14, 0, 0).is_err());
+    fn validate_timings_requires_refresh_below_validity() {
+        assert!(validate_timings(14, 5, 0).is_ok());
+        assert!(validate_timings(5, 5, 0).is_err());
+        assert!(validate_timings(0, 1, 0).is_err());
+        assert!(validate_timings(14, 0, 0).is_err());
         // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
-        assert!(validate_timing(24_856, 5, 0).is_err());
-        assert!(validate_timing(24_855, 5, 0).is_ok());
-        assert!(validate_timing(14, 5, 3651).is_err());
+        assert!(validate_timings(24_856, 5, 0).is_err());
+        assert!(validate_timings(24_855, 5, 0).is_ok());
+        assert!(validate_timings(14, 5, 3651).is_err());
     }
 }

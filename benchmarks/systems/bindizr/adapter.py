@@ -158,13 +158,13 @@ class BindizrAdapter(DnsAdapter):
         async with self.session.delete(self.base + f"/zones/{zone.rstrip('.')}") as r:
             await r.read()
 
-    def _record_body(self, zone: str, rec: dict) -> dict:
+    def _build_record_request(self, zone: str, rec: dict) -> dict:
         """Build a bindizr record request from a benchmark record."""
-        return {**self._bulk_item(rec), "zone_name": zone.rstrip(".")}
+        return {**self._build_record_fields(rec), "zone_name": zone.rstrip(".")}
 
     async def create_record(self, zone: str, rec: dict) -> str:
         """Create a record and return its adapter-specific handle."""
-        async with self.session.post(self.base + "/records", json=self._record_body(zone, rec)) as r:
+        async with self.session.post(self.base + "/records", json=self._build_record_request(zone, rec)) as r:
             if r.status not in (200, 201):
                 raise RuntimeError(f"create_record {r.status}: {await r.text()}")
             data = await r.json()
@@ -178,7 +178,7 @@ class BindizrAdapter(DnsAdapter):
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
-        body = self._bulk_item(rec)
+        body = self._build_record_fields(rec)
         async with self.session.put(self.base + f"/records/{handle}", json=body) as r:
             await r.read()
             return r.status == 200
@@ -189,7 +189,7 @@ class BindizrAdapter(DnsAdapter):
             await r.read()
             return r.status == 200
 
-    def _bulk_item(self, rec: dict) -> dict:
+    def _build_record_fields(self, rec: dict) -> dict:
         """Build one record entry for the bindizr bulk API."""
         item = {
             "name": rec["name"],
@@ -201,29 +201,24 @@ class BindizrAdapter(DnsAdapter):
             item["priority"] = rec["priority"]
         return item
 
-    async def _post_with_retry(self, url: str, body: dict, count: int,
-                               check_applied: bool = False) -> int:
-        """POST a batch with transient retries and return the failed-record count.
-
-        With `check_applied`, treat HTTP 200 with `applied=false` as a deterministic
-        rejection and do not retry."""
+    async def _post_json_with_retry(self, url: str, body: dict) -> dict | None:
+        """Return the JSON response object, or None after exhausting retries."""
         delay = 0.05
         for attempt in range(POST_ATTEMPTS):
             try:
                 async with self.session.post(url, json=body) as r:
                     if r.status in (200, 201):
-                        if not check_applied:
-                            return 0
                         data = await r.json()
-                        return 0 if data.get("applied") else count
+                        if isinstance(data, dict):
+                            return data
             except Exception:
                 pass
             if attempt < POST_ATTEMPTS - 1:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 1.0)
-        return count
+        return None
 
-    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+    async def import_records(self, zone: str, records: list[dict]) -> None:
         """Bulk-insert via Bindizr's `/records/bulk` API in single-transaction
         chunks (each chunk bumps the serial once and sends one NOTIFY)."""
         self.bulk_errors = 0
@@ -231,10 +226,11 @@ class BindizrAdapter(DnsAdapter):
         for start in range(0, len(records), self.bulk_chunk):
             chunk = records[start:start + self.bulk_chunk]
             body = {"zone_name": zone.rstrip("."),
-                    "records": [self._bulk_item(r) for r in chunk]}
-            self.bulk_errors += await self._post_with_retry(url, body, len(chunk))
+                    "records": [self._build_record_fields(r) for r in chunk]}
+            if await self._post_json_with_retry(url, body) is None:
+                self.bulk_errors += len(chunk)
 
-    def _zone_line(self, rec: dict) -> str:
+    def _to_zone_file_record(self, rec: dict) -> str:
         """Render a benchmark record as a zone-file line."""
         ttl = rec.get("ttl", 3600)
         rdata = rec["value"]
@@ -251,10 +247,11 @@ class BindizrAdapter(DnsAdapter):
         url = self.base + f"/zones/{zone.rstrip('.')}/import"
         for start in range(0, len(records), self.import_chunk):
             chunk = records[start:start + self.import_chunk]
-            content = "\n".join(self._zone_line(r) for r in chunk) + "\n"
+            content = "\n".join(self._to_zone_file_record(r) for r in chunk) + "\n"
             body = {"content": content, "mode": "append"}
-            self.import_errors += await self._post_with_retry(
-                url, body, len(chunk), check_applied=True)
+            data = await self._post_json_with_retry(url, body)
+            if data is None or not data.get("applied"):
+                self.import_errors += len(chunk)
 
     def dns_endpoint(self) -> Endpoint:
         """Return the DNS endpoint that serves the managed zone."""

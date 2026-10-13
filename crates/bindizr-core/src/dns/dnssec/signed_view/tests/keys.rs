@@ -1,7 +1,11 @@
 use super::*;
 use crate::{
     dns::SoaInterval,
-    model::{dnssec_key::DnssecKeyId, record::RecordId, zone::ZoneId},
+    model::{
+        dnssec_key::{DS_DIGEST_TYPE, DnssecKeyId},
+        record::RecordId,
+        zone::ZoneId,
+    },
 };
 
 /// Build a zone fixture for the test.
@@ -44,9 +48,9 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
-/// Verify that p384 keys advertise a sha384 DS digest.
+/// Verify that every key advertises a SHA-256 DS digest.
 #[test]
-fn p384_keys_advertise_a_sha384_ds_digest() {
+fn every_key_advertises_a_sha256_ds_digest() {
     let zone = test_zone();
     let key = DnssecKey::generate(
         &zone,
@@ -59,10 +63,11 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
     .unwrap();
 
     let apex = zone.name.to_wire_name().unwrap();
-    let rdata = key.ds_rdata(&apex, key.algorithm.ds_digest_type()).unwrap();
-    // RFC 6605, Section 4 pairs P-384 with a SHA-384 (type 4) DS digest.
-    assert_eq!(rdata.as_bytes()[3], 4);
-    assert_eq!(rdata.as_bytes().len(), 4 + 48);
+    let rdata = key.ds_rdata(&apex, DS_DIGEST_TYPE).unwrap();
+    // RFC 8624, Section 3.3: SHA-256 is the digest a delegation must take,
+    // a P-384 key's included; SHA-384 is only a MAY.
+    assert_eq!(rdata.as_bytes()[3], 2);
+    assert_eq!(rdata.as_bytes().len(), 4 + 32);
 }
 
 /// Verify that `DnssecKey::ds_rdata` pairs the key with each supported digest.

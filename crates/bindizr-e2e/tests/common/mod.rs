@@ -10,6 +10,7 @@ use std::{
 };
 
 use reqwest::{Client, Method, StatusCode};
+use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -23,10 +24,10 @@ mod verify;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
-    FakeParent, ServedDs, TransferOutcome, axfr, exchange_dns_query, probe_zone_soa,
-    wait_for_any_dns_record,
+    DsRecord, FakeParent, TransferResult, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
+    probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
 };
-use verify::{PreviousDnsKey, to_fqdn};
+use verify::{PreviousRecordKey, to_fqdn};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 /// Every record action, the grant a test role needs to read and change a zone's records.
@@ -44,6 +45,10 @@ pub(crate) struct TestApp {
     client: Client,
     base_url: String,
     dns_port: Option<u16>,
+    /// The XoT listener's port, when the daemon was started with `dns_tls`.
+    dns_tls_port: Option<u16>,
+    /// The self-signed certificate this run's TLS listeners present.
+    tls_cert: Option<CertificateDer<'static>>,
     dns_secondary_ports: Vec<u16>,
     namespace: String,
     auth_token: Option<String>,
@@ -59,6 +64,10 @@ pub(crate) struct TestAppOptions {
     pub(crate) openapi_enabled: bool,
     /// Serve the API over HTTPS with a certificate generated for this run.
     pub(crate) tls: bool,
+    /// Serve zone transfers over TLS on a second port with that same certificate.
+    pub(crate) dns_tls: bool,
+    /// Refuse transfers on the plain listeners, so only `dns_tls` serves them.
+    pub(crate) dns_transfer_require_tls: bool,
 }
 
 impl Default for TestAppOptions {
@@ -71,6 +80,8 @@ impl Default for TestAppOptions {
             nsupdate_tsig_required: true,
             openapi_enabled: false,
             tls: false,
+            dns_tls: false,
+            dns_transfer_require_tls: false,
         }
     }
 }
@@ -114,6 +125,20 @@ impl TestApp {
         self.dns_port.expect("local runtime binds a DNS port")
     }
 
+    /// Port of bindizr's XoT listener; only a local daemon started with
+    /// `dns_tls` has one.
+    pub(crate) fn dns_tls_port(&self) -> u16 {
+        self.dns_tls_port
+            .expect("the daemon was started with dns_tls")
+    }
+
+    /// The certificate this run's TLS listeners present, for a client to trust.
+    pub(crate) fn tls_cert(&self) -> &CertificateDer<'static> {
+        self.tls_cert
+            .as_ref()
+            .expect("the daemon was started with TLS")
+    }
+
     /// Bearer token attached to every subsequent HTTP request.
     pub(crate) fn set_auth_token(&mut self, token: String) {
         self.auth_token = Some(token);
@@ -131,7 +156,7 @@ impl TestApp {
     /// return the `(name, plaintext token)`; grant the role with `role grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
         let name = format!("{}-scoped", self.namespace);
-        self.run_cli_success(&["role", "create", &name]).await;
+        self.run_cli_success(&["role", "create", &name], None).await;
         self.create_token_with(&["token", "create", &name, "--role", &name])
             .await
     }
@@ -139,7 +164,7 @@ impl TestApp {
     /// Create a test API token using the supplied CLI options.
     async fn create_token_with(&self, args: &[&str]) -> (String, String) {
         let args = [args, &["--output", "json"]].concat();
-        let stdout = self.run_cli_success(&args).await;
+        let stdout = self.run_cli_success(&args, None).await;
         let created: Value =
             serde_json::from_str(&stdout).expect("token create did not print JSON");
         let field = |value: &Value, what: &str| {
@@ -192,7 +217,7 @@ impl TestApp {
         body: Option<Value>,
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
-        let mut previous_dns_key = self.read_previous_dns_key(&method, path).await;
+        let mut previous_record_key = self.read_previous_record_key(&method, path).await;
         let updated_zone_name = (method == Method::PUT)
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
@@ -202,11 +227,11 @@ impl TestApp {
             && response.0.is_success()
             && response.1["zone"]["name"].as_str() == Some(previous_zone_name)
         {
-            previous_dns_key = None;
+            previous_record_key = None;
         }
 
         if should_verify_dns && response.0.is_success() {
-            self.assert_dns_matches_api(previous_dns_key).await;
+            self.assert_dns_matches_api(previous_record_key).await;
         }
 
         response
@@ -329,39 +354,33 @@ impl TestApp {
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
-        self.run_cli_success(&[
-            "zone",
-            "create",
-            zone_name,
-            "--mname",
-            &mname,
-            "--rname",
-            &rname,
-            "--default-ttl",
-            default_ttl,
-        ])
+        self.run_cli_success(
+            &[
+                "zone",
+                "create",
+                zone_name,
+                "--mname",
+                &mname,
+                "--rname",
+                &rname,
+                "--default-ttl",
+                default_ttl,
+            ],
+            None,
+        )
         .await
-    }
-
-    /// Run a CLI command against this test application.
-    pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {
-        self.run_cli_with_input(args, None).await
     }
 
     /// Run the CLI with optional stdin; after selected zone/record writes,
     /// wait for configured secondaries to match the API.
-    pub(crate) async fn run_cli_with_input(
-        &self,
-        args: &[&str],
-        input: Option<&str>,
-    ) -> std::process::Output {
+    pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
         // Remember deleted names before the API can no longer return their identity.
-        let previous_dns_key = match args {
+        let previous_record_key = match args {
             ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
-                self.read_previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
+                self.read_previous_record_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
-            ["zone", "delete", zone_name, ..] => Some(PreviousDnsKey {
+            ["zone", "delete", zone_name, ..] => Some(PreviousRecordKey {
                 zone_name: to_fqdn(zone_name),
                 name: to_fqdn(zone_name),
                 record_type: 6,
@@ -407,22 +426,15 @@ impl TestApp {
                 ]
             )
         {
-            self.assert_dns_matches_api(previous_dns_key).await;
+            self.assert_dns_matches_api(previous_record_key).await;
         }
 
         output
     }
 
     /// Run a CLI command and return stdout after asserting success.
-    pub(crate) async fn run_cli_success(&self, args: &[&str]) -> String {
-        let output = self.run_cli(args).await;
-        assert_cli_success(args, &output);
-        String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
-    }
-
-    /// Run a CLI command with stdin and return stdout after asserting success.
-    pub(crate) async fn run_cli_success_with_input(&self, args: &[&str], input: &str) -> String {
-        let output = self.run_cli_with_input(args, Some(input)).await;
+    pub(crate) async fn run_cli_success(&self, args: &[&str], input: Option<&str>) -> String {
+        let output = self.run_cli(args, input).await;
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }

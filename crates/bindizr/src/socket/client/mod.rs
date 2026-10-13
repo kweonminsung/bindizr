@@ -17,7 +17,7 @@ use crate::{
 /// garbled response may come from a live but wedged daemon.
 pub(crate) async fn is_daemon_socket_gone() -> bool {
     /// Check whether a connection error means no daemon is listening.
-    fn gone(err: &std::io::Error) -> bool {
+    fn is_missing_listener(err: &std::io::Error) -> bool {
         matches!(
             err.kind(),
             std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
@@ -36,12 +36,12 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         Err(ConnectDaemonSocketError {
             fallback: Some(fallback_err),
             ..
-        }) => gone(&fallback_err),
+        }) => is_missing_listener(&fallback_err),
         // Primary failed in an unexpected way; the fallback was not tried.
         Err(ConnectDaemonSocketError {
             primary: err,
             fallback: None,
-        }) => gone(&err),
+        }) => is_missing_listener(&err),
     }
 }
 

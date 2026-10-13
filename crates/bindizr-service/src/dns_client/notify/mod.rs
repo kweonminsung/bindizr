@@ -4,17 +4,17 @@ use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
         name::ZoneName,
-        query::{question_builder, validate_notify_response},
+        query::{build_question, validate_notify_response},
         tsig::{TsigSigningKey, sign_request, verify_response},
     },
     metrics::NotifyResult,
 };
 use thiserror::Error;
 
-use super::{ExchangeError, ResolveAddressError};
+use super::{ExchangeMessageError, ResolveAddressError};
 use crate::{
     Context, error::ServiceError, model::secondary::Secondary, secondary,
-    types::NotifyCheckResponse,
+    types::CheckNotifyResponse,
 };
 
 /// Why one NOTIFY to one address was not acknowledged.
@@ -23,11 +23,11 @@ pub enum SendNotifyError {
     #[error(transparent)]
     Sign(#[from] bindizr_core::dns::tsig::SignRequestError),
     #[error(transparent)]
-    Exchange(#[from] ExchangeError),
+    Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
-    Verify(#[from] bindizr_core::dns::tsig::VerifyAnswerError),
+    Verify(#[from] bindizr_core::dns::tsig::VerifyResponseError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    Response(#[from] bindizr_core::dns::query::ParseResponseError),
     #[error("NOTIFY task failed: {0}")]
     TaskFailed(#[source] tokio::task::JoinError),
 }
@@ -78,7 +78,7 @@ pub(crate) async fn send_zone_notify(
 pub async fn send_notify_to_secondaries(
     cx: &Context,
     zone_name: &ZoneName,
-) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
     send_notify(cx, zone_name, secondaries).await
 }
@@ -89,7 +89,7 @@ pub async fn send_notify_to_secondary(
     cx: &Context,
     zone_name: &ZoneName,
     secondary: &Secondary,
-) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
     send_notify(cx, zone_name, vec![secondary.clone()]).await
 }
 
@@ -99,7 +99,7 @@ async fn send_notify(
     cx: &Context,
     zone_name: &ZoneName,
     secondaries: Vec<Secondary>,
-) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+) -> Result<Vec<CheckNotifyResponse>, ServiceError> {
     // The zone name is a stored row, so one that does not parse is the
     // server's fault.
     let qname = zone_name
@@ -108,17 +108,15 @@ async fn send_notify(
     let timeout = cx.config().dns.notify.timeout();
     let retries = cx.config().dns.notify.retries;
 
-    // A secondary that never answers must cost its own timeouts, not the
-    // others': each sends on a task of its own, the key lookup and metrics
-    // stay on this one.
+    // Send concurrently so an unresponsive secondary cannot delay the others.
     let mut reports = Vec::new();
     let mut tasks = Vec::with_capacity(secondaries.len());
     for secondary in secondaries {
-        let key = match secondary::notify_signing_key(cx, &secondary).await {
-            Ok(key) => key,
+        let tsig_key = match secondary::find_notify_signing_key(cx, &secondary).await {
+            Ok(tsig_key) => tsig_key,
             Err(e) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
-                reports.push(NotifyCheckResponse {
+                reports.push(CheckNotifyResponse {
                     address: secondary.address.to_string(),
                     error: Some(e.to_string()),
                 });
@@ -133,7 +131,8 @@ async fn send_notify(
                 let mut outcomes = Vec::with_capacity(addrs.len());
                 for addr in addrs {
                     let result =
-                        send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await;
+                        send_notify_to_server(&qname, addr, timeout, retries, tsig_key.as_ref())
+                            .await;
                     outcomes.push((addr, result));
                 }
                 Ok::<_, ResolveAddressError>(outcomes)
@@ -146,7 +145,7 @@ async fn send_notify(
             Ok(Ok(outcomes)) => outcomes,
             Ok(Err(e)) => {
                 cx.metrics().track_notify(NotifyResult::ResolveFailed);
-                reports.push(NotifyCheckResponse {
+                reports.push(CheckNotifyResponse {
                     address: address.to_string(),
                     error: Some(format!("failed to resolve: {}", e)),
                 });
@@ -154,7 +153,7 @@ async fn send_notify(
             }
             Err(e) => {
                 cx.metrics().track_notify(NotifyResult::Failed);
-                reports.push(NotifyCheckResponse {
+                reports.push(CheckNotifyResponse {
                     address: address.to_string(),
                     error: Some(SendNotifyError::TaskFailed(e).to_string()),
                 });
@@ -174,7 +173,7 @@ async fn send_notify(
                     Some(e.to_string())
                 }
             };
-            reports.push(NotifyCheckResponse {
+            reports.push(CheckNotifyResponse {
                 address: addr.to_string(),
                 error,
             });
@@ -190,13 +189,13 @@ async fn send_notify_to_server(
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
-    key: Option<&TsigSigningKey>,
+    tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     let attempts = retries.saturating_add(1);
     let mut attempt = 1;
 
     loop {
-        match send_notify_to_server_once(qname, server_addr, timeout, key).await {
+        match send_notify_to_server_once(qname, server_addr, timeout, tsig_key).await {
             Ok(()) => return Ok(()),
             Err(e) if attempt < attempts => {
                 attempt += 1;
@@ -219,11 +218,12 @@ async fn send_notify_to_server_once(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
-    key: Option<&TsigSigningKey>,
+    tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
-    let (query_id, mut builder) = question_builder(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
-    let signer = match key {
-        Some(key) => Some(sign_request(&mut builder, key.clone())?),
+    let (query_id, mut builder) =
+        build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+    let signer = match tsig_key {
+        Some(tsig_key) => Some(sign_request(&mut builder, tsig_key.clone())?),
         None => None,
     };
     let notify_message = builder.finish();
@@ -256,7 +256,7 @@ mod tests {
     use crate::dns_client::ds::tests::encode_name;
 
     /// A NOTIFY response with `flags`, echoing a SOA question for `qname`.
-    fn notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
+    fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
         let mut response = Vec::new();
         response.extend_from_slice(&query_id.to_be_bytes());
         response.extend_from_slice(&flags.to_be_bytes());
@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn validate_notify_response_accepts_matching_noerror_response() {
         // 0xa000 = QR set + opcode NOTIFY, NOERROR.
-        let response = notify_response(1234, 0xa000, "example.com");
+        let response = build_notify_response(1234, 0xa000, "example.com");
 
         assert!(validate_notify_response(1234, &zone(), &response).is_ok());
     }
@@ -287,7 +287,7 @@ mod tests {
     /// Verify that `validate_notify_response` rejects id mismatch.
     #[test]
     fn validate_notify_response_rejects_id_mismatch() {
-        let response = notify_response(1234, 0xa000, "example.com");
+        let response = build_notify_response(1234, 0xa000, "example.com");
 
         let err = validate_notify_response(5678, &zone(), &response).unwrap_err();
 
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn validate_notify_response_rejects_error_rcode() {
         // 0xa005 adds RCODE 5 (REFUSED).
-        let response = notify_response(1234, 0xa005, "example.com");
+        let response = build_notify_response(1234, 0xa005, "example.com");
 
         let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 
@@ -311,7 +311,7 @@ mod tests {
     fn validate_notify_response_reports_rcode_without_question() {
         // NSD 4.6 answers NOTIFY for a zone it does not serve with NOTAUTH
         // (RCODE 9) and an empty question section.
-        let mut response = notify_response(1234, 0xa009, "example.com");
+        let mut response = build_notify_response(1234, 0xa009, "example.com");
         response.truncate(12);
         response[4..6].copy_from_slice(&0u16.to_be_bytes());
 
@@ -323,7 +323,7 @@ mod tests {
     /// Verify that `validate_notify_response` rejects another question.
     #[test]
     fn validate_notify_response_rejects_another_question() {
-        let response = notify_response(1234, 0xa000, "other.com");
+        let response = build_notify_response(1234, 0xa000, "other.com");
 
         let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 

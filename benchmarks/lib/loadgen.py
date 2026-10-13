@@ -44,7 +44,7 @@ async def run_closed_loop(
                 ok = False
             t1 = clock()
             if t1 >= warmup_until:
-                rec.record(t1 - t0, ok=ok)
+                rec.track_latency(t1 - t0, ok=ok)
 
     workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
     await asyncio.gather(*workers)
@@ -73,7 +73,7 @@ async def run_n(step: Step, concurrency: int, total: int) -> LatencyRecorder:
                 ok = await step(seq)
             except Exception:
                 ok = False
-            rec.record(clock() - t0, ok=ok)
+            rec.track_latency(clock() - t0, ok=ok)
 
     await asyncio.gather(*[worker() for _ in range(concurrency)])
     rec.ended_at = clock()

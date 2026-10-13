@@ -54,9 +54,9 @@ async def run(adapter, cfg, ctx) -> dict:
         t0 = time.monotonic()
         try:
             await adapter.create_record(zone, rec)
-            api.record(time.monotonic() - t0, ok=True)
+            api.track_latency(time.monotonic() - t0, ok=True)
         except Exception:
-            api.record(time.monotonic() - t0, ok=False)
+            api.track_latency(time.monotonic() - t0, ok=False)
             continue
 
         # Blocking poll runs in a thread so we don't stall the loop.
@@ -68,9 +68,9 @@ async def run(adapter, cfg, ctx) -> dict:
         elapsed = time.monotonic() - t0
         if secs is None:
             timeouts += 1
-            visible.record(elapsed, ok=False)
+            visible.track_latency(elapsed, ok=False)
         else:
-            visible.record(elapsed, ok=True)
+            visible.track_latency(elapsed, ok=True)
 
     api.ended_at = visible.ended_at = time.monotonic()
     a, v = api.summary(), visible.summary()

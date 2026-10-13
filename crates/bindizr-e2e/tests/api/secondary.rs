@@ -5,7 +5,7 @@ use crate::common::{
     TestApp, assert_cli_failure_contains,
     dns::{
         notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL},
-        nsupdate::{KeyRole, create_tsig_key},
+        tsig::{KeyRole, create_tsig_key},
     },
 };
 
@@ -277,12 +277,14 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
     assert_eq!(body["catalog"]["status"], "unreachable");
     assert!(!body["notifies"][0]["error"].is_null(), "{body}");
 
-    let checked = app.run_cli_success(&["secondary", "check", "fake"]).await;
+    let checked = app
+        .run_cli_success(&["secondary", "check", "fake"], None)
+        .await;
     assert!(
         checked.contains("in sync at serial 1") && checked.contains("accepted"),
         "{checked}"
     );
     let args = ["secondary", "check", "dead"];
-    let failed = app.run_cli(&args).await;
+    let failed = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &failed, "secondary 'dead' failed the check");
 }

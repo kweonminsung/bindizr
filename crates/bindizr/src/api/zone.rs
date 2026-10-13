@@ -11,10 +11,11 @@ use bindizr_core::{dns::Serial, model::zone_version::VersionFilter};
 use bindizr_service::{
     Context, record,
     types::{
-        CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, ErrorResponse, GetZoneResponse,
-        GetZonesFilter, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
-        RollbackZoneResponse, Run, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
-        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneView, ZoneWriteResponse,
+        CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, DiffZoneVersionsResponse,
+        ErrorResponse, GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse,
+        PaginatedResponse, RollbackZoneResponse, Run, SingleZoneResponse, UpdateZoneRequest,
+        WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+        ZoneView,
     },
     zone,
 };
@@ -143,7 +144,7 @@ pub(crate) async fn export_zone(
         description = "Every zone mutation records a version of the zone's SOA metadata keyed by serial. Versions are returned newest serial first.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            VersionListQuery
+            ListZoneVersionsQuery
         ),
         responses(
             (status = 200, description = "A list of zone versions", body = PaginatedResponse<ZoneVersionResponse>),
@@ -156,7 +157,7 @@ pub(crate) async fn list_zone_versions(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(query): Query<VersionListQuery>,
+    Query(query): Query<ListZoneVersionsQuery>,
 ) -> Result<Response, ApiError> {
     let response = zone::list_versions(
         &cx,
@@ -182,7 +183,7 @@ pub(crate) async fn list_zone_versions(
             ("serial" = u32, Path, description = "The version serial to inspect.")
         ),
         responses(
-            (status = 200, description = "The version and its reconstructed records", body = VersionDetailResponse),
+            (status = 200, description = "The version and its reconstructed records", body = GetZoneVersionResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -246,7 +247,7 @@ pub(crate) async fn rollback_zone(
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct VersionListQuery {
+pub(crate) struct ListZoneVersionsQuery {
     /// Versions per page; defaults to 50.
     #[param(minimum = 1, maximum = 1000)]
     limit: Option<u32>,
@@ -268,7 +269,7 @@ pub(crate) struct ZoneVersionParams {
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct VersionDiffQuery {
+pub(crate) struct DiffZoneVersionsQuery {
     /// The serial to diff from.
     #[param(value_type = u32)]
     from: Serial,
@@ -286,10 +287,10 @@ pub(crate) struct VersionDiffQuery {
         description = "Reports the records added, removed, and changed between `from` and `to`, grouped by name and type. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            VersionDiffQuery
+            DiffZoneVersionsQuery
         ),
         responses(
-            (status = 200, description = "The record differences between the two serials", body = VersionDiffResponse),
+            (status = 200, description = "The record differences between the two serials", body = DiffZoneVersionsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -299,7 +300,7 @@ pub(crate) async fn diff_zone_versions(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(query): Query<VersionDiffQuery>,
+    Query(query): Query<DiffZoneVersionsQuery>,
 ) -> Result<Response, ApiError> {
     let diff = zone::diff_versions(
         &cx,
@@ -318,9 +319,9 @@ pub(crate) async fn diff_zone_versions(
         path = "/zones",
         tag = "Zone",
         summary = "List all DNS zones",
-        params(GetZonesFilter),
+        params(ZoneFilter),
         responses(
-            (status = 200, description = "A list of DNS zones", body = PaginatedResponse<GetZoneResponse>),
+            (status = 200, description = "A list of DNS zones", body = PaginatedResponse<ZoneResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -329,7 +330,7 @@ pub(crate) async fn diff_zone_versions(
 pub(crate) async fn list_zones(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut query): Query<GetZonesFilter>,
+    Query(mut query): Query<ZoneFilter>,
 ) -> Result<Response, ApiError> {
     query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = zone::list_by_filter(&cx, &caller, query).await?;
@@ -347,7 +348,7 @@ pub(crate) async fn list_zones(
             ("name" = String, Path, description = "The name of the DNS zone to retrieve.")
         ),
         responses(
-            (status = 200, description = "Details of the DNS zone", body = ZoneResponse),
+            (status = 200, description = "Details of the DNS zone", body = SingleZoneResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -361,8 +362,8 @@ pub(crate) async fn get_zone(
     let zone = zone::get_by_name(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
     Ok((
         StatusCode::OK,
-        Json(ZoneResponse {
-            zone: GetZoneResponse::from(&zone),
+        Json(SingleZoneResponse {
+            zone: ZoneResponse::from(&zone),
         }),
     )
         .into_response())
@@ -376,8 +377,8 @@ pub(crate) async fn get_zone(
         summary = "Create a new DNS zone",
         request_body = CreateZoneRequest,
         responses(
-            (status = 201, description = "DNS zone created successfully", body = ZoneWriteResponse),
-            (status = 200, description = "Dry run validated successfully, nothing applied", body = ZoneWriteResponse),
+            (status = 201, description = "DNS zone created successfully", body = WriteZoneResponse),
+            (status = 200, description = "Dry run validated successfully, nothing applied", body = WriteZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
@@ -413,7 +414,7 @@ pub(crate) async fn create_zone(
         ),
         request_body = UpdateZoneRequest,
         responses(
-            (status = 200, description = "DNS zone updated successfully", body = ZoneWriteResponse),
+            (status = 200, description = "DNS zone updated successfully", body = WriteZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),

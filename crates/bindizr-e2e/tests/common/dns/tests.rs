@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use domain::{
     base::{
-        MessageBuilder, Name, Record, Ttl,
+        MessageBuilder, Name, Record, Ttl, UnknownRecordData,
         iana::{Class, Rcode},
     },
     rdata::{A, Mx, Srv, Txt},
@@ -15,7 +15,7 @@ use super::*;
 
 /// Verify that parse DNS response renders values in harness comparison format.
 #[test]
-fn parse_dns_response_renders_values_in_harness_comparison_format() {
+fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(7);
     builder.header_mut().set_qr(true);
@@ -60,9 +60,22 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
             Txt::from_octets(vec![2, b'a', b'b', 1, b'c']).unwrap(),
         ))
         .unwrap();
+    for rdata in [
+        b"\x00\x05issue".as_slice(),
+        b"\x80\x06custom\x00\xFF\x0A\"\\",
+    ] {
+        answer
+            .push(Record::new(
+                &owner,
+                Class::IN,
+                ttl,
+                UnknownRecordData::from_octets(Rtype::CAA, rdata).unwrap(),
+            ))
+            .unwrap();
+    }
 
-    let answers = parse_dns_response(7, &answer.finish()).unwrap();
-    let values: Vec<(u16, Option<Value>)> = answers
+    let records = extract_dns_records(7, &answer.finish()).unwrap();
+    let values: Vec<(u16, Option<Value>)> = records
         .into_iter()
         .map(|answer| (answer.record_type, answer.value))
         .collect();
@@ -75,6 +88,8 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
             (33, Some(json!("1 2 8080 mail.example.com."))),
             (16, Some(json!("hello"))),
             (16, Some(json!(["ab", "c"]))),
+            (257, Some(json!(r#"0 issue """#))),
+            (257, Some(json!(r#"128 custom "\000\255\010\"\\""#))),
         ]
     );
 }
@@ -82,24 +97,24 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
 /// Verify that a refused response includes the exact "REFUSED RCODE" text recognized by
 /// `is_deleted_zone_absence`.
 #[test]
-fn parse_dns_response_names_refused_rcode_in_error() {
+fn extract_dns_records_names_refused_rcode_in_error() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(9);
     builder.header_mut().set_qr(true);
     builder.header_mut().set_rcode(Rcode::REFUSED);
 
-    let err = parse_dns_response(9, &builder.finish()).unwrap_err();
+    let err = extract_dns_records(9, &builder.finish()).unwrap_err();
     assert!(err.contains("REFUSED RCODE (5)"), "unexpected error: {err}");
 }
 
-/// Verify that `parse_dns_response` treats nxdomain as no answers.
+/// Verify that `extract_dns_records` treats nxdomain as no records.
 #[test]
-fn parse_dns_response_treats_nxdomain_as_no_answers() {
+fn extract_dns_records_treats_nxdomain_as_no_records() {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(9);
     builder.header_mut().set_qr(true);
     builder.header_mut().set_rcode(Rcode::NXDOMAIN);
 
-    let answers = parse_dns_response(9, &builder.finish()).unwrap();
-    assert!(answers.is_empty());
+    let records = extract_dns_records(9, &builder.finish()).unwrap();
+    assert!(records.is_empty());
 }
