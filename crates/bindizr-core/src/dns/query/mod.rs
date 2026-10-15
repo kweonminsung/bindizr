@@ -228,7 +228,7 @@ fn parse_response(
     Ok(message)
 }
 
-/// One answer record with uncompressed, canonical RDATA.
+/// One answer record with uncompressed RDATA preserving received case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferRecord {
     /// Owner name as an absolute presentation name (trailing dot).

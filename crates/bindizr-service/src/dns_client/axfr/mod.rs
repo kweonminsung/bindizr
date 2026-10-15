@@ -53,6 +53,8 @@ pub(crate) enum FetchZoneError {
     Read(#[source] ReadTcpMessageError),
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    #[error(transparent)]
+    Rdata(#[from] bindizr_core::dns::record::ParseRdataError),
     #[error("transfer does not start with the zone's SOA")]
     NoOpeningSoa,
     #[error("transfer opens with the SOA of {found}, not {expected}")]
@@ -156,9 +158,11 @@ async fn fetch_zone_from_address(
                 }
             } else if record.rtype == Rtype::SOA {
                 // The stream ends by repeating the opening SOA (RFC 5936, Section 2.2).
+                // Compare canonical copies, preserving received case for import.
                 let opening = &records[0];
                 if owner_labels(&record.name)? != owner_labels(&opening.name)?
-                    || record.rdata != opening.rdata
+                    || record.rdata.to_canonical(Rtype::SOA)?
+                        != opening.rdata.to_canonical(Rtype::SOA)?
                 {
                     return Err(FetchZoneError::ForeignClosingSoa);
                 }
@@ -182,3 +186,6 @@ fn owner_labels(name: &str) -> Result<Vec<Vec<u8>>, FetchZoneError> {
             source,
         })
 }
+
+#[cfg(test)]
+mod tests;
