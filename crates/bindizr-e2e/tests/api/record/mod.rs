@@ -730,6 +730,15 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({"zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.1"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
     let (status, scoped) = app
         .send_request(
             Method::GET,
@@ -744,7 +753,14 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         "zone has no apex record to find: {scoped}"
     );
 
-    let (status, unscoped) = app.send_request(Method::GET, "/records?name=@", None).await;
+    // Keep the unscoped lookup on one page even when Compose retains older runs.
+    let (status, unscoped) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?name=@&search={}", app.namespace()),
+            None,
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = unscoped["items"]
         .as_array()
@@ -752,10 +768,7 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         .iter()
         .map(|r| r["name"].as_str().unwrap())
         .collect();
-    assert!(
-        names.contains(&format!("{zone_name}.").as_str()),
-        "apex of {zone_name} missing from {names:?}"
-    );
+    assert_eq!(names, [format!("{zone_name}.")]);
 }
 
 /// Verify that empty name filter is no filter not the apex.
