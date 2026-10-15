@@ -147,7 +147,7 @@ pub async fn delete(
             &[],
         )
         .await?;
-        let new_serial = generate_serial(Some(zone.serial))?;
+        let new_serial = generate_serial(Some(zone.serial));
         if run.is_dry_run() {
             return Ok((response, zone.name));
         }
@@ -286,7 +286,7 @@ pub async fn delete_matching(
         let new_serial = if matched.is_empty() {
             zone.serial
         } else {
-            generate_serial(Some(zone.serial))?
+            generate_serial(Some(zone.serial))
         };
         if !response.applied || matched.is_empty() {
             return Ok((response, owner));

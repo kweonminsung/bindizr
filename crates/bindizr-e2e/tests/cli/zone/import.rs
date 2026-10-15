@@ -5,34 +5,32 @@ use crate::{
     common::TestApp,
 };
 
-/// Refuse an unsupported migration serial in both preview and apply without creating a zone.
+/// Preserve a high source serial during preview and advance it when applying records.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_rejects_an_unsupported_initial_serial() {
+async fn zone_import_accepts_the_full_serial_range() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-high-serial.example");
     let content = format!(
-        "@ IN SOA ns.old.example. hostmaster.{zone_name}. (2140000000 7200 1800 1209600 300)\n\
-         @ IN NS ns.old.example.\n\
-         www IN A 192.0.2.10\n"
+        "@ IN SOA ns.old.example. hostmaster.{zone_name}. (4294967295 7200 1800 1209600 300)\n@ IN NS ns.old.example.\nwww IN A 192.0.2.10\n"
     );
-
-    for dry_run in [true, false] {
-        let mut args = vec!["zone", "import", &zone_name, "-", "--create"];
-        if dry_run {
-            args.push("--dry-run");
-        }
-        let output = app.run_cli(&args, Some(&content)).await;
-        assert!(!output.status.success(), "{output:?}");
-        let stderr = String::from_utf8(output.stderr).expect("CLI stderr was not UTF-8");
-        assert!(
-            stderr.contains("serial 2140000000 must not exceed 2137483647"),
-            "{stderr}"
-        );
-
-        let output = app.run_cli(&["zone", "get", &zone_name], None).await;
-        assert!(!output.status.success(), "{output:?}");
-    }
+    app.run_cli_success(
+        &["zone", "import", &zone_name, "-", "--create", "--dry-run"],
+        Some(&content),
+    )
+    .await;
+    assert!(
+        !app.run_cli(&["zone", "get", &zone_name], None)
+            .await
+            .status
+            .success()
+    );
+    app.run_cli_success(
+        &["zone", "import", &zone_name, "-", "--create"],
+        Some(&content),
+    )
+    .await;
+    assert_eq!(app.read_zone_serial(&zone_name).await, 0);
 }
 
 /// Verify that a rejected import applies nothing and exits non-zero.
@@ -48,7 +46,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     let output = app
         .run_cli(
             &["zone", "import", &zone_name, "-"],
-            Some("www IN A 192.0.2.40\nbox IN HINFO \"amd64\" \"linux\"\n"),
+            Some("www IN A 192.0.2.40\nbox IN TYPE128 \\# 0\n"),
         )
         .await;
     assert!(!output.status.success(), "{output:?}");

@@ -14,9 +14,8 @@ use crate::{
     },
 };
 
-/// Undo the zone's journal in `(target_serial, current_serial]` on the
-/// current records, yielding the records at `target_serial`.
-/// SOA rows are skipped (SOA state is restored from `zone_versions`).
+/// Rewind current records through journal `(target_serial, current_serial]`.
+/// Skip SOA rows; `zone_versions` restores SOA state.
 pub(crate) async fn rewind_records_to_serial_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -36,7 +35,7 @@ pub(crate) async fn rewind_records_to_serial_tx(
     Ok(undo_changes(records, &changes))
 }
 
-/// Undo ascending `(serial, id)` changes newest-first over the current records.
+/// Undo chronological journal changes newest-first over the current records.
 /// Log and skip unexplained changes so inconsistent history cannot block rollback.
 fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData> {
     let mut state: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
@@ -48,9 +47,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
     }
 
     for change in changes.iter().rev() {
-        // Derived DNSSEC rows are not user data (rollback re-signs the
-        // restored plane), and SOA markers are zone metadata the version row
-        // already carries.
+        // Rollback re-signs derived DNSSEC data; SOA metadata comes from the version row.
         let JournalRecordType::User(record_type) = &change.record_type else {
             continue;
         };
@@ -119,9 +116,9 @@ pub(crate) async fn list_records_at_serial_tx(
 /// Deterministic output order (hash-map iteration order is not).
 fn sort_records(records: &mut [RecordData]) {
     records.sort_by(|a, b| {
-        (&a.name, a.record_type.as_str(), &a.value).cmp(&(
+        (&a.name, a.record_type.to_text(), &a.value).cmp(&(
             &b.name,
-            b.record_type.as_str(),
+            b.record_type.to_text(),
             &b.value,
         ))
     });

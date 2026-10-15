@@ -33,47 +33,56 @@ would need a restart and leaves the running configuration alone.
 
 ## Configuration file
 
-Packages install this configuration file. For other installations, create it
-and adjust the values. Commented settings are optional; unknown keys are
-rejected by `config check`.
+Packages install this file; create it manually for other installations.
+Omitted keys and sections use defaults; an empty string (`""`) does not.
+Environment variables override file values. The selected database needs a
+file path or URL. Unknown keys are rejected by `config check`.
+
+The Docker configuration uses API port `8000` and DNS port `53`.
+
+`dns.listen_addr = "0.0.0.0"` accepts requests on all local IPv4 addresses;
+`"::"` listens on IPv6. On Linux and macOS, UDP replies use the IP address
+queried by the client, including with wildcard listeners (RFC 2181, Section 4.1).
 
 ```toml title="/etc/bindizr/bindizr.conf.toml"
+# Uncomment to override defaults. Database URLs and TLS settings are examples.
+
 [api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-authentication_required = true # Require an API token; `bindizr token create` makes the first one
-metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
-external_dns_enabled = false  # ExternalDNS provider API at /external-dns
-openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
+# listen_addr = "0.0.0.0"
+# listen_port = 3000
+# authentication_required = true # Require an API token; `bindizr token create` makes the first one
+# metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
+# external_dns_enabled = false  # ExternalDNS provider API at /external-dns
+# openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
 
 [api.tls]                     # Set both files to serve HTTPS
 # cert_file = "/etc/bindizr/tls/tls.crt"
 # key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
-type = "sqlite"               # sqlite, mysql, or postgresql
+# type = "sqlite"               # sqlite, mysql, or postgresql
 
-[database.mysql]
-url = "mysql://user:password@hostname:port/database"
+# [database.mysql]
+# url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
 file_path = "/var/lib/bindizr/bindizr.db"
 
-[database.postgresql]
-url = "postgresql://user:password@hostname:port/database"
+# [database.postgresql]
+# url = "postgresql://user:password@hostname:port/database"
 
 [database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
 # mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
 # ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
 
 [dns]
-listen_addr = "127.0.0.1"
-listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
+# listen_addr = "0.0.0.0"
+# listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
 # zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
-# tcp_idle_timeout_secs = 30             # Idle time between queries before a TCP or TLS connection closes; advertised as edns-tcp-keepalive (RFC 7828)
-# tcp_max_connections = 128              # Connections served at once on each listener, TCP and TLS; the rest wait in the accept backlog
+# tcp_idle_timeout_secs = 30             # TCP/TLS idle seconds; advertised via edns-tcp-keepalive (RFC 7828)
+# tcp_max_connections = 128              # Per-listener TCP/TLS connection limit; excess waits in the backlog
 
 [dns.notify]                  # NOTIFY to the secondaries
 # batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
@@ -81,7 +90,7 @@ listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
 [dns.nsupdate]                # nsupdate (RFC 2136)
-tsig_required = true          # false admits unsigned updates from anyone
+# tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
 # listen_port = 853           # On dns.listen_addr
@@ -89,22 +98,22 @@ tsig_required = true          # false admits unsigned updates from anyone
 # key_file = "/etc/bindizr/tls/xot.key"
 
 [dns.transfer]                # Zone transfers
-# cache_max_records = 500000  # Zone records cached per serial; a larger zone is served uncached (0 = no cache)
-# require_tls = false         # Refuse AXFR/IXFR over plain TCP and UDP; needs [dns.tls], SOA queries still answer
+# cache_max_records = 500000  # Total cached records; oversized zones bypass the cache (0 = disabled)
+# require_tls = false         # Require [dns.tls] for AXFR/IXFR; SOA queries remain available
 
 [dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
 # timeout_secs = 30
 # max_records = 200000        # A larger zone is refused
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
-ttl = 3600                    # Default record TTL (seconds)
-refresh = 300                 # SOA refresh; NOTIFY drives propagation, this only bounds a lost one
-retry = 60                    # SOA retry
-expire = 3600000              # SOA expire
-minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
+# ttl = 3600                    # Default record TTL (seconds)
+# refresh = 300                 # SOA refresh; fallback when NOTIFY is lost
+# retry = 60                    # SOA retry
+# expire = 3600000              # SOA expire
+# minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-level = "info"                # error, warn, info, debug, trace
+# level = "info"                # error, warn, info, debug, trace
 # format = "text"             # text, or json for one object per line
 ```
 

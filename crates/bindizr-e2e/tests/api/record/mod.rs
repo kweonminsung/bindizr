@@ -4,6 +4,7 @@ use serde_json::json;
 use crate::common::TestApp;
 
 mod bulk;
+mod rfc;
 
 /// Preserve CAA empty and binary values through record writes and reads.
 #[tokio::test]
@@ -14,7 +15,7 @@ async fn caa_values_preserve_empty_and_binary_properties() {
     let zone_name = zone["name"].as_str().unwrap();
     let long_tag = format!("0 {} \"\"", "a".repeat(255));
     for (input, expected) in [
-        (r#"0 ISSUE """#, r#"0 issue """#),
+        (r#"0 ISSUE """#, r#"0 ISSUE """#),
         (r#"0 issuewild """#, r#"0 issuewild """#),
         (
             r"128 custom \000\255\010\034\092",
@@ -44,7 +45,13 @@ async fn caa_values_preserve_empty_and_binary_properties() {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["record"]["value"], "0 custom \"\"");
         let serial = app.read_zone_serial(zone_name).await;
-        for invalid in ["0 custom", "0 custom a b", r"0 custom \256"] {
+        for invalid in [
+            "0 custom",
+            "0 custom a b",
+            r"0 custom \256",
+            "1 custom x",
+            "255 custom x",
+        ] {
             let (status, body) = app
                 .send_request(Method::PUT, &path, Some(json!({"value": invalid})))
                 .await;
@@ -918,27 +925,21 @@ async fn record_listing_sorts_by_the_field_asked_for() {
     );
 }
 
-/// Verify that a non-ASCII label is refused with the punycode advice.
+/// Accept DNS octets independently of IDNA host conventions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_non_ascii_label_is_refused_with_punycode_advice() {
+async fn non_ascii_labels_are_stored_as_dns_octets() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Owner names and the names inside values take the A-label form the wire
-    // carries (RFC 5890): the raw label is refused, its A-label accepted.
+    // UTF-8 input denotes its literal octets; A-labels remain accepted as well.
     for (name, record_type, value, expected) in [
-        ("caf\u{e9}", "A", "192.0.2.1", StatusCode::BAD_REQUEST),
-        (
-            "alias",
-            "CNAME",
-            "caf\u{e9}.example.",
-            StatusCode::BAD_REQUEST,
-        ),
+        ("caf\u{e9}", "A", "192.0.2.1", StatusCode::CREATED),
+        ("alias", "CNAME", "caf\u{e9}.example.", StatusCode::CREATED),
         ("xn--caf-dma", "A", "192.0.2.1", StatusCode::CREATED),
         (
-            "alias",
+            "idna-alias",
             "CNAME",
             "xn--caf-dma.example.",
             StatusCode::CREATED,
@@ -957,9 +958,6 @@ async fn a_non_ascii_label_is_refused_with_punycode_advice() {
             )
             .await;
         assert_eq!(status, expected, "{name} {record_type} {value}: {body}");
-        if expected == StatusCode::BAD_REQUEST {
-            assert!(body.to_string().contains("punycode"), "{body}");
-        }
     }
 }
 
@@ -1075,9 +1073,8 @@ async fn a_naptr_regexp_bind_refuses_is_rejected() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // BIND checks the regexp on receipt, and one record it refuses fails the
-    // whole zone transfer, so what it refuses must not be stored. A backslash
-    // in the regexp is spelled `\\` in the quoted form (RFC 1035, Section 5.1).
+    // BIND rejects the whole transfer for an invalid regexp. Literal backslashes
+    // use `\\` in quoted text (RFC 1035, Section 5.1).
     for (value, expected) in [
         (
             "10 10 \"u\" \"E2U+sip\" \"garbage\" .",
@@ -1588,7 +1585,7 @@ async fn record_create_supported_types() {
             "MX" => "mail.example.com.",
             "SRV" => "5 5060 sip.example.com.",
             "CNAME" => "www.example.com.",
-            "CAA" => "0 issue \"letsencrypt.org\"",
+            "CAA" => "0 ISSUE \"letsencrypt.org\"",
             "SSHFP" => "4 2 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             "TLSA" => "3 1 1 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             _ => value,

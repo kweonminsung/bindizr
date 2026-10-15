@@ -101,9 +101,8 @@ impl GrantedRecord for RecordData {
     }
 }
 
-/// Rows of one zone the caller may read. A response renders existing rows
-/// only from this type, built by [`Caller::readable_records`] or a
-/// [`WholeZoneRead`], so a flow cannot show a row it never checked.
+/// Zone rows authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
+/// Responses render existing rows only through this checked type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReadableRecords<T>(Vec<T>);
 
@@ -156,9 +155,8 @@ impl Caller {
         }
     }
 
-    /// Build the DNS plane's caller for a request no key signed, which the
-    /// address ACL or `dns.nsupdate.tsig_required = false` admitted: global,
-    /// as they already decided.
+    /// Build a global caller for unsigned DNS requests admitted by the address ACL
+    /// or `dns.nsupdate.tsig_required = false`.
     pub fn unsigned_dns() -> Self {
         Self {
             scope: CallerScope::Global,
@@ -545,8 +543,8 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map(RecordType::as_str)
-                    .unwrap_or("records"),
+                    .map(RecordType::to_text)
+                    .unwrap_or("records".into()),
                 zone.name
             )));
         }

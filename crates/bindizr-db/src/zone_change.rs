@@ -83,9 +83,8 @@ pub async fn list_between_serials_tx(
     }
 }
 
-/// Prune one zone's journal rows older than `cutoff`, whole serials at a
-/// time so the remaining chain stays contiguous; requests below it fall
-/// back to AXFR. Returns the number of rows deleted.
+/// Delete expired whole serials, retaining a contiguous IXFR chain.
+/// Older requests use AXFR; return the deleted row count.
 pub async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -100,6 +99,25 @@ pub async fn prune_by_zone_id_older_than_tx(
         }
         TransactionKind::Sqlite(tx) => {
             sqlite::zone_change::prune_by_zone_id_older_than_tx(tx, zone_id, cutoff).await
+        }
+    }
+}
+
+/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub async fn prune_outside_serial_window_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+    current: Serial,
+) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::zone_change::prune_outside_serial_window_tx(tx, zone_id, current).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::zone_change::prune_outside_serial_window_tx(tx, zone_id, current).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::zone_change::prune_outside_serial_window_tx(tx, zone_id, current).await
         }
     }
 }

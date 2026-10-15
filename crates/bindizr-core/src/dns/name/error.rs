@@ -17,7 +17,7 @@ pub enum ParseNameError {
     EmptyLabel,
     #[error("labels must be {MAX_DNS_LABEL_LEN} bytes or fewer")]
     LabelTooLong,
-    /// The LDH charset rule, which applies to zone names but not owner names.
+    /// Hostname syntax for connection addresses, independent of DNS owner labels.
     #[error("labels must contain only {}", if *underscore_allowed { "ASCII letters, digits, hyphens, or underscores" } else { "ASCII letters, digits, or hyphens" })]
     LabelCharset { underscore_allowed: bool },
     #[error("labels must not start or end with hyphens")]
@@ -28,10 +28,6 @@ pub enum ParseNameError {
     /// A `\DDD` that is not three decimal digits, or is above 255.
     #[error("contains an invalid escape")]
     InvalidEscape,
-    /// A label may hold any octet (RFC 2181, Section 11); bindizr holds names
-    /// to ASCII text, an internationalized label as its `xn--` A-label.
-    #[error("must be printable ASCII; spell an internationalized label in punycode (xn--)")]
-    NonAscii,
     #[error("is outside the zone")]
     OutsideZone,
 }

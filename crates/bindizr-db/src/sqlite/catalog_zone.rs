@@ -21,7 +21,7 @@ pub(crate) async fn upsert_tx(
         DO UPDATE SET
             serial = CASE
                 WHEN digest = excluded.digest THEN serial
-                ELSE max(serial + 1, excluded.serial)
+                ELSE (serial + 1) % 4294967296
             END,
             digest = excluded.digest
         "#,

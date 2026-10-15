@@ -120,7 +120,7 @@ async fn zone_reject_invalid_name_and_ttl() {
     let app = TestApp::start().await;
 
     for (name, ttl, expected_error) in [
-        ("_tcp.example", "3600", "ASCII letters"),
+        ("bad..example", "3600", "empty labels"),
         ("low-ttl.example", "0", "ttl must be at least"),
     ] {
         let mname = format!("ns1.{name}");

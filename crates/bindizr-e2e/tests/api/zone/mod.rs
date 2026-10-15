@@ -134,9 +134,8 @@ async fn zone_seed_and_reject_out_of_range_serial() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zone"]["serial"], 2026072502i64);
 
-    // Past MAX_INITIAL_SERIAL (i32::MAX - 10_000_000) the counter would
-    // saturate while the zone is still in use.
-    for out_of_range_serial in [0i64, -1, 2_137_483_648, i64::from(i32::MAX)] {
+    // RFC 1982 serials span the complete unsigned 32-bit range.
+    for out_of_range_serial in [-1i64, i64::from(u32::MAX) + 1] {
         let out_of_range_zone = json!({
             "name": app.zone_name("out-of-range-serial.example.com"),
             "mname": "ns1.example.com",
@@ -711,7 +710,7 @@ async fn zone_reject_invalid_name_and_ttl() {
             "default_ttl": 3600
         }),
         json!({
-            "name": "_tcp.example.com",
+            "name": "bad..example.com",
             "mname": "ns._tcp.example.com",
             "rname": "hostmaster@example.com",
             "default_ttl": 3600
@@ -723,7 +722,7 @@ async fn zone_reject_invalid_name_and_ttl() {
             "default_ttl": 3600
         }),
         json!({
-            "name": "-test.example.com",
+            "name": "bad..example.com",
             "mname": "ns.-test.example.com",
             "rname": "hostmaster@example.com",
             "default_ttl": 3600

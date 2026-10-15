@@ -91,7 +91,7 @@ pub(crate) async fn send_ixfr_response(
         }
 
         let mut serials: Vec<Serial> = changes_by_serial.keys().copied().collect();
-        serials.sort();
+        serials.sort_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
 
         for (idx, &serial) in serials.iter().enumerate() {
             let serial_changes = &changes_by_serial[&serial];

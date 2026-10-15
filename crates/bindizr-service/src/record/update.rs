@@ -5,7 +5,8 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 
 use super::validation::{
-    normalize_record_owner_name, parse_record_type, validate_record_constraints,
+    normalize_record_owner_name, parse_record_type, validate_management_value,
+    validate_record_constraints,
 };
 use crate::{
     Context,
@@ -105,6 +106,9 @@ fn resolve_update(
             .map_err(ServiceError::invalid_record_value)?,
         None => existing.value.clone(),
     };
+    if request.value.is_some() {
+        validate_management_value(record_type, &encoded_value)?;
+    }
     let ttl = match request.ttl {
         Some(ttl) => validate_record_ttl(ttl)?,
         None => existing.ttl,
@@ -357,7 +361,7 @@ async fn update_locked(
         )
         .await?;
 
-        let new_serial = generate_serial(Some(zone.serial))?;
+        let new_serial = generate_serial(Some(zone.serial));
 
         // The merge is resolved and validated, so a dry run stops here.
         if request.dry_run {

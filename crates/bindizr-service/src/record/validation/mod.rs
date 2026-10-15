@@ -5,7 +5,7 @@ use bindizr_core::{
     dns::{
         Ttl,
         name::{OwnerName, ParseNameError, ZoneName},
-        record::MxRecordValue,
+        record::{CaaRecordValue, MxRecordValue},
     },
     model::record::RecordId,
 };
@@ -45,12 +45,26 @@ pub(crate) fn parse_record_fields(
         .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
+    validate_management_value(record_type, &value)?;
     Ok(ParsedRecord {
         record_type,
         value,
         ttl,
         priority,
     })
+}
+
+/// Validate newly authored values while leaving imported opaque flags intact.
+pub(super) fn validate_management_value(
+    record_type: RecordType,
+    value: &str,
+) -> Result<(), ServiceError> {
+    if record_type == RecordType::Caa {
+        CaaRecordValue::parse(value)
+            .and_then(|caa| caa.validate_creation())
+            .map_err(ServiceError::invalid_record_value)?;
+    }
+    Ok(())
 }
 
 /// Parse a supported record type from request text.

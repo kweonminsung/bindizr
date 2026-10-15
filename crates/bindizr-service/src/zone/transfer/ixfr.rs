@@ -16,7 +16,7 @@ use crate::{
 /// What an IXFR from a client's serial is answered with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IxfrPlan {
-    /// Equal serials need only the current SOA.
+    /// Equal or newer client serials need only the current SOA.
     SoaOnly,
     /// Complete journal steps and their bounding SOA versions.
     Changes {
@@ -42,12 +42,11 @@ pub async fn authorize_ixfr_plan_by_name(
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
         let current = zone.serial;
-        // RFC 1995, Section 2: equal serials need only the current SOA.
-        let plan = if client_serial == current {
+        // RFC 1995, Section 2: equal or newer client serials need only the current SOA.
+        let plan = if client_serial == current || client_serial.is_newer_than(current) {
             IxfrPlan::SoaOnly
-        } else if !current.is_newer_than(client_serial) || client_serial > Serial::MAX_STORED {
-            // RFC 1995, Section 2 exception: newer clients receive the full snapshot.
-            // Undefined ordering and serials outside stored history also need AXFR.
+        } else if !current.is_newer_than(client_serial) {
+            // RFC 1982 leaves the half-range distance unordered; send a full snapshot.
             IxfrPlan::Full
         } else {
             // RFC 1995, Section 2 permits a full transfer when IXFR is no
@@ -84,7 +83,9 @@ pub async fn authorize_ixfr_plan_by_name(
                     .await?;
                     let mut journal_serials: Vec<Serial> =
                         changes.iter().map(|change| change.serial).collect();
-                    journal_serials.sort_unstable();
+                    journal_serials.sort_unstable_by_key(|serial| {
+                        serial.as_u32().wrapping_sub(client_serial.as_u32())
+                    });
                     journal_serials.dedup();
                     let version_serials: Vec<Serial> =
                         versions.iter().map(|version| version.serial).collect();
@@ -144,9 +145,9 @@ fn validate_delta(
     let mut steps: Vec<Serial> = version_serials
         .iter()
         .copied()
-        .filter(|&serial| serial > client_serial)
+        .filter(|&serial| serial.is_newer_than(client_serial))
         .collect();
-    steps.sort_unstable();
+    steps.sort_unstable_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
     if journal_serials != steps {
         return Err(ValidateDeltaError::StepsDiffer {
             journal: journal_serials.to_vec(),

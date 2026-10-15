@@ -5,7 +5,7 @@ use domain::{
         ToName,
         iana::{Class, Rtype},
         name::ParsedName,
-        rdata::ParseRecordData,
+        rdata::{ComposeRecordData, ParseRecordData},
     },
     dep::octseq::parse::Parser,
     rdata::ZoneRecordData,
@@ -25,7 +25,7 @@ use crate::{
 /// A record's value as the zone file spells it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ZoneFileValue {
-    /// Presentation-form rdata, for every type but TXT.
+    /// Presentation-form RDATA, including TXT with non-UTF-8 octets.
     Rdata(String),
     /// A TXT record's character-strings, already checked for UTF-8.
     Segments(Vec<String>),
@@ -229,59 +229,72 @@ impl ParsedZoneFile {
             return;
         };
 
-        let (value, priority) = match data {
-            // Use parsed NAPTR fields because `domain` renders a root replacement as `..`.
-            ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
-                naptr.order(),
-                naptr.preference(),
-                naptr.flags().as_slice(),
-                naptr.services().as_slice(),
-                naptr.regexp().as_slice(),
-                &naptr.replacement().to_string(),
+        let (value, priority) = if matches!(record_type, RecordType::Unknown(_)) {
+            let mut bytes = Vec::new();
+            let Ok(()) = data.compose_rdata(&mut bytes);
+            (
+                ZoneFileValue::Rdata(format!(r"\# {} {}", bytes.len(), hex::encode_upper(bytes))),
+                None,
             )
-            .map(|value| value.canonical())
-            {
-                Ok(text) => (ZoneFileValue::Rdata(text), None),
-                Err(e) => {
-                    self.errors
-                        .push(format!("NAPTR value for '{}': {}", owner, e));
-                    return;
-                }
-            },
-            ZoneRecordData::Srv(srv) => (
-                ZoneFileValue::Rdata(format!(
-                    "{} {} {}",
-                    srv.weight(),
-                    srv.port(),
-                    crate::dns::name::to_fqdn(&srv.target().to_string())
-                )),
-                Some(i32::from(srv.priority())),
-            ),
-            ZoneRecordData::Mx(mx) => (
-                ZoneFileValue::Rdata(crate::dns::name::to_fqdn(&mx.exchange().to_string())),
-                Some(i32::from(mx.preference())),
-            ),
-            ZoneRecordData::Txt(txt) => {
-                // Reject non-UTF-8 TXT octets; stored values must be valid UTF-8.
-                let mut segments = Vec::new();
-                let mut non_utf8 = false;
-                for segment in txt.iter() {
-                    match std::str::from_utf8(segment) {
-                        Ok(text) => segments.push(text.to_string()),
-                        Err(_) => {
-                            non_utf8 = true;
-                            break;
-                        }
+        } else {
+            match data {
+                // Use parsed NAPTR fields because `domain` renders a root replacement as `..`.
+                ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
+                    naptr.order(),
+                    naptr.preference(),
+                    naptr.flags().as_slice(),
+                    naptr.services().as_slice(),
+                    naptr.regexp().as_slice(),
+                    &naptr.replacement().to_string(),
+                )
+                .map(|value| value.canonical())
+                {
+                    Ok(text) => (ZoneFileValue::Rdata(text), None),
+                    Err(e) => {
+                        self.errors
+                            .push(format!("NAPTR value for '{}': {}", owner, e));
+                        return;
+                    }
+                },
+                ZoneRecordData::Srv(srv) => (
+                    ZoneFileValue::Rdata(format!(
+                        "{} {} {}",
+                        srv.weight(),
+                        srv.port(),
+                        crate::dns::name::to_fqdn(&srv.target().to_string())
+                    )),
+                    Some(i32::from(srv.priority())),
+                ),
+                ZoneRecordData::Mx(mx) => (
+                    ZoneFileValue::Rdata(crate::dns::name::to_fqdn(&mx.exchange().to_string())),
+                    Some(i32::from(mx.preference())),
+                ),
+                ZoneRecordData::Txt(txt) => {
+                    // RFC 1035, Section 3.3.14: TXT character-strings are octets.
+                    match txt
+                        .iter()
+                        .map(std::str::from_utf8)
+                        .collect::<Result<Vec<_>, _>>()
+                    {
+                        Ok(segments) => (
+                            ZoneFileValue::Segments(
+                                segments.into_iter().map(str::to_string).collect(),
+                            ),
+                            None,
+                        ),
+                        Err(_) => (
+                            ZoneFileValue::Rdata(
+                                txt.iter()
+                                    .map(crate::dns::record::to_quoted_charstr)
+                                    .collect::<Vec<_>>()
+                                    .join(" "),
+                            ),
+                            None,
+                        ),
                     }
                 }
-                if non_utf8 {
-                    self.errors
-                        .push(format!("TXT value for '{}' is not valid UTF-8", owner));
-                    return;
-                }
-                (ZoneFileValue::Segments(segments), None)
+                other => (ZoneFileValue::Rdata(other.to_string()), None),
             }
-            other => (ZoneFileValue::Rdata(other.to_string()), None),
         };
 
         self.records.push(ZoneFileRecord {

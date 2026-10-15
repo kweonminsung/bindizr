@@ -14,17 +14,17 @@ use std::{net::SocketAddr, sync::Arc};
 
 use bindizr_service::Context;
 use thiserror::Error;
-use tokio::{
-    net::{TcpListener, UdpSocket},
-    task::JoinHandle,
-};
+use tokio::{net::TcpListener, task::JoinHandle};
 
-use self::server::DnsContext;
+use self::{server::DnsContext, udp::UdpSocket};
 use crate::{shutdown::Shutdown, tls::TlsCertificate};
 
 /// Why a DNS listener could not come up.
 #[derive(Debug, Error)]
 pub(crate) enum StartDnsError {
+    #[error("failed to enable DNS UDP packet information: {0}")]
+    UdpPacketInfo(#[source] std::io::Error),
+
     /// Names the usual cause when the port is already taken.
     #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse { format!(" (another DNS server on this host? change {setting})") } else { String::new() })]
     Bind {
@@ -85,7 +85,7 @@ pub(crate) async fn start(
                 setting: "dns.listen_port",
                 source,
             })?;
-    let udp_socket = UdpSocket::bind(listen_addr)
+    let udp_socket = tokio::net::UdpSocket::bind(listen_addr)
         .await
         .map_err(|source| StartDnsError::Bind {
             socket: "UDP socket",
@@ -93,6 +93,7 @@ pub(crate) async fn start(
             setting: "dns.listen_port",
             source,
         })?;
+    let udp_socket = UdpSocket::new(udp_socket).map_err(StartDnsError::UdpPacketInfo)?;
     // Bound before anything serves, so a failure exits the start.
     let tls_listener = match certificate {
         Some(certificate) => {

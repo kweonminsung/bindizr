@@ -11,6 +11,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 struct TestConfigToml {
     api_listen_addr: &'static str,
+    dns_listen_addr: &'static str,
     authentication_required: bool,
     /// Extra lines after the `[api]` keys, as `dns_extra` below.
     api_extra: &'static str,
@@ -29,6 +30,7 @@ impl Default for TestConfigToml {
     fn default() -> Self {
         Self {
             api_listen_addr: "127.0.0.1",
+            dns_listen_addr: "127.0.0.1",
             authentication_required: false,
             api_extra: "",
             database_type: "sqlite",
@@ -62,13 +64,14 @@ type = "{database_type}"
 file_path = "file::memory:?cache=shared"
 {unselected_databases}
 [dns]
-listen_addr = "127.0.0.1"
+listen_addr = "{dns_listen_addr}"
 listen_port = {dns_listen_port}
 {dns_extra}
 [logging]
 level = "debug"
 "#,
             api_listen_addr = self.api_listen_addr,
+            dns_listen_addr = self.dns_listen_addr,
             authentication_required = self.authentication_required,
             api_extra = self.api_extra,
             database_type = self.database_type,
@@ -105,6 +108,26 @@ fn from_toml_accepts_valid_config() {
     assert!(!parsed.dns.nsupdate.tsig_required);
 }
 
+/// Both front ends accept wildcard addresses as well as specific local addresses.
+#[test]
+fn dns_listener_accepts_wildcard_and_specific_addresses() {
+    for addr in [
+        "0.0.0.0",
+        "::",
+        "127.0.0.1",
+        "::1",
+        "192.0.2.10",
+        "2001:db8::10",
+    ] {
+        parse_config(&TestConfigToml {
+            api_listen_addr: "0.0.0.0",
+            dns_listen_addr: addr,
+            ..Default::default()
+        })
+        .unwrap();
+    }
+}
+
 /// Verify that `from_toml` defaults missing optional fields.
 #[test]
 fn from_toml_defaults_missing_optional_fields() {
@@ -126,6 +149,88 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
+}
+
+/// Omitted fields and omitted sections produce the same listener and backend defaults.
+#[test]
+fn from_toml_defaults_listeners_backend_and_logging() {
+    let minimal = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
+    let omitted = Config::from_toml(minimal, |_| None).unwrap();
+    let empty_sections = Config::from_toml(
+        &format!("[api]\n[database]\n[dns]\n[logging]\n{minimal}"),
+        |_| None,
+    )
+    .unwrap();
+    assert_eq!(omitted, empty_sections);
+    assert_eq!(omitted.api.listen_addr.to_string(), "0.0.0.0");
+    assert_eq!(omitted.api.listen_port, 3000);
+    assert_eq!(omitted.dns.listen_addr.to_string(), "0.0.0.0");
+    assert_eq!(omitted.dns.listen_port, 5300);
+    assert_eq!(omitted.database.database_type, DatabaseType::Sqlite);
+    assert_eq!(omitted.logging.level, LogLevel::Info);
+    assert!(omitted.api.authentication_required);
+    assert!(omitted.api.metrics_enabled);
+    assert!(omitted.dns.nsupdate.tsig_required);
+}
+
+/// Environment variables can supply omitted settings before validation, including the database.
+#[test]
+fn from_toml_overrides_defaults_before_validation() {
+    let parsed = Config::from_toml("", |name| {
+        Some(
+            match name {
+                "BINDIZR_API_LISTEN_ADDR" => "127.0.0.1",
+                "BINDIZR_API_LISTEN_PORT" => "8000",
+                "BINDIZR_DNS_LISTEN_ADDR" => "::1",
+                "BINDIZR_DNS_LISTEN_PORT" => "5353",
+                "BINDIZR_DATABASE_TYPE" => "postgresql",
+                "BINDIZR_DATABASE_URL" => "postgresql://localhost/bindizr",
+                "BINDIZR_LOGGING_LEVEL" => "debug",
+                _ => return None,
+            }
+            .to_string(),
+        )
+    })
+    .unwrap();
+    assert_eq!(parsed.api.listen_addr.to_string(), "127.0.0.1");
+    assert_eq!(parsed.api.listen_port, 8000);
+    assert_eq!(parsed.dns.listen_addr.to_string(), "::1");
+    assert_eq!(parsed.dns.listen_port, 5353);
+    assert_eq!(parsed.database.database_type, DatabaseType::Postgres);
+    assert_eq!(
+        parsed.database.postgresql.url,
+        "postgresql://localhost/bindizr"
+    );
+    assert_eq!(parsed.logging.level, LogLevel::Debug);
+}
+
+/// Defaults do not turn an explicitly invalid value into a valid configuration.
+#[test]
+fn from_toml_rejects_empty_values_and_missing_database_location() {
+    let base = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
+    for invalid in [
+        "[api]\nlisten_addr = \"\"",
+        "[api]\nlisten_port = \"\"",
+        "[database]\ntype = \"\"",
+        "[dns]\nlisten_addr = \"\"",
+        "[dns]\nlisten_port = \"\"",
+        "[logging]\nlevel = \"\"",
+    ] {
+        assert!(
+            matches!(
+                Config::from_toml(&format!("{invalid}\n{base}"), |_| None),
+                Err(ConfigError::Parse(_))
+            ),
+            "{invalid}"
+        );
+    }
+    assert!(matches!(
+        Config::from_toml("", |_| None),
+        Err(ConfigError::EmptyDatabaseLocation {
+            key: "database.sqlite.file_path",
+            database_type: DatabaseType::Sqlite,
+        })
+    ));
 }
 
 /// Verify that `from_toml` defaults the fields of a sub-table left empty.

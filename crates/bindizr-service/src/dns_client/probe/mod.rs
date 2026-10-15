@@ -50,9 +50,8 @@ impl From<ProbeSoaError> for ServiceError {
     }
 }
 
-/// Classify a probed SOA serial against the serial Bindizr serves; a
-/// probe error reads as `unreachable`, an answer with nothing to compare
-/// it to as `reachable`.
+/// Compare a probed SOA serial with the served serial; errors are `unreachable`,
+/// and answers without comparable serials are `reachable`.
 fn build_secondary_status(
     address: String,
     expected_serial: Option<Serial>,
@@ -61,11 +60,11 @@ fn build_secondary_status(
     match result {
         Ok(visible) => {
             let status = match expected_serial {
-                Some(expected) => match visible.cmp(&expected) {
-                    std::cmp::Ordering::Equal => SecondaryStatus::InSync,
-                    std::cmp::Ordering::Less => SecondaryStatus::Lagging,
-                    std::cmp::Ordering::Greater => SecondaryStatus::Ahead,
-                },
+                Some(expected) if visible == expected => SecondaryStatus::InSync,
+                Some(expected) if visible.is_newer_than(expected) => SecondaryStatus::Ahead,
+                Some(expected) if expected.is_newer_than(visible) => SecondaryStatus::Lagging,
+                // RFC 1982, Section 3.2: half-range distances have no ordering.
+                Some(_) => SecondaryStatus::Reachable,
                 None => SecondaryStatus::Reachable,
             };
             SecondaryStatusResponse {
@@ -86,9 +85,8 @@ fn build_secondary_status(
     }
 }
 
-/// Query every enabled secondary for the zone's SOA serial in parallel and
-/// classify each against `expected_serial`. No enabled secondary yields an
-/// empty list.
+/// Probe enabled secondaries in parallel against `expected_serial`;
+/// return an empty list if none are enabled.
 pub async fn probe_secondaries(
     cx: &Context,
     zone_name: &ZoneName,
@@ -132,9 +130,8 @@ pub async fn probe_secondaries(
     Ok(probes)
 }
 
-/// Query one secondary for the zone's SOA serial, trying its hostname at each
-/// resolved address until one answers, and classify the answer against
-/// `expected_serial`.
+/// Probe one secondary at each resolved address until one answers,
+/// then compare with `expected_serial`.
 pub async fn probe_secondary(
     cx: &Context,
     zone_name: &ZoneName,
@@ -146,9 +143,8 @@ pub async fn probe_secondary(
     Ok(attach_last_transfer(cx, zone_name, probe, &clients).await)
 }
 
-/// The network half of a probe: resolve the secondary and query its
-/// addresses. Owns nothing of the daemon's state, so it can run on a task of
-/// its own; the addresses come back because they key the transfer rows.
+/// Resolve and probe a secondary without daemon state.
+/// Return resolved addresses for transfer-row lookups.
 async fn probe_addresses(
     zone_name: &ZoneName,
     secondary: &Secondary,

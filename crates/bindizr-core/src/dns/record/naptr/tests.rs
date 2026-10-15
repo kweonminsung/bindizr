@@ -62,7 +62,7 @@ fn parses_the_presentation_form_and_canonicalizes_the_replacement() {
 
     assert_eq!(
         parsed.canonical(),
-        "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com."
+        "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM."
     );
 }
 
@@ -83,7 +83,7 @@ fn reads_a_wire_record_back_into_the_stored_form() {
         NaptrRecordValue::from_wire(100, 10, b"S", b"SIP+D2U", b"", "_sip._udp.Example.COM")
             .unwrap()
             .canonical(),
-        "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com."
+        "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM."
     );
     assert_eq!(
         NaptrRecordValue::from_wire(200, 20, b"u", b"E2U+tel", b"!^.*$!tel:+1!", ".")

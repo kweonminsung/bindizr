@@ -10,10 +10,8 @@ use crate::{
     },
 };
 
-/// A single record add/delete change within a zone, used for IXFR.
-///
-/// Exactly one of `record_value` and `record_rdata` is set, matching
-/// `derived`; a CHECK constraint enforces it on the row.
+/// One IXFR record change; a CHECK constraint requires exactly one of
+/// `record_value` or `record_rdata`, according to `derived`.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneChange {
     pub zone_id: ZoneId,
@@ -30,9 +28,8 @@ pub struct ZoneChange {
     pub record_rdata: Option<Rdata>,
     pub record_ttl: Ttl,
     pub record_priority: Option<i32>,
-    /// Signer-generated DNSSEC change (RRSIG/NSEC/DNSKEY). IXFR emits these
-    /// like any change; the history rewind and diffs skip them — the
-    /// derived plane is re-signed, never restored.
+    /// Signer-generated DNSSEC change, served by IXFR but skipped during rewind
+    /// and diffs: rollback re-signs the restored user records.
     pub derived: bool,
 }
 
@@ -96,12 +93,12 @@ pub enum JournalRecordType {
 }
 
 impl JournalRecordType {
-    /// Return the text representation of this journal record type.
-    pub fn as_str(&self) -> &'static str {
+    /// Render the stored mnemonic or RFC 3597 `TYPE<number>` form.
+    pub fn to_text(&self) -> String {
         match self {
-            JournalRecordType::User(record_type) => record_type.as_str(),
-            JournalRecordType::Derived(record_type) => record_type.as_str(),
-            JournalRecordType::Soa => "SOA",
+            JournalRecordType::User(record_type) => record_type.to_text(),
+            JournalRecordType::Derived(record_type) => record_type.as_str().to_owned(),
+            JournalRecordType::Soa => "SOA".to_owned(),
         }
     }
 }
@@ -109,7 +106,7 @@ impl JournalRecordType {
 impl std::fmt::Display for JournalRecordType {
     /// Write the journal record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(&self.to_text())
     }
 }
 
@@ -182,6 +179,6 @@ where
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.as_str().to_string().encode_by_ref(buf)
+        self.to_text().encode_by_ref(buf)
     }
 }

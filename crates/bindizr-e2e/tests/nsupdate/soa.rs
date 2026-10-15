@@ -263,7 +263,6 @@ async fn soa_replacement_refusals_are_atomic() {
     let before = metadata(&app, zone_name).await;
     let records = app.list_records(zone_name).await;
     for (ttl, soa) in [
-        (600, replacement(zone_name, i32::MAX as u32 + 1)),
         (30, replacement(zone_name, 100)),
         (
             600,
@@ -532,4 +531,76 @@ async fn soa_replacement_is_replayed_by_ixfr() {
     }
     assert_eq!(answers[3].rtype(), Rtype::A);
     assert_eq!(answers[3].owner().to_string(), format!("delta.{zone_name}"));
+}
+
+/// Reusing a wire serial after a full cycle cannot resurrect old transfer content or history.
+#[tokio::test]
+#[serial]
+async fn soa_serial_reuse_refreshes_the_transfer_cache() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let initial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
+    let key = create_tsig_key(&app, "serial-reuse", KeyRole::Admin).await;
+    let before = crate::common::axfr(app.dns_port(), zone_name, Some(&key))
+        .unwrap()
+        .records();
+    for (index, serial) in [
+        initial.wrapping_add(0x7fff_ffff),
+        initial.wrapping_sub(2),
+        initial,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut updates = vec![UpdateRecord::AddSoa {
+            name: format!("{zone_name}."),
+            ttl: 600,
+            soa: replacement(zone_name, serial),
+        }];
+        if index == 0 {
+            updates.push(UpdateRecord::AddA {
+                name: format!("new.{zone_name}."),
+                ttl: 300,
+                addr: "192.0.2.99".into(),
+            });
+        }
+        assert_eq!(
+            send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+            Rcode::NOERROR
+        );
+    }
+    assert_eq!(app.read_zone_serial(zone_name).await, i64::from(initial));
+    assert_eq!(
+        crate::common::axfr(app.dns_port(), zone_name, Some(&key))
+            .unwrap()
+            .records(),
+        before + 1
+    );
+    let (_, history) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    assert_eq!(history["items"].as_array().unwrap().len(), 2, "{history}");
+    // RFC 2136, Section 3.6 still requires an increment if one atomic request
+    // traverses the whole circle and finishes with the original serial.
+    let updates: Vec<_> = [
+        initial.wrapping_add(0x7fff_ffff),
+        initial.wrapping_sub(2),
+        initial,
+    ]
+    .into_iter()
+    .map(|serial| UpdateRecord::AddSoa {
+        name: format!("{zone_name}."),
+        ttl: 600,
+        soa: replacement(zone_name, serial),
+    })
+    .collect();
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        Rcode::NOERROR
+    );
+    assert_eq!(
+        app.read_zone_serial(zone_name).await,
+        i64::from(initial.wrapping_add(1))
+    );
 }

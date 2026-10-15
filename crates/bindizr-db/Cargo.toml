@@ -17,7 +17,15 @@ categories.workspace = true
 bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.2" }
 chrono.workspace = true
 log.workspace = true
-sqlx.workspace = true
+sqlx = { workspace = true, features = [
+    "runtime-tokio",
+    "mysql",
+    "mysql-rsa",
+    "postgres",
+    "sqlite",
+    "chrono",
+    "tls-rustls-ring-native-roots",
+] }
 thiserror.workspace = true
 
 [dev-dependencies]

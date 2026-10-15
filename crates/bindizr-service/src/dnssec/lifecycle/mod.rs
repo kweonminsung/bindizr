@@ -298,7 +298,7 @@ pub async fn disable(
             bindizr_db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::Unlocked)
                 .await?;
 
-        let new_serial = generate_serial(Some(signed.zone.serial))?;
+        let new_serial = generate_serial(Some(signed.zone.serial));
         // Journal a DEL for every derived row; they carry wire RDATA, not
         // a value.
         let changes: Vec<ZoneChange> = derived

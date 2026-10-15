@@ -55,7 +55,10 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
         // A whole-name delete touches every type at the name, so a type-limited
         // grant cannot cover it.
         None => false,
-        Some(record_type) => types.split(',').any(|t| t == record_type.as_str()),
+        Some(record_type) => {
+            let record_type = record_type.to_text();
+            types.split(',').any(|t| t == record_type)
+        }
     }
 }
 

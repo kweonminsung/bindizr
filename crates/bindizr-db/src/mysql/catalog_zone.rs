@@ -18,7 +18,7 @@ pub(crate) async fn upsert_tx(
         INSERT INTO catalog_zones (name, digest, serial)
         VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE
-            serial = IF(digest = VALUES(digest), serial, GREATEST(serial + 1, VALUES(serial))),
+            serial = IF(digest = VALUES(digest), serial, MOD(serial + 1, 4294967296)),
             digest = VALUES(digest)
         "#,
     )

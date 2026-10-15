@@ -50,14 +50,30 @@ pub enum Edns {
 impl Edns {
     /// Read the request's OPT metadata, retaining flags even for unsupported versions.
     pub(crate) fn from_message(message: &Message<&[u8]>) -> Self {
+        // RFC 6891, Section 6.1.1: OPT belongs only in Additional, once per message.
+        for section in [message.answer(), message.authority()] {
+            let Ok(section) = section else {
+                return Self::Malformed;
+            };
+            for record in section {
+                if !record.is_ok_and(|record| record.rtype() != Rtype::OPT) {
+                    return Self::Malformed;
+                }
+            }
+        }
         let Ok(additional) = message.additional() else {
-            return Self::Absent;
+            return Self::Malformed;
         };
         let mut opts = additional.limit_to::<Opt<_>>();
         let first = match opts.next() {
             None => return Self::Absent,
             Some(Err(_)) => return Self::Malformed,
-            Some(Ok(record)) => OptRecord::from(record),
+            Some(Ok(record)) => {
+                if !record.owner().is_root() {
+                    return Self::Malformed;
+                }
+                OptRecord::from(record)
+            }
         };
         if opts.next().is_some() {
             return Self::Malformed;

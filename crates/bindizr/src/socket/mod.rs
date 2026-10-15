@@ -18,10 +18,10 @@ pub(crate) fn is_trusted_peer(peer_uid: u32, own_uid: u32) -> bool {
     peer_uid == own_uid || peer_uid == 0
 }
 
-/// The uid this process runs as, read from the kernel through a socket pair:
-/// the credentials it reports for the far end are our own.
+/// Read this process's effective UID from its own Unix socket pair.
 pub(crate) fn read_own_uid() -> io::Result<u32> {
     let (near, _far) = UnixStream::pair()?;
+    // Keep both ends alive while reading the credentials, including on macOS.
     Ok(near.peer_cred()?.uid())
 }
 

@@ -52,10 +52,11 @@ fn ignored_deletes_still_require_valid_owners_and_shapes() {
         for class in [Class::ANY, Class::NONE] {
             let data = if class == Class::ANY { &[][..] } else { &data };
             let valid = record(class, rtype, 0, data);
-            assert!(
+            assert_eq!(
                 decode_updates(std::slice::from_ref(&valid), &zone, data)
                     .unwrap()
-                    .is_empty()
+                    .is_empty(),
+                rtype == Rtype::SOA
             );
             for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
                 let mut outside = valid.clone();
@@ -94,7 +95,7 @@ fn decoded_operations_carry_checked_owners() {
     let operations = decode_updates(&[add], &zone, &message).unwrap();
     match &operations[0] {
         UpdateOperation::Record(RecordOperation::AddRecord { name, ttl, .. }) => {
-            assert_eq!(name.labels(), ["host.name"]);
+            assert_eq!(name.labels(), [b"host.name".to_vec()]);
             assert_eq!(ttl.as_secs(), 0);
         }
         other => panic!("{other:?}"),

@@ -219,7 +219,7 @@ pub async fn create_bulk(
         };
         timings.load_existing_ms = elapsed_ms(t);
 
-        let new_serial = generate_serial(Some(zone.serial))?;
+        let new_serial = generate_serial(Some(zone.serial));
 
         // The diff is only shown on a dry-run preview, so keep the `before`
         // copy (and pay for building the diff) off the apply hot path.

@@ -6,8 +6,8 @@ use std::str::FromStr;
 use chrono::Utc;
 use sqlx::{
     MySql, Pool, Postgres, Sqlite,
-    mysql::{MySqlConnectOptions, MySqlPoolOptions},
-    postgres::{PgConnectOptions, PgPoolOptions},
+    mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode},
+    postgres::{PgConnectOptions, PgPoolOptions, PgSslMode},
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 
@@ -190,7 +190,13 @@ fn mysql_connect_options(
 ) -> Result<MySqlConnectOptions, DatabaseError> {
     let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
     if let Some(mode) = tls.mode {
-        options = options.ssl_mode(mode.into());
+        options = options.ssl_mode(match mode {
+            config::DatabaseTlsMode::Disable => MySqlSslMode::Disabled,
+            config::DatabaseTlsMode::Prefer => MySqlSslMode::Preferred,
+            config::DatabaseTlsMode::Require => MySqlSslMode::Required,
+            config::DatabaseTlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+            config::DatabaseTlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
+        });
     }
     if let Some(ca_file) = &tls.ca_file {
         options = options.ssl_ca(ca_file);
@@ -206,7 +212,13 @@ fn postgres_connect_options(
 ) -> Result<PgConnectOptions, DatabaseError> {
     let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
     if let Some(mode) = tls.mode {
-        options = options.ssl_mode(mode.into());
+        options = options.ssl_mode(match mode {
+            config::DatabaseTlsMode::Disable => PgSslMode::Disable,
+            config::DatabaseTlsMode::Prefer => PgSslMode::Prefer,
+            config::DatabaseTlsMode::Require => PgSslMode::Require,
+            config::DatabaseTlsMode::VerifyCa => PgSslMode::VerifyCa,
+            config::DatabaseTlsMode::VerifyFull => PgSslMode::VerifyFull,
+        });
     }
     if let Some(ca_file) = &tls.ca_file {
         options = options.ssl_root_cert(ca_file);
@@ -296,15 +308,13 @@ impl Backend {
                     sqlx::query("PRAGMA foreign_keys = ON")
                         .execute(&mut *conn)
                         .await?;
-                    // SQLite's busy handler polls unfairly: a short timeout starves
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the WAL
-                    // switch, which locks too.
+                    // Set the busy timeout before WAL locks too; short timeouts starve
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY.
                     sqlx::query("PRAGMA busy_timeout = 15000")
                         .execute(&mut *conn)
                         .await?;
-                    // WAL keeps readers off the writer's lock; a file property, so
-                    // each connection re-asserts it. SQLite reports the mode in
-                    // force instead of failing when WAL cannot apply.
+                    // Reassert WAL on each connection to separate reader/writer locks.
+                    // SQLite reports the active mode rather than failing if WAL cannot apply.
                     let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
                         .fetch_one(&mut *conn)
                         .await?;

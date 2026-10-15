@@ -79,7 +79,7 @@ fn encoded_value_produces_one_spelling_per_rdata() {
         RecordType::Srv
             .encoded_value("5 5060 Sip.Example.Com.", Some(10))
             .as_deref(),
-        Ok("5 5060 sip.example.com.")
+        Ok("5 5060 Sip.Example.Com.")
     );
 }
 
@@ -133,7 +133,7 @@ fn display_value_adds_trailing_dot_for_name_like_values() {
     );
     assert_eq!(
         RecordType::Cname.display_value("Target.Example.Net"),
-        "target.example.net."
+        "Target.Example.Net."
     );
     assert_eq!(
         RecordType::Mx.display_value("mail.example.com"),
@@ -182,9 +182,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
     }
 }
 
-/// Verify that CNAME, NS, and PTR values reject invalid domain forms.
-/// Hyphen-edge and non-LDH labels are not here: an rdata name takes the labels
-/// an owner name does, so only what no presentation form spells back is left.
+/// Reject malformed CNAME, NS and PTR names while permitting non-hostname labels.
 #[test]
 fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
     for record_type in [RecordType::Cname, RecordType::Ns, RecordType::Ptr] {

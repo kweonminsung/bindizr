@@ -90,8 +90,8 @@ The accepted serial is used for all changes in that request; automatic
 incrementing applies only when records change without an SOA advance
 (RFC 2136, Sections 3.4.2.2 and 3.6).
 
-SOA replacements use the existing zone-write policy: serials at most
-2147483647, SOA TTL 60–604800 seconds, positive timing fields at most
+SOA replacements accept serials 0–4294967295, with wraparound comparison and
+automatic incrementing under RFC 1982. The zone-write policy requires SOA TTL 60–604800 seconds, positive timing fields at most
 2147483647, a supported MNAME and an email-convertible RNAME. A newer SOA
 outside that policy refuses the whole request with `REFUSED`.
 

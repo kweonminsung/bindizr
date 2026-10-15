@@ -26,6 +26,8 @@ pub enum ParseResponseError {
     IdMismatch { expected: u16, got: u16 },
     #[error("response does not have QR bit set")]
     NotResponse,
+    #[error("response opcode mismatch: expected {expected}, got {got}")]
+    OpcodeMismatch { expected: u8, got: u8 },
     #[error("truncated response")]
     Truncated,
     #[error("malformed question section: {0}")]
@@ -108,15 +110,66 @@ pub fn is_truncated(response: &[u8]) -> bool {
     Message::from_octets(response).is_ok_and(|message| message.header().tc())
 }
 
+/// Match and structurally validate an incoming datagram before trusting its flags
+/// (RFC 1035, Section 7.3; RFC 5452, Section 9.1).
+pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
+    use domain::rdata::AllRecordData;
+
+    let (Ok(request), Ok(response)) = (
+        Message::from_octets(request),
+        Message::from_octets(response),
+    ) else {
+        return false;
+    };
+    if !response.header().qr()
+        || response.header().id() != request.header().id()
+        || response.header().opcode() != request.header().opcode()
+    {
+        return false;
+    }
+    // Some NOTIFY refusals omit the question; retain the server's error.
+    let empty_notify_error = response.header().opcode() == Opcode::NOTIFY
+        && response.header().rcode() != Rcode::NOERROR
+        && response.header_counts().qdcount() == 0;
+    if !empty_notify_error {
+        let (Ok(wanted), Ok(answered)) = (request.sole_question(), response.sole_question()) else {
+            return false;
+        };
+        if !wanted.qname().name_eq(answered.qname())
+            || wanted.qtype() != answered.qtype()
+            || wanted.qclass() != answered.qclass()
+        {
+            return false;
+        }
+    }
+    for section in [
+        response.answer(),
+        response.authority(),
+        response.additional(),
+    ] {
+        let Ok(section) = section else {
+            return false;
+        };
+        if section
+            .limit_to::<AllRecordData<_, _>>()
+            .any(|record| record.is_err())
+        {
+            return false;
+        }
+    }
+    true
+}
+
 /// `parse_response`, plus the echoed question must be ours (`qname`, `rtype`,
 /// class IN).
 fn parse_question_response<'a>(
     query_id: u16,
+    opcode: Opcode,
     qname: &Name<Vec<u8>>,
     rtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
-    let message = parse_response(query_id, response)?;
+    let message = parse_response(query_id, opcode, response)?;
     let question = message
         .sole_question()
         .map_err(|e| ParseResponseError::MalformedQuestion(Box::new(e)))?;
@@ -136,7 +189,7 @@ fn parse_authoritative_response<'a>(
     rtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
-    let message = parse_question_response(query_id, qname, rtype, response)?;
+    let message = parse_question_response(query_id, Opcode::QUERY, qname, rtype, response)?;
     if !message.header().aa() {
         return Err(ParseResponseError::NotAuthoritative);
     }
@@ -145,7 +198,11 @@ fn parse_authoritative_response<'a>(
 
 /// Check a response answers our question: our id, QR set, not truncated.
 /// The RCODE is the caller's, since NXDOMAIN answers some questions.
-fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, ParseResponseError> {
+fn parse_response(
+    query_id: u16,
+    opcode: Opcode,
+    response: &[u8],
+) -> Result<Message<&[u8]>, ParseResponseError> {
     let message =
         Message::from_octets(response).map_err(|e| ParseResponseError::Malformed(Box::new(e)))?;
 
@@ -154,6 +211,12 @@ fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, Pars
         return Err(ParseResponseError::IdMismatch {
             expected: query_id,
             got: header.id(),
+        });
+    }
+    if header.opcode() != opcode {
+        return Err(ParseResponseError::OpcodeMismatch {
+            expected: opcode.to_int(),
+            got: header.opcode().to_int(),
         });
     }
     if !header.qr() {
@@ -189,14 +252,14 @@ pub fn extract_transfer_records(
 
     let message = if position == TransferMessagePosition::First {
         parse_authoritative_response(query_id, qname, Rtype::AXFR, response)?
-    } else if parse_response(query_id, response)?
+    } else if parse_response(query_id, Opcode::QUERY, response)?
         .header_counts()
         .qdcount()
         == 1
     {
-        parse_question_response(query_id, qname, Rtype::AXFR, response)?
+        parse_question_response(query_id, Opcode::QUERY, qname, Rtype::AXFR, response)?
     } else {
-        parse_response(query_id, response)?
+        parse_response(query_id, Opcode::QUERY, response)?
     };
     if message.header().rcode() != Rcode::NOERROR {
         return Err(ParseResponseError::Rcode(message.header().rcode().to_int()));
@@ -217,7 +280,7 @@ pub fn extract_transfer_records(
             });
         }
         let mut rdata = Vec::new();
-        let Ok(()) = record.data().compose_canonical_rdata(&mut rdata);
+        let Ok(()) = record.data().compose_rdata(&mut rdata);
         records.push(TransferRecord {
             // Display omits the root dot; the absolute form keeps the
             // import parser from re-qualifying the name.
@@ -236,8 +299,8 @@ pub fn validate_notify_response(
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<(), ParseResponseError> {
-    let message =
-        parse_response(query_id, response).map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
+    let message = parse_response(query_id, Opcode::NOTIFY, response)
+        .map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
     let header = message.header();
     if header.opcode() != Opcode::NOTIFY {
         return Err(ParseResponseError::NotifyOpcode {
@@ -250,7 +313,7 @@ pub fn validate_notify_response(
         return Err(ParseResponseError::NotifyRcode(header.rcode().to_int()));
     }
     // The acknowledgement copies the request's question (RFC 1996, Section 3.7).
-    parse_question_response(query_id, qname, Rtype::SOA, response)
+    parse_question_response(query_id, Opcode::NOTIFY, qname, Rtype::SOA, response)
         .map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
     Ok(())
 }

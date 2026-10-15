@@ -1,5 +1,5 @@
-//! Zone transfer content cached by zone id and serial; record writes advance the serial.
-//! The record budget bounds retained data, including entries for deleted zones.
+//! Cache zone transfers by immutable version id to distinguish reused serials.
+//! The record budget includes cached content for deleted zones.
 
 use std::{
     collections::HashMap,
@@ -7,12 +7,13 @@ use std::{
 };
 
 use bindizr_core::{
-    dns::{Serial, name::ZoneName},
+    dns::name::ZoneName,
     metrics::Metrics,
     model::{
         dnssec_record::DnssecRecord,
         record::Record,
         zone::{Zone, ZoneId},
+        zone_version::ZoneVersionId,
     },
 };
 use bindizr_service::{
@@ -25,14 +26,15 @@ use bindizr_service::{
 use super::DnsContext;
 
 /// Read the configured cache record budget, which counts records rather than bytes.
-fn max_records(dns_cx: &Context) -> usize {
-    dns_cx.config().dns.transfer.cache_max_records as usize
+fn max_records(cx: &Context) -> usize {
+    cx.config().dns.transfer.cache_max_records as usize
 }
 
 /// Everything a full transfer serves for one zone: the user records and the
 /// derived DNSSEC plane (empty for an unsigned zone).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CachedTransferContent {
+    pub(crate) version_id: ZoneVersionId,
     pub(crate) records: Arc<Vec<Record>>,
     pub(crate) dnssec_records: Arc<Vec<DnssecRecord>>,
 }
@@ -44,11 +46,11 @@ impl CachedTransferContent {
     }
 }
 
-/// One zone's transfer as cached: the serial it was built at, its content,
+/// One zone's transfer as cached: the version it was built at, its content,
 /// and what the budget and the LRU order read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedTransfer {
-    serial: Serial,
+    version_id: ZoneVersionId,
     content: CachedTransferContent,
     records: usize,
     /// Logical clock value at last hit; drives LRU eviction.
@@ -86,22 +88,20 @@ impl TransferCache {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// The cached content at `serial`, after enforcing the budget: a reload
-    /// can lower it, and a server that only serves cached zones never stores
-    /// again.
+    /// Find content at `version_id`, enforcing budget reductions even on cache hits.
     fn find_cached_content(
         &self,
         metrics: &Metrics,
         max_records: usize,
         zone_id: ZoneId,
-        serial: Serial,
+        version_id: ZoneVersionId,
     ) -> Option<CachedTransferContent> {
         let mut entries = self.locked();
         let evicted = entries.trim_to(max_records);
         if evicted > 0 {
             metrics.track_zone_cache_store(entries.records, evicted);
         }
-        let content = entries.find(zone_id, serial);
+        let content = entries.find(zone_id, version_id);
         drop(entries);
         metrics.track_zone_cache_lookup(content.is_some());
         content
@@ -113,16 +113,16 @@ impl TransferCache {
         metrics: &Metrics,
         max_records: usize,
         zone_id: ZoneId,
-        serial: Serial,
+        version_id: ZoneVersionId,
         content: CachedTransferContent,
     ) {
         let mut entries = self.locked();
-        let evicted = entries.store(zone_id, serial, content, max_records);
+        let evicted = entries.store(zone_id, version_id, content, max_records);
         metrics.track_zone_cache_store(entries.records, evicted);
     }
 }
 
-/// Load authorized transfer content, reusing cached data for the locked zone's serial.
+/// Load authorized transfer content, reusing cached data for the locked zone's version.
 /// Decide the zone and key grant together under that lock.
 pub(crate) async fn authorize_transfer_content_by_name(
     dns_cx: &DnsContext,
@@ -135,17 +135,16 @@ pub(crate) async fn authorize_transfer_content_by_name(
         return fetch_transfer_content(cx, caller, zone_name).await;
     }
 
-    let zone = match zone::authorize_transfer_by_name(cx, caller, zone_name).await? {
+    let (zone, version_id) = match zone::authorize_transfer_by_name(cx, caller, zone_name).await? {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
-    // A serial's content never changes, so a hit serves the rows the
-    // authorizing transaction would have read for the serial it locked.
+    // RFC 1982 serials can repeat; version ids identify the locked snapshot.
     if let Some(content) =
         dns_cx
             .transfer_cache
-            .find_cached_content(cx.metrics(), max_records, zone.id, zone.serial)
+            .find_cached_content(cx.metrics(), max_records, zone.id, version_id)
     {
         return Ok(TransferAccess::Granted((zone, content)));
     }
@@ -158,7 +157,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
             cx.metrics(),
             max_records,
             zone.id,
-            zone.serial,
+            content.version_id,
             content.clone(),
         );
     }
@@ -168,22 +167,24 @@ pub(crate) async fn authorize_transfer_content_by_name(
 /// Pull both record planes of the zone by name, as far as `caller` may read
 /// them, straight from the service.
 async fn fetch_transfer_content(
-    dns_cx: &Context,
+    cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     Ok(
-        zone::authorize_transfer_content_by_name(dns_cx, caller, zone_name)
+        zone::authorize_transfer_content_by_name(cx, caller, zone_name)
             .await?
             .map(|content| {
                 let TransferContent {
                     zone,
+                    version_id,
                     records,
                     dnssec_records,
                 } = content;
                 (
                     zone,
                     CachedTransferContent {
+                        version_id,
                         records: Arc::new(records),
                         dnssec_records: Arc::new(dnssec_records),
                     },
@@ -218,13 +219,17 @@ impl Entries {
         evicted
     }
 
-    /// Find cached zone content matching the requested serial.
-    fn find(&mut self, zone_id: ZoneId, serial: Serial) -> Option<CachedTransferContent> {
+    /// Find cached zone content matching the requested version.
+    fn find(
+        &mut self,
+        zone_id: ZoneId,
+        version_id: ZoneVersionId,
+    ) -> Option<CachedTransferContent> {
         let now = self.tick();
         let entry = self
             .zones
             .get_mut(&zone_id)
-            .filter(|entry| entry.serial == serial)?;
+            .filter(|entry| entry.version_id == version_id)?;
         entry.last_used = now;
         Some(entry.content.clone())
     }
@@ -233,12 +238,11 @@ impl Entries {
     fn store(
         &mut self,
         zone_id: ZoneId,
-        serial: Serial,
+        version_id: ZoneVersionId,
         content: CachedTransferContent,
         max_records: usize,
     ) -> usize {
-        // Before the size check: a zone that grew past the budget must release
-        // its old serial, which no read can match any more.
+        // Evict the old version even if its replacement exceeds the cache budget.
         self.remove(zone_id);
 
         let records = content.record_count();
@@ -265,7 +269,7 @@ impl Entries {
         self.zones.insert(
             zone_id,
             CachedTransfer {
-                serial,
+                version_id,
                 content,
                 records,
                 last_used,

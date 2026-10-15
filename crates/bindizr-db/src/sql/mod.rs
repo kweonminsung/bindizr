@@ -27,7 +27,7 @@ pub(crate) fn apex_owner_sql() -> String {
 pub(crate) fn name_like_types_sql() -> String {
     NAME_LIKE_RECORD_TYPES
         .iter()
-        .map(|record_type| format!("'{}'", record_type.as_str()))
+        .map(|record_type| format!("'{}'", record_type.to_text()))
         .collect::<Vec<_>>()
         .join(",")
 }

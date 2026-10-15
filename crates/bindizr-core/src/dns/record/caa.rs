@@ -66,12 +66,22 @@ impl<'a> CaaRecordValue<'a> {
         Ok(())
     }
 
+    /// Validate authored flags under RFC 8659, Section 4.1;
+    /// received records preserve unknown flag bits.
+    pub fn validate_creation(&self) -> Result<(), ParseRecordValueError> {
+        self.validate()?;
+        if self.flags & 0x7f != 0 {
+            return Err(ParseRecordValueError::CaaReservedFlags);
+        }
+        Ok(())
+    }
+
     /// Render the CAA value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {}",
             self.flags,
-            self.tag.to_lowercase(),
+            self.tag,
             to_quoted_charstr(&self.value)
         )
     }
@@ -114,7 +124,7 @@ mod tests {
         let quoted = CaaRecordValue::parse("0 issue \"letsencrypt.org\"").unwrap();
         assert_eq!(quoted.canonical(), "0 issue \"letsencrypt.org\"");
         let bare = CaaRecordValue::parse("0 ISSUE letsencrypt.org").unwrap();
-        assert_eq!(bare.canonical(), "0 issue \"letsencrypt.org\"");
+        assert_eq!(bare.canonical(), "0 ISSUE \"letsencrypt.org\"");
     }
 
     /// Verify that `parse` accepts repeated whitespace between fields.

@@ -130,3 +130,57 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
         ParseResponseError::OtherQuestion
     ));
 }
+
+/// Serial comparisons retain their direction across wraparound and leave half-range unordered.
+#[test]
+fn secondary_status_uses_rfc1982_order() {
+    for (expected, visible, status) in [
+        (0, u32::MAX, SecondaryStatus::Lagging),
+        (u32::MAX, 0, SecondaryStatus::Ahead),
+        (0, 0, SecondaryStatus::InSync),
+        (0, 0x8000_0000, SecondaryStatus::Reachable),
+    ] {
+        assert_eq!(
+            build_secondary_status(
+                "server".into(),
+                Some(Serial::from(expected)),
+                Ok(Serial::from(visible))
+            )
+            .status,
+            status
+        );
+    }
+}
+
+/// A malformed, unrelated or wrong-opcode datagram cannot end a live UDP probe.
+#[tokio::test]
+async fn udp_probe_discards_invalid_datagrams_without_resending() {
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let address = socket.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let mut request = [0; 4096];
+        let (_, peer) = socket.recv_from(&mut request).await.unwrap();
+        let id = u16::from_be_bytes([request[0], request[1]]);
+        for response in [
+            vec![0],
+            build_soa_response(id.wrapping_add(1), 0x8600, "example.com", true, 7),
+            build_soa_response(id, 0xa400, "example.com", true, 7),
+            build_soa_response(id, 0x8400, "other.example", true, 7),
+            build_soa_response(id, 0x8400, "example.com", true, 99),
+        ] {
+            socket.send_to(&response, peer).await.unwrap();
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), socket.recv_from(&mut request))
+                .await
+                .is_err()
+        );
+    });
+    assert_eq!(
+        probe_address(&zone(), address, Duration::from_secs(1))
+            .await
+            .unwrap(),
+        Serial::from(99)
+    );
+    server.await.unwrap();
+}

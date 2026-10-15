@@ -83,9 +83,10 @@ async fn accepted_connection_reports_the_peer_uid() {
     let (client, accepted) = tokio::join!(UnixStream::connect(socket_path), listener.accept());
     // macOS reports no credentials once the peer has hung up, so the client
     // stays open while the daemon side asks.
-    let _client = client.unwrap();
+    let client = client.unwrap();
     let (stream, _) = accepted.unwrap();
     assert_eq!(stream.peer_cred().unwrap().uid(), own_uid);
+    assert_eq!(client.peer_cred().unwrap().uid(), own_uid);
 }
 
 /// Verify that `prepare_socket_path` removes stale socket.

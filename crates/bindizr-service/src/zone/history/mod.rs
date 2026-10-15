@@ -29,7 +29,7 @@ use crate::{
     },
     pagination::{build_paginated_response, normalize_page_limit},
     record::{self, validate_record_constraints, validate_record_name_in_zone},
-    serial::{generate_serial, validate_stored_serial},
+    serial::generate_serial,
     transaction,
     types::{
         DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
@@ -94,7 +94,6 @@ pub async fn get_version(
     zone_name: &ZoneName,
     serial: Serial,
 ) -> Result<GetZoneVersionResponse, ServiceError> {
-    let serial = validate_stored_serial(serial)?;
     let mut tx = transaction::begin_read_tx(cx, "failed to load version").await?;
 
     let result = async {
@@ -140,8 +139,8 @@ pub async fn diff_versions(
     from_serial: Serial,
     to_serial: Option<Serial>,
 ) -> Result<DiffZoneVersionsResponse, ServiceError> {
-    let from = validate_stored_serial(from_serial)?;
-    let to = to_serial.map(validate_stored_serial).transpose()?;
+    let from = from_serial;
+    let to = to_serial;
     let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
     let result = async {
@@ -182,7 +181,7 @@ pub async fn rollback(
     target_serial: Serial,
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
-    let target = validate_stored_serial(target_serial)?;
+    let target = target_serial;
 
     let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
@@ -196,7 +195,7 @@ pub async fn rollback(
         caller.authorize_whole_zone(Action::RecordCreate, &zone)?;
         caller.authorize_whole_zone(Action::RecordDelete, &zone)?;
 
-        if target.as_u32() < 1 || target >= zone.serial {
+        if !zone.serial.is_newer_than(target) {
             return Err(ServiceError::invalid_input(format!(
                 "target serial {} must be less than the current serial {}",
                 target, zone.serial
@@ -211,7 +210,7 @@ pub async fn rollback(
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
-        let new_serial = generate_serial(Some(zone.serial))?;
+        let new_serial = generate_serial(Some(zone.serial));
         // SOA metadata comes back from the version; identity and creation
         // time are not part of one and stay.
         let rname = SoaMailbox::from_encoded(&version.rname)

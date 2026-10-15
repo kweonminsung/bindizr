@@ -33,10 +33,11 @@ clap_complete.workspace = true
 clap_mangen.workspace = true
 hex.workspace = true
 log.workspace = true
+nix.workspace = true
 ring.workspace = true
 # The XoT listener builds its own server config; axum-server builds the API's.
 rustls.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 serde_norway.workspace = true
 thiserror.workspace = true

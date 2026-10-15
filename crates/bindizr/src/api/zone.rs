@@ -180,7 +180,7 @@ pub(crate) async fn list_zone_versions(
         description = "Returns the version's SOA fields together with the zone's records at that serial, reconstructed from the journal.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("serial" = u32, Path, description = "The version serial to inspect.")
+            ("serial" = inline(Serial), Path, description = "The version serial to inspect.")
         ),
         responses(
             (status = 200, description = "The version and its reconstructed records", body = GetZoneVersionResponse),
@@ -213,7 +213,7 @@ pub(crate) async fn get_zone_version(
         description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. It needs `zone:update`, and `record:read`, `record:create` and `record:delete` with no name or type narrowing, since it reads the version it restores. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back."),
-            ("serial" = u32, Path, description = "The version serial to roll back to."),
+            ("serial" = inline(Serial), Path, description = "The version serial to roll back to."),
             DryRunQuery
         ),
         responses(
@@ -271,10 +271,10 @@ pub(crate) struct ZoneVersionParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DiffZoneVersionsQuery {
     /// The serial to diff from.
-    #[param(value_type = u32)]
+    #[param(inline)]
     from: Serial,
     /// The serial to diff to; defaults to the current serial.
-    #[param(value_type = Option<u32>)]
+    #[param(inline)]
     to: Option<Serial>,
 }
 

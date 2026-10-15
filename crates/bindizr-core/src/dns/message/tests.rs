@@ -136,6 +136,9 @@ fn multi_question_headers_receive_formerr_only_for_query() {
         query.header_mut().set_opcode(opcode);
         let mut wire = query.into_octets();
         wire[4..6].copy_from_slice(&count.to_be_bytes());
+        if opcode == Opcode::STATUS {
+            wire.extend_from_within(12..);
+        }
         let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
         assert_eq!(parsed.question_count, count);
         assert_eq!(parsed.format_error(), expected, "{opcode} QDCOUNT={count}");
@@ -391,9 +394,8 @@ fn a_response_echoes_the_question_class() {
     assert_eq!(reply.first_question().unwrap().qclass(), Class::CH);
 }
 
-/// Verify that an answer over TCP carries the idle timeout as an
-/// edns-tcp-keepalive option (RFC 7828, Section 3.3.2) and one over UDP
-/// does not.
+/// Verify that only TCP answers advertise edns-tcp-keepalive
+/// (RFC 7828, Section 3.3.2).
 #[test]
 fn a_tcp_answer_advertises_the_idle_timeout() {
     let tcp = ParsedQuery::parse(
@@ -415,4 +417,39 @@ fn a_tcp_answer_advertises_the_idle_timeout() {
     let response = udp.build_error_response(Rcode::REFUSED, None);
     let message = Message::from_octets(response.as_slice()).unwrap();
     assert!(message.opt().unwrap().opt().tcp_keepalive().is_none());
+}
+
+/// OPT is unique, root-owned, and confined to Additional (RFC 6891, Section 6.1.1).
+#[test]
+fn opt_owner_and_section_are_checked() {
+    let plain = build_question(Rtype::SOA, &[]);
+    let wire = build_question(Rtype::SOA, &[0]);
+    let start = plain.len();
+    let mut named = wire.clone();
+    named.splice(start..start + 1, [1, b'x', 0]);
+    assert_eq!(
+        ParsedQuery::parse(&named, Keepalive::None)
+            .unwrap()
+            .format_error(),
+        Some(OptRcode::FORMERR)
+    );
+    for count in [6, 8] {
+        let mut misplaced = wire.clone();
+        misplaced[count..count + 2].copy_from_slice(&1u16.to_be_bytes());
+        misplaced[10..12].fill(0);
+        assert_eq!(
+            ParsedQuery::parse(&misplaced, Keepalive::None)
+                .unwrap()
+                .format_error(),
+            Some(OptRcode::FORMERR)
+        );
+        misplaced[10..12].copy_from_slice(&1u16.to_be_bytes());
+        misplaced.extend_from_slice(&wire[start..]);
+        assert_eq!(
+            ParsedQuery::parse(&misplaced, Keepalive::None)
+                .unwrap()
+                .format_error(),
+            Some(OptRcode::FORMERR)
+        );
+    }
 }

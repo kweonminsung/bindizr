@@ -1,5 +1,6 @@
-mod common;
+pub(crate) mod common;
 mod dnssec;
+mod opaque;
 mod soa;
 
 use common::{exported_record_sets, unsigned_nsupdate_app};
@@ -42,6 +43,8 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
     let key = create_tsig_key(&app, "caa-key", KeyRole::Admin).await;
     let values = [
         b"\x00\x05issue".to_vec(),
+        b"\x00\x05ISSUE".to_vec(),
+        b"\x01\x06custom".to_vec(),
         b"\x00\x09issuewild".to_vec(),
         b"\x80\x06custom".iter().copied().chain(0..=255u8).collect(),
         [vec![0, 255], vec![b'a'; 255], vec![b'b'; 300]].concat(),
@@ -879,9 +882,8 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     assert_eq!(app.read_zone_serial(&zone_name).await, before + 1);
 }
 
-/// Verify that an add rewriting what stands there needs the grant for that
-/// rewrite beyond `record:create`: a delete for a replaced alias, an update
-/// for a retimed record set.
+/// Verify that replacing an alias needs `record:delete` and retiming a set
+/// needs `record:update`, in addition to `record:create`.
 #[tokio::test]
 #[serial]
 async fn a_create_grant_alone_rewrites_nothing_that_exists() {
@@ -957,9 +959,7 @@ async fn a_create_grant_alone_rewrites_nothing_that_exists() {
     }
 }
 
-/// Verify that a signed update requires a zone grant for its TSIG key.
-///
-/// The unsigned cases exercise address authorization; this case checks the key-based path.
+/// Verify that signed updates require a zone grant for their TSIG key.
 #[tokio::test]
 #[serial]
 async fn signed_nsupdate_needs_a_grant_for_the_zone() {
@@ -1159,9 +1159,8 @@ async fn nsupdate_adds_at_the_zone_apex() {
     );
 }
 
-/// Verify that an update for a zone this server does not serve is NOTAUTH
-/// (RFC 2136, Section 3.1.2), while an owner outside a served zone stays
-/// NOTZONE.
+/// Verify NOTAUTH for unserved zones and NOTZONE for out-of-zone owners
+/// (RFC 2136, Section 3.1.2).
 #[tokio::test]
 #[serial]
 async fn nsupdate_answers_notauth_for_a_zone_it_does_not_serve() {
@@ -1246,9 +1245,8 @@ async fn nsupdate_keeps_the_apex_ns_set() {
     );
 }
 
-/// Verify that a CNAME beside other data, or data beside a CNAME, is passed
-/// over, and that a second CNAME replaces the first (RFC 2136, Section
-/// 3.4.2.2).
+/// Verify that CNAME/data conflicts are ignored and a second CNAME replaces the first
+/// (RFC 2136, Section 3.4.2.2).
 #[tokio::test]
 #[serial]
 async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {

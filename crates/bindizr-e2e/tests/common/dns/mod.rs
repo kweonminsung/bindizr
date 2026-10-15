@@ -60,24 +60,10 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
 
 /// Map a supported record mnemonic to its wire type number.
 pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
-    match record_type {
-        "A" => Some(1),
-        "NS" => Some(2),
-        "CNAME" => Some(5),
-        "SOA" => Some(6),
-        "PTR" => Some(12),
-        "MX" => Some(15),
-        "TXT" => Some(16),
-        "AAAA" => Some(28),
-        "SRV" => Some(33),
-        "NAPTR" => Some(35),
-        "DNAME" => Some(39),
-        "DS" => Some(43),
-        "SSHFP" => Some(44),
-        "TLSA" => Some(52),
-        "CAA" => Some(257),
-        _ => None,
-    }
+    record_type
+        .parse::<domain::base::Rtype>()
+        .ok()
+        .map(|rtype| rtype.to_int())
 }
 
 /// Poll DNS until its answers match the expected record values.

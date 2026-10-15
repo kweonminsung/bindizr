@@ -117,9 +117,8 @@ internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z
 
 `IXFR full` is an IXFR answered with the whole zone; `refused` and `failed`
 carry the reason in `ERROR`.
-An equal-serial IXFR receives only the current SOA, including for catalogs.
-Over TCP/TLS, newer clients receive the full primary snapshot as an intentional
-exception to RFC 1995, Section 2; the secondary decides whether to install it.
+An equal- or newer-serial IXFR receives only the current SOA, including for
+catalogs (RFC 1995, Section 2).
 UDP IXFRs return the current SOA. Serial comparisons follow RFC 1982, Section 3.2.
 `TRANSPORT` says whether the request came over plain TCP or TLS, and `zone
 status` marks a TLS transfer with `over TLS`.

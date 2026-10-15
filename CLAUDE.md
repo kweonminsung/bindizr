@@ -350,7 +350,7 @@ One locking model covers the service layer; keep new code on it:
   what it could read before. Every write that acts for a caller therefore runs in a
   transaction, management writes included; a TSIG transfer or update re-reads its key
   and grants the same way, and a transfer loads what it serves (AXFR records, IXFR
-  delta, catalog members, SOA) in that transaction, a cached AXFR serving its serial's
+  delta, catalog members, SOA) in that transaction, a cached AXFR serving that version's
   content. A single statement that only records what already happened — the token's
   last-used stamp written during authentication, the transfer log — runs on the pool:
   nothing decides on it, and the caller's own transaction re-authenticates regardless.
@@ -427,8 +427,8 @@ An owner name is decoded into labels at the parse boundary —
 `OwnerName::parse_in_zone` / `parse_absolute_in_zone` and
 `dns::name::decode_name_labels` resolve the `\.`, `\\`, and `\DDD` escapes of
 RFC 1035, Section 5.1. A dot inside a label is data, never a boundary.
-`ZoneName::parse` instead requires strict LDH labels and rejects escapes;
-that invariant lets `ZoneName` itself split its stored text on dots.
+`ZoneName::parse` uses the same octet-label and escape rules. DNS labels may
+contain arbitrary octets (RFC 2181, Section 11), including non-LDH zone names.
 
 Outside these name types and their parsers, do not answer a question about
 name relationships with string operations. `ends_with`,
@@ -436,9 +436,9 @@ name relationships with string operations. `ends_with`,
 it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
 methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `is_label_suffix`.
 
-Names are canonical by construction: labels are printable ASCII (an
-internationalized label arrives as its `xn--` A-label), lowercased
-(RFC 4343), and rendered back with the in-label dot as `\046` and the
+Names are canonical by construction: ASCII letters are lowercased
+(RFC 4343); other octets retain their values. Presentation renders nonprintable
+and whitespace octets as `\DDD`, the in-label dot as `\046`, and
 master-file metacharacters escaped, so one name has one spelling and a `.`
 in rendered text is always a label boundary. That is what lets the
 record-filter SQL compare owner names as text under a bytewise collation,
@@ -480,7 +480,15 @@ refusal may come before any parse: a name no zone can carry leaves no row.
 Record values own their encoding: the SOA RNAME uses `SoaMailbox`, TXT uses
 `TxtRecordValue`, and CAA uses `CaaRecordValue`. CAA property values are octets,
 including empty and non-UTF-8 values; storage and export render them with
-RFC 1035 escapes (RFC 8659, Section 4.1).
+RFC 1035 escapes (RFC 8659, Section 4.1). TXT character-strings likewise carry
+arbitrary octets and preserve segment boundaries. CAA tags and the names in
+SRV, DNAME and NAPTR RDATA retain their original case; comparison and DNSSEC
+canonicalization operate on separate wire data. Management creation of CAA
+permits flags 0 or 128; UPDATE and import preserve unknown flag bits.
+
+Ordinary record types without a typed editor use `TYPE<number>` and RFC 3597
+`\# <length> <hex>` values, including zero-length RDATA. Meta/query types and
+SOA or signer-managed DNSSEC types remain outside ordinary record writes.
 
 `NaptrRecordValue` validates flags after decoding presentation escapes:
 empty or ASCII letters and digits (RFC 3403, Section 4.1). The application
@@ -488,7 +496,8 @@ defines flag meanings; DNS record validation does not restrict them to a list.
 
 ### RFC behavior and explicit exceptions
 
-The DNS plane implements the RFCs it cites (1034/1035, 1982, 1995, 1996,
+Except for the explicit deviations below, the DNS plane implements the RFCs it
+cites (1034/1035, 1982, 1995, 1996,
 2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8945, 9103, 9432, 9619), and a
 requirement one states is met as written: a MUST is implemented, a SHOULD
 is followed unless the reason not to stands in a comment beside the code,
@@ -504,6 +513,18 @@ the section (`RFC 9103, Section 7.1`), so a reader can check the text.
 QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
 (RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
 readable queries; an unreadable question receives a header-only response.
+
+`dns.listen_addr` accepts a specific local IP or a wildcard (`0.0.0.0`, `::`).
+UDP replies use the query's local destination IP and the listener's bound port
+(RFC 2181, Sections 4.1–4.2), including wildcard listeners on Linux and macOS.
+Enable packet information before starting the listener; reject truncated
+datagrams or missing destination metadata instead of guessing the reply source.
+
+Omitted API/DNS addresses default to `0.0.0.0`; their ports default to `3000`
+and `5300`. The database type defaults to SQLite and the logging level to `info`.
+These defaults also apply when their sections are absent. The selected database
+still needs its location. Parse the file and fill defaults, then apply environment
+overrides before validation; explicit invalid values remain errors.
 
 EDNS parsing and response encoding are shared by QUERY, UPDATE, and TSIG errors.
 A readable OPT retains its version and DO bit even when rejected with BADVERS;
@@ -530,17 +551,47 @@ SOA additions are resolved in wire order using RFC 1982 comparisons. Equal,
 older, undefined-distance and non-apex SOAs are ignored; an advancing SOA
 passes the existing zone-write policy and supplies the request's final serial
 (RFC 2136, Sections 3.4.2.2 and 3.6). SOA metadata, record changes, signatures
-and the version commit together at that serial. Storage-range or zone-policy
-failures are REFUSED, not malformed RDATA.
+and the version commit together at that serial. Serials span 0..=4294967295,
+are stored in signed 64-bit columns and advance modulo 2^32. History older
+than the unambiguous RFC 1982 half-range is retired in that transaction, so
+serial reuse cannot mix journal generations. The transfer cache keys snapshots
+by their immutable version id, since a wire serial can repeat. Zone-policy failures are REFUSED,
+not malformed RDATA.
 
-An equal-serial IXFR receives only the current SOA from the authorized
-snapshot, independent of journal retention, including for catalogs (RFC 1995,
-Section 2). By explicit project policy, newer clients over TCP/TLS receive the
-full primary snapshot: an intentional exception to that section, not a guarantee
-that the secondary installs it. UDP IXFRs return the current SOA. RFC 1982
-determines serial order; undefined comparisons and unavailable deltas use AXFR.
+An equal- or newer-serial IXFR receives only the current SOA from the
+authorized snapshot, independent of journal retention, including for catalogs
+(RFC 1995, Section 2). UDP IXFRs return the current SOA. RFC 1982 determines
+serial order; undefined comparisons and unavailable deltas use AXFR.
 
 ## Rust design
+
+### Standard, asynchronous, and Unix APIs
+
+Use stable std/Tokio APIs on the supported platforms. Choose by the operation's
+contract, not by the system call the library uses internally. Unix-specific
+`std::os::unix` extensions are part of std.
+
+| Responsibility | API |
+| --- | --- |
+| Values, paths, addresses, synchronous file operations, metadata, permissions, PID, process creation/replacement/exit | `std`, including `PermissionsExt` and `CommandExt::exec` |
+| Asynchronous files and sockets, readiness, tasks, timers, signals, Unix peer credentials | Tokio, including `UnixStream::peer_cred` |
+| DNS UDP packet information and per-datagram reply source selection | `nix` in `dns::udp` only, using `setsockopt`, `recvmsg`, and `sendmsg` |
+
+HTTP servers use `axum` (`axum-server` for HTTPS); the ExternalDNS adapter's
+HTTP client uses `reqwest`. HTTPS, DNS TLS, and database TLS share ring-backed
+`rustls`; `tokio-rustls` connects it to Tokio streams. OpenSSL is needed by
+`domain` for DNSSEC RSA key generation and Ed448.
+
+Enable dependency features where they are used: core needs SQLx row derives;
+DB owns its drivers, runtime, and TLS. Keep Tokio's features explicit.
+
+The effective-UID getter in `socket::read_own_uid` uses a Tokio Unix socket pair
+and its peer credentials; keep both endpoints alive until the read completes.
+The DNS UDP listener keeps its Tokio socket and uses `UdpSocket::async_io` for
+readiness around nix calls. Enable only nix's `net` and `uio` features; libc types
+come through nix, with no direct libc calls. Other sockets and Unix operations
+stay with std/Tokio. Do not introduce a general syscall layer. Application
+`unsafe` remains forbidden.
 
 ### Structs and literals
 
@@ -696,7 +747,7 @@ Derive traits according to the value's contract (`C-COMMON-TRAITS`, `C-DEBUG`):
 | `Serialize`, `Deserialize` | Every process-boundary payload, including adapter-local HTTP shapes and responses read by the CLI. Query extractors and final CLI presentation structs need only their transport's direction. DB rows carry neither. |
 
 Enums with stored, wire, or textual forms follow [Presentation](#presentation).
-Control enums without those forms need neither `as_str` nor `Display`.
+Control enums without those forms need neither text conversion nor `Display`.
 
 ### Errors
 
@@ -1106,11 +1157,13 @@ grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
 ### Presentation
 
 An enum with a stored, wire, or textual representation has two spellings and no more.
-`as_str` is the storage and API form, the one serde's `rename_all` also produces — each
-such enum's `spells_itself_once` test holds the two together — and is what a row or a
-metric label binds. `Display` is the presentation form, the one a person reads in a
-table cell or a message, and every front end writes the value with `{}` rather than
-spelling a variant itself. The two coincide unless the presentation is a DNS mnemonic
+The storage and API form uses `as_str() -> &str` when it can borrow its text, or
+`to_text() -> String` when variant data must be formatted (`TYPE<number>`).
+Serde produces the same form; each such enum's `spells_itself_once` test holds
+them together. Rows and metric labels use that form. `Display` is the presentation
+form, the one a person reads in a table cell or a message, and every front end
+writes the value with `{}` rather than spelling a variant itself. The two coincide
+unless the presentation is a DNS mnemonic
 (`NSEC3`, `AXFR`), a human phrase (`in sync`), or a notation (`RecordChange`'s
 `+`/`-`/`~`); a type whose `Display` nobody reads has none. The CLI's free
 `display_<thing>` helpers in `cli/output` render only what no type of ours can own — an
@@ -1150,7 +1203,7 @@ are evidence of the contract, not a separate visibility rule for each member.
   or single-item and multi-item forms of the same operation. Examples are
   `OwnerName::is_apex` / `is_same_or_under`, `Rdata::as_bytes` / `into_bytes`,
   `ServiceError` constructors, and `probe_secondary` / `probe_secondaries`.
-  A public enum's canonical `as_str` belongs to this value API too.
+  A public enum's canonical `as_str` or `to_text` belongs to this value API too.
 - **`pub(crate)` — an internal interface.** Apply the same grouping within a
   crate, including shared implementation types and their operations. A private
   module or crate-internal type does not gain `pub` members just to resemble

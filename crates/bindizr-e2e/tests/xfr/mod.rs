@@ -172,11 +172,11 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
             .unwrap();
         let current = soa.data().serial().into_int();
         // RFC 1982, Section 3.2: half-range is undefined; larger distances wrap.
-        // Project policy keeps full transfers for newer clients.
+        // RFC 1995, Section 2: newer clients receive the current SOA only.
         for (client_serial, soa_only) in [
             (current, true),
-            (current + 1, false),
-            (current.wrapping_add(0x7fff_ffff), false),
+            (current + 1, true),
+            (current.wrapping_add(0x7fff_ffff), true),
             (current.wrapping_add(0x8000_0000), false),
             (current.wrapping_add(0x8000_0001), false),
             (current - 1, false),
@@ -449,9 +449,8 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
         wait_for_any_dns_record(*port, &zone_name, RRSIG).await;
     }
 
-    // Phase 4: a record mutation on the signed zone re-signs in the same
-    // transaction; the harness's DNS verification waits for the new A record
-    // on both secondaries, so this exercises the signed IXFR delta.
+    // Phase 4: mutation re-signs the zone in one transaction; verifying the new
+    // A record on both secondaries exercises the signed IXFR delta.
     let serial_before = app.read_zone_serial(&zone_name).await;
     let (status, _) = app
         .send_request(
@@ -661,9 +660,8 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
 }
 
-/// Verify that a TSIG out of place or with a MAC of a size its algorithm
-/// cannot produce is answered FORMERR and unsigned (RFC 8945, Section 5.2),
-/// not REFUSED under the address that would have admitted the client.
+/// Verify malformed TSIG gets unsigned FORMERR even from an allowed address
+/// (RFC 8945, Section 5.2).
 #[tokio::test]
 #[serial]
 async fn a_malformed_tsig_is_answered_formerr_unsigned() {

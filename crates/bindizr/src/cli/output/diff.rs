@@ -9,12 +9,13 @@ use crate::cli::output::color;
 
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
 /// inline, TXT is quoted per character-string, other types use the value as-is.
-fn rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> String {
+fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> String {
     match record_type {
         "TXT" => {
             let segments: &[String] = match &diff_value.value {
                 RecordValue::Text(value) => std::slice::from_ref(value),
                 RecordValue::Segments(segments) => segments,
+                RecordValue::Presentation { presentation } => return presentation.clone(),
             };
             segments
                 .iter()
@@ -37,11 +38,11 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
     let mut out = String::new();
     for entry in entries {
         let sign = entry.change.to_string();
-        let rtype = entry.record_type.as_str();
+        let rtype = entry.record_type.to_text();
 
         // Show only the delta: records removed, then records added.
         let rendered =
-            |value: &RecordDiffValueResponse| (value.ttl.to_string(), rdata(value, rtype));
+            |value: &RecordDiffValueResponse| (value.ttl.to_string(), display_rdata(value, &rtype));
         let from_lines: Vec<(String, String)> = entry.from.iter().map(rendered).collect();
         let to_lines: Vec<(String, String)> = entry.to.iter().map(rendered).collect();
         let mut lines: Vec<(String, String)> = from_lines

@@ -18,7 +18,7 @@ use crate::{
 /// (`rname` converted back from SOA mailbox form).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZoneVersionResponse {
-    #[schema(example = 7, value_type = u32)]
+    #[schema(inline)]
     pub serial: Serial,
     #[schema(example = "ns1.example.com")]
     pub mname: String,
@@ -175,9 +175,9 @@ pub struct RecordDiffResponse {
 /// The difference between two of a zone's serials.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DiffZoneVersionsResponse {
-    #[schema(example = 41, value_type = u32)]
+    #[schema(inline)]
     pub from_serial: Serial,
-    #[schema(example = 42, value_type = u32)]
+    #[schema(inline)]
     pub to_serial: Serial,
     pub diff: RecordDiffResponse,
 }
@@ -197,16 +197,16 @@ pub struct RollbackZoneSummaryResponse {
 }
 
 /// Result of a zone rollback. The zone's state returns to `target_serial`
-/// while its serial advances to `new_serial` (serials never go backward).
+/// while its serial advances to `new_serial` (modulo 2^32 under RFC 1982).
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub struct RollbackZoneResponse {
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
-    #[schema(example = 7, value_type = u32)]
+    #[schema(inline)]
     pub target_serial: Serial,
-    #[schema(example = 13, value_type = u32)]
+    #[schema(inline)]
     pub new_serial: Serial,
     pub summary: RollbackZoneSummaryResponse,
 }

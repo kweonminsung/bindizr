@@ -132,7 +132,7 @@ pub async fn update(
             retry: retry?.unwrap_or(existing_zone.retry),
             expire: expire?.unwrap_or(existing_zone.expire),
             minimum_ttl: minimum_ttl?.unwrap_or(existing_zone.minimum_ttl),
-            serial: generate_serial(Some(existing_zone.serial))?,
+            serial: generate_serial(Some(existing_zone.serial)),
             enabled: request.enabled.unwrap_or(existing_zone.enabled),
             ..existing_zone.clone()
         };

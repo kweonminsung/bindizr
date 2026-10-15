@@ -348,12 +348,12 @@ fn to_record_value_rejects_empty_txt_rdata() {
     assert!(!err.to_string().is_empty());
 }
 
-/// Verify that `to_record_value` rejects non UTF8 TXT character strings.
+/// Preserve arbitrary TXT octets through UPDATE decoding.
 #[test]
-fn to_record_value_rejects_non_utf8_txt_character_strings() {
+fn to_record_value_preserves_non_utf8_txt_character_strings() {
     let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
-    let err = record.to_record_value(&record.rdata).unwrap_err();
-    assert!(!err.to_string().is_empty());
+    let (_, value, _) = record.to_record_value(&record.rdata).unwrap();
+    assert_eq!(value, r#""\255""#);
 }
 
 /// Verify that `to_record_value` splits SRV priority into its own column.
@@ -386,9 +386,8 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
     }
 }
 
-/// Verify that the delete shapes RFC 2136, Section 2.5 allows pass: an
-/// ANY-class delete with zero TTL and empty RDATA, a NONE-class delete
-/// naming one record's RDATA.
+/// Verify empty ANY-class deletes and NONE-class deletes of specific RDATA
+/// (RFC 2136, Section 2.5).
 #[test]
 fn a_well_formed_delete_passes_the_shape_check() {
     update_record(Rtype::A, Class::ANY, 0, Vec::new())
@@ -410,10 +409,6 @@ fn a_malformed_delete_names_what_it_lacks() {
         (
             update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
             ValidateUpdateShapeError::AnyClassRdata,
-        ),
-        (
-            update_record(Rtype::A, Class::NONE, 0, Vec::new()),
-            ValidateUpdateShapeError::NoneClassNoRdata,
         ),
         (
             update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
@@ -515,4 +510,30 @@ fn parse_update_request_reads_the_opt_record() {
             dnssec_ok: false,
         }
     );
+}
+
+/// Generic legacy types decompress names before storage; unknown bytes and empty values stay opaque.
+#[test]
+fn generic_records_preserve_uncompressed_rdata() {
+    for data in [vec![], vec![0, 255, 0xc0, 12]] {
+        let record = update_record(Rtype::from_int(65280), Class::NONE, 0, data.clone());
+        record.validate_update_shape().unwrap();
+        let (rtype, value, priority) = record.to_record_value(&data).unwrap();
+        assert_eq!(rtype, RecordType::Unknown(65280));
+        assert_eq!(priority, None);
+        assert_eq!(
+            crate::dns::record::OpaqueRecordValue::parse(&value)
+                .unwrap()
+                .to_rdata()
+                .unwrap()
+                .as_bytes(),
+            data
+        );
+    }
+    // RP has two compressible domain names, each pointing to offset zero.
+    let message = [1, b'X', 0, 0xc0, 0, 0xc0, 0];
+    let mut record = update_record(Rtype::RP, Class::IN, 300, message[3..].to_vec());
+    record.rdata_start = 3;
+    let (_, value, _) = record.to_record_value(&message).unwrap();
+    assert_eq!(value, r"\# 6 015800015800");
 }

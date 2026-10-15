@@ -3,7 +3,12 @@ mod env_overrides;
 #[cfg(test)]
 mod tests;
 
-use std::{env, fmt, net::IpAddr, path::PathBuf, time::Duration};
+use std::{
+    env, fmt,
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -85,9 +90,13 @@ const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
     pub api: ApiConfig,
+    #[serde(default)]
     pub database: DatabaseConfig,
+    #[serde(default)]
     pub dns: DnsConfig,
+    #[serde(default)]
     pub logging: LoggingConfig,
 }
 
@@ -95,7 +104,9 @@ pub struct Config {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiConfig {
+    #[serde(default = "default_listen_addr")]
     pub listen_addr: IpAddr,
+    #[serde(default = "default_api_listen_port")]
     pub listen_port: u16,
     /// Require an API token on every request that touches zone data.
     #[serde(default = "default_authentication_required")]
@@ -113,6 +124,31 @@ pub struct ApiConfig {
     pub openapi_enabled: bool,
     #[serde(default)]
     pub tls: ApiTlsConfig,
+}
+
+impl Default for ApiConfig {
+    /// Build the default HTTP listener and API settings.
+    fn default() -> Self {
+        Self {
+            listen_addr: default_listen_addr(),
+            listen_port: default_api_listen_port(),
+            authentication_required: default_authentication_required(),
+            metrics_enabled: default_metrics_enabled(),
+            external_dns_enabled: false,
+            openapi_enabled: false,
+            tls: ApiTlsConfig::default(),
+        }
+    }
+}
+
+/// Return the wildcard IPv4 address used by both listeners.
+fn default_listen_addr() -> IpAddr {
+    IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+}
+
+/// Return the default HTTP API port.
+fn default_api_listen_port() -> u16 {
+    3000
 }
 
 /// HTTPS for the API, served while both PEM files are set; without them the
@@ -144,10 +180,10 @@ fn default_metrics_enabled() -> bool {
 }
 
 /// Database backend selection and per-backend connection settings.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
-    #[serde(rename = "type")]
+    #[serde(default, rename = "type")]
     pub database_type: DatabaseType,
     #[serde(default)]
     pub mysql: MySqlConfig,
@@ -160,10 +196,11 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database backends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     MySql,
+    #[default]
     Sqlite,
     #[serde(rename = "postgresql")]
     Postgres,
@@ -299,38 +336,14 @@ impl serde::Serialize for DatabaseTlsMode {
     }
 }
 
-impl From<DatabaseTlsMode> for sqlx::postgres::PgSslMode {
-    /// The same mode in sqlx's PostgreSQL vocabulary.
-    fn from(mode: DatabaseTlsMode) -> Self {
-        match mode {
-            DatabaseTlsMode::Disable => Self::Disable,
-            DatabaseTlsMode::Prefer => Self::Prefer,
-            DatabaseTlsMode::Require => Self::Require,
-            DatabaseTlsMode::VerifyCa => Self::VerifyCa,
-            DatabaseTlsMode::VerifyFull => Self::VerifyFull,
-        }
-    }
-}
-
-impl From<DatabaseTlsMode> for sqlx::mysql::MySqlSslMode {
-    /// The same mode in sqlx's MySQL vocabulary.
-    fn from(mode: DatabaseTlsMode) -> Self {
-        match mode {
-            DatabaseTlsMode::Disable => Self::Disabled,
-            DatabaseTlsMode::Prefer => Self::Preferred,
-            DatabaseTlsMode::Require => Self::Required,
-            DatabaseTlsMode::VerifyCa => Self::VerifyCa,
-            DatabaseTlsMode::VerifyFull => Self::VerifyIdentity,
-        }
-    }
-}
-
 /// DNS server settings; the sub-tables hold the import client, NOTIFY,
 /// nsupdate, the TLS listener, transfers, and zone defaults.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DnsConfig {
+    #[serde(default = "default_listen_addr")]
     pub listen_addr: IpAddr,
+    #[serde(default = "default_dns_listen_port")]
     pub listen_port: u16,
     /// Virtual RFC 9432 catalog zone name; primaries sharing a secondary need distinct names.
     #[serde(default = "default_catalog_zone_name")]
@@ -363,6 +376,32 @@ pub struct DnsConfig {
     pub transfer: TransferConfig,
     #[serde(default)]
     pub zone_defaults: ZoneDefaultsConfig,
+}
+
+impl Default for DnsConfig {
+    /// Build the default DNS listener and zone-management settings.
+    fn default() -> Self {
+        Self {
+            listen_addr: default_listen_addr(),
+            listen_port: default_dns_listen_port(),
+            catalog_zone_name: default_catalog_zone_name(),
+            zone_history_retention_days: default_zone_history_retention_days(),
+            scheduler_interval_secs: default_scheduler_interval_secs(),
+            tcp_idle_timeout_secs: default_tcp_idle_timeout_secs(),
+            tcp_max_connections: default_tcp_max_connections(),
+            import: ImportConfig::default(),
+            notify: NotifyConfig::default(),
+            nsupdate: NsupdateConfig::default(),
+            tls: DnsTlsConfig::default(),
+            transfer: TransferConfig::default(),
+            zone_defaults: ZoneDefaultsConfig::default(),
+        }
+    }
+}
+
+/// Return the default DNS port, leaving port 53 available to a secondary.
+fn default_dns_listen_port() -> u16 {
+    5300
 }
 
 /// When NOTIFY reaches the secondaries.
@@ -626,9 +665,10 @@ fn default_notify_timeout_secs() -> u64 {
 }
 
 /// Logging settings.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
+    #[serde(default)]
     pub level: LogLevel,
     /// `json` writes one object per line for log pipelines.
     #[serde(default)]
@@ -667,11 +707,12 @@ impl std::str::FromStr for LogFormat {
 }
 
 /// Console log verbosity levels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
     Debug,
+    #[default]
     Info,
     Warn,
     Error,
@@ -936,9 +977,7 @@ impl DnsTlsConfig {
 }
 
 impl DnsConfig {
-    /// Whether `zone_name` is the virtual RFC 9432 catalog zone this instance
-    /// serves. Case-insensitive per RFC 4343; callers pass client-cased query
-    /// names as-is.
+    /// Match this instance's RFC 9432 catalog zone, ignoring case (RFC 4343).
     pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
         zone_name.eq_ignore_ascii_case(self.catalog_zone_name.as_str())
     }

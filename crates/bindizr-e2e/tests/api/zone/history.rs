@@ -367,7 +367,7 @@ async fn zone_rollback_rejects_bad_serials() {
             StatusCode::BAD_REQUEST,
             "INVALID_INPUT",
         ),
-        (0, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        (0, StatusCode::NOT_FOUND, "VERSION_NOT_FOUND"),
         (-5, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
         (
             current_serial - 2,
@@ -471,9 +471,8 @@ async fn zone_versions_distinguish_unauthenticated_api_from_socket() {
     }
 }
 
-/// Verify that a serial past the stored range, as a version or a listing
-/// filter, is refused as invalid input rather than failing in the database:
-/// RFC 1035 serials are 32 bits, rows hold 31.
+/// Reject version and listing serials outside the unsigned 32-bit DNS range
+/// before database access (RFC 1035).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_serial_past_the_stored_range_is_invalid_input() {
@@ -482,12 +481,18 @@ async fn a_serial_past_the_stored_range_is_invalid_input() {
     let zone_name = zone["name"].as_str().unwrap();
 
     for path in [
-        format!("/zones/{zone_name}/versions/{}", u32::MAX),
-        format!("/zones/{zone_name}/versions/diff?from={}", u32::MAX),
-        format!("/zones/{zone_name}/versions/diff?from=1&to={}", u32::MAX),
-        format!("/zones?serial={}", u32::MAX),
-        format!("/zones?min_serial={}", u32::MAX),
-        format!("/zones?max_serial={}", u32::MAX),
+        format!("/zones/{zone_name}/versions/{}", u64::from(u32::MAX) + 1),
+        format!(
+            "/zones/{zone_name}/versions/diff?from={}",
+            u64::from(u32::MAX) + 1
+        ),
+        format!(
+            "/zones/{zone_name}/versions/diff?from=1&to={}",
+            u64::from(u32::MAX) + 1
+        ),
+        format!("/zones?serial={}", u64::from(u32::MAX) + 1),
+        format!("/zones?min_serial={}", u64::from(u32::MAX) + 1),
+        format!("/zones?max_serial={}", u64::from(u32::MAX) + 1),
     ] {
         let (status, body) = app.send_request(Method::GET, &path, None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
@@ -498,11 +503,58 @@ async fn a_serial_past_the_stored_range_is_invalid_input() {
             Method::POST,
             &format!(
                 "/zones/{zone_name}/versions/{}/rollback?dry_run=true",
-                u32::MAX
+                u64::from(u32::MAX) + 1
             ),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_INPUT", "{body}");
+}
+
+/// Versions, reverse replay and new serials remain ordered when MAX advances to zero.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn history_and_rollback_cross_the_serial_wrap() {
+    let app = TestApp::start_local().await;
+    let name = app.zone_name("serial-wrap.example");
+    let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({"name": name, "mname": "ns.example.net", "rname": "admin@example.net", "serial": u32::MAX}))).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    for record in ["first", "second"] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({"zone_name": name, "name": record, "type": "A", "value": "192.0.2.1"})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+    assert_eq!(app.read_zone_serial(&name).await, 1);
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{name}/versions"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let serials: Vec<_> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["serial"].as_u64().unwrap())
+        .collect();
+    assert_eq!(serials, [1, 0, u64::from(u32::MAX)]);
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{name}/versions/{}/rollback", u32::MAX),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(app.read_zone_serial(&name).await, 2);
+    let records = app.list_records(&name).await;
+    assert_eq!(
+        records.len(),
+        1,
+        "only the initial apex NS should remain: {records:?}"
+    );
 }

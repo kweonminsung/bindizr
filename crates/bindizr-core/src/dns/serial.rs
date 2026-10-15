@@ -1,6 +1,4 @@
-//! The SOA serial as one value with two forms: the unsigned 32-bit field the
-//! wire carries (RFC 1035, Section 3.3.13) and the signed 32-bit column a row
-//! stores, so a serial bindizr writes stays at or below `i32::MAX`.
+//! RFC 1982 serial arithmetic, stored losslessly in signed 64-bit columns.
 
 use std::fmt;
 
@@ -15,17 +13,13 @@ pub struct Serial(u32);
 /// A serial that cannot cross between its row form and its wire form.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertSerialError {
-    /// Rows are stored as `i32`, so a negative one is corrupt data.
-    #[error("invalid DNS serial: {serial}")]
-    Negative { serial: i32 },
-    /// One past `i32::MAX` names nothing bindizr could have written.
-    #[error("serial {serial} is beyond the stored range of {}", i32::MAX)]
-    BeyondStoredRange { serial: u32 },
+    #[error("invalid DNS serial: {serial}; expected an unsigned 32-bit value")]
+    OutOfRange { serial: i64 },
 }
 
 impl Serial {
-    /// The largest serial a row can hold.
-    pub const MAX_STORED: Serial = Serial(i32::MAX as u32);
+    /// The largest wire serial (RFC 1982, Section 2).
+    pub const MAX: Serial = Serial(u32::MAX);
 
     /// The serial as the wire carries it.
     pub const fn as_u32(self) -> u32 {
@@ -38,10 +32,9 @@ impl Serial {
         matches!(self.0.wrapping_sub(other.0), 1..=0x7fff_ffff)
     }
 
-    /// The serial one step ahead, or `None` at the stored ceiling: a
-    /// saturating step would repeat a serial silently.
-    pub fn next(self) -> Option<Serial> {
-        (self < Self::MAX_STORED).then(|| Serial(self.0 + 1))
+    /// Advance modulo 2^32 (RFC 1982, Section 3.1), including MAX to zero.
+    pub fn next(self) -> Serial {
+        Serial(self.0.wrapping_add(1))
     }
 }
 
@@ -59,24 +52,30 @@ impl From<Serial> for u32 {
     }
 }
 
-impl TryFrom<i32> for Serial {
+impl TryFrom<i64> for Serial {
     type Error = ConvertSerialError;
 
-    /// Read a row's serial; a negative one is corrupt data.
-    fn try_from(serial: i32) -> Result<Self, Self::Error> {
+    /// Read a stored serial, rejecting values outside the DNS wire range.
+    fn try_from(serial: i64) -> Result<Self, Self::Error> {
         u32::try_from(serial)
             .map(Serial)
-            .map_err(|_| ConvertSerialError::Negative { serial })
+            .map_err(|_| ConvertSerialError::OutOfRange { serial })
     }
 }
 
-impl TryFrom<Serial> for i32 {
+impl TryFrom<i32> for Serial {
     type Error = ConvertSerialError;
 
-    /// The row form, refused past the stored range.
-    fn try_from(serial: Serial) -> Result<Self, Self::Error> {
-        i32::try_from(serial.0)
-            .map_err(|_| ConvertSerialError::BeyondStoredRange { serial: serial.0 })
+    /// Convert a signed application value without reinterpreting negative bits.
+    fn try_from(serial: i32) -> Result<Self, Self::Error> {
+        Self::try_from(i64::from(serial))
+    }
+}
+
+impl From<Serial> for i64 {
+    /// Widen the wire serial into its lossless database representation.
+    fn from(serial: Serial) -> Self {
+        i64::from(serial.0)
     }
 }
 
@@ -87,43 +86,60 @@ impl fmt::Display for Serial {
     }
 }
 
+impl utoipa::PartialSchema for Serial {
+    /// Describe the unsigned wire range with a format that holds every serial.
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, Type};
+
+        ObjectBuilder::new()
+            .schema_type(Type::Integer)
+            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
+            .minimum(Some(0_u64))
+            .maximum(Some(u64::from(Self::MAX.as_u32())))
+            .examples([serde_json::json!(42)])
+            .into()
+    }
+}
+
+impl utoipa::ToSchema for Serial {}
+
 impl<DB: sqlx::Database> sqlx::Type<DB> for Serial
 where
-    i32: sqlx::Type<DB>,
+    i64: sqlx::Type<DB>,
 {
     /// The row form's column type.
     fn type_info() -> DB::TypeInfo {
-        <i32 as sqlx::Type<DB>>::type_info()
+        <i64 as sqlx::Type<DB>>::type_info()
     }
 
     /// Whether the column can hold the row form.
     fn compatible(ty: &DB::TypeInfo) -> bool {
-        <i32 as sqlx::Type<DB>>::compatible(ty)
+        <i64 as sqlx::Type<DB>>::compatible(ty)
     }
 }
 
 impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Serial
 where
-    i32: sqlx::Encode<'q, DB>,
+    i64: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form; a serial past the stored range fails the query.
+    /// Bind every wire serial in the signed 64-bit row form.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i32::try_from(*self)?.encode_by_ref(buf)
+        i64::from(*self).encode_by_ref(buf)
     }
 }
 
 impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for Serial
 where
-    i32: sqlx::Decode<'r, DB>,
+    i64: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a negative column fails the row.
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(Serial::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+        Ok(Serial::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

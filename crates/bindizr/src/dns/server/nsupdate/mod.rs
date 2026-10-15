@@ -15,9 +15,13 @@ use bindizr_core::{
     metrics::NsupdateResult,
     model::transfer::TransferTransport,
 };
-use tokio::net::UdpSocket;
 
-use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
+use crate::dns::{
+    error::DnsError,
+    server::DnsContext,
+    stream::ResponseWriter,
+    udp::{ReplyTarget, UdpSocket},
+};
 
 /// Apply an nsupdate received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
@@ -42,8 +46,9 @@ pub(crate) async fn handle_udp_nsupdate(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
     query_data: &[u8],
-    client_addr: SocketAddr,
+    target: ReplyTarget,
 ) -> Result<(), DnsError> {
+    let client_addr = target.client_addr;
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
     let response = match handle_nsupdate_request(
@@ -61,7 +66,7 @@ pub(crate) async fn handle_udp_nsupdate(
         }
     };
 
-    socket.send_to(&response, client_addr).await?;
+    socket.send_to(&response, target).await?;
     Ok(())
 }
 

@@ -89,7 +89,7 @@ async fn resign_zone_tx(
     pass: SigningPass,
     attribution: &ChangeAttribution,
 ) -> Result<Option<Serial>, ServiceError> {
-    let new_serial = crate::serial::generate_serial(Some(signed.zone.serial))?;
+    let new_serial = crate::serial::generate_serial(Some(signed.zone.serial));
     if !apply_signed_view_tx(
         tx,
         &signed.zone,
@@ -106,9 +106,8 @@ async fn resign_zone_tx(
     Ok(Some(new_serial))
 }
 
-/// The policy the zone signs under, or `None` for an unsigned zone. Read
-/// unlocked: a policy in use cannot be deleted (FK), and its editable
-/// fields are safe to read at any moment.
+/// Read the signing policy unlocked, or `None` for unsigned zones.
+/// The FK prevents deletion while in use; editable fields need no lock.
 async fn find_zone_policy_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

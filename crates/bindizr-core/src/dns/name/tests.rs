@@ -10,11 +10,15 @@ fn zone() -> ZoneName {
 fn decode_keeps_an_escaped_dot_inside_one_label() {
     assert_eq!(
         decode_name_labels(r"host\.name.example.com").unwrap().0,
-        vec!["host.name", "example", "com"]
+        [b"host.name".to_vec(), b"example".to_vec(), b"com".to_vec()]
     );
     assert_eq!(
         decode_name_labels(r"back\\slash.example.com").unwrap().0,
-        vec![r"back\slash", "example", "com"]
+        [
+            br"back\slash".to_vec(),
+            b"example".to_vec(),
+            b"com".to_vec()
+        ]
     );
 }
 
@@ -25,11 +29,11 @@ fn decode_resolves_decimal_escapes() {
     // arrive either way (RFC 1035, Section 5.1).
     assert_eq!(
         decode_name_labels(r"a\046b.example.com").unwrap().0[0],
-        "a.b"
+        b"a.b"
     );
     assert_eq!(
         decode_name_labels(r"a\098c.example.com").unwrap().0[0],
-        "abc"
+        b"abc"
     );
 }
 
@@ -37,13 +41,13 @@ fn decode_resolves_decimal_escapes() {
 #[test]
 fn an_escaped_trailing_dot_is_label_data_not_the_root() {
     // Trimming the dot off the text first would leave a dangling escape.
-    assert_eq!(decode_name_labels(r"a\.").unwrap().0, vec!["a."]);
+    assert_eq!(decode_name_labels(r"a\.").unwrap().0, vec![b"a.".to_vec()]);
     assert_eq!(decode_name_labels("www.example.com.").unwrap().0.len(), 3);
 
     let zone = ZoneName::parse("example.com").unwrap();
     assert_eq!(
         OwnerName::parse_in_zone(r"a\.", &zone).unwrap().labels(),
-        ["a."]
+        [b"a.".to_vec()]
     );
 }
 
@@ -54,7 +58,6 @@ fn decode_rejects_malformed_escapes() {
         (r"bad.example.com\", ParseNameError::DanglingEscape),
         (r"a\04.example.com", ParseNameError::InvalidEscape),
         (r"a\300.example.com", ParseNameError::InvalidEscape),
-        (r"a\255b.example.com", ParseNameError::NonAscii),
         ("bad..example.com", ParseNameError::EmptyLabel),
     ] {
         assert_eq!(decode_name_labels(name).unwrap_err(), expected, "{name:?}");
@@ -172,7 +175,7 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
     let zone = ZoneName::parse("example.com").unwrap();
 
     let owner = OwnerName::parse_in_zone(r"host\.name.example.com.", &zone).unwrap();
-    assert_eq!(owner.labels(), ["host.name"]);
+    assert_eq!(owner.labels(), [b"host.name".to_vec()]);
     assert_eq!(owner.to_stored(), r"host\046name");
     assert_eq!(owner.to_fqdn(&zone), r"host\046name.example.com.");
 
@@ -198,18 +201,31 @@ fn a_rendered_dot_is_always_a_label_boundary() {
     assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
 }
 
-/// Verify that a non-ASCII label is refused.
+/// DNS labels preserve arbitrary octets, independently of IDNA host conventions.
 #[test]
-fn a_non_ascii_label_is_refused() {
+fn arbitrary_label_octets_round_trip() {
     let zone = ZoneName::parse("example.com").unwrap();
-
-    // The wire carries an internationalized label as its A-label (RFC 5890),
-    // and one text vocabulary keeps rows, filters and search terms comparable.
-    assert_eq!(
-        OwnerName::parse_in_zone("caf\u{e9}", &zone).unwrap_err(),
-        ParseNameError::NonAscii
-    );
-    assert!(OwnerName::parse_in_zone("xn--caf-dma", &zone).is_ok());
+    for (input, expected) in [
+        ("café", r"caf\195\169"),
+        (r"\255\000\032", r"\255\000\032"),
+        ("a\\ ", r"a\032"),
+    ] {
+        let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
+        assert_eq!(owner.to_stored(), expected);
+        assert_eq!(
+            OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone), &zone).unwrap(),
+            owner
+        );
+    }
+    for name in [
+        "_acme-challenge.example",
+        "0/25.2.0.192.in-addr.arpa",
+        r"\255\000.example",
+    ] {
+        let zone = ZoneName::parse(name).unwrap();
+        assert_eq!(ZoneName::parse(&zone.to_fqdn()).unwrap(), zone);
+        assert!(zone.to_wire().is_ok());
+    }
 }
 
 /// Verify that owner name parse enforces the length limit on both paths.
@@ -343,25 +359,18 @@ fn zone_name_parse_rejects_malformed_names() {
         assert_eq!(ZoneName::parse(value).unwrap_err(), expected, "{value:?}");
     }
 
-    // Underscore labels are refused here but accepted as owner names. The same
-    // LDH rule is what keeps escapes out of zone names entirely.
-    for (value, expected) in [
-        ("bad..example.com", ParseNameError::EmptyLabel),
-        (
-            "_svc.example.com",
-            ParseNameError::LabelCharset {
-                underscore_allowed: false,
-            },
-        ),
-        (
-            r"evil\.example.com",
-            ParseNameError::LabelCharset {
-                underscore_allowed: false,
-            },
-        ),
-        ("-bad.example.com", ParseNameError::LabelHyphen),
+    assert_eq!(
+        ZoneName::parse("bad..example.com").unwrap_err(),
+        ParseNameError::EmptyLabel
+    );
+    for name in [
+        "_svc.example.com",
+        r"evil\.example.com",
+        "-bad.example.com",
+        r"\255.example",
+        "0/25.example",
     ] {
-        assert_eq!(ZoneName::parse(value).unwrap_err(), expected, "{value:?}");
+        assert!(ZoneName::parse(name).is_ok(), "{name}");
     }
 }
 
@@ -404,7 +413,7 @@ fn accepted_owner_names_round_trip_through_storage_and_presentation() {
 fn owner_name_constructors_admit_the_same_labels() {
     let zone = zone();
 
-    for label in ["host name", r"host\032name", "host\u{7}bell"] {
+    for label in ["host name", "host\u{7}bell"] {
         let relative = OwnerName::parse_in_zone(label, &zone);
         let absolute =
             OwnerName::parse_absolute_in_zone(&format!("{label}.test.example.com."), &zone);
@@ -413,9 +422,8 @@ fn owner_name_constructors_admit_the_same_labels() {
     }
 }
 
-/// Verify that owner names can reach the 255-octet wire limit of RFC 1035, Section 2.3.4.
-///
-/// The 253-character presentation limit must not be applied to wire bytes.
+/// Verify the 255-octet wire limit (RFC 1035, Section 2.3.4),
+/// independent of the 253-character presentation limit.
 #[test]
 fn owner_name_admits_a_maximum_length_name() {
     let zone = ZoneName::parse("example.com").unwrap();

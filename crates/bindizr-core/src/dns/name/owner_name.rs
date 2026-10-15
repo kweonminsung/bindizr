@@ -1,13 +1,11 @@
 //! A record's owner name, held as decoded labels.
 
-use super::{
-    MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
-};
+use super::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, trim_presentation_name};
 
 /// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
 /// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct OwnerName(Vec<String>);
+pub struct OwnerName(Vec<Vec<u8>>);
 
 impl OwnerName {
     /// How the apex is spelled in input and in presentation. Rows hold it out
@@ -25,15 +23,14 @@ impl OwnerName {
     }
 
     /// Return the owner's decoded DNS labels.
-    pub fn labels(&self) -> &[String] {
+    pub fn labels(&self) -> &[Vec<u8>] {
         &self.0
     }
 
-    /// Parse client input — `@`, a relative name, or an absolute name inside
-    /// `zone` — into the owner's labels. Labels are checked for wire safety
-    /// only, since owner names carry the `_` labels a zone name may not.
+    /// Parse `@`, relative names, or absolute names inside `zone` into octet labels.
+    /// Validate wire lengths without imposing hostname character rules.
     pub fn parse_in_zone(input: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
-        let trimmed = input.trim();
+        let trimmed = trim_presentation_name(input);
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
         }
@@ -57,14 +54,13 @@ impl OwnerName {
         }
     }
 
-    /// Parse an absolute name, rejecting names outside `zone` without qualification.
-    /// The caller guarantees an absolute name even without a trailing dot;
-    /// relative client input belongs to [`Self::parse_in_zone`].
+    /// Parse an absolute name inside `zone`, even without a trailing root dot.
+    /// Relative client input belongs to [`Self::parse_in_zone`].
     pub fn parse_absolute_in_zone(
         input: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
-        let trimmed = input.trim();
+        let trimmed = trim_presentation_name(input);
         if trimmed == Self::APEX {
             return Ok(Self::apex());
         }
@@ -83,12 +79,11 @@ impl OwnerName {
 
         match decode_name_labels(value) {
             Ok((labels, _)) => Self(labels),
-            // Only parse_in_zone writes these rows, so a decode failure means
-            // the row was edited outside bindizr; one literal label matches
-            // nothing rather than re-splitting into a name it never was.
+            // An externally corrupted row becomes one literal label; splitting it
+            // would invent a different name.
             Err(e) => {
                 log::error!("undecodable owner name in a record row: {} ({})", value, e);
-                Self(vec![value.to_ascii_lowercase()])
+                Self(vec![value.as_bytes().to_ascii_lowercase()])
             }
         }
     }
@@ -110,8 +105,8 @@ impl OwnerName {
         super::labels_to_wire(
             self.0
                 .iter()
-                .map(String::as_str)
-                .chain(zone_labels.iter().map(String::as_str)),
+                .map(Vec::as_slice)
+                .chain(zone_labels.iter().map(Vec::as_slice)),
         )
     }
 
@@ -192,10 +187,18 @@ impl std::fmt::Display for OwnerName {
     }
 }
 
-/// Decode a name into its labels, applying the wire length limits but not the
-/// LDH charset rule only zone names take. The flag is whether the name ended at
-/// the root — no string test can tell: `a\.` ends with a dot that is data.
-pub fn decode_name_labels(name: &str) -> Result<(Vec<String>, bool), ParseNameError> {
+/// Decode octet labels and enforce wire lengths; return whether the root was present.
+/// An escaped final dot (`a\.`) is label data, not the root.
+pub fn decode_name_labels(name: &str) -> Result<(Vec<Vec<u8>>, bool), ParseNameError> {
+    let (mut labels, absolute) = decode_preserved_labels(name)?;
+    for label in &mut labels {
+        label.make_ascii_lowercase();
+    }
+    Ok((labels, absolute))
+}
+
+/// Decode octet labels without changing case, for RDATA storage and wire output.
+pub(crate) fn decode_preserved_labels(name: &str) -> Result<(Vec<Vec<u8>>, bool), ParseNameError> {
     let mut labels = decode_labels(name)?;
 
     // The root's empty label terminates a name rather than being one. Deciding
@@ -213,16 +216,19 @@ pub fn decode_name_labels(name: &str) -> Result<(Vec<String>, bool), ParseNameEr
     Ok((labels, absolute))
 }
 
-/// Decode a presentation-form name into lowercase labels, resolving the `\X`
+/// Decode a presentation-form name into octet labels, resolving the `\X`
 /// and `\DDD` escapes (RFC 1035, Section 5.1).
-pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
+pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> {
     let mut labels = Vec::new();
     let mut label: Vec<u8> = Vec::new();
     let mut chars = name.chars().peekable();
 
     while let Some(c) = chars.next() {
         match c {
-            '.' => labels.push(decode_label(std::mem::take(&mut label))?),
+            c if c.is_ascii_whitespace() || c.is_ascii_control() => {
+                return Err(ParseNameError::Whitespace);
+            }
+            '.' => labels.push(std::mem::take(&mut label)),
             '\\' => match chars.peek() {
                 None => return Err(ParseNameError::DanglingEscape),
                 Some(d) if d.is_ascii_digit() => {
@@ -249,40 +255,24 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
         }
     }
 
-    labels.push(decode_label(label)?);
+    labels.push(label);
     Ok(labels)
 }
 
-/// Decode a completed label as ASCII text and fold its case; an
-/// internationalized label arrives as its A-label (RFC 5890).
-fn decode_label(label: Vec<u8>) -> Result<String, ParseNameError> {
-    if !label.is_ascii() {
-        return Err(ParseNameError::NonAscii);
-    }
-    // ASCII is valid UTF-8, so this reuses the buffer rather than copying it.
-    let mut label = String::from_utf8(label).map_err(|_| ParseNameError::NonAscii)?;
-    label.make_ascii_lowercase();
-    Ok(label)
-}
-
-/// Validate decoded owner labels, allowing `_` and `*` but rejecting whitespace
-/// and control octets even when supplied through `\DDD` escapes.
-fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
+/// Validate only the DNS label length (RFC 2181, Section 11).
+fn classify_owner_label(label: &[u8]) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
     }
     if label.len() > MAX_DNS_LABEL_LEN {
         return Err(ParseNameError::LabelTooLong);
     }
-    if has_whitespace_or_control(label) {
-        return Err(ParseNameError::Whitespace);
-    }
     Ok(())
 }
 
 /// Check the DNS wire-length limit in RFC 1035, Section 2.3.4, including each label's length
 /// octet and the root terminator.
-fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameError> {
+fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNameError> {
     let wire_len: usize = owner
         .iter()
         .chain(zone)
@@ -295,40 +285,35 @@ fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameE
     Ok(())
 }
 
-/// What a label escapes to survive its own presentation form: the separator
-/// and escape themselves, the `@` that RFC 1035, Section 5.1 fixes as the
-/// origin, and the master-file metacharacters that would end the owner field.
-const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
+/// Escape separators, backslashes, the origin marker `@`, and master-file
+/// metacharacters (RFC 1035, Section 5.1).
+const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
 
-/// Inverse of [`decode_labels`] for one label. The dot takes its decimal form,
-/// `\046`, so a `.` in rendered text is always a label boundary and SQL can
-/// match a subtree by text.
-pub(crate) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(ESCAPED_IN_LABEL) {
-        return std::borrow::Cow::Borrowed(label);
-    }
-
-    let mut escaped = String::with_capacity(label.len() + 4);
-    for c in label.chars() {
-        match c {
-            '.' => escaped.push_str(r"\046"),
-            c if ESCAPED_IN_LABEL.contains(&c) => {
+/// Escape a label without changing its octets; dots use decimal escapes so
+/// a stored dot is always a label boundary (RFC 1035, Section 5.1).
+pub(crate) fn escape_label(label: &[u8]) -> String {
+    let mut escaped = String::with_capacity(label.len());
+    for &byte in label {
+        match byte {
+            b'.' => escaped.push_str(r"\046"),
+            0x21..=0x7e if !ESCAPED_IN_LABEL.contains(&byte) => escaped.push(char::from(byte)),
+            byte if ESCAPED_IN_LABEL.contains(&byte) => {
                 escaped.push('\\');
-                escaped.push(c);
+                escaped.push(char::from(byte));
             }
-            c => escaped.push(c),
+            byte => escaped.push_str(&format!("\\{byte:03}")),
         }
     }
-    std::borrow::Cow::Owned(escaped)
+    escaped
 }
 
 /// Whether `suffix` is a label-wise suffix of `name` (the same name or under it).
-pub fn is_label_suffix(name: &[String], suffix: &[String]) -> bool {
+pub fn is_label_suffix(name: &[Vec<u8>], suffix: &[Vec<u8>]) -> bool {
     name.len() >= suffix.len() && name[name.len() - suffix.len()..] == *suffix
 }
 
 /// The labels left after removing `zone` from the end of `name`, or `None`
 /// when `name` does not sit inside `zone`.
-fn relative_labels(name: &[String], zone: &[String]) -> Option<Vec<String>> {
+fn relative_labels(name: &[Vec<u8>], zone: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
     is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
 }

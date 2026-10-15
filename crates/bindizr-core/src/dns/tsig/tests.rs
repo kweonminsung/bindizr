@@ -626,9 +626,8 @@ fn update_with_mac_of(mac_len: usize) -> Vec<u8> {
     message
 }
 
-/// Verify that a TSIG out of place, doubled, or with a MAC of a size its
-/// algorithm cannot produce reads as malformed (RFC 8945, Sections 5.2 and
-/// 5.2.2.1), while a permitted truncation still names its key.
+/// Verify malformed TSIG placement and MAC lengths while admitting valid truncation
+/// (RFC 8945, Sections 5.2 and 5.2.2.1).
 #[test]
 fn a_tsig_breaking_section_5_2_is_malformed() {
     let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -657,9 +656,8 @@ fn a_tsig_breaking_section_5_2_is_malformed() {
         RequestSignature::Malformed
     ));
 
-    // SHA-256 makes 32 octets: 4 is below the floor of max(10, 16), 40 is
-    // more than the hash, and 16 is a truncation the key check may still
-    // refuse as BADTRUNC but the structure admits.
+    // SHA-256 allows 16..=32 bytes structurally; key validation may still
+    // reject 16-byte truncation with BADTRUNC.
     for (mac_len, malformed) in [(4, true), (40, true), (16, false), (32, false)] {
         let signature = request_signature(&update_with_mac_of(mac_len));
         assert_eq!(
@@ -667,5 +665,30 @@ fn a_tsig_breaking_section_5_2_is_malformed() {
             malformed,
             "mac of {mac_len}: {signature:?}"
         );
+    }
+}
+
+/// TSIG belongs only in Additional, with CLASS ANY and TTL zero (RFC 8945, Section 4.2).
+#[test]
+fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
+    let wire = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let start = minimal_update_with_ztype(6).len();
+    let class = start + encode_name("update-key").len() + 2;
+    for offset in [class + 1, class + 5] {
+        let mut malformed = wire.clone();
+        malformed[offset] = 1;
+        assert!(matches!(
+            request_signature(&malformed),
+            RequestSignature::Malformed
+        ));
+    }
+    for count in [6, 8] {
+        let mut malformed = wire.clone();
+        malformed[count..count + 2].copy_from_slice(&1u16.to_be_bytes());
+        malformed[10..12].fill(0);
+        assert!(matches!(
+            request_signature(&malformed),
+            RequestSignature::Malformed
+        ));
     }
 }

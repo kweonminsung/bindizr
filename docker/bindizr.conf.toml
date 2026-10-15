@@ -1,62 +1,70 @@
-[api]
-listen_addr = "0.0.0.0"
-listen_port = 8000
-authentication_required = true
-metrics_enabled = true
-external_dns_enabled = false
-openapi_enabled = false
+# Uncomment to override defaults. Database URLs and TLS settings are examples.
 
-[api.tls]                       # Set both files to serve HTTPS
+[api]
+# listen_addr = "0.0.0.0"
+listen_port = 8000
+# authentication_required = true # Require an API token; `bindizr token create` makes the first one
+# metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
+# external_dns_enabled = false  # ExternalDNS provider API at /external-dns
+# openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
+
+[api.tls]                     # Set both files to serve HTTPS
 # cert_file = "/etc/bindizr/tls/tls.crt"
 # key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
-type = "sqlite"
+# type = "sqlite"               # sqlite, mysql, or postgresql
 
-[database.mysql]
-url = ""
+# [database.mysql]
+# url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
 file_path = "/var/lib/bindizr/bindizr.db"
 
-[database.postgresql]
-url = ""
+# [database.postgresql]
+# url = "postgresql://user:password@hostname:port/database"
 
-[database.tls]                  # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
-# mode = "verify-full"          # disable, prefer, require, verify-ca, verify-full
+[database.tls]                # TLS to the MySQL or PostgreSQL server; unset leaves it to the URL
+# mode = "verify-full"        # disable, prefer, require, verify-ca, verify-full
 # ca_file = "/etc/bindizr/db-ca.crt"  # A private issuer; needs verify-ca or verify-full
 
 [dns]
-listen_addr = "0.0.0.0"
+# listen_addr = "0.0.0.0"
 listen_port = 53
-catalog_zone_name = "catalog.bindizr"
-zone_history_retention_days = 365
-scheduler_interval_secs = 3600
+# catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
+# zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
+# scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
+# tcp_idle_timeout_secs = 30             # TCP/TLS idle seconds; advertised via edns-tcp-keepalive (RFC 7828)
+# tcp_max_connections = 128              # Per-listener TCP/TLS connection limit; excess waits in the backlog
 
+[dns.notify]                  # NOTIFY to the secondaries
+# batch_ms = 0                # Window to batch a zone's NOTIFYs (0 = send before answering)
+# retries = 3
+# timeout_secs = 3            # Seconds to wait for each NOTIFY, SOA probe, and parent-NS query
 
-[dns.notify]
-batch_ms = 0
-retries = 3
-timeout_secs = 3
+[dns.nsupdate]                # nsupdate (RFC 2136)
+# tsig_required = true          # false admits unsigned updates from anyone
 
-[dns.nsupdate]
-tsig_required = true            # false accepts updates from anyone (testing only)
-
-[dns.tls]                       # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
-listen_port = 853
+[dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
+# listen_port = 853           # On dns.listen_addr
 # cert_file = "/etc/bindizr/tls/xot.crt"
 # key_file = "/etc/bindizr/tls/xot.key"
 
-[dns.transfer]
-cache_max_records = 500000
+[dns.transfer]                # Zone transfers
+# cache_max_records = 500000  # Total cached records; oversized zones bypass the cache (0 = disabled)
+# require_tls = false         # Require [dns.tls] for AXFR/IXFR; SOA queries remain available
 
-[dns.zone_defaults]             # Applied when a zone-creation request omits the field
-ttl = 3600                    # Default record TTL (seconds)
-refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
-retry = 60                    # SOA retry
-expire = 3600000              # SOA expire
-minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
+[dns.import]                  # zone import --from-server: the AXFR Bindizr pulls
+# timeout_secs = 30
+# max_records = 200000        # A larger zone is refused
+
+[dns.zone_defaults]           # Applied when a zone-creation request omits the field
+# ttl = 3600                    # Default record TTL (seconds)
+# refresh = 300                 # SOA refresh; fallback when NOTIFY is lost
+# retry = 60                    # SOA retry
+# expire = 3600000              # SOA expire
+# minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-level = "info"
-format = "text"
+# level = "info"                # error, warn, info, debug, trace
+# format = "text"             # text, or json for one object per line
