@@ -10,11 +10,14 @@ use domain::{
     rdata::AllRecordData,
 };
 pub(crate) use parent::{DsRecord, FakeParent};
+use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferResult, axfr, xot};
 pub(crate) use transport::{
     exchange_request, exchange_tcp, exchange_udp, exchange_xot, read_frame, write_frame,
 };
+
+use super::TestApp;
 
 pub(crate) mod notify;
 pub(crate) mod nsupdate;
@@ -432,4 +435,36 @@ fn to_quoted_string(bytes: &[u8]) -> String {
     }
     out.push('"');
     out
+}
+
+/// Read published RRsets with an independent zone-file parser.
+pub(crate) async fn exported_record_sets(
+    app: &TestApp,
+    zone_name: &str,
+) -> std::collections::BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
+    use domain::{
+        base::rdata::ComposeRecordData,
+        zonefile::inplace::{Entry, Zonefile},
+    };
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/zones/{zone_name}/export?signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut file = Zonefile::new();
+    file.extend_from_slice(body.as_str().unwrap().as_bytes());
+    let mut sets = std::collections::BTreeMap::<_, Vec<_>>::new();
+    while let Some(entry) = file.next_entry().unwrap() {
+        if let Entry::Record(record) = entry {
+            let name = format!("{}.", record.owner().to_string().trim_end_matches('.'));
+            let mut rdata = Vec::new();
+            let Ok(()) = record.data().compose_rdata(&mut rdata);
+            sets.entry((name, record.rtype())).or_default().push(rdata);
+        }
+    }
+    sets
 }

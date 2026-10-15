@@ -1,10 +1,10 @@
+use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::TestApp;
+use crate::common::{TestApp, dns::exported_record_sets};
 
 mod bulk;
-mod rfc;
 
 /// Preserve CAA empty and binary values through record writes and reads.
 #[tokio::test]
@@ -1968,4 +1968,278 @@ async fn record_mutations_validate_the_complete_proposed_state() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"], 2);
+}
+
+/// Verify that records listing signed pages the derived plane.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn signed_record_listing_paginates_derived_records() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www",
+                "type": "A",
+                "value": "192.0.2.10",
+                "zone_name": zone_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_total = body["pagination"]["total"].as_u64().unwrap();
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["id"].is_i64()),
+        "the unsigned listing holds only addressable user records"
+    );
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(
+        body["pagination"]["total"].as_u64().unwrap() as usize,
+        items.len()
+    );
+    assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
+    assert!(items.iter().any(|item| item["id"].is_i64()));
+    for item in items {
+        assert_eq!(item["zone_name"], zone_name);
+        assert!(item["name"].as_str().unwrap().ends_with('.'));
+    }
+    let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
+    for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
+        assert!(
+            derived.iter().any(|item| item["type"] == record_type),
+            "signed listing must carry a {record_type} row: {items:?}"
+        );
+    }
+    assert!(derived.iter().all(|item| item["priority"].is_null()));
+
+    // The derived plane pages after the user records under one offset space.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|item| item["id"].is_null()));
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert!(items.iter().all(|item| item["type"] == "RRSIG"));
+
+    // A derived type is only addressable through the signed view.
+    let (status, _) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Verify that a signed listing searches the derived plane by name.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn signed_record_listing_filters_derived_records_by_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "searchable", "type": "A", "value": "192.0.2.1",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The search must reach the derived rows, not only the stored ones.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let types: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"A"), "{body}");
+    assert!(types.contains(&"RRSIG"), "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=caf%C3%A9&signed=true&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(body["pagination"]["total"], 0);
+
+    // Refused rather than quietly answered without the rows it cannot narrow.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("value cannot narrow the derived"),
+        "{body}"
+    );
+}
+
+/// Binary TXT and generic types retain their exact RDATA when API responses are written back.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn binary_txt_and_unknown_types_round_trip() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone = zone["name"].as_str().unwrap();
+    for (name, rtype, value, bytes) in [
+        (
+            "binary",
+            "TXT",
+            json!({"presentation": r#""\255\000" "\195" "\169""#}),
+            vec![2, 255, 0, 1, 195, 1, 169],
+        ),
+        ("empty", "TYPE65280", json!(r"\# 0"), vec![]),
+        (
+            "other",
+            "TYPE65281",
+            json!(r"\# 4 00ff C00C"),
+            vec![0, 255, 192, 12],
+        ),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({"zone_name": zone, "name": name, "type": rtype, "value": value})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let path = format!("/records/{}", body["record"]["id"]);
+        let value = body["record"]["value"].clone();
+        let (status, body) = app
+            .send_request(Method::PUT, &path, Some(json!({"value": value})))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let wire_type: Rtype = rtype.parse().unwrap();
+        assert_eq!(
+            exported_record_sets(&app, zone)
+                .await
+                .get(&(format!("{name}.{zone}."), wire_type))
+                .unwrap(),
+            &vec![bytes]
+        );
+    }
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone}/import"),
+            Some(json!({"content": r#"imported IN TXT "\255\000""#})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        exported_record_sets(&app, zone)
+            .await
+            .get(&(format!("imported.{zone}."), Rtype::TXT))
+            .unwrap(),
+        &vec![vec![2, 255, 0]]
+    );
+}
+
+/// PTR cannot name a CNAME, whichever record was created first (RFC 2181, Section 10.2).
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn ptr_record_rejects_alias_target() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone = zone["name"].as_str().unwrap();
+    for reverse in [false, true] {
+        let alias = if reverse { "later" } else { "earlier" };
+        let cname = json!({"zone_name": zone, "name": alias, "type": "CNAME", "value": "host.example.net."});
+        let ptr = json!({"zone_name": zone, "name": format!("ptr-{alias}"), "type": "PTR", "value": format!("{alias}.{zone}.")});
+        let [first, second] = if reverse { [ptr, cname] } else { [cname, ptr] };
+        assert_eq!(
+            app.send_request(Method::POST, "/records", Some(first))
+                .await
+                .0,
+            StatusCode::CREATED
+        );
+        let (status, body) = app
+            .send_request(Method::POST, "/records", Some(second))
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    }
 }

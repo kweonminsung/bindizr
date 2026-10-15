@@ -558,3 +558,73 @@ async fn history_and_rollback_cross_the_serial_wrap() {
         "only the initial apex NS should remain: {records:?}"
     );
 }
+
+/// Verify that a rollback keeps every restored record inside the wire limit.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_rollback_enforces_restored_record_wire_length_limit() {
+    let app = TestApp::start().await;
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": "c.co",
+                "mname": "ns.c.co",
+                "rname": "admin@c.co",
+                "default_ttl": 3600
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let owner = [
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(50),
+    ]
+    .join(".");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": owner,
+                "type": "A",
+                "value": "192.0.2.1",
+                "zone_name": "c.co"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    let (_, zone_at_target) = app.send_request(Method::GET, "/zones/c.co", None).await;
+    let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
+
+    // With the long name gone the rename passes; the history still holds it.
+    let (status, _) = app
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert!(status.is_success(), "{status}");
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            "/zones/c.co",
+            Some(json!({ "name": "rollback-length.example" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Restoring that serial would bring the name back under a zone it no
+    // longer fits, so the rollback is refused whole.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/rollback-length.example/versions/{target_serial}/rollback"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("bytes or fewer"), "{body}");
+}

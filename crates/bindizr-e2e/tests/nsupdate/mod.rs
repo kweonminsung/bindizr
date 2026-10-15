@@ -1,12 +1,6 @@
-pub(crate) mod common;
-mod dnssec;
-mod opaque;
-mod soa;
-
-use common::{exported_record_sets, unsigned_nsupdate_app};
 use domain::{
     base::{
-        Message, Rtype, Serial, Ttl,
+        Message, Name, Rtype, Serial, Ttl,
         iana::{Class, Opcode, OptRcode, Rcode, TsigRcode},
     },
     rdata::{
@@ -15,13 +9,14 @@ use domain::{
     },
     tsig::ClientTransaction,
 };
-use serde_json::Value;
+use reqwest::{Method, StatusCode};
+use serde_json::{Value, json};
 use serial_test::serial;
 
 use crate::common::{
-    TestApp,
+    TestApp, TestAppOptions,
     dns::{
-        exchange_request, exchange_udp,
+        exchange_request, exchange_udp, exported_record_sets,
         nsupdate::{
             PrerequisiteRecord, UpdateRecord, build_update, send_signed_update_with_edns_version,
             send_signed_update_with_two_zones, send_update_tcp, send_update_udp,
@@ -1635,4 +1630,996 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
         records_at(&records, &tree),
         [("DNAME".to_string(), "two.example.net.".to_string(), 600)]
     );
+}
+
+/// Check derived names and RRsets for existence (RFC 2136, Sections 3.2.1–3.2.2).
+#[tokio::test]
+#[serial]
+async fn dnssec_prerequisites_see_derived_records() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({"parent_ns_addrs": ["127.0.0.1:9"]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let add = [UpdateRecord::AddA {
+        name: format!("must-not-exist.{zone_name}."),
+        ttl: 300,
+        addr: "192.0.2.140".to_string(),
+    }];
+    let derived: Vec<_> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["id"].is_null())
+        .collect();
+    assert!(derived.iter().any(|row| row["type"] == "DNSKEY"));
+    assert!(derived.iter().any(|row| row["type"] == "NSEC3"));
+    for row in derived {
+        let name = row["name"].as_str().unwrap().to_string();
+        let rtype: Rtype = row["type"].as_str().unwrap().parse().unwrap();
+        for (prerequisite, expected) in [
+            (
+                PrerequisiteRecord::RecordSetInUse {
+                    name: name.clone(),
+                    rtype,
+                },
+                Rcode::NOERROR,
+            ),
+            (
+                PrerequisiteRecord::RecordSetNotInUse {
+                    name: name.clone(),
+                    rtype,
+                },
+                Rcode::YXRRSET,
+            ),
+            (
+                PrerequisiteRecord::NameInUse { name: name.clone() },
+                Rcode::NOERROR,
+            ),
+            (PrerequisiteRecord::NameNotInUse { name }, Rcode::YXDOMAIN),
+        ] {
+            let updates = if expected == Rcode::NOERROR {
+                &[][..]
+            } else {
+                &add
+            };
+            let rcode = send_update_udp(app.dns_port(), zone_name, &[prerequisite], updates, None)
+                .expect("prerequisite response");
+            assert_eq!(rcode, expected, "{row}");
+            assert_eq!(app.list_records(zone_name).await, before);
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        }
+    }
+}
+
+/// Check RRset equality with NSEC/NSEC3 and split keys (RFC 2136, Section 3.2.3).
+#[tokio::test]
+#[serial]
+async fn dnssec_prerequisites_compare_whole_served_record_sets() {
+    for denial in ["nsec", "nsec3"] {
+        let app = unsigned_nsupdate_app().await;
+        let zone = app.create_test_zone().await;
+        let zone_name = zone["name"].as_str().unwrap();
+        // Exercise different stored encodings through the same wire comparison.
+        for mut record in [
+            json!({"name": "v6", "type": "AAAA", "value": "2001:db8::1"}),
+            json!({"name": "txt", "type": "TXT", "value": "\"First\" \"second\""}),
+            json!({"name": "mail", "type": "MX", "value": "Mail.Example.NET.", "priority": 10}),
+            json!({"name": "alias", "type": "CNAME", "value": "Target.Example.NET."}),
+            json!({"name": "caa", "type": "CAA", "value": "0 issue \"ca.example\""}),
+        ] {
+            record["zone_name"] = json!(zone_name);
+            let (status, body) = app
+                .send_request(Method::POST, "/records", Some(record))
+                .await;
+            assert_eq!(status, StatusCode::CREATED, "{body}");
+        }
+        let policy_name = format!("{}-prereq", app.namespace());
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/dnssec-policies",
+                Some(json!({
+                    "name": policy_name, "denial": denial, "split_keys": true,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/dnssec"),
+                Some(json!({
+                    "policy_name": policy_name, "parent_ns_addrs": ["127.0.0.1:9"],
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let sets = exported_record_sets(&app, zone_name).await;
+        let apex = format!("{zone_name}.");
+        for rtype in [
+            Rtype::DNSKEY,
+            Rtype::RRSIG,
+            Rtype::CDS,
+            Rtype::CDNSKEY,
+            Rtype::SOA,
+            Rtype::NS,
+        ] {
+            assert!(
+                sets.contains_key(&(apex.clone(), rtype)),
+                "missing {rtype}: {sets:?}"
+            );
+        }
+        let denial_type = if denial == "nsec" {
+            Rtype::NSEC
+        } else {
+            Rtype::NSEC3
+        };
+        assert!(sets.keys().any(|(_, rtype)| *rtype == denial_type));
+        assert!(sets[&(apex.clone(), Rtype::DNSKEY)].len() > 1);
+        let serial = app.read_zone_serial(zone_name).await;
+        for ((name, rtype), values) in &sets {
+            let prerequisites: Vec<_> = values
+                .iter()
+                .map(|rdata| PrerequisiteRecord::RecordEquals {
+                    name: name.clone(),
+                    rtype: *rtype,
+                    rdata: rdata.clone(),
+                })
+                .collect();
+            let rcode = send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
+                .expect("exact set");
+            assert_eq!(rcode, Rcode::NOERROR, "{name} {rtype}");
+            let mut repeated = prerequisites.clone();
+            repeated.reverse();
+            repeated.extend(prerequisites.clone());
+            let rcode = send_update_udp(app.dns_port(), zone_name, &repeated, &[], None)
+                .expect("repeated set");
+            assert_eq!(rcode, Rcode::NOERROR, "{name} {rtype}");
+            if prerequisites.len() > 1 {
+                let rcode =
+                    send_update_udp(app.dns_port(), zone_name, &prerequisites[..1], &[], None)
+                        .expect("subset");
+                assert_eq!(rcode, Rcode::NXRRSET, "{name} {rtype}");
+            }
+        }
+        // A different DNSKEY remains well-formed but must fail equality.
+        let values = &sets[&(apex.clone(), Rtype::DNSKEY)];
+        let mut wrong = values.clone();
+        *wrong[0].last_mut().unwrap() ^= 1;
+        for values in [
+            wrong.clone(),
+            values.iter().chain(&wrong[..1]).cloned().collect(),
+        ] {
+            let prerequisites: Vec<_> = values
+                .into_iter()
+                .map(|rdata| PrerequisiteRecord::RecordEquals {
+                    name: apex.clone(),
+                    rtype: Rtype::DNSKEY,
+                    rdata,
+                })
+                .collect();
+            let rcode = send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
+                .expect("different set");
+            assert_eq!(rcode, Rcode::NXRRSET);
+        }
+        // Read-only checks must not advance the signed view.
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(exported_record_sets(&app, zone_name).await, sets);
+
+        // Re-signing must make the old RRSIG prerequisite fail.
+        let signatures: Vec<_> = sets[&(apex.clone(), Rtype::RRSIG)]
+            .iter()
+            .map(|rdata| PrerequisiteRecord::RecordEquals {
+                name: apex.clone(),
+                rtype: Rtype::RRSIG,
+                rdata: rdata.clone(),
+            })
+            .collect();
+        let add = |owner: &str| UpdateRecord::AddA {
+            name: format!("{owner}.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.141".to_string(),
+        };
+        let rcode = send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &signatures,
+            &[add("accepted")],
+            None,
+        )
+        .expect("guarded write");
+        assert_eq!(rcode, Rcode::NOERROR);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
+        let after = exported_record_sets(&app, zone_name).await;
+        assert_ne!(
+            after[&(apex.clone(), Rtype::RRSIG)],
+            sets[&(apex.clone(), Rtype::RRSIG)]
+        );
+        let rcode = send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &signatures,
+            &[add("rejected")],
+            None,
+        )
+        .expect("stale guard");
+        assert_eq!(rcode, Rcode::NXRRSET);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
+        assert_eq!(exported_record_sets(&app, zone_name).await, after);
+    }
+}
+
+/// Check derived read grants and signed TCP errors.
+#[tokio::test]
+#[serial]
+async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({
+                "parent_ns_addrs": ["127.0.0.1:9"],
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let key = create_tsig_key(&app, "dnssec-prereq", KeyRole::Own).await;
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            zone_name,
+            "--actions",
+            "record:read",
+            "--types",
+            "A",
+        ],
+        None,
+    )
+    .await;
+    let apex = format!("{zone_name}.");
+    let sets = exported_record_sets(&app, zone_name).await;
+    let values = &sets[&(apex.clone(), Rtype::DNSKEY)];
+    let prerequisites: Vec<_> = values
+        .iter()
+        .map(|rdata| PrerequisiteRecord::RecordEquals {
+            name: apex.clone(),
+            rtype: Rtype::DNSKEY,
+            rdata: rdata.clone(),
+        })
+        .collect();
+    let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
+        .expect("restricted read");
+    assert_eq!(rcode, Rcode::REFUSED);
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            &key.name,
+            "--zone",
+            zone_name,
+            "--actions",
+            "record:read",
+        ],
+        None,
+    )
+    .await;
+    let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
+        .expect("granted read");
+    assert_eq!(rcode, Rcode::NOERROR);
+    for (rtype, rdata, expected) in [
+        (Rtype::DNSKEY, vec![1, 1, 3], Rcode::FORMERR),
+        (Rtype::from_int(65280), vec![], Rcode::NXRRSET),
+    ] {
+        let prerequisite = PrerequisiteRecord::RecordEquals {
+            name: apex.clone(),
+            rtype,
+            rdata,
+        };
+        let rcode = send_update_tcp(app.dns_port(), zone_name, &[prerequisite], &[], Some(&key))
+            .expect("signed error");
+        assert_eq!(rcode, expected);
+    }
+    assert_eq!(exported_record_sets(&app, zone_name).await, sets);
+}
+
+/// Preserve binary owners, TXT segment octets, zero-length unknown values and RDATA case.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn update_preserves_opaque_values_and_names() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "opaque-key", KeyRole::Admin).await;
+    let target = crate::common::dns::parse_name("Mixed.Example.")
+        .unwrap()
+        .as_slice()
+        .to_vec();
+    for (label, rtype, rdata) in [
+        (r"\255\032", Rtype::TXT, vec![1, 255, 1, 0]),
+        ("split", Rtype::TXT, vec![1, 0xc3, 1, 0xa9]),
+        ("empty", Rtype::from_int(65280), vec![]),
+        ("opaque", Rtype::from_int(65281), vec![0, 255, 192, 12]),
+        (
+            "srv",
+            Rtype::SRV,
+            [vec![0, 1, 0, 2, 0, 80], target.clone()].concat(),
+        ),
+        ("dname", Rtype::DNAME, target),
+    ] {
+        let owner = format!("{label}.{zone}.");
+        let export_owner = format!("{}.", crate::common::dns::parse_name(&owner).unwrap());
+        assert_eq!(
+            send_update_udp(
+                app.dns_port(),
+                zone,
+                &[],
+                &[UpdateRecord::AddRecord {
+                    name: owner.clone(),
+                    rtype,
+                    ttl: 300,
+                    rdata: rdata.clone()
+                }],
+                Some(&key)
+            )
+            .unwrap(),
+            Rcode::NOERROR
+        );
+        let exported = exported_record_sets(&app, zone).await;
+        assert_eq!(
+            exported.get(&(export_owner.clone(), rtype)).unwrap(),
+            &vec![rdata.clone()]
+        );
+        assert_eq!(
+            send_update_udp(
+                app.dns_port(),
+                zone,
+                &[PrerequisiteRecord::RecordEquals {
+                    name: owner.clone(),
+                    rtype,
+                    rdata: rdata.clone()
+                }],
+                &[UpdateRecord::DeleteRecord {
+                    name: owner.clone(),
+                    rtype,
+                    rdata
+                }],
+                Some(&key)
+            )
+            .unwrap(),
+            Rcode::NOERROR
+        );
+        assert!(
+            !exported_record_sets(&app, zone)
+                .await
+                .contains_key(&(export_owner, rtype))
+        );
+    }
+}
+
+/// Build a replacement whose metadata differs from the default zone SOA.
+fn replacement(zone: &str, serial: u32) -> Soa<Name<Vec<u8>>> {
+    Soa::new(
+        parse_name(&format!("ns2.{zone}")).unwrap(),
+        parse_name(r"host\.master.example.net").unwrap(),
+        Serial::from(serial),
+        Ttl::from_secs(1800),
+        Ttl::from_secs(900),
+        Ttl::from_secs(86400),
+        Ttl::from_secs(600),
+    )
+}
+
+/// Read zone metadata through the API.
+async fn metadata(app: &TestApp, zone: &str) -> Value {
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{zone}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["zone"].clone()
+}
+
+/// Ignore equal, older, and non-apex SOAs without changing records or metadata.
+#[tokio::test]
+#[serial]
+async fn soa_addition_ignores_ineffective_updates() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let before = metadata(&app, zone_name).await;
+    let serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
+    let records = app.list_records(zone_name).await;
+    for (name, serial) in [
+        (format!("{zone_name}."), serial),
+        (format!("{zone_name}."), serial - 1),
+        (format!("child.{zone_name}."), serial + 1),
+        (format!("{zone_name}."), serial.wrapping_add(1 << 31)),
+        (format!("{zone_name}."), u32::MAX),
+    ] {
+        let rcode = send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[UpdateRecord::AddSoa {
+                name,
+                ttl: 600,
+                soa: replacement(zone_name, serial),
+            }],
+            None,
+        )
+        .unwrap();
+        assert_eq!(rcode, Rcode::NOERROR, "serial {serial}");
+        assert_eq!(metadata(&app, zone_name).await, before);
+        assert_eq!(app.list_records(zone_name).await, records);
+    }
+}
+
+/// Keep the last advancing SOA and journal every record under that serial.
+#[tokio::test]
+#[serial]
+async fn soa_replacement_versions_the_whole_update_once() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let serial = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
+    let add = |label: &str| UpdateRecord::AddA {
+        name: format!("{label}.{zone_name}."),
+        ttl: 300,
+        addr: "192.0.2.150".to_string(),
+    };
+    let soa = |serial, ttl| UpdateRecord::AddSoa {
+        name: format!("{zone_name}."),
+        ttl,
+        soa: replacement(zone_name, serial),
+    };
+    assert_eq!(
+        send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[
+                add("before"),
+                soa(serial + 10, 600),
+                add("middle"),
+                soa(serial + 20, 900),
+                soa(serial + 15, 1200),
+                soa(serial + 20, 1800),
+                add("after"),
+            ],
+            None
+        )
+        .unwrap(),
+        Rcode::NOERROR,
+    );
+    let after = metadata(&app, zone_name).await;
+    assert_eq!(after["serial"], serial + 20);
+    assert_eq!(after["mname"], format!("ns2.{zone_name}"));
+    assert_eq!(after["rname"], "host.master@example.net");
+    assert_eq!(after["default_ttl"], 900);
+    assert_eq!(after["refresh"], 1800);
+    assert_eq!(after["retry"], 900);
+    assert_eq!(after["expire"], 86400);
+    assert_eq!(after["minimum_ttl"], 600);
+    let (status, history) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{history}");
+    assert_eq!(history["items"].as_array().unwrap().len(), 2);
+    assert_eq!(history["items"][0]["serial"], serial + 20);
+    assert_eq!(history["items"][0]["change_source"], "nsupdate");
+    for (version, count, mname) in [(serial, 0, "ns1"), (serial + 20, 3, "ns2")] {
+        let (status, detail) = app
+            .send_request(
+                Method::GET,
+                &format!("/zones/{zone_name}/versions/{version}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{detail}");
+        assert_eq!(detail["version"]["mname"], format!("{mname}.{zone_name}"));
+        assert_eq!(
+            detail["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["type"] == "A")
+                .count(),
+            count
+        );
+    }
+    let prerequisite = PrerequisiteRecord::SoaEquals {
+        name: format!("{zone_name}."),
+        soa: replacement(zone_name, serial + 20),
+    };
+    assert_eq!(
+        send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[prerequisite],
+            &[add("next")],
+            None
+        )
+        .unwrap(),
+        Rcode::NOERROR
+    );
+    assert_eq!(
+        app.read_zone_serial(zone_name).await,
+        i64::from(serial + 21)
+    );
+    let (status, rollback) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/versions/{serial}/rollback"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{rollback}");
+    let restored = metadata(&app, zone_name).await;
+    for field in [
+        "mname",
+        "rname",
+        "default_ttl",
+        "refresh",
+        "retry",
+        "expire",
+        "minimum_ttl",
+    ] {
+        assert_eq!(restored[field], zone[field], "{field}");
+    }
+    assert!(
+        app.list_records(zone_name)
+            .await
+            .iter()
+            .all(|r| r["type"] != "A")
+    );
+}
+
+/// Require zone:update for SOA changes and preserve TCP response authentication.
+#[tokio::test]
+#[serial]
+async fn soa_replacement_uses_zone_permissions() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "soa-writer", KeyRole::Own).await;
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            "soa-writer",
+            "--zone",
+            zone_name,
+            "--actions",
+            "record:create",
+        ],
+        None,
+    )
+    .await;
+    let before = metadata(&app, zone_name).await;
+    let updates = [UpdateRecord::AddSoa {
+        name: format!("{zone_name}."),
+        ttl: 600,
+        soa: replacement(zone_name, 100),
+    }];
+    assert_eq!(
+        send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        Rcode::REFUSED
+    );
+    assert_eq!(metadata(&app, zone_name).await, before);
+    app.run_cli_success(
+        &[
+            "role",
+            "grant",
+            "soa-writer",
+            "--zone",
+            zone_name,
+            "--actions",
+            "zone:update",
+        ],
+        None,
+    )
+    .await;
+    assert_eq!(
+        send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        Rcode::NOERROR
+    );
+    assert_eq!(app.read_zone_serial(zone_name).await, 100);
+}
+
+/// Policy failures and failed prerequisites roll back SOA and ordinary records together.
+#[tokio::test]
+#[serial]
+async fn soa_replacement_rejects_invalid_changes_atomically() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    assert_eq!(
+        send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[UpdateRecord::AddDname {
+                name: format!("blocked.{zone_name}."),
+                ttl: 300,
+                target: "target.example.net.".to_string(),
+            }],
+            None
+        )
+        .unwrap(),
+        Rcode::NOERROR
+    );
+    let before = metadata(&app, zone_name).await;
+    let records = app.list_records(zone_name).await;
+    for (ttl, soa) in [
+        (30, replacement(zone_name, 100)),
+        (
+            600,
+            Soa::new(
+                parse_name("ns.example.net").unwrap(),
+                parse_name(".").unwrap(),
+                Serial::from(100),
+                Ttl::from_secs(100),
+                Ttl::from_secs(100),
+                Ttl::from_secs(100),
+                Ttl::from_secs(100),
+            ),
+        ),
+        (
+            600,
+            Soa::new(
+                parse_name("ns.example.net").unwrap(),
+                parse_name("admin.example.net").unwrap(),
+                Serial::from(100),
+                Ttl::from_secs(u32::MAX),
+                Ttl::from_secs(100),
+                Ttl::from_secs(100),
+                Ttl::from_secs(100),
+            ),
+        ),
+    ] {
+        let updates = [
+            UpdateRecord::AddA {
+                name: format!("atomic.{zone_name}."),
+                ttl: 300,
+                addr: "192.0.2.151".to_string(),
+            },
+            UpdateRecord::AddSoa {
+                name: format!("{zone_name}."),
+                ttl: 600,
+                soa: replacement(zone_name, 20),
+            },
+            UpdateRecord::AddSoa {
+                name: format!("{zone_name}."),
+                ttl,
+                soa,
+            },
+        ];
+        assert_eq!(
+            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+            Rcode::REFUSED
+        );
+        assert_eq!(metadata(&app, zone_name).await, before);
+        assert_eq!(app.list_records(zone_name).await, records);
+    }
+    let prerequisites = [PrerequisiteRecord::NameInUse {
+        name: format!("absent.{zone_name}."),
+    }];
+    let updates = [UpdateRecord::AddSoa {
+        name: format!("{zone_name}."),
+        ttl: 600,
+        soa: replacement(zone_name, 100),
+    }];
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &prerequisites, &updates, None).unwrap(),
+        Rcode::NXDOMAIN
+    );
+    assert_eq!(metadata(&app, zone_name).await, before);
+
+    // A record conflict after an earlier write must roll back its journal too.
+    let updates = [
+        UpdateRecord::AddA {
+            name: format!("written-first.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.152".to_string(),
+        },
+        UpdateRecord::AddSoa {
+            name: format!("{zone_name}."),
+            ttl: 600,
+            soa: replacement(zone_name, 100),
+        },
+        UpdateRecord::AddA {
+            name: format!("child.blocked.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.153".to_string(),
+        },
+    ];
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+        Rcode::REFUSED
+    );
+    assert_eq!(metadata(&app, zone_name).await, before);
+    assert_eq!(app.list_records(zone_name).await, records);
+    let (status, history) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{history}");
+    assert_eq!(history["items"].as_array().unwrap().len(), 2);
+}
+
+/// An explicit advance to the stored ceiling still permits subsequent SOA no-ops.
+#[tokio::test]
+#[serial]
+async fn soa_noop_accepts_maximum_serial() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    for serial in [i32::MAX as u32, i32::MAX as u32, i32::MAX as u32 - 1] {
+        assert_eq!(
+            send_update_udp(
+                app.dns_port(),
+                zone_name,
+                &[],
+                &[UpdateRecord::AddSoa {
+                    name: format!("{zone_name}."),
+                    ttl: 600,
+                    soa: replacement(zone_name, serial)
+                }],
+                None
+            )
+            .unwrap(),
+            Rcode::NOERROR
+        );
+        assert_eq!(app.read_zone_serial(zone_name).await, i64::from(i32::MAX));
+    }
+}
+
+/// Re-sign the updated SOA and use it in subsequent value-dependent prerequisites.
+#[tokio::test]
+#[serial]
+async fn soa_replacement_updates_the_signed_zone() {
+    use domain::{base::rdata::ComposeRecordData, dep::octseq::parse::Parser, rdata::Rrsig};
+
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({"parent_ns_addrs": ["127.0.0.1:9"]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let before = exported_record_sets(&app, zone_name).await;
+    let soa = replacement(zone_name, 100);
+    assert_eq!(
+        send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[UpdateRecord::AddSoa {
+                name: format!("{zone_name}."),
+                ttl: 900,
+                soa: soa.clone()
+            }],
+            None
+        )
+        .unwrap(),
+        Rcode::NOERROR
+    );
+    let after = exported_record_sets(&app, zone_name).await;
+    let key = (format!("{zone_name}."), Rtype::SOA);
+    let mut expected = Vec::new();
+    soa.compose_rdata(&mut expected).unwrap();
+    assert_eq!(after[&key], [expected]);
+    let key = (format!("{zone_name}."), Rtype::RRSIG);
+    assert_ne!(after[&key], before[&key]);
+    let signatures: Vec<_> = after[&key]
+        .iter()
+        .map(|data| Rrsig::parse(&mut Parser::from_ref(data)).unwrap())
+        .filter(|sig| sig.type_covered() == Rtype::SOA)
+        .collect();
+    assert!(!signatures.is_empty());
+    assert!(
+        signatures
+            .iter()
+            .all(|sig| sig.original_ttl() == Ttl::from_secs(900))
+    );
+    let prerequisites = [PrerequisiteRecord::SoaEquals {
+        name: format!("{zone_name}."),
+        soa,
+    }];
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None).unwrap(),
+        Rcode::NOERROR
+    );
+    assert_eq!(app.read_zone_serial(zone_name).await, 100);
+}
+
+/// Transfer the old and new SOAs around one delta even when the serial skips values.
+#[tokio::test]
+#[serial]
+async fn ixfr_replays_soa_replacement() {
+    use domain::base::{Message, MessageBuilder, iana::Class, rdata::ComposeRecordData};
+
+    let app = unsigned_nsupdate_app().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    // Keep the journal smaller than the zone so the server selects IXFR.
+    let padding: Vec<_> = (0..20)
+        .map(|i| UpdateRecord::AddA {
+            name: format!("padding{i}.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.160".to_string(),
+        })
+        .collect();
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &[], &padding, None).unwrap(),
+        Rcode::NOERROR
+    );
+    let old_serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
+    let before = exported_record_sets(&app, zone_name).await;
+    let soa = replacement(zone_name, old_serial + 10);
+    assert_eq!(
+        send_update_udp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[
+                UpdateRecord::AddSoa {
+                    name: format!("{zone_name}."),
+                    ttl: 600,
+                    soa: soa.clone()
+                },
+                UpdateRecord::AddA {
+                    name: format!("delta.{zone_name}."),
+                    ttl: 300,
+                    addr: "192.0.2.161".to_string()
+                },
+            ],
+            None
+        )
+        .unwrap(),
+        Rcode::NOERROR
+    );
+    let name = parse_name(zone_name).unwrap();
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(0x1234);
+    let mut question = builder.question();
+    question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
+    let mut authority = question.authority();
+    authority
+        .push((
+            &name,
+            Class::IN,
+            Ttl::ZERO,
+            replacement(zone_name, old_serial),
+        ))
+        .unwrap();
+    let response = crate::common::exchange_tcp(app.dns_port(), &authority.finish()).unwrap();
+    let message = Message::from_octets(response).unwrap();
+    assert_eq!(message.header().rcode(), Rcode::NOERROR);
+    let answers: Vec<_> = message.answer().unwrap().map(Result::unwrap).collect();
+    assert_eq!(answers.len(), 5, "IXFR must not fall back to AXFR");
+    let mut new_rdata = Vec::new();
+    soa.compose_rdata(&mut new_rdata).unwrap();
+    let old_rdata = &before[&(format!("{zone_name}."), Rtype::SOA)][0];
+    for (index, ttl, expected) in [
+        (0, 600, &new_rdata),
+        (1, 3600, old_rdata),
+        (2, 600, &new_rdata),
+        (4, 600, &new_rdata),
+    ] {
+        let record = answers[index].to_record::<Soa<_>>().unwrap().unwrap();
+        assert_eq!(record.ttl(), Ttl::from_secs(ttl));
+        let mut data = Vec::new();
+        record.data().compose_rdata(&mut data).unwrap();
+        assert_eq!(&data, expected);
+    }
+    assert_eq!(answers[3].rtype(), Rtype::A);
+    assert_eq!(answers[3].owner().to_string(), format!("delta.{zone_name}"));
+}
+
+/// Reusing a wire serial after a full cycle cannot resurrect old transfer content or history.
+#[tokio::test]
+#[serial]
+async fn soa_serial_reuse_refreshes_the_transfer_cache() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let initial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
+    let key = create_tsig_key(&app, "serial-reuse", KeyRole::Admin).await;
+    let before = crate::common::axfr(app.dns_port(), zone_name, Some(&key))
+        .unwrap()
+        .records();
+    for (index, serial) in [
+        initial.wrapping_add(0x7fff_ffff),
+        initial.wrapping_sub(2),
+        initial,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut updates = vec![UpdateRecord::AddSoa {
+            name: format!("{zone_name}."),
+            ttl: 600,
+            soa: replacement(zone_name, serial),
+        }];
+        if index == 0 {
+            updates.push(UpdateRecord::AddA {
+                name: format!("new.{zone_name}."),
+                ttl: 300,
+                addr: "192.0.2.99".into(),
+            });
+        }
+        assert_eq!(
+            send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+            Rcode::NOERROR
+        );
+    }
+    assert_eq!(app.read_zone_serial(zone_name).await, i64::from(initial));
+    assert_eq!(
+        crate::common::axfr(app.dns_port(), zone_name, Some(&key))
+            .unwrap()
+            .records(),
+        before + 1
+    );
+    let (_, history) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    assert_eq!(history["items"].as_array().unwrap().len(), 2, "{history}");
+    // RFC 2136, Section 3.6 still requires an increment if one atomic request
+    // traverses the whole circle and finishes with the original serial.
+    let updates: Vec<_> = [
+        initial.wrapping_add(0x7fff_ffff),
+        initial.wrapping_sub(2),
+        initial,
+    ]
+    .into_iter()
+    .map(|serial| UpdateRecord::AddSoa {
+        name: format!("{zone_name}."),
+        ttl: 600,
+        soa: replacement(zone_name, serial),
+    })
+    .collect();
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        Rcode::NOERROR
+    );
+    assert_eq!(
+        app.read_zone_serial(zone_name).await,
+        i64::from(initial.wrapping_add(1))
+    );
+}
+
+/// Start a local daemon accepting unsigned DNS updates.
+async fn unsigned_nsupdate_app() -> TestApp {
+    TestApp::start_with_options(TestAppOptions {
+        nsupdate_tsig_required: false,
+        ..TestAppOptions::default()
+    })
+    .await
 }

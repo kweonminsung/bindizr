@@ -5,6 +5,7 @@ use crate::common::{TestApp, probe_zone_soa};
 
 mod history;
 mod import;
+mod status;
 
 /// Verify zone creation, retrieval, update, and deletion.
 #[tokio::test]
@@ -478,76 +479,6 @@ async fn zone_rename_enforces_record_wire_length_limit() {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// Verify that a rollback keeps every restored record inside the wire limit.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn zone_rollback_enforces_restored_record_wire_length_limit() {
-    let app = TestApp::start().await;
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            "/zones",
-            Some(json!({
-                "name": "c.co",
-                "mname": "ns.c.co",
-                "rname": "admin@c.co",
-                "default_ttl": 3600
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    let owner = [
-        "a".repeat(63),
-        "b".repeat(63),
-        "c".repeat(63),
-        "d".repeat(50),
-    ]
-    .join(".");
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            "/records",
-            Some(json!({
-                "name": owner,
-                "type": "A",
-                "value": "192.0.2.1",
-                "zone_name": "c.co"
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    let record_id = body["record"]["id"].as_i64().unwrap();
-    let (_, zone_at_target) = app.send_request(Method::GET, "/zones/c.co", None).await;
-    let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
-
-    // With the long name gone the rename passes; the history still holds it.
-    let (status, _) = app
-        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
-        .await;
-    assert!(status.is_success(), "{status}");
-    let (status, body) = app
-        .send_request(
-            Method::PUT,
-            "/zones/c.co",
-            Some(json!({ "name": "rollback-length.example" })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-
-    // Restoring that serial would bring the name back under a zone it no
-    // longer fits, so the rollback is refused whole.
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/rollback-length.example/versions/{target_serial}/rollback"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.to_string().contains("bytes or fewer"), "{body}");
-}
-
 /// Verify that a zone cannot take the catalog zone's name, however spelled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -778,58 +709,6 @@ async fn zone_rejects_invalid_name_and_ttl() {
             .await;
         assert_eq!(status, StatusCode::CREATED);
     }
-}
-
-/// Verify that `zone_status` reports secondaries.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn zone_status_reports_secondaries() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    let (status, body) = app
-        .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zone_name"], zone_name);
-    assert_eq!(
-        body["serial"].as_i64().unwrap(),
-        zone["serial"].as_i64().unwrap()
-    );
-
-    let secondaries = body["secondaries"].as_array().expect("missing secondaries");
-    if app.has_dns_secondaries() {
-        // Compose mode: both BIND9 secondaries must converge to in_sync.
-        assert_eq!(secondaries.len(), 2);
-        let mut attempts = 0;
-        loop {
-            let (_, body) = app
-                .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
-                .await;
-            let all_in_sync = body["secondaries"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|s| s["status"] == "in_sync");
-            if all_in_sync {
-                break;
-            }
-            attempts += 1;
-            assert!(attempts < 60, "secondaries never reached in_sync: {body}");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-    } else {
-        // Local mode has no secondaries configured.
-        assert!(secondaries.is_empty());
-    }
-
-    let missing_zone = app.zone_name("missing.example");
-    let (status, body) = app
-        .send_request(Method::GET, &format!("/zones/{missing_zone}/status"), None)
-        .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
 /// Verify that a disabled zone stops answering DNS while remaining editable through the API.
