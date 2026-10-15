@@ -7,7 +7,7 @@ use domain::{
         MessageBuilder, Name, Record, Ttl, UnknownRecordData,
         iana::{Class, Rcode},
     },
-    rdata::{A, Mx, Srv, Txt},
+    rdata::{A, Cname, Mx, Srv, Txt},
 };
 use serde_json::{Value, json};
 
@@ -74,6 +74,29 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
             .unwrap();
     }
 
+    let escaped = Name::<Vec<u8>>::from_str(r"a\046b.\255.caf\195\169.\;meta.example").unwrap();
+    answer
+        .push(Record::new(&owner, Class::IN, ttl, Cname::new(&escaped)))
+        .unwrap();
+    answer
+        .push(Record::new(
+            &owner,
+            Class::IN,
+            ttl,
+            Txt::from_octets(vec![2, 0, 255, 1, 195, 1, 169, 0]).unwrap(),
+        ))
+        .unwrap();
+    for bytes in [b"".as_slice(), &[0, 255, 192, 12]] {
+        answer
+            .push(Record::new(
+                &owner,
+                Class::IN,
+                ttl,
+                UnknownRecordData::from_octets(Rtype::from_int(65280), bytes).unwrap(),
+            ))
+            .unwrap();
+    }
+
     let records = extract_dns_records(7, &answer.finish()).unwrap();
     let values: Vec<(u16, Option<Value>)> = records
         .into_iter()
@@ -90,6 +113,13 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
             (16, Some(json!(["ab", "c"]))),
             (257, Some(json!(r#"0 issue """#))),
             (257, Some(json!(r#"128 custom "\000\255\010\"\\""#))),
+            (5, Some(json!(r"a\046b.\255.caf\195\169.\;meta.example."))),
+            (
+                16,
+                Some(json!({ "presentation": r#""\000\255" "\195" "\169" """# }))
+            ),
+            (65280, Some(json!(r"\# 0"))),
+            (65280, Some(json!(r"\# 4 00FFC00C"))),
         ]
     );
 }

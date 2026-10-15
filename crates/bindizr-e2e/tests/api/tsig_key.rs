@@ -6,7 +6,7 @@ use crate::common::TestApp;
 /// Verify TSIG key creation, retrieval, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tsig_key_create_read_delete() {
+async fn tsig_key_supports_create_read_and_delete() {
     let app = TestApp::start().await;
 
     let (status, body) = app

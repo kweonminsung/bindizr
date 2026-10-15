@@ -141,8 +141,8 @@ pub(crate) async fn list_by_filter(
           AND (? IS NULL OR enabled = ?)
           AND (
                 ? IS NULL
-                OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
-                OR LOWER(mname) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(name USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(mname USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(rname) LIKE LOWER(?) ESCAPE '\\'
           )
           AND (
@@ -237,8 +237,8 @@ pub(crate) async fn count_by_filter(
           AND (? IS NULL OR enabled = ?)
           AND (
                 ? IS NULL
-                OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
-                OR LOWER(mname) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(name USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(mname USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(rname) LIKE LOWER(?) ESCAPE '\\'
           )
           AND (

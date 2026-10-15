@@ -50,7 +50,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
 
 /// Verify that every key advertises a SHA-256 DS digest.
 #[test]
-fn every_key_advertises_a_sha256_ds_digest() {
+fn dnssec_keys_advertise_sha256_ds_digest() {
     let zone = test_zone();
     let key = DnssecKey::generate(
         &zone,
@@ -101,7 +101,7 @@ fn ds_rdata_pairs_the_key_with_each_supported_digest() {
 
 /// Verify that ed448 keys generate and sign.
 #[test]
-fn ed448_keys_generate_and_sign() {
+fn ed448_keys_generate_verifiable_signatures() {
     let zone = test_zone();
     let mut key = DnssecKey::generate(
         &zone,
@@ -138,7 +138,7 @@ fn ed448_keys_generate_and_sign() {
 
 /// Verify that rsa keys generate and sign.
 #[test]
-fn rsa_keys_generate_and_sign() {
+fn rsa_keys_generate_verifiable_signatures() {
     let zone = test_zone();
     let mut key = DnssecKey::generate(
         &zone,

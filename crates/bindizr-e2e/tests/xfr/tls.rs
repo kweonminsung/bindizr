@@ -1,6 +1,5 @@
-//! Zone transfers over TLS (XoT, RFC 9103): the second listener serves what
-//! the plain one does, but admits a request only when its TSIG key and its
-//! address both pass, as Section 7.5 requires without mTLS.
+//! Zone transfers over TLS require both TSIG and address authorization
+//! without mTLS (RFC 9103, Section 7.5).
 
 use domain::{
     base::{
@@ -66,7 +65,7 @@ fn dot_client(app: &TestApp) -> ClientConfig {
 /// together, while the plain listener keeps admitting either alone.
 #[tokio::test]
 #[serial]
-async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
+async fn tls_transfer_requires_key_and_registered_address() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -123,7 +122,26 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
             app.create_secondary("loopback", "127.0.0.1").await;
         }
         for zone_name in [zone["name"].as_str().unwrap(), "catalog.bindizr"] {
-            for serial in [current, current + 1] {
+            let expected = if registered {
+                let query = build_edns_query(zone_name, Rtype::SOA, &[]);
+                let response = exchange_request(query, Some(&key), |message| {
+                    exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                })
+                .unwrap();
+                response
+                    .answer()
+                    .unwrap()
+                    .limit_to::<Soa<_>>()
+                    .next()
+                    .unwrap()
+                    .unwrap()
+                    .data()
+                    .serial()
+                    .into_int()
+            } else {
+                current
+            };
+            for serial in [expected, expected.wrapping_add(1)] {
                 let query = build_ixfr_query(zone_name, serial);
                 let response = exchange_request(query, Some(&key), |message| {
                     exchange_xot(app.dns_tls_port(), message, dot_client(&app))
@@ -133,11 +151,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
                     assert_eq!(response.header().rcode(), Rcode::NOERROR);
                     assert!(response.header().aa() && !response.header().tc());
                     assert_eq!(response.sole_question().unwrap().qtype(), Rtype::IXFR);
-                    if serial == current {
-                        assert_eq!(response.header_counts().ancount(), 1);
-                    } else {
-                        assert!(response.header_counts().ancount() > 1);
-                    }
+                    assert_eq!(response.header_counts().ancount(), 1);
                     let soa = response
                         .answer()
                         .unwrap()
@@ -145,7 +159,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
                         .next()
                         .unwrap()
                         .unwrap();
-                    assert_eq!(soa.data().serial().into_int(), current);
+                    assert_eq!(soa.data().serial().into_int(), expected);
                 } else {
                     assert_eq!(response.header().rcode(), Rcode::REFUSED);
                     assert_eq!(response.header_counts().ancount(), 0);
@@ -158,7 +172,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
 /// Echo DO in signed TLS responses, including REFUSED and BADVERS.
 #[tokio::test]
 #[serial]
-async fn edns_dnssec_ok_is_echoed_over_tls() {
+async fn tls_response_preserves_edns_dnssec_ok() {
     let app = xot_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
@@ -324,8 +338,7 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
     assert_eq!(response.header_counts().ancount(), 0);
 }
 
-/// Verify that `dns.transfer.require_tls` refuses a transfer over plain TCP
-/// and UDP while SOA queries and the transfer over TLS keep working
+/// Verify `require_tls` refuses plain TCP/UDP transfers while allowing SOA and TLS
 /// (RFC 9103, Section 11).
 #[tokio::test]
 #[serial]
@@ -377,7 +390,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
 /// certificate serves without a restart.
 #[tokio::test]
 #[serial]
-async fn a_reload_picks_up_a_renewed_certificate() {
+async fn config_reload_replaces_dns_tls_certificate() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -412,7 +425,7 @@ async fn a_reload_picks_up_a_renewed_certificate() {
 /// that a client naming no ALPN is closed without a transfer.
 #[tokio::test]
 #[serial]
-async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
+async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -443,7 +456,7 @@ async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
 /// extended DNS error 21, Not Supported (RFC 9103, Section 7.8).
 #[tokio::test]
 #[serial]
-async fn a_query_the_tls_listener_does_not_serve_is_refused_as_not_supported() {
+async fn tls_query_returns_not_supported_for_unserved_type() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -473,12 +486,11 @@ async fn a_query_the_tls_listener_does_not_serve_is_refused_as_not_supported() {
     );
 }
 
-/// Verify that an UPDATE sent to the TLS listener, which serves transfers
-/// alone, is refused as not supported (RFC 9103, Section 7.8), under its key
-/// when it has one (RFC 8945, Section 5.3).
+/// Verify the transfer-only TLS listener refuses UPDATE (RFC 9103, Section 7.8),
+/// signing the refusal when a key is present (RFC 8945, Section 5.3).
 #[tokio::test]
 #[serial]
-async fn an_update_over_tls_is_refused_as_not_supported() {
+async fn tls_update_returns_not_supported() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

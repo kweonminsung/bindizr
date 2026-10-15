@@ -21,7 +21,7 @@ pub(crate) async fn force_increment_serial(
             .await?
             .authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
-        let new_serial = generate_serial(Some(zone.serial))?;
+        let new_serial = generate_serial(Some(zone.serial));
         let updated_zone = bindizr_db::zone::update_tx(
             &mut tx,
             Zone {

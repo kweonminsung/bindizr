@@ -56,6 +56,44 @@ fn config_check_accepts_a_config_flag() {
     assert!(stdout.contains("valid"));
 }
 
+/// Environment overrides accept wildcard DNS listeners for either address family.
+#[test]
+#[serial_test::serial(bindizr_e2e)]
+fn config_check_accepts_wildcard_dns_addresses() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config_path = temp_dir.path().join("bindizr.conf.toml");
+    std::fs::write(&config_path, VALID_CONFIG).unwrap();
+    let path = config_path.to_str().unwrap();
+    for addr in ["0.0.0.0", "::"] {
+        let output = run_config_check(Some(path), &[("BINDIZR_DNS_LISTEN_ADDR", addr)]);
+        assert_cli_success(&["config", "check"], &output);
+    }
+}
+
+/// Configuration checks accept omitted listener, backend, and logging settings.
+#[test]
+#[serial_test::serial(bindizr_e2e)]
+fn config_check_defaults_omitted_sections() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config_path = temp_dir.path().join("bindizr.conf.toml");
+    let path = config_path.to_str().unwrap();
+    std::fs::write(
+        &config_path,
+        "[database.sqlite]\nfile_path = \"bindizr.sqlite\"\n",
+    )
+    .unwrap();
+    let output = run_config_check(Some(path), &[]);
+    assert_cli_success(&["config", "check"], &output);
+
+    // With no sections in the file, the database location can come from the environment.
+    std::fs::write(&config_path, "").unwrap();
+    let output = run_config_check(
+        Some(path),
+        &[("BINDIZR_DATABASE_SQLITE_FILE_PATH", "bindizr.sqlite")],
+    );
+    assert_cli_success(&["config", "check"], &output);
+}
+
 /// Verify that config check uses config path env without argument.
 #[test]
 #[serial_test::serial(bindizr_e2e)]

@@ -14,7 +14,9 @@ bindizr zone get example.com
 ```
 
 `--mname` and `--rname` are required. The zone starts at serial 1 unless
-`--serial` is given, and includes an apex `NS` record naming `--mname`.
+`--serial` is given, and includes an apex `NS` record naming `--mname`. Serials
+accept 0–4294967295 and advance modulo 2^32. Zone and record names accept DNS
+octets with RFC 1035 escapes, including `\DDD` for arbitrary bytes.
 Use `--no-apex-ns` to supply the NS records yourself.
 
 Add any other name servers and address records for names inside the zone.
@@ -48,11 +50,21 @@ bindizr record update --id 42 --value 192.0.2.2
 
 Use `--new-name` to rename a record. A TXT value over 255 bytes is split into
 segments automatically; repeat `--value` to choose the segments yourself.
-Resolvers join them without inserting spaces.
+Resolvers join them without inserting spaces. Zone-file imports preserve
+arbitrary TXT octets, for example `txt IN TXT "\255\000"`. The HTTP API
+also accepts `"value": {"presentation": "\"\\255\\000\""}`; ordinary strings
+and arrays still represent raw text. Binary TXT responses use this explicit
+presentation object so they can be sent back unchanged.
 
 CAA values use `<flags> <tag> <value>`. An empty property value is written `""`;
 binary octets use DNS decimal escapes such as `\000` and `\255`. Tags contain
-1–255 ASCII letters or digits (RFC 8659, Section 4.1).
+1–255 ASCII letters or digits and retain their case. Management creation accepts
+flags `0` or `128`; imports and DNS UPDATE preserve unknown flag bits
+(RFC 8659, Section 4.1).
+
+Other ordinary DNS types use `TYPE<number>` with RFC 3597 generic values,
+for example `--type TYPE65280 --value '\# 2 CAFe'`. The declared length
+must match the hex octets; `\# 0` represents empty RDATA.
 
 NAPTR flags may be empty or contain ASCII letters and digits. Their meaning
 depends on the application; letter case is preserved (RFC 3403, Section 4.1).
@@ -117,9 +129,8 @@ Choose an import mode explicitly when replacing existing data:
 
 `--from-server` imports over AXFR instead of reading a file. With `--create`,
 a missing zone is created from the source SOA, preserving its timers and
-using its serial as the starting value. That serial must be between 1 and
-2,137,483,647; otherwise both dry run and apply fail without creating the
-zone. Applying record changes advances it once. `[dns.import]` bounds the
+using its serial as the starting value across the full unsigned 32-bit range.
+Applying record changes advances it once modulo 2^32. `[dns.import]` bounds the
 pull, 30 seconds and 200,000 records by default. See
 [Migrating an Existing Primary](../deployment/migrating.md).
 
@@ -137,7 +148,8 @@ or `from_server`, with the same `mode`, `dry_run`, and `skip_unsupported` option
 
 ## Zone history
 
-Each serial has a saved version. Rollback restores its records and SOA fields
+Each serial has a saved version. Versions outside the unambiguous RFC 1982
+half-range behind the current serial are retired with their journal entries. Rollback restores its records and SOA fields
 while advancing the serial, so secondaries receive the change:
 
 ```bash

@@ -197,6 +197,7 @@ pub(crate) async fn validate_record_changes_tx(
         RecordType::Cname,
         RecordType::Mx,
         RecordType::Srv,
+        RecordType::Ptr,
     ];
     let mut records = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
         Vec::new()
@@ -276,7 +277,7 @@ pub(crate) async fn validate_record_changes_tx(
                 RecordType::Srv => SrvRecordValue::parse(&record.value, record.priority)
                     .ok()
                     .map(|srv| srv.target().to_string()),
-                RecordType::Ns | RecordType::Mx => Some(record.value.clone()),
+                RecordType::Ns | RecordType::Mx | RecordType::Ptr => Some(record.value.clone()),
                 _ => continue,
             };
             let Some(owner) = target
@@ -286,7 +287,7 @@ pub(crate) async fn validate_record_changes_tx(
             };
             if cnames.contains(&owner) {
                 return Err(ServiceError::record_conflict(
-                    "an NS, MX, or SRV record cannot name a CNAME record of this zone as its target (RFC 2181, Section 10.3; RFC 2782)",
+                    "an NS, MX, PTR, or SRV record cannot name a CNAME record of this zone as its target (RFC 2181, Sections 10.2–10.3; RFC 2782)",
                 ));
             }
         }

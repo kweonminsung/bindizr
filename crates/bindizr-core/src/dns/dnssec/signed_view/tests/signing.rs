@@ -1,6 +1,8 @@
+use domain::{crypto::common::PublicKey, dep::octseq::Parser, rdata::Rrsig};
+
 use super::*;
 use crate::{
-    dns::SoaInterval,
+    dns::{SoaInterval, record::EncodedRdata},
     model::{record::RecordId, zone::ZoneId},
 };
 
@@ -135,6 +137,89 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     assert!(rrsigs.iter().all(|row| row.record_set_digest.is_some()));
 }
 
+#[test]
+fn signatures_validate_case_preserving_rdata() {
+    let zone = test_zone();
+    let keys = [test_key(
+        &zone,
+        1,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+    )];
+    let apex = zone.name.to_wire_name().unwrap();
+    let signer = Signer::new(&apex, &keys[0]).unwrap();
+    let public_key = PublicKey::from_dnskey(&signer.dnskey).unwrap();
+
+    for (record_type, value, canonical_value, priority) in [
+        (
+            RecordType::Dname,
+            "MiXeD.Example.NET.",
+            "mixed.example.net.",
+            None,
+        ),
+        (
+            RecordType::Srv,
+            "5 443 MiXeD.Example.NET.",
+            "5 443 mixed.example.net.",
+            Some(10),
+        ),
+        (
+            RecordType::Naptr,
+            r#"1 2 "S" "SIP+D2U" "" MiXeD.Example.NET."#,
+            r#"1 2 "S" "SIP+D2U" "" mixed.example.net."#,
+            None,
+        ),
+        (
+            RecordType::Unknown(65280),
+            r"\# 4 41FF5A00",
+            r"\# 4 41FF5A00",
+            None,
+        ),
+    ] {
+        let mut record = test_record("target", record_type, value, 300);
+        record.priority = priority;
+        let records = [record];
+        let diff = compute(ComputeArgs {
+            zone: &zone,
+            records: &records,
+            keys: &keys,
+            prev: &[],
+            denial: DnssecDenial::Nsec,
+            new_serial: 6,
+            expiration: default_expiration(),
+            expiration_jitter_secs: 0,
+            pass: SigningPass::Full,
+        });
+        let rows = rrsigs_covering(
+            &diff.added,
+            &records[0].name,
+            i32::from(record_type.wire_type()),
+        );
+        assert_eq!(rows.len(), 1);
+        let wire = rows[0].rdata.as_bytes();
+        let signature = Rrsig::parse(&mut Parser::from_ref(wire)).unwrap();
+        let rdata = EncodedRdata::from_columns(&record_type, canonical_value, priority)
+            .unwrap()
+            .rdata;
+
+        // RFC 4034: RRSIG fields without the signature, then the canonical RR.
+        let mut signed_data = wire[..wire.len() - signature.signature().len()].to_vec();
+        signed_data.extend_from_slice(records[0].name.to_wire_name(&zone.name).unwrap().as_slice());
+        signed_data.extend_from_slice(&record_type.wire_type().to_be_bytes());
+        signed_data.extend_from_slice(&1u16.to_be_bytes());
+        signed_data.extend_from_slice(&signature.original_ttl().as_secs().to_be_bytes());
+        signed_data.extend_from_slice(&(rdata.as_bytes().len() as u16).to_be_bytes());
+        signed_data.extend_from_slice(rdata.as_bytes());
+        assert!(
+            public_key
+                .verify(&signed_data, signature.signature())
+                .is_ok(),
+            "invalid {record_type} signature"
+        );
+        assert_eq!(records[0].value, value);
+    }
+}
+
 /// Verify that NSEC3 mode builds hashed chain with nsec3param.
 #[test]
 fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
@@ -199,7 +284,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
 
 /// Verify that delegation NS and glue are unsigned.
 #[test]
-fn delegation_ns_and_glue_are_unsigned() {
+fn signing_leaves_delegation_ns_and_glue_unsigned() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,

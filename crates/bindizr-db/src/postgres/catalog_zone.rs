@@ -21,7 +21,7 @@ pub(crate) async fn upsert_tx(
         DO UPDATE SET
             serial = CASE
                 WHEN catalog_zones.digest = EXCLUDED.digest THEN catalog_zones.serial
-                ELSE GREATEST(catalog_zones.serial + 1, EXCLUDED.serial)
+                ELSE MOD(catalog_zones.serial + 1, 4294967296)
             END,
             digest = EXCLUDED.digest
         RETURNING serial

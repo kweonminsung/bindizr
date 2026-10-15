@@ -3,7 +3,7 @@
 use super::ParseRecordValueError;
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
-    name::{MAX_DOMAIN_LEN, decode_name_labels, has_whitespace_or_control},
+    name::{MAX_DOMAIN_LEN, decode_name_labels},
     tsig::MAX_TSIG_RECORD,
 };
 
@@ -40,9 +40,8 @@ pub(crate) fn parse_u8_record_field(
         })
 }
 
-/// Decode a hex field that presentation form may split into whitespace-
-/// separated groups, as `dig` prints. RFC 1035 `(`/`)` markers are dropped:
-/// nsupdate and import re-parse `domain`'s form, which wraps hex in them.
+/// Decode whitespace-separated hex, ignoring RFC 1035 `(`/`)` markers
+/// that `domain` emits and nsupdate/import re-parse.
 pub(crate) fn parse_hex_record_field<'a>(
     field: &'static str,
     groups: impl Iterator<Item = &'a str>,
@@ -176,16 +175,10 @@ pub(crate) fn validate_domain_record_value(
         return Err(ParseRecordValueError::Empty { field });
     }
 
-    // Escapes reach the labels below; this catches the raw octets, which no
-    // presentation form can spell back.
-    if has_whitespace_or_control(value) {
-        return Err(ParseRecordValueError::Whitespace { field });
-    }
-
     if trimmed == "." {
         return Err(ParseRecordValueError::RootZone { field });
     }
-    decode_name_labels(trimmed).map_err(|source| ParseRecordValueError::Name { field, source })?;
+    decode_name_labels(value).map_err(|source| ParseRecordValueError::Name { field, source })?;
 
     Ok(())
 }
@@ -197,7 +190,7 @@ mod tests {
     /// Verify that record-value names accept non-LDH owner labels under
     /// RFC 2181, Section 11.
     #[test]
-    fn accepts_the_labels_an_owner_name_may_carry() {
+    fn record_value_accepts_non_ldh_owner_labels() {
         for value in [
             r"evil\.example.com", // one label `evil.example`, not a subdomain
             r"a\\b.example.com",
@@ -213,7 +206,7 @@ mod tests {
 
     /// Verify rejection of record names that cannot round-trip through presentation text.
     #[test]
-    fn rejects_what_no_presentation_form_spells_back() {
+    fn record_value_rejects_names_without_reversible_presentation() {
         for value in [
             "",
             ".",

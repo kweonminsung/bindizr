@@ -55,7 +55,10 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
         // A whole-name delete touches every type at the name, so a type-limited
         // grant cannot cover it.
         None => false,
-        Some(record_type) => types.split(',').any(|t| t == record_type.as_str()),
+        Some(record_type) => {
+            let record_type = record_type.to_text();
+            types.split(',').any(|t| t == record_type)
+        }
     }
 }
 
@@ -86,7 +89,7 @@ mod tests {
 
     /// Verify that a subtree grant does not reach a label that merely spells it.
     #[test]
-    fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
+    fn subtree_grant_rejects_escaped_label_boundary() {
         // `a\.sub` is the single label `a.sub`, not a name under `sub`.
         assert!(!matches_name("*.sub", &OwnerName::from_row(r"a\.sub")));
         assert!(matches_name("*.sub", &OwnerName::from_row(r"a\.b.sub")));

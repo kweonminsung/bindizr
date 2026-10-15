@@ -12,7 +12,7 @@ use crate::common::{
 /// Verify secondary registration, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn secondary_create_read_update_delete() {
+async fn secondary_supports_create_read_update_and_delete() {
     let app = TestApp::start().await;
     let name = format!("{}-ns2", app.namespace());
 
@@ -150,7 +150,7 @@ async fn secondary_rejects_a_bad_name_or_address() {
 /// another key fails the NOTIFY rather than passing it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
+async fn notify_signs_requests_when_secondary_has_key() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

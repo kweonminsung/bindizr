@@ -120,3 +120,73 @@ async fn actor_columns_reject_partial_or_unknown_identities() {
         );
     }
 }
+
+/// Cyclic queries span MAX to zero; pruning retains only unambiguous history.
+#[tokio::test]
+async fn history_ranges_and_catalog_serials_wrap() {
+    let (pool, mut version) = fixture().await;
+    let mut tx = pool.begin().await.unwrap();
+    for serial in [u32::MAX - 1, u32::MAX, 0, 1, 0x8000_0001] {
+        version.serial = Serial::from(serial);
+        upsert_tx(&mut tx, version.clone()).await.unwrap();
+        sqlx::query("INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES (1, ?, 'ADD', 'www', 'A', '192.0.2.1', NULL, 300, NULL, FALSE, ?)")
+            .bind(version.serial).bind(Utc::now()).execute(&mut *tx).await.unwrap();
+    }
+    let from = Serial::from(u32::MAX);
+    let to = Serial::from(1);
+    let mut versions: Vec<_> = list_in_serial_range_tx(&mut tx, version.zone_id, from, to)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|v| v.serial.as_u32())
+        .collect();
+    versions.sort_unstable();
+    assert_eq!(versions, [0, 1, u32::MAX]);
+    let journal = crate::sqlite::zone_change::list_between_serials_tx(
+        &mut tx,
+        version.zone_id,
+        from,
+        to,
+        LockLevel::Unlocked,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        journal
+            .iter()
+            .map(|c| c.serial.as_u32())
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert_eq!(
+        prune_outside_serial_window_tx(&mut tx, version.zone_id, to)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        crate::sqlite::zone_change::prune_outside_serial_window_tx(&mut tx, version.zone_id, to)
+            .await
+            .unwrap(),
+        1
+    );
+    let catalog = bindizr_core::dns::name::ZoneName::parse("catalog.example").unwrap();
+    assert_eq!(
+        crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "one", from)
+            .await
+            .unwrap(),
+        from
+    );
+    assert_eq!(
+        crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
+            .await
+            .unwrap(),
+        Serial::from(0)
+    );
+    assert_eq!(
+        crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
+            .await
+            .unwrap(),
+        Serial::from(0)
+    );
+}

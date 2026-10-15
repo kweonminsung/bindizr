@@ -199,7 +199,7 @@ async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
 
 /// Verify that `negotiate` rejects a token with no manageable names.
 #[tokio::test]
-async fn negotiate_rejects_a_token_with_no_manageable_names() {
+async fn negotiate_rejects_token_without_manageable_names() {
     let (_, records, changes) = ok_mock_bodies();
     let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
@@ -497,7 +497,7 @@ async fn healthz_reflects_bindizr_reachability() {
 
 /// Verify that healthz is unready when the token reaches no zone.
 #[tokio::test]
-async fn healthz_is_unready_with_no_manageable_names() {
+async fn healthz_reports_unready_without_manageable_names() {
     // `negotiate` already refuses this, so readiness must not stay green and
     // leave the sidecar taking traffic it can do nothing with.
     let (_, records, changes) = ok_mock_bodies();

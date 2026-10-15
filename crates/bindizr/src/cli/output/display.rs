@@ -1,8 +1,13 @@
 //! Shared CLI cells for absent values, flags, time, truncation, and combined fields.
 //! Use a type's `Display` where available.
 
-use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
-use bindizr_service::types::{RecordValue, TransferResponse, TransferSummaryResponse};
+use bindizr_core::{
+    dns::Serial,
+    model::transfer::{TransferKind, TransferResult, TransferTransport},
+};
+use bindizr_service::types::{
+    RecordValue, SecondaryStatus, TransferResponse, TransferSummaryResponse,
+};
 use chrono::Utc;
 
 /// What a cell shows for a value that is absent.
@@ -17,6 +22,27 @@ pub(crate) fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {
 /// Render a boolean as yes or no.
 pub(crate) fn display_yes_no(value: &bool) -> String {
     if *value { "yes" } else { "no" }.to_string()
+}
+
+/// Serial distance behind the zone, negative when ahead; unordered values show `-`.
+pub(crate) fn display_serial_lag(
+    zone_serial: Serial,
+    visible_serial: Option<Serial>,
+    status: SecondaryStatus,
+) -> String {
+    match (status, visible_serial) {
+        (SecondaryStatus::InSync, Some(_)) => "0".to_string(),
+        (SecondaryStatus::Lagging, Some(visible)) => zone_serial
+            .as_u32()
+            .wrapping_sub(visible.as_u32())
+            .to_string(),
+        (SecondaryStatus::Ahead, Some(visible)) => {
+            (-i64::from(visible.as_u32().wrapping_sub(zone_serial.as_u32()))).to_string()
+        }
+        (SecondaryStatus::Reachable | SecondaryStatus::Unreachable, _) | (_, None) => {
+            MISSING_CELL.to_string()
+        }
+    }
 }
 
 /// The longest value a listing cell shows: one DKIM key would otherwise widen

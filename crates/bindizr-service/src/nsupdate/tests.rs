@@ -24,7 +24,7 @@ fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
         )
         .unwrap()
         .labels(),
-        ["host.name"]
+        [b"host.name".to_vec()]
     );
 }
 

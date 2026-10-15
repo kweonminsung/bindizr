@@ -18,8 +18,8 @@ use bindizr_service::types::{
 use tabled::Tabled;
 
 use super::display::{
-    MISSING_CELL, display_option, display_option_time, display_record_value, display_time,
-    display_transfer, display_transfer_kind, display_yes_no,
+    MISSING_CELL, display_option, display_option_time, display_record_value, display_serial_lag,
+    display_time, display_transfer, display_transfer_kind, display_yes_no,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
@@ -375,10 +375,7 @@ impl SecondaryStatusRow {
             address: secondary.address.clone(),
             status: detail,
             visible_serial: display_option(&secondary.visible_serial),
-            lag: secondary.visible_serial.map_or_else(
-                || MISSING_CELL.to_string(),
-                |serial| (i64::from(zone_serial.as_u32()) - i64::from(serial.as_u32())).to_string(),
-            ),
+            lag: display_serial_lag(zone_serial, secondary.visible_serial, secondary.status),
             last_transfer: secondary
                 .last_transfer
                 .as_ref()
@@ -622,6 +619,44 @@ impl From<&TransferResponse> for TransferRow {
             address: transfer.address.clone(),
             at: display_time(transfer.at),
             error: display_option(&transfer.error),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bindizr_service::types::SecondaryStatus;
+
+    use super::*;
+
+    #[test]
+    fn secondary_status_row_displays_serial_lag_across_wraparound() {
+        use SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};
+
+        for (zone_serial, visible_serial, status, lag) in [
+            (10, Some(10), InSync, "0"),
+            (11, Some(10), Lagging, "1"),
+            (10, Some(11), Ahead, "-1"),
+            (0, Some(u32::MAX), Lagging, "1"),
+            (u32::MAX, Some(0), Ahead, "-1"),
+            (0x7fff_ffff, Some(0), Lagging, "2147483647"),
+            (0, Some(0x7fff_ffff), Ahead, "-2147483647"),
+            (0, Some(0x8000_0000), Reachable, "-"),
+            (0x8000_0000, Some(0), Reachable, "-"),
+            (0, None, Unreachable, "-"),
+        ] {
+            let secondary = SecondaryStatusResponse {
+                address: "127.0.0.1:53".to_string(),
+                status,
+                visible_serial: visible_serial.map(Serial::from),
+                error: None,
+                last_transfer: None,
+            };
+            let row = SecondaryStatusRow::from_secondary(&secondary, Serial::from(zone_serial));
+            assert_eq!(
+                row.lag, lag,
+                "{zone_serial} vs {visible_serial:?}: {status}"
+            );
         }
     }
 }

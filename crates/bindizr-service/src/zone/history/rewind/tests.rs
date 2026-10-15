@@ -65,7 +65,7 @@ fn values(records: &[RecordData]) -> Vec<&str> {
 
 /// Verify that undoing an add takes the record back out.
 #[test]
-fn undoing_an_add_takes_the_record_back_out() {
+fn rewind_removes_added_record() {
     let records = vec![record(1, "www", "192.0.2.1"), record(2, "www", "192.0.2.2")];
     let changes = [change(
         5,
@@ -80,7 +80,7 @@ fn undoing_an_add_takes_the_record_back_out() {
 
 /// Verify that undoing a delete restores the row the journal kept.
 #[test]
-fn undoing_a_delete_restores_the_row_the_journal_kept() {
+fn rewind_restores_deleted_record_from_journal() {
     let changes = [change(
         5,
         ChangeOperation::Delete,
@@ -97,7 +97,7 @@ fn undoing_a_delete_restores_the_row_the_journal_kept() {
 
 /// Verify that only one of two identical records comes out.
 #[test]
-fn only_one_of_two_identical_records_comes_out() {
+fn rewind_removes_only_one_identical_record() {
     // The match key ignores row identity, so an undone ADD takes one of the
     // two rows, not both.
     let records = vec![record(1, "www", "192.0.2.1"), record(2, "www", "192.0.2.1")];
@@ -114,7 +114,7 @@ fn only_one_of_two_identical_records_comes_out() {
 
 /// Verify that a value spelled differently still matches its row.
 #[test]
-fn a_value_spelled_differently_still_matches_its_row() {
+fn rewind_matches_canonically_equivalent_values() {
     // The key canonicalizes, so a value the journal spelled in another case
     // still names its row.
     let mut live = record(1, "alias", "Target.Example.COM.");
@@ -132,7 +132,7 @@ fn a_value_spelled_differently_still_matches_its_row() {
 
 /// Verify that a record added and deleted inside the window leaves nothing.
 #[test]
-fn a_record_added_and_deleted_inside_the_window_leaves_nothing() {
+fn rewind_omits_records_added_and_deleted_inside_window() {
     let changes = [
         change(
             5,
@@ -155,7 +155,7 @@ fn a_record_added_and_deleted_inside_the_window_leaves_nothing() {
 
 /// Verify that derived and SOA rows are not user data to restore.
 #[test]
-fn derived_and_soa_rows_are_not_user_data_to_restore() {
+fn rewind_excludes_derived_and_soa_records() {
     // Rollback re-signs the derived plane, and the SOA lives in the version
     // row, so neither belongs in the rewound records.
     let changes = [
@@ -180,7 +180,7 @@ fn derived_and_soa_rows_are_not_user_data_to_restore() {
 
 /// Verify that a history that does not add up does not block the rollback.
 #[test]
-fn a_history_that_does_not_add_up_does_not_block_the_rollback() {
+fn rewind_accepts_incomplete_history() {
     // Two anomalies at once: an ADD with no live row to take, and a user row
     // carrying no value.
     let changes = [
@@ -205,7 +205,7 @@ fn a_history_that_does_not_add_up_does_not_block_the_rollback() {
 
 /// Verify that the output order does not follow the hash map.
 #[test]
-fn the_output_order_does_not_follow_the_hash_map() {
+fn rewind_returns_deterministic_record_order() {
     let records = vec![
         record(1, "zzz", "192.0.2.3"),
         record(2, "aaa", "192.0.2.1"),

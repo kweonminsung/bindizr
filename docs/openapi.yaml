@@ -2298,7 +2298,10 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       - name: min_serial
         in: query
@@ -2306,7 +2309,10 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       - name: max_serial
         in: query
@@ -2314,7 +2320,10 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       - name: created_after
         in: query
@@ -3502,7 +3511,10 @@ paths:
         required: true
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       - name: to
         in: query
@@ -3510,7 +3522,10 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       responses:
         '200':
@@ -3557,7 +3572,10 @@ paths:
         required: true
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       responses:
         '200':
@@ -3604,7 +3622,10 @@ paths:
         required: true
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
       - name: dry_run
         in: query
@@ -3867,15 +3888,17 @@ components:
           $ref: '#/components/schemas/SecondaryStatusResponse'
           description: The secondary's catalog probe, classified against `catalog_serial`.
         catalog_serial:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 42
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: |-
             The serial Bindizr's own listener serves the catalog zone at; absent
             with `listener_error`, and `catalog` is then `reachable` at best.
-          example: 42
-          minimum: 0
         catalog_zone_name:
           type: string
           description: The catalog zone the secondary was asked for.
@@ -4266,13 +4289,15 @@ components:
           type: string
           example: admin@example.com
         serial:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
-          example: 42
-          minimum: 0
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 42
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
+          description: Starting serial, auto-generated if not provided. Accepts 0-4294967295, advances modulo 2^32, and can only be set at creation.
       additionalProperties: false
     DeleteRecordsResponse:
       type: object
@@ -4350,13 +4375,17 @@ components:
           $ref: '#/components/schemas/RecordDiffResponse'
         from_serial:
           type: integer
-          format: int32
-          example: 41
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
         to_serial:
           type: integer
-          format: int32
-          example: 42
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
     DnssecAlgorithm:
       type: string
@@ -4895,8 +4924,8 @@ components:
           description: |-
             Create a missing zone from the SOA; otherwise a missing zone is an error.
             Requires `zone:create` and the mode's record actions in all zones.
-            The initial serial must be 1..=2137483647 for previews and writes alike;
-            applying record changes advances it once.
+            The initial serial accepts the full unsigned 32-bit range (0..=4294967295);
+            applying record changes advances it once modulo 2^32.
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
@@ -5459,8 +5488,10 @@ components:
                 example: admin@example.com
               serial:
                 type: integer
-                format: int32
-                example: 42
+                format: int64
+                examples:
+                - 42
+                maximum: 4294967295
                 minimum: 0
         pagination:
           $ref: '#/components/schemas/PaginationResponse'
@@ -5531,8 +5562,10 @@ components:
                 example: admin@example.com
               serial:
                 type: integer
-                format: int32
-                example: 7
+                format: int64
+                examples:
+                - 42
+                maximum: 4294967295
                 minimum: 0
         pagination:
           $ref: '#/components/schemas/PaginationResponse'
@@ -5739,22 +5772,7 @@ components:
           example: example.com
     RecordType:
       type: string
-      description: The record types bindizr stores.
-      enum:
-      - A
-      - AAAA
-      - CAA
-      - CNAME
-      - DNAME
-      - DS
-      - MX
-      - NAPTR
-      - TXT
-      - NS
-      - SRV
-      - PTR
-      - SSHFP
-      - TLSA
+      description: 'Ordinary DNS record type: a supported mnemonic or TYPE<number> (RFC 3597). Other ordinary types use generic \# <length> <hex> values; SOA, managed DNSSEC, query and meta types have separate contracts.'
     RecordValue:
       oneOf:
       - type: string
@@ -5765,9 +5783,16 @@ components:
         example:
         - hello
         - world
+      - type: object
+        description: Quoted TXT character-strings with RFC 1035 escapes for arbitrary octets.
+        required:
+        - presentation
+        properties:
+          presentation:
+            type: string
       description: |-
         A record value as the API spells it, in requests and responses alike:
-        a single string or TXT segments.
+        a single string, TXT segments, or explicit TXT presentation with DNS escapes.
     RoleGrantResponse:
       type: object
       description: API representation of a role grant.
@@ -5857,7 +5882,7 @@ components:
       type: object
       description: |-
         Result of a zone rollback. The zone's state returns to `target_serial`
-        while its serial advances to `new_serial` (serials never go backward).
+        while its serial advances to `new_serial` (modulo 2^32 under RFC 1982).
       required:
       - applied
       - dry_run
@@ -5873,15 +5898,19 @@ components:
           example: false
         new_serial:
           type: integer
-          format: int32
-          example: 13
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
         summary:
           $ref: '#/components/schemas/RollbackZoneSummaryResponse'
         target_serial:
           type: integer
-          format: int32
-          example: 7
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
     RollbackZoneSummaryResponse:
       type: object
@@ -5977,12 +6006,14 @@ components:
         status:
           $ref: '#/components/schemas/SecondaryStatus'
         visible_serial:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 42
-          minimum: 0
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 42
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
     SecondaryTransferSummaryResponse:
       type: object
       description: One secondary's transfer summary, as `doctor` reports it.
@@ -6188,13 +6219,15 @@ components:
           $ref: '#/components/schemas/TransferResult'
           description: Answered, refused, or allowed and then broken off by a failure.
         serial:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 42
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: The serial the answer reached; absent when nothing was transferred.
-          example: 42
-          minimum: 0
         transport:
           $ref: '#/components/schemas/TransferTransport'
           description: Plain TCP or TLS (XoT).
@@ -6636,8 +6669,10 @@ components:
           example: admin@example.com
         serial:
           type: integer
-          format: int32
-          example: 42
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
     ZoneStatusResponse:
       type: object
@@ -6655,8 +6690,10 @@ components:
             $ref: '#/components/schemas/SecondaryStatusResponse'
         serial:
           type: integer
-          format: int32
-          example: 42
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
         zone_name:
           type: string
@@ -6719,8 +6756,10 @@ components:
           example: admin@example.com
         serial:
           type: integer
-          format: int32
-          example: 7
+          format: int64
+          examples:
+          - 42
+          maximum: 4294967295
           minimum: 0
   securitySchemes:
     bearer_auth:

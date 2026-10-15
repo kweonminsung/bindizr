@@ -1,5 +1,5 @@
 use super::{ParseRecordValueError, value::validate_domain_record_value};
-use crate::dns::name::to_fqdn_lowercase;
+use crate::dns::name::to_fqdn;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DnameRecordValue<'a> {
@@ -15,7 +15,7 @@ impl<'a> DnameRecordValue<'a> {
 
     /// Render the DNAME value in canonical text form.
     pub fn canonical(&self) -> String {
-        to_fqdn_lowercase(self.target)
+        to_fqdn(self.target)
     }
 }
 
@@ -23,20 +23,20 @@ impl<'a> DnameRecordValue<'a> {
 mod tests {
     use super::DnameRecordValue;
 
-    /// Verify that DNAME targets use CNAME-compatible canonicalization.
+    /// Keep DNAME target case in stored and wire forms.
     #[test]
-    fn canonicalizes_the_target_like_cname() {
+    fn dname_preserves_target_case() {
         assert_eq!(
             DnameRecordValue::parse("Target.Example.COM")
                 .unwrap()
                 .canonical(),
-            "target.example.com."
+            "Target.Example.COM."
         );
     }
 
     /// Verify rejection of invalid DNAME targets.
     #[test]
-    fn rejects_a_target_that_is_not_a_name() {
+    fn dname_rejects_invalid_target_name() {
         assert!(DnameRecordValue::parse("not a name").is_err());
     }
 }

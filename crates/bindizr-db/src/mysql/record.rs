@@ -48,7 +48,7 @@ pub(crate) async fn create_many_tx(
         for r in chunk {
             query = query
                 .bind(&r.name)
-                .bind(r.record_type.as_str())
+                .bind(r.record_type.to_text())
                 .bind(r.value.clone())
                 .bind(r.record_type.display_value(&r.value))
                 .bind(r.ttl)
@@ -58,9 +58,8 @@ pub(crate) async fn create_many_tx(
         }
         let result = query.execute(&mut **tx).await?;
 
-        // MySQL returns the id of the FIRST row of a multi-row insert; the
-        // ids are contiguous by `increment` for a simple insert under every
-        // innodb_autoinc_lock_mode.
+        // MySQL returns the first inserted id; simple multi-row inserts advance
+        // by `increment` under every innodb_autoinc_lock_mode.
         let first = result.last_insert_id() as i32;
         for (offset, r) in chunk.iter().enumerate() {
             let mut rec = r.clone();
@@ -179,7 +178,7 @@ pub(crate) async fn list_by_record_types_tx(
 
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
     for record_type in record_types {
-        query = query.bind(record_type.as_str());
+        query = query.bind(record_type.to_text());
     }
     let records = query.fetch_all(&mut **tx).await?;
 
@@ -272,7 +271,7 @@ pub(crate) async fn list_by_filter_with_zone(
           AND (? IS NULL OR r.priority <= ?)
           AND (
                 ? IS NULL
-                OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(z.name USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.name) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\\'
@@ -381,7 +380,7 @@ pub(crate) async fn count_by_filter(
           AND (? IS NULL OR r.priority <= ?)
           AND (
                 ? IS NULL
-                OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(z.name USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.name) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\\'
@@ -443,7 +442,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.as_str())
+    .bind(record.record_type.to_text())
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)

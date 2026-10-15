@@ -132,7 +132,7 @@ mod tests {
 
     /// Match either IP family regardless of port, without resolving earlier hostnames.
     #[tokio::test]
-    async fn literal_entries_answer_without_resolving() {
+    async fn acl_matches_literal_addresses_without_resolving_hostnames() {
         let addresses = targets(&[
             "no-such-host.invalid:53",
             "192.0.2.10:5353",
@@ -148,7 +148,7 @@ mod tests {
 
     /// Deny unmatched clients, including when the registry is empty.
     #[tokio::test]
-    async fn only_configured_addresses_allow_clients() {
+    async fn acl_rejects_unconfigured_addresses() {
         let cache = AddressCache::new();
         let client_ip = "192.0.2.11".parse().unwrap();
         assert!(!allows_client(&cache, targets(&[]).iter(), client_ip).await);

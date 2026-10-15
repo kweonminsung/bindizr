@@ -167,7 +167,7 @@ mod tests {
 
     /// Verify that listener defaults to localhost only.
     #[test]
-    fn listener_defaults_to_localhost_only() {
+    fn listener_defaults_to_loopback() {
         let cli = to_cli(&["--bindizr-url", "http://bindizr:8000"]);
         assert_eq!(cli.listen_addr.to_string(), "127.0.0.1:8888");
         assert_eq!(cli.health_listen_addr.to_string(), "0.0.0.0:8080");
@@ -210,7 +210,7 @@ mod tests {
 
     /// Verify that token file takes precedence and is trimmed.
     #[test]
-    fn token_file_takes_precedence_and_is_trimmed() {
+    fn config_prefers_trimmed_token_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("token");
         std::fs::write(&path, "secret-token\n").unwrap();
@@ -230,7 +230,7 @@ mod tests {
 
     /// Verify that missing token resolves to none.
     #[test]
-    fn missing_token_resolves_to_none() {
+    fn config_returns_no_token_when_unspecified() {
         let config = AdapterConfig::load(to_cli(&[
             "--bindizr-url",
             "http://bindizr:8000",

@@ -56,10 +56,14 @@ pub(crate) async fn count_between_serials_tx(
         r#"
         SELECT COUNT(*)
         FROM zone_journal
-        WHERE zone_id = ? AND serial > ? AND serial <= ?
+        WHERE zone_id = ? AND ((serial > ? AND serial <= ?) OR (? > ? AND (serial > ? OR serial <= ?)))
         "#,
     )
     .bind(zone_id)
+    .bind(from_serial)
+    .bind(to_serial)
+    .bind(from_serial)
+    .bind(to_serial)
     .bind(from_serial)
     .bind(to_serial)
     .fetch_one(&mut **tx)
@@ -81,11 +85,15 @@ pub(crate) async fn list_between_serials_tx(
         r#"
         SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
         FROM zone_journal
-        WHERE zone_id = ? AND serial > ? AND serial <= ?
-        ORDER BY serial, id
+        WHERE zone_id = ? AND ((serial > ? AND serial <= ?) OR (? > ? AND (serial > ? OR serial <= ?)))
+        ORDER BY id
         "#
     )
     .bind(zone_id)
+    .bind(from_serial)
+    .bind(to_serial)
+    .bind(from_serial)
+    .bind(to_serial)
     .bind(from_serial)
     .bind(to_serial)
     .fetch_all(&mut **tx)
@@ -105,9 +113,9 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
         r#"
         DELETE FROM zone_journal
         WHERE zone_id = ?
-          AND serial <= (
-              SELECT MAX(serial) FROM zone_journal
-              WHERE zone_id = ? AND created_at < ?
+          AND serial IN (
+              SELECT serial FROM zone_journal WHERE zone_id = ?
+              GROUP BY serial HAVING MAX(created_at) < ?
           )
         "#,
     )
@@ -117,5 +125,19 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     .execute(&mut **tx)
     .await?;
 
+    Ok(result.rows_affected())
+}
+
+/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub(crate) async fn prune_outside_serial_window_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    zone_id: ZoneId,
+    current: Serial,
+) -> Result<u64, DatabaseError> {
+    let result = sqlx::query("DELETE FROM zone_journal WHERE zone_id = ? AND ((? - serial + 4294967296) % 4294967296) >= 2147483648")
+        .bind(zone_id)
+        .bind(current)
+        .execute(&mut **tx)
+        .await?;
     Ok(result.rows_affected())
 }

@@ -69,7 +69,7 @@ fn import(timing: &[(&str, String)]) -> Result<DnssecKey, ImportKeyError> {
 
 /// Verify that a key file without timing imports as a settled active key.
 #[test]
-fn a_key_file_without_timing_imports_as_a_settled_active_key() {
+fn key_import_defaults_missing_timing_to_active() {
     let key = import(&[]).unwrap();
 
     assert_eq!(key.state, DnssecKeyState::Active);
@@ -79,7 +79,7 @@ fn a_key_file_without_timing_imports_as_a_settled_active_key() {
 
 /// Verify that bind timing places an imported key in its rollover.
 #[test]
-fn bind_timing_places_an_imported_key_in_its_rollover() {
+fn key_import_restores_rollover_from_bind_timing() {
     // Activate sets the earliest promotion time for a pre-published key.
     let key = import(&[("Publish", stamp(-1)), ("Activate", stamp(2))]).unwrap();
     assert_eq!(key.state, DnssecKeyState::Published);
@@ -106,7 +106,7 @@ fn bind_timing_places_an_imported_key_in_its_rollover() {
 
 /// Verify that a schedule bind left open falls back to the DNSKEY TTL.
 #[test]
-fn a_schedule_bind_left_open_falls_back_to_the_dnskey_ttl() {
+fn key_import_defaults_open_schedule_to_dnskey_ttl() {
     let ttl = Duration::seconds(i64::from(test_zone().default_ttl.as_secs()));
 
     let key = import(&[("Publish", stamp(-1))]).unwrap();
@@ -120,7 +120,7 @@ fn a_schedule_bind_left_open_falls_back_to_the_dnskey_ttl() {
 
 /// Verify that a key outside the window bind serves it in is refused.
 #[test]
-fn a_key_outside_the_window_bind_serves_it_in_is_refused() {
+fn key_import_rejects_keys_outside_serving_window() {
     let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]).unwrap_err();
     assert!(
         matches!(not_yet, ImportKeyError::NotYetPublished { .. }),
@@ -144,7 +144,7 @@ fn a_key_outside_the_window_bind_serves_it_in_is_refused() {
 
 /// Verify that an exported key file re-imports in the state it left.
 #[test]
-fn an_exported_key_file_re_imports_in_the_state_it_left() {
+fn key_export_preserves_state_across_reimport() {
     for timing in [
         vec![("Publish", stamp(-1)), ("Activate", stamp(2))],
         vec![("Publish", stamp(-48)), ("Activate", stamp(-24))],
@@ -173,7 +173,7 @@ fn an_exported_key_file_re_imports_in_the_state_it_left() {
 
 /// Verify that imported bind key pair round-trips.
 #[test]
-fn imported_bind_key_pair_round_trips() {
+fn key_import_round_trips_bind_key_pair() {
     let zone = test_zone();
     let generated = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let dnskey = format!(

@@ -241,7 +241,7 @@ mod tests {
 
     /// Verify that `normalize_expires_at` is none without days and ahead of now with them.
     #[test]
-    fn to_expires_at_is_none_without_days_and_ahead_of_now_with_them() {
+    fn normalize_expires_at_returns_optional_future_deadline() {
         assert!(normalize_expires_at(None).unwrap().is_none());
         assert!(normalize_expires_at(Some(1)).unwrap().unwrap() > chrono::Utc::now());
         assert!(normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
@@ -249,7 +249,7 @@ mod tests {
 
     /// Verify that `normalize_expires_at` rejects non positive values.
     #[test]
-    fn to_expires_at_rejects_non_positive_values() {
+    fn normalize_expires_at_rejects_non_positive_values() {
         let zero = normalize_expires_at(Some(0)).unwrap_err();
         let negative = normalize_expires_at(Some(-1)).unwrap_err();
 
@@ -259,7 +259,7 @@ mod tests {
 
     /// Verify that `normalize_expires_at` rejects values beyond the cap.
     #[test]
-    fn to_expires_at_rejects_values_beyond_the_cap() {
+    fn normalize_expires_at_rejects_values_beyond_cap() {
         let just_over = normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS + 1)).unwrap_err();
         let overflow = normalize_expires_at(Some(i64::MAX)).unwrap_err();
 

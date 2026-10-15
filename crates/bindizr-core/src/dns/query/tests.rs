@@ -143,7 +143,7 @@ fn transfer_rejects_a_non_in_record() {
 
 /// Verify that transfer first message must echo the question and be authoritative.
 #[test]
-fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
+fn transfer_requires_authoritative_first_message_with_question() {
     let apex = name("example.com");
     let whole = build_transfer_message(7, &apex, true, true);
     assert_eq!(

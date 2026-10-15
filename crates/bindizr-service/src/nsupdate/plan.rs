@@ -8,10 +8,7 @@ use bindizr_core::dns::{
 
 use super::{NsupdateError, operation::RecordOperation};
 use crate::{
-    error::ServiceError,
-    model::zone::Zone,
-    serial::{generate_serial, validate_stored_serial},
-    ttl::validate_soa_interval,
+    error::ServiceError, model::zone::Zone, serial::generate_serial, ttl::validate_soa_interval,
     zone::validation::normalize_soa,
 };
 
@@ -60,15 +57,17 @@ pub(crate) fn prepare(
     }
     // RFC 2136, Section 3.6: only an update without an explicit SOA advance
     // needs an automatically generated serial.
-    if !plan.soa_changed && !plan.records.is_empty() {
-        plan.zone.serial = generate_serial(Some(zone.serial))?;
+    if (plan.soa_changed && plan.zone.serial == zone.serial)
+        || (!plan.soa_changed && !plan.records.is_empty())
+    {
+        plan.zone.serial = generate_serial(Some(zone.serial));
     }
     Ok(plan)
 }
 
 /// Apply the existing zone-write policy to an advancing wire SOA.
 fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Zone, ServiceError> {
-    let serial = validate_stored_serial(Serial::from(value.serial))?;
+    let serial = Serial::from(value.serial);
     let interval = |value| i32::try_from(value).map_err(ServiceError::invalid_zone_field);
     let rname = SoaMailbox::from_encoded(value.rname)
         .to_email()

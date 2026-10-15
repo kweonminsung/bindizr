@@ -85,7 +85,7 @@ pub(crate) async fn list_in_serial_range_tx(
         r#"
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
-        WHERE zone_id = $1 AND serial >= $2 AND serial <= $3
+        WHERE zone_id = $1 AND ((serial >= $2 AND serial <= $3) OR ($2 > $3 AND (serial >= $2 OR serial <= $3)))
         "#,
     )
     .bind(zone_id)
@@ -113,7 +113,7 @@ pub(crate) async fn list_by_filter(
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = $1{predicate}
-        ORDER BY serial DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT $2 OFFSET $3
         "#
     )))
@@ -177,7 +177,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
         r#"
         DELETE FROM zone_versions
         WHERE zone_id = $1 AND created_at < $2
-          AND serial < (SELECT MAX(serial) FROM zone_versions WHERE zone_id = $1)
+          AND serial != (SELECT serial FROM zones WHERE id = $1)
         "#,
     )
     .bind(zone_id)
@@ -185,5 +185,19 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     .execute(&mut **tx)
     .await?;
 
+    Ok(result.rows_affected())
+}
+
+/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub(crate) async fn prune_outside_serial_window_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    current: Serial,
+) -> Result<u64, DatabaseError> {
+    let result = sqlx::query("DELETE FROM zone_versions WHERE zone_id = $1 AND (($2 - serial + 4294967296) % 4294967296) >= 2147483648")
+        .bind(zone_id)
+        .bind(current)
+        .execute(&mut **tx)
+        .await?;
     Ok(result.rows_affected())
 }

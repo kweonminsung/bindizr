@@ -6,14 +6,13 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use super::name::{LabelCharset, MAX_DOMAIN_LEN, classify_domain_label};
+use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
 
 /// The port a `host` without one is taken to serve DNS on.
 pub const DEFAULT_DNS_PORT: u16 = 53;
 
-/// An address target: a socket address, or a host and port to resolve later.
-/// Canonical by construction: the port is spelled out and a hostname is
-/// lowercase, so one server has one spelling, which rows compare as text.
+/// A socket address or hostname to resolve, with an explicit port.
+/// Hostnames are lowercase so rows compare one canonical spelling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddressTarget {
     Socket(SocketAddr),
@@ -144,7 +143,7 @@ fn is_hostname(value: &str) -> bool {
         && name.len() <= MAX_DOMAIN_LEN
         && name
             .split('.')
-            .all(|label| classify_domain_label(label, LabelCharset::LdhUnderscore).is_ok())
+            .all(|label| classify_domain_label(label).is_ok())
 }
 
 /// Check whether an address target includes a valid explicit port.

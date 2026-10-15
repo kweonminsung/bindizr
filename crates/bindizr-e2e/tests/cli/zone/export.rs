@@ -3,7 +3,7 @@ use crate::{cli::common::summary_row, common::TestApp};
 /// Verify zone-file export through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_export_via_cli() {
+async fn zone_export_returns_zone_file_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("export.example");
     // Zone TTL is deliberately not 3600 so an inherited TTL is distinguishable.

@@ -47,8 +47,8 @@ pub struct ImportZoneRequest {
     pub skip_unsupported: bool,
     /// Create a missing zone from the SOA; otherwise a missing zone is an error.
     /// Requires `zone:create` and the mode's record actions in all zones.
-    /// The initial serial must be 1..=2137483647 for previews and writes alike;
-    /// applying record changes advances it once.
+    /// The initial serial accepts the full unsigned 32-bit range (0..=4294967295);
+    /// applying record changes advances it once modulo 2^32.
     #[serde(default)]
     pub create: bool,
 }

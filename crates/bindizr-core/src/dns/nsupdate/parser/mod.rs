@@ -276,9 +276,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateE
             break;
         }
 
-        let text =
-            std::str::from_utf8(label.as_slice()).map_err(|_| ParseUpdateError::InvalidName)?;
-        labels.push(text.to_string());
+        labels.push(label.as_slice().to_vec());
     }
 
     if labels.is_empty() {

@@ -1,4 +1,4 @@
-//! Canonical wire RDATA for comparison.
+//! Canonical wire RDATA for comparison and DNSSEC signing.
 
 use domain::{
     base::{
@@ -49,7 +49,7 @@ impl Rdata {
         Ok(Self::new(bytes)?)
     }
 
-    /// Canonicalize uncompressed RDATA for comparison.
+    /// Canonicalize uncompressed RDATA for comparison or DNSSEC signing.
     pub fn to_canonical(&self, record_type: Rtype) -> Result<Self, ParseRdataError> {
         Self::parse_canonical(record_type, self.as_bytes(), 0, self.as_bytes().len())
     }

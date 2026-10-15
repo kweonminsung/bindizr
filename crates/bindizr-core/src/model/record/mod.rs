@@ -8,12 +8,13 @@ use thiserror::Error;
 use crate::{
     dns::{
         Ttl,
-        name::{OwnerName, ZoneName, to_fqdn_lowercase},
+        name::{OwnerName, ZoneName},
         record::{
             ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
             DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
-            NaptrRecordValue, NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata,
-            SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
+            NaptrRecordValue, NsRecordValue, OpaqueRecordValue, ParseRecordValueError,
+            PtrRecordValue, Rdata, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent,
+            TxtRecordValue,
         },
     },
     model::zone::ZoneId,
@@ -38,9 +39,7 @@ pub struct Record {
     pub zone_id: ZoneId,
 }
 
-/// What makes two records the same record to DNS: owner, type, and rdata,
-/// compared canonically. TTL and the row id are left out: a TTL change is the
-/// same record, and a rebuilt record has no row.
+/// Canonical DNS record identity: owner, type and RDATA, excluding TTL and row id.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RecordKey {
     name: OwnerName,
@@ -104,9 +103,8 @@ pub struct RecordSetKey {
     pub record_type: RecordType,
 }
 
-/// A record without its row identity: what a [`Record`] carries besides its
-/// id, zone, and creation time. The form of a record rebuilt from the journal
-/// and of the sets a diff compares, neither of which has a row.
+/// Record contents without row identity, zone or creation time,
+/// used for journal replay and diffs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordData {
     pub name: OwnerName,
@@ -175,10 +173,8 @@ impl RecordWithZone {
 }
 
 /// The record types bindizr stores.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum RecordType {
     A,
     Aaaa,
@@ -194,12 +190,14 @@ pub enum RecordType {
     Ptr,
     Sshfp,
     Tlsa,
+    /// An ordinary type stored as RFC 3597 opaque data.
+    Unknown(u16),
 }
 
 impl std::fmt::Display for RecordType {
     /// Write the record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.pad(self.as_str())
+        f.pad(&self.to_text())
     }
 }
 
@@ -248,7 +246,7 @@ where
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.as_str().to_string().encode_by_ref(buf)
+        self.to_text().encode_by_ref(buf)
     }
 }
 
@@ -272,7 +270,10 @@ impl std::str::FromStr for RecordType {
             "PTR" => Ok(RecordType::Ptr),
             "SSHFP" => Ok(RecordType::Sshfp),
             "TLSA" => Ok(RecordType::Tlsa),
-            _ => Err(ParseRecordTypeError::Unknown(s.to_string())),
+            _ => s
+                .parse::<Rtype>()
+                .map_err(|_| ParseRecordTypeError::Unknown(s.to_string()))
+                .and_then(Self::try_from),
         }
     }
 }
@@ -298,14 +299,19 @@ impl TryFrom<Rtype> for RecordType {
             Rtype::TXT => Ok(RecordType::Txt),
             Rtype::AAAA => Ok(RecordType::Aaaa),
             Rtype::SRV => Ok(RecordType::Srv),
-            _ => Err(ParseRecordTypeError::Unsupported(rtype)),
+            // SOA and derived DNSSEC data have their own write contracts;
+            // meta/query types are not opaque user data (RFC 3597, Section 2).
+            _ if matches!(rtype.to_int(), 0 | 6 | 41 | 46..=48 | 50..=51 | 59..=60 | 128..=255 | 65535) => {
+                Err(ParseRecordTypeError::Unsupported(rtype))
+            }
+            _ => Ok(RecordType::Unknown(rtype.to_int())),
         }
     }
 }
 
 impl RecordType {
-    /// Return the record type's presentation-format mnemonic (e.g. `"A"`).
-    pub fn as_str(&self) -> &'static str {
+    /// Render the stored and API mnemonic or RFC 3597 `TYPE<number>` form.
+    pub fn to_text(&self) -> String {
         match self {
             RecordType::A => "A",
             RecordType::Aaaa => "AAAA",
@@ -321,7 +327,9 @@ impl RecordType {
             RecordType::Ptr => "PTR",
             RecordType::Sshfp => "SSHFP",
             RecordType::Tlsa => "TLSA",
+            RecordType::Unknown(code) => return format!("TYPE{code}"),
         }
+        .to_owned()
     }
 
     /// The record TYPE number this type's records carry on the wire.
@@ -341,6 +349,7 @@ impl RecordType {
             RecordType::Sshfp => 44,
             RecordType::Tlsa => 52,
             RecordType::Caa => 257,
+            RecordType::Unknown(code) => *code,
         }
     }
 
@@ -375,6 +384,7 @@ impl RecordType {
             RecordType::Ptr => PtrRecordValue::parse(value).map(|_| ()),
             RecordType::Sshfp => SshfpRecordValue::parse(value)?.validate(),
             RecordType::Tlsa => TlsaRecordValue::parse(value)?.validate(),
+            RecordType::Unknown(_) => OpaqueRecordValue::parse(value).map(|_| ()),
         }
     }
 
@@ -407,48 +417,21 @@ impl RecordType {
         value: &'a str,
         fallback_priority: Option<i32>,
     ) -> Cow<'a, str> {
-        match self {
-            RecordType::A => ARecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Aaaa => AaaaRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Caa => CaaRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
-                Cow::Owned(to_fqdn_lowercase(value))
-            }
-            RecordType::Ds => DsRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Mx => MxRecordValue::parse(value, fallback_priority)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Naptr => NaptrRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            // Parsed like every other type, so the content a caller typed and
-            // the presentation form the row holds compare equal.
-            RecordType::Txt => TxtRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.to_presentation()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Srv => SrvRecordValue::parse(value, fallback_priority)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Sshfp => SshfpRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-            RecordType::Tlsa => TlsaRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
-        }
+        self.encoded_value(value, fallback_priority)
+            .ok()
+            .and_then(|value| EncodedRdata::from_columns(self, &value, fallback_priority).ok())
+            .and_then(|encoded| {
+                encoded
+                    .rdata
+                    .to_canonical(Rtype::from_int(self.wire_type()))
+                    .ok()
+            })
+            .map(|rdata| Cow::Owned(hex::encode(rdata.as_bytes())))
+            .unwrap_or(Cow::Borrowed(value))
     }
 
-    /// Counterpart of [`Self::canonical_value`] for writes: the one spelling
-    /// record rows encode, so every entry path stores equal bytes. TXT takes
-    /// presentation form; other TXT grammars go through [`TxtRecordValue`] directly.
+    /// Render storage text, distinct from [`Self::canonical_value`]'s comparison form.
+    /// TXT input uses presentation form; parse other grammars through [`TxtRecordValue`].
     pub fn encoded_value(
         &self,
         value: &str,
@@ -457,6 +440,9 @@ impl RecordType {
         // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
         let trimmed = value.trim();
         match self {
+            RecordType::Unknown(_) => {
+                OpaqueRecordValue::parse(value).map(|parsed| parsed.to_presentation())
+            }
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Caa => {
@@ -517,7 +503,7 @@ impl RecordType {
         match self {
             RecordType::Mx => display_last_name_field(value, 1),
             RecordType::Srv => display_last_name_field(value, 3),
-            _ if self.is_name_like() => to_fqdn_lowercase(value),
+            _ if self.is_name_like() => crate::dns::name::to_fqdn(value),
             _ => value.to_string(),
         }
     }
@@ -527,9 +513,8 @@ impl RecordType {
         NAME_LIKE_RECORD_TYPES.contains(self)
     }
 
-    /// Render a stored value plus its priority column as zone-file rdata:
-    /// MX/SRV carry the priority inline (default 10), TXT rows already hold
-    /// their presentation form, and other types use their display form.
+    /// Render zone-file RDATA, adding MX/SRV priority (default 10).
+    /// TXT retains its stored presentation; other types use their display form.
     pub fn presentation_rdata(&self, value: &str, priority: Option<i32>) -> String {
         match self {
             RecordType::Txt => value.to_string(),
@@ -587,9 +572,7 @@ pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::Srv,
 ];
 
-/// Record types the ExternalDNS provider manages. The API server and the
-/// webhook adapter share no crate below core, so the set lives here rather
-/// than being spelled out in each.
+/// Record types shared by the API server and ExternalDNS adapter.
 pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
     RecordType::A,
     RecordType::Aaaa,
@@ -612,7 +595,7 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
     let Some(last) = fields.pop() else {
         return value.to_string();
     };
-    fields.push(to_fqdn_lowercase(&last));
+    fields.push(crate::dns::name::to_fqdn(&last));
     fields.join(" ")
 }
 
@@ -622,7 +605,7 @@ mod tests;
 impl Ord for RecordType {
     /// Preserve mnemonic ordering in record lists and diffs.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.as_str().cmp(other.as_str())
+        self.to_text().cmp(&other.to_text())
     }
 }
 
@@ -632,3 +615,22 @@ impl PartialOrd for RecordType {
         Some(self.cmp(other))
     }
 }
+
+impl From<RecordType> for String {
+    /// Render the wire-facing mnemonic or RFC 3597 type number for serde.
+    fn from(value: RecordType) -> Self {
+        value.to_text()
+    }
+}
+
+impl utoipa::PartialSchema for RecordType {
+    /// Describe both familiar mnemonics and RFC 3597 TYPE numbers as strings.
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::schema::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::schema::Type::String)
+            .description(Some("Ordinary DNS record type: a supported mnemonic or TYPE<number> (RFC 3597). Other ordinary types use generic \\# <length> <hex> values; SOA, managed DNSSEC, query and meta types have separate contracts."))
+            .into()
+    }
+}
+
+impl utoipa::ToSchema for RecordType {}

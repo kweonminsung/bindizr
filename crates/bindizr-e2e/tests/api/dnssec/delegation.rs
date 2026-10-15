@@ -229,7 +229,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
 /// Verify that DNSSEC disable is refused until the parent can be asked.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
+async fn dnssec_disable_rejects_unreachable_parent() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

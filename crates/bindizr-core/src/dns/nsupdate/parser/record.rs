@@ -5,9 +5,10 @@ use domain::{
     base::{
         iana::{Class, Rtype},
         name::ParsedName,
+        rdata::{ComposeRecordData, ParseRecordData},
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Soa, Srv, Txt},
+    rdata::{A, Aaaa, AllRecordData, Mx, Soa, Srv},
 };
 use thiserror::Error;
 
@@ -17,9 +18,8 @@ use crate::{
     model::record::RecordType,
 };
 
-/// One record from the prerequisite or update section. `rdata_start` locates the
-/// rdata in the original message so compressed names inside it can be decoded
-/// lazily by the update flow.
+/// A prerequisite or update record with an RDATA offset into the original message.
+/// The offset lets the update flow decode compressed names lazily.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRecord {
     pub name: String,
@@ -42,8 +42,6 @@ pub enum ValidateUpdateShapeError {
     NonzeroTtl,
     #[error("ANY-class delete must have empty rdata")]
     AnyClassRdata,
-    #[error("NONE-class delete must specify rdata")]
-    NoneClassNoRdata,
 }
 
 impl UpdateRecord {
@@ -67,7 +65,6 @@ impl UpdateRecord {
         }
         match self.class {
             Class::ANY if !self.rdata.is_empty() => Err(ValidateUpdateShapeError::AnyClassRdata),
-            Class::NONE if self.rdata.is_empty() => Err(ValidateUpdateShapeError::NoneClassNoRdata),
             _ => Ok(()),
         }
     }
@@ -130,6 +127,24 @@ impl UpdateRecord {
         message: &[u8],
     ) -> Result<(RecordType, String, Option<i32>), ParseUpdateError> {
         match RecordType::try_from(self.record_type)? {
+            record_type @ RecordType::Unknown(_) => {
+                // Known legacy types may contain compressed names. Unknown types
+                // remain opaque (RFC 3597, Sections 3 and 4).
+                let data = self.parse_rdata(message, &record_type.to_text(), |parser| {
+                    AllRecordData::<_, ParsedName<_>>::parse_rdata(self.record_type, parser)
+                        .ok()
+                        .flatten()
+                })?;
+                let mut bytes = Vec::new();
+                let Ok(()) = data.compose_rdata(&mut bytes);
+                Ok((
+                    record_type,
+                    format!(r"\# {} {}", bytes.len(), hex::encode_upper(bytes))
+                        .trim_end()
+                        .to_string(),
+                    None,
+                ))
+            }
             RecordType::A => {
                 let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
                 Ok((RecordType::A, data.addr().to_string(), None))
@@ -142,31 +157,17 @@ impl UpdateRecord {
             | RecordType::Dname
             | RecordType::Ns
             | RecordType::Ptr) => {
-                let name = self.parse_rdata(message, record_type.as_str(), |parser| {
+                let name = self.parse_rdata(message, &record_type.to_text(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
                 let value =
                     to_presentation_name(&name).map_err(|e| ParseUpdateError::RdataName {
-                        record_type: record_type.as_str().to_string(),
+                        record_type: record_type.to_text(),
                         source: Box::new(e),
                     })?;
                 Ok((record_type, value, None))
             }
             RecordType::Txt => {
-                let data = Txt::from_octets(self.rdata.as_slice()).map_err(|e| {
-                    ParseUpdateError::TxtRdata {
-                        reason: e.to_string(),
-                    }
-                })?;
-                // TXT values must be valid UTF-8 (a project-wide rule), so reject
-                // non-UTF-8 character-strings even though the wire allows them.
-                for charstr in data.iter_charstrs() {
-                    if std::str::from_utf8(charstr.as_slice()).is_err() {
-                        return Err(ParseUpdateError::Rdata {
-                            record_type: "TXT".to_string(),
-                        });
-                    }
-                }
                 let value = TxtRecordValue::from_rdata(&self.rdata)
                     .map_err(ParseUpdateError::TxtValue)?
                     .to_presentation();

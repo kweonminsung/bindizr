@@ -110,12 +110,16 @@ pub(crate) async fn handle_catalog_transfer(
             })
             .await?;
 
-        // RFC 1995, Section 2: equal serials need only the current SOA.
-        if response_qtype == Rtype::IXFR && query.client_serial == Some(serial.as_u32()) {
+        // RFC 1995, Section 2: equal or newer clients need only the current SOA.
+        if response_qtype == Rtype::IXFR
+            && query.client_serial.is_some_and(|client| {
+                let client = Serial::from(client);
+                client == serial || client.is_newer_than(serial)
+            })
+        {
             return writer.flush_if_not_empty(&mut builder).await;
         }
 
-        // RFC 1995, Section 2 exception: newer clients also receive the full snapshot.
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
                 builder.add_catalog_ns(&catalog_zone)
@@ -167,7 +171,7 @@ mod tests {
     /// Verify that the catalog digest changes when members change and is
     /// indifferent to their order.
     #[test]
-    fn catalog_digest_follows_membership_only() {
+    fn catalog_digest_changes_only_with_membership() {
         let members = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
 
         let original = catalog_digest(&members(&["example.com", "test.com"]));

@@ -140,9 +140,8 @@ pub(crate) struct EncodedRdata {
 }
 
 impl EncodedRdata {
-    /// Wire RDATA for stored record columns (records and journal rows share
-    /// this shape). TXT stays one opaque byte mapping: canonical record set order
-    /// is a byte comparison over the rdata.
+    /// Encode record or journal columns as wire RDATA.
+    /// TXT remains opaque bytes for canonical record-set ordering.
     pub(crate) fn from_columns(
         record_type: &RecordType,
         value: &str,
@@ -153,6 +152,7 @@ impl EncodedRdata {
             value: value.to_string(),
         };
         let rdata = match record_type {
+            RecordType::Unknown(_) => super::OpaqueRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
                 let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?

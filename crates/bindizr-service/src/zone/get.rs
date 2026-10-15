@@ -7,7 +7,6 @@ use crate::{
     error::ServiceError,
     model::zone::Zone,
     pagination::{build_paginated_response, normalize_page_limit, parse_setting},
-    serial::validate_stored_serial,
     types::{PaginatedResponse, ZoneFilter, ZoneResponse},
 };
 
@@ -75,9 +74,9 @@ pub async fn list_by_filter(
     let scope_role_id = caller.scope_role_id();
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;
-    let serial = filter.serial.map(validate_stored_serial).transpose()?;
-    let min_serial = filter.min_serial.map(validate_stored_serial).transpose()?;
-    let max_serial = filter.max_serial.map(validate_stored_serial).transpose()?;
+    let serial = filter.serial;
+    let min_serial = filter.min_serial;
+    let max_serial = filter.max_serial;
 
     let zone_filter = bindizr_db::zone::ZoneFilter {
         name: filter.name,
@@ -131,9 +130,8 @@ pub(crate) async fn lookup_by_name(
         .ok_or_else(|| ServiceError::zone_not_found(zone_name))
 }
 
-/// Fetch a zone without a visibility check inside the flow's transaction at
-/// `lock_level`, returning `NotFound` if it does not exist. The flow gates
-/// the locked row before exposing or changing it.
+/// Look up a zone in `tx` at `lock_level`, returning `NotFound` if absent.
+/// The owning flow must authorize the locked row before exposing or changing it.
 pub(crate) async fn lookup_by_name_tx(
     tx: &mut Transaction<'_>,
     zone_name: &ZoneName,

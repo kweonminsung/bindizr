@@ -1,6 +1,5 @@
-//! Parse and normalize names, enforcing label, length, and whitespace limits.
-//! [`OwnerName`] and [`ZoneName`] decode labels before comparison: escaped dots
-//! remain label data. Text uses canonical RFC 1035, Section 5.1 escapes.
+//! Parse DNS octet labels and render canonical RFC 1035, Section 5.1 escapes.
+//! [`OwnerName`] and [`ZoneName`] compare decoded labels, preserving escaped dots.
 
 mod error;
 mod owner_name;
@@ -24,11 +23,8 @@ pub fn has_whitespace_or_control(value: &str) -> bool {
 }
 
 /// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
-/// charset (plus `_` when `LabelCharset::LdhUnderscore`), no leading/trailing hyphen.
-pub(crate) fn classify_domain_label(
-    label: &str,
-    charset: LabelCharset,
-) -> Result<(), ParseNameError> {
+/// hostname charset including underscores, without a leading/trailing hyphen.
+pub(crate) fn classify_domain_label(label: &str) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
     }
@@ -37,13 +33,12 @@ pub(crate) fn classify_domain_label(
         return Err(ParseNameError::LabelTooLong);
     }
 
-    if !label.chars().all(|c| {
-        c.is_ascii_alphanumeric()
-            || c == '-'
-            || (charset == LabelCharset::LdhUnderscore && c == '_')
-    }) {
+    if !label
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(ParseNameError::LabelCharset {
-            underscore_allowed: charset == LabelCharset::LdhUnderscore,
+            underscore_allowed: true,
         });
     }
 
@@ -54,39 +49,48 @@ pub(crate) fn classify_domain_label(
     Ok(())
 }
 
+/// Trim surrounding input whitespace without eating a final escaped label octet.
+pub(crate) fn trim_presentation_name(value: &str) -> &str {
+    let mut value = value.trim_start();
+    while let Some(last) = value.chars().next_back().filter(|c| c.is_whitespace()) {
+        let prefix = &value[..value.len() - last.len_utf8()];
+        if prefix.bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 1 {
+            break;
+        }
+        value = prefix;
+    }
+    value
+}
+
 /// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, and
 /// re-escaped canonically so two spellings of one name compare equal as text.
 pub fn parse_lookup_name(value: &str) -> Result<String, ParseNameError> {
-    let trimmed = value.trim();
+    let trimmed = trim_presentation_name(value);
 
     if trimmed.trim_end_matches('.').is_empty() {
         return Err(ParseNameError::Empty);
-    }
-    if has_whitespace_or_control(trimmed) {
-        return Err(ParseNameError::Whitespace);
     }
 
     Ok(labels_to_presentation(&decode_name_labels(trimmed)?.0))
 }
 
 /// Convert decoded labels back to presentation form.
-pub fn labels_to_presentation(labels: &[String]) -> String {
+pub fn labels_to_presentation(labels: &[impl AsRef<[u8]>]) -> String {
     // Most owners are one label, which needs no join buffer.
     if let [label] = labels {
-        return owner_name::escape_label(label).into_owned();
+        return owner_name::escape_label(label.as_ref());
     }
     labels
         .iter()
-        .map(|label| owner_name::escape_label(label))
+        .map(|label| owner_name::escape_label(label.as_ref()))
         .collect::<Vec<_>>()
         .join(".")
 }
 
-/// Return `value` as a lowercase, trailing-dot FQDN: labels decoded and
-/// re-escaped canonically, so a `\.` stays inside its label. A value that does
-/// not decode keeps its own spelling — this renders, it does not validate.
+/// Render a lowercase FQDN with canonical escapes, preserving in-label dots.
+/// Undecodable input keeps its spelling; this function does not validate.
 pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
-    let trimmed = value.trim();
+    let trimmed = trim_presentation_name(value);
     // LDH and underscore labels need no escaping, so this fast path
     // produces the same lowercase form as decoding and re-encoding.
     let needs_decode = trimmed
@@ -98,11 +102,15 @@ pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
     format!("{}.", trimmed.trim_end_matches('.').to_ascii_lowercase())
 }
 
-/// Return `value` with a single trailing dot, preserving case. Only the one
-/// root dot is stripped, so an escaped trailing dot inside the last label
-/// stays data.
+/// Append one root dot, preserving case and escaped dots within labels.
 pub fn to_fqdn(value: &str) -> String {
-    format!("{}.", value.strip_suffix('.').unwrap_or(value))
+    if value == "." {
+        return value.to_string();
+    }
+    match owner_name::decode_preserved_labels(value) {
+        Ok((labels, _)) => format!("{}.", labels_to_presentation(&labels)),
+        Err(_) => format!("{}.", value.strip_suffix('.').unwrap_or(value)),
+    }
 }
 
 /// Encode a presentation-form name as uncompressed wire labels, mapping
@@ -116,13 +124,13 @@ pub fn encode_name(name: &str) -> Result<Vec<u8>, EncodeNameError> {
         name: name.to_string(),
         source,
     };
-    let (labels, _) = decode_name_labels(name).map_err(failed)?;
-    labels_to_wire(labels.iter().map(String::as_str)).map_err(failed)
+    let (labels, _) = owner_name::decode_preserved_labels(name).map_err(failed)?;
+    labels_to_wire(labels.iter().map(Vec::as_slice)).map_err(failed)
 }
 
 /// Encode length-prefixed labels and the root, rechecking wire limits
 /// because stored rows may have been edited outside bindizr.
-fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, ParseNameError> {
+fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a [u8]>) -> Result<Vec<u8>, ParseNameError> {
     let mut wire = Vec::new();
     for label in labels {
         if label.is_empty() {
@@ -132,7 +140,7 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, 
             return Err(ParseNameError::LabelTooLong);
         }
         wire.push(label.len() as u8);
-        wire.extend_from_slice(label.as_bytes());
+        wire.extend_from_slice(label);
     }
     wire.push(0);
     if wire.len() > MAX_DOMAIN_LEN + 2 {
@@ -143,10 +151,3 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, 
 
 #[cfg(test)]
 mod tests;
-
-/// Character policy for an LDH label validator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LabelCharset {
-    Ldh,
-    LdhUnderscore,
-}

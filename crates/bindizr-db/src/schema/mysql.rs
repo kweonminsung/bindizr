@@ -24,11 +24,11 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS zones (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
-            mname VARCHAR(255) NOT NULL,
-            rname VARCHAR(255) NOT NULL,
+            name VARCHAR(1020) CHARACTER SET ascii COLLATE ascii_bin UNIQUE NOT NULL,
+            mname VARCHAR(1020) CHARACTER SET ascii NOT NULL,
+            rname VARCHAR(1020) NOT NULL,
             default_ttl INT NOT NULL,
-            serial INT NOT NULL,
+            serial BIGINT NOT NULL,
             refresh INT NOT NULL DEFAULT 300,
             retry INT NOT NULL DEFAULT 60,
             expire INT NOT NULL DEFAULT 3600000,
@@ -63,7 +63,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS zone_journal (
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
-            serial INT NOT NULL,
+            serial BIGINT NOT NULL,
             operation VARCHAR(10) NOT NULL,
             record_name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type VARCHAR(50) NOT NULL,
@@ -84,7 +84,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS zone_versions (
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
-            serial INT NOT NULL,
+            serial BIGINT NOT NULL,
             mname TEXT NOT NULL,
             rname TEXT NOT NULL,
             default_ttl INT NOT NULL,
@@ -130,9 +130,9 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS catalog_zones (
-            name VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(1020) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
             digest VARCHAR(64) NOT NULL,
-            serial INT NOT NULL
+            serial BIGINT NOT NULL
         );
         "#,
         r#"
@@ -174,7 +174,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             result VARCHAR(7) NOT NULL,
             transport VARCHAR(3) NOT NULL,
             incremental BOOLEAN NOT NULL,
-            serial INT NULL,
+            serial BIGINT NULL,
             served_at DATETIME NOT NULL,
             error TEXT NULL,
             UNIQUE KEY uq_transfers_client_zone (client_addr, zone_id),

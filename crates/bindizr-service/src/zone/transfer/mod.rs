@@ -12,7 +12,7 @@ use crate::{
     Context, Transaction,
     authorization::Caller,
     error::{ErrorCode, ServiceError},
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
+    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_version::ZoneVersionId},
     transaction,
 };
 
@@ -42,6 +42,7 @@ impl<T> TransferAccess<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferContent {
     pub zone: Zone,
+    pub version_id: ZoneVersionId,
     pub records: Vec<Record>,
     pub dnssec_records: Vec<DnssecRecord>,
 }
@@ -52,9 +53,19 @@ pub async fn authorize_transfer_by_name(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-) -> Result<TransferAccess<Zone>, ServiceError> {
+) -> Result<TransferAccess<(Zone, ZoneVersionId)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
-    let result = authorize_transfer_tx(&mut tx, caller, zone_name).await;
+    let result = async {
+        match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
+            TransferAccess::Granted(zone) => {
+                let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
+                Ok(TransferAccess::Granted((zone, version_id)))
+            }
+            TransferAccess::NotAuth => Ok(TransferAccess::NotAuth),
+            TransferAccess::Refused(reason) => Ok(TransferAccess::Refused(reason)),
+        }
+    }
+    .await;
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
@@ -83,9 +94,7 @@ pub async fn authorize_catalog_content(
     transaction::finish_tx(tx, result, "failed to load catalog content").await
 }
 
-/// Both record planes of the zone `zone_name` names, read under the share
-/// lock that decides whether `caller` may transfer it, so the serial, the
-/// signatures, and the grant all describe one row.
+/// Authorize the caller and read both record planes in one shared-lock snapshot.
 pub async fn authorize_transfer_content_by_name(
     cx: &Context,
     caller: &Caller,
@@ -101,14 +110,27 @@ pub async fn authorize_transfer_content_by_name(
         let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let dnssec_records =
             bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
         Ok(TransferAccess::Granted(TransferContent {
             zone,
+            version_id,
             records,
             dnssec_records,
         }))
     }
     .await;
     transaction::finish_tx(tx, result, "failed to load transfer content").await
+}
+
+/// Read the immutable version identity, which remains distinct when serials wrap.
+async fn lookup_current_version_id_tx(
+    tx: &mut Transaction<'_>,
+    zone: &Zone,
+) -> Result<ZoneVersionId, ServiceError> {
+    bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, zone.serial, LockLevel::Unlocked)
+        .await?
+        .map(|version| version.id)
+        .ok_or_else(|| ServiceError::internal("the current zone version is missing"))
 }
 
 /// Share-lock the enabled zone by name and the grants that must permit the

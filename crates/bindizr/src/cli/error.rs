@@ -284,7 +284,7 @@ mod tests {
 
     /// Verify that exit codes separate the classes a script branches on.
     #[test]
-    fn exit_codes_separate_the_classes_a_script_branches_on() {
+    fn exit_codes_distinguish_failure_classes() {
         let code = |code| {
             CliError {
                 code: Some(code),

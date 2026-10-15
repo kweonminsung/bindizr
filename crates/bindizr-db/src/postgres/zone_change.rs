@@ -68,7 +68,7 @@ pub(crate) async fn count_between_serials_tx(
         r#"
         SELECT COUNT(*)
         FROM zone_journal
-        WHERE zone_id = $1 AND serial > $2 AND serial <= $3
+        WHERE zone_id = $1 AND ((serial > $2 AND serial <= $3) OR ($2 > $3 AND (serial > $2 OR serial <= $3)))
         "#,
     )
     .bind(zone_id)
@@ -93,8 +93,8 @@ pub(crate) async fn list_between_serials_tx(
         AssertSqlSafe(format!("{}{}", r#"
         SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
         FROM zone_journal
-        WHERE zone_id = $1 AND serial > $2 AND serial <= $3
-        ORDER BY serial, id
+        WHERE zone_id = $1 AND ((serial > $2 AND serial <= $3) OR ($2 > $3 AND (serial > $2 OR serial <= $3)))
+        ORDER BY id
         "#, lock_level.clause()))
     )
     .bind(zone_id)
@@ -117,9 +117,9 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
         r#"
         DELETE FROM zone_journal
         WHERE zone_id = $1
-          AND serial <= (
-              SELECT MAX(serial) FROM zone_journal
-              WHERE zone_id = $1 AND created_at < $2
+          AND serial IN (
+              SELECT serial FROM zone_journal WHERE zone_id = $1
+              GROUP BY serial HAVING MAX(created_at) < $2
           )
         "#,
     )
@@ -128,5 +128,19 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     .execute(&mut **tx)
     .await?;
 
+    Ok(result.rows_affected())
+}
+
+/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub(crate) async fn prune_outside_serial_window_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    current: Serial,
+) -> Result<u64, DatabaseError> {
+    let result = sqlx::query("DELETE FROM zone_journal WHERE zone_id = $1 AND (($2 - serial + 4294967296) % 4294967296) >= 2147483648")
+        .bind(zone_id)
+        .bind(current)
+        .execute(&mut **tx)
+        .await?;
     Ok(result.rows_affected())
 }

@@ -14,7 +14,7 @@ mod tests {
 
     /// Verify that `zone_name_to_member_id` is stable and case insensitive.
     #[test]
-    fn zone_name_to_member_id_is_stable_and_case_insensitive() {
+    fn zone_name_to_member_id_preserves_identity_across_case_changes() {
         let id = zone_name_to_member_id("example.com");
         assert_eq!(id, zone_name_to_member_id("example.com"));
         assert_eq!(id, zone_name_to_member_id("EXAMPLE.COM"));
@@ -26,7 +26,7 @@ mod tests {
 
     /// Verify that `zone_name_to_member_id` fits a label for the longest zone name.
     #[test]
-    fn zone_name_to_member_id_fits_a_label_for_the_longest_zone_name() {
+    fn zone_name_to_member_id_fits_label_limit_for_longest_zone_name() {
         // RFC 9432, Section 4.1: the id is one label, so the longest zone
         // name must still fit under the 63-byte label cap.
         let long = [

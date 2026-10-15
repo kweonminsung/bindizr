@@ -45,7 +45,7 @@ fn parse_address_target_preserves_explicit_ports() {
 
 /// Verify that `AddressTarget::parse` drops a hostname's trailing root dot.
 #[test]
-fn parse_drops_a_hostnames_trailing_root_dot() {
+fn parse_address_target_strips_hostname_root_dot() {
     assert_eq!(
         target_to_string(AddressTarget::parse("ns2.example.com.", 53)),
         "HostPort(ns2.example.com:53)"

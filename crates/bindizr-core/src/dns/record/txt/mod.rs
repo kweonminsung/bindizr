@@ -26,7 +26,7 @@ impl TxtRecordValue {
         }
 
         let segments = parse_quoted_segments(value.trim())?;
-        Self::from_segments(segments.iter().map(String::as_str))
+        Self::from_octet_segments(segments.iter().map(Vec::as_slice))
     }
 
     /// Wrap raw RDATA bytes, validating the character-string chain.
@@ -43,11 +43,17 @@ impl TxtRecordValue {
     where
         I: IntoIterator<Item = &'a str>,
     {
+        Self::from_octet_segments(segments.into_iter().map(str::as_bytes))
+    }
+
+    /// Encode arbitrary character-string octets without imposing an application charset.
+    pub fn from_octet_segments<'a>(
+        segments: impl IntoIterator<Item = &'a [u8]>,
+    ) -> Result<Self, ParseRecordValueError> {
         let mut rdata = Vec::new();
         let mut has_segments = false;
-        for segment in segments {
+        for bytes in segments {
             has_segments = true;
-            let bytes = segment.as_bytes();
             if bytes.len() > 255 {
                 return Err(ParseRecordValueError::CharStringTooLong {
                     field: "TXT character-string",
@@ -101,7 +107,7 @@ impl TxtRecordValue {
     /// `None` if the value is not in that form.
     pub fn from_presentation(stored: &str) -> Option<Self> {
         let segments = parse_quoted_segments(stored.trim()).ok()?;
-        Self::from_segments(segments.iter().map(String::as_str)).ok()
+        Self::from_octet_segments(segments.iter().map(Vec::as_slice)).ok()
     }
 
     /// Decode into character-strings, collapsing a single segment into
@@ -141,7 +147,7 @@ impl TxtRecordValue {
 }
 
 /// Parse quoted TXT character strings and their escapes.
-fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, ParseRecordValueError> {
+fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValueError> {
     let mut segments = Vec::new();
     let mut bytes = trimmed.bytes().peekable();
 
@@ -187,10 +193,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, ParseRecordValueE
                 field: "TXT character-string",
             });
         }
-        segments.push(
-            String::from_utf8(segment)
-                .map_err(|_| ParseRecordValueError::NotUtf8 { field: "TXT value" })?,
-        );
+        segments.push(segment);
 
         // Require spaces between quoted strings while preserving each wire segment.
         match bytes.next() {
@@ -215,9 +218,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, ParseRecordValueE
     Ok(segments)
 }
 
-/// Split RDATA into its length-prefixed character-strings, or `None` when a
-/// length octet overruns the buffer. The one place the prefix is interpreted;
-/// the accessors above slice only what this returns.
+/// Split length-prefixed character-strings, returning `None` on buffer overrun.
 fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
     let mut segments = Vec::new();
     let mut pos = 0usize;

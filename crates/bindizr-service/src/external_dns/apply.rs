@@ -110,7 +110,7 @@ pub async fn apply_changes(
             .await?;
 
             // Apply the remaining delta and its signatures under one zone serial.
-            let new_serial = generate_serial(Some(zone.serial))?;
+            let new_serial = generate_serial(Some(zone.serial));
             record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &change_set.deletes)
                 .await?;
             record::create_with_changes_tx(&mut tx, zone.id, new_serial, &change_set.creates)

@@ -63,7 +63,7 @@ async fn fixture() -> Pool<Sqlite> {
                      VALUES (?, ?, 'v', 'v', 300, ?, ?)",
                 )
                 .bind(&owner)
-                .bind(record_type.as_str())
+                .bind(record_type.to_text())
                 .bind(Utc::now())
                 .bind(id)
                 .execute(&pool)
@@ -152,7 +152,7 @@ fn roles() -> Vec<Vec<RoleGrant>> {
 /// Verify that the record, DNSSEC record, and zone listings narrow each role
 /// exactly as `RoleGrants` answers row by row.
 #[tokio::test]
-async fn listings_narrow_each_role_as_role_grants_answer() {
+async fn listings_match_role_grants_visibility() {
     let pool = fixture().await;
     let all_records = super::record::list_by_filter_with_zone(&pool, RecordFilter::default())
         .await

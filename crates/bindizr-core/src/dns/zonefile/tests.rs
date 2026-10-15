@@ -8,26 +8,18 @@ use domain::{
 use super::*;
 use crate::dns::{name::ZoneName, query::TransferRecord, record::Rdata};
 
-/// Verify that TXT rejects non UTF8 octets.
+/// Preserve TXT octets that cannot be represented as UTF-8 segments.
 #[test]
-fn txt_rejects_non_utf8_octets() {
-    // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8.
+fn txt_preserves_non_utf8_octets() {
     let parsed = ParsedZoneFile::parse(
-        "weird IN TXT \"\\255\\254\"\n",
+        r#"weird IN TXT "\255\254""#,
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
-    assert!(
-        parsed.errors.iter().any(|e| e.contains("not valid UTF-8")),
-        "expected a UTF-8 error, got: {:?}",
-        parsed.errors
-    );
-    assert!(
-        !parsed
-            .records
-            .iter()
-            .any(|record| record.record_type == RecordType::Txt),
-        "the non-UTF-8 TXT record should not have been stored"
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert_eq!(
+        parsed.records[0].value,
+        ZoneFileValue::Rdata(r#""\255\254""#.into())
     );
 }
 
@@ -50,7 +42,7 @@ fn parse_error_names_the_line_of_the_submitted_text() {
 
 /// Verify that TXT UTF8 multi segment parses as segments.
 #[test]
-fn txt_utf8_multi_segment_parses_as_segments() {
+fn txt_parser_preserves_utf8_segments() {
     let parsed = ParsedZoneFile::parse(
         "multi IN TXT \"foo\" \"bar\"\n",
         &ZoneName::parse("example.com").unwrap(),
@@ -74,7 +66,7 @@ fn txt_utf8_multi_segment_parses_as_segments() {
 
 /// Verify that a TTL written with a BIND unit suffix is refused on its line.
 #[test]
-fn a_ttl_written_with_units_is_refused() {
+fn zonefile_rejects_ttl_units() {
     // RFC 1035, Section 5.1 defines the TTL as a decimal integer; the suffix
     // is a BIND extension, and `named-compilezone` writes it back as seconds.
     let parsed = ParsedZoneFile::parse(
@@ -94,7 +86,7 @@ fn a_ttl_written_with_units_is_refused() {
 
 /// Verify zone-file parsing of NAPTR presentation data.
 #[test]
-fn reads_a_naptr_record_in_its_own_presentation_form() {
+fn zonefile_preserves_naptr_presentation() {
     // `domain` renders a root replacement as `..`, so the value comes from
     // the parsed fields rather than its display form.
     let parsed = ParsedZoneFile::parse(
@@ -113,7 +105,7 @@ fn reads_a_naptr_record_in_its_own_presentation_form() {
         [
             &ZoneFileValue::Rdata("200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .".to_string()),
             &ZoneFileValue::Rdata(
-                "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com.".to_string()
+                "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM.".to_string()
             ),
         ]
     );
@@ -121,7 +113,7 @@ fn reads_a_naptr_record_in_its_own_presentation_form() {
 
 /// Verify that only the apex SOA is read as the zone's own.
 #[test]
-fn a_soa_outside_the_apex_is_refused() {
+fn zonefile_rejects_non_apex_soa() {
     // `zone import --create` builds the new zone from `soa`, so a foreign
     // owner's SOA would hand it that zone's serial, MNAME, RNAME and timers.
     let parsed = ParsedZoneFile::parse(
@@ -169,7 +161,7 @@ fn a_soa_outside_the_apex_is_refused() {
     );
 }
 
-/// Build one transferred record with canonical wire RDATA.
+/// Build one transferred record with uncompressed wire RDATA.
 fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     let mut zonefile = Zonefile::new();
     zonefile.extend_from_slice(format!("{name} 300 IN {rtype} {rdata}\n").as_bytes());
@@ -177,7 +169,7 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
         panic!("record");
     };
     let mut bytes = Vec::new();
-    let Ok(()) = record.data().compose_canonical_rdata(&mut bytes);
+    let Ok(()) = record.data().compose_rdata(&mut bytes);
     TransferRecord {
         name: crate::dns::name::to_fqdn(&record.owner().to_string()),
         rtype,
@@ -205,9 +197,9 @@ fn transfer_keeps_one_soa_for_creation() {
     assert_eq!(parsed.records.len(), 1);
 }
 
-/// Verify that a type bindizr cannot store reaches the parser as unsupported.
+/// Store ordinary types without a typed editor in RFC 3597 presentation form.
 #[test]
-fn transfer_reports_unsupported_records() {
+fn transfer_preserves_other_ordinary_types() {
     let records = [
         transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
         transfer_record("example.com.", Rtype::HINFO, r#""rfc" "8482""#),
@@ -215,12 +207,12 @@ fn transfer_reports_unsupported_records() {
 
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
-    assert_eq!(parsed.records.len(), 1);
-    assert_eq!(parsed.unsupported.len(), 1, "{:?}", parsed.unsupported);
-    assert!(
-        parsed.unsupported[0].contains("HINFO"),
-        "{:?}",
-        parsed.unsupported
+    assert_eq!(parsed.records.len(), 2);
+    assert!(parsed.unsupported.is_empty());
+    assert_eq!(parsed.records[1].record_type, RecordType::Unknown(13));
+    assert_eq!(
+        parsed.records[1].value,
+        ZoneFileValue::Rdata(r"\# 9 037266630438343832".into())
     );
 }
 
@@ -273,7 +265,7 @@ fn transfer_preserves_escaped_names() {
 
 /// Preserve TXT segments and root targets across import sources.
 #[test]
-fn transfer_preserves_record_values_and_rejects_unstorable_octets() {
+fn transfer_preserves_record_values_and_arbitrary_octets() {
     let zone = ZoneName::parse("example.com").unwrap();
     let records = [
         transfer_record(
@@ -315,6 +307,9 @@ fn transfer_preserves_record_values_and_rejects_unstorable_octets() {
         rdata: Rdata::new(vec![1, 255]).unwrap(),
     };
     let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone);
-    assert!(parsed.records.is_empty());
-    assert!(parsed.errors[0].contains("UTF-8"));
+    assert!(parsed.errors.is_empty());
+    assert_eq!(
+        parsed.records[0].value,
+        ZoneFileValue::Rdata(r#""\255""#.into())
+    );
 }

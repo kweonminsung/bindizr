@@ -43,7 +43,7 @@ pub async fn list_in_serial_range_tx(
     }
 }
 
-/// List the versions of a zone that `filter` covers, newest serial first,
+/// List the versions of a zone that `filter` covers, newest version first,
 /// paginated; the current serial is always listed.
 pub async fn list_by_filter(
     db: &Db,
@@ -116,6 +116,25 @@ pub async fn prune_by_zone_id_older_than_tx(
         }
         TransactionKind::Sqlite(tx) => {
             sqlite::zone_version::prune_by_zone_id_older_than_tx(tx, zone_id, cutoff).await
+        }
+    }
+}
+
+/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub async fn prune_outside_serial_window_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+    current: Serial,
+) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::zone_version::prune_outside_serial_window_tx(tx, zone_id, current).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::zone_version::prune_outside_serial_window_tx(tx, zone_id, current).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::zone_version::prune_outside_serial_window_tx(tx, zone_id, current).await
         }
     }
 }

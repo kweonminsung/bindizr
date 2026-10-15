@@ -6,7 +6,7 @@ use crate::{
 
 /// Verify that encode a RDATA is the address octets.
 #[test]
-fn encode_a_rdata_is_the_address_octets() {
+fn encode_a_rdata_returns_address_octets() {
     // RFC 1035, Section 3.4.1.
     let encoded = EncodedRdata::from_columns(&RecordType::A, "192.0.2.1", None).unwrap();
     assert_eq!(encoded.record_type, 1);
@@ -15,7 +15,7 @@ fn encode_a_rdata_is_the_address_octets() {
 
 /// Verify that encode AAAA RDATA is the address octets.
 #[test]
-fn encode_aaaa_rdata_is_the_address_octets() {
+fn encode_aaaa_rdata_returns_address_octets() {
     // RFC 3596, Section 2.2.
     let encoded = EncodedRdata::from_columns(&RecordType::Aaaa, "2001:db8::1", None).unwrap();
     assert_eq!(encoded.record_type, 28);
@@ -27,7 +27,7 @@ fn encode_aaaa_rdata_is_the_address_octets() {
 
 /// Verify that encode CNAME RDATA is the target name.
 #[test]
-fn encode_cname_rdata_is_the_target_name() {
+fn encode_cname_rdata_returns_target_name() {
     let encoded =
         EncodedRdata::from_columns(&RecordType::Cname, "mail.example.com.", None).unwrap();
     assert_eq!(encoded.record_type, 5);
@@ -39,7 +39,7 @@ fn encode_cname_rdata_is_the_target_name() {
 
 /// Verify that encode CAA RDATA is flags tag length tag then value.
 #[test]
-fn encode_caa_rdata_is_flags_tag_length_tag_then_value() {
+fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
     // RFC 8659, Section 4.1.
     let encoded =
         EncodedRdata::from_columns(&RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
@@ -52,7 +52,7 @@ fn encode_caa_rdata_is_flags_tag_length_tag_then_value() {
 
 /// Verify that encode SSHFP RDATA is algorithm type then fingerprint.
 #[test]
-fn encode_sshfp_rdata_is_algorithm_type_then_fingerprint() {
+fn encode_sshfp_rdata_returns_algorithm_type_and_fingerprint() {
     // RFC 4255, Section 3.1.
     let encoded = EncodedRdata::from_columns(&RecordType::Sshfp, "4 1 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 44);
@@ -61,7 +61,7 @@ fn encode_sshfp_rdata_is_algorithm_type_then_fingerprint() {
 
 /// Verify that encode TLSA RDATA is usage selector matching then data.
 #[test]
-fn encode_tlsa_rdata_is_usage_selector_matching_then_data() {
+fn encode_tlsa_rdata_returns_usage_selector_matching_and_data() {
     // RFC 6698, Section 2.1.
     let encoded = EncodedRdata::from_columns(&RecordType::Tlsa, "3 1 0 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 52);
@@ -70,7 +70,7 @@ fn encode_tlsa_rdata_is_usage_selector_matching_then_data() {
 
 /// Verify that encode DS RDATA is tag algorithm digest type then digest.
 #[test]
-fn encode_ds_rdata_is_tag_algorithm_digest_type_then_digest() {
+fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
     // RFC 4034, Section 5.1.
     let encoded = EncodedRdata::from_columns(&RecordType::Ds, "34217 13 2 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 43);
@@ -82,7 +82,7 @@ fn encode_ds_rdata_is_tag_algorithm_digest_type_then_digest() {
 
 /// Verify that encode MX RDATA is preference then exchange.
 #[test]
-fn encode_mx_rdata_is_preference_then_exchange() {
+fn encode_mx_rdata_returns_preference_and_exchange() {
     // RFC 1035, Section 3.3.9; the preference lives in the priority column.
     let encoded =
         EncodedRdata::from_columns(&RecordType::Mx, "mail.example.com", Some(10)).unwrap();
@@ -94,7 +94,7 @@ fn encode_mx_rdata_is_preference_then_exchange() {
 
 /// Verify that encode SRV RDATA is priority weight port target.
 #[test]
-fn encode_srv_rdata_is_priority_weight_port_target() {
+fn encode_srv_rdata_returns_priority_weight_port_and_target() {
     // RFC 2782; the value stores `weight port target`, priority its column.
     let encoded =
         EncodedRdata::from_columns(&RecordType::Srv, "5 5060 sip.example.com", Some(1)).unwrap();

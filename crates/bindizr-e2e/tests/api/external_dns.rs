@@ -108,7 +108,7 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
 /// Verify that external DNS routes are not registered when disabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn external_dns_routes_are_not_registered_when_disabled() {
+async fn external_dns_omits_routes_when_disabled() {
     let app = TestApp::start_local().await;
 
     let (status, _) = app
@@ -224,7 +224,7 @@ async fn external_dns_domain_listing_unions_split_grants() {
 /// Verify that a grant narrowed to a subtree narrows the domain filter.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
+async fn external_dns_domain_filter_respects_subtree_grant() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         external_dns_enabled: true,
@@ -466,7 +466,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 /// Verify that external DNS never falls back from ungranted subzone to granted parent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent() {
+async fn external_dns_rejects_ungranted_subzone_without_parent_fallback() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         external_dns_enabled: true,

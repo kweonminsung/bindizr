@@ -5,7 +5,7 @@ use super::{
         validate_domain_record_value,
     },
 };
-use crate::dns::name::{encode_name, to_fqdn_lowercase};
+use crate::dns::name::{encode_name, to_fqdn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SrvRecordValue<'a> {
@@ -70,18 +70,13 @@ impl<'a> SrvRecordValue<'a> {
             self.priority,
             self.weight,
             self.port,
-            to_fqdn_lowercase(self.target)
+            to_fqdn(self.target)
         )
     }
 
-    /// The value column's form: `<weight> <port> <target>` with a lowercase
+    /// The value column's form: `<weight> <port> <target>` with a case-preserving
     /// FQDN target.
     pub fn to_stored(&self) -> String {
-        format!(
-            "{} {} {}",
-            self.weight,
-            self.port,
-            to_fqdn_lowercase(self.target)
-        )
+        format!("{} {} {}", self.weight, self.port, to_fqdn(self.target))
     }
 }

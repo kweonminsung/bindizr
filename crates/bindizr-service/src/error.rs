@@ -587,7 +587,7 @@ mod tests {
 
     /// Verify that a signing failure is not an internal error.
     #[test]
-    fn a_signing_failure_is_not_an_internal_error() {
+    fn signing_failure_preserves_dnssec_error_class() {
         let err = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
         assert_eq!(err.code(), ErrorCode::DnssecSigningFailed);
         assert!(err.code().is_internal());

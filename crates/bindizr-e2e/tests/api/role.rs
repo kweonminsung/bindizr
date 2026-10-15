@@ -6,7 +6,7 @@ use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 /// Verify role and grant management over HTTP, and the guards on both.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn role_grant_lifecycle_over_http() {
+async fn role_grants_support_create_list_and_revoke_over_http() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -153,7 +153,7 @@ async fn role_grant_lifecycle_over_http() {
 /// role, and named when they keep it from being deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_roles_credentials_are_listed_counted_and_named() {
+async fn role_credentials_report_names_and_counts() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -313,7 +313,7 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
 /// Verify that scoped token without grants sees nothing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn scoped_token_without_grants_sees_nothing() {
+async fn scoped_token_hides_zones_when_grants_are_absent() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -345,7 +345,7 @@ async fn scoped_token_without_grants_sees_nothing() {
 /// Verify that hidden and absent zones read alike whatever the spelling.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
+async fn zone_lookup_hides_existence_across_name_spellings() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -401,7 +401,7 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
 /// Verify that a narrowed grant reads only what it may write.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_narrowed_grant_reads_only_what_it_may_write() {
+async fn narrowed_grant_reads_only_matching_records() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -498,7 +498,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
 /// Verify that a grants pattern and types narrow the count too.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_grants_pattern_and_types_narrow_the_count_too() {
+async fn record_count_respects_grant_patterns_and_types() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -851,7 +851,7 @@ async fn role_grants_enforce_name_patterns_and_types() {
 /// it matches a record, and that such a record reads as absent by id.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches() {
+async fn record_delete_rejects_out_of_grant_filter_even_without_matches() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -926,7 +926,7 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
 /// Verify that ungranted bulk is refused before it can probe the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
+async fn record_bulk_rejects_ungranted_request_before_zone_lookup() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -977,7 +977,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
 /// unparseable names leave the per-record check with no write targets.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
+async fn record_bulk_rejects_ungranted_request_before_name_validation() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -1013,7 +1013,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
 /// Verify that a `record:read` grant reads the zone but cannot change it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_record_read_grant_reads_the_zone_but_cannot_change_it() {
+async fn record_read_grant_allows_zone_read_without_write() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -1293,7 +1293,7 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
 /// its write actions cover, and nothing else.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_write_only_grant_changes_the_records_it_covers() {
+async fn write_only_grant_changes_matching_records() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -1436,7 +1436,7 @@ async fn create_role_with_token(app: &TestApp, name: &str) -> String {
 /// zone, version, import or ExternalDNS route, carries a record it cannot read.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn no_response_reveals_a_record_the_role_cannot_read() {
+async fn responses_hide_records_outside_read_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         external_dns_enabled: true,
@@ -1732,7 +1732,7 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
 /// alone cannot make the daemon fetch from an arbitrary host.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_zone_creating_import_needs_its_record_rights_before_fetching() {
+async fn zone_import_checks_record_permissions_before_fetching() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -1802,7 +1802,7 @@ async fn a_zone_creating_import_needs_its_record_rights_before_fetching() {
 /// `zone:update` cannot probe other zones' names through rename conflicts.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn renaming_a_zone_needs_zone_create() {
+async fn zone_rename_requires_zone_create() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -1881,7 +1881,7 @@ async fn renaming_a_zone_needs_zone_create() {
 /// slow transfer stops it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn an_import_stops_when_its_credential_is_revoked_mid_transfer() {
+async fn zone_import_rejects_credential_revoked_during_transfer() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()

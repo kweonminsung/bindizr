@@ -9,6 +9,12 @@ use crate::{dns::name::ParseNameError, model::record::RecordType};
 /// text names the field, so the message stands on its own beside the value.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseRecordValueError {
+    #[error("CAA flags must be 0 or 128; reserved bits must be zero")]
+    CaaReservedFlags,
+    #[error("generic record value must be '\\# <length> <hex>' with matching length")]
+    GenericRdata,
+    #[error("generic record value exceeds the maximum of {max} bytes")]
+    GenericRdataTooLong { max: usize },
     #[error("{field} must be between 0 and 65535")]
     OutOfRange { field: &'static str },
     #[error("{field} must be an unsigned 8-bit integer: {value}")]

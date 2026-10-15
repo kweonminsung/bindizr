@@ -109,7 +109,7 @@ pub struct CheckSecondaryResponse {
     pub catalog_zone_name: String,
     /// The serial Bindizr's own listener serves the catalog zone at; absent
     /// with `listener_error`, and `catalog` is then `reachable` at best.
-    #[schema(example = 42, value_type = Option<u32>)]
+    #[schema(inline)]
     pub catalog_serial: Option<Serial>,
     pub listener_error: Option<String>,
     /// The secondary's catalog probe, classified against `catalog_serial`.
@@ -139,7 +139,7 @@ pub struct TransferResponse {
     #[schema(example = true)]
     pub incremental: bool,
     /// The serial the answer reached; absent when nothing was transferred.
-    #[schema(example = 42, value_type = Option<u32>)]
+    #[schema(inline)]
     pub serial: Option<Serial>,
     pub at: DateTime<Utc>,
     /// Why the transfer was refused or failed.

@@ -16,7 +16,6 @@ use bindizr_service::{
     authorization::Caller,
     zone::{self, TransferAccess},
 };
-use tokio::net::UdpSocket;
 
 use crate::dns::{
     error::DnsError,
@@ -26,6 +25,7 @@ use crate::dns::{
         catalog,
     },
     stream::ResponseWriter,
+    udp::{ReplyTarget, UdpSocket},
 };
 
 /// Answer an SOA query over TCP. The outcome is counted once the answer is
@@ -60,7 +60,7 @@ pub(crate) async fn handle_tcp_soa(
 pub(crate) async fn handle_udp_soa(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
-    client_addr: SocketAddr,
+    target: ReplyTarget,
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), DnsError> {
@@ -68,7 +68,7 @@ pub(crate) async fn handle_udp_soa(
     let (response, outcome) = handle_soa_request(
         dns_cx,
         query,
-        client_addr.ip(),
+        target.client_addr.ip(),
         query_data,
         TransferTransport::Udp,
         query.udp_payload_limit(),
@@ -76,7 +76,7 @@ pub(crate) async fn handle_udp_soa(
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     socket
-        .send_to(&response, client_addr)
+        .send_to(&response, target)
         .await
         .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     cx.metrics().track_soa(outcome);
@@ -88,7 +88,7 @@ pub(crate) async fn handle_udp_soa(
 pub(crate) async fn handle_udp_ixfr(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
-    client_addr: SocketAddr,
+    target: ReplyTarget,
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), DnsError> {
@@ -96,7 +96,7 @@ pub(crate) async fn handle_udp_ixfr(
     let (response, outcome) = handle_soa_request(
         dns_cx,
         query,
-        client_addr.ip(),
+        target.client_addr.ip(),
         query_data,
         TransferTransport::Udp,
         query.udp_payload_limit(),
@@ -106,13 +106,10 @@ pub(crate) async fn handle_udp_ixfr(
         cx.metrics()
             .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
     })?;
-    socket
-        .send_to(&response, client_addr)
-        .await
-        .inspect_err(|_| {
-            cx.metrics()
-                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
-        })?;
+    socket.send_to(&response, target).await.inspect_err(|_| {
+        cx.metrics()
+            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+    })?;
     let result = match outcome {
         SoaResult::Ok => XfrResult::Truncated,
         SoaResult::Refused => XfrResult::Refused,
@@ -126,14 +123,13 @@ pub(crate) async fn handle_udp_ixfr(
 
 /// `bindizr doctor` probes over the wire, reaching a concrete `listen_addr` from it.
 fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
-    // A v4 client on a `::` listener arrives mapped, so canonicalize first.
+    // IPv4-mapped IPv6 addresses use the same self-probe identity as IPv4.
     let client_ip = client_ip.to_canonical();
     client_ip.is_loopback() || client_ip == dns_cx.daemon().config().dns.listen_addr.to_canonical()
 }
 
-/// Build the SOA response and outcome for any transport, applying the same
-/// gate as transfers because secondaries poll with their transfer key. An
-/// answer over `max_len` goes out truncated, for UDP.
+/// Build an SOA response under the transfer gate for polling secondaries.
+/// Truncate responses exceeding `max_len` for UDP.
 async fn handle_soa_request(
     dns_cx: &DnsContext,
     query: &message::ParsedQuery,
@@ -224,7 +220,9 @@ async fn handle_soa_request(
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
     let access = match zone::normalize_name(zone_name_str) {
-        Ok(zone_name) => zone::authorize_transfer_by_name(cx, &identity.caller, &zone_name).await?,
+        Ok(zone_name) => zone::authorize_transfer_by_name(cx, &identity.caller, &zone_name)
+            .await?
+            .map(|(zone, _)| zone),
         Err(_) => TransferAccess::NotAuth,
     };
     let zone = match access {

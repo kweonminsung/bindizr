@@ -65,7 +65,7 @@ pub struct ZoneResponse {
     pub rname: String,
     #[schema(example = 3600, value_type = i32)]
     pub default_ttl: Ttl,
-    #[schema(example = 42, value_type = u32)]
+    #[schema(inline)]
     pub serial: Serial,
     #[schema(example = 7200, value_type = i32)]
     pub refresh: SoaInterval,
@@ -116,8 +116,8 @@ pub struct CreateZoneRequest {
     /// `dns.zone_defaults.ttl`.
     #[schema(example = 3600)]
     pub default_ttl: Option<i32>,
-    /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
-    #[schema(example = 42, value_type = Option<u32>)]
+    /// Starting serial, auto-generated if not provided. Accepts 0-4294967295, advances modulo 2^32, and can only be set at creation.
+    #[schema(inline)]
     pub serial: Option<Serial>,
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
@@ -174,16 +174,16 @@ pub struct ZoneFilter {
     #[schema(example = 86400)]
     pub max_default_ttl: Option<i32>,
     /// Filter by serial.
-    #[schema(example = 42, value_type = Option<u32>)]
-    #[param(value_type = Option<u32>)]
+    #[schema(inline)]
+    #[param(inline)]
     pub serial: Option<Serial>,
     /// Filter by minimum serial.
-    #[schema(example = 1, value_type = Option<u32>)]
-    #[param(value_type = Option<u32>)]
+    #[schema(inline)]
+    #[param(inline)]
     pub min_serial: Option<Serial>,
     /// Filter by maximum serial.
-    #[schema(example = 99, value_type = Option<u32>)]
-    #[param(value_type = Option<u32>)]
+    #[schema(inline)]
+    #[param(inline)]
     pub max_serial: Option<Serial>,
     /// Keep zones created at or after this RFC 3339 timestamp.
     pub created_after: Option<DateTime<Utc>>,
@@ -321,7 +321,7 @@ pub enum SecondaryStatus {
     InSync,
     Lagging,
     Ahead,
-    /// The secondary answered, but Bindizr's own serial was not known.
+    /// The secondary answered, but serials could not be ordered (unknown or RFC 1982 half-range).
     Reachable,
     Unreachable,
 }
@@ -346,7 +346,7 @@ pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
     pub status: SecondaryStatus,
-    #[schema(example = 42, value_type = Option<u32>)]
+    #[schema(inline)]
     pub visible_serial: Option<Serial>,
     pub error: Option<String>,
     /// The latest transfer of this zone Bindizr served the address.
@@ -371,7 +371,7 @@ impl SecondaryStatusResponse {
 pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
-    #[schema(example = 42, value_type = u32)]
+    #[schema(inline)]
     pub serial: Serial,
     pub secondaries: Vec<SecondaryStatusResponse>,
 }

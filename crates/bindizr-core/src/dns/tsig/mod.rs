@@ -126,9 +126,8 @@ pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), Ve
     Ok(())
 }
 
-/// The largest TSIG record a response can carry, so an intake cap can reserve
-/// room for one it has not seen yet: the longest key name, `hmac-sha512.`, its
-/// 64-byte MAC, and the 6 bytes BADTIME adds (RFC 8945, Section 4.2).
+/// Reserve the maximum TSIG size: longest key name, `hmac-sha512.`,
+/// 64-byte MAC and 6-byte BADTIME data (RFC 8945, Section 4.2).
 pub(crate) const MAX_TSIG_RECORD: usize =
     (MAX_DOMAIN_LEN + 2) + (2 + 2 + 4 + 2) + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
@@ -232,9 +231,8 @@ pub fn verify_tsig(
 pub enum RequestSignature {
     /// No TSIG record: the address decides, as it did before keys existed.
     Absent,
-    /// A TSIG that breaks RFC 8945, Section 5.2: more than one, not the last
-    /// record, uninterpretable, or a MAC of a size no key produces. Answered
-    /// FORMERR, never treated as unsigned.
+    /// Duplicate, misplaced, undecodable or impossible-length TSIG: answer FORMERR,
+    /// never treat as unsigned (RFC 8945, Section 5.2).
     Malformed,
     /// The key name the record carries, and the fudge its answer echoes.
     Key { name: String, fudge: u16 },
@@ -246,6 +244,17 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     let Ok(message) = Message::from_octets(query_data) else {
         return RequestSignature::Absent;
     };
+    // RFC 8945, Section 5.2: TSIG is legal only at the end of Additional.
+    for section in [message.answer(), message.authority()] {
+        let Ok(section) = section else {
+            return RequestSignature::Malformed;
+        };
+        for record in section {
+            if !record.is_ok_and(|record| record.rtype() != Rtype::TSIG) {
+                return RequestSignature::Malformed;
+            }
+        }
+    }
     let Ok(additional) = message.additional() else {
         return RequestSignature::Malformed;
     };
@@ -257,6 +266,10 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
         match record {
             Ok(record) => {
                 if record.rtype() == Rtype::TSIG {
+                    // RFC 8945, Section 4.2: these fields are fixed, not MAC inputs.
+                    if record.class() != Class::ANY || record.ttl().as_secs() != 0 {
+                        return RequestSignature::Malformed;
+                    }
                     tsig_positions.push(records);
                 }
                 records += 1;
@@ -282,9 +295,8 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     }
 }
 
-/// Whether a MAC of `mac_len` octets could come from `algorithm` (RFC 8945,
-/// Section 5.2.2.1): at most the hash's length, at least max(10, half of
-/// it). An unknown algorithm passes, for the key check to answer BADKEY.
+/// Accept MAC lengths from max(10, half the hash length) to the full length
+/// (RFC 8945, Section 5.2.2.1); defer unknown algorithms to the BADKEY check.
 pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) -> bool {
     let Some(algorithm) = Algorithm::from_name(algorithm) else {
         return true;

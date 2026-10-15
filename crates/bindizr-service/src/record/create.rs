@@ -110,7 +110,7 @@ pub async fn create(
         after.push_written(RecordData::from(candidate.clone()));
         let diff = build_record_diff(&zone, &before, &after);
 
-        let new_serial = generate_serial(Some(zone.serial))?;
+        let new_serial = generate_serial(Some(zone.serial));
 
         // The record is validated and authorized, so a dry run stops here.
         if create_record_request.dry_run {

@@ -104,7 +104,7 @@ mod tests {
 
     /// Verify that a closed pipe is quiet while any other failure is kept.
     #[test]
-    fn a_closed_pipe_is_success_and_a_real_failure_is_not() {
+    fn stream_write_accepts_broken_pipe_and_preserves_other_errors() {
         let closed = AtomicBool::new(false);
         write(&closed, &mut FailingSink(ErrorKind::BrokenPipe), "x");
         assert!(

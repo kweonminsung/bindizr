@@ -42,7 +42,7 @@ pub(crate) async fn create_many_tx(
         for r in chunk {
             query = query
                 .bind(&r.name)
-                .bind(r.record_type.as_str())
+                .bind(r.record_type.to_text())
                 .bind(r.value.clone())
                 .bind(r.record_type.display_value(&r.value))
                 .bind(r.ttl)
@@ -174,7 +174,7 @@ pub(crate) async fn list_by_record_types_tx(
 
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
     for record_type in record_types {
-        query = query.bind(record_type.as_str());
+        query = query.bind(record_type.to_text());
     }
     let records = query.fetch_all(&mut **tx).await?;
 
@@ -205,9 +205,8 @@ pub(crate) async fn list_by_names_tx(
     if names.is_empty() {
         return Ok(Vec::new());
     }
-    // Only same-name rows can conflict, so load just those, matching the
-    // stored names as given so idx_records_zone_name applies. Chunk the IN
-    // list to stay under SQLite's bind-variable limit.
+    // Load only same-name conflicts using idx_records_zone_name;
+    // chunk the IN list below SQLite's bind-variable limit.
     const CHUNK: usize = 400;
     let mut out = Vec::new();
     for chunk in names.chunks(CHUNK) {
@@ -438,7 +437,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.as_str())
+    .bind(record.record_type.to_text())
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)

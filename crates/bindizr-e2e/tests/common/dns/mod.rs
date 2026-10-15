@@ -10,11 +10,14 @@ use domain::{
     rdata::AllRecordData,
 };
 pub(crate) use parent::{DsRecord, FakeParent};
+use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferResult, axfr, xot};
 pub(crate) use transport::{
     exchange_request, exchange_tcp, exchange_udp, exchange_xot, read_frame, write_frame,
 };
+
+use super::TestApp;
 
 pub(crate) mod notify;
 pub(crate) mod nsupdate;
@@ -60,24 +63,10 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
 
 /// Map a supported record mnemonic to its wire type number.
 pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
-    match record_type {
-        "A" => Some(1),
-        "NS" => Some(2),
-        "CNAME" => Some(5),
-        "SOA" => Some(6),
-        "PTR" => Some(12),
-        "MX" => Some(15),
-        "TXT" => Some(16),
-        "AAAA" => Some(28),
-        "SRV" => Some(33),
-        "NAPTR" => Some(35),
-        "DNAME" => Some(39),
-        "DS" => Some(43),
-        "SSHFP" => Some(44),
-        "TLSA" => Some(52),
-        "CAA" => Some(257),
-        _ => None,
-    }
+    record_type
+        .parse::<domain::base::Rtype>()
+        .ok()
+        .map(|rtype| rtype.to_int())
 }
 
 /// Poll DNS until its answers match the expected record values.
@@ -144,7 +133,7 @@ fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord
     }
     let normalize = |value: &Value| {
         let value = value.to_string();
-        if matches!(record_type, 2 | 5 | 12 | 15 | 33) {
+        if matches!(record_type, 2 | 5 | 12 | 15 | 33 | 39) {
             value.to_ascii_lowercase()
         } else {
             value
@@ -324,9 +313,9 @@ fn decode_dns_value(
             "{} {} {} {} {} {}",
             naptr.order(),
             naptr.preference(),
-            to_quoted_string(&String::from_utf8_lossy(naptr.flags().as_slice())),
-            to_quoted_string(&String::from_utf8_lossy(naptr.services().as_slice())),
-            to_quoted_string(&String::from_utf8_lossy(naptr.regexp().as_slice())),
+            to_quoted_string(naptr.flags().as_slice()),
+            to_quoted_string(naptr.services().as_slice()),
+            to_quoted_string(naptr.regexp().as_slice()),
             to_presentation_name(naptr.replacement())
         )),
         AllRecordData::Mx(mx) => Value::String(format!(
@@ -342,14 +331,22 @@ fn decode_dns_value(
             to_presentation_name(srv.target())
         )),
         AllRecordData::Txt(txt) => {
-            let mut segments = txt
+            let segments = txt
                 .iter_charstrs()
-                .map(|charstr| String::from_utf8_lossy(charstr.as_slice()).into())
-                .collect::<Vec<String>>();
-            if segments.len() == 1 {
-                Value::String(segments.remove(0))
+                .map(|charstr| charstr.as_slice())
+                .collect::<Vec<_>>();
+            let text = segments
+                .iter()
+                .map(|segment| std::str::from_utf8(segment))
+                .collect::<Result<Vec<_>, _>>();
+            if let Ok(text) = text {
+                if let [value] = text.as_slice() {
+                    json!(value)
+                } else {
+                    json!(text)
+                }
             } else {
-                serde_json::to_value(segments).map_err(|error| error.to_string())?
+                json!({ "presentation": segments.into_iter().map(to_quoted_string).collect::<Vec<_>>().join(" ") })
             }
         }
         AllRecordData::Ds(ds) => Value::String(format!(
@@ -374,6 +371,15 @@ fn decode_dns_value(
         )),
         // CAA values are opaque octets, escaped losslessly (RFC 8659, Section 4.1).
         AllRecordData::Caa(caa) => Value::String(caa.to_string()),
+        AllRecordData::Unknown(unknown) => {
+            let bytes = unknown.data();
+            let mut value = format!(r"\# {}", bytes.len());
+            if !bytes.is_empty() {
+                value.push(' ');
+                value.push_str(&hex_upper(bytes));
+            }
+            Value::String(value)
+        }
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
     };
@@ -389,15 +395,24 @@ fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
         .collect()
 }
 
-/// Renders names the way records are compared here: labels joined with '.',
-/// trailing dot, lossy UTF-8 (never `Display`, which escapes label bytes).
+/// Render the API's escaped FQDN form without losing label octets or boundaries.
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     let mut out = String::new();
     for label in name.iter() {
         if label.is_root() {
             break;
         }
-        out.push_str(&String::from_utf8_lossy(label.as_slice()));
+        for &byte in label.as_slice() {
+            match byte {
+                b'.' => out.push_str(r"\046"),
+                b'\\' | b'@' | b';' | b'(' | b')' | b'"' | b'$' => {
+                    out.push('\\');
+                    out.push(char::from(byte));
+                }
+                0x21..=0x7e => out.push(char::from(byte)),
+                _ => out.push_str(&format!("\\{byte:03}")),
+            }
+        }
         out.push('.');
     }
     if out.is_empty() {
@@ -408,9 +423,9 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
 
 /// Quote a value the way the record types render it: `"` and `\` escaped,
 /// control and non-ASCII bytes as `\DDD`, so it matches what the API reports.
-fn to_quoted_string(text: &str) -> String {
+fn to_quoted_string(bytes: &[u8]) -> String {
     let mut out = String::from("\"");
-    for byte in text.bytes() {
+    for &byte in bytes {
         match byte {
             b'"' => out.push_str("\\\""),
             b'\\' => out.push_str("\\\\"),
@@ -420,4 +435,36 @@ fn to_quoted_string(text: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// Read published RRsets with an independent zone-file parser.
+pub(crate) async fn exported_record_sets(
+    app: &TestApp,
+    zone_name: &str,
+) -> std::collections::BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
+    use domain::{
+        base::rdata::ComposeRecordData,
+        zonefile::inplace::{Entry, Zonefile},
+    };
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/zones/{zone_name}/export?signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut file = Zonefile::new();
+    file.extend_from_slice(body.as_str().unwrap().as_bytes());
+    let mut sets = std::collections::BTreeMap::<_, Vec<_>>::new();
+    while let Some(entry) = file.next_entry().unwrap() {
+        if let Entry::Record(record) = entry {
+            let name = format!("{}.", record.owner().to_string().trim_end_matches('.'));
+            let mut rdata = Vec::new();
+            let Ok(()) = record.data().compose_rdata(&mut rdata);
+            sets.entry((name, record.rtype())).or_default().push(rdata);
+        }
+    }
+    sets
 }

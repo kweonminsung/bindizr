@@ -21,12 +21,14 @@ use crate::model::record::{Record, RecordType};
 pub(crate) enum EncodeRecordValueError {
     #[error("array value is only supported for TXT records")]
     SegmentsNotTxt,
+    #[error("presentation value is only supported for TXT records")]
+    PresentationNotTxt,
     #[error(transparent)]
     Value(#[from] ParseRecordValueError),
 }
 
 /// A record value as the API spells it, in requests and responses alike:
-/// a single string or TXT segments.
+/// a single string, TXT segments, or explicit TXT presentation with DNS escapes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(untagged)]
 pub enum RecordValue {
@@ -34,6 +36,8 @@ pub enum RecordValue {
     Text(String),
     #[schema(example = json!(["hello", "world"]))]
     Segments(Vec<String>),
+    /// Quoted TXT character-strings with RFC 1035 escapes for arbitrary octets.
+    Presentation { presentation: String },
 }
 
 impl RecordValue {
@@ -43,6 +47,7 @@ impl RecordValue {
         match self {
             RecordValue::Text(value) => value.clone(),
             RecordValue::Segments(segments) => segments.concat(),
+            RecordValue::Presentation { presentation } => presentation.clone(),
         }
     }
 
@@ -61,8 +66,17 @@ impl RecordValue {
                 TxtRecordValue::from_segments(segments.iter().map(String::as_str))
                     .map(|parsed| parsed.to_presentation())?,
             ),
+            (RecordType::Txt, RecordValue::Presentation { presentation }) => {
+                let parsed = TxtRecordValue::from_presentation(presentation)
+                    .ok_or(ParseRecordValueError::TxtRdata)?;
+                parsed.validate()?;
+                Ok(parsed.to_presentation())
+            }
             (_, RecordValue::Text(value)) => Ok(record_type.encoded_value(value, priority)?),
             (_, RecordValue::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
+            (_, RecordValue::Presentation { .. }) => {
+                Err(EncodeRecordValueError::PresentationNotTxt)
+            }
         }
     }
 }
@@ -76,7 +90,9 @@ pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> Reco
     match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
         Some(TxtContent::Single(value)) => RecordValue::Text(value),
         Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
-        None => RecordValue::Text(value.to_string()),
+        None => RecordValue::Presentation {
+            presentation: value.to_string(),
+        },
     }
 }
 
@@ -358,11 +374,11 @@ pub enum ServedRecordType {
 }
 
 impl ServedRecordType {
-    /// Return the DNS mnemonic shared by the response and display forms.
-    pub fn as_str(self) -> &'static str {
+    /// Render the API mnemonic or RFC 3597 `TYPE<number>` form.
+    pub fn to_text(self) -> String {
         match self {
-            Self::User(value) => value.as_str(),
-            Self::Derived(value) => value.as_str(),
+            Self::User(value) => value.to_text(),
+            Self::Derived(value) => value.as_str().to_owned(),
         }
     }
 }
@@ -370,7 +386,7 @@ impl ServedRecordType {
 impl std::fmt::Display for ServedRecordType {
     /// Display the canonical DNS mnemonic.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.pad(self.as_str())
+        f.pad(&self.to_text())
     }
 }
 
@@ -410,6 +426,10 @@ mod tests {
             (ServedRecordType::from(RecordType::Ptr), "PTR"),
             (ServedRecordType::from(RecordType::Sshfp), "SSHFP"),
             (ServedRecordType::from(RecordType::Tlsa), "TLSA"),
+            (
+                ServedRecordType::from(RecordType::Unknown(65280)),
+                "TYPE65280",
+            ),
             (ServedRecordType::from(DnssecRecordType::Rrsig), "RRSIG"),
             (ServedRecordType::from(DnssecRecordType::Nsec), "NSEC"),
             (ServedRecordType::from(DnssecRecordType::Dnskey), "DNSKEY"),
@@ -421,7 +441,7 @@ mod tests {
             (ServedRecordType::from(DnssecRecordType::Cds), "CDS"),
             (ServedRecordType::from(DnssecRecordType::Cdnskey), "CDNSKEY"),
         ] {
-            assert_eq!(value.as_str(), expected);
+            assert_eq!(value.to_text(), expected);
             assert_eq!(value.to_string(), expected);
             assert_eq!(
                 serde_json::to_value(value).unwrap(),

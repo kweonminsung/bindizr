@@ -62,7 +62,7 @@ fn endpoint_serializes_with_omitempty_semantics() {
 
 /// Verify that endpoint validate rejects unsupported shapes.
 #[test]
-fn endpoint_validate_rejects_unsupported_shapes() {
+fn endpoint_validation_rejects_unsupported_shapes() {
     assert!(endpoint("", "A", 0, &["192.0.2.1"]).validate().is_err());
     assert!(
         endpoint("a.example.com", "NS", 0, &["x"])

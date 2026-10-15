@@ -5,7 +5,7 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 /// Verify zone history inspection and rollback through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_versions_and_rollback_flow() {
+async fn zone_versions_support_diff_and_rollback_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
 

@@ -117,12 +117,21 @@ impl SignedViewParams<'_> {
         for record in self.records {
             let EncodedRdata { record_type, rdata } =
                 EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
+            let record_type = Rtype::from_int(record_type);
+            // UnknownRecordData cannot canonicalize embedded names for signing.
+            let rdata = rdata
+                .to_canonical(record_type)
+                .map_err(|e| SignZoneError::Rdata {
+                    rtype: "record",
+                    source: Box::new(e),
+                })?;
             let data =
-                UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-                    .map_err(|e| SignZoneError::Rdata {
+                UnknownRecordData::from_octets(record_type, rdata.into_bytes()).map_err(|e| {
+                    SignZoneError::Rdata {
                         rtype: "record",
                         source: Box::new(e),
-                    })?;
+                    }
+                })?;
             let owner = record.name.to_wire_name(&zone.name)?;
             input.push(WireRecord::new(
                 owner,

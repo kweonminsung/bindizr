@@ -1,6 +1,5 @@
-//! Outbound DNS client paths — NOTIFY fan-out, SOA and parent-DS probing,
-//! and inbound zone transfers — plus the UDP exchange and address-resolution
-//! helpers they share. The wire format itself stays in core.
+//! Outbound NOTIFY, SOA/parent-DS probes and AXFR clients with shared UDP/resolution
+//! helpers; wire formats belong to core.
 
 pub(crate) mod axfr;
 pub(crate) mod ds;
@@ -12,7 +11,7 @@ use std::{net::SocketAddr, time::Duration};
 use bindizr_core::dns::{
     address::{AddressTarget, DEFAULT_DNS_PORT},
     message::encode_tcp_message,
-    query::is_truncated,
+    query::{is_truncated, matches_response_to_request},
 };
 use thiserror::Error;
 use tokio::{
@@ -138,12 +137,21 @@ pub(crate) async fn exchange_over_udp(
     }
 
     let mut response = [0u8; UDP_RESPONSE_BUF];
-    let received = tokio::time::timeout(timeout, socket.recv(&mut response))
-        .await
-        .map_err(|_| ExchangeMessageError::ResponseTimedOut {
+    // A stray or malformed datagram does not end the request or renew its deadline.
+    let receive = async {
+        loop {
+            let received = socket.recv(&mut response).await?;
+            if matches_response_to_request(request, &response[..received]) {
+                return Ok::<_, std::io::Error>(received);
+            }
+        }
+    };
+    let received = tokio::time::timeout(timeout, receive).await.map_err(|_| {
+        ExchangeMessageError::ResponseTimedOut {
             what,
             server: server_addr,
-        })??;
+        }
+    })??;
 
     Ok((received, response))
 }
@@ -169,9 +177,7 @@ pub(crate) async fn resolve_address_entries(
     entries
 }
 
-/// Resolve one `host[:port]` entry (port 53 default) into every address it
-/// names. `resolve_timeout` bounds the lookup so a stalled system resolver
-/// fails the entry instead of hanging the caller.
+/// Resolve `host[:port]` (default 53), bounded by `resolve_timeout`.
 pub async fn resolve_address_entry(
     entry: &AddressTarget,
     resolve_timeout: Duration,

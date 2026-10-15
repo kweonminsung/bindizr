@@ -112,7 +112,7 @@ fn authoritative_zone_requires_label_boundary() {
 
 /// Verify that an escaped dot does not put a name inside the zone it spells.
 #[test]
-fn an_escaped_dot_does_not_put_a_name_inside_the_zone_it_spells() {
+fn authoritative_zone_rejects_escaped_label_boundary() {
     // `evil\.example.com` is the two labels [evil.example, com], so no zone
     // named example.com is authoritative for it.
     let zones = vec![test_zone(1, "example.com")];

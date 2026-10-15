@@ -16,7 +16,7 @@ use crate::{
 /// What an IXFR from a client's serial is answered with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IxfrPlan {
-    /// Equal serials need only the current SOA.
+    /// Equal or newer client serials need only the current SOA.
     SoaOnly,
     /// Complete journal steps and their bounding SOA versions.
     Changes {
@@ -42,12 +42,11 @@ pub async fn authorize_ixfr_plan_by_name(
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
         let current = zone.serial;
-        // RFC 1995, Section 2: equal serials need only the current SOA.
-        let plan = if client_serial == current {
+        // RFC 1995, Section 2: equal or newer client serials need only the current SOA.
+        let plan = if client_serial == current || client_serial.is_newer_than(current) {
             IxfrPlan::SoaOnly
-        } else if !current.is_newer_than(client_serial) || client_serial > Serial::MAX_STORED {
-            // RFC 1995, Section 2 exception: newer clients receive the full snapshot.
-            // Undefined ordering and serials outside stored history also need AXFR.
+        } else if !current.is_newer_than(client_serial) {
+            // RFC 1982 leaves the half-range distance unordered; send a full snapshot.
             IxfrPlan::Full
         } else {
             // RFC 1995, Section 2 permits a full transfer when IXFR is no
@@ -84,7 +83,9 @@ pub async fn authorize_ixfr_plan_by_name(
                     .await?;
                     let mut journal_serials: Vec<Serial> =
                         changes.iter().map(|change| change.serial).collect();
-                    journal_serials.sort_unstable();
+                    journal_serials.sort_unstable_by_key(|serial| {
+                        serial.as_u32().wrapping_sub(client_serial.as_u32())
+                    });
                     journal_serials.dedup();
                     let version_serials: Vec<Serial> =
                         versions.iter().map(|version| version.serial).collect();
@@ -144,9 +145,9 @@ fn validate_delta(
     let mut steps: Vec<Serial> = version_serials
         .iter()
         .copied()
-        .filter(|&serial| serial > client_serial)
+        .filter(|&serial| serial.is_newer_than(client_serial))
         .collect();
-    steps.sort_unstable();
+    steps.sort_unstable_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
     if journal_serials != steps {
         return Err(ValidateDeltaError::StepsDiffer {
             journal: journal_serials.to_vec(),
@@ -177,7 +178,7 @@ mod tests {
 
     /// Verify that a delta covering every step is valid.
     #[test]
-    fn a_delta_covering_every_step_is_valid() {
+    fn ixfr_delta_accepts_complete_history() {
         assert_eq!(
             validate_delta(
                 Serial::from(10),
@@ -191,7 +192,7 @@ mod tests {
 
     /// Verify that versions at or below the client serial are not steps.
     #[test]
-    fn versions_at_or_below_the_client_serial_are_not_steps() {
+    fn ixfr_delta_ignores_versions_at_or_before_client_serial() {
         // The inclusive range may contain older versions; only later ones are steps.
         assert_eq!(
             validate_delta(
@@ -206,7 +207,7 @@ mod tests {
 
     /// Verify that a journal short of the current serial falls back.
     #[test]
-    fn a_journal_short_of_the_current_serial_falls_back() {
+    fn ixfr_delta_falls_back_when_journal_misses_current_serial() {
         // Incomplete history must not advance the secondary past its content.
         assert!(
             validate_delta(
@@ -221,7 +222,7 @@ mod tests {
 
     /// Verify that a missing SOA for the client serial falls back.
     #[test]
-    fn a_missing_soa_for_the_client_serial_falls_back() {
+    fn ixfr_delta_falls_back_when_client_soa_is_missing() {
         // The first deletion section needs the client's SOA (RFC 1995, Section 4).
         assert!(
             validate_delta(
@@ -236,7 +237,7 @@ mod tests {
 
     /// Verify that a missing journal step refuses IXFR and identifies the gap.
     #[test]
-    fn a_journal_skipping_a_step_reports_the_gap() {
+    fn ixfr_delta_reports_missing_step() {
         // The version proves serial 11 occurred; omitting its changes would corrupt the replay.
         let gap = validate_delta(
             Serial::from(10),

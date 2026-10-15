@@ -50,7 +50,7 @@ async fn transfer_app() -> TestApp {
 /// registered and enabled.
 #[tokio::test]
 #[serial]
-async fn an_unsigned_transfer_follows_the_secondary_registry() {
+async fn unsigned_transfer_requires_registered_secondary() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -90,7 +90,7 @@ async fn an_unsigned_transfer_follows_the_secondary_registry() {
 /// like a missing zone, rather than closing the connection.
 #[tokio::test]
 #[serial]
-async fn a_name_no_zone_can_carry_is_answered_notauth() {
+async fn transfer_returns_notauth_for_invalid_zone_name() {
     let app = transfer_app().await;
 
     // RFC 5936, Section 2.2.1: a refusal is an RCODE, not a dropped
@@ -105,7 +105,7 @@ async fn a_name_no_zone_can_carry_is_answered_notauth() {
 /// alone and counts as a truncated transfer.
 #[tokio::test]
 #[serial]
-async fn a_udp_ixfr_is_answered_with_the_current_soa() {
+async fn udp_ixfr_returns_current_soa() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -172,11 +172,11 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
             .unwrap();
         let current = soa.data().serial().into_int();
         // RFC 1982, Section 3.2: half-range is undefined; larger distances wrap.
-        // Project policy keeps full transfers for newer clients.
+        // RFC 1995, Section 2: newer clients receive the current SOA only.
         for (client_serial, soa_only) in [
             (current, true),
-            (current + 1, false),
-            (current.wrapping_add(0x7fff_ffff), false),
+            (current + 1, true),
+            (current.wrapping_add(0x7fff_ffff), true),
             (current.wrapping_add(0x8000_0000), false),
             (current.wrapping_add(0x8000_0001), false),
             (current - 1, false),
@@ -260,7 +260,7 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
 /// Verify that an unsigned transfer still runs under the address acl.
 #[tokio::test]
 #[serial]
-async fn an_unsigned_transfer_still_runs_under_the_address_acl() {
+async fn unsigned_transfer_enforces_address_acl() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -275,7 +275,7 @@ async fn an_unsigned_transfer_still_runs_under_the_address_acl() {
 /// Verify that a signed transfer answers under the key that asked.
 #[tokio::test]
 #[serial]
-async fn a_signed_transfer_answers_under_the_key_that_asked() {
+async fn signed_transfer_replies_with_request_key() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -290,7 +290,7 @@ async fn a_signed_transfer_answers_under_the_key_that_asked() {
 /// Verify that a key transfers only the zones its role grants `zone:transfer` in.
 #[tokio::test]
 #[serial]
-async fn a_key_transfers_only_the_zones_its_role_may_transfer() {
+async fn signed_transfer_limits_zones_to_key_role_grants() {
     let app = transfer_app().await;
     let granted = app.create_test_zone().await;
     let granted = granted["name"].as_str().unwrap();
@@ -340,7 +340,7 @@ async fn a_key_transfers_only_the_zones_its_role_may_transfer() {
 /// Verify that a transfer only grant pulls the zone without changing it.
 #[tokio::test]
 #[serial]
-async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
+async fn transfer_only_grant_reads_zone_without_write_access() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -381,7 +381,7 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
 /// Verify that an unknown key is refused rather than falling back to the address.
 #[tokio::test]
 #[serial]
-async fn an_unknown_key_is_refused_rather_than_falling_back_to_the_address() {
+async fn signed_transfer_rejects_unknown_key_without_address_fallback() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -449,9 +449,8 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
         wait_for_any_dns_record(*port, &zone_name, RRSIG).await;
     }
 
-    // Phase 4: a record mutation on the signed zone re-signs in the same
-    // transaction; the harness's DNS verification waits for the new A record
-    // on both secondaries, so this exercises the signed IXFR delta.
+    // Phase 4: mutation re-signs the zone in one transaction; verifying the new
+    // A record on both secondaries exercises the signed IXFR delta.
     let serial_before = app.read_zone_serial(&zone_name).await;
     let (status, _) = app
         .send_request(
@@ -559,7 +558,7 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
 /// Verify per-zone transfer history, including refusals before secondary registration.
 #[tokio::test]
 #[serial]
-async fn the_transfers_served_a_secondary_are_read_back() {
+async fn transfer_history_returns_served_secondary_transfers() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -661,12 +660,11 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
 }
 
-/// Verify that a TSIG out of place or with a MAC of a size its algorithm
-/// cannot produce is answered FORMERR and unsigned (RFC 8945, Section 5.2),
-/// not REFUSED under the address that would have admitted the client.
+/// Verify malformed TSIG gets unsigned FORMERR even from an allowed address
+/// (RFC 8945, Section 5.2).
 #[tokio::test]
 #[serial]
-async fn a_malformed_tsig_is_answered_formerr_unsigned() {
+async fn malformed_tsig_returns_unsigned_formerr() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -727,7 +725,7 @@ async fn a_malformed_tsig_is_answered_formerr_unsigned() {
 /// Verify that a response copies the query's RD bit (RFC 1035, Section 4.1.1).
 #[tokio::test]
 #[serial]
-async fn a_response_copies_the_rd_bit() {
+async fn query_response_preserves_rd_bit() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -830,7 +828,7 @@ async fn multi_question_headers_receive_formerr_without_readable_questions() {
 /// Echo DO in ordinary, truncated, refused and BADVERS responses.
 #[tokio::test]
 #[serial]
-async fn edns_dnssec_ok_is_echoed_in_query_responses() {
+async fn query_response_preserves_edns_dnssec_ok() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -881,7 +879,7 @@ async fn edns_dnssec_ok_is_echoed_in_query_responses() {
 /// Preserve DO when TSIG verification rejects a key or MAC.
 #[tokio::test]
 #[serial]
-async fn edns_dnssec_ok_is_echoed_in_tsig_errors() {
+async fn query_tsig_error_preserves_edns_dnssec_ok() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1045,7 +1043,7 @@ async fn truncated_queries_follow_tsig_validation_order() {
 /// an AXFR envelope carries the OPT too (RFC 9103, Section 6.3.4).
 #[tokio::test]
 #[serial]
-async fn an_edns_query_is_answered_with_an_opt() {
+async fn edns_query_returns_opt() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1110,7 +1108,7 @@ async fn an_edns_query_is_answered_with_an_opt() {
 /// delivered whole within an advertised size (RFC 1035, Section 4.2.1).
 #[tokio::test]
 #[serial]
-async fn a_udp_answer_over_the_limit_is_truncated() {
+async fn udp_query_truncates_answers_above_limit() {
     let app = transfer_app().await;
     // Three 60-octet labels push the SOA answer well past 512 octets.
     let label = "x".repeat(60);
@@ -1158,7 +1156,7 @@ async fn a_udp_answer_over_the_limit_is_truncated() {
 /// their streams free to intermingle (RFC 9103, Section 6.2).
 #[tokio::test]
 #[serial]
-async fn pipelined_transfers_on_one_connection_both_complete() {
+async fn tcp_connection_completes_pipelined_transfers() {
     let app = transfer_app().await;
     let first = app.create_test_zone().await;
     let first = first["name"].as_str().unwrap().to_string();
@@ -1256,7 +1254,7 @@ async fn rejected_queries_keep_the_tcp_connection_usable() {
 /// (RFC 5936, Section 2.2.2).
 #[tokio::test]
 #[serial]
-async fn a_question_of_another_class_is_notauth() {
+async fn query_returns_notauth_for_unsupported_class() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

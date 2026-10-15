@@ -7,7 +7,7 @@ use super::{
     EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
     value::{parse_char_string, parse_u16_record_field, validate_domain_record_value},
 };
-use crate::dns::name::{encode_name, to_fqdn_lowercase};
+use crate::dns::name::{encode_name, to_fqdn};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NaptrRecordValue<'a> {
@@ -96,7 +96,7 @@ impl<'a> NaptrRecordValue<'a> {
             to_quoted_charstr(self.flags.as_bytes()),
             to_quoted_charstr(self.services.as_bytes()),
             to_quoted_charstr(self.regexp.as_bytes()),
-            to_fqdn_lowercase(self.replacement)
+            to_fqdn(self.replacement)
         )
     }
 

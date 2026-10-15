@@ -53,6 +53,8 @@ pub(crate) enum FetchZoneError {
     Read(#[source] ReadTcpMessageError),
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    #[error(transparent)]
+    Rdata(#[from] bindizr_core::dns::record::ParseRdataError),
     #[error("transfer does not start with the zone's SOA")]
     NoOpeningSoa,
     #[error("transfer opens with the SOA of {found}, not {expected}")]
@@ -69,9 +71,8 @@ pub(crate) enum FetchZoneError {
     },
 }
 
-/// Transfer the zone from `server` (`host[:port]`, port 53 default) and
-/// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
-/// Resolution and every address attempt share the import's deadline.
+/// Fetch AXFR records including delimiting SOAs (RFC 5936, Section 2.2).
+/// `server` defaults to port 53; resolution and address attempts share one deadline.
 pub(crate) async fn fetch_zone(
     server: &str,
     zone_name: &ZoneName,
@@ -157,9 +158,11 @@ async fn fetch_zone_from_address(
                 }
             } else if record.rtype == Rtype::SOA {
                 // The stream ends by repeating the opening SOA (RFC 5936, Section 2.2).
+                // Compare canonical copies, preserving received case for import.
                 let opening = &records[0];
                 if owner_labels(&record.name)? != owner_labels(&opening.name)?
-                    || record.rdata != opening.rdata
+                    || record.rdata.to_canonical(Rtype::SOA)?
+                        != opening.rdata.to_canonical(Rtype::SOA)?
                 {
                     return Err(FetchZoneError::ForeignClosingSoa);
                 }
@@ -175,7 +178,7 @@ async fn fetch_zone_from_address(
 }
 
 /// Owner names compare as labels, never as text (RFC 4343 case, escapes).
-fn owner_labels(name: &str) -> Result<Vec<String>, FetchZoneError> {
+fn owner_labels(name: &str) -> Result<Vec<Vec<u8>>, FetchZoneError> {
     decode_name_labels(name)
         .map(|(labels, _)| labels)
         .map_err(|source| FetchZoneError::OwnerName {
@@ -183,3 +186,6 @@ fn owner_labels(name: &str) -> Result<Vec<String>, FetchZoneError> {
             source,
         })
 }
+
+#[cfg(test)]
+mod tests;

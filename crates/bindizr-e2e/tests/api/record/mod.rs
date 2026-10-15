@@ -1,7 +1,8 @@
+use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::TestApp;
+use crate::common::{TestApp, dns::exported_record_sets};
 
 mod bulk;
 
@@ -14,7 +15,7 @@ async fn caa_values_preserve_empty_and_binary_properties() {
     let zone_name = zone["name"].as_str().unwrap();
     let long_tag = format!("0 {} \"\"", "a".repeat(255));
     for (input, expected) in [
-        (r#"0 ISSUE """#, r#"0 issue """#),
+        (r#"0 ISSUE """#, r#"0 ISSUE """#),
         (r#"0 issuewild """#, r#"0 issuewild """#),
         (
             r"128 custom \000\255\010\034\092",
@@ -44,7 +45,13 @@ async fn caa_values_preserve_empty_and_binary_properties() {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["record"]["value"], "0 custom \"\"");
         let serial = app.read_zone_serial(zone_name).await;
-        for invalid in ["0 custom", "0 custom a b", r"0 custom \256"] {
+        for invalid in [
+            "0 custom",
+            "0 custom a b",
+            r"0 custom \256",
+            "1 custom x",
+            "255 custom x",
+        ] {
             let (status, body) = app
                 .send_request(Method::PUT, &path, Some(json!({"value": invalid})))
                 .await;
@@ -75,7 +82,7 @@ fn encode(value: &str) -> String {
 /// Verify record creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_read_update_delete() {
+async fn record_supports_create_read_update_and_delete() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -166,7 +173,7 @@ async fn record_create_read_update_delete() {
 /// Verify zone-name normalization in record requests.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_normalize_zone_name() {
+async fn record_canonicalizes_zone_name() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("example.com");
 
@@ -401,7 +408,7 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
 /// Verify that record listings are scoped to the requested zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_scope_by_zone() {
+async fn record_listing_filters_by_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let first_zone_name = zone["name"].as_str().unwrap();
@@ -485,7 +492,7 @@ async fn record_scope_by_zone() {
 /// Verify record filtering and pagination.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_filter_and_paginate() {
+async fn record_listing_filters_and_paginates() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -644,14 +651,19 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
 /// Verify that a name filter without a zone reads the same spellings.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
+async fn record_name_filter_matches_owner_spellings_across_zones() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    // Compose shares its database; unscoped names must be unique per test.
+    let suffix = app.namespace();
+    let semicolon_owner = format!("foo;bar-{suffix}");
+    let dot_owner = format!(r"a\.b-{suffix}");
+
     for (name, record_type, value) in [
-        ("foo;bar", "A", "192.0.2.1"),
-        (r"a\.b", "A", "192.0.2.2"),
+        (semicolon_owner.as_str(), "A", "192.0.2.1"),
+        (dot_owner.as_str(), "A", "192.0.2.2"),
         ("note", "TXT", "caf\u{e9}"),
     ] {
         let (status, body) = app
@@ -672,17 +684,17 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
     // Without a zone the filter is still rendered as rows hold it: a relative
     // name against the owner, an absolute one against the FQDN.
     for spelling in [
-        "foo;bar",
-        r"foo\;bar",
-        &format!("foo;bar.{zone_name}."),
-        r"a\.b",
-        r"a\046b",
-        &format!(r"a\.b.{zone_name}."),
+        semicolon_owner.clone(),
+        format!(r"foo\;bar-{suffix}"),
+        format!("{semicolon_owner}.{zone_name}."),
+        dot_owner.clone(),
+        format!(r"a\046b-{suffix}"),
+        format!("{dot_owner}.{zone_name}."),
     ] {
         let (status, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?name={}", encode(spelling)),
+                &format!("/records?name={}", encode(&spelling)),
                 None,
             )
             .await;
@@ -718,6 +730,15 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({"zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.1"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
     let (status, scoped) = app
         .send_request(
             Method::GET,
@@ -732,7 +753,14 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         "zone has no apex record to find: {scoped}"
     );
 
-    let (status, unscoped) = app.send_request(Method::GET, "/records?name=@", None).await;
+    // Keep the unscoped lookup on one page even when Compose retains older runs.
+    let (status, unscoped) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?name=@&search={}", app.namespace()),
+            None,
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = unscoped["items"]
         .as_array()
@@ -740,16 +768,13 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         .iter()
         .map(|r| r["name"].as_str().unwrap())
         .collect();
-    assert!(
-        names.contains(&format!("{zone_name}.").as_str()),
-        "apex of {zone_name} missing from {names:?}"
-    );
+    assert_eq!(names, [format!("{zone_name}.")]);
 }
 
 /// Verify that empty name filter is no filter not the apex.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn empty_name_filter_is_no_filter_not_the_apex() {
+async fn record_listing_ignores_empty_name_filter() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -918,27 +943,21 @@ async fn record_listing_sorts_by_the_field_asked_for() {
     );
 }
 
-/// Verify that a non-ASCII label is refused with the punycode advice.
+/// Accept DNS octets independently of IDNA host conventions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_non_ascii_label_is_refused_with_punycode_advice() {
+async fn record_storage_preserves_non_ascii_label_octets() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Owner names and the names inside values take the A-label form the wire
-    // carries (RFC 5890): the raw label is refused, its A-label accepted.
+    // UTF-8 input denotes its literal octets; A-labels remain accepted as well.
     for (name, record_type, value, expected) in [
-        ("caf\u{e9}", "A", "192.0.2.1", StatusCode::BAD_REQUEST),
-        (
-            "alias",
-            "CNAME",
-            "caf\u{e9}.example.",
-            StatusCode::BAD_REQUEST,
-        ),
+        ("caf\u{e9}", "A", "192.0.2.1", StatusCode::CREATED),
+        ("alias", "CNAME", "caf\u{e9}.example.", StatusCode::CREATED),
         ("xn--caf-dma", "A", "192.0.2.1", StatusCode::CREATED),
         (
-            "alias",
+            "idna-alias",
             "CNAME",
             "xn--caf-dma.example.",
             StatusCode::CREATED,
@@ -957,16 +976,13 @@ async fn a_non_ascii_label_is_refused_with_punycode_advice() {
             )
             .await;
         assert_eq!(status, expected, "{name} {record_type} {value}: {body}");
-        if expected == StatusCode::BAD_REQUEST {
-            assert!(body.to_string().contains("punycode"), "{body}");
-        }
     }
 }
 
 /// Verify that a control character in a TXT value is stored escaped.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_control_character_in_a_txt_value_is_stored_escaped() {
+async fn txt_record_storage_escapes_control_characters() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1001,7 +1017,7 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
 /// Reject invalid NAPTR flags on create and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn naptr_flags_are_checked_on_create_and_update() {
+async fn naptr_record_validates_flags_on_create_and_update() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1070,14 +1086,13 @@ async fn naptr_flags_are_checked_on_create_and_update() {
 /// Verify that a NAPTR regexp BIND refuses is rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_naptr_regexp_bind_refuses_is_rejected() {
+async fn naptr_record_rejects_invalid_regexp() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // BIND checks the regexp on receipt, and one record it refuses fails the
-    // whole zone transfer, so what it refuses must not be stored. A backslash
-    // in the regexp is spelled `\\` in the quoted form (RFC 1035, Section 5.1).
+    // BIND rejects the whole transfer for an invalid regexp. Literal backslashes
+    // use `\\` in quoted text (RFC 1035, Section 5.1).
     for (value, expected) in [
         (
             "10 10 \"u\" \"E2U+sip\" \"garbage\" .",
@@ -1122,7 +1137,7 @@ async fn a_naptr_regexp_bind_refuses_is_rejected() {
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_invalid_values() {
+async fn record_rejects_invalid_values() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1190,7 +1205,7 @@ async fn record_reject_invalid_values() {
 /// Verify that records sharing an owner and type must use one TTL.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_mixed_ttl_for_one_name_and_type() {
+async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1253,7 +1268,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
 /// Verify rejection of negative TTLs on record creation and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_negative_ttl_on_create_and_update() {
+async fn record_rejects_negative_ttl_on_create_and_update() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1301,7 +1316,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
 /// Verify rejection of priority on record types without a priority field.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_priority_on_types_without_one() {
+async fn record_rejects_priority_on_types_without_one() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1370,7 +1385,7 @@ async fn record_reject_priority_on_types_without_one() {
 /// Verify preservation of TXT segment boundaries and case.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_preserve_txt_segments_and_case() {
+async fn record_preserves_txt_segments_and_case() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1457,7 +1472,7 @@ async fn record_preserve_txt_segments_and_case() {
 /// Verify owner normalization and rejection of names outside the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_normalize_owner_and_reject_out_of_zone() {
+async fn record_normalizes_owner_and_rejects_out_of_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1543,7 +1558,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
 /// Verify creation of every supported user record type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_supported_types() {
+async fn record_create_accepts_supported_types() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1588,7 +1603,7 @@ async fn record_create_supported_types() {
             "MX" => "mail.example.com.",
             "SRV" => "5 5060 sip.example.com.",
             "CNAME" => "www.example.com.",
-            "CAA" => "0 issue \"letsencrypt.org\"",
+            "CAA" => "0 ISSUE \"letsencrypt.org\"",
             "SSHFP" => "4 2 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             "TLSA" => "3 1 1 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             _ => value,
@@ -1622,7 +1637,7 @@ async fn record_create_supported_types() {
 /// Verify rejection of records that conflict with a CNAME.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_cname_conflicts() {
+async fn record_rejects_cname_conflicts() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1697,7 +1712,7 @@ async fn record_reject_cname_conflicts() {
 /// of RFC 2181, Section 10.3 and RFC 2782, in either order of arrival.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_dname_and_alias_target_rules() {
+async fn record_enforces_dname_and_alias_target_rules() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1953,4 +1968,278 @@ async fn record_mutations_validate_the_complete_proposed_state() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"], 2);
+}
+
+/// Verify that records listing signed pages the derived plane.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn signed_record_listing_paginates_derived_records() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www",
+                "type": "A",
+                "value": "192.0.2.10",
+                "zone_name": zone_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_total = body["pagination"]["total"].as_u64().unwrap();
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["id"].is_i64()),
+        "the unsigned listing holds only addressable user records"
+    );
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(
+        body["pagination"]["total"].as_u64().unwrap() as usize,
+        items.len()
+    );
+    assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
+    assert!(items.iter().any(|item| item["id"].is_i64()));
+    for item in items {
+        assert_eq!(item["zone_name"], zone_name);
+        assert!(item["name"].as_str().unwrap().ends_with('.'));
+    }
+    let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
+    for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
+        assert!(
+            derived.iter().any(|item| item["type"] == record_type),
+            "signed listing must carry a {record_type} row: {items:?}"
+        );
+    }
+    assert!(derived.iter().all(|item| item["priority"].is_null()));
+
+    // The derived plane pages after the user records under one offset space.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|item| item["id"].is_null()));
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert!(items.iter().all(|item| item["type"] == "RRSIG"));
+
+    // A derived type is only addressable through the signed view.
+    let (status, _) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Verify that a signed listing searches the derived plane by name.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn signed_record_listing_filters_derived_records_by_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "searchable", "type": "A", "value": "192.0.2.1",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The search must reach the derived rows, not only the stored ones.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let types: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"A"), "{body}");
+    assert!(types.contains(&"RRSIG"), "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=caf%C3%A9&signed=true&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(body["pagination"]["total"], 0);
+
+    // Refused rather than quietly answered without the rows it cannot narrow.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("value cannot narrow the derived"),
+        "{body}"
+    );
+}
+
+/// Binary TXT and generic types retain their exact RDATA when API responses are written back.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn binary_txt_and_unknown_types_round_trip() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone = zone["name"].as_str().unwrap();
+    for (name, rtype, value, bytes) in [
+        (
+            "binary",
+            "TXT",
+            json!({"presentation": r#""\255\000" "\195" "\169""#}),
+            vec![2, 255, 0, 1, 195, 1, 169],
+        ),
+        ("empty", "TYPE65280", json!(r"\# 0"), vec![]),
+        (
+            "other",
+            "TYPE65281",
+            json!(r"\# 4 00ff C00C"),
+            vec![0, 255, 192, 12],
+        ),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({"zone_name": zone, "name": name, "type": rtype, "value": value})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let path = format!("/records/{}", body["record"]["id"]);
+        let value = body["record"]["value"].clone();
+        let (status, body) = app
+            .send_request(Method::PUT, &path, Some(json!({"value": value})))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let wire_type: Rtype = rtype.parse().unwrap();
+        assert_eq!(
+            exported_record_sets(&app, zone)
+                .await
+                .get(&(format!("{name}.{zone}."), wire_type))
+                .unwrap(),
+            &vec![bytes]
+        );
+    }
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone}/import"),
+            Some(json!({"content": r#"imported IN TXT "\255\000""#})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        exported_record_sets(&app, zone)
+            .await
+            .get(&(format!("imported.{zone}."), Rtype::TXT))
+            .unwrap(),
+        &vec![vec![2, 255, 0]]
+    );
+}
+
+/// PTR cannot name a CNAME, whichever record was created first (RFC 2181, Section 10.2).
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn ptr_record_rejects_alias_target() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone = zone["name"].as_str().unwrap();
+    for reverse in [false, true] {
+        let alias = if reverse { "later" } else { "earlier" };
+        let cname = json!({"zone_name": zone, "name": alias, "type": "CNAME", "value": "host.example.net."});
+        let ptr = json!({"zone_name": zone, "name": format!("ptr-{alias}"), "type": "PTR", "value": format!("{alias}.{zone}.")});
+        let [first, second] = if reverse { [ptr, cname] } else { [cname, ptr] };
+        assert_eq!(
+            app.send_request(Method::POST, "/records", Some(first))
+                .await
+                .0,
+            StatusCode::CREATED
+        );
+        let (status, body) = app
+            .send_request(Method::POST, "/records", Some(second))
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    }
 }

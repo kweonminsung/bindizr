@@ -71,7 +71,7 @@ mod tests {
 
     /// Verify that an identifier is trimmed and lowercased.
     #[test]
-    fn trims_and_lowercases() {
+    fn normalize_identifier_trims_and_lowercases() {
         assert_eq!(
             normalize_identifier("  NS2.Example ", "name", 64).unwrap(),
             "ns2.example"
@@ -80,7 +80,7 @@ mod tests {
 
     /// Verify that an empty, over-long, or oddly spelled identifier is refused.
     #[test]
-    fn rejects_empty_long_and_odd_identifiers() {
+    fn normalize_identifier_rejects_empty_long_and_invalid_names() {
         for value in ["", "  ", "a b", "a/b", &"n".repeat(65)] {
             let err = normalize_identifier(value, "name", 64).unwrap_err();
             assert_eq!(err.code(), ErrorCode::InvalidInput, "{value:?}");

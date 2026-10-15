@@ -26,10 +26,10 @@ use crate::{
     dnssec,
     error::ServiceError,
     model::{
-        record::{Record, RecordData},
+        record::{Record, RecordData, RecordType},
         zone::Zone,
     },
-    serial::{generate_serial, validate_initial_serial},
+    serial::generate_serial,
     time::elapsed_ms,
     transaction,
     ttl::validate_soa_interval,
@@ -60,7 +60,7 @@ fn prepare_zone(
         mname: normalized.mname,
         rname: normalized.rname,
         default_ttl: normalized.ttl,
-        serial: validate_initial_serial(soa.serial)?,
+        serial: soa.serial,
         refresh: validate_soa_interval(i32::from(soa.refresh), "refresh")?,
         retry: validate_soa_interval(i32::from(soa.retry), "retry")?,
         expire: validate_soa_interval(i32::from(soa.expire), "expire")?,
@@ -247,6 +247,9 @@ async fn reconcile(
             HashMap::with_capacity(parsed.records.len());
         for record in parsed.records {
             let requested = match record.value {
+                ZoneFileValue::Rdata(rdata) if record.record_type == RecordType::Txt => {
+                    RecordValue::Presentation { presentation: rdata }
+                }
                 ZoneFileValue::Rdata(rdata) => RecordValue::Text(rdata),
                 ZoneFileValue::Segments(segments) => RecordValue::Segments(segments),
             };
@@ -427,7 +430,7 @@ async fn reconcile(
         let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
 
         let new_serial = if has_changes && errors.is_empty() {
-            generate_serial(Some(zone.serial))?
+            generate_serial(Some(zone.serial))
         } else {
             zone.serial
         };
