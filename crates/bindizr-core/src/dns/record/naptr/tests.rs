@@ -56,7 +56,7 @@ fn naptr_flags_allow_empty_and_application_defined_values() {
 
 /// Verify NAPTR parsing and replacement-name canonicalization.
 #[test]
-fn parses_the_presentation_form_and_canonicalizes_the_replacement() {
+fn naptr_parse_canonicalizes_replacement_name() {
     let parsed =
         NaptrRecordValue::parse("100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM.").unwrap();
 
@@ -68,7 +68,7 @@ fn parses_the_presentation_form_and_canonicalizes_the_replacement() {
 
 /// Verify that a root replacement ends the rewrite chain.
 #[test]
-fn a_root_replacement_ends_the_rewrite_chain() {
+fn naptr_accepts_root_replacement() {
     let value = "200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .";
     let parsed = NaptrRecordValue::parse(value).unwrap();
 
@@ -78,7 +78,7 @@ fn a_root_replacement_ends_the_rewrite_chain() {
 
 /// Verify conversion of NAPTR wire data into its stored form.
 #[test]
-fn reads_a_wire_record_back_into_the_stored_form() {
+fn naptr_round_trips_wire_data_through_stored_form() {
     assert_eq!(
         NaptrRecordValue::from_wire(100, 10, b"S", b"SIP+D2U", b"", "_sip._udp.Example.COM")
             .unwrap()
@@ -95,7 +95,7 @@ fn reads_a_wire_record_back_into_the_stored_form() {
 
 /// Verify that a regexp may carry quotes and escapes.
 #[test]
-fn a_regexp_may_carry_quotes_and_escapes() {
+fn naptr_regexp_preserves_quotes_and_escapes() {
     let parsed = NaptrRecordValue::parse(r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#).unwrap();
 
     assert_eq!(parsed.canonical(), r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#);
@@ -103,7 +103,7 @@ fn a_regexp_may_carry_quotes_and_escapes() {
 
 /// Verify that a regexp BIND refuses fails validation, not just parsing.
 #[test]
-fn a_regexp_bind_refuses_fails_validation() {
+fn naptr_validation_rejects_invalid_regexp() {
     let parsed = NaptrRecordValue::parse("10 10 \"u\" \"E2U+sip\" \"garbage\" .").unwrap();
 
     let err = parsed.validate().unwrap_err();
@@ -115,7 +115,7 @@ fn a_regexp_bind_refuses_fails_validation() {
 
 /// Verify that a regexp and a replacement name together are rejected.
 #[test]
-fn a_regexp_and_a_replacement_name_together_are_rejected() {
+fn naptr_validation_rejects_regexp_with_replacement_name() {
     // RFC 3403, Section 4.1 makes the two mutually exclusive.
     let parsed =
         NaptrRecordValue::parse("10 10 \"u\" \"E2U+sip\" \"!^.*$!sip:x!\" next.example.").unwrap();
@@ -125,7 +125,7 @@ fn a_regexp_and_a_replacement_name_together_are_rejected() {
 
 /// Verify rejection of NAPTR values with missing fields.
 #[test]
-fn rejects_a_value_missing_a_field() {
+fn naptr_parse_rejects_missing_fields() {
     for value in [
         "100 10 \"S\" \"SIP+D2U\" \"\"",
         "100 \"S\" \"SIP+D2U\" \"\" .",

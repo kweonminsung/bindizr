@@ -79,7 +79,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) ->
 
 /// Verify that a published sep key past its hold down is promotable.
 #[test]
-fn a_published_sep_key_past_its_hold_down_is_promotable() {
+fn rollover_promotes_published_sep_key_after_hold_down() {
     let keys = [
         key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, -1),
         key(2, DnssecKeyRole::Csk, DnssecKeyState::Published, -1),
@@ -93,7 +93,7 @@ fn a_published_sep_key_past_its_hold_down_is_promotable() {
 
 /// Verify that nothing published means no rollover to confirm.
 #[test]
-fn nothing_published_means_no_rollover_to_confirm() {
+fn rollover_rejects_confirmation_without_published_keys() {
     let keys = [key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, -1)];
 
     let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
@@ -103,7 +103,7 @@ fn nothing_published_means_no_rollover_to_confirm() {
 
 /// Verify that a ZSK rollover has no parent DS to confirm.
 #[test]
-fn a_zsk_rollover_has_no_parent_ds_to_confirm() {
+fn rollover_rejects_ds_confirmation_for_zsk() {
     // Only a SEP key is answerable by `ds-seen`; the scheduler promotes a
     // ZSK once its publish hold-down passes.
     let keys = [
@@ -119,7 +119,7 @@ fn a_zsk_rollover_has_no_parent_ds_to_confirm() {
 
 /// Verify that a hold down still running names the time to retry.
 #[test]
-fn a_hold_down_still_running_names_the_time_to_retry() {
+fn rollover_reports_retry_time_during_hold_down() {
     let keys = [
         key(1, DnssecKeyRole::Ksk, DnssecKeyState::Active, -1),
         key(2, DnssecKeyRole::Ksk, DnssecKeyState::Published, 1),
@@ -133,7 +133,7 @@ fn a_hold_down_still_running_names_the_time_to_retry() {
 
 /// Verify that skipping the hold down promotes anyway.
 #[test]
-fn skipping_the_hold_down_promotes_anyway() {
+fn rollover_promotes_key_when_hold_down_is_skipped() {
     let keys = [
         key(1, DnssecKeyRole::Ksk, DnssecKeyState::Active, -1),
         key(2, DnssecKeyRole::Ksk, DnssecKeyState::Published, 1),
@@ -147,7 +147,7 @@ fn skipping_the_hold_down_promotes_anyway() {
 
 /// Verify that the latest deadline among the published keys gates them all.
 #[test]
-fn the_latest_deadline_among_the_published_keys_gates_them_all() {
+fn rollover_waits_for_latest_published_key_deadline() {
     // Each key carries its own deadline, so the one published last is what
     // `ds-seen` waits on for the whole set.
     let keys = [
@@ -162,7 +162,7 @@ fn the_latest_deadline_among_the_published_keys_gates_them_all() {
 
 /// Verify that a retiring key waits out the signatures it made.
 #[test]
-fn a_retiring_key_waits_out_the_signatures_it_made() {
+fn retiring_key_waits_for_signature_expiration() {
     let mut zsk = key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, 0);
     zsk.max_signed_ttl = Ttl::try_from(900).unwrap();
 
@@ -174,7 +174,7 @@ fn a_retiring_key_waits_out_the_signatures_it_made() {
 
 /// Verify that a retiring sep key also waits out the parents DS.
 #[test]
-fn a_retiring_sep_key_also_waits_out_the_parents_ds() {
+fn retiring_sep_key_waits_for_parent_ds_expiration() {
     // Resolvers that cached the parent's DS record set before the replacement was
     // added hold it for its TTL, and it names only the key being removed.
     let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);

@@ -58,7 +58,7 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
 /// Verify that escaped wildcards cannot widen a literal-owner grant
 /// into a match-all or subtree grant.
 #[test]
-fn rejects_a_wildcard_label_however_it_is_spelled() {
+fn normalize_pattern_rejects_escaped_wildcard_labels() {
     for pattern in [r"\042", r"\042.sub", r"\042x", r"a\042b", "a*b", "*x"] {
         let err = normalize_pattern(Some(pattern)).unwrap_err();
         assert_eq!(
@@ -76,7 +76,7 @@ fn rejects_a_wildcard_label_however_it_is_spelled() {
 /// Verify that an escaped `@` remains a literal owner by retaining its escape through
 /// normalization.
 #[test]
-fn an_escaped_at_stays_a_literal_owner() {
+fn normalize_pattern_preserves_escaped_at_as_literal_owner() {
     let pattern = normalize_pattern(Some(r"\064")).unwrap();
     assert_eq!(pattern, r"\@");
     assert!(!matches_name(&pattern, &OwnerName::apex()));
@@ -85,7 +85,7 @@ fn an_escaped_at_stays_a_literal_owner() {
 /// Verify that an escaped trailing dot stays in its relative label
 /// instead of being mistaken for the root.
 #[test]
-fn an_escaped_dot_is_label_data_not_a_root_marker() {
+fn normalize_pattern_preserves_escaped_dot_as_label_data() {
     assert_eq!(normalize_pattern(Some(r"a\.")).unwrap(), r"a\046");
 
     // A real trailing dot still is: a pattern is relative to its zone.
@@ -97,7 +97,7 @@ fn an_escaped_dot_is_label_data_not_a_root_marker() {
 
 /// Verify that a pattern becomes the name a domain filter can spell.
 #[test]
-fn a_pattern_becomes_the_name_a_domain_filter_can_spell() {
+fn domain_filter_renders_normalized_grant_pattern() {
     let zone = ZoneName::parse("example.com").unwrap();
 
     assert_eq!(pattern_domain("*", &zone), "example.com.");

@@ -212,7 +212,7 @@ mod tests {
     /// Verify that SOA RDATA encodes two names followed by five counters (RFC 1035, Section
     /// 3.3.13).
     #[test]
-    fn encode_soa_rdata_is_names_then_five_counters() {
+    fn encode_soa_rdata_returns_names_and_five_counters() {
         let rdata = SoaRecordValue {
             mname: "ns1.example.com",
             rname: "admin.example.com",

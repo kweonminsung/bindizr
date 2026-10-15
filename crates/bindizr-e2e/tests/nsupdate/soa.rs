@@ -34,7 +34,7 @@ async fn metadata(app: &TestApp, zone: &str) -> Value {
 /// Ignore equal, older, and non-apex SOAs without changing records or metadata.
 #[tokio::test]
 #[serial]
-async fn soa_ineffective_additions_are_successful_noops() {
+async fn soa_addition_ignores_ineffective_updates() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -241,7 +241,7 @@ async fn soa_replacement_uses_zone_permissions() {
 /// Policy failures and failed prerequisites roll back SOA and ordinary records together.
 #[tokio::test]
 #[serial]
-async fn soa_replacement_refusals_are_atomic() {
+async fn soa_replacement_rejects_invalid_changes_atomically() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -361,7 +361,7 @@ async fn soa_replacement_refusals_are_atomic() {
 /// An explicit advance to the stored ceiling still permits subsequent SOA no-ops.
 #[tokio::test]
 #[serial]
-async fn soa_noops_do_not_require_serial_headroom() {
+async fn soa_noop_accepts_maximum_serial() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -451,7 +451,7 @@ async fn soa_replacement_updates_the_signed_zone() {
 /// Transfer the old and new SOAs around one delta even when the serial skips values.
 #[tokio::test]
 #[serial]
-async fn soa_replacement_is_replayed_by_ixfr() {
+async fn ixfr_replays_soa_replacement() {
     use domain::base::{Message, MessageBuilder, iana::Class, rdata::ComposeRecordData};
 
     let app = unsigned_nsupdate_app().await;

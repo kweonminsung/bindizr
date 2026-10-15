@@ -171,7 +171,7 @@ mod tests {
     /// Verify that the catalog digest changes when members change and is
     /// indifferent to their order.
     #[test]
-    fn catalog_digest_follows_membership_only() {
+    fn catalog_digest_changes_only_with_membership() {
         let members = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
 
         let original = catalog_digest(&members(&["example.com", "test.com"]));

@@ -65,7 +65,7 @@ fn dot_client(app: &TestApp) -> ClientConfig {
 /// together, while the plain listener keeps admitting either alone.
 #[tokio::test]
 #[serial]
-async fn a_transfer_over_tls_needs_the_key_and_a_registered_address() {
+async fn tls_transfer_requires_key_and_registered_address() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -172,7 +172,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
 /// Echo DO in signed TLS responses, including REFUSED and BADVERS.
 #[tokio::test]
 #[serial]
-async fn edns_dnssec_ok_is_echoed_over_tls() {
+async fn tls_response_preserves_edns_dnssec_ok() {
     let app = xot_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
@@ -390,7 +390,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
 /// certificate serves without a restart.
 #[tokio::test]
 #[serial]
-async fn a_reload_picks_up_a_renewed_certificate() {
+async fn config_reload_replaces_dns_tls_certificate() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -425,7 +425,7 @@ async fn a_reload_picks_up_a_renewed_certificate() {
 /// that a client naming no ALPN is closed without a transfer.
 #[tokio::test]
 #[serial]
-async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
+async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -456,7 +456,7 @@ async fn the_handshake_refuses_tls_1_2_and_a_foreign_alpn() {
 /// extended DNS error 21, Not Supported (RFC 9103, Section 7.8).
 #[tokio::test]
 #[serial]
-async fn a_query_the_tls_listener_does_not_serve_is_refused_as_not_supported() {
+async fn tls_query_returns_not_supported_for_unserved_type() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -490,7 +490,7 @@ async fn a_query_the_tls_listener_does_not_serve_is_refused_as_not_supported() {
 /// signing the refusal when a key is present (RFC 8945, Section 5.3).
 #[tokio::test]
 #[serial]
-async fn an_update_over_tls_is_refused_as_not_supported() {
+async fn tls_update_returns_not_supported() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

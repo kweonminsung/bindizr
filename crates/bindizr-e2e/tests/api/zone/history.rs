@@ -6,7 +6,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Verify listing and retrieval of zone versions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_versions_list_and_get() {
+async fn zone_versions_support_list_and_get() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -166,7 +166,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
 /// Verify that rollback previews match the applied changes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_rollback_dry_run_then_apply() {
+async fn zone_rollback_previews_changes_before_apply() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -475,7 +475,7 @@ async fn zone_versions_distinguish_unauthenticated_api_from_socket() {
 /// before database access (RFC 1035).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_serial_past_the_stored_range_is_invalid_input() {
+async fn zone_versions_reject_serials_outside_wire_range() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

@@ -106,7 +106,7 @@ mod tests {
 
     /// Preserve empty CAA properties, including the no-issuer form in RFC 8659, Section 4.2.
     #[test]
-    fn empty_properties_remain_present_in_wire_data() {
+    fn caa_encoding_preserves_empty_properties() {
         for tag in ["issue", "issuewild", "unknown"] {
             let text = format!("0 {tag} \"\"");
             let parsed = CaaRecordValue::parse(&text).unwrap();
@@ -136,7 +136,7 @@ mod tests {
 
     /// Verify that a quoted value resolves its escapes and renders them back.
     #[test]
-    fn a_quoted_value_resolves_its_escapes_and_renders_them_back() {
+    fn caa_parse_round_trips_quoted_value_escapes() {
         // An export and a zone file both spell a quote or backslash with the
         // RFC 1035, Section 5.1 escaping.
         let parsed = CaaRecordValue::parse(r#"0 issue "a\"b\\c""#).unwrap();
@@ -163,7 +163,7 @@ mod tests {
 
     /// Verify rejection of unclosed or concatenated quoted CAA values.
     #[test]
-    fn rejects_a_quoted_value_that_does_not_close_or_stand_alone() {
+    fn caa_parse_rejects_unclosed_or_concatenated_quoted_values() {
         for value in [r#"0 issue "unterminated"#, r#"0 issue "a" trailing"#] {
             assert!(
                 CaaRecordValue::parse(value).is_err(),
@@ -174,7 +174,7 @@ mod tests {
 
     /// Require quotes or escapes for whitespace within a CAA value.
     #[test]
-    fn unquoted_whitespace_separates_fields() {
+    fn caa_parse_splits_fields_at_unquoted_whitespace() {
         for text in ["0 issue a\tb", "0 issue a b", "0 issue a\"b"] {
             assert!(CaaRecordValue::parse(text).is_err());
         }
@@ -216,7 +216,7 @@ mod tests {
 
     /// Bound the decoded RDATA, including a full-length tag and a value over 255 bytes.
     #[test]
-    fn tag_and_value_lengths_follow_the_wire_fields() {
+    fn caa_validation_enforces_wire_field_lengths() {
         use super::super::{ParseRecordValueError, value::MAX_RECORD_RDATA};
 
         for tag_len in [1, 15, 16, 255] {

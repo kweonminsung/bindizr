@@ -5,7 +5,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Verify NOTIFY for one or all zones with optional serial advancement.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn notify_zone_all_and_bump_serial() {
+async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -73,7 +73,7 @@ async fn notify_zone_all_and_bump_serial() {
 /// a zone grant can reference.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn scoped_token_cannot_notify_the_catalog_zone() {
+async fn scoped_token_rejects_catalog_zone_notify() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..TestAppOptions::default()

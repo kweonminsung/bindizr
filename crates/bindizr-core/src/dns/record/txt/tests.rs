@@ -3,7 +3,7 @@ use crate::dns::record::ParseRecordValueError;
 
 /// Verify that raw TXT RDATA round-trips through the row form.
 #[test]
-fn raw_txt_rdata_round_trips_through_the_row_form() {
+fn txt_rdata_round_trips_stored_form() {
     let rdata = [2, b'a', b'b', 1, b'c'];
     let stored = TxtRecordValue::from_rdata(&rdata)
         .unwrap()
@@ -18,7 +18,7 @@ fn raw_txt_rdata_round_trips_through_the_row_form() {
 
 /// Verify that TXT segment encoding is reversible.
 #[test]
-fn txt_segments_encode_reversible() {
+fn txt_segments_round_trip_wire_encoding() {
     let rdata = TxtRecordValue::from_segments(["a", "bc"]).unwrap();
 
     assert_eq!(

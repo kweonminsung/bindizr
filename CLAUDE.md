@@ -279,7 +279,7 @@ than returning anything.
   its site.
   Every record response carries the caller's `actions` on it, so a client
   offers what the service allows without re-implementing grant matching.
-  The e2e `no_response_reveals_a_record_the_role_cannot_read` sweeps every
+  The e2e `responses_hide_records_outside_read_grants` sweeps every
   route as restricted roles; a new route that returns records joins it.
 - **A write-only grant learns what its write touches, never a value.** Write
   and read stay independent, with the boundary SQL, S3, Route 53 and Vault
@@ -1285,6 +1285,23 @@ never for symmetric `_tx`/non-`_tx` pairs or a complete-looking API. Entity quer
 serve the service; `probe_connection` serves offline doctor as a lifecycle operation.
 After removing a caller, inspect the next layer: rustc cannot detect an orphaned
 cross-crate `pub` facade. Remove a dead DB root function and all three backends together.
+
+### Test names
+
+Name tests `<subject>_<expected_behavior>[_when_<condition>]` in snake_case.
+The subject is the operation or contract under test; the rest states an
+observable result (`accepts`, `rejects`, `preserves`, `returns`, or another
+precise verb). Include conditions that distinguish cases, such as transport,
+permissions, or malformed input. Module paths provide context; do not repeat
+them unless the subject needs it.
+
+Avoid filler prefixes (`test_`, `verify_`), leading articles, and vague results
+such as `works`, `success`, or `lifecycle` alone. A real subject beginning with
+`verify_`, such as `verify_tsig`, keeps its operation name. Test helpers follow
+their responsibility rules below, not the test-case naming pattern.
+
+Merge tests only when their setup, action, and assertions cover the same
+contract. Unit and integration coverage of different boundaries stays separate.
 
 ### Test helpers
 

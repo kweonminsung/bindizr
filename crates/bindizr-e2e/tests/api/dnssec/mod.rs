@@ -8,7 +8,7 @@ mod delegation;
 /// Verify the DNSSEC enable, status, re-sign, and disable lifecycle.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_enable_status_sign_disable_lifecycle() {
+async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -222,7 +222,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
 /// Verify DNSSEC enablement with NSEC3 and separate key roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_enable_with_nsec3_and_split_keys() {
+async fn dnssec_enable_supports_nsec3_with_split_keys() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -349,7 +349,7 @@ async fn dnssec_enable_requires_dnssec_manage() {
 /// Verify that records listing signed pages the derived plane.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn records_listing_signed_pages_the_derived_plane() {
+async fn signed_record_listing_paginates_derived_records() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -461,7 +461,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
 /// Verify that a signed listing searches the derived plane by name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_signed_listing_searches_the_derived_plane_by_name() {
+async fn signed_record_listing_filters_derived_records_by_name() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -525,7 +525,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
 /// Verify a complete rollover with combined signing keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_csk_rollover_lifecycle() {
+async fn dnssec_csk_rollover_preserves_signed_zone() {
     let app = TestApp::start().await;
     // The publish wait is the zone TTL plus the SOA refresh (RFC 7583,
     // Section 3.2.1); both short, the rollover reaches promotion inside the test.

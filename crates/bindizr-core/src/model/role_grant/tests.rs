@@ -22,7 +22,7 @@ fn action_spells_itself_once() {
 
 /// Verify that an action set keeps one row spelling whatever order it was given in.
 #[test]
-fn action_set_row_form_is_canonical() {
+fn action_set_serializes_canonical_row_form() {
     let set: ActionSet = [Action::RecordDelete, Action::ZoneRead, Action::RecordDelete]
         .into_iter()
         .collect();

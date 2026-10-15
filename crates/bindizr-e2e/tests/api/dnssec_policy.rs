@@ -6,7 +6,7 @@ use crate::common::TestApp;
 /// Verify DNSSEC policy creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_policy_create_read_update_delete() {
+async fn dnssec_policy_supports_create_read_update_and_delete() {
     let app = TestApp::start().await;
     let policy_name = format!("{}-strict", app.namespace());
 
@@ -134,7 +134,7 @@ async fn dnssec_policy_create_read_update_delete() {
 /// Verify an assigned DNSSEC policy becomes deletable after DNSSEC is disabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_policy_in_use_cannot_be_deleted() {
+async fn dnssec_policy_rejects_deletion_when_in_use() {
     let app = TestApp::start().await;
     let policy_name = format!("{}-in-use", app.namespace());
     let (status, _) = app

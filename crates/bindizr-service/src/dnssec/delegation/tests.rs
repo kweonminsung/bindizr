@@ -98,7 +98,7 @@ fn promotion_waits_until_every_server_serves_the_ds() {
 
 /// Verify that one server still serving a DS is enough to block a disable.
 #[test]
-fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
+fn dnssec_disable_rejects_ds_remaining_on_any_parent_server() {
     // `disable` refuses on ds_key_tags, so the union is what it reads: dropping
     // signatures under a DS any resolver can still reach makes the zone bogus.
     let key = csk();
@@ -110,7 +110,7 @@ fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
 
 /// Verify that a parent serving nothing anywhere hides the delegation.
 #[test]
-fn a_parent_serving_nothing_anywhere_hides_the_delegation() {
+fn delegation_reports_hidden_when_all_parents_answer_empty() {
     let key = csk();
     let hidden = delegation_response(&key, vec![None, None]);
 
@@ -122,7 +122,7 @@ fn a_parent_serving_nothing_anywhere_hides_the_delegation() {
 
 /// Verify that a DS for another key does not publish this one.
 #[test]
-fn a_ds_for_another_key_does_not_publish_this_one() {
+fn delegation_rejects_ds_for_another_key() {
     // Key tags are 16 bits and collide, so the whole RDATA is matched.
     let key = csk();
     let other = csk();
@@ -137,7 +137,7 @@ fn a_ds_for_another_key_does_not_publish_this_one() {
 
 /// Verify that a digest bindizr cannot compute leaves the match undecided.
 #[test]
-fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
+fn delegation_reports_unknown_match_for_unsupported_digest() {
     // RFC 8624, Section 3.3 retires GOST (3), so a parent serving only that
     // is not the same as a parent serving no DS at all.
     let key = csk();
@@ -155,7 +155,7 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
 
 /// Verify that one server answering in a computable digest does not mask another.
 #[test]
-fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
+fn delegation_preserves_unknown_match_from_any_parent() {
     // A parent mid-rollout between digest types is undecided, not a match.
     let key = csk();
     let gost = DsRecord {
@@ -175,7 +175,7 @@ fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
 
 /// Verify that the TTL reported is the longest any server serves.
 #[test]
-fn the_ttl_reported_is_the_longest_any_server_serves() {
+fn delegation_returns_longest_parent_ttl() {
     let key = csk();
     let answers = vec![
         Some(DsRecordSet {

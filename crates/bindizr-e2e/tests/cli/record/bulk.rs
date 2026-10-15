@@ -43,7 +43,7 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
 /// Verify bulk record insertion from standard input.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_insert_from_stdin() {
+async fn record_bulk_insert_reads_stdin() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("bulk.example");
     app.create_zone_cli(&zone_name, "3600").await;

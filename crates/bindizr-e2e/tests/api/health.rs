@@ -27,7 +27,7 @@ async fn home_reports_running_message() {
 /// Verify that the API serves over TLS and nothing over plain HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn the_api_serves_over_tls_and_nothing_over_plain_http() {
+async fn api_tls_accepts_https_and_rejects_plain_http() {
     let app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         tls: true,
@@ -65,7 +65,7 @@ async fn the_api_serves_over_tls_and_nothing_over_plain_http() {
 /// renewed certificate serves without a restart.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_reload_picks_up_a_renewed_api_certificate() {
+async fn config_reload_replaces_api_certificate() {
     let app = TestApp::start_with_options(TestAppOptions {
         tls: true,
         ..Default::default()

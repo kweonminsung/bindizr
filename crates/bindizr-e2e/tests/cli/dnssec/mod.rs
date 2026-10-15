@@ -9,7 +9,7 @@ mod keys;
 /// Verify the DNSSEC lifecycle through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_lifecycle_via_cli() {
+async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("dnssec-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -109,7 +109,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
 /// Verify DNSSEC rollover with NSEC3 through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_nsec3_rollover_via_cli() {
+async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("dnssec-roll-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;

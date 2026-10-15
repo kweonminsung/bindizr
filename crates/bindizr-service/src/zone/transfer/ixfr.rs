@@ -178,7 +178,7 @@ mod tests {
 
     /// Verify that a delta covering every step is valid.
     #[test]
-    fn a_delta_covering_every_step_is_valid() {
+    fn ixfr_delta_accepts_complete_history() {
         assert_eq!(
             validate_delta(
                 Serial::from(10),
@@ -192,7 +192,7 @@ mod tests {
 
     /// Verify that versions at or below the client serial are not steps.
     #[test]
-    fn versions_at_or_below_the_client_serial_are_not_steps() {
+    fn ixfr_delta_ignores_versions_at_or_before_client_serial() {
         // The inclusive range may contain older versions; only later ones are steps.
         assert_eq!(
             validate_delta(
@@ -207,7 +207,7 @@ mod tests {
 
     /// Verify that a journal short of the current serial falls back.
     #[test]
-    fn a_journal_short_of_the_current_serial_falls_back() {
+    fn ixfr_delta_falls_back_when_journal_misses_current_serial() {
         // Incomplete history must not advance the secondary past its content.
         assert!(
             validate_delta(
@@ -222,7 +222,7 @@ mod tests {
 
     /// Verify that a missing SOA for the client serial falls back.
     #[test]
-    fn a_missing_soa_for_the_client_serial_falls_back() {
+    fn ixfr_delta_falls_back_when_client_soa_is_missing() {
         // The first deletion section needs the client's SOA (RFC 1995, Section 4).
         assert!(
             validate_delta(
@@ -237,7 +237,7 @@ mod tests {
 
     /// Verify that a missing journal step refuses IXFR and identifies the gap.
     #[test]
-    fn a_journal_skipping_a_step_reports_the_gap() {
+    fn ixfr_delta_reports_missing_step() {
         // The version proves serial 11 occurred; omitting its changes would corrupt the replay.
         let gap = validate_delta(
             Serial::from(10),

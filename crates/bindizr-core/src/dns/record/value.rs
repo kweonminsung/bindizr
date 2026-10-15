@@ -190,7 +190,7 @@ mod tests {
     /// Verify that record-value names accept non-LDH owner labels under
     /// RFC 2181, Section 11.
     #[test]
-    fn accepts_the_labels_an_owner_name_may_carry() {
+    fn record_value_accepts_non_ldh_owner_labels() {
         for value in [
             r"evil\.example.com", // one label `evil.example`, not a subdomain
             r"a\\b.example.com",
@@ -206,7 +206,7 @@ mod tests {
 
     /// Verify rejection of record names that cannot round-trip through presentation text.
     #[test]
-    fn rejects_what_no_presentation_form_spells_back() {
+    fn record_value_rejects_names_without_reversible_presentation() {
         for value in [
             "",
             ".",

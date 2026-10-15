@@ -5,7 +5,7 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 /// Verify role grant creation, listing, and revocation through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn role_grant_grants_revoke() {
+async fn role_grants_support_create_list_and_revoke_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-role.example");
     app.create_zone_cli(&zone_name, "3600").await;

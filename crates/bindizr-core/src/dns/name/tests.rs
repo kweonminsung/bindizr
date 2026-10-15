@@ -39,7 +39,7 @@ fn decode_resolves_decimal_escapes() {
 
 /// Verify that an escaped trailing dot is label data not the root.
 #[test]
-fn an_escaped_trailing_dot_is_label_data_not_the_root() {
+fn decode_preserves_escaped_trailing_dot_as_label_data() {
     // Trimming the dot off the text first would leave a dangling escape.
     assert_eq!(decode_name_labels(r"a\.").unwrap().0, vec![b"a.".to_vec()]);
     assert_eq!(decode_name_labels("www.example.com.").unwrap().0.len(), 3);
@@ -194,7 +194,7 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
 
 /// Verify that a rendered dot is always a label boundary.
 #[test]
-fn a_rendered_dot_is_always_a_label_boundary() {
+fn name_rendering_escapes_dots_inside_labels() {
     // SQL matches a grant's subtree as `LIKE '%.sub'`, so the single label
     // `a.sub` must not render to text ending in `.sub`; `[a\, sub]` may.
     assert_eq!(OwnerName::from_row(r"a\.sub").to_stored(), r"a\046sub");
@@ -203,7 +203,7 @@ fn a_rendered_dot_is_always_a_label_boundary() {
 
 /// DNS labels preserve arbitrary octets, independently of IDNA host conventions.
 #[test]
-fn arbitrary_label_octets_round_trip() {
+fn name_encoding_round_trips_arbitrary_label_octets() {
     let zone = ZoneName::parse("example.com").unwrap();
     for (input, expected) in [
         ("café", r"caf\195\169"),
@@ -376,7 +376,7 @@ fn zone_name_parse_rejects_malformed_names() {
 
 /// Verify that apex, escaped, and relative owners survive storage and presentation round trips.
 #[test]
-fn accepted_owner_names_round_trip_through_storage_and_presentation() {
+fn owner_name_round_trips_storage_and_presentation() {
     let zone = zone();
 
     for input in [
@@ -465,7 +465,7 @@ fn owner_name_escapes_master_file_metacharacters() {
 /// Verify that the schema holds the longest escaped owner name; the wire limit
 /// bounds decoded labels rather than their longer presentation form.
 #[test]
-fn worst_case_stored_form_fits_the_schema_column_width() {
+fn owner_name_storage_fits_schema_at_maximum_length() {
     const SCHEMA_COLUMN_WIDTH: usize = 1024;
     let zone = ZoneName::parse("e.co").unwrap();
 

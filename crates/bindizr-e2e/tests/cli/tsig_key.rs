@@ -5,7 +5,7 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 /// Verify TSIG key creation, listing, retrieval, and deletion through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tsig_key_create_list_get_delete() {
+async fn tsig_key_supports_create_list_get_and_delete_via_cli() {
     let app = TestApp::start().await;
 
     let created = app

@@ -42,7 +42,7 @@ fn parse_error_names_the_line_of_the_submitted_text() {
 
 /// Verify that TXT UTF8 multi segment parses as segments.
 #[test]
-fn txt_utf8_multi_segment_parses_as_segments() {
+fn txt_parser_preserves_utf8_segments() {
     let parsed = ParsedZoneFile::parse(
         "multi IN TXT \"foo\" \"bar\"\n",
         &ZoneName::parse("example.com").unwrap(),
@@ -66,7 +66,7 @@ fn txt_utf8_multi_segment_parses_as_segments() {
 
 /// Verify that a TTL written with a BIND unit suffix is refused on its line.
 #[test]
-fn a_ttl_written_with_units_is_refused() {
+fn zonefile_rejects_ttl_units() {
     // RFC 1035, Section 5.1 defines the TTL as a decimal integer; the suffix
     // is a BIND extension, and `named-compilezone` writes it back as seconds.
     let parsed = ParsedZoneFile::parse(
@@ -86,7 +86,7 @@ fn a_ttl_written_with_units_is_refused() {
 
 /// Verify zone-file parsing of NAPTR presentation data.
 #[test]
-fn reads_a_naptr_record_in_its_own_presentation_form() {
+fn zonefile_preserves_naptr_presentation() {
     // `domain` renders a root replacement as `..`, so the value comes from
     // the parsed fields rather than its display form.
     let parsed = ParsedZoneFile::parse(
@@ -113,7 +113,7 @@ fn reads_a_naptr_record_in_its_own_presentation_form() {
 
 /// Verify that only the apex SOA is read as the zone's own.
 #[test]
-fn a_soa_outside_the_apex_is_refused() {
+fn zonefile_rejects_non_apex_soa() {
     // `zone import --create` builds the new zone from `soa`, so a foreign
     // owner's SOA would hand it that zone's serial, MNAME, RNAME and timers.
     let parsed = ParsedZoneFile::parse(

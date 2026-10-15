@@ -48,7 +48,7 @@ fn encode_tcp_message_rejects_oversized_payload() {
 
 /// Verify that overflowing answers split into multiple frames.
 #[test]
-fn overflowing_answers_split_into_multiple_frames() {
+fn encoding_splits_overflowing_answers_into_frames() {
     let mut builder = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
     let mut wire = Vec::new();
 
@@ -205,7 +205,7 @@ fn strip_frame_length(frame: Vec<u8>) -> Vec<u8> {
 
 /// Verify that every envelope of a signed transfer carries a verifiable mac.
 #[test]
-fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
+fn signed_transfer_authenticates_every_envelope() {
     let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
@@ -249,7 +249,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
 
 /// Verify that a signed message reserves room for its TSIG record.
 #[test]
-fn a_signed_message_reserves_room_for_its_tsig_record() {
+fn signed_message_reserves_space_for_tsig() {
     let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
@@ -266,7 +266,7 @@ fn a_signed_message_reserves_room_for_its_tsig_record() {
 /// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3: echoed
 /// with the extended error, FORMERR when doubled, BADVERS for a newer version.
 #[test]
-fn an_edns_query_is_answered_with_an_opt() {
+fn edns_query_returns_opt() {
     let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     assert_eq!(
         parsed.edns,
@@ -324,7 +324,7 @@ fn an_edns_query_is_answered_with_an_opt() {
 
 /// Echo DO while clearing reserved EDNS flags in error and truncated responses.
 #[test]
-fn edns_dnssec_ok_survives_response_encoding() {
+fn response_encoding_preserves_edns_dnssec_ok() {
     for version in [0, 1] {
         for flags in [0u16, 0x8000, 0x7fff, 0xffff] {
             let mut wire = build_question(Rtype::SOA, &[version]);
@@ -355,7 +355,7 @@ fn edns_dnssec_ok_survives_response_encoding() {
 /// Verify that an answer over the UDP limit goes out truncated with its OPT
 /// (RFC 6891, Section 6.2.5).
 #[test]
-fn an_answer_over_the_udp_limit_is_truncated() {
+fn udp_response_truncates_answers_above_limit() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
     let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&parsed, Rtype::SOA);
@@ -380,7 +380,7 @@ fn an_answer_over_the_udp_limit_is_truncated() {
 
 /// Verify that a response echoes the class asked (RFC 5936, Section 2.2.2).
 #[test]
-fn a_response_echoes_the_question_class() {
+fn response_encoding_preserves_question_class() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(5);
@@ -397,7 +397,7 @@ fn a_response_echoes_the_question_class() {
 /// Verify that only TCP answers advertise edns-tcp-keepalive
 /// (RFC 7828, Section 3.3.2).
 #[test]
-fn a_tcp_answer_advertises_the_idle_timeout() {
+fn tcp_response_advertises_idle_timeout() {
     let tcp = ParsedQuery::parse(
         &build_question(Rtype::SOA, &[0]),
         Keepalive::IdleTimeout(Duration::from_secs(30)),
@@ -421,7 +421,7 @@ fn a_tcp_answer_advertises_the_idle_timeout() {
 
 /// OPT is unique, root-owned, and confined to Additional (RFC 6891, Section 6.1.1).
 #[test]
-fn opt_owner_and_section_are_checked() {
+fn query_validation_rejects_invalid_opt_owner_and_section() {
     let plain = build_question(Rtype::SOA, &[]);
     let wire = build_question(Rtype::SOA, &[0]);
     let start = plain.len();

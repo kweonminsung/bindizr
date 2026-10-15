@@ -69,7 +69,7 @@ mod tests {
 
     /// Verify that a grant pattern narrows by name and type.
     #[test]
-    fn a_grant_pattern_narrows_by_name_and_type() {
+    fn grant_sql_filters_by_name_and_type() {
         let sql = grant_record_match_sql("r", Some("record_type"), concat_pipes);
 
         assert!(sql.starts_with("',' || p.actions || ',' LIKE '%,record:read,%' AND "));
@@ -83,7 +83,7 @@ mod tests {
 
     /// Verify that the derived plane reaches only a grant that limits no type.
     #[test]
-    fn the_derived_plane_reaches_only_a_grant_that_limits_no_type() {
+    fn grant_sql_limits_derived_records_to_unrestricted_types() {
         let sql = grant_record_match_sql("d", None, concat_pipes);
 
         assert!(sql.ends_with("AND p.record_types = '*'"));

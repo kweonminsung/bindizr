@@ -89,7 +89,7 @@ mod tests {
 
     /// Verify that a subtree grant does not reach a label that merely spells it.
     #[test]
-    fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
+    fn subtree_grant_rejects_escaped_label_boundary() {
         // `a\.sub` is the single label `a.sub`, not a name under `sub`.
         assert!(!matches_name("*.sub", &OwnerName::from_row(r"a\.sub")));
         assert!(matches_name("*.sub", &OwnerName::from_row(r"a\.b.sub")));

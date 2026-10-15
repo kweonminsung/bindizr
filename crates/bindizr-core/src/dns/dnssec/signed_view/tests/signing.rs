@@ -199,7 +199,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
 
 /// Verify that delegation NS and glue are unsigned.
 #[test]
-fn delegation_ns_and_glue_are_unsigned() {
+fn signing_leaves_delegation_ns_and_glue_unsigned() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,

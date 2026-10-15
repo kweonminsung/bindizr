@@ -71,7 +71,7 @@ async fn binary_txt_and_unknown_types_round_trip() {
 /// PTR cannot name a CNAME, whichever record was created first (RFC 2181, Section 10.2).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn ptr_targets_cannot_become_aliases() {
+async fn ptr_record_rejects_alias_target() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone = zone["name"].as_str().unwrap();

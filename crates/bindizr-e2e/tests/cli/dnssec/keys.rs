@@ -57,7 +57,7 @@ async fn write_exported_pairs(
 /// Verify DNSSEC key export and import through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_key_export_import_round_trip_via_cli() {
+async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-keys.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -272,7 +272,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
 /// Verify that a zone exported mid rollover imports still mid rollover.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
+async fn zone_dnssec_key_import_preserves_rollover_state() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-rolling.example");
     app.create_zone_cli(&zone_name, "3600").await;

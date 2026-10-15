@@ -164,7 +164,7 @@ mod tests {
 
     /// Verify that a misspelled query key is rejected, naming the key.
     #[tokio::test]
-    async fn unknown_query_key_is_rejected_by_name() {
+    async fn query_rejects_unknown_key_by_name() {
         // Dropping a key the filter does not declare would widen this delete
         // to every type at the name.
         let (mut parts, _) = Request::builder()
@@ -187,7 +187,7 @@ mod tests {
 
     /// Verify that the spelled-out filter still parses, keys and all.
     #[tokio::test]
-    async fn known_query_keys_are_accepted() {
+    async fn query_accepts_known_keys() {
         let (mut parts, _) = Request::builder()
             .uri("/records?zone_name=example.com&name=www&type=A&dry_run=true")
             .body(Body::empty())
@@ -205,7 +205,7 @@ mod tests {
 
     /// Verify that an unknown body field is rejected, naming the field.
     #[tokio::test]
-    async fn unknown_body_field_is_rejected_by_name() {
+    async fn body_rejects_unknown_field_by_name() {
         let request = Request::builder()
             .method("POST")
             .uri("/records")

@@ -149,7 +149,7 @@ mod tests {
 
     /// Verify that an order by always ends on the row id.
     #[test]
-    fn an_order_by_always_ends_on_the_row_id() {
+    fn order_by_appends_row_id_tiebreaker() {
         // LIMIT/OFFSET over a non-unique sort would let tied rows swap between
         // pages, dropping or repeating one.
         assert_eq!(

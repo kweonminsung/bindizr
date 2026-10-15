@@ -68,7 +68,7 @@ fn added<'a>(plan: &ImportPlan<'a>) -> Vec<&'a str> {
 
 /// Verify that append never deletes what it did not ask about.
 #[test]
-fn append_never_deletes_what_it_did_not_ask_about() {
+fn append_preserves_records_absent_from_file() {
     let rows = [existing(1, "old", RecordType::A, "192.0.2.9", 300)];
     let want = [desired("new", RecordType::A, "192.0.2.1", 300)];
 
@@ -80,7 +80,7 @@ fn append_never_deletes_what_it_did_not_ask_about() {
 
 /// Verify that replace deletes every row the file does not name.
 #[test]
-fn replace_deletes_every_row_the_file_does_not_name() {
+fn replace_deletes_records_absent_from_file() {
     let rows = [
         existing(1, "keep", RecordType::A, "192.0.2.1", 300),
         existing(2, "drop", RecordType::A, "192.0.2.9", 300),
@@ -97,7 +97,7 @@ fn replace_deletes_every_row_the_file_does_not_name() {
 
 /// Verify that upsert leaves names and types the file is silent about.
 #[test]
-fn upsert_leaves_names_and_types_the_file_is_silent_about() {
+fn upsert_preserves_name_and_type_pairs_absent_from_file() {
     // The file speaks about www/A only, so the other rows are none of its
     // business.
     let rows = [
@@ -115,7 +115,7 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
 
 /// Verify that a TTL change rewrites the row rather than editing it.
 #[test]
-fn a_ttl_change_rewrites_the_row_rather_than_editing_it() {
+fn import_plan_replaces_row_when_ttl_changes() {
     // RFC 2181, Section 5.2: the records of one name and type share a TTL.
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", 600)];
@@ -142,7 +142,7 @@ fn append_keeps_a_ttl_it_disagrees_with() {
 
 /// Verify that an omitted TTL is the zones default not a wildcard.
 #[test]
-fn an_omitted_ttl_is_the_zones_default_not_a_wildcard() {
+fn import_plan_defaults_omitted_ttl_to_zone_default() {
     // A file that leaves the TTL out still reconciles against the default,
     // so a row at another TTL is stale rather than unchanged.
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 900)];
@@ -156,7 +156,7 @@ fn an_omitted_ttl_is_the_zones_default_not_a_wildcard() {
 
 /// Verify that a value the file spells differently is the same record.
 #[test]
-fn a_value_the_file_spells_differently_is_the_same_record() {
+fn import_plan_matches_canonically_equivalent_values() {
     let rows = [existing(
         1,
         "alias",

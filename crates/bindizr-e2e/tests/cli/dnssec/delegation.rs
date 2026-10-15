@@ -9,7 +9,7 @@ use crate::{
 /// Verify parent DS checks through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_parent_ds_check_via_cli() {
+async fn zone_dnssec_checks_parent_ds_via_cli() {
     let app = TestApp::start_local().await;
     let parent = FakeParent::start();
     let parent_addr = parent.addr();
@@ -90,7 +90,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
 /// Verify the CLI option to disable DNSSEC without a parent DS check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_disable_skip_ds_check_via_cli() {
+async fn zone_dnssec_disable_skips_parent_ds_check_when_requested() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-skip-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;

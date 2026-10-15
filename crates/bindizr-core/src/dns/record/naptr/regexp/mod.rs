@@ -487,7 +487,7 @@ mod tests {
 
     /// Verify that the substitution expressions BIND accepts are accepted.
     #[test]
-    fn accepts_the_substitution_expressions_bind_accepts() {
+    fn naptr_regexp_accepts_bind_supported_expressions() {
         for regexp in [
             // An empty regexp is the common case (RFC 3403, Section 4.1).
             "",
@@ -517,7 +517,7 @@ mod tests {
     /// Verify that the substitution expressions BIND refuses are refused, each
     /// for the reason BIND gives.
     #[test]
-    fn refuses_the_substitution_expressions_bind_refuses() {
+    fn naptr_regexp_rejects_bind_unsupported_expressions() {
         for (regexp, reason) in [
             // No substitution expression at all.
             (

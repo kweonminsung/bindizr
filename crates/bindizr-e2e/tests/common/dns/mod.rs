@@ -130,7 +130,7 @@ fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord
     }
     let normalize = |value: &Value| {
         let value = value.to_string();
-        if matches!(record_type, 2 | 5 | 12 | 15 | 33) {
+        if matches!(record_type, 2 | 5 | 12 | 15 | 33 | 39) {
             value.to_ascii_lowercase()
         } else {
             value
@@ -310,9 +310,9 @@ fn decode_dns_value(
             "{} {} {} {} {} {}",
             naptr.order(),
             naptr.preference(),
-            to_quoted_string(&String::from_utf8_lossy(naptr.flags().as_slice())),
-            to_quoted_string(&String::from_utf8_lossy(naptr.services().as_slice())),
-            to_quoted_string(&String::from_utf8_lossy(naptr.regexp().as_slice())),
+            to_quoted_string(naptr.flags().as_slice()),
+            to_quoted_string(naptr.services().as_slice()),
+            to_quoted_string(naptr.regexp().as_slice()),
             to_presentation_name(naptr.replacement())
         )),
         AllRecordData::Mx(mx) => Value::String(format!(
@@ -328,14 +328,22 @@ fn decode_dns_value(
             to_presentation_name(srv.target())
         )),
         AllRecordData::Txt(txt) => {
-            let mut segments = txt
+            let segments = txt
                 .iter_charstrs()
-                .map(|charstr| String::from_utf8_lossy(charstr.as_slice()).into())
-                .collect::<Vec<String>>();
-            if segments.len() == 1 {
-                Value::String(segments.remove(0))
+                .map(|charstr| charstr.as_slice())
+                .collect::<Vec<_>>();
+            let text = segments
+                .iter()
+                .map(|segment| std::str::from_utf8(segment))
+                .collect::<Result<Vec<_>, _>>();
+            if let Ok(text) = text {
+                if let [value] = text.as_slice() {
+                    json!(value)
+                } else {
+                    json!(text)
+                }
             } else {
-                serde_json::to_value(segments).map_err(|error| error.to_string())?
+                json!({ "presentation": segments.into_iter().map(to_quoted_string).collect::<Vec<_>>().join(" ") })
             }
         }
         AllRecordData::Ds(ds) => Value::String(format!(
@@ -360,6 +368,15 @@ fn decode_dns_value(
         )),
         // CAA values are opaque octets, escaped losslessly (RFC 8659, Section 4.1).
         AllRecordData::Caa(caa) => Value::String(caa.to_string()),
+        AllRecordData::Unknown(unknown) => {
+            let bytes = unknown.data();
+            let mut value = format!(r"\# {}", bytes.len());
+            if !bytes.is_empty() {
+                value.push(' ');
+                value.push_str(&hex_upper(bytes));
+            }
+            Value::String(value)
+        }
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
     };
@@ -375,15 +392,24 @@ fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
         .collect()
 }
 
-/// Renders names the way records are compared here: labels joined with '.',
-/// trailing dot, lossy UTF-8 (never `Display`, which escapes label bytes).
+/// Render the API's escaped FQDN form without losing label octets or boundaries.
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     let mut out = String::new();
     for label in name.iter() {
         if label.is_root() {
             break;
         }
-        out.push_str(&String::from_utf8_lossy(label.as_slice()));
+        for &byte in label.as_slice() {
+            match byte {
+                b'.' => out.push_str(r"\046"),
+                b'\\' | b'@' | b';' | b'(' | b')' | b'"' | b'$' => {
+                    out.push('\\');
+                    out.push(char::from(byte));
+                }
+                0x21..=0x7e => out.push(char::from(byte)),
+                _ => out.push_str(&format!("\\{byte:03}")),
+            }
+        }
         out.push('.');
     }
     if out.is_empty() {
@@ -394,9 +420,9 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
 
 /// Quote a value the way the record types render it: `"` and `\` escaped,
 /// control and non-ASCII bytes as `\DDD`, so it matches what the API reports.
-fn to_quoted_string(text: &str) -> String {
+fn to_quoted_string(bytes: &[u8]) -> String {
     let mut out = String::from("\"");
-    for byte in text.bytes() {
+    for &byte in bytes {
         match byte {
             b'"' => out.push_str("\\\""),
             b'\\' => out.push_str("\\\\"),

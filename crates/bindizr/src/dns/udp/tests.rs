@@ -60,7 +60,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
 
 /// Specific IPv4 and IPv6 listeners preserve their configured address.
 #[tokio::test]
-async fn specific_addresses_reply_from_the_bound_address() {
+async fn udp_replies_from_bound_address() {
     for ip in [
         IpAddr::V4(Ipv4Addr::LOCALHOST),
         IpAddr::V6(Ipv6Addr::LOCALHOST),
@@ -71,13 +71,13 @@ async fn specific_addresses_reply_from_the_bound_address() {
 
 /// IPv4 wildcard listeners reply using the packet's destination address.
 #[tokio::test]
-async fn ipv4_wildcard_preserves_destination() {
+async fn udp_preserves_destination_when_bound_to_ipv4_wildcard() {
     exchange(Ipv4Addr::UNSPECIFIED.into(), &[Ipv4Addr::LOCALHOST.into()]).await;
 }
 
 /// IPv6 wildcard listeners also handle IPv4-mapped requests on the same socket.
 #[tokio::test]
-async fn ipv6_wildcard_preserves_both_address_families() {
+async fn udp_preserves_both_address_families_when_bound_to_ipv6_wildcard() {
     exchange(
         Ipv6Addr::UNSPECIFIED.into(),
         &[
@@ -92,7 +92,7 @@ async fn ipv6_wildcard_preserves_both_address_families() {
 /// Linux routes distinct 127/8 destinations locally without interface aliases.
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn replies_do_not_mix_up_local_destinations() {
+async fn udp_preserves_destination_across_interleaved_requests() {
     let destinations = [
         Ipv4Addr::new(127, 0, 0, 2).into(),
         Ipv4Addr::LOCALHOST.into(),
@@ -105,7 +105,7 @@ async fn replies_do_not_mix_up_local_destinations() {
 
 /// A truncated datagram is rejected before it can be parsed or answered.
 #[tokio::test]
-async fn truncated_datagram_is_rejected() {
+async fn recv_from_rejects_truncated_datagram() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
     let server = UdpSocket::new(socket).unwrap();
@@ -119,7 +119,7 @@ async fn truncated_datagram_is_rejected() {
 
 /// Missing packet information never falls back to an OS-selected source address.
 #[tokio::test]
-async fn missing_destination_is_rejected() {
+async fn recv_from_rejects_missing_destination() {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
     let port = socket.local_addr().unwrap().port();
     let server = UdpSocket { socket };

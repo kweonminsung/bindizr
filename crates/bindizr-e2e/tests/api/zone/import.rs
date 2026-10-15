@@ -18,7 +18,7 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
 /// Verify that zone-file import previews match the applied changes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_dry_run_then_apply() {
+async fn zone_import_previews_zone_file_before_apply() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -87,7 +87,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
 /// Verify that replace imports reconcile all records in the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_replace_mode() {
+async fn zone_import_replace_removes_records_absent_from_file() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -298,7 +298,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
 /// Verify importing a zone from another DNS server through the API.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_from_server_over_http() {
+async fn zone_import_fetches_server_records_over_http() {
     // The transfer ACL must admit the test's own loopback AXFR.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -496,7 +496,7 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
 /// Verify that a rejected import leaves behind no zone it created to apply into.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_rejected_with_create_leaves_no_zone() {
+async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-create-reject.example");
     // The SOA is enough to create the zone from, but the CNAME collides with
@@ -925,7 +925,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
 /// Reject an import containing invalid NAPTR flags.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn naptr_flags_reject_the_whole_import() {
+async fn zone_import_rejects_invalid_naptr_flags_atomically() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -962,7 +962,7 @@ async fn naptr_flags_reject_the_whole_import() {
 /// Verify that DNAME and NAPTR survive an import and export round trip.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
+async fn zone_import_export_preserves_dname_and_naptr() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1017,7 +1017,7 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
 /// Verify that escaped labels and values survive an import and export round trip.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn escaped_labels_and_values_survive_an_import_and_export_round_trip() {
+async fn zone_import_export_preserves_escaped_labels_and_values() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

@@ -95,7 +95,7 @@ fn token(grants: Vec<RoleGrant>) -> Caller {
 
 /// Verify that actions on objects no zone owns need a grant covering all zones.
 #[test]
-fn authorize_action_needs_an_all_zones_grant() {
+fn authorize_action_requires_all_zones_grant() {
     assert!(
         Caller::socket()
             .authorize_action(Action::ZoneCreate)
@@ -223,7 +223,7 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
 
 /// Verify that `sees_record` needs `record:read` and narrows like writes.
 #[test]
-fn sees_record_needs_record_read_under_matching_constraints() {
+fn sees_record_requires_matching_record_read_grant() {
     let caller = token(vec![grant(&[Action::RecordRead], "*.dyn", "A,TXT")]);
 
     assert!(visible(&caller, "host.dyn", Some(&RecordType::A)));
@@ -265,7 +265,7 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
 
 /// Equally privileged socket and API callers retain distinct request origins.
 #[test]
-fn access_scope_does_not_determine_change_attribution() {
+fn change_attribution_preserves_credential_across_access_scopes() {
     use crate::model::zone_version::{ChangeActor, ChangeSource};
 
     let socket = Caller::socket();

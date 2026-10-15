@@ -55,7 +55,7 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
 /// Verify that record bulk insert is all or nothing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_insert_is_all_or_nothing() {
+async fn record_bulk_insert_rejects_invalid_batch_atomically() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -87,7 +87,7 @@ async fn record_bulk_insert_is_all_or_nothing() {
 /// Verify that record bulk insert unknown zone returns not found.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_insert_unknown_zone_returns_not_found() {
+async fn record_bulk_insert_returns_not_found_when_zone_is_unknown() {
     let app = TestApp::start().await;
     let missing_zone = app.zone_name("missing.example.com");
 
@@ -104,7 +104,7 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
 /// Verify that bulk insertion can be previewed without writes and then applied.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_insert_dry_run_then_apply() {
+async fn record_bulk_insert_previews_changes_before_apply() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

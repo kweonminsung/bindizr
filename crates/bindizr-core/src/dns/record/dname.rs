@@ -25,7 +25,7 @@ mod tests {
 
     /// Keep DNAME target case in stored and wire forms.
     #[test]
-    fn preserves_target_case() {
+    fn dname_preserves_target_case() {
         assert_eq!(
             DnameRecordValue::parse("Target.Example.COM")
                 .unwrap()
@@ -36,7 +36,7 @@ mod tests {
 
     /// Verify rejection of invalid DNAME targets.
     #[test]
-    fn rejects_a_target_that_is_not_a_name() {
+    fn dname_rejects_invalid_target_name() {
         assert!(DnameRecordValue::parse("not a name").is_err());
     }
 }

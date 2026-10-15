@@ -26,7 +26,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<U
 
 /// Verify that a retired key goes once its replacement signs the zone.
 #[test]
-fn a_retired_key_goes_once_its_replacement_signs_the_zone() {
+fn key_retirement_removes_key_after_replacement_signs() {
     let now = Utc::now();
     let keys = [
         key(
@@ -48,7 +48,7 @@ fn a_retired_key_goes_once_its_replacement_signs_the_zone() {
 
 /// Verify that a retired key waits out its hold down.
 #[test]
-fn a_retired_key_waits_out_its_hold_down() {
+fn key_retirement_waits_for_hold_down() {
     // eligible_at is stamped at the transition, so caches may still be
     // validating with the key until it passes.
     let now = Utc::now();
@@ -72,7 +72,7 @@ fn a_retired_key_waits_out_its_hold_down() {
 
 /// Verify that a retired key stays while its replacement is only published.
 #[test]
-fn a_retired_key_stays_while_its_replacement_is_only_published() {
+fn key_retirement_preserves_key_when_replacement_is_only_published() {
     // Keeping this algorithm requires an active successor; publication alone
     // does not confirm that the replacement is ready to take over.
     let now = Utc::now();
@@ -96,7 +96,7 @@ fn a_retired_key_stays_while_its_replacement_is_only_published() {
 
 /// Verify that a KSK alone cannot keep its algorithm alive.
 #[test]
-fn a_ksk_alone_cannot_keep_its_algorithm_alive() {
+fn algorithm_retirement_preserves_keys_without_signing_replacement() {
     // Only a CSK or ZSK signs zone data; an active KSK covers the DNSKEY
     // record set alone, so the retired ZSK's signatures have no successor.
     let now = Utc::now();
@@ -120,7 +120,7 @@ fn a_ksk_alone_cannot_keep_its_algorithm_alive() {
 
 /// Verify that an algorithm whose keys have all retired leaves together.
 #[test]
-fn an_algorithm_whose_keys_have_all_retired_leaves_together() {
+fn algorithm_retirement_removes_all_retired_keys_together() {
     // RFC 6840, Section 5.11: an algorithm's DNSKEYs and its signatures
     // appear and disappear as one — the state an algorithm rollover leaves.
     let now = Utc::now();
@@ -154,7 +154,7 @@ fn an_algorithm_whose_keys_have_all_retired_leaves_together() {
 
 /// Verify that one key of a retiring algorithm still inside its hold down holds the rest.
 #[test]
-fn one_key_of_a_retiring_algorithm_still_inside_its_hold_down_holds_the_rest() {
+fn algorithm_retirement_waits_for_last_key_hold_down() {
     let now = Utc::now();
     let mut keys = [
         key(

@@ -64,7 +64,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
 /// Verify importing a zone file from standard input.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_from_stdin() {
+async fn zone_import_reads_zone_file_from_stdin() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import.example");
     app.create_zone_cli(&zone_name, "3600").await;

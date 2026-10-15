@@ -319,7 +319,7 @@ mod tests {
 
     /// Verify that the earliest signature stays clear of its refresh window.
     #[test]
-    fn the_earliest_signature_stays_clear_of_its_refresh_window() {
+    fn jitter_keeps_signatures_outside_refresh_window() {
         for (validity, refresh) in [(14, 5), (30, 7), (7, 6), (2, 1)] {
             let policy = policy(validity, refresh);
             let earliest = i64::from(validity) * 86_400 - policy.expiration_jitter_secs();
@@ -333,7 +333,7 @@ mod tests {
 
     /// Verify that a policy leaving no room takes no jitter.
     #[test]
-    fn a_policy_leaving_no_room_takes_no_jitter() {
+    fn jitter_returns_zero_when_policy_leaves_no_room() {
         assert_eq!(policy(5, 5).expiration_jitter_secs(), 0);
         assert_eq!(policy(5, 7).expiration_jitter_secs(), 0);
     }

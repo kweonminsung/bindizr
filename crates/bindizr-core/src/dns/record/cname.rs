@@ -30,7 +30,7 @@ mod tests {
 
     /// Verify that an escaped dot stays inside its label.
     #[test]
-    fn an_escaped_dot_stays_inside_its_label() {
+    fn cname_preserves_escaped_dot_inside_label() {
         // RFC 1035, Section 5.1: the escape makes the dot data, so the name has
         // two labels and the trailing dot is the only boundary left to drop.
         assert_eq!(canonical(r"Evil\.Example.COM."), r"evil\046example.com.");
@@ -39,14 +39,14 @@ mod tests {
 
     /// Verify that a label keeps what only an escape could have spelled.
     #[test]
-    fn a_label_keeps_what_only_an_escape_could_have_spelled() {
+    fn cname_preserves_escaped_label_octets() {
         assert_eq!(canonical(r"host\065.example.com"), "hosta.example.com.");
         assert_eq!(canonical(r"a\\b.example.com"), r"a\\b.example.com.");
     }
 
     /// Verify that a classless reverse delegation target survives.
     #[test]
-    fn a_classless_reverse_delegation_target_survives() {
+    fn cname_accepts_classless_reverse_delegation_target() {
         // RFC 2317, Section 4 delegates through a label carrying a slash.
         assert_eq!(
             canonical("1.0/25.2.0.192.in-addr.arpa."),

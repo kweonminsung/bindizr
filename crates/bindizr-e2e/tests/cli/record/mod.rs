@@ -7,7 +7,7 @@ mod bulk;
 /// Verify record creation, retrieval, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_read_delete() {
+async fn record_supports_create_read_and_delete_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli.example");
 
@@ -191,7 +191,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
 /// Verify creation of TXT segments from repeated CLI value options.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_txt_segments_from_repeated_value() {
+async fn record_create_builds_txt_segments_from_repeated_values() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-txt.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -461,7 +461,7 @@ async fn record_update_by_name_refuses_a_name_holding_several_records() {
 /// Verify record filtering by zone and type through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_filter_by_zone_and_type() {
+async fn record_listing_filters_by_zone_and_type() {
     let app = TestApp::start().await;
     let one_zone = app.zone_name("one.example");
     let two_zone = app.zone_name("two.example");
@@ -511,7 +511,7 @@ async fn record_filter_by_zone_and_type() {
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_invalid_values() {
+async fn record_rejects_invalid_values_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("validation.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -540,7 +540,7 @@ async fn record_reject_invalid_values() {
 /// Verify that record update retype without value is rejected via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_retype_without_value_is_rejected_via_cli() {
+async fn record_update_rejects_retype_without_value_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype-noval.example");
     app.create_zone_cli(&zone_name, "3600").await;

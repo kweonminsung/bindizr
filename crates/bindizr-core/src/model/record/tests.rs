@@ -333,13 +333,13 @@ fn record(record_type: RecordType, value: &str, priority: Option<i32>) -> Record
 
 /// Verify that nothing given takes every record at the name.
 #[test]
-fn nothing_given_takes_every_record_at_the_name() {
+fn record_match_accepts_all_records_when_filters_are_absent() {
     assert!(record(RecordType::A, "192.0.2.1", None).matches(None, None, None));
 }
 
 /// Verify that a type narrows to one RRSET.
 #[test]
-fn a_type_narrows_to_one_record_set() {
+fn record_match_filters_by_type() {
     let a = record(RecordType::A, "192.0.2.1", None);
 
     assert!(a.matches(Some(&RecordType::A), None, None));
@@ -348,7 +348,7 @@ fn a_type_narrows_to_one_record_set() {
 
 /// Verify that a value is compared canonically not as text.
 #[test]
-fn a_value_is_compared_canonically_not_as_text() {
+fn record_match_compares_values_canonically() {
     // The row stores the canonical spelling, so a request naming the same
     // record another way still names it.
     let cname = record(RecordType::Cname, "target.example.com.", None);
@@ -359,7 +359,7 @@ fn a_value_is_compared_canonically_not_as_text() {
 
 /// Verify that a value never carries the preference.
 #[test]
-fn a_value_never_carries_the_preference() {
+fn record_match_excludes_priority_from_value() {
     // MX keeps its preference in its own column, so the value compares to the
     // exchange alone and two rows differing only in preference both match.
     let ten = record(RecordType::Mx, "mail.example.com.", Some(10));
@@ -372,7 +372,7 @@ fn a_value_never_carries_the_preference() {
 
 /// Verify that a preference narrows where the value cannot.
 #[test]
-fn a_preference_narrows_where_the_value_cannot() {
+fn record_match_filters_by_priority() {
     let ten = record(RecordType::Mx, "mail.example.com.", Some(10));
     let twenty = record(RecordType::Mx, "mail.example.com.", Some(20));
 
@@ -382,7 +382,7 @@ fn a_preference_narrows_where_the_value_cannot() {
 
 /// Verify that a preference asked of a type that has none matches nothing.
 #[test]
-fn a_preference_asked_of_a_type_that_has_none_matches_nothing() {
+fn record_match_rejects_priority_for_unsupported_type() {
     assert!(!record(RecordType::A, "192.0.2.1", None).matches(
         Some(&RecordType::A),
         None,

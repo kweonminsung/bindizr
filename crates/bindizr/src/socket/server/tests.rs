@@ -69,7 +69,7 @@ async fn prepare_socket_path_creates_parent_directory() {
 
 /// Verify owner-only socket permissions and the UID used for peer authorization.
 #[tokio::test]
-async fn accepted_connection_reports_the_peer_uid() {
+async fn accepted_connection_returns_peer_uid() {
     let dir = tempfile::tempdir().unwrap();
     let socket_path = dir.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();

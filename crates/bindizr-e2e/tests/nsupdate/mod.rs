@@ -170,7 +170,7 @@ async fn nsupdate_naptr_flags_refuse_the_whole_update() {
 /// Refuse unserved zone classes before evaluating prerequisites or updates.
 #[tokio::test]
 #[serial]
-async fn nsupdate_unserved_zone_classes_are_notauth_over_udp() {
+async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -252,7 +252,7 @@ async fn nsupdate_unserved_zone_classes_are_notauth_over_udp() {
 /// Sign TCP class refusals and distinguish missing authority from missing grants.
 #[tokio::test]
 #[serial]
-async fn nsupdate_zone_class_refusals_are_signed_over_tcp() {
+async fn nsupdate_signs_zone_class_refusals_over_tcp() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -473,7 +473,7 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
 /// Verify that a value prerequisite needs every record of the name and type.
 #[tokio::test]
 #[serial]
-async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
+async fn nsupdate_value_prerequisite_requires_complete_record_set() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-records.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -544,7 +544,7 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
 /// (RFC 2136, Section 3.2).
 #[tokio::test]
 #[serial]
-async fn a_prerequisite_may_name_the_zone_soa() {
+async fn nsupdate_prerequisite_accepts_zone_soa() {
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -770,7 +770,7 @@ async fn nsupdate_prescans_delete_types() {
 /// lookup precedes the prescan (RFC 2136, Sections 3.1 and 3.4.1).
 #[tokio::test]
 #[serial]
-async fn nsupdate_prescan_errors_are_signed_over_tcp() {
+async fn nsupdate_signs_prescan_errors_over_tcp() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -886,7 +886,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 /// needs `record:update`, in addition to `record:create`.
 #[tokio::test]
 #[serial]
-async fn a_create_grant_alone_rewrites_nothing_that_exists() {
+async fn nsupdate_create_grant_preserves_existing_records() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-rewrite.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -1060,7 +1060,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
 /// Verify that a signed prerequisite needs a grant reaching what it names.
 #[tokio::test]
 #[serial]
-async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
+async fn nsupdate_signed_prerequisite_requires_matching_grant() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-prereq.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -1360,7 +1360,7 @@ async fn nsupdate_moves_a_record_set_to_the_added_ttl() {
 /// its key (RFC 8945, Section 5.2), as a signed FORMERR.
 #[tokio::test]
 #[serial]
-async fn a_signed_request_that_does_not_parse_is_answered_under_its_key() {
+async fn nsupdate_signs_parse_errors_with_request_key() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1377,7 +1377,7 @@ async fn a_signed_request_that_does_not_parse_is_answered_under_its_key() {
 /// (RFC 8945, Section 5.3).
 #[tokio::test]
 #[serial]
-async fn a_signed_request_with_a_newer_edns_is_answered_under_its_key() {
+async fn nsupdate_signs_badvers_with_request_key() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1393,7 +1393,7 @@ async fn a_signed_request_with_a_newer_edns_is_answered_under_its_key() {
 /// Echo DO in signed UPDATE success and BADVERS responses over UDP and TCP.
 #[tokio::test]
 #[serial]
-async fn edns_dnssec_ok_is_echoed_in_update_responses() {
+async fn nsupdate_response_preserves_edns_dnssec_ok() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

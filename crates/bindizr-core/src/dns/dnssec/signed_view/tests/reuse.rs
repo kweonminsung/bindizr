@@ -98,7 +98,7 @@ fn expirations_spread_across_the_jitter_window() {
 
 /// Verify that recompute against stored plane is empty.
 #[test]
-fn recompute_against_stored_plane_is_empty() {
+fn recompute_returns_empty_delta_when_signed_plane_is_unchanged() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,
@@ -235,7 +235,7 @@ fn record_change_reuses_unaffected_signatures() {
 
 /// Verify that signature inside refresh window is resigned.
 #[test]
-fn signature_inside_refresh_window_is_resigned() {
+fn signing_refreshes_signatures_inside_refresh_window() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,

@@ -629,7 +629,7 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
 
 /// Verify that a reload refuses what a running process cannot adopt.
 #[test]
-fn a_reload_refuses_what_a_running_process_cannot_adopt() {
+fn reload_rejects_settings_that_require_restart() {
     // authentication_required is in the list because the router is built
     // once: a section is fixed whole, not field by field.
     let current = parse_config(&TestConfigToml::default()).unwrap();
@@ -704,7 +704,7 @@ fn is_catalog_zone_matches_the_configured_name_ignoring_case() {
 /// Verify that the catalog zone name is stored canonically, so an FQDN or a
 /// padded spelling still matches a query name.
 #[test]
-fn catalog_zone_name_is_canonicalized_on_load() {
+fn from_toml_canonicalizes_catalog_zone_name() {
     for dns_extra in [
         "catalog_zone_name = \"catalog.Prod.\"",
         "catalog_zone_name = \" catalog.prod \"",
@@ -722,7 +722,7 @@ fn catalog_zone_name_is_canonicalized_on_load() {
 
 /// Verify that a reload takes the settings read per use.
 #[test]
-fn a_reload_takes_the_settings_read_per_use() {
+fn reload_applies_settings_read_per_use() {
     let current = parse_config(&TestConfigToml::default()).unwrap();
 
     let mut next = current.clone();

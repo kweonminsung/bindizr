@@ -17,7 +17,7 @@ fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRec
 /// Verify the prerequisite and update shapes are reported as FORMERR
 /// (RFC 2136, Sections 3.2.1 and 3.4.1).
 #[test]
-fn malformed_sections_are_formerr() {
+fn nsupdate_decode_returns_formerr_for_malformed_sections() {
     let zone = ZoneName::parse("example.com").unwrap();
     for prerequisite in [
         record(Class::ANY, Rtype::ANY, 1, &[]),
@@ -42,7 +42,7 @@ fn malformed_sections_are_formerr() {
 /// Verify that ineffective deletes still pass every prescan check, including
 /// names whose escaped dots cannot act as zone boundaries (RFC 2136, Section 3.4.1).
 #[test]
-fn ignored_deletes_still_require_valid_owners_and_shapes() {
+fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
     let zone = ZoneName::parse("example.com").unwrap();
     for (rtype, data) in [
         (Rtype::SOA, vec![0; 22]),
@@ -75,7 +75,7 @@ fn ignored_deletes_still_require_valid_owners_and_shapes() {
 /// Verify that every record is prescanned before RDATA is decoded or an
 /// ineffective delete is omitted (RFC 2136, Section 3.4.1).
 #[test]
-fn the_complete_prescan_precedes_operation_decoding() {
+fn nsupdate_decode_prescans_all_records_before_decoding_operations() {
     let zone = ZoneName::parse("example.com").unwrap();
     let malformed_add = record(Class::IN, Rtype::A, 0, &[]);
     let mut outside = record(Class::ANY, Rtype::SOA, 0, &[]);
@@ -87,7 +87,7 @@ fn the_complete_prescan_precedes_operation_decoding() {
 /// Verify that execution receives the checked owner, and an add with a
 /// high-bit TTL still reads as zero (RFC 2181, Section 8).
 #[test]
-fn decoded_operations_carry_checked_owners() {
+fn nsupdate_decode_returns_operations_with_checked_owners() {
     let zone = ZoneName::parse("example.com").unwrap();
     let message = [192, 0, 2, 1];
     let mut add = record(Class::IN, Rtype::A, u32::MAX, &message);

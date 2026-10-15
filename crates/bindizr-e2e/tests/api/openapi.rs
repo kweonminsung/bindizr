@@ -5,7 +5,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Verify that the unauthenticated API description is disabled by default.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn openapi_document_is_absent_unless_enabled() {
+async fn openapi_omits_document_when_disabled() {
     let app = TestApp::start_local().await;
 
     for path in ["/openapi.json", "/openapi.yaml"] {
@@ -17,7 +17,7 @@ async fn openapi_document_is_absent_unless_enabled() {
 /// Verify that enabled JSON and YAML API descriptions need no token.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn openapi_documents_need_no_token_when_enabled() {
+async fn openapi_serves_documents_without_token_when_enabled() {
     let app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         openapi_enabled: true,

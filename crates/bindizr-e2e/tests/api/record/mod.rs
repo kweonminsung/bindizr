@@ -82,7 +82,7 @@ fn encode(value: &str) -> String {
 /// Verify record creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_read_update_delete() {
+async fn record_supports_create_read_update_and_delete() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -173,7 +173,7 @@ async fn record_create_read_update_delete() {
 /// Verify zone-name normalization in record requests.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_normalize_zone_name() {
+async fn record_canonicalizes_zone_name() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("example.com");
 
@@ -408,7 +408,7 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
 /// Verify that record listings are scoped to the requested zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_scope_by_zone() {
+async fn record_listing_filters_by_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let first_zone_name = zone["name"].as_str().unwrap();
@@ -492,7 +492,7 @@ async fn record_scope_by_zone() {
 /// Verify record filtering and pagination.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_filter_and_paginate() {
+async fn record_listing_filters_and_paginates() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -651,14 +651,19 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
 /// Verify that a name filter without a zone reads the same spellings.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
+async fn record_name_filter_matches_owner_spellings_across_zones() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    // Compose shares its database; unscoped names must be unique per test.
+    let suffix = app.namespace();
+    let semicolon_owner = format!("foo;bar-{suffix}");
+    let dot_owner = format!(r"a\.b-{suffix}");
+
     for (name, record_type, value) in [
-        ("foo;bar", "A", "192.0.2.1"),
-        (r"a\.b", "A", "192.0.2.2"),
+        (semicolon_owner.as_str(), "A", "192.0.2.1"),
+        (dot_owner.as_str(), "A", "192.0.2.2"),
         ("note", "TXT", "caf\u{e9}"),
     ] {
         let (status, body) = app
@@ -679,17 +684,17 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
     // Without a zone the filter is still rendered as rows hold it: a relative
     // name against the owner, an absolute one against the FQDN.
     for spelling in [
-        "foo;bar",
-        r"foo\;bar",
-        &format!("foo;bar.{zone_name}."),
-        r"a\.b",
-        r"a\046b",
-        &format!(r"a\.b.{zone_name}."),
+        semicolon_owner.clone(),
+        format!(r"foo\;bar-{suffix}"),
+        format!("{semicolon_owner}.{zone_name}."),
+        dot_owner.clone(),
+        format!(r"a\046b-{suffix}"),
+        format!("{dot_owner}.{zone_name}."),
     ] {
         let (status, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?name={}", encode(spelling)),
+                &format!("/records?name={}", encode(&spelling)),
                 None,
             )
             .await;
@@ -756,7 +761,7 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
 /// Verify that empty name filter is no filter not the apex.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn empty_name_filter_is_no_filter_not_the_apex() {
+async fn record_listing_ignores_empty_name_filter() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -928,7 +933,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
 /// Accept DNS octets independently of IDNA host conventions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn non_ascii_labels_are_stored_as_dns_octets() {
+async fn record_storage_preserves_non_ascii_label_octets() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -964,7 +969,7 @@ async fn non_ascii_labels_are_stored_as_dns_octets() {
 /// Verify that a control character in a TXT value is stored escaped.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_control_character_in_a_txt_value_is_stored_escaped() {
+async fn txt_record_storage_escapes_control_characters() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -999,7 +1004,7 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
 /// Reject invalid NAPTR flags on create and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn naptr_flags_are_checked_on_create_and_update() {
+async fn naptr_record_validates_flags_on_create_and_update() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1068,7 +1073,7 @@ async fn naptr_flags_are_checked_on_create_and_update() {
 /// Verify that a NAPTR regexp BIND refuses is rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_naptr_regexp_bind_refuses_is_rejected() {
+async fn naptr_record_rejects_invalid_regexp() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1119,7 +1124,7 @@ async fn a_naptr_regexp_bind_refuses_is_rejected() {
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_invalid_values() {
+async fn record_rejects_invalid_values() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1187,7 +1192,7 @@ async fn record_reject_invalid_values() {
 /// Verify that records sharing an owner and type must use one TTL.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_mixed_ttl_for_one_name_and_type() {
+async fn record_rejects_mixed_ttl_for_one_name_and_type() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1250,7 +1255,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
 /// Verify rejection of negative TTLs on record creation and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_negative_ttl_on_create_and_update() {
+async fn record_rejects_negative_ttl_on_create_and_update() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1298,7 +1303,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
 /// Verify rejection of priority on record types without a priority field.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_priority_on_types_without_one() {
+async fn record_rejects_priority_on_types_without_one() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1367,7 +1372,7 @@ async fn record_reject_priority_on_types_without_one() {
 /// Verify preservation of TXT segment boundaries and case.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_preserve_txt_segments_and_case() {
+async fn record_preserves_txt_segments_and_case() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1454,7 +1459,7 @@ async fn record_preserve_txt_segments_and_case() {
 /// Verify owner normalization and rejection of names outside the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_normalize_owner_and_reject_out_of_zone() {
+async fn record_normalizes_owner_and_rejects_out_of_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1540,7 +1545,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
 /// Verify creation of every supported user record type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_supported_types() {
+async fn record_create_accepts_supported_types() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1619,7 +1624,7 @@ async fn record_create_supported_types() {
 /// Verify rejection of records that conflict with a CNAME.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_cname_conflicts() {
+async fn record_rejects_cname_conflicts() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -1694,7 +1699,7 @@ async fn record_reject_cname_conflicts() {
 /// of RFC 2181, Section 10.3 and RFC 2782, in either order of arrival.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_dname_and_alias_target_rules() {
+async fn record_enforces_dname_and_alias_target_rules() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

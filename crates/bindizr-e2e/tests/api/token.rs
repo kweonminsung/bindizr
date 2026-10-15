@@ -6,7 +6,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Verify that tokens are created listed and deleted over HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tokens_are_created_listed_and_deleted_over_http() {
+async fn tokens_support_create_list_and_delete_over_http() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -177,7 +177,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
 /// Verify that a token whose role lacks `access:manage` cannot manage tokens or roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn scoped_token_cannot_manage_tokens() {
+async fn scoped_token_rejects_token_management() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -243,7 +243,7 @@ async fn tokens_self_describes_the_bearer() {
 /// Verify that tokens self needs a token even with authentication off.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tokens_self_needs_a_token_even_with_authentication_off() {
+async fn tokens_self_requires_token_when_authentication_is_disabled() {
     let app = TestApp::start_with_options(TestAppOptions {
         authentication_required: false,
         ..Default::default()

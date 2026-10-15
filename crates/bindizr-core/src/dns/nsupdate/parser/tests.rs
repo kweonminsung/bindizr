@@ -389,7 +389,7 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
 /// Verify empty ANY-class deletes and NONE-class deletes of specific RDATA
 /// (RFC 2136, Section 2.5).
 #[test]
-fn a_well_formed_delete_passes_the_shape_check() {
+fn update_shape_accepts_well_formed_deletes() {
     update_record(Rtype::A, Class::ANY, 0, Vec::new())
         .validate_update_shape()
         .unwrap();
@@ -400,7 +400,7 @@ fn a_well_formed_delete_passes_the_shape_check() {
 
 /// Verify that each shape RFC 2136, Section 2.5 forbids is named.
 #[test]
-fn a_malformed_delete_names_what_it_lacks() {
+fn update_shape_reports_malformed_delete_fields() {
     for (record, expected) in [
         (
             update_record(Rtype::A, Class::ANY, 60, Vec::new()),

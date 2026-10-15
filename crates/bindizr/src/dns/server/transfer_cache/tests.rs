@@ -37,7 +37,7 @@ fn zone_content(records: usize) -> CachedTransferContent {
 
 /// Verify that a zone larger than the budget is served uncached.
 #[test]
-fn a_zone_larger_than_the_budget_is_served_uncached() {
+fn transfer_cache_serves_oversized_zone_without_caching() {
     let mut entries = Entries::default();
     entries.store(
         ZoneId::from(1),
@@ -56,7 +56,7 @@ fn a_zone_larger_than_the_budget_is_served_uncached() {
 
 /// Verify that a zone that grows past the budget releases its old entry.
 #[test]
-fn a_zone_that_grows_past_the_budget_releases_its_old_entry() {
+fn transfer_cache_releases_entry_when_zone_exceeds_budget() {
     let mut entries = Entries::default();
     entries.store(
         ZoneId::from(1),
@@ -86,7 +86,7 @@ fn a_zone_that_grows_past_the_budget_releases_its_old_entry() {
 
 /// Verify that a second large zone evicts the first to fit.
 #[test]
-fn a_second_large_zone_evicts_the_first_to_fit() {
+fn transfer_cache_evicts_previous_zone_to_fit_new_zone() {
     let mut entries = Entries::default();
     // A cap on zones would have held both, at 120% of the budget.
     entries.store(
@@ -117,7 +117,7 @@ fn a_second_large_zone_evicts_the_first_to_fit() {
 
 /// Verify that eviction drops the least recently used zone.
 #[test]
-fn eviction_drops_the_least_recently_used_zone() {
+fn transfer_cache_evicts_least_recently_used_zone() {
     let mut entries = Entries::default();
     entries.store(
         ZoneId::from(1),
@@ -164,7 +164,7 @@ fn eviction_drops_the_least_recently_used_zone() {
 
 /// Verify that restoring a zone replaces its records rather than adding them.
 #[test]
-fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
+fn transfer_cache_replaces_records_when_zone_is_restored() {
     let mut entries = Entries::default();
     let content = zone_content(4);
     let records = content.record_count();
@@ -197,7 +197,7 @@ fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
 
 /// Verify that a lowered budget reaches zones already cached.
 #[test]
-fn a_lowered_budget_reaches_zones_already_cached() {
+fn transfer_cache_evicts_existing_zones_when_budget_is_lowered() {
     let mut entries = Entries::default();
     entries.store(ZoneId::from(1), ZoneVersionId::from(1), zone_content(3), 10);
     entries.store(ZoneId::from(2), ZoneVersionId::from(1), zone_content(3), 10);

@@ -9,7 +9,7 @@ mod import;
 /// Verify zone creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_read_update_delete() {
+async fn zone_supports_create_read_update_and_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("test.com");
     let updated_zone_name = app.zone_name("updated-test.com");
@@ -99,7 +99,7 @@ async fn zone_create_read_update_delete() {
 /// Verify serial initialization and rejection of out-of-range serials.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_seed_and_reject_out_of_range_serial() {
+async fn zone_create_accepts_seed_serial_and_rejects_out_of_range() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("seeded-serial.example.com");
 
@@ -153,7 +153,7 @@ async fn zone_seed_and_reject_out_of_range_serial() {
 /// Verify that zone auto serial starts at one and update rejects explicit serial.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
+async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("counter.example");
 
@@ -273,7 +273,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
 /// Verify zone filtering and pagination.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_filter_and_paginate() {
+async fn zone_listing_filters_and_paginates() {
     let app = TestApp::start().await;
     app.create_test_zone().await;
     let filtered_zone_name = app.zone_name("filtered.net");
@@ -408,7 +408,7 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
 /// Verify that a rename keeps every record inside the wire limit.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_rename_keeps_every_record_inside_the_wire_limit() {
+async fn zone_rename_enforces_record_wire_length_limit() {
     let app = TestApp::start().await;
     let (status, _) = app
         .send_request(
@@ -470,7 +470,7 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
 /// Verify that a rollback keeps every restored record inside the wire limit.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
+async fn zone_rollback_enforces_restored_record_wire_length_limit() {
     let app = TestApp::start().await;
     let (status, _) = app
         .send_request(
@@ -540,7 +540,7 @@ async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
 /// Verify that a zone cannot take the catalog zone's name, however spelled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_cannot_take_the_catalog_zone_name() {
+async fn zone_rejects_catalog_zone_name() {
     let app = TestApp::start().await;
 
     for name in ["catalog.bindizr", "Catalog.Bindizr", " catalog.bindizr. "] {
@@ -567,7 +567,7 @@ async fn zone_cannot_take_the_catalog_zone_name() {
 /// Verify zone-field validation and normalization.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_validate_and_normalize() {
+async fn zone_normalizes_names_and_validates_soa() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("test.example.com");
     let second_zone_name = app.zone_name("second.example.com");
@@ -693,7 +693,7 @@ async fn zone_validate_and_normalize() {
 /// Verify rejection of invalid zone names and TTLs.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_reject_invalid_name_and_ttl() {
+async fn zone_rejects_invalid_name_and_ttl() {
     let app = TestApp::start().await;
 
     for invalid_zone in [
@@ -824,7 +824,7 @@ async fn zone_status_reports_secondaries() {
 /// Verify that a disabled zone stops answering DNS while remaining editable through the API.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
+async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     // The transfer ACL must admit the test's own loopback AXFR.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -947,7 +947,7 @@ async fn zone_create_starts_with_a_deletable_apex_ns() {
 /// Verify that `apex_ns: false` creates a zone with no records.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_without_apex_ns_has_no_records() {
+async fn zone_create_omits_records_when_apex_ns_is_disabled() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("bare.example.com");
 

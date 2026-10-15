@@ -539,7 +539,7 @@ fn outbound_responses_require_full_length_macs() {
 
 /// Verify that the TSIG reservation covers the longest key name and MAC.
 #[test]
-fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
+fn reserved_tsig_size_covers_maximum_key_name() {
     // The longest name a key can carry, under the algorithm with the widest MAC.
     let name = format!(
         "{}.{}.{}.{}",
@@ -565,7 +565,7 @@ fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
 
 /// Keep malformed TSIG requests from being treated as unsigned.
 #[test]
-fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
+fn tsig_parser_rejects_unparseable_signature() {
     let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
     assert!(matches!(
         request_signature(&signed),
@@ -629,7 +629,7 @@ fn update_with_mac_of(mac_len: usize) -> Vec<u8> {
 /// Verify malformed TSIG placement and MAC lengths while admitting valid truncation
 /// (RFC 8945, Sections 5.2 and 5.2.2.1).
 #[test]
-fn a_tsig_breaking_section_5_2_is_malformed() {
+fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
     // An A record after the TSIG: the TSIG is no longer the last record.

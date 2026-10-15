@@ -47,7 +47,7 @@ fn policy(id: i32, name: &str) -> DnssecPolicy {
 
 /// Verify that a move that only changes timings is allowed.
 #[test]
-fn a_move_that_only_changes_timings_is_allowed() {
+fn policy_move_accepts_timing_changes() {
     let current = policy(1, "default");
     let mut target = policy(2, "long-lived");
     target.signature_validity_days = Days::try_from(30).unwrap();
@@ -58,7 +58,7 @@ fn a_move_that_only_changes_timings_is_allowed() {
 
 /// Verify that a move that only changes the algorithm is left to the rollover.
 #[test]
-fn a_move_that_only_changes_the_algorithm_is_left_to_the_rollover() {
+fn policy_move_accepts_algorithm_change() {
     let current = policy(1, "default");
     let mut target = policy(2, "ed25519");
     target.algorithm = DnssecAlgorithm::Ed25519;
@@ -68,7 +68,7 @@ fn a_move_that_only_changes_the_algorithm_is_left_to_the_rollover() {
 
 /// Verify that a move that changes the denial chain is allowed in place.
 #[test]
-fn a_move_that_changes_the_denial_chain_is_allowed_in_place() {
+fn policy_move_accepts_denial_chain_change_in_place() {
     // No key roll stands between the two chains: every algorithm bindizr
     // signs with is NSEC3-capable (RFC 5155, Section 2).
     let current = policy(1, "default");
@@ -82,7 +82,7 @@ fn a_move_that_changes_the_denial_chain_is_allowed_in_place() {
 
 /// Verify that the key layout cannot change under a signed zone.
 #[test]
-fn the_key_layout_cannot_change_under_a_signed_zone() {
+fn policy_move_rejects_key_layout_change() {
     let current = policy(1, "default");
     let mut target = policy(2, "split");
     target.split_keys = true;
@@ -99,7 +99,7 @@ fn the_key_layout_cannot_change_under_a_signed_zone() {
 
 /// Verify that the key layout is still refused when the denial chain moves with it.
 #[test]
-fn the_key_layout_is_still_refused_when_the_denial_chain_moves_with_it() {
+fn policy_move_rejects_combined_key_layout_and_denial_change() {
     let current = policy(1, "default");
     let mut target = policy(2, "other");
     target.denial = DnssecDenial::Nsec3;
