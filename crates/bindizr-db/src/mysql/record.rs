@@ -271,7 +271,7 @@ pub(crate) async fn list_by_filter_with_zone(
           AND (? IS NULL OR r.priority <= ?)
           AND (
                 ? IS NULL
-                OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(z.name USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.name) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\\'
@@ -380,7 +380,7 @@ pub(crate) async fn count_by_filter(
           AND (? IS NULL OR r.priority <= ?)
           AND (
                 ? IS NULL
-                OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\\'
+                OR LOWER(CONVERT(z.name USING utf8mb4) COLLATE utf8mb4_bin) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.name) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) LIKE LOWER(?) ESCAPE '\\'
                 OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\\'

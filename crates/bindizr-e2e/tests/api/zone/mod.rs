@@ -323,6 +323,17 @@ async fn zone_listing_filters_and_paginates() {
     assert_eq!(body["pagination"]["limit"], 1);
     assert_eq!(body["pagination"]["offset"], 1);
 
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/zones?name={filtered_zone_name}&search=caf%C3%A9"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(body["pagination"]["total"], 0);
+
     let (status, _) = app.send_request(Method::GET, "/zones?limit=-1", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }

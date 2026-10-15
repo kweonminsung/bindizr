@@ -504,6 +504,17 @@ async fn signed_record_listing_filters_derived_records_by_name() {
     assert!(types.contains(&"A"), "{body}");
     assert!(types.contains(&"RRSIG"), "{body}");
 
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=caf%C3%A9&signed=true&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(body["pagination"]["total"], 0);
+
     // Refused rather than quietly answered without the rows it cannot narrow.
     let (status, body) = app
         .send_request(
