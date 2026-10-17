@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Sqlite, Transaction};
+use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
 use crate::{
     audit_log::AuditLogFilter,
@@ -16,13 +16,14 @@ pub(crate) async fn create_tx(
         log.changed_by.as_ref().map(ChangeActor::as_columns).unzip();
     sqlx::query(
         r#"
-        INSERT INTO audit_log (entity, entity_name, operation, change_source, changed_by_kind, changed_by_name, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO audit_log (entity, entity_name, operation, detail, change_source, changed_by_kind, changed_by_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(log.entity.as_str())
     .bind(&log.entity_name)
     .bind(log.operation.as_str())
+    .bind(&log.detail)
     .bind(log.change_source.as_str())
     .bind(changed_by_kind)
     .bind(changed_by_name)
@@ -39,18 +40,19 @@ pub(crate) async fn list_by_filter(
 ) -> Result<Vec<AuditLog>, DatabaseError> {
     let mut conn = pool.acquire().await?;
     let entity = filter.entity.map(|entity| entity.as_str());
-    let rows = sqlx::query_as::<_, AuditLog>(
+    let order_by = filter.sort.order_by_sql(filter.order);
+    let rows = sqlx::query_as::<_, AuditLog>(AssertSqlSafe(format!(
         r#"
-        SELECT id, entity, entity_name, operation, change_source, changed_by_kind, changed_by_name, created_at
+        SELECT id, entity, entity_name, operation, detail, change_source, changed_by_kind, changed_by_name, created_at
         FROM audit_log
         WHERE (? IS NULL OR entity = ?)
           AND (? IS NULL OR entity_name = ?)
           AND (? IS NULL OR created_at >= ?)
           AND (? IS NULL OR created_at < ?)
-        ORDER BY created_at DESC, id DESC
+        {order_by}
         LIMIT ? OFFSET ?
-        "#,
-    )
+        "#
+    )))
     .bind(entity)
     .bind(entity)
     .bind(&filter.entity_name)

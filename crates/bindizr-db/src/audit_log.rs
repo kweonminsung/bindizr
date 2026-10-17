@@ -5,10 +5,12 @@ use bindizr_core::model::audit_log::{AuditEntity, AuditLog};
 use chrono::{DateTime, Utc};
 
 use crate::{
-    Backend, Db, Transaction, error::DatabaseError, mysql, postgres, sqlite, tx::TransactionKind,
+    AuditLogSortField, Backend, Db, SortOrder, Transaction, error::DatabaseError, mysql, postgres,
+    sqlite, tx::TransactionKind,
 };
 
-/// Which audit log rows a listing selects, newest first; paging rides along.
+/// Which audit log rows a listing selects and how they are ordered; paging
+/// rides along.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AuditLogFilter {
     pub entity: Option<AuditEntity>,
@@ -17,6 +19,8 @@ pub struct AuditLogFilter {
     pub since: Option<DateTime<Utc>>,
     /// Entries made before this time.
     pub until: Option<DateTime<Utc>>,
+    pub sort: AuditLogSortField,
+    pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -30,7 +34,7 @@ pub async fn create_tx(tx: &mut Transaction<'_>, log: AuditLog) -> Result<(), Da
     }
 }
 
-/// The rows `filter` selects, newest first.
+/// The rows `filter` selects, in its order.
 pub async fn list_by_filter(
     db: &Db,
     filter: &AuditLogFilter,

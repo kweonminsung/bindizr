@@ -13,6 +13,7 @@ use bindizr_core::{
         zone::ZoneId,
     },
 };
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::{
@@ -107,6 +108,10 @@ pub async fn create(
             AuditEntity::RoleGrant,
             &role.name,
             AuditOperation::Create,
+            Some(describe_grant(
+                &grant,
+                zone.as_ref().map(|zone| zone.name.as_str()),
+            )),
             caller.change_attribution(),
         )
         .await?;
@@ -171,6 +176,15 @@ pub async fn revoke(
             .await?
             .authorize_action(Action::AccessManage)?;
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        // Read for the audit row's detail alone; a zone gone meanwhile reads as its id.
+        let zone_name = match grant.zone_scope.zone_id() {
+            Some(zone_id) => Some(
+                bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Unlocked)
+                    .await?
+                    .map_or_else(|| format!("zone {zone_id}"), |zone| zone.name.to_string()),
+            ),
+            None => None,
+        };
         if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
             return Err(ServiceError::role_grant_not_found(grant.id));
         }
@@ -179,12 +193,24 @@ pub async fn revoke(
             AuditEntity::RoleGrant,
             &role.name,
             AuditOperation::Delete,
+            Some(describe_grant(&grant, zone_name.as_deref())),
             caller.change_attribution(),
         )
         .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to revoke role grant").await
+}
+
+/// A grant's audit detail, in the request's field names.
+fn describe_grant(grant: &RoleGrant, zone_name: Option<&str>) -> String {
+    format!(
+        "zone_name {}, actions {}, record_name_pattern {}, record_types {}",
+        zone_name.unwrap_or("all zones"),
+        grant.actions,
+        grant.record_name_pattern,
+        grant.record_types
+    )
 }
 
 /// A role's grants as responses, each with the name of the zone it covers.

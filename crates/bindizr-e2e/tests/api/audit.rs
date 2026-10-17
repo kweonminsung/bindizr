@@ -114,10 +114,10 @@ async fn audit_log_records_management_changes_with_their_actor() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     app.create_named_zone(&zone_name).await;
-    let (status, body) = app
+    let (status, deleted_zone) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}"), None)
         .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(status, StatusCode::OK, "{deleted_zone}");
 
     // A refused request leaves nothing: the role exists, so its create conflicts.
     let (status, _) = app
@@ -130,8 +130,13 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(total, 2, "{rows:?}");
     assert_eq!(rows[0]["entity"], "role_grant");
     assert_eq!(rows[0]["operation"], "create");
+    assert_eq!(
+        rows[0]["detail"],
+        "zone_name all zones, actions zone:read, record_name_pattern *, record_types *"
+    );
     assert_eq!(rows[1]["entity"], "role");
     assert_eq!(rows[1]["operation"], "create");
+    assert!(rows[1]["detail"].is_null(), "{rows:?}");
     for row in &rows {
         assert_eq!(row["entity_name"], role_name);
         assert_eq!(row["change_source"], "api");
@@ -166,6 +171,58 @@ async fn audit_log_records_management_changes_with_their_actor() {
         assert_eq!(listed, operations, "{entity} {name}");
         assert!(rows.iter().all(|row| row["changed_by"] == actor));
     }
+
+    // The detail: what a change set, or what an update moved.
+    let (rows, _) = list_audit_log(&app, &format!("entity=token&entity_name={token_name}")).await;
+    assert_eq!(
+        rows[0]["detail"],
+        format!("role_name {role_name}, expires_at never")
+    );
+    let (rows, _) = list_audit_log(
+        &app,
+        &format!("entity=secondary&entity_name={secondary_name}"),
+    )
+    .await;
+    assert!(rows[0]["detail"].is_null(), "{rows:?}");
+    assert_eq!(rows[1]["detail"], "enabled true -> false");
+    assert_eq!(
+        rows[2]["detail"],
+        "address 192.0.2.77:53, notify_key_name none"
+    );
+    let (rows, _) = list_audit_log(
+        &app,
+        &format!("entity=dnssec_policy&entity_name={policy_name}"),
+    )
+    .await;
+    assert_eq!(rows[1]["detail"], "signature_validity_days 14 -> 21");
+    let (rows, _) = list_audit_log(&app, &format!("entity=zone&entity_name={zone_name}")).await;
+    assert_eq!(
+        rows[0]["detail"],
+        format!(
+            "records_deleted {}, versions_deleted {}",
+            deleted_zone["records_deleted"], deleted_zone["versions_deleted"]
+        )
+    );
+
+    // Any column, either direction; newest first by default.
+    let (rows, _) = list_audit_log(
+        &app,
+        &format!("entity=secondary&entity_name={secondary_name}&sort=operation&order=asc"),
+    )
+    .await;
+    let listed: Vec<&str> = rows
+        .iter()
+        .map(|row| row["operation"].as_str().unwrap())
+        .collect();
+    assert_eq!(listed, ["create", "delete", "update"]);
+    let (rows, _) = list_audit_log(&app, &format!("entity_name={role_name}&order=asc")).await;
+    assert_eq!(rows[0]["entity"], "role");
+    assert_eq!(rows[1]["entity"], "role_grant");
+    let (status, body) = app
+        .send_request(Method::GET, "/audit?sort=detail", None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_INPUT");
 
     // The entity filter is the closed set; a time window is half-open and ordered.
     let (status, body) = app

@@ -166,6 +166,9 @@ pub struct AuditLog {
     pub entity_name: String,
     #[sqlx(try_from = "String")]
     pub operation: AuditOperation,
+    /// What the change set, or what an update moved, in the request's field
+    /// names; none for a delete.
+    pub detail: Option<String>,
     /// The request path that made the change.
     #[sqlx(try_from = "String")]
     pub change_source: ChangeSource,

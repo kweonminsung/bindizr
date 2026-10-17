@@ -203,6 +203,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             entity TEXT NOT NULL,
             entity_name TEXT NOT NULL,
             operation TEXT NOT NULL,
+            detail TEXT NULL,
             change_source TEXT NOT NULL,
             changed_by_kind TEXT,
             changed_by_name TEXT,

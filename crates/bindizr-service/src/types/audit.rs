@@ -13,11 +13,11 @@ use utoipa::{IntoParams, ToSchema};
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct AuditLogFilter {
-    /// Only changes to this kind of object: `token`, `role`, `role_grant`,
+    /// Only changes to this kind of entity: `token`, `role`, `role_grant`,
     /// `tsig_key`, `secondary`, `dnssec_policy`, or `zone`.
     #[schema(example = "token")]
     pub entity: Option<String>,
-    /// Only changes to the object of this name; a grant's is its role's.
+    /// Only changes to the entity of this name; a grant's is its role's.
     #[schema(example = "external-dns")]
     pub entity_name: Option<String>,
     /// Only changes made at or after this time (RFC 3339).
@@ -26,6 +26,12 @@ pub struct AuditLogFilter {
     /// Only changes made before this time (RFC 3339).
     #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
+    /// `created_at` (the default), `entity`, `entity_name`, or `operation`.
+    #[schema(example = "created_at")]
+    pub sort: Option<String>,
+    /// `desc` (the default) or `asc`.
+    #[schema(example = "desc")]
+    pub order: Option<String>,
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
     #[schema(example = 50)]
     #[param(minimum = 1, maximum = 1000)]
@@ -40,10 +46,14 @@ pub struct AuditLogResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: AuditLogId,
     pub entity: AuditEntity,
-    /// The object's name as its row spelled it; a grant's is its role's.
+    /// The entity's name as its row spelled it; a grant's is its role's.
     #[schema(example = "external-dns")]
     pub entity_name: String,
     pub operation: AuditOperation,
+    /// What the change set, or what an update moved (`enabled true -> false`),
+    /// in the request's field names; null for a delete, never a secret.
+    #[schema(example = "role_name external-dns-prod, expires_at never")]
+    pub detail: Option<String>,
     /// The request path (`api` or `socket`) that made the change.
     pub change_source: ChangeSource,
     /// Token kind and name. Null for socket commands and unauthenticated
@@ -60,6 +70,7 @@ impl From<&AuditLog> for AuditLogResponse {
             entity: log.entity,
             entity_name: log.entity_name.clone(),
             operation: log.operation,
+            detail: log.detail.clone(),
             change_source: log.change_source,
             changed_by: log.changed_by.clone(),
             created_at: log.created_at,

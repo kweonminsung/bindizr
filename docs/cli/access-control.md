@@ -190,26 +190,32 @@ and [Signing zone transfers](advanced.md#signing-zone-transfers).
 ## Audit log
 
 Every change to a token, role, grant, TSIG key, secondary, or DNSSEC policy,
-and every zone deletion, leaves an entry naming the object, the operation,
+and every zone deletion, leaves an entry naming the entity, the operation,
 the request path (`api` or `socket`), the token that made it (a CLI command
-names none), and when. A grant's entry carries its role's name. Changes to
+names none), when, and a detail: what a creation set, in the request's own
+field names (`role_name admin, expires_at never`), or what an update moved
+(`enabled true -> false`); a secret never appears. A grant's entry carries
+its role's name. Changes to
 a zone's records and settings are in its [versions](zones.md#zone-history)
 instead, so the two together answer who changed what, and when. A request
 that was refused or failed leaves nothing.
 
 ```bash
-# Newest first; narrow by object kind, name, or time
+# Newest first; narrow by entity, name, or time, or sort by a column
 bindizr audit list
 bindizr audit list --entity token --name cluster-a
 bindizr audit list --since 7d -o json
 bindizr audit list --since 2026-10-01 --until 2026-11-01
+bindizr audit list --sort entity_name --order asc
 ```
 
 `--since` and `--until` take a span ago (`7d`, `12h`, `30m`), a date (midnight
-UTC, as the times listed are), or an RFC 3339 timestamp.
+UTC, as the times listed are), or an RFC 3339 timestamp. `--sort` takes
+`created_at` (the default), `entity`, `entity_name`, or `operation`, and
+`--order` is `desc` (the default) or `asc`.
 
 Over HTTP the same is `GET /audit`, with the same `entity`, `entity_name`,
-`since`, `until` (RFC 3339), `limit`, and `offset` parameters. Reading the log needs
+`since`, `until` (RFC 3339), `sort`, `order`, `limit`, and `offset` parameters. Reading the log needs
 `audit:read`, which only a grant without `--zone` carries. Entries older
 than `history.audit_max_days` (365 by default; `0` keeps them forever) are
 pruned by the scheduler pass — see [Configuration](../configuration.md).

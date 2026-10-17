@@ -45,7 +45,7 @@ use bindizr_core::{
     },
 };
 use error::DatabaseError;
-pub use sql::{ParseSortError, RecordSortField, SortOrder, ZoneSortField};
+pub use sql::{AuditLogSortField, ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
 

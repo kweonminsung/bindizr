@@ -69,6 +69,9 @@ pub async fn create(
             AuditEntity::Role,
             &role.name,
             AuditOperation::Create,
+            role.description
+                .as_ref()
+                .map(|description| format!("description {description}")),
             caller.change_attribution(),
         )
         .await?;
@@ -202,6 +205,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             AuditEntity::Role,
             &role.name,
             AuditOperation::Delete,
+            None,
             caller.change_attribution(),
         )
         .await

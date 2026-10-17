@@ -109,6 +109,15 @@ pub async fn create(
             AuditEntity::DnssecPolicy,
             &policy.name,
             AuditOperation::Create,
+            Some(format!(
+                "algorithm {}, denial {}, split_keys {}, signature_validity_days {}, signature_refresh_days {}, zsk_lifetime_days {}",
+                policy.algorithm,
+                policy.denial,
+                policy.split_keys,
+                policy.signature_validity_days,
+                policy.signature_refresh_days,
+                policy.zsk_lifetime_days
+            )),
             caller.change_attribution(),
         )
         .await?;
@@ -188,6 +197,23 @@ pub async fn update(
             zsk_lifetime_days,
         )?;
 
+        let detail = audit::join_changes([
+            audit::changed(
+                "signature_validity_days",
+                policy.signature_validity_days,
+                timings.signature_validity_days,
+            ),
+            audit::changed(
+                "signature_refresh_days",
+                policy.signature_refresh_days,
+                timings.signature_refresh_days,
+            ),
+            audit::changed(
+                "zsk_lifetime_days",
+                policy.zsk_lifetime_days,
+                timings.zsk_lifetime_days,
+            ),
+        ]);
         let policy = bindizr_db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
@@ -203,6 +229,7 @@ pub async fn update(
             AuditEntity::DnssecPolicy,
             &policy.name,
             AuditOperation::Update,
+            detail,
             caller.change_attribution(),
         )
         .await?;
@@ -259,6 +286,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             AuditEntity::DnssecPolicy,
             &policy.name,
             AuditOperation::Delete,
+            None,
             caller.change_attribution(),
         )
         .await

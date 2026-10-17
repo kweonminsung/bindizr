@@ -242,11 +242,9 @@ mod tests {
             "{two_versions}"
         );
 
-        let foreign_version = extract_member_zones(
-            &[version_record("catalog.example", b"1"), member.clone()],
-            &catalog,
-        )
-        .unwrap_err();
+        let foreign_version =
+            extract_member_zones(&[version_record("catalog.example", b"1"), member], &catalog)
+                .unwrap_err();
         assert!(
             matches!(&foreign_version, ExtractMemberZonesError::UnsupportedVersion { found } if found == "1"),
             "{foreign_version}"

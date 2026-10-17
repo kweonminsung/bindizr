@@ -23,6 +23,7 @@ Examples:
   bindizr audit list --entity token --name external-dns
   bindizr audit list --since 7d -o json
   bindizr audit list --since 2026-10-01 --until 2026-11-01
+  bindizr audit list --sort entity_name --order asc
 
 A time is a span ago (7d, 12h, 30m), a date (2026-10-01, midnight UTC as the
 AT column is), or an RFC 3339 timestamp.
@@ -33,11 +34,11 @@ a socket command names no token. Changes to zone data are in the zone's
 versions (`zone version list`) instead."
     )]
     List {
-        /// Only changes to this kind of object: token, role, role_grant,
+        /// Only changes to this kind of entity: token, role, role_grant,
         /// tsig_key, secondary, dnssec_policy, or zone
         #[arg(long, value_name = "ENTITY")]
         entity: Option<String>,
-        /// Only changes to the object of this name (a grant's is its role's)
+        /// Only changes to the entity of this name (a grant's is its role's)
         #[arg(long, value_name = "NAME")]
         name: Option<String>,
         /// Only changes at or after this time: a span ago (7d, 12h, 30m), a
@@ -47,6 +48,12 @@ versions (`zone version list`) instead."
         /// Only changes before this time, in the same forms
         #[arg(long, value_name = "TIME", value_parser = parse_time)]
         until: Option<DateTime<Utc>>,
+        /// Sort by: created_at (default), entity, entity_name, operation
+        #[arg(long, value_name = "FIELD")]
+        sort: Option<String>,
+        /// Sort order: desc (default) or asc
+        #[arg(long, value_name = "asc|desc")]
+        order: Option<String>,
         /// Maximum number of rows to return
         #[arg(long)]
         limit: Option<u32>,
@@ -104,6 +111,8 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
             name,
             since,
             until,
+            sort,
+            order,
             limit,
             offset,
             output,
@@ -114,6 +123,8 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
                     entity_name: name,
                     since,
                     until,
+                    sort,
+                    order,
                     limit,
                     offset,
                 }),

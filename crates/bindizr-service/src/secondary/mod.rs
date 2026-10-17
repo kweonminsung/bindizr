@@ -106,6 +106,13 @@ pub async fn create(
             AuditEntity::Secondary,
             &secondary.name,
             AuditOperation::Create,
+            Some(format!(
+                "address {}, notify_key_name {}",
+                secondary.address,
+                notify_tsig_key
+                    .as_ref()
+                    .map_or("none", |tsig_key| tsig_key.name.as_str())
+            )),
             caller.change_attribution(),
         )
         .await?;
@@ -216,11 +223,36 @@ pub async fn update(
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
 
         let address = address.unwrap_or_else(|| secondary.address.clone());
+        let enabled = request.enabled.unwrap_or(secondary.enabled);
+        // The detail names keys, so the replaced one is read by id; gone
+        // meanwhile, it reads as the id.
+        let notify_key_change = match &notify_tsig_key {
+            None => None,
+            Some(next) => {
+                let previous = match secondary.notify_tsig_key_id {
+                    None => "none".to_string(),
+                    Some(id) => bindizr_db::tsig_key::get(cx.db(), id)
+                        .await?
+                        .map_or_else(|| format!("key {id}"), |key| key.name),
+                };
+                audit::changed(
+                    "notify_key_name",
+                    previous,
+                    next.as_ref()
+                        .map_or("none".to_string(), |key| key.name.clone()),
+                )
+            }
+        };
+        let detail = audit::join_changes([
+            audit::changed("address", &secondary.address, &address),
+            audit::changed("enabled", secondary.enabled, enabled),
+            notify_key_change,
+        ]);
         let secondary = bindizr_db::secondary::update_tx(
             &mut tx,
             Secondary {
                 address: address.clone(),
-                enabled: request.enabled.unwrap_or(secondary.enabled),
+                enabled,
                 notify_tsig_key_id: match &notify_tsig_key {
                     Some(tsig_key) => tsig_key.as_ref().map(|tsig_key| tsig_key.id),
                     None => secondary.notify_tsig_key_id,
@@ -245,6 +277,7 @@ pub async fn update(
             AuditEntity::Secondary,
             &secondary.name,
             AuditOperation::Update,
+            detail,
             caller.change_attribution(),
         )
         .await?;
@@ -378,6 +411,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             AuditEntity::Secondary,
             &secondary.name,
             AuditOperation::Delete,
+            None,
             caller.change_attribution(),
         )
         .await
