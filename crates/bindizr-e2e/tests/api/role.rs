@@ -1092,7 +1092,7 @@ async fn permissions_report_what_each_zone_allows() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["all_zones"]["actions"].as_array().unwrap().len(),
-        14,
+        15,
         "{body}"
     );
     assert_eq!(

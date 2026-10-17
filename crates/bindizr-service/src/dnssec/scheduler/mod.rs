@@ -68,9 +68,9 @@ async fn run_scheduler_pass(cx: &Context) {
 
     // Bound retained IXFR and rollback history before maintaining signed zones,
     // one zone per transaction under its lock, like every other step here.
-    let retention_days = config.dns.zone_history_retention_days;
-    if retention_days > 0 {
-        let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
+    let zone_max_days = config.history.zone_max_days;
+    if zone_max_days > 0 {
+        let cutoff = Utc::now() - Duration::days(i64::from(zone_max_days));
         match bindizr_db::zone::list_all(cx.db()).await {
             Ok(zones) => {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
@@ -102,6 +102,24 @@ async fn run_scheduler_pass(cx: &Context) {
             Err(e) => {
                 failed = true;
                 log::error!("Zone history pruning scan failed: {}", e)
+            }
+        }
+    }
+
+    // The audit log has no row lock to take: one statement bounds it.
+    let audit_max_days = config.history.audit_max_days;
+    if audit_max_days > 0 {
+        let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
+        match bindizr_db::audit_log::prune_older_than(cx.db(), cutoff).await {
+            Ok(rows) => {
+                cx.metrics().track_pruned_audit_log_rows(rows);
+                if rows > 0 {
+                    log::info!("Pruned {} audit log rows", rows);
+                }
+            }
+            Err(e) => {
+                failed = true;
+                log::error!("Audit log pruning failed: {}", e)
             }
         }
     }

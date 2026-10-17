@@ -145,16 +145,17 @@ impl ChangeActor {
     }
 }
 
-/// The nullable SQL columns decoded into one optional actor at the row boundary.
+/// The nullable SQL columns decoded into one optional actor at the row
+/// boundary, by every row that carries an attribution.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-struct ChangeActorColumns {
+pub(crate) struct ChangeActorColumns {
     changed_by_kind: Option<String>,
     changed_by_name: Option<String>,
 }
 
 /// An actor's stored columns do not describe a complete, known credential.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-enum DecodeChangeActorError {
+pub(crate) enum DecodeChangeActorError {
     #[error("change actor kind and name must both be present or both be null")]
     Incomplete,
     #[error("unknown change actor kind '{value}'")]

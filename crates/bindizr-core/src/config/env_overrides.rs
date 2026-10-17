@@ -81,12 +81,6 @@ impl Config {
             self.dns.nsupdate.tsig_required =
                 parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;
         }
-        // Three variables rather than one, because the key's name is part of
-        // the contract: the client signs with it.
-        if let Some(value) = get_env("BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS") {
-            self.dns.zone_history_retention_days =
-                parse_env_value("BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS", &value)?;
-        }
         if let Some(value) = get_env("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS") {
             self.dns.scheduler_interval_secs =
                 parse_env_value("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS", &value)?;
@@ -152,6 +146,13 @@ impl Config {
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL") {
             self.dns.zone_defaults.minimum_ttl =
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_HISTORY_ZONE_MAX_DAYS") {
+            self.history.zone_max_days = parse_env_value("BINDIZR_HISTORY_ZONE_MAX_DAYS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_HISTORY_AUDIT_MAX_DAYS") {
+            self.history.audit_max_days =
+                parse_env_value("BINDIZR_HISTORY_AUDIT_MAX_DAYS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {
             self.logging.level = parse_env_value("BINDIZR_LOGGING_LEVEL", &value)?;

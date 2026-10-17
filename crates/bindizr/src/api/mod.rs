@@ -1,5 +1,6 @@
 //! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
 
+mod audit;
 mod dnssec;
 mod dnssec_policy;
 mod error;

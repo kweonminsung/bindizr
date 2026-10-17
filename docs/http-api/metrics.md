@@ -23,7 +23,7 @@ curl http://localhost:3000/metrics
 | `bindizr_soa_queries_total{result}` | counter | SOA queries answered, by outcome; secondaries poll these on their refresh timer, so a rise in `refused` means one stopped being an enabled secondary |
 | `bindizr_notify_sent_total{result}` | counter | NOTIFY delivery attempts to secondaries, by outcome |
 | `bindizr_nsupdate_requests_total{result}` | counter | nsupdate requests (RFC 2136), by outcome |
-| `bindizr_pruned_rows_total{table}` | counter | History rows pruned by table (`journal`/`version`); zero is expected until rows exceed the retention period |
+| `bindizr_pruned_rows_total{table}` | counter | History rows pruned by table (`journal`/`version`/`audit`); zero is expected until rows exceed the retention period |
 | `bindizr_zone_serial_bumps_total` | counter | Committed zone serial writes across every update path |
 | `bindizr_dnssec_zones_total` | gauge | DNSSEC-signed zones, refreshed at scrape time |
 | `bindizr_dnssec_keys_total{state}` | gauge | DNSSEC keys by state (`published`/`active`/`retired`) |

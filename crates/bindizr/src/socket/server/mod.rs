@@ -2,6 +2,7 @@
 //! (no token scoping), so a connection is admitted only from the daemon's own
 //! user or root, by the peer credentials the kernel reports.
 
+mod audit;
 pub(crate) mod control;
 mod dnssec;
 mod dnssec_policy;
@@ -326,6 +327,9 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         }
         DaemonCommand::DeleteTsigKey { name } => {
             encode_response(tsig_key::delete_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::ListAuditLogs(filter) => {
+            encode_response(audit::list_audit_logs(cx, filter).await)
         }
         DaemonCommand::CreateSecondary(request) => {
             encode_response(secondary::create_secondary(cx, &request).await)

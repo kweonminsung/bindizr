@@ -289,7 +289,7 @@ impl Metrics {
         for result in SchedulerResult::ALL {
             dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
         }
-        for table in ["journal", "version"] {
+        for table in ["journal", "version", "audit"] {
             pruned_rows_total.with_label_values(&[table]);
         }
         for result in ["hit", "miss"] {
@@ -521,6 +521,13 @@ impl Metrics {
         self.pruned_rows_total
             .with_label_values(&["version"])
             .inc_by(version_rows);
+    }
+
+    /// Count the audit log rows the retention pass pruned.
+    pub fn track_pruned_audit_log_rows(&self, rows: u64) {
+        self.pruned_rows_total
+            .with_label_values(&["audit"])
+            .inc_by(rows);
     }
 
     /// Count serial versions only after their transaction commits.

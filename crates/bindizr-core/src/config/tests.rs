@@ -146,8 +146,9 @@ fn from_toml_defaults_missing_optional_fields() {
     assert!(parsed.dns.tls.tls_files().is_none());
     assert!(parsed.dns.nsupdate.tsig_required);
     assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
-    assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
+    assert_eq!(parsed.history.zone_max_days, 365);
+    assert_eq!(parsed.history.audit_max_days, 365);
     assert_eq!(parsed.logging.format, LogFormat::Text);
 }
 
@@ -157,7 +158,7 @@ fn from_toml_defaults_listeners_backend_and_logging() {
     let minimal = "[database.sqlite]\nfile_path = \"file::memory:?cache=shared\"\n";
     let omitted = Config::from_toml(minimal, |_| None).unwrap();
     let empty_sections = Config::from_toml(
-        &format!("[api]\n[database]\n[dns]\n[logging]\n{minimal}"),
+        &format!("[api]\n[database]\n[dns]\n[history]\n[logging]\n{minimal}"),
         |_| None,
     )
     .unwrap();
@@ -342,9 +343,10 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_TLS_LISTEN_PORT" => Some("8853".to_string()),
             "BINDIZR_DNS_TLS_CERT_FILE" => Some("/tls/xot.crt".to_string()),
             "BINDIZR_DNS_TLS_KEY_FILE" => Some("/tls/xot.key".to_string()),
-            "BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS" => Some("0".to_string()),
             "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
+            "BINDIZR_HISTORY_ZONE_MAX_DAYS" => Some("0".to_string()),
+            "BINDIZR_HISTORY_AUDIT_MAX_DAYS" => Some("30".to_string()),
             "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
             "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
             _ => None,
@@ -390,10 +392,11 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         Some("/tls/xot.crt")
     );
     assert_eq!(overridden.dns.tls.key_file.as_deref(), Some("/tls/xot.key"));
-    assert_eq!(overridden.dns.zone_history_retention_days, 0);
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
     assert_eq!(overridden.dns.zone_defaults.ttl.as_secs(), 600);
+    assert_eq!(overridden.history.zone_max_days, 0);
+    assert_eq!(overridden.history.audit_max_days, 30);
     assert!(matches!(overridden.logging.level, LogLevel::Info));
     assert_eq!(overridden.logging.format, LogFormat::Json);
 }

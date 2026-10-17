@@ -16,9 +16,9 @@ action in the same grant applies to the zone whole.
 
 ## Actions that need all zones
 
-`zone:create`, `secondary:read`, `secondary:manage`, `access:manage`, and the
-DNSSEC policy actions concern things no single zone owns, so only a grant
-without `--zone` carries them.
+`zone:create`, `secondary:read`, `secondary:manage`, `access:manage`,
+`audit:read`, and the DNSSEC policy actions concern things no single zone
+owns, so only a grant without `--zone` carries them.
 
 `access:manage` can issue any role to a new token, so it amounts to `admin`:
 give it only where you would give `admin`.
@@ -39,6 +39,7 @@ give it only where you would give `admin`.
 | Rollback | `zone:update`, plus `record:read`, `record:create` and `record:delete` with no narrowing |
 | `zone notify` | `zone:update`; for the catalog zone or all zones, `zone:update` in all zones |
 | DNSSEC policies | `dnssec:read` to list or show, `dnssec:manage` to change, both in all zones |
+| Reading the audit log | `audit:read` in all zones |
 
 A view the zone is rebuilt from — an export, a stored version, a diff, an
 import, a rollback — needs a grant with no name or type narrowing: half a zone

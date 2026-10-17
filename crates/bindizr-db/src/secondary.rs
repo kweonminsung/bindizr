@@ -99,7 +99,8 @@ pub async fn count_by_notify_tsig_key_id(
 }
 
 /// Delete a secondary by ID.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: SecondaryId) -> Result<(), DatabaseError> {
+/// Reports `false` when no row had the id.
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: SecondaryId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::secondary::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::secondary::delete_tx(tx, id).await,

@@ -96,6 +96,7 @@ Actions:
   secondary:manage  register, change, check and remove secondaries (all zones only)
   access:manage     manage roles, API tokens and TSIG keys (all zones only);
                     equivalent to admin, since its holder can grant itself anything
+  audit:read        read the audit log of management changes (all zones only)
 
 --pattern and --types narrow the record:* actions only. A grant permits its
 actions together; a role permits what any one of its grants does.")]

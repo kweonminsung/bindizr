@@ -3,6 +3,7 @@
 //! Zone signing consumes these policies in `dnssec`.
 
 use bindizr_core::model::{
+    audit_log::{AuditEntity, AuditOperation},
     dnssec_policy::{Days, PolicyId},
     role_grant::Action,
 };
@@ -10,7 +11,7 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     error::ServiceError,
     model::{
@@ -74,12 +75,12 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create DNSSEC policy").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::DnssecManage)?;
-        bindizr_db::dnssec_policy::create_tx(
+        let policy = bindizr_db::dnssec_policy::create_tx(
             &mut tx,
             DnssecPolicy {
                 id: PolicyId::UNWRITTEN,
@@ -102,7 +103,16 @@ pub async fn create(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::DnssecPolicy,
+            &policy.name,
+            AuditOperation::Create,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(policy)
     }
     .await;
     transaction::finish_tx(tx, result, "failed to create DNSSEC policy").await
@@ -178,7 +188,7 @@ pub async fn update(
             zsk_lifetime_days,
         )?;
 
-        Ok(bindizr_db::dnssec_policy::update_tx(
+        let policy = bindizr_db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
                 signature_validity_days: timings.signature_validity_days,
@@ -187,7 +197,16 @@ pub async fn update(
                 ..policy
             },
         )
-        .await?)
+        .await?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::DnssecPolicy,
+            &policy.name,
+            AuditOperation::Update,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(policy)
     }
     .await;
     transaction::finish_tx(tx, result, "failed to update DNSSEC policy").await
@@ -213,12 +232,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete DNSSEC policy").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::DnssecManage)?;
-        bindizr_db::dnssec_policy::delete_tx(&mut tx, policy.id)
+        let deleted = bindizr_db::dnssec_policy::delete_tx(&mut tx, policy.id)
             .await
             .map_err(|e| {
                 // A zone enabled between the count above and this delete trips
@@ -230,7 +249,19 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
                 } else {
                     e.into()
                 }
-            })
+            })?;
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !deleted {
+            return Err(ServiceError::dnssec_policy_not_found(&policy.name));
+        }
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::DnssecPolicy,
+            &policy.name,
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to delete DNSSEC policy").await

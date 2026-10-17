@@ -1,11 +1,15 @@
 use bindizr_core::{
     dns::name::ZoneName,
-    model::{role_grant::Action, zone_version::VersionFilter},
+    model::{
+        audit_log::{AuditEntity, AuditOperation},
+        role_grant::Action,
+        zone_version::VersionFilter,
+    },
 };
 use bindizr_db::{LockLevel, record::RecordFilter};
 
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     error::ServiceError,
     transaction,
@@ -57,6 +61,15 @@ pub async fn delete(
                 log::error!("Failed to delete zone: {}", e);
                 ServiceError::internal_with_source("failed to delete zone", e)
             })?;
+        // The zone's versions went with it, so the deletion is the audit log's.
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Zone,
+            zone.name.as_str(),
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await?;
         Ok(response)
     }
     .await;

@@ -115,16 +115,17 @@ pub(crate) async fn update_last_used_at(
 }
 
 /// Delete an API token by ID.
+/// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: TokenId,
-) -> Result<(), DatabaseError> {
-    sqlx::query("DELETE FROM api_tokens WHERE id = ?")
+) -> Result<bool, DatabaseError> {
+    let result = sqlx::query("DELETE FROM api_tokens WHERE id = ?")
         .bind(id)
         .execute(&mut **tx)
         .await?;
 
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }
 
 /// List the API tokens authenticating into a role.

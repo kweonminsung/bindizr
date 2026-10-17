@@ -183,6 +183,25 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            entity VARCHAR(16) NOT NULL,
+            entity_name VARCHAR(1020) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            operation VARCHAR(16) NOT NULL,
+            change_source VARCHAR(16) NOT NULL,
+            changed_by_kind VARCHAR(16),
+            changed_by_name VARCHAR(255),
+            created_at DATETIME NOT NULL,
+            CONSTRAINT chk_audit_log_changed_by CHECK (
+                (changed_by_kind IS NULL AND changed_by_name IS NULL)
+                OR (changed_by_kind IS NOT NULL AND changed_by_name IS NOT NULL
+                    AND changed_by_kind IN ('token', 'tsig_key'))
+            ),
+            INDEX idx_audit_log_created (created_at),
+            INDEX idx_audit_log_entity (entity, entity_name)
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS role_grants (
             id INT PRIMARY KEY AUTO_INCREMENT,
             role_id INT NOT NULL,

@@ -66,7 +66,8 @@ pub async fn list_by_role_id_tx(
 }
 
 /// Delete a role grant by ID.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: RoleGrantId) -> Result<(), DatabaseError> {
+/// Reports `false` when no row had the id.
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: RoleGrantId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::role_grant::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::role_grant::delete_tx(tx, id).await,

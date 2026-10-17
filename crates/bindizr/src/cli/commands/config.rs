@@ -170,10 +170,6 @@ fn print_config(config: &Config) {
     print_value("listen_addr", config.dns.listen_addr);
     print_value("listen_port", config.dns.listen_port);
     print_value(
-        "zone_history_retention_days",
-        config.dns.zone_history_retention_days,
-    );
-    print_value(
         "scheduler_interval_secs",
         config.dns.scheduler_interval_secs,
     );
@@ -213,6 +209,11 @@ fn print_config(config: &Config) {
     print_value("retry", config.dns.zone_defaults.retry);
     print_value("expire", config.dns.zone_defaults.expire);
     print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
+    outln!();
+
+    print_section("history");
+    print_value("zone_max_days", config.history.zone_max_days);
+    print_value("audit_max_days", config.history.audit_max_days);
     outln!();
 
     print_section("logging");
