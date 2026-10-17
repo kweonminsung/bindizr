@@ -277,9 +277,10 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
         ));
     }
     let mut zone_names: Vec<ZoneName> = Vec::with_capacity(names.len());
+    let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
     for name in names {
         let zone_name = zone::normalize_name(name)?;
-        if !zone_names.contains(&zone_name) {
+        if seen.insert(zone_name.clone()) {
             zone_names.push(zone_name);
         }
     }

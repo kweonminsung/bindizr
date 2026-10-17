@@ -1,6 +1,8 @@
 //! The catalog zone (RFC 9432): how Bindizr names a member, and how another
 //! server's members are read back.
 
+use std::collections::HashSet;
+
 use ring::digest::{SHA256, digest};
 use thiserror::Error;
 
@@ -39,17 +41,24 @@ pub enum ExtractMemberZonesError {
         #[source]
         source: ParseNameError,
     },
+    #[error("member node '{name}' holds more than one PTR record (RFC 9432, Section 4.1)")]
+    MemberNodeNotSingular { name: String },
+    #[error("zone '{name}' is listed under more than one member node (RFC 9432, Section 4.1)")]
+    MemberRepeated { name: String },
 }
 
 /// The member zones a transferred catalog lists, sorted: the PTR targets
 /// directly under `zones.<catalog>` (RFC 9432, Section 4.3), once its
-/// version record says schema 2 (Section 4.2.1).
+/// version record says schema 2 (Section 4.2.1); a node with two PTRs or a
+/// zone under two nodes is a broken catalog (Section 4.1).
 pub fn extract_member_zones(
     records: &[TransferRecord],
     catalog: &ZoneName,
 ) -> Result<Vec<ZoneName>, ExtractMemberZonesError> {
     let mut version = None;
     let mut members = Vec::new();
+    let mut member_nodes: HashSet<Vec<u8>> = HashSet::new();
+    let mut listed: HashSet<&ZoneName> = HashSet::new();
     for record in records {
         let owner = OwnerName::parse_absolute_in_zone(&record.name, catalog).map_err(|source| {
             ExtractMemberZonesError::OwnerName {
@@ -63,6 +72,11 @@ pub fn extract_member_zones(
                 version = Some(record.rdata.as_bytes().to_vec());
             }
             Rtype::PTR if labels.len() == 2 && labels[1] == b"zones" => {
+                if !member_nodes.insert(labels[0].clone()) {
+                    return Err(ExtractMemberZonesError::MemberNodeNotSingular {
+                        name: record.name.clone(),
+                    });
+                }
                 let target = Name::<Vec<u8>>::from_octets(record.rdata.as_bytes().to_vec())
                     .map_err(|_| ExtractMemberZonesError::MemberRdata {
                         name: record.name.clone(),
@@ -93,8 +107,14 @@ pub fn extract_member_zones(
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });
         }
     }
+    for member in &members {
+        if !listed.insert(member) {
+            return Err(ExtractMemberZonesError::MemberRepeated {
+                name: member.to_string(),
+            });
+        }
+    }
     members.sort();
-    members.dedup();
     Ok(members)
 }
 
@@ -125,7 +145,7 @@ mod tests {
         }
     }
 
-    /// Verify that `extract_member_zones` reads the PTR members under `zones`, sorted and deduplicated.
+    /// Verify that `extract_member_zones` reads the PTR members under `zones`, sorted.
     #[test]
     fn extract_member_zones_reads_ptr_members_under_zones_label() {
         let catalog = ZoneName::parse("catalog.example").unwrap();
@@ -134,7 +154,6 @@ mod tests {
             version_record("catalog.example", b"2"),
             name_record("b1.zones.catalog.example.", Rtype::PTR, "Zone-B.example."),
             name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example."),
-            name_record("a2.zones.catalog.example.", Rtype::PTR, "zone-a.example."),
             // A property of a member (Section 4.4), not a member.
             name_record(
                 "group.a1.zones.catalog.example.",
@@ -152,6 +171,44 @@ mod tests {
                 ZoneName::parse("zone-a.example").unwrap(),
                 ZoneName::parse("zone-b.example").unwrap(),
             ]
+        );
+    }
+
+    /// Verify that `extract_member_zones` refuses a node with two PTRs and a zone under two nodes.
+    #[test]
+    fn extract_member_zones_rejects_repeated_members() {
+        let catalog = ZoneName::parse("catalog.example").unwrap();
+        let version = version_record("catalog.example", b"2");
+
+        let two_ptrs = extract_member_zones(
+            &[
+                version.clone(),
+                name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example."),
+                name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-b.example."),
+            ],
+            &catalog,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                two_ptrs,
+                ExtractMemberZonesError::MemberNodeNotSingular { .. }
+            ),
+            "{two_ptrs}"
+        );
+
+        let two_nodes = extract_member_zones(
+            &[
+                version,
+                name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example."),
+                name_record("a2.zones.catalog.example.", Rtype::PTR, "Zone-A.example."),
+            ],
+            &catalog,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&two_nodes, ExtractMemberZonesError::MemberRepeated { name } if name == "zone-a.example"),
+            "{two_nodes}"
         );
     }
 
