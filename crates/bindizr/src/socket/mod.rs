@@ -18,6 +18,13 @@ pub(crate) fn is_trusted_peer(peer_uid: u32, own_uid: u32) -> bool {
     peer_uid == own_uid || peer_uid == 0
 }
 
+/// Whether the CLI may drive the daemon behind `socket_path`: a trusted peer,
+/// or any daemon on the primary socket when the CLI runs as root, since only
+/// root prepares `/run/bindizr` while anyone can plant a socket under `/tmp`.
+pub(crate) fn is_trusted_daemon(peer_uid: u32, own_uid: u32, socket_path: &str) -> bool {
+    is_trusted_peer(peer_uid, own_uid) || (own_uid == 0 && socket_path == SOCKET_FILE_PATH)
+}
+
 /// Read this process's effective UID from its own Unix socket pair.
 pub(crate) fn read_own_uid() -> io::Result<u32> {
     let (near, _far) = UnixStream::pair()?;
@@ -38,5 +45,17 @@ mod tests {
         // The daemon running as root admits root, and nobody else.
         assert!(is_trusted_peer(0, 0));
         assert!(!is_trusted_peer(1000, 0));
+    }
+
+    /// Verify that root's trust in another user's daemon stops at the primary socket.
+    #[test]
+    fn is_trusted_daemon_extends_root_to_the_primary_socket_only() {
+        assert!(is_trusted_daemon(10001, 0, SOCKET_FILE_PATH));
+        assert!(is_trusted_daemon(0, 0, FALLBACK_SOCKET_FILE_PATH));
+        assert!(!is_trusted_daemon(10001, 0, FALLBACK_SOCKET_FILE_PATH));
+        assert!(is_trusted_daemon(1000, 1000, FALLBACK_SOCKET_FILE_PATH));
+        assert!(is_trusted_daemon(0, 1000, SOCKET_FILE_PATH));
+        assert!(!is_trusted_daemon(10001, 1000, SOCKET_FILE_PATH));
+        assert!(!is_trusted_daemon(10001, 1000, FALLBACK_SOCKET_FILE_PATH));
     }
 }

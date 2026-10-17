@@ -8,7 +8,7 @@ use tokio::{
 use crate::{
     cli::error::CliError,
     socket::{
-        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
+        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_daemon, read_own_uid,
         types::{DaemonCommand, DaemonResponse},
     },
 };
@@ -99,10 +99,10 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
     serde_json::from_str(&response)
         .map_err(|e| CliError::request_with_source(format!("failed to parse response: {}", e), e))
 }
-/// Open a connection to the daemon's control socket, refusing a daemon that
-/// is neither this user's nor root's (a socket another user planted in /tmp).
+/// Open a connection to the daemon's control socket, refusing a daemon this
+/// user may not drive (a socket another user planted in /tmp).
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
-    let stream = try_connect_daemon_socket()
+    let (socket_path, stream) = try_connect_daemon_socket()
         .await
         .map_err(|error| {
             let denied_path = if error.primary.kind() == std::io::ErrorKind::PermissionDenied {
@@ -132,27 +132,31 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     let own_uid = read_own_uid().map_err(|e| {
         CliError::request_with_source(format!("could not read this process's uid: {}", e), e)
     })?;
-    // Root drives any daemon, as `sudo bindizr` on a package install does.
-    if own_uid != 0 && !is_trusted_peer(peer_uid, own_uid) {
-        let path = stream
-            .peer_addr()
-            .ok()
-            .and_then(|addr| addr.as_pathname().map(|p| p.display().to_string()))
-            .unwrap_or_else(|| "?".to_string());
-        return Err(CliError::request(format!(
-            "the daemon at '{}' runs as uid {}, neither this user nor root; run the CLI as that \
-             user, or remove a socket another user left there",
-            path, peer_uid
-        )));
+    // Root drives another user's daemon on the primary socket only, as `sudo bindizr` does.
+    if !is_trusted_daemon(peer_uid, own_uid, socket_path) {
+        let message = if own_uid == 0 {
+            format!(
+                "the daemon at '{socket_path}' runs as uid {peer_uid}, not root, and anyone can \
+                 plant a socket under /tmp; run the CLI as that user, or remove a socket another \
+                 user left there"
+            )
+        } else {
+            format!(
+                "the daemon at '{socket_path}' runs as uid {peer_uid}, neither this user nor root; \
+                 run the CLI as that user, or remove a socket another user left there"
+            )
+        };
+        return Err(CliError::request(message));
     }
     Ok(stream)
 }
 
-/// Io-level connect attempt, preserving the error(s) so callers can tell a
-/// vanished socket apart from other failures.
-async fn try_connect_daemon_socket() -> Result<UnixStream, ConnectDaemonSocketError> {
+/// Io-level connect attempt, naming the path that answered and preserving
+/// the error(s) so callers can tell a vanished socket apart from other failures.
+async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), ConnectDaemonSocketError>
+{
     match UnixStream::connect(SOCKET_FILE_PATH).await {
-        Ok(stream) => Ok(stream),
+        Ok(stream) => Ok((SOCKET_FILE_PATH, stream)),
         Err(err)
             if matches!(
                 err.kind(),
@@ -162,7 +166,7 @@ async fn try_connect_daemon_socket() -> Result<UnixStream, ConnectDaemonSocketEr
             ) =>
         {
             match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
-                Ok(stream) => Ok(stream),
+                Ok(stream) => Ok((FALLBACK_SOCKET_FILE_PATH, stream)),
                 Err(fallback_err) => Err(ConnectDaemonSocketError {
                     primary: err,
                     fallback: Some(fallback_err),
