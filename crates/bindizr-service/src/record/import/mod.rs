@@ -27,7 +27,7 @@ use crate::{
     dnssec,
     error::ServiceError,
     model::{
-        record::{Record, RecordData, RecordType},
+        record::{Record, RecordData, RecordKey, RecordType},
         zone::Zone,
     },
     serial::generate_serial,
@@ -371,11 +371,10 @@ async fn reconcile(
             Vec::new()
         };
 
-        // Normalize parsed records and drop duplicates within the file,
-        // indexed by owner name so the dedup check scans only same-name entries.
+        // Normalize parsed records and drop duplicates within the file by identity.
         let t = Instant::now();
         let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
-        let mut desired_by_name: HashMap<OwnerName, Vec<usize>> =
+        let mut desired_by_key: HashMap<RecordKey, usize> =
             HashMap::with_capacity(parsed.records.len());
         for record in parsed.records {
             let requested = match record.value {
@@ -400,19 +399,15 @@ async fn reconcile(
                 }
             };
 
-            let name_key = stored_name.clone();
-            let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
-                idxs.iter().copied().find(|&i| {
-                    desired[i].data.record_type == record.record_type
-                        && record.record_type.values_equal(
-                            &desired[i].data.value,
-                            desired[i].data.priority,
-                            &value,
-                            record.priority,
-                        )
-                })
-            });
-            if let Some(kept) = duplicate_in_file {
+            let data = RecordData {
+                name: stored_name,
+                priority: record.record_type.stored_priority(record.priority),
+                record_type: record.record_type,
+                value,
+                ttl: record.ttl,
+            };
+            let key = data.match_key();
+            if let Some(&kept) = desired_by_key.get(&key) {
                 let kept_ttl = desired[kept].data.ttl;
                 let this_ttl = record.ttl;
                 // The same record at two TTLs is a mixed-TTL record set (RFC 2181,
@@ -428,19 +423,10 @@ async fn reconcile(
                 continue;
             }
 
-            desired_by_name
-                .entry(name_key)
-                .or_default()
-                .push(desired.len());
+            desired_by_key.insert(key, desired.len());
             desired.push(DesiredRecord {
                 source_name: record.owner_fqdn,
-                data: RecordData {
-                    name: stored_name,
-                    priority: record.record_type.stored_priority(record.priority),
-                    record_type: record.record_type,
-                    value,
-                    ttl: record.ttl,
-                },
+                data,
             });
         }
 

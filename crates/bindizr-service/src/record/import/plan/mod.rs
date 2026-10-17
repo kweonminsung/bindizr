@@ -2,12 +2,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::{dns::name::OwnerName, model::record::RecordId};
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::record::{RecordId, RecordKey},
+};
 
 use crate::{
     authorization::Caller,
     model::{
-        record::{Record, RecordData},
+        record::{Record, RecordData, RecordType},
         zone::Zone,
     },
     types::{ImportMode, RecordDiffResponse},
@@ -22,15 +25,6 @@ pub(crate) struct DesiredRecord {
     pub(crate) source_name: String,
 }
 
-impl DesiredRecord {
-    /// Whether `existing` has the desired identity; TTL is reconciled separately.
-    fn matches(&self, existing: &Record) -> bool {
-        existing.name == self.data.name
-            && existing.record_type == self.data.record_type
-            && existing.has_rdata(&self.data.value, self.data.priority)
-    }
-}
-
 /// What an import will change, decided before anything is written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ImportPlan<'a> {
@@ -43,53 +37,44 @@ pub(crate) struct ImportPlan<'a> {
 }
 
 impl<'a> ImportPlan<'a> {
-    /// Reconcile the file against the zone under `mode`. Records are indexed
-    /// by owner name so each one is compared only against same-name rows.
+    /// Reconcile the file against the zone under `mode`, matching records by
+    /// identity; TTL is reconciled separately.
     pub(crate) fn compute(
         mode: ImportMode,
         existing_records: &[Record],
         desired: &'a [DesiredRecord],
     ) -> Self {
-        let mut existing_by_name: HashMap<&OwnerName, Vec<&Record>> =
+        let existing_keys: Vec<RecordKey> =
+            existing_records.iter().map(Record::match_key).collect();
+        let mut existing_by_key: HashMap<&RecordKey, Vec<&Record>> =
             HashMap::with_capacity(existing_records.len());
-        for record in existing_records {
-            existing_by_name
-                .entry(&record.name)
-                .or_default()
-                .push(record);
+        for (record, key) in existing_records.iter().zip(&existing_keys) {
+            existing_by_key.entry(key).or_default().push(record);
         }
-        let mut desired_by_name: HashMap<&OwnerName, Vec<&DesiredRecord>> =
-            HashMap::with_capacity(desired.len());
-        for record in desired {
-            desired_by_name
-                .entry(&record.data.name)
-                .or_default()
-                .push(record);
-        }
-
-        let desired_matches_existing = |existing: &Record| {
-            desired_by_name
-                .get(&existing.name)
-                .is_some_and(|ds| ds.iter().any(|d| d.matches(existing)))
-        };
+        let desired_keys: Vec<RecordKey> = desired.iter().map(|d| d.data.match_key()).collect();
+        let desired_key_set: HashSet<&RecordKey> = desired_keys.iter().collect();
         // Upsert only touches the names and types the file speaks about.
-        let desired_key_matches_existing = |existing: &Record| {
-            desired_by_name.get(&existing.name).is_some_and(|ds| {
-                ds.iter()
-                    .any(|d| d.data.record_type == existing.record_type)
-            })
-        };
+        let desired_set_keys: HashSet<(&OwnerName, RecordType)> = desired
+            .iter()
+            .map(|d| (&d.data.name, d.data.record_type))
+            .collect();
+
         let dels: Vec<Record> = match mode {
             ImportMode::Append => Vec::new(),
             ImportMode::Replace => existing_records
                 .iter()
-                .filter(|e| !desired_matches_existing(e))
-                .cloned()
+                .zip(&existing_keys)
+                .filter(|(_, key)| !desired_key_set.contains(key))
+                .map(|(e, _)| e.clone())
                 .collect(),
             ImportMode::Upsert => existing_records
                 .iter()
-                .filter(|e| desired_key_matches_existing(e) && !desired_matches_existing(e))
-                .cloned()
+                .zip(&existing_keys)
+                .filter(|(e, key)| {
+                    desired_set_keys.contains(&(&e.name, e.record_type))
+                        && !desired_key_set.contains(key)
+                })
+                .map(|(e, _)| e.clone())
                 .collect(),
         };
 
@@ -100,20 +85,16 @@ impl<'a> ImportPlan<'a> {
         let mut adds = Vec::new();
         let mut unchanged = 0;
         let mut updated = 0;
-        for d in desired {
+        for (d, key) in desired.iter().zip(&desired_keys) {
             let desired_ttl = d.data.ttl;
             let mut present = false;
             let mut stale = false;
-            if let Some(es) = existing_by_name.get(&d.data.name) {
-                for e in es {
-                    if d.matches(e) {
-                        present = true;
-                        // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
-                        if reconcile_ttl && e.ttl != desired_ttl {
-                            ttl_dels.push((*e).clone());
-                            stale = true;
-                        }
-                    }
+            for e in existing_by_key.get(key).into_iter().flatten() {
+                present = true;
+                // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
+                if reconcile_ttl && e.ttl != desired_ttl {
+                    ttl_dels.push((*e).clone());
+                    stale = true;
                 }
             }
 

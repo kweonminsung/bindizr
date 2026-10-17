@@ -203,16 +203,21 @@ impl Entries {
     /// Drop least-recently-used zones until the retained records fit
     /// `max_records`, which a reload may have lowered since the last store.
     fn trim_to(&mut self, max_records: usize) -> usize {
+        if self.records <= max_records {
+            return 0;
+        }
+        // One recency-ordered pass, not a full scan per eviction under the lock.
+        let mut by_recency: Vec<(u64, ZoneId)> = self
+            .zones
+            .iter()
+            .map(|(&id, entry)| (entry.last_used, id))
+            .collect();
+        by_recency.sort_unstable();
         let mut evicted = 0;
-        while self.records > max_records {
-            let Some(lru_id) = self
-                .zones
-                .iter()
-                .min_by_key(|(_, entry)| entry.last_used)
-                .map(|(&id, _)| id)
-            else {
+        for (_, lru_id) in by_recency {
+            if self.records <= max_records {
                 break;
-            };
+            }
             self.remove(lru_id);
             evicted += 1;
         }
@@ -250,19 +255,7 @@ impl Entries {
             return 0;
         }
 
-        let mut evicted = 0;
-        while self.records + records > max_records {
-            let Some(lru_id) = self
-                .zones
-                .iter()
-                .min_by_key(|(_, entry)| entry.last_used)
-                .map(|(&id, _)| id)
-            else {
-                break;
-            };
-            self.remove(lru_id);
-            evicted += 1;
-        }
+        let evicted = self.trim_to(max_records - records);
 
         self.records += records;
         let last_used = self.tick();

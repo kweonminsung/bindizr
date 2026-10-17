@@ -98,9 +98,11 @@ fn has_matching_rdata<'a>(
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    records
-        .into_iter()
-        .any(|r| r.record_type == *record_type && r.has_rdata(value, priority))
+    // One comparison form for the candidate, however many rows it meets.
+    let wanted = record_type.canonical_value(value, priority);
+    records.into_iter().any(|r| {
+        r.record_type == *record_type && record_type.canonical_value(&r.value, r.priority) == wanted
+    })
 }
 
 /// Validate a normalized record, excluding the row being replaced.
