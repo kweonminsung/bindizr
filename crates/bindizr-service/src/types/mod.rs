@@ -1,6 +1,7 @@
 //! Request and response payloads, grouped by entity and re-exported as `types::X`.
 //! HTTP and the daemon socket share this contract; CLI responses also need `Deserialize`.
 
+mod audit;
 mod common;
 mod dnssec;
 mod dnssec_policy;
@@ -16,6 +17,7 @@ mod tsig;
 mod version;
 mod zone;
 
+pub use audit::{AuditLogFilter, AuditLogResponse};
 pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse, Run};
 pub use dnssec::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecDsResponse,

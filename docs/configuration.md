@@ -79,7 +79,6 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # listen_addr = "0.0.0.0"
 # listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
-# zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
 # tcp_idle_timeout_secs = 30             # TCP/TLS idle seconds; advertised via edns-tcp-keepalive (RFC 7828)
 # tcp_max_connections = 128              # Per-listener TCP/TLS connection limit; excess waits in the backlog
@@ -111,6 +110,10 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # retry = 60                    # SOA retry
 # expire = 3600000              # SOA expire
 # minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
+
+[history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
+# zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
+# audit_max_days = 365          # Audit log entries: who changed a token, role, key, secondary, or policy
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace
@@ -163,7 +166,6 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [nsupdate](cli/nsupdate.md#unsigned-requests) |
-| `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
@@ -182,6 +184,8 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE` | `dns.zone_defaults.expire` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
+| `BINDIZR_HISTORY_ZONE_MAX_DAYS` | `history.zone_max_days` | `0` keeps zone versions forever |
+| `BINDIZR_HISTORY_AUDIT_MAX_DAYS` | `history.audit_max_days` | `0` keeps the audit log forever |
 | `BINDIZR_LOGGING_LEVEL` | `logging.level` | |
 | `BINDIZR_LOGGING_FORMAT` | `logging.format` | `text` or `json` |
 

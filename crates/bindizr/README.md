@@ -17,6 +17,7 @@ there.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
+- **Audit Log** — every change to a token, role, grant, TSIG key, secondary, or policy, and every zone deletion, is logged with who made it and when; a zone's own changes are its versions.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
@@ -69,7 +70,6 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # listen_addr = "0.0.0.0"
 # listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 # catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
-# zone_history_retention_days = 365      # Days of history for rollback and IXFR (0 = forever)
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
 # tcp_idle_timeout_secs = 30             # TCP/TLS idle seconds; advertised via edns-tcp-keepalive (RFC 7828)
 # tcp_max_connections = 128              # Per-listener TCP/TLS connection limit; excess waits in the backlog
@@ -101,6 +101,10 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # retry = 60                    # SOA retry
 # expire = 3600000              # SOA expire
 # minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
+
+[history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
+# zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
+# audit_max_days = 365          # Audit log entries: who changed a token, role, key, secondary, or policy
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace

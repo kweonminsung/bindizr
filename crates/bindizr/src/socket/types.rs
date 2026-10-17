@@ -3,14 +3,14 @@ use bindizr_core::{
     model::{record::RecordId, role_grant::RoleGrantId, zone_version::VersionFilter},
 };
 use bindizr_service::types::{
-    CheckNotifyResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateRecordRequest,
-    CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest, CreateTokenRequest,
-    CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck, EnableDnssecRequest,
-    Holddown, ImportDnssecKeysRequest, ImportZoneRequest, NotifySerial, PageRequest, RecordFilter,
-    Run, SecondaryStatusResponse, SecondaryTransferFilter, SecondaryTransferSummaryResponse,
-    StartDnssecRolloverRequest, TokenFilter, TsigKeyFilter, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
-    ZoneFilter, ZoneView,
+    AuditLogFilter, CheckNotifyResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest,
+    CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest,
+    CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck,
+    EnableDnssecRequest, Holddown, ImportDnssecKeysRequest, ImportZoneRequest, NotifySerial,
+    PageRequest, RecordFilter, Run, SecondaryStatusResponse, SecondaryTransferFilter,
+    SecondaryTransferSummaryResponse, StartDnssecRolloverRequest, TokenFilter, TsigKeyFilter,
+    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,7 @@ pub(crate) enum DaemonCommand {
     DeleteTsigKey {
         name: String,
     },
+    ListAuditLogs(AuditLogFilter),
     CreateRole(CreateRoleRequest),
     ListRoles(PageRequest),
     GetRole {

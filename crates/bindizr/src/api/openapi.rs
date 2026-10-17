@@ -4,8 +4,8 @@ use bindizr_core::model::{
 };
 use bindizr_service::types::{
     AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
-    ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, BulkRecordItem,
-    CheckNotifyResponse, CheckSecondaryResponse, CreateBulkRecordsRequest,
+    ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, AuditLogResponse,
+    BulkRecordItem, CheckNotifyResponse, CheckSecondaryResponse, CreateBulkRecordsRequest,
     CreateBulkRecordsResponse, CreateDnssecPolicyRequest, CreateRecordRequest,
     CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest, CreateTokenRequest,
     CreateTokenResponse, CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsResponse,
@@ -83,6 +83,7 @@ use utoipa::{
         super::role::create_role_grant,
         super::role::delete_role_grant,
         super::permission::get_permissions,
+        super::audit::list_audit_logs,
         super::dnssec::get_dnssec_status,
         super::dnssec::enable_dnssec,
         super::dnssec::disable_dnssec,
@@ -196,6 +197,7 @@ use utoipa::{
         ZoneVersionResponse,
         ZoneStatusResponse,
         Action,
+        AuditLogResponse,
         SingleRoleGrantResponse,
         SingleRoleResponse,
         SingleTokenResponse
@@ -214,6 +216,7 @@ use utoipa::{
         (name = "TSIG", description = "Manage TSIG keys, each authenticating nsupdate and transfers into a role."),
         (name = "Token", description = "API tokens, each authenticating into a role."),
         (name = "Role", description = "Roles and their grants: the actions API tokens and TSIG keys holding a role may perform."),
+        (name = "Audit", description = "The audit log of management changes: who created, changed or deleted a token, role, grant, TSIG key, secondary or DNSSEC policy, or deleted a zone, and when."),
         (name = "DNSSEC", description = "DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone and the parent's check of them, key rollover, and re-signing."),
         (name = "ExternalDNS", description = "Provider endpoints for the ExternalDNS webhook adapter; registered only when api.external_dns_enabled is set.")
     ),

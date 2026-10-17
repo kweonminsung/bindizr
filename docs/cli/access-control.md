@@ -109,6 +109,7 @@ deny rules. How grants combine, and what each operation needs, is in
 | `secondary:read` | Listing secondaries, their details and transfers — needs all zones |
 | `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs all zones |
 | `access:manage` | Tokens, TSIG keys, and roles — needs all zones |
+| `audit:read` | Reading the [audit log](#audit-log) — needs all zones |
 
 A response never carries a record the role cannot read: a write's preview
 shows the records it changes and the readable ones beside them, and every
@@ -186,6 +187,33 @@ NOTIFY. See
 [Which actions each credential exercises](advanced.md#which-actions-each-credential-exercises)
 and [Signing zone transfers](advanced.md#signing-zone-transfers).
 
+## Audit log
+
+Every change to a token, role, grant, TSIG key, secondary, or DNSSEC policy,
+and every zone deletion, leaves an entry naming the object, the operation,
+the request path (`api` or `socket`), the token that made it (a CLI command
+names none), and when. A grant's entry carries its role's name. Changes to
+a zone's records and settings are in its [versions](zones.md#zone-history)
+instead, so the two together answer who changed what, and when. A request
+that was refused or failed leaves nothing.
+
+```bash
+# Newest first; narrow by object kind, name, or time
+bindizr audit list
+bindizr audit list --entity token --name cluster-a
+bindizr audit list --since 7d -o json
+bindizr audit list --since 2026-10-01 --until 2026-11-01
+```
+
+`--since` and `--until` take a span ago (`7d`, `12h`, `30m`), a date (midnight
+UTC, as the times listed are), or an RFC 3339 timestamp.
+
+Over HTTP the same is `GET /audit`, with the same `entity`, `entity_name`,
+`since`, `until` (RFC 3339), `limit`, and `offset` parameters. Reading the log needs
+`audit:read`, which only a grant without `--zone` carries. Entries older
+than `history.audit_max_days` (365 by default; `0` keeps them forever) are
+pruned by the scheduler pass — see [Configuration](../configuration.md).
+
 ## Examples
 
 ### ExternalDNS
@@ -237,11 +265,12 @@ bindizr tsig-key create notify-key --role notify-only
 
 ### Read-only monitoring
 
-A dashboard or an audit job that reads everything and changes nothing:
+A dashboard or an audit job that reads everything, the audit log included,
+and changes nothing:
 
 ```bash
 bindizr role create monitoring
 bindizr role grant monitoring \
-    --actions zone:read,record:read,dnssec:read,secondary:read
+    --actions zone:read,record:read,dnssec:read,secondary:read,audit:read
 bindizr token create grafana --role monitoring
 ```

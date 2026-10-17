@@ -1,6 +1,7 @@
 //! Application services for bindizr: zone, record, token, and NOTIFY
 //! workflows over `bindizr_db`, with explicit context and transaction dependencies.
 
+pub mod audit;
 pub mod authorization;
 pub mod context;
 pub mod dns_client;

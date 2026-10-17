@@ -12,6 +12,7 @@ use sqlx::{
 };
 
 pub mod api_token;
+pub mod audit_log;
 pub mod catalog_zone;
 pub mod dnssec_key;
 pub mod dnssec_policy;

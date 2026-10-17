@@ -44,7 +44,6 @@ data:
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ .Values.bindizr.dns.port }}
     catalog_zone_name = "{{ .Values.bindizr.dns.catalogZoneName }}"
-    zone_history_retention_days = {{ .Values.bindizr.dns.zoneHistoryRetentionDays }}
     scheduler_interval_secs = {{ .Values.bindizr.dns.schedulerIntervalSecs }}
     tcp_idle_timeout_secs = {{ .Values.bindizr.dns.tcpIdleTimeoutSecs }}
     tcp_max_connections = {{ .Values.bindizr.dns.tcpMaxConnections }}
@@ -79,6 +78,10 @@ data:
     retry = {{ .Values.bindizr.zoneDefaults.retry }}
     expire = {{ int64 .Values.bindizr.zoneDefaults.expire }}
     minimum_ttl = {{ .Values.bindizr.zoneDefaults.minimumTtl }}
+
+    [history]
+    zone_max_days = {{ .Values.bindizr.history.zoneMaxDays }}
+    audit_max_days = {{ .Values.bindizr.history.auditMaxDays }}
 
     [logging]
     level = "{{ .Values.bindizr.logging.level }}"

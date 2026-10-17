@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 
 use bindizr_core::model::{
+    audit_log::{AuditEntity, AuditOperation},
     role::{Role, RoleId},
     role_grant::Action,
 };
 use chrono::Utc;
 
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     error::ServiceError,
     pagination::build_page,
@@ -39,12 +40,12 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create role").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::role::create_tx(
+        let role = bindizr_db::role::create_tx(
             &mut tx,
             Role {
                 id: RoleId::UNWRITTEN,
@@ -62,7 +63,16 @@ pub async fn create(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Role,
+            &role.name,
+            AuditOperation::Create,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(role)
     }
     .await;
     let role = transaction::finish_tx(tx, result, "failed to create role").await?;
@@ -163,7 +173,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete role").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -181,7 +191,16 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
                 } else {
                     e.into()
                 }
-            })
+            })?;
+        // Its grants go with it, under the one entry.
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Role,
+            &role.name,
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to delete role").await

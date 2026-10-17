@@ -5,13 +5,18 @@ use std::collections::HashMap;
 use base64::Engine;
 use bindizr_core::{
     dns::name::parse_lookup_name,
-    model::{role::RoleId, role_grant::Action, tsig_key::TsigKeyId},
+    model::{
+        audit_log::{AuditEntity, AuditOperation},
+        role::RoleId,
+        role_grant::Action,
+        tsig_key::TsigKeyId,
+    },
 };
 use chrono::Utc;
 use rand::RngExt;
 
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
@@ -61,12 +66,12 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create TSIG key").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::tsig_key::create_tx(
+        let tsig_key = bindizr_db::tsig_key::create_tx(
             &mut tx,
             TsigKey {
                 id: TsigKeyId::UNWRITTEN,
@@ -88,7 +93,16 @@ pub async fn create(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::TsigKey,
+            &tsig_key.name,
+            AuditOperation::Create,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(tsig_key)
     }
     .await;
     let tsig_key = transaction::finish_tx(tx, result, "failed to create TSIG key").await?;
@@ -180,7 +194,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -197,7 +211,15 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
                 } else {
                     e.into()
                 }
-            })
+            })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::TsigKey,
+            &tsig_key.name,
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to delete TSIG key").await

@@ -13,9 +13,10 @@ use clap_complete::Shell;
 use crate::{
     cli::{
         commands::{
-            config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
-            record::RecordCommand, role::RoleCommand, secondary::SecondaryCommand,
-            token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+            audit::AuditCommand, config::ConfigCommand, dnssec::DnssecCommand,
+            dnssec_policy::DnssecPolicyCommand, record::RecordCommand, role::RoleCommand,
+            secondary::SecondaryCommand, token::TokenCommand, tsig_key::TsigKeyCommand,
+            zone::ZoneCommand,
         },
         output::OutputFormat,
     },
@@ -102,6 +103,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,
     },
+    /// Read the audit log: who changed a token, role, grant, key, secondary or policy, and when
+    Audit {
+        #[command(subcommand)]
+        subcommand: AuditCommand,
+    },
     /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
     DnssecPolicy {
         #[command(subcommand)]
@@ -151,6 +157,7 @@ pub async fn execute() {
         Command::Role { subcommand } => commands::role::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
+        Command::Audit { subcommand } => commands::audit::handle_command(subcommand).await,
         Command::DnssecPolicy { subcommand } => {
             commands::dnssec_policy::handle_command(subcommand).await
         }

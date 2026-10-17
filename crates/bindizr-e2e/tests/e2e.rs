@@ -1,6 +1,7 @@
 mod common;
 
 mod api {
+    mod audit;
     mod common;
     mod dnssec;
     mod dnssec_policy;
@@ -18,6 +19,7 @@ mod api {
 }
 
 mod cli {
+    mod audit;
     mod common;
     mod config;
     mod daemon;

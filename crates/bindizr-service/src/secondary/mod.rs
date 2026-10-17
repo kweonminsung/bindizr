@@ -11,13 +11,18 @@ use bindizr_core::{
         name::has_whitespace_or_control,
         tsig::TsigSigningKey,
     },
-    model::{role_grant::Action, secondary::SecondaryId, tsig_key::TsigKeyId},
+    model::{
+        audit_log::{AuditEntity, AuditOperation},
+        role_grant::Action,
+        secondary::SecondaryId,
+        tsig_key::TsigKeyId,
+    },
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     dns_client::{notify, probe, resolve_address_entry},
     error::ServiceError,
@@ -68,12 +73,12 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create secondary").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::SecondaryManage)?;
-        bindizr_db::secondary::create_tx(
+        let secondary = bindizr_db::secondary::create_tx(
             &mut tx,
             Secondary {
                 id: SecondaryId::UNWRITTEN,
@@ -95,7 +100,16 @@ pub async fn create(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Secondary,
+            &secondary.name,
+            AuditOperation::Create,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(secondary)
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
@@ -202,7 +216,7 @@ pub async fn update(
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
 
         let address = address.unwrap_or_else(|| secondary.address.clone());
-        bindizr_db::secondary::update_tx(
+        let secondary = bindizr_db::secondary::update_tx(
             &mut tx,
             Secondary {
                 address: address.clone(),
@@ -225,7 +239,16 @@ pub async fn update(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Secondary,
+            &secondary.name,
+            AuditOperation::Update,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(secondary)
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
@@ -341,12 +364,20 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let secondary = lookup_by_name(cx, name).await?;
     let mut tx = transaction::begin_tx(cx, "failed to delete secondary").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::SecondaryManage)?;
-        Ok(bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await?)
+        bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Secondary,
+            &secondary.name,
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to delete secondary").await

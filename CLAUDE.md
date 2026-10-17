@@ -237,7 +237,8 @@ than returning anything.
   `RoleZoneScope` is `All` (row `zone_id` NULL, covering zones created later)
   or `Zone(ZoneId)`. `Action` is a closed enum spelled `<resource>:<action>`:
   `zone:read|create|update|delete|transfer`, `record:read|create|update|delete`,
-  `dnssec:read|manage`, `secondary:read|manage`, `access:manage`. The name
+  `dnssec:read|manage`, `secondary:read|manage`, `access:manage`,
+  `audit:read`. The name
   pattern and type list (the `grant_pattern` grammar: `*`, `@`, `*.sub`, an
   exact relative name; `*` or comma-separated types) constrain `record:*`
   actions only. A role's rights are the union of its grants: an operation is
@@ -249,9 +250,9 @@ than returning anything.
   repeats its name and type match for paging and is held to it by test.
 - **Objects no zone owns need an `All` grant**: `zone:create` (a rename
   too, since a new name is one), `secondary:*`,
-  DNSSEC policies under `dnssec:manage`, and `access:manage`, which
-  administers tokens, TSIG keys and roles — and so is equivalent to admin,
-  since its holder can grant itself anything. The built-in `admin` role (every
+  DNSSEC policies under `dnssec:manage`, `audit:read`, and `access:manage`,
+  which administers tokens, TSIG keys and roles — and so is equivalent to
+  admin, since its holder can grant itself anything. The built-in `admin` role (every
   action, `All`) is ensured at startup and can be neither changed nor deleted;
   the first token is issued over the socket with `token create --role admin`.
 - **Visibility**: a zone is visible when any grant of the role reaches it,
@@ -324,6 +325,18 @@ of the `ChangeAttribution` stored with a version. Persist an actor in the scalar
 columns `changed_by_kind` and `changed_by_name`; both are populated or both null.
 Decode them into `Option<ChangeActor>` at the row boundary. The API's object shape
 does not dictate a JSON database column.
+
+A management change — a token, role, grant, TSIG key, secondary or DNSSEC
+policy created, updated or deleted, and a zone deleted, whose versions go
+with it — is the one write no zone version records, so it saves an
+`AuditLog` (`audit::save_tx`) in its own transaction, after its row write
+and before commit: a change that rolled back leaves no row and a committed
+one always has one. The entry names the entity kind and name (a grant's is
+its role's), the operation, and the `ChangeSource` and `ChangeActor` a
+version carries. Reads, refused requests, and startup setup (the built-in
+`admin` role) leave none. `audit:read`, an all-zones action, lists the log;
+`history.audit_max_days` bounds it, pruned by the scheduler pass beside
+`history.zone_max_days`.
 
 ### Transactions and locking
 
