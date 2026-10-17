@@ -10,7 +10,14 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
 
     let policy_name = format!("{}-nsec3", app.namespace());
     app.run_cli_success(
-        &["dnssec-policy", "create", &policy_name, "--denial", "nsec3"],
+        &[
+            "dnssec",
+            "policy",
+            "create",
+            &policy_name,
+            "--denial",
+            "nsec3",
+        ],
         None,
     )
     .await;

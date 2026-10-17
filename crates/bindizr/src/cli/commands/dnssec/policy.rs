@@ -23,12 +23,12 @@ pub(crate) enum DnssecPolicyCommand {
     /// Create a DNSSEC policy (omitted options take the built-in defaults)
     #[command(after_help = "\
 Examples:
-  bindizr dnssec-policy create strict --algorithm ed25519
-  bindizr dnssec-policy create split --split-keys --zsk-lifetime-days 90
+  bindizr dnssec policy create strict --algorithm ed25519
+  bindizr dnssec policy create split --split-keys --zsk-lifetime-days 90
 
 --algorithm, --denial and --split-keys are fixed at creation, because changing
 them rebuilds the zone's key set; the day counts stay editable with
-`dnssec-policy update`.")]
+`dnssec policy update`.")]
     Create {
         /// Policy name (letters, digits, '-', '_', '.')
         #[arg(value_name = "POLICY_NAME")]
@@ -112,7 +112,7 @@ them rebuilds the zone's key set; the day counts stay editable with
     },
 }
 
-/// Handle the `dnssec-policy` subcommand by dispatching to the daemon over
+/// Handle the `dnssec policy` subcommand by dispatching to the daemon over
 /// the socket.
 pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<(), CliError> {
     match subcommand {

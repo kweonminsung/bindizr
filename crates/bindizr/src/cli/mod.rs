@@ -14,9 +14,8 @@ use crate::{
     cli::{
         commands::{
             audit::AuditCommand, config::ConfigCommand, dnssec::DnssecCommand,
-            dnssec_policy::DnssecPolicyCommand, record::RecordCommand, role::RoleCommand,
-            secondary::SecondaryCommand, token::TokenCommand, tsig_key::TsigKeyCommand,
-            zone::ZoneCommand,
+            record::RecordCommand, role::RoleCommand, secondary::SecondaryCommand,
+            token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
         },
         output::OutputFormat,
     },
@@ -31,8 +30,7 @@ pub(crate) struct Args {
     pub(crate) command: Command,
 }
 
-/// Top-level CLI subcommands. Declaration order is `--help` order, and it
-/// keeps `dnssec-policy` beside the `dnssec` commands that sign under it.
+/// Top-level CLI subcommands. Declaration order is `--help` order.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
@@ -108,12 +106,7 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: AuditCommand,
     },
-    /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
-    DnssecPolicy {
-        #[command(subcommand)]
-        subcommand: DnssecPolicyCommand,
-    },
-    /// Manage a zone's DNSSEC signing (keys, DS records, re-signing)
+    /// Manage DNSSEC: each zone's signing (keys, DS records, re-signing) and the policies zones sign under
     Dnssec {
         #[command(subcommand)]
         subcommand: DnssecCommand,
@@ -158,9 +151,6 @@ pub async fn execute() {
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::Audit { subcommand } => commands::audit::handle_command(subcommand).await,
-        Command::DnssecPolicy { subcommand } => {
-            commands::dnssec_policy::handle_command(subcommand).await
-        }
         Command::Dnssec { subcommand } => commands::dnssec::handle_command(subcommand).await,
         Command::Completion { shell } => commands::completion::handle_command(shell),
         Command::Man => commands::completion::handle_man_command(),

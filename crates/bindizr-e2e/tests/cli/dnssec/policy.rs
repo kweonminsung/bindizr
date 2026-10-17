@@ -12,7 +12,8 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
     let created = app
         .run_cli_success(
             &[
-                "dnssec-policy",
+                "dnssec",
+                "policy",
                 "create",
                 &policy_name,
                 "--algorithm",
@@ -36,7 +37,9 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
     assert_eq!(created["signature_validity_days"], 21);
     assert_eq!(created["signature_refresh_days"], 7);
 
-    let listed = app.run_cli_success(&["dnssec-policy", "list"], None).await;
+    let listed = app
+        .run_cli_success(&["dnssec", "policy", "list"], None)
+        .await;
     let row = listed
         .lines()
         .find(|line| line.contains(&policy_name))
@@ -50,7 +53,8 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
     let updated = app
         .run_cli_success(
             &[
-                "dnssec-policy",
+                "dnssec",
+                "policy",
                 "update",
                 &policy_name,
                 "--zsk-lifetime-days",
@@ -69,17 +73,17 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
     assert_eq!(updated["signature_refresh_days"], 7);
 
     let got = app
-        .run_cli_success(&["dnssec-policy", "get", &policy_name], None)
+        .run_cli_success(&["dnssec", "policy", "get", &policy_name], None)
         .await;
     assert!(got.contains("60d"), "{got}");
 
     let deleted = app
-        .run_cli_success(&["dnssec-policy", "delete", &policy_name], None)
+        .run_cli_success(&["dnssec", "policy", "delete", &policy_name], None)
         .await;
     assert!(deleted.contains("deleted successfully"), "{deleted}");
 
     let missing = app
-        .run_cli(&["dnssec-policy", "get", &policy_name], None)
+        .run_cli(&["dnssec", "policy", "get", &policy_name], None)
         .await;
     assert!(!missing.status.success());
 }
