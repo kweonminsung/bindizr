@@ -170,7 +170,10 @@ pub async fn revoke(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await?;
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
+            return Err(ServiceError::role_grant_not_found(grant.id));
+        }
         audit::save_tx(
             &mut tx,
             AuditEntity::RoleGrant,

@@ -55,7 +55,8 @@ pub async fn list_all(db: &Db) -> Result<Vec<TsigKey>, DatabaseError> {
 }
 
 /// Delete a TSIG key by ID.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: TsigKeyId) -> Result<(), DatabaseError> {
+/// Reports `false` when no row had the id.
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: TsigKeyId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::tsig_key::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::tsig_key::delete_tx(tx, id).await,

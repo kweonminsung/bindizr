@@ -76,7 +76,8 @@ pub async fn update_last_used_at(
 }
 
 /// Delete an API token by ID.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: TokenId) -> Result<(), DatabaseError> {
+/// Reports `false` when no row had the id.
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: TokenId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::api_token::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::api_token::delete_tx(tx, id).await,

@@ -81,7 +81,8 @@ pub async fn update_tx(
 }
 
 /// Delete a DNSSEC policy by ID.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: PolicyId) -> Result<(), DatabaseError> {
+/// Reports `false` when no row had the id.
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: PolicyId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::dnssec_policy::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::dnssec_policy::delete_tx(tx, id).await,

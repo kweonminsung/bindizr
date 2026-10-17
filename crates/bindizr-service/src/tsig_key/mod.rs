@@ -199,7 +199,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::tsig_key::delete_tx(&mut tx, tsig_key.id)
+        let deleted = bindizr_db::tsig_key::delete_tx(&mut tx, tsig_key.id)
             .await
             .map_err(|e| {
                 // A secondary that took the key between the count above and this
@@ -212,6 +212,10 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
                     e.into()
                 }
             })?;
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !deleted {
+            return Err(ServiceError::tsig_key_not_found(&tsig_key.name));
+        }
         audit::save_tx(
             &mut tx,
             AuditEntity::TsigKey,

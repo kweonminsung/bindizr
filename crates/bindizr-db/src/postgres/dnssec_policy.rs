@@ -120,14 +120,15 @@ pub(crate) async fn update_tx(
 }
 
 /// Delete a DNSSEC policy by ID.
+/// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: PolicyId,
-) -> Result<(), DatabaseError> {
-    sqlx::query("DELETE FROM dnssec_policies WHERE id = $1")
+) -> Result<bool, DatabaseError> {
+    let result = sqlx::query("DELETE FROM dnssec_policies WHERE id = $1")
         .bind(id)
         .execute(&mut **tx)
         .await?;
 
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }

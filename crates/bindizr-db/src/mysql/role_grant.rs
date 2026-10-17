@@ -95,14 +95,15 @@ pub(crate) async fn list_by_role_id_tx(
 }
 
 /// Delete a role grant by ID.
+/// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
     id: RoleGrantId,
-) -> Result<(), DatabaseError> {
-    sqlx::query("DELETE FROM role_grants WHERE id = ?")
+) -> Result<bool, DatabaseError> {
+    let result = sqlx::query("DELETE FROM role_grants WHERE id = ?")
         .bind(id)
         .execute(&mut **tx)
         .await?;
 
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }

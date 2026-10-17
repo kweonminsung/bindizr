@@ -178,7 +178,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::role::delete_tx(&mut tx, role.id)
+        let deleted = bindizr_db::role::delete_tx(&mut tx, role.id)
             .await
             .map_err(|e| {
                 // A credential that took the role between the counts above and
@@ -192,7 +192,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
                     e.into()
                 }
             })?;
-        // Its grants go with it, under the one entry.
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !deleted {
+            return Err(ServiceError::role_not_found(&role.name));
+        }
+        // Its grants go with it, under the one row.
         audit::save_tx(
             &mut tx,
             AuditEntity::Role,

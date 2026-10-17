@@ -376,7 +376,9 @@ One locking model covers the service layer; keep new code on it:
 - **Management writes** (tokens, TSIG keys, roles, grants, policies,
   secondaries) are one statement in a transaction that re-authenticates the
   caller: UNIQUE/FK constraints backstop their check-then-act races, read as
-  friendly conflicts where the service calls the statement.
+  friendly conflicts where the service calls the statement. A delete whose
+  statement removed no row — its target went meanwhile — reports not found,
+  as the zone delete's locked lookup does, and saves no audit row.
 - MySQL and PostgreSQL use READ COMMITTED with row locks and constraints.
   SQLite uses WAL: mutations begin IMMEDIATE to reserve the database writer,
   and read-only transactions begin DEFERRED to read a consistent snapshot.

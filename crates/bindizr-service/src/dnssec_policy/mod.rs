@@ -237,7 +237,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::DnssecManage)?;
-        bindizr_db::dnssec_policy::delete_tx(&mut tx, policy.id)
+        let deleted = bindizr_db::dnssec_policy::delete_tx(&mut tx, policy.id)
             .await
             .map_err(|e| {
                 // A zone enabled between the count above and this delete trips
@@ -250,6 +250,10 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
                     e.into()
                 }
             })?;
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !deleted {
+            return Err(ServiceError::dnssec_policy_not_found(&policy.name));
+        }
         audit::save_tx(
             &mut tx,
             AuditEntity::DnssecPolicy,

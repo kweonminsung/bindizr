@@ -73,14 +73,15 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<Role>, Databas
 }
 
 /// Delete a role by ID.
+/// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: RoleId,
-) -> Result<(), DatabaseError> {
-    sqlx::query("DELETE FROM roles WHERE id = $1")
+) -> Result<bool, DatabaseError> {
+    let result = sqlx::query("DELETE FROM roles WHERE id = $1")
         .bind(id)
         .execute(&mut **tx)
         .await?;
 
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }

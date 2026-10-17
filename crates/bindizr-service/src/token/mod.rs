@@ -168,7 +168,10 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::api_token::delete_tx(&mut tx, token.id).await?;
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !bindizr_db::api_token::delete_tx(&mut tx, token.id).await? {
+            return Err(ServiceError::token_not_found(&token.name));
+        }
         audit::save_tx(
             &mut tx,
             AuditEntity::Token,

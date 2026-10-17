@@ -369,7 +369,10 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::SecondaryManage)?;
-        bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await?;
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await? {
+            return Err(ServiceError::secondary_not_found(&secondary.name));
+        }
         audit::save_tx(
             &mut tx,
             AuditEntity::Secondary,
