@@ -542,6 +542,56 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
       security:
       - {}
+  /import:
+    post:
+      tags:
+      - Zone
+      summary: Import zones from a server
+      description: Pull the zones in `zone_names`, or the members of the server's catalog zone `from_catalog` (RFC 9432), over AXFR from `from_server`, and import each as `POST /zones/{name}/import` would, in its own transaction. The answer lists every zone's result (`ok`, `rejected`, `failed`) with its import answer or error; the request itself fails only when malformed, when the catalog cannot be read, or when `create` lacks `zone:create`, or a catalog the mode's record actions, in all zones.
+      operationId: import_zones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportZonesRequest'
+        required: true
+      responses:
+        '200':
+          description: One entry per zone, in the order imported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportZonesResponse'
+        '400':
+          description: Bad request, invalid input, or the catalog could not be transferred or read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit creating zones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /notify:
     post:
       tags:
@@ -5044,6 +5094,13 @@ components:
       - append
       - upsert
       - replace
+    ImportResult:
+      type: string
+      description: How one zone of a bulk import came out.
+      enum:
+      - ok
+      - rejected
+      - failed
     ImportZoneRequest:
       type: object
       description: |-
@@ -5158,6 +5215,119 @@ components:
           type: integer
           format: int64
           example: 1
+          minimum: 0
+    ImportZonesItemResponse:
+      type: object
+      description: 'One zone of a bulk import: its result with the import answer or the error.'
+      required:
+      - zone_name
+      - result
+      properties:
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/ErrorResponse'
+            description: Why the import never ran; null otherwise.
+          - type: 'null'
+        import:
+          oneOf:
+          - $ref: '#/components/schemas/ImportZoneResponse'
+            description: The zone's own import answer; null when the import never ran.
+          - type: 'null'
+        result:
+          $ref: '#/components/schemas/ImportResult'
+        zone_name:
+          type: string
+          example: example.com
+    ImportZonesRequest:
+      type: object
+      description: |-
+        Request body for importing several zones from one server over AXFR:
+        those in `zone_names`, or the members of its catalog zone `from_catalog`
+        (RFC 9432); exactly one of the two.
+      required:
+      - from_server
+      properties:
+        create:
+          type: boolean
+          description: |-
+            Create a missing zone from its SOA; otherwise it fails. Requires
+            `zone:create` and the mode's record actions in all zones.
+        dry_run:
+          type: boolean
+          description: When true, parse and validate every zone without applying any change.
+        from_catalog:
+          type:
+          - string
+          - 'null'
+          description: The source's catalog zone, whose members are the zones to import.
+          example: catalog.example
+        from_server:
+          type: string
+          description: Transfer source (`host[:port]`, port 53 default); it must allow the transfers.
+          example: 192.0.2.1:53
+        mode:
+          $ref: '#/components/schemas/ImportMode'
+          description: 'Reconciliation mode for every zone: `append` (default), `upsert`, or `replace`.'
+          default: append
+        skip_unsupported:
+          type: boolean
+          description: Pass over records bindizr has no type for instead of rejecting the zone.
+        zone_names:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: The zones to import, as the source serves them.
+          example:
+          - example.com
+          - example.net
+      additionalProperties: false
+    ImportZonesResponse:
+      type: object
+      description: 'Result of a bulk import: one entry per zone, in the order imported.'
+      required:
+      - dry_run
+      - summary
+      - zones
+      properties:
+        dry_run:
+          type: boolean
+          example: false
+        summary:
+          $ref: '#/components/schemas/ImportZonesSummaryResponse'
+        zones:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportZonesItemResponse'
+    ImportZonesSummaryResponse:
+      type: object
+      description: How many zones of a bulk import came out each way.
+      required:
+      - zones
+      - ok
+      - rejected
+      - failed
+      properties:
+        failed:
+          type: integer
+          format: int64
+          example: 1
+          minimum: 0
+        ok:
+          type: integer
+          format: int64
+          example: 10
+          minimum: 0
+        rejected:
+          type: integer
+          format: int64
+          example: 1
+          minimum: 0
+        zones:
+          type: integer
+          format: int64
+          example: 12
           minimum: 0
     ListExternalDnsDomainsResponse:
       type: object

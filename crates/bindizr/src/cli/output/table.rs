@@ -11,10 +11,10 @@ use bindizr_core::{
 };
 use bindizr_service::types::{
     AuditLogResponse, CreateTokenResponse, DnssecKeyResponse, DnssecPolicyResponse,
-    ImportZoneResponse, RecordResponse, RoleGrantResponse, RoleResponse, RollbackZoneResponse,
-    SecondaryResponse, SecondaryStatusResponse, SingleTsigKeyResponse, TokenResponse,
-    TransferResponse, TsigKeyResponse, VersionRecordResponse, ZoneResponse, ZoneStatusResponse,
-    ZoneVersionResponse,
+    ImportZoneResponse, ImportZonesItemResponse, RecordResponse, RoleGrantResponse, RoleResponse,
+    RollbackZoneResponse, SecondaryResponse, SecondaryStatusResponse, SingleTsigKeyResponse,
+    TokenResponse, TransferResponse, TsigKeyResponse, VersionRecordResponse, ZoneResponse,
+    ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -419,6 +419,48 @@ impl From<&ImportZoneResponse> for ImportSummaryRow {
             updated: summary.updated,
             unchanged: summary.unchanged,
             skipped: summary.skipped,
+        }
+    }
+}
+
+/// One zone of a bulk import, as the CLI table lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+pub(crate) struct ImportZonesRow {
+    #[tabled(rename = "ZONE")]
+    pub(crate) zone_name: String,
+    #[tabled(rename = "RESULT")]
+    pub(crate) result: String,
+    #[tabled(rename = "PARSED")]
+    pub(crate) parsed: String,
+    #[tabled(rename = "ADDED")]
+    pub(crate) added: String,
+    #[tabled(rename = "DELETED")]
+    pub(crate) deleted: String,
+    #[tabled(rename = "UPDATED")]
+    pub(crate) updated: String,
+    #[tabled(rename = "UNCHANGED")]
+    pub(crate) unchanged: String,
+    #[tabled(rename = "SKIPPED")]
+    pub(crate) skipped: String,
+    #[tabled(rename = "ERROR")]
+    pub(crate) error: String,
+}
+
+impl From<&ImportZonesItemResponse> for ImportZonesRow {
+    /// Build a table row from one zone's outcome.
+    fn from(item: &ImportZonesItemResponse) -> Self {
+        let summary = item.import.as_ref().map(|import| import.summary);
+        let count = |value: Option<u64>| display_option(&value);
+        ImportZonesRow {
+            zone_name: item.zone_name.clone(),
+            result: item.result.to_string(),
+            parsed: count(summary.map(|s| s.parsed)),
+            added: count(summary.map(|s| s.added)),
+            deleted: count(summary.map(|s| s.deleted)),
+            updated: count(summary.map(|s| s.updated)),
+            unchanged: count(summary.map(|s| s.unchanged)),
+            skipped: count(summary.map(|s| s.skipped)),
+            error: display_option(&item.error.as_ref().map(|error| &error.error)),
         }
     }
 }

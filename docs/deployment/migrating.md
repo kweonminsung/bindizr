@@ -63,6 +63,36 @@ bindizr zone create example.com --mname ns1.example.com --rname admin@example.co
 bindizr zone import example.com --from-server <old-primary>:53 --mode replace
 ```
 
+### Moving every zone in one run
+
+The same import takes a whole server at once. Name the zones in a file, one
+per line, as the old primary spells them; blank lines and `#` comments are
+skipped. The primary's own tooling writes that list:
+
+```bash
+named-checkconf -l | awk '$2 == "IN" && $3 == "primary" { print $1 }' > zones.txt   # BIND
+knotc zone-status | awk -F'[][]' '{ print $2 }' > zones.txt                           # Knot DNS
+pdnsutil list-all-zones > zones.txt                                                   # PowerDNS
+
+bindizr zone import --from-server <old-primary>:53 --zones zones.txt --mode replace --create --dry-run
+bindizr zone import --from-server <old-primary>:53 --zones zones.txt --mode replace --create
+```
+
+A primary that already publishes a catalog zone (RFC 9432) needs no list:
+`--from-catalog` transfers the catalog and imports every member it names.
+The catalog transfer must be allowed from Bindizr's address like any other.
+
+```bash
+bindizr zone import --from-server <old-primary>:53 --from-catalog catalog.example --mode replace --create
+```
+
+Every zone is imported on its own, so a zone that is rejected (a record
+Bindizr cannot store) or fails (the transfer refused, the zone missing)
+leaves the rest imported; the table reports each zone's result, and the
+command exits non-zero when any was left behind. Fix those and run the same
+command again: a zone already moved replaces itself with no change. Over
+HTTP the same is `POST /import`.
+
 ## 3. Compare before cutting over
 
 Export what Bindizr now serves and diff it against the source:

@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-use crate::common::TestApp;
+use crate::common::{TestApp, TestAppOptions};
 
 /// Populate a zone with records before testing an import.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
@@ -1075,4 +1075,136 @@ async fn zone_import_rejects_unknown_mode_in_service() {
             .unwrap()
             .contains("invalid import mode")
     );
+}
+
+/// Verify that `POST /import` imports the zones named or the catalog lists,
+/// answers each zone's outcome, and refuses a malformed request whole.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn import_zones_reports_each_zone_outcome_over_http() {
+    // The transfer ACL must admit the test's own loopback AXFRs.
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap().to_string();
+    let missing = app.zone_name("bulk-missing.example");
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "www IN A 192.0.2.30\n" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let server = format!("127.0.0.1:{}", app.dns_port());
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/import",
+            Some(json!({
+                "from_server": server,
+                "zone_names": [zone_name, missing],
+                "mode": "replace",
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["summary"],
+        json!({ "zones": 2, "ok": 1, "rejected": 0, "failed": 1 }),
+        "{body}"
+    );
+    assert_eq!(body["zones"][0]["zone_name"], zone_name);
+    assert_eq!(body["zones"][0]["result"], "ok");
+    assert_eq!(body["zones"][0]["import"]["applied"], true);
+    assert_eq!(body["zones"][0]["import"]["summary"]["unchanged"], 2);
+    assert!(body["zones"][0]["error"].is_null(), "{body}");
+    assert_eq!(body["zones"][1]["zone_name"], missing);
+    assert_eq!(body["zones"][1]["result"], "failed");
+    assert!(body["zones"][1]["import"].is_null(), "{body}");
+    assert_eq!(body["zones"][1]["error"]["code"], "ZONE_NOT_FOUND");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/import",
+            Some(json!({
+                "from_server": server,
+                "from_catalog": "catalog.bindizr",
+                "mode": "replace",
+                "dry_run": true,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["dry_run"], true);
+    assert_eq!(body["summary"]["zones"], 1, "{body}");
+    assert_eq!(body["zones"][0]["zone_name"], zone_name);
+    assert_eq!(body["zones"][0]["import"]["dry_run"], true);
+
+    // Exactly one zone selector, a server, a mode, and a readable catalog.
+    for request in [
+        json!({ "zone_names": [zone_name] }),
+        json!({ "from_server": server }),
+        json!({ "from_server": server, "zone_names": [] }),
+        json!({ "from_server": server, "zone_names": [zone_name], "from_catalog": "catalog.bindizr" }),
+        json!({ "from_server": server, "zone_names": [zone_name], "mode": "merge" }),
+        json!({ "from_server": server, "from_catalog": "no-such.catalog" }),
+    ] {
+        let (status, body) = app
+            .send_request(Method::POST, "/import", Some(request.clone()))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{request}: {body}");
+    }
+}
+
+/// Verify that `create` and a catalog are authorized before any transfer,
+/// while a zone the caller cannot reach fails on its own.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn import_zones_authorizes_create_and_catalog_before_transferring() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+    let (_, scoped_token) = app.create_scoped_api_token().await;
+    app.set_auth_token(scoped_token);
+    let zone_name = app.zone_name("bulk-scoped.example");
+
+    // Port 1 answers no transfer, so a 403 proves the check came first.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/import",
+            Some(json!({
+                "from_server": "127.0.0.1:1",
+                "zone_names": [zone_name],
+                "create": true,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/import",
+            Some(json!({ "from_server": "127.0.0.1:1", "from_catalog": "catalog.bindizr" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/import",
+            Some(json!({ "from_server": "127.0.0.1:1", "zone_names": [zone_name] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["zones"][0]["result"], "failed");
+    assert_eq!(body["zones"][0]["error"]["code"], "ZONE_NOT_FOUND");
 }

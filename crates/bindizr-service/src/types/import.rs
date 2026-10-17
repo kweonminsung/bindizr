@@ -1,9 +1,9 @@
-//! Zone import request, mode, and summary payloads.
+//! Zone import payloads, for one zone and for several from one server.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::version::RecordDiffResponse;
+use super::{common::ErrorResponse, version::RecordDiffResponse};
 
 /// How parsed records are reconciled with the records already in the zone.
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
@@ -132,6 +132,111 @@ impl Default for ImportZoneRequest {
     }
 }
 
+/// Request body for importing several zones from one server over AXFR:
+/// those in `zone_names`, or the members of its catalog zone `from_catalog`
+/// (RFC 9432); exactly one of the two.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImportZonesRequest {
+    /// Transfer source (`host[:port]`, port 53 default); it must allow the transfers.
+    #[schema(example = "192.0.2.1:53")]
+    pub from_server: String,
+    /// The zones to import, as the source serves them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = json!(["example.com", "example.net"]))]
+    pub zone_names: Option<Vec<String>>,
+    /// The source's catalog zone, whose members are the zones to import.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "catalog.example")]
+    pub from_catalog: Option<String>,
+    /// Reconciliation mode for every zone: `append` (default), `upsert`, or `replace`.
+    #[serde(default = "default_import_mode")]
+    #[schema(value_type = ImportMode, default = "append", example = "replace")]
+    pub mode: String,
+    /// When true, parse and validate every zone without applying any change.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Pass over records bindizr has no type for instead of rejecting the zone.
+    #[serde(default)]
+    pub skip_unsupported: bool,
+    /// Create a missing zone from its SOA; otherwise it fails. Requires
+    /// `zone:create` and the mode's record actions in all zones.
+    #[serde(default)]
+    pub create: bool,
+}
+
+/// How one zone of a bulk import came out.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportResult {
+    /// The import ran: applied, or previewed on a dry run.
+    Ok,
+    /// Validation errors; nothing applied, the errors in `import`.
+    Rejected,
+    /// Never imported: the transfer failed, the zone is missing without
+    /// `create`, or the caller may not touch it.
+    Failed,
+}
+
+impl ImportResult {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Rejected => "rejected",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl std::fmt::Display for ImportResult {
+    /// Write the result as the API spells it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One zone of a bulk import: its result with the import answer or the error.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+pub struct ImportZonesItemResponse {
+    #[schema(example = "example.com")]
+    pub zone_name: String,
+    pub result: ImportResult,
+    /// The zone's own import answer; null when the import never ran.
+    pub import: Option<ImportZoneResponse>,
+    /// Why the import never ran; null otherwise.
+    pub error: Option<ErrorResponse>,
+}
+
+/// How many zones of a bulk import came out each way.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+pub struct ImportZonesSummaryResponse {
+    #[schema(example = 12)]
+    pub zones: u64,
+    #[schema(example = 10)]
+    pub ok: u64,
+    #[schema(example = 1)]
+    pub rejected: u64,
+    #[schema(example = 1)]
+    pub failed: u64,
+}
+
+/// Result of a bulk import: one entry per zone, in the order imported.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+pub struct ImportZonesResponse {
+    #[schema(example = false)]
+    pub dry_run: bool,
+    pub summary: ImportZonesSummaryResponse,
+    pub zones: Vec<ImportZonesItemResponse>,
+}
+
+impl ImportZonesResponse {
+    /// Whether any zone was rejected or failed; not a success for a script.
+    pub fn has_rejected_or_failed(&self) -> bool {
+        self.summary.rejected > 0 || self.summary.failed > 0
+    }
+}
+
 /// An import mode outside the supported reconciliation strategies.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid import mode '{0}': expected append, upsert, or replace")]
@@ -154,6 +259,25 @@ impl std::str::FromStr for ImportMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verify that `ImportResult` has one spelling across `as_str` and serde.
+    #[test]
+    fn import_result_spells_itself_once() {
+        for value in [
+            ImportResult::Ok,
+            ImportResult::Rejected,
+            ImportResult::Failed,
+        ] {
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(value.as_str())
+            );
+            assert_eq!(
+                serde_json::from_value::<ImportResult>(serde_json::json!(value.as_str())).unwrap(),
+                value
+            );
+        }
+    }
 
     /// Verify the canonical spelling and round-trip of every ImportMode variant.
     #[test]

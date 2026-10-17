@@ -9,6 +9,7 @@ use bindizr_core::{
     dns::{
         Ttl,
         address::is_address_target,
+        extract_member_zones,
         name::{OwnerName, ZoneName},
         record::SoaMailbox,
         zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue},
@@ -34,8 +35,9 @@ use crate::{
     transaction,
     ttl::validate_soa_interval,
     types::{
-        ImportMode, ImportZoneRequest, ImportZoneResponse, ImportZoneSummaryResponse,
-        RecordDiffResponse, RecordValue, Run,
+        ErrorResponse, ImportMode, ImportResult, ImportZoneRequest, ImportZoneResponse,
+        ImportZoneSummaryResponse, ImportZonesItemResponse, ImportZonesRequest,
+        ImportZonesResponse, ImportZonesSummaryResponse, RecordDiffResponse, RecordValue, Run,
     },
     zone,
 };
@@ -82,7 +84,7 @@ enum ImportSource<'a> {
 
 /// Outcome of the transactional part of a zone-file import.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ImportResult {
+struct ReconcileResult {
     response: ImportZoneResponse,
     zone_name: ZoneName,
     changed: bool,
@@ -160,6 +162,136 @@ pub async fn import_zone(
     reconcile(cx, caller, zone_name, source, request, mode).await
 }
 
+/// Import the zones named, or the source catalog's members, from one
+/// server, each as `import_zone` would in its own transaction; a rejected
+/// or failed zone is reported beside the rest.
+pub async fn import_zones(
+    cx: &Context,
+    caller: &Caller,
+    request: &ImportZonesRequest,
+) -> Result<ImportZonesResponse, ServiceError> {
+    let mode = request
+        .mode
+        .parse::<ImportMode>()
+        .map_err(ServiceError::invalid_input)?;
+    let server = request.from_server.trim();
+    if !is_address_target(server) {
+        return Err(ServiceError::invalid_input(
+            "from_server must name one server as host[:port]",
+        ));
+    }
+    // Checked once, before any transfer: every zone's `create` would fail alike.
+    if request.create {
+        caller.authorize_action(Action::ZoneCreate)?;
+        for action in import_actions(mode) {
+            caller.authorize_all_whole_zones(*action)?;
+        }
+    }
+    let zone_names = match (&request.zone_names, &request.from_catalog) {
+        (Some(names), None) => normalize_zone_names(names)?,
+        (None, Some(catalog)) => {
+            // A catalog names every zone its server provisions, so reading it
+            // through Bindizr is an all-zones act.
+            for action in import_actions(mode) {
+                caller.authorize_all_whole_zones(*action)?;
+            }
+            let catalog = zone::normalize_name(catalog)?;
+            let records =
+                crate::dns_client::axfr::fetch_zone(server, &catalog, &cx.config().dns.import)
+                    .await
+                    .map_err(|e| {
+                        ServiceError::invalid_input(format!(
+                            "AXFR of catalog {} from {} failed: {}",
+                            catalog, server, e
+                        ))
+                    })?;
+            extract_member_zones(&records, &catalog).map_err(|e| {
+                ServiceError::invalid_input(format!(
+                    "catalog {} from {} cannot be read: {}",
+                    catalog, server, e
+                ))
+            })?
+        }
+        (Some(_), Some(_)) => {
+            return Err(ServiceError::invalid_input(
+                "give either zone_names or from_catalog, not both",
+            ));
+        }
+        (None, None) => {
+            return Err(ServiceError::invalid_input(
+                "give zone_names or from_catalog",
+            ));
+        }
+    };
+
+    let single = ImportZoneRequest {
+        content: None,
+        from_server: Some(server.to_string()),
+        mode: mode.as_str().to_owned(),
+        dry_run: request.dry_run,
+        skip_unsupported: request.skip_unsupported,
+        create: request.create,
+    };
+    let mut summary = ImportZonesSummaryResponse {
+        zones: zone_names.len() as u64,
+        ok: 0,
+        rejected: 0,
+        failed: 0,
+    };
+    let mut zones = Vec::with_capacity(zone_names.len());
+    for zone_name in &zone_names {
+        let (result, import, error) = match import_zone(cx, caller, zone_name, &single).await {
+            Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
+            Ok(import) => (ImportResult::Ok, Some(import), None),
+            Err(e) => (ImportResult::Failed, None, Some(ErrorResponse::from(&e))),
+        };
+        match result {
+            ImportResult::Ok => summary.ok += 1,
+            ImportResult::Rejected => summary.rejected += 1,
+            ImportResult::Failed => summary.failed += 1,
+        }
+        zones.push(ImportZonesItemResponse {
+            zone_name: zone_name.to_string(),
+            result,
+            import,
+            error,
+        });
+    }
+    log::info!(
+        "event=zones_import server={} mode={:?} dry_run={} zones={} ok={} rejected={} failed={}",
+        server,
+        mode,
+        request.dry_run,
+        summary.zones,
+        summary.ok,
+        summary.rejected,
+        summary.failed,
+    );
+    Ok(ImportZonesResponse {
+        dry_run: request.dry_run,
+        summary,
+        zones,
+    })
+}
+
+/// The zones a bulk import names, in request order without repeats.
+fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError> {
+    if names.is_empty() {
+        return Err(ServiceError::invalid_input(
+            "zone_names must name at least one zone",
+        ));
+    }
+    let mut zone_names: Vec<ZoneName> = Vec::with_capacity(names.len());
+    let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
+    for name in names {
+        let zone_name = zone::normalize_name(name)?;
+        if seen.insert(zone_name.clone()) {
+            zone_names.push(zone_name);
+        }
+    }
+    Ok(zone_names)
+}
+
 /// The record actions an import mode performs.
 fn import_actions(mode: ImportMode) -> &'static [Action] {
     match mode {
@@ -192,7 +324,7 @@ async fn reconcile(
 
     let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
-    let apply_result: Result<ImportResult, ServiceError> = async {
+    let apply_result: Result<ReconcileResult, ServiceError> = async {
         let t = Instant::now();
         let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -462,7 +594,7 @@ async fn reconcile(
             skipped_records,
         };
 
-        Ok(ImportResult {
+        Ok(ReconcileResult {
             response,
             zone_name: zone.name,
             changed: will_apply && has_changes,
@@ -471,7 +603,7 @@ async fn reconcile(
     }
     .await;
 
-    let ImportResult {
+    let ReconcileResult {
         response,
         zone_name,
         changed,
@@ -530,4 +662,37 @@ async fn reconcile(
     );
 
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::ErrorCode;
+
+    /// Verify that `normalize_zone_names` canonicalizes and drops repeats in request order.
+    #[test]
+    fn normalize_zone_names_canonicalizes_and_drops_repeats() {
+        let names =
+            ["Example.COM.", "example.net", " example.com", "example.net"].map(str::to_string);
+
+        let zones = normalize_zone_names(&names).unwrap();
+
+        assert_eq!(
+            zones,
+            vec![
+                ZoneName::parse("example.com").unwrap(),
+                ZoneName::parse("example.net").unwrap(),
+            ]
+        );
+    }
+
+    /// Verify that `normalize_zone_names` rejects an empty list and a name no zone can carry.
+    #[test]
+    fn normalize_zone_names_rejects_empty_list_and_bad_name() {
+        let empty = normalize_zone_names(&[]).unwrap_err();
+        assert_eq!(empty.code(), ErrorCode::InvalidInput);
+
+        let root = normalize_zone_names(&["example.com".to_string(), ".".to_string()]).unwrap_err();
+        assert_eq!(root.code(), ErrorCode::InvalidZoneField);
+    }
 }

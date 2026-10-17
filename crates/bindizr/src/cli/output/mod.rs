@@ -10,7 +10,7 @@ pub(crate) use format::{
     OutputFormat, RenderOutputError, print_page, print_payload, print_response, print_table,
 };
 pub(crate) use table::{
-    AuditLogRow, DnssecKeyRow, DnssecPolicyRow, ImportSummaryRow, RecordRow, RoleGrantRow, RoleRow,
-    RollbackSummaryRow, SecondaryRow, SecondaryStatusRow, TokenRow, TransferRow, TsigKeyRow,
-    VersionRecordRow, VersionRow, ZoneRow,
+    AuditLogRow, DnssecKeyRow, DnssecPolicyRow, ImportSummaryRow, ImportZonesRow, RecordRow,
+    RoleGrantRow, RoleRow, RollbackSummaryRow, SecondaryRow, SecondaryStatusRow, TokenRow,
+    TransferRow, TsigKeyRow, VersionRecordRow, VersionRow, ZoneRow,
 };

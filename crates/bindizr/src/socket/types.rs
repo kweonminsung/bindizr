@@ -6,8 +6,8 @@ use bindizr_service::types::{
     AuditLogFilter, CheckNotifyResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest,
     CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest,
     CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck,
-    EnableDnssecRequest, Holddown, ImportDnssecKeysRequest, ImportZoneRequest, NotifySerial,
-    PageRequest, RecordFilter, Run, SecondaryStatusResponse, SecondaryTransferFilter,
+    EnableDnssecRequest, Holddown, ImportDnssecKeysRequest, ImportZoneRequest, ImportZonesRequest,
+    NotifySerial, PageRequest, RecordFilter, Run, SecondaryStatusResponse, SecondaryTransferFilter,
     SecondaryTransferSummaryResponse, StartDnssecRolloverRequest, TokenFilter, TsigKeyFilter,
     UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
@@ -107,6 +107,7 @@ pub(crate) enum DaemonCommand {
         zone_name: String,
         request: ImportZoneRequest,
     },
+    ImportZones(ImportZonesRequest),
     ExportZone {
         name: String,
         view: ZoneView,

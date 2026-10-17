@@ -426,6 +426,12 @@ success. Management operations re-authenticate before locking their own rows, as
 - Imports resolve text using the locked zone's TTL, or configured creation defaults
   for a missing zone. Parse once; AXFR passes records without rendering a master
   file. Plan and validate missing-zone imports before inserting the zone.
+  A bulk import (`import_zones`) runs that flow once per zone, each in its own
+  transaction in list order, so one zone's rejection or failure is reported
+  beside the others' outcomes and stops nothing. Its zone list is the request's
+  names or the members of the source's catalog zone (RFC 9432), read before
+  any zone is touched; the `create` authorization, and the all-zones record
+  actions a catalog needs, are checked once before the first transfer.
 - NOTIFY, successful-write metrics and success logs follow commit. A no-op reports
   its outcome without claiming a version change. A preview log says `dry_run` or
   `applied`. A transaction result carries any change information these steps need.
