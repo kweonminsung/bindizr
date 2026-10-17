@@ -25,6 +25,8 @@ pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
 pub enum ExtractMemberZonesError {
     #[error("the catalog carries no version record (RFC 9432, Section 4.2.1)")]
     MissingVersion,
+    #[error("the catalog carries more than one version record (RFC 9432, Section 4.2.1)")]
+    VersionNotSingular,
     #[error("the catalog is schema version '{found}', not 2 (RFC 9432, Section 4.2.1)")]
     UnsupportedVersion { found: String },
     #[error("invalid owner name '{name}': {source}")]
@@ -49,8 +51,9 @@ pub enum ExtractMemberZonesError {
 
 /// The member zones a transferred catalog lists, sorted: the PTR targets
 /// directly under `zones.<catalog>` (RFC 9432, Section 4.3), once its
-/// version record says schema 2 (Section 4.2.1); a node with two PTRs or a
-/// zone under two nodes is a broken catalog (Section 4.1).
+/// one version record says schema 2 (Section 4.2.1); a second version
+/// record, a node with two PTRs or a zone under two nodes is a broken
+/// catalog (Sections 4.1 and 4.2.1).
 pub fn extract_member_zones(
     records: &[TransferRecord],
     catalog: &ZoneName,
@@ -69,6 +72,9 @@ pub fn extract_member_zones(
         let labels = owner.labels();
         match record.rtype {
             Rtype::TXT if labels == [b"version".to_vec()] => {
+                if version.is_some() {
+                    return Err(ExtractMemberZonesError::VersionNotSingular);
+                }
                 version = Some(record.rdata.as_bytes().to_vec());
             }
             Rtype::PTR if labels.len() == 2 && labels[1] == b"zones" => {
@@ -213,7 +219,7 @@ mod tests {
     }
 
     /// Verify that `extract_member_zones` refuses a catalog without a version
-    /// record, with another schema version, or with a record outside the zone.
+    /// record, with two, with another schema version, or with a record outside the zone.
     #[test]
     fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
         let catalog = ZoneName::parse("catalog.example").unwrap();
@@ -221,6 +227,20 @@ mod tests {
 
         let missing = extract_member_zones(std::slice::from_ref(&member), &catalog).unwrap_err();
         assert!(matches!(missing, ExtractMemberZonesError::MissingVersion));
+
+        let two_versions = extract_member_zones(
+            &[
+                version_record("catalog.example", b"2"),
+                version_record("catalog.example", b"2"),
+                member.clone(),
+            ],
+            &catalog,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(two_versions, ExtractMemberZonesError::VersionNotSingular),
+            "{two_versions}"
+        );
 
         let foreign_version = extract_member_zones(
             &[version_record("catalog.example", b"1"), member.clone()],
