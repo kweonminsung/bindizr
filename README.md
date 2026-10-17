@@ -65,9 +65,6 @@ Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven
   versions, but a change to a token, role, grant, TSIG key, secondary, or
   policy leaves no trace. Logging each one answers who changed what, and
   when.
-- **Bulk Migration** — `zone import --from-server` moves one zone per
-  command. Importing every zone an existing primary serves in one run moves
-  a whole server.
 - **Terraform Provider** — infrastructure as code reaches Bindizr through
   the ExternalDNS adapter alone. A provider over the HTTP API lets zones,
   records, and access rights be declared beside the rest of the stack.

@@ -146,6 +146,22 @@ as `1h` with `named-compilezone -o zone.txt example.com source.zone` first.
 Over HTTP, `POST /zones/{name}/import` accepts either `content` (zone-file text)
 or `from_server`, with the same `mode`, `dry_run`, and `skip_unsupported` options.
 
+Several zones move from one server in one run. `--zones` names them in a
+file (one per line, `-` for stdin), and `--from-catalog` takes every member
+of a catalog zone (RFC 9432) the server serves. Each zone is imported as the
+single form above would, in its own transaction, so one that is rejected or
+fails leaves the others standing; the table lists each zone's result, and the
+command exits non-zero when any was not imported.
+
+```bash
+bindizr zone import --from-server 192.0.2.1:53 --zones zones.txt --mode replace --create --dry-run
+bindizr zone import --from-server 192.0.2.1:53 --from-catalog catalog.example --mode replace --create
+```
+
+Over HTTP the same is `POST /import`, with `from_server` and either
+`zone_names` or `from_catalog`. See
+[Moving every zone in one run](../deployment/migrating.md#moving-every-zone-in-one-run).
+
 ## Zone history
 
 Each serial has a saved version. Versions outside the unambiguous RFC 1982

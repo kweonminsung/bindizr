@@ -33,7 +33,8 @@ pub use external_dns::{
     ExternalDnsRecordUpdate, ListExternalDnsDomainsResponse, ListExternalDnsRecordsResponse,
 };
 pub use import::{
-    ImportMode, ImportZoneRequest, ImportZoneResponse, ImportZoneSummaryResponse,
+    ImportMode, ImportResult, ImportZoneRequest, ImportZoneResponse, ImportZoneSummaryResponse,
+    ImportZonesItemResponse, ImportZonesRequest, ImportZonesResponse, ImportZonesSummaryResponse,
     ParseImportModeError,
 };
 pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, PaginationResponse};

@@ -13,7 +13,7 @@ pub(crate) use bulk::{create_with_changes_tx, delete_with_changes_tx, update_wit
 pub use create::create;
 pub use delete::{delete, delete_matching};
 pub use get::{count_all, get, list_by_filter_with_zone};
-pub use import::import_zone;
+pub use import::{import_zone, import_zones};
 pub use update::{update, update_by_name};
 pub(crate) use validation::{
     AddResult, validate_add_tx, validate_record_constraints, validate_record_name_in_zone,

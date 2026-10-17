@@ -6,8 +6,9 @@ mod version;
 use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
     self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
-    ImportZoneResponse, MessageResponse, NotifySerial, PaginatedResponse, Run, SingleZoneResponse,
-    UpdateZoneRequest, WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse, ZoneView,
+    ImportZoneResponse, ImportZonesRequest, ImportZonesResponse, MessageResponse, NotifySerial,
+    PaginatedResponse, Run, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter,
+    ZoneResponse, ZoneStatusResponse, ZoneView,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -16,8 +17,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, OutputFormat, SecondaryStatusRow, ZoneRow, print_page, print_payload,
-            print_response, print_table, render_change_preview,
+            ImportSummaryRow, ImportZonesRow, OutputFormat, SecondaryStatusRow, ZoneRow,
+            print_page, print_payload, print_response, print_table, render_change_preview,
         },
     },
     socket::{client, types::DaemonCommand},
@@ -205,7 +206,7 @@ and the contact is the address a resolver operator writes to.")]
         output: OutputFormat,
     },
 
-    /// Import a BIND zone file into a zone
+    /// Import a BIND zone file into a zone, or pull zones from another server
     #[command(after_help = "\
 The file is standard BIND zone file text, for example:
   www    300  IN A   192.0.2.1
@@ -218,11 +219,25 @@ $INCLUDE is not supported.
 
 TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
 (1h, 2d) is refused; write it out in seconds first:
-  named-compilezone -o - example.com db.example.com")]
+  named-compilezone -o - example.com db.example.com
+
+Several zones are pulled from one server in one run, each imported as a
+single zone would be, so a zone that is rejected or fails leaves the others
+standing; the command exits non-zero when any did:
+  bindizr zone import --from-server 192.0.2.1 --zones zones.txt --mode replace --create
+  bindizr zone import --from-server 192.0.2.1 --from-catalog catalog.example --mode replace --create
+
+The zones file names one zone per line; blank lines and lines starting with
+'#' are skipped. A catalog zone (RFC 9432) lists every zone the server
+provisions through it.")]
     Import {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
+        /// The name of the zone; omit it to import several zones with
+        /// --zones or --from-catalog
+        #[arg(
+            value_name = "ZONE_NAME",
+            required_unless_present_any = ["zones", "from_catalog"]
+        )]
+        name: Option<String>,
         /// Path to a BIND zone file, or '-' to read from stdin
         #[arg(
             required_unless_present = "from_server",
@@ -233,6 +248,24 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
         /// default) instead of a file
         #[arg(long, value_name = "SERVER")]
         from_server: Option<String>,
+        /// Pull every zone named in this file (one per line, '-' for stdin)
+        /// from --from-server
+        #[arg(
+            long,
+            value_name = "FILE",
+            requires = "from_server",
+            conflicts_with_all = ["name", "from_catalog"]
+        )]
+        zones: Option<String>,
+        /// Pull every member of this catalog zone (RFC 9432) served by
+        /// --from-server
+        #[arg(
+            long,
+            value_name = "CATALOG_ZONE",
+            requires = "from_server",
+            conflicts_with = "name"
+        )]
+        from_catalog: Option<String>,
         /// How parsed records are reconciled with existing records
         #[arg(long, value_enum, default_value_t = ImportMode::Append)]
         mode: ImportMode,
@@ -490,7 +523,72 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             out!("{}", response.data.zone_file);
         }
         ZoneCommand::Import {
-            name,
+            name: None,
+            from_server,
+            zones,
+            from_catalog,
+            mode,
+            dry_run,
+            skip_unsupported,
+            create,
+            output,
+            ..
+        } => {
+            // Clap requires --from-server with either selector.
+            let from_server = from_server.unwrap_or_default();
+            let zone_names = zones
+                .map(|zones| super::read_input(&zones))
+                .transpose()?
+                .map(|text| {
+                    text.lines()
+                        .map(str::trim)
+                        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                });
+            let response = client::send_command::<ImportZonesResponse>(DaemonCommand::ImportZones(
+                ImportZonesRequest {
+                    from_server,
+                    zone_names,
+                    from_catalog,
+                    mode: types::ImportMode::from(mode).as_str().to_owned(),
+                    dry_run,
+                    skip_unsupported,
+                    create,
+                },
+            ))
+            .await?;
+            let import = &response.data;
+            match output {
+                OutputFormat::Table => {
+                    outln!("{}", response.message);
+                    // Diagnostics go to stderr, so a pipeline keeps the table clean.
+                    for item in &import.zones {
+                        let Some(zone_import) = &item.import else {
+                            continue;
+                        };
+                        for error in &zone_import.errors {
+                            errln!("  {} - {}", item.zone_name, error);
+                        }
+                        for skipped in &zone_import.skipped_records {
+                            errln!("  {} ~ {}", item.zone_name, skipped);
+                        }
+                    }
+                    print_table(import.zones.iter().map(ImportZonesRow::from).collect());
+                }
+                _ => print_payload(import, output)?,
+            }
+            // A zone left behind must not exit as a success.
+            if import.has_rejected_or_failed() {
+                return Err(CliError::request(format!(
+                    "{} of {} zone(s) were rejected or failed; see the table",
+                    import.summary.rejected + import.summary.failed,
+                    import.summary.zones
+                )));
+            }
+        }
+        ZoneCommand::Import {
+            name: Some(name),
             file,
             from_server,
             mode,
@@ -498,6 +596,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             skip_unsupported,
             create,
             output,
+            ..
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
             let response = client::send_command::<ImportZoneResponse>(DaemonCommand::ImportZone {

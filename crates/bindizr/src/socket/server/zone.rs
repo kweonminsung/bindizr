@@ -6,9 +6,10 @@ use bindizr_service::{
     record,
     types::{
         CreateZoneRequest, DeleteZoneResponse, DiffZoneVersionsResponse, ExportZoneFileResponse,
-        GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
-        RollbackZoneResponse, Run, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse,
-        ZoneFilter, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneView,
+        GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse, ImportZonesRequest,
+        ImportZonesResponse, PaginatedResponse, RollbackZoneResponse, Run, SingleZoneResponse,
+        UpdateZoneRequest, WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse,
+        ZoneVersionResponse, ZoneView,
     },
     zone,
 };
@@ -103,6 +104,31 @@ pub(crate) async fn import_zone(
     } else {
         "Zone imported successfully".to_string()
     };
+    Ok(DaemonResponse {
+        message,
+        data: response,
+    })
+}
+
+/// Preview or apply every zone the request names, or the source's catalog lists.
+pub(crate) async fn import_zones(
+    cx: &Context,
+    request: &ImportZonesRequest,
+) -> Result<DaemonResponse<ImportZonesResponse>, ServiceError> {
+    let response = record::import_zones(cx, &Caller::socket(), request).await?;
+    let summary = &response.summary;
+    let message = format!(
+        "{} of {} zone(s) {}; {} rejected, {} failed",
+        summary.ok,
+        summary.zones,
+        if response.dry_run {
+            "previewed"
+        } else {
+            "imported"
+        },
+        summary.rejected,
+        summary.failed
+    );
     Ok(DaemonResponse {
         message,
         data: response,

@@ -377,6 +377,9 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::ImportZone { zone_name, request } => {
             encode_response(zone::import_zone(cx, &zone_name, &request).await)
         }
+        DaemonCommand::ImportZones(request) => {
+            encode_response(zone::import_zones(cx, &request).await)
+        }
         DaemonCommand::ExportZone { name, view } => {
             encode_response(zone::export_zone(cx, &name, view).await)
         }

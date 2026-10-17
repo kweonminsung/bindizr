@@ -13,9 +13,9 @@ use bindizr_service::{
     types::{
         CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, DiffZoneVersionsResponse,
         ErrorResponse, GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse,
-        PaginatedResponse, RollbackZoneResponse, Run, SingleZoneResponse, UpdateZoneRequest,
-        WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
-        ZoneView,
+        ImportZonesRequest, ImportZonesResponse, PaginatedResponse, RollbackZoneResponse, Run,
+        SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter, ZoneResponse,
+        ZoneStatusResponse, ZoneVersionResponse, ZoneView,
     },
     zone,
 };
@@ -44,6 +44,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
             "/zones/{name}/import",
             routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
         )
+        .route("/import", routing::post(import_zones))
         .route("/zones/{name}/export", routing::get(export_zone))
         .route("/zones/{name}/versions", routing::get(list_zone_versions))
         .route(
@@ -508,4 +509,30 @@ pub(crate) async fn import_zone(
         StatusCode::OK
     };
     Ok((status, Json(response)).into_response())
+}
+
+/// Import several zones from one server, each in its own transaction.
+#[utoipa::path(
+        post,
+        path = "/import",
+        tag = "Zone",
+        summary = "Import zones from a server",
+        description = "Pull every zone named in `zone_names`, or every member of the server's catalog zone `from_catalog` (RFC 9432), over AXFR from `from_server`, and import each as `POST /zones/{name}/import` would with the same `mode`, `dry_run`, `skip_unsupported` and `create`. Zones are imported one at a time, each in its own transaction, so a zone that is rejected or fails leaves the others' outcomes standing; the answer lists every zone with its result (`ok`, `rejected`, `failed`), the import summary of the ones that ran, and the error of the ones that did not. The request itself fails only when it is malformed, the catalog cannot be read, or `create` is asked for without `zone:create` and the mode's record actions in all zones.",
+        request_body = ImportZonesRequest,
+        responses(
+            (status = 200, description = "One entry per zone, in the order imported", body = ImportZonesResponse),
+            (status = 400, description = "Bad request, invalid input, or the catalog could not be transferred or read", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit creating zones", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+pub(crate) async fn import_zones(
+    State(cx): State<Arc<Context>>,
+    RequestCaller(caller): RequestCaller,
+    JsonBody(body): JsonBody<ImportZonesRequest>,
+) -> Result<Response, ApiError> {
+    let response = record::import_zones(&cx, &caller, &body).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

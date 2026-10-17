@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::{
     cli::common::{summary_cells, summary_row},
-    common::TestApp,
+    common::{TestApp, assert_cli_failure_contains},
 };
 
 /// Preserve a high source serial during preview and advance it when applying records.
@@ -212,4 +212,144 @@ async fn zone_import_from_server_round_trips_over_axfr() {
         ["9", "0", "0", "0", "9", "0"],
         "{applied}"
     );
+}
+
+/// Verify that one run pulls every zone the file names or the catalog lists,
+/// each as its own import, and reports the ones it could not import.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_pulls_several_zones_from_one_server() {
+    // The transfer ACL must admit the test's own loopback AXFRs.
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let first = app.zone_name("bulk-a.example");
+    let second = app.zone_name("bulk-b.example");
+    let missing = app.zone_name("bulk-missing.example");
+    app.create_zone_cli(&first, "3600").await;
+    app.create_zone_cli(&second, "3600").await;
+    app.run_cli_success(
+        &["zone", "import", &first, "-"],
+        Some("www IN A 192.0.2.1\n"),
+    )
+    .await;
+    app.run_cli_success(
+        &["zone", "import", &second, "-"],
+        Some("www IN A 192.0.2.2\nmail IN A 192.0.2.3\n"),
+    )
+    .await;
+    let server = format!("127.0.0.1:{}", app.dns_port());
+
+    // From a list: both zones replace themselves; the third exists nowhere,
+    // which fails that zone alone and the exit code.
+    let zones = format!("# zones to move\n{first}\n\n{second}\n{missing}\n{first}\n");
+    let args = [
+        "zone",
+        "import",
+        "--from-server",
+        &server,
+        "--zones",
+        "-",
+        "--mode",
+        "replace",
+    ];
+    let output = app.run_cli(&args, Some(&zones)).await;
+    assert!(!output.status.success(), "a failed zone must exit non-zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("2 of 3 zone(s) imported; 0 rejected, 1 failed"),
+        "{stdout}"
+    );
+    assert!(
+        stderr.contains("1 of 3 zone(s) were rejected or failed"),
+        "{stderr}"
+    );
+    let row = |zone: &str| {
+        stdout
+            .lines()
+            .find(|line| line.contains(zone))
+            .unwrap_or_else(|| panic!("no row for {zone}: {stdout}"))
+            .to_string()
+    };
+    assert!(row(&first).contains(" ok "), "{stdout}");
+    assert!(row(&second).contains(" ok "), "{stdout}");
+    assert!(
+        row(&missing).contains("failed") && row(&missing).contains("not found"),
+        "{stdout}"
+    );
+
+    let listed = app
+        .run_cli_success(
+            &[
+                "zone",
+                "import",
+                "--from-server",
+                &server,
+                "--zones",
+                "-",
+                "--mode",
+                "replace",
+                "--output",
+                "json",
+                "--dry-run",
+            ],
+            Some(&format!("{first}\n{second}\n")),
+        )
+        .await;
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    assert_eq!(listed["dry_run"], true);
+    assert_eq!(listed["summary"]["zones"], 2, "{listed}");
+    assert_eq!(listed["summary"]["ok"], 2, "{listed}");
+    assert_eq!(listed["zones"][0]["zone_name"], first);
+    assert_eq!(listed["zones"][0]["result"], "ok");
+    assert_eq!(listed["zones"][0]["import"]["applied"], false);
+    assert_eq!(listed["zones"][0]["import"]["summary"]["added"], 0);
+    assert!(listed["zones"][0]["error"].is_null(), "{listed}");
+
+    // From the catalog: every zone this server provisions.
+    let listed = app
+        .run_cli_success(
+            &[
+                "zone",
+                "import",
+                "--from-server",
+                &server,
+                "--from-catalog",
+                "catalog.bindizr",
+                "--mode",
+                "replace",
+                "--output",
+                "json",
+            ],
+            None,
+        )
+        .await;
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let names: Vec<&str> = listed["zones"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["zone_name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, [first.as_str(), second.as_str()], "{listed}");
+    assert_eq!(listed["summary"]["ok"], 2, "{listed}");
+    assert_eq!(listed["zones"][1]["import"]["applied"], true);
+    assert_eq!(listed["zones"][1]["import"]["summary"]["unchanged"], 3);
+
+    // A list or a catalog needs the server, and excludes the single form.
+    let refused = app
+        .run_cli(&["zone", "import", "--zones", "-"], Some(&zones))
+        .await;
+    assert!(!refused.status.success());
+    let args = [
+        "zone",
+        "import",
+        &first,
+        "--from-server",
+        &server,
+        "--zones",
+        "-",
+    ];
+    let refused = app.run_cli(&args, Some(&zones)).await;
+    assert_cli_failure_contains(&args, &refused, "cannot be used with");
 }
