@@ -9,6 +9,89 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   version: 0.1.0-rc.2
 paths:
+  /audit:
+    get:
+      tags:
+      - Audit
+      summary: List the audit log
+      description: 'The management changes, newest first: a token, role, grant, TSIG key, secondary or DNSSEC policy created, updated or deleted, and a zone deleted, each with the request path and the token that made it. Changes to zone data are in the zone''s versions instead. Needs `audit:read` in all zones.'
+      operationId: list_audit_logs
+      parameters:
+      - name: entity
+        in: query
+        description: |-
+          Only changes to this kind of object: `token`, `role`, `role_grant`,
+          `tsig_key`, `secondary`, `dnssec_policy`, or `zone`.
+        required: false
+        schema:
+          type: string
+      - name: entity_name
+        in: query
+        description: Only changes to the object of this name; a grant's is its role's.
+        required: false
+        schema:
+          type: string
+      - name: since
+        in: query
+        description: Only changes made at or after this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: until
+        in: query
+        description: Only changes made before this time (RFC 3339).
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: The rows selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_AuditLogResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /dnssec-policies:
     get:
       tags:
@@ -3703,6 +3786,7 @@ components:
         - `secondary:manage` — register, change, check and remove secondaries; all zones only
         - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
           and equivalent to admin since its holder can grant itself anything
+        - `audit:read` — read the audit log of management changes; all zones only
       enum:
       - zone:read
       - zone:create
@@ -3718,6 +3802,7 @@ components:
       - secondary:read
       - secondary:manage
       - access:manage
+      - audit:read
     AdjustExternalDnsRecordsRequest:
       type: object
       description: Request body for canonicalizing desired records without applying them.
@@ -3783,6 +3868,60 @@ components:
           description: Counted one per value removed, not per name and type.
           example: 1
           minimum: 0
+    AuditEntity:
+      type: string
+      description: What a management change was made to.
+      enum:
+      - token
+      - role
+      - role_grant
+      - tsig_key
+      - secondary
+      - dnssec_policy
+      - zone
+    AuditLogResponse:
+      type: object
+      description: 'One row of the audit log: what was changed, how, by whom, and when.'
+      required:
+      - id
+      - entity
+      - entity_name
+      - operation
+      - change_source
+      - created_at
+      properties:
+        change_source:
+          $ref: '#/components/schemas/ChangeSource'
+          description: The request path (`api` or `socket`) that made the change.
+        changed_by:
+          oneOf:
+          - $ref: '#/components/schemas/ChangeActor'
+            description: |-
+              Token kind and name. Null for socket commands and unauthenticated
+              API requests.
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        entity:
+          $ref: '#/components/schemas/AuditEntity'
+        entity_name:
+          type: string
+          description: The object's name as its row spelled it; a grant's is its role's.
+          example: external-dns
+        id:
+          type: integer
+          format: int32
+          example: 1
+        operation:
+          $ref: '#/components/schemas/AuditOperation'
+    AuditOperation:
+      type: string
+      description: What was done to the entity.
+      enum:
+      - create
+      - update
+      - delete
     BulkRecordItem:
       type: object
       description: |-
@@ -5055,6 +5194,53 @@ components:
         message:
           type: string
           example: Deleted successfully
+    PaginatedResponse_AuditLogResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: 'One row of the audit log: what was changed, how, by whom, and when.'
+            required:
+            - id
+            - entity
+            - entity_name
+            - operation
+            - change_source
+            - created_at
+            properties:
+              change_source:
+                $ref: '#/components/schemas/ChangeSource'
+                description: The request path (`api` or `socket`) that made the change.
+              changed_by:
+                oneOf:
+                - $ref: '#/components/schemas/ChangeActor'
+                  description: |-
+                    Token kind and name. Null for socket commands and unauthenticated
+                    API requests.
+                - type: 'null'
+              created_at:
+                type: string
+                format: date-time
+              entity:
+                $ref: '#/components/schemas/AuditEntity'
+              entity_name:
+                type: string
+                description: The object's name as its row spelled it; a grant's is its role's.
+                example: external-dns
+              id:
+                type: integer
+                format: int32
+                example: 1
+              operation:
+                $ref: '#/components/schemas/AuditOperation'
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
     PaginatedResponse_DnssecPolicyResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -6784,6 +6970,8 @@ tags:
   description: API tokens, each authenticating into a role.
 - name: Role
   description: 'Roles and their grants: the actions API tokens and TSIG keys holding a role may perform.'
+- name: Audit
+  description: 'The audit log of management changes: who created, changed or deleted a token, role, grant, TSIG key, secondary or DNSSEC policy, or deleted a zone, and when.'
 - name: DNSSEC
   description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone and the parent''s check of them, key rollover, and re-signing.'
 - name: ExternalDNS

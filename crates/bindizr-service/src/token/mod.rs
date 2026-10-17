@@ -2,14 +2,19 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::model::{api_token::TokenId, role::RoleId, role_grant::Action};
+use bindizr_core::model::{
+    api_token::TokenId,
+    audit_log::{AuditEntity, AuditOperation},
+    role::RoleId,
+    role_grant::Action,
+};
 use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use ring::digest::{SHA256, digest};
 
 use super::error::ServiceError;
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     model::api_token::ApiToken,
     pagination::build_page,
@@ -58,12 +63,12 @@ pub async fn create(
     let token_hash = hash_token(&raw_token);
 
     let mut tx = transaction::begin_tx(cx, "failed to create token").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::api_token::create_tx(
+        let token = bindizr_db::api_token::create_tx(
             &mut tx,
             ApiToken {
                 id: TokenId::UNWRITTEN,
@@ -87,7 +92,16 @@ pub async fn create(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Token,
+            &token.name,
+            AuditOperation::Create,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(token)
     }
     .await;
     let created = transaction::finish_tx(tx, result, "failed to create token").await?;
@@ -149,12 +163,23 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     let token = lookup_by_name(cx, name).await?;
 
     let mut tx = transaction::begin_tx(cx, "failed to delete token").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        Ok(bindizr_db::api_token::delete_tx(&mut tx, token.id).await?)
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !bindizr_db::api_token::delete_tx(&mut tx, token.id).await? {
+            return Err(ServiceError::token_not_found(&token.name));
+        }
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::Token,
+            &token.name,
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to delete token").await

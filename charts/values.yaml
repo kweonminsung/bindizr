@@ -37,8 +37,6 @@ bindizr:
     # Require a TSIG signature on RFC 2136 updates; false accepts them from
     # anyone (testing only).
     nsupdateTsigRequired: true
-    # Days of history kept for rollback and secondary catch-up (0 = forever).
-    zoneHistoryRetentionDays: 365
     # Seconds between background passes: signing, key rollover, history
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
     # least one must keep it.
@@ -80,6 +78,13 @@ bindizr:
       maxRecords: 200000
     service:
       port: 53
+
+  history:
+    # Days of history kept; older entries are pruned by the scheduler pass
+    # (0 = forever). Zone versions serve diff, rollback, and incremental
+    # updates to secondaries; the audit log says who changed what.
+    zoneMaxDays: 365
+    auditMaxDays: 365
 
   logging:
     level: info

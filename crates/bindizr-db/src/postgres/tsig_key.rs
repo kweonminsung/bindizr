@@ -96,16 +96,17 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<TsigKey>, Data
 }
 
 /// Delete a TSIG key by ID.
+/// Reports `false` when no row had the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: TsigKeyId,
-) -> Result<(), DatabaseError> {
-    sqlx::query("DELETE FROM tsig_keys WHERE id = $1")
+) -> Result<bool, DatabaseError> {
+    let result = sqlx::query("DELETE FROM tsig_keys WHERE id = $1")
         .bind(id)
         .execute(&mut **tx)
         .await?;
 
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }
 
 /// List the TSIG keys authenticating into a role.

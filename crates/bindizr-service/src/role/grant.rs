@@ -6,6 +6,7 @@ use bindizr_core::{
     dns::name::ZoneName,
     model::{
         api_token::ApiToken,
+        audit_log::{AuditEntity, AuditOperation},
         grant_pattern::MATCH_ANY,
         role::Role,
         role_grant::{Action, ActionSet, RoleGrant, RoleGrantId, RoleZoneScope},
@@ -15,7 +16,7 @@ use bindizr_core::{
 use chrono::Utc;
 
 use crate::{
-    Context,
+    Context, audit,
     authorization::Caller,
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
@@ -72,12 +73,12 @@ pub async fn create(
     };
 
     let mut tx = transaction::begin_tx(cx, "failed to create role grant").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        bindizr_db::role_grant::create_tx(
+        let grant = bindizr_db::role_grant::create_tx(
             &mut tx,
             RoleGrant {
                 id: RoleGrantId::UNWRITTEN,
@@ -100,7 +101,16 @@ pub async fn create(
             } else {
                 e.into()
             }
-        })
+        })?;
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::RoleGrant,
+            &role.name,
+            AuditOperation::Create,
+            caller.change_attribution(),
+        )
+        .await?;
+        Ok(grant)
     }
     .await;
     let grant = transaction::finish_tx(tx, result, "failed to create role grant").await?;
@@ -155,12 +165,23 @@ pub async fn revoke(
         .ok_or_else(|| ServiceError::role_grant_not_found(grant_id))?;
 
     let mut tx = transaction::begin_tx(cx, "failed to revoke role grant").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
-        Ok(bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await?)
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
+        if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
+            return Err(ServiceError::role_grant_not_found(grant.id));
+        }
+        audit::save_tx(
+            &mut tx,
+            AuditEntity::RoleGrant,
+            &role.name,
+            AuditOperation::Delete,
+            caller.change_attribution(),
+        )
+        .await
     }
     .await;
     transaction::finish_tx(tx, result, "failed to revoke role grant").await

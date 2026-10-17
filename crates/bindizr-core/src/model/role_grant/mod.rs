@@ -48,6 +48,7 @@ pub struct ParseActionError {
 /// - `secondary:manage` — register, change, check and remove secondaries; all zones only
 /// - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
 ///   and equivalent to admin since its holder can grant itself anything
+/// - `audit:read` — read the audit log of management changes; all zones only
 #[derive(
     Debug,
     Clone,
@@ -90,11 +91,13 @@ pub enum Action {
     SecondaryManage,
     #[serde(rename = "access:manage")]
     AccessManage,
+    #[serde(rename = "audit:read")]
+    AuditRead,
 }
 
 impl Action {
     /// Every action, in storage order.
-    pub const ALL: [Action; 14] = [
+    pub const ALL: [Action; 15] = [
         Action::ZoneRead,
         Action::ZoneCreate,
         Action::ZoneUpdate,
@@ -109,6 +112,7 @@ impl Action {
         Action::SecondaryRead,
         Action::SecondaryManage,
         Action::AccessManage,
+        Action::AuditRead,
     ];
 
     /// Storage and API form.
@@ -128,6 +132,7 @@ impl Action {
             Action::SecondaryRead => "secondary:read",
             Action::SecondaryManage => "secondary:manage",
             Action::AccessManage => "access:manage",
+            Action::AuditRead => "audit:read",
         }
     }
 
@@ -139,6 +144,7 @@ impl Action {
                 | Action::SecondaryRead
                 | Action::SecondaryManage
                 | Action::AccessManage
+                | Action::AuditRead
         )
     }
 

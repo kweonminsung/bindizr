@@ -97,6 +97,8 @@ pub struct Config {
     #[serde(default)]
     pub dns: DnsConfig,
     #[serde(default)]
+    pub history: HistoryConfig,
+    #[serde(default)]
     pub logging: LoggingConfig,
 }
 
@@ -348,10 +350,6 @@ pub struct DnsConfig {
     /// Virtual RFC 9432 catalog zone name; primaries sharing a secondary need distinct names.
     #[serde(default = "default_catalog_zone_name")]
     pub catalog_zone_name: ZoneName,
-    /// Days to retain IXFR history and rollback versions (`0` = unlimited).
-    /// Pruned serials fall back to AXFR.
-    #[serde(default = "default_zone_history_retention_days")]
-    pub zone_history_retention_days: u32,
     /// Seconds between scheduler passes for signing, rollover, and history pruning.
     /// 0 disables this instance; at least one instance must run the scheduler.
     #[serde(default = "default_scheduler_interval_secs")]
@@ -385,7 +383,6 @@ impl Default for DnsConfig {
             listen_addr: default_listen_addr(),
             listen_port: default_dns_listen_port(),
             catalog_zone_name: default_catalog_zone_name(),
-            zone_history_retention_days: default_zone_history_retention_days(),
             scheduler_interval_secs: default_scheduler_interval_secs(),
             tcp_idle_timeout_secs: default_tcp_idle_timeout_secs(),
             tcp_max_connections: default_tcp_max_connections(),
@@ -638,11 +635,6 @@ fn default_zone_minimum_ttl() -> Ttl {
     Ttl::from_secs(86_400)
 }
 
-/// Return the default zone history retention days setting.
-fn default_zone_history_retention_days() -> u32 {
-    365
-}
-
 /// Return the default scheduler interval setting: plenty next to the
 /// day-scale windows a pass enforces.
 fn default_scheduler_interval_secs() -> u64 {
@@ -662,6 +654,35 @@ fn default_notify_retries() -> u32 {
 /// Return the default notify timeout secs setting.
 fn default_notify_timeout_secs() -> u64 {
     3
+}
+
+/// The most days of history kept before the scheduler pass prunes it:
+/// zone versions and the audit log. `0` keeps it forever.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryConfig {
+    /// Zone versions, for diff and rollback, and the IXFR journal behind
+    /// incremental updates to secondaries; a pruned serial falls back to AXFR.
+    #[serde(default = "default_history_days")]
+    pub zone_max_days: u32,
+    /// The audit log of management changes.
+    #[serde(default = "default_history_days")]
+    pub audit_max_days: u32,
+}
+
+impl Default for HistoryConfig {
+    /// Build the default history settings: a year of each.
+    fn default() -> Self {
+        Self {
+            zone_max_days: default_history_days(),
+            audit_max_days: default_history_days(),
+        }
+    }
+}
+
+/// Return the default days of history kept.
+fn default_history_days() -> u32 {
+    365
 }
 
 /// Logging settings.
@@ -787,6 +808,9 @@ impl Config {
         let mut changed = Vec::new();
         if self.dns != next.dns {
             changed.push("dns".to_string());
+        }
+        if self.history != next.history {
+            changed.push("history".to_string());
         }
         if self.logging != next.logging {
             changed.push("logging".to_string());

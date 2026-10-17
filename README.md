@@ -38,6 +38,7 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
+- **Audit Log** — every change to a token, role, grant, TSIG key, secondary, or policy, and every zone deletion, is logged with who made it and when; a zone's own changes are its versions.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
@@ -61,10 +62,6 @@ Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven
 - **More Record Types** — fourteen types are stored today, and an import
   drops the rest with `--skip-unsupported`. Adding SVCB/HTTPS and storing any
   other type in its RFC 3597 generic form lets a zone move over whole.
-- **Audit Log** — a zone change names its source and actor in the zone's
-  versions, but a change to a token, role, grant, TSIG key, secondary, or
-  policy leaves no trace. Logging each one answers who changed what, and
-  when.
 - **Bulk Migration** — `zone import --from-server` moves one zone per
   command. Importing every zone an existing primary serves in one run moves
   a whole server.

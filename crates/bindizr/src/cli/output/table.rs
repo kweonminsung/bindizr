@@ -10,10 +10,11 @@ use bindizr_core::{
     },
 };
 use bindizr_service::types::{
-    CreateTokenResponse, DnssecKeyResponse, DnssecPolicyResponse, ImportZoneResponse,
-    RecordResponse, RoleGrantResponse, RoleResponse, RollbackZoneResponse, SecondaryResponse,
-    SecondaryStatusResponse, SingleTsigKeyResponse, TokenResponse, TransferResponse,
-    TsigKeyResponse, VersionRecordResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+    AuditLogResponse, CreateTokenResponse, DnssecKeyResponse, DnssecPolicyResponse,
+    ImportZoneResponse, RecordResponse, RoleGrantResponse, RoleResponse, RollbackZoneResponse,
+    SecondaryResponse, SecondaryStatusResponse, SingleTsigKeyResponse, TokenResponse,
+    TransferResponse, TsigKeyResponse, VersionRecordResponse, ZoneResponse, ZoneStatusResponse,
+    ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -619,6 +620,37 @@ impl From<&TransferResponse> for TransferRow {
             address: transfer.address.clone(),
             at: display_time(transfer.at),
             error: display_option(&transfer.error),
+        }
+    }
+}
+
+/// One management change, as `audit list` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
+pub(crate) struct AuditLogRow {
+    #[tabled(rename = "AT")]
+    pub(crate) at: String,
+    #[tabled(rename = "ENTITY")]
+    pub(crate) entity: String,
+    #[tabled(rename = "NAME")]
+    pub(crate) entity_name: String,
+    #[tabled(rename = "OPERATION")]
+    pub(crate) operation: String,
+    #[tabled(rename = "SOURCE")]
+    pub(crate) change_source: String,
+    #[tabled(rename = "CHANGED BY")]
+    pub(crate) changed_by: String,
+}
+
+impl From<&AuditLogResponse> for AuditLogRow {
+    /// Build a table row from one audit log row.
+    fn from(log: &AuditLogResponse) -> Self {
+        AuditLogRow {
+            at: display_time(log.created_at),
+            entity: log.entity.to_string(),
+            entity_name: log.entity_name.clone(),
+            operation: log.operation.to_string(),
+            change_source: log.change_source.to_string(),
+            changed_by: display_option(&log.changed_by),
         }
     }
 }

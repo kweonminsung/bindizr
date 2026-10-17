@@ -7,7 +7,7 @@ use bindizr_core::{
     dns::name::{OwnerName, ZoneName},
     model::{
         record::RecordType,
-        role::RoleId,
+        role::{Role, RoleId},
         role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope},
         zone::ZoneId,
     },
@@ -242,4 +242,35 @@ async fn listings_match_role_grants_visibility() {
             .collect();
         assert_eq!(listed, expected, "zones, {case}");
     }
+}
+
+/// Verify that a management delete reports whether its row went, so a raced
+/// second delete reads as not found rather than as a deletion.
+#[tokio::test]
+async fn delete_tx_reports_whether_a_row_went() {
+    let pool = fixture().await;
+    let mut tx = pool.begin().await.unwrap();
+    let role = crate::sqlite::role::create_tx(
+        &mut tx,
+        Role {
+            id: RoleId::UNWRITTEN,
+            name: "deleted-twice".to_string(),
+            description: None,
+            created_at: Utc::now(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        crate::sqlite::role::delete_tx(&mut tx, role.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !crate::sqlite::role::delete_tx(&mut tx, role.id)
+            .await
+            .unwrap()
+    );
+    tx.rollback().await.unwrap();
 }
