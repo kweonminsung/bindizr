@@ -215,7 +215,7 @@ impl CliError {
                 Some("Run 'bindizr tsig-key list' to see available keys.")
             }
             ErrorCode::DnssecPolicyNotFound => {
-                Some("Run 'bindizr dnssec-policy list' to see available policies.")
+                Some("Run 'bindizr dnssec policy list' to see available policies.")
             }
             ErrorCode::TsigKeyInUse => Some(
                 "Move each secondary off it ('bindizr secondary update --notify-key') before deleting the key.",

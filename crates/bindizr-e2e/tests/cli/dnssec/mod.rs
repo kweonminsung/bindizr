@@ -2,6 +2,7 @@ use crate::{cli::common::read_signing_key_tag, common::TestApp};
 
 mod delegation;
 mod keys;
+mod policy;
 mod rollover;
 
 /// Verify the DNSSEC lifecycle through the CLI.
@@ -40,7 +41,8 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     let policy_name = format!("{}-long", app.namespace());
     app.run_cli_success(
         &[
-            "dnssec-policy",
+            "dnssec",
+            "policy",
             "create",
             &policy_name,
             "--signature-validity-days",

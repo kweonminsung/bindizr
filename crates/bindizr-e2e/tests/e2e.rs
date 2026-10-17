@@ -24,7 +24,6 @@ mod cli {
     mod config;
     mod daemon;
     mod dnssec;
-    mod dnssec_policy;
     mod doctor;
     mod notify;
     mod record;

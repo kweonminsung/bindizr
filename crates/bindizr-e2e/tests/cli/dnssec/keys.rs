@@ -115,7 +115,7 @@ async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
     // import is refused before anything is stored.
     let split_policy = format!("{}-split", app.namespace());
     app.run_cli_success(
-        &["dnssec-policy", "create", &split_policy, "--split-keys"],
+        &["dnssec", "policy", "create", &split_policy, "--split-keys"],
         None,
     )
     .await;
@@ -167,7 +167,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     app.create_zone_cli(&zone_name, "3600").await;
     let policy_name = format!("{}-split", app.namespace());
     app.run_cli_success(
-        &["dnssec-policy", "create", &policy_name, "--split-keys"],
+        &["dnssec", "policy", "create", &policy_name, "--split-keys"],
         None,
     )
     .await;

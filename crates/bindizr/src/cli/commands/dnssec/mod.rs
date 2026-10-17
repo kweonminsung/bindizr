@@ -1,6 +1,7 @@
 //! The `dnssec` subcommands.
 
 mod keys;
+mod policy;
 
 use bindizr_core::outln;
 use bindizr_service::types::{
@@ -9,6 +10,7 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 pub(crate) use keys::DnssecKeysCommand;
+pub(crate) use policy::DnssecPolicyCommand;
 
 use crate::{
     cli::{
@@ -39,7 +41,7 @@ publish the DS itself — hand the DS from `dnssec status` to the registrar.")]
         #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// DNSSEC policy to sign under (default: the built-in "default"
-        /// policy; see `bindizr dnssec-policy list`)
+        /// policy; see `bindizr dnssec policy list`)
         #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
         /// The parent zone's nameservers (comma-separated host[:port]),
@@ -137,6 +139,11 @@ the chain, and a new algorithm starts a rollover."
     Keys {
         #[command(subcommand)]
         subcommand: DnssecKeysCommand,
+    },
+    /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
+    Policy {
+        #[command(subcommand)]
+        subcommand: DnssecPolicyCommand,
     },
 }
 
@@ -273,6 +280,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             print_status(&response.data, output)?;
         }
         DnssecCommand::Keys { subcommand } => keys::handle_command(subcommand).await?,
+        DnssecCommand::Policy { subcommand } => policy::handle_command(subcommand).await?,
         DnssecCommand::Disable {
             name,
             skip_ds_check,

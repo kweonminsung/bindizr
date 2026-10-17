@@ -7,11 +7,11 @@ startup; create others when zones need a different algorithm, denial mode,
 key layout, or timing.
 
 ```sh
-bindizr dnssec-policy list
-bindizr dnssec-policy create strict --algorithm ed25519 --denial nsec3 \
+bindizr dnssec policy list
+bindizr dnssec policy create strict --algorithm ed25519 --denial nsec3 \
     --signature-validity-days 7 --signature-refresh-days 3
-bindizr dnssec-policy get strict
-bindizr dnssec-policy update strict --signature-refresh-days 2
+bindizr dnssec policy get strict
+bindizr dnssec policy update strict --signature-refresh-days 2
 ```
 
 Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
@@ -61,4 +61,4 @@ doubted.
 
 Use `bindizr dnssec status example.com` to inspect the policy currently
 applied to a zone. Remove an unused custom policy with
-`bindizr dnssec-policy delete <name>`.
+`bindizr dnssec policy delete <name>`.

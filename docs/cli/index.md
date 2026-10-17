@@ -25,7 +25,7 @@ no remote mode; use the [HTTP API](../http-api/index.md) for remote access.
 | `token` | API tokens, each authenticating into one role | [Access Control](access-control.md#api-tokens) |
 | `tsig-key` | TSIG keys, each authenticating into one role, for nsupdate and transfers | [Access Control](access-control.md#tsig-keys), [nsupdate](nsupdate.md) |
 | `audit` | The audit log: who changed a token, role, grant, key, secondary, or policy, and when | [Access Control](access-control.md#audit-log) |
-| `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec/index.md) |
+| `dnssec` | Each zone's signing state, and the signing-parameter bundles under `dnssec policy` | [DNSSEC](../dnssec/index.md) |
 
 Result commands support `-o json` and `-o yaml` for scripting. Exports,
 `completion`, and `man` write their file content directly and take no `-o`.
