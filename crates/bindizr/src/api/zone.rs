@@ -44,7 +44,10 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
             "/zones/{name}/import",
             routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
         )
-        .route("/import", routing::post(import_zones))
+        .route(
+            "/import",
+            routing::post(import_zones).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
         .route("/zones/{name}/export", routing::get(export_zone))
         .route("/zones/{name}/versions", routing::get(list_zone_versions))
         .route(
