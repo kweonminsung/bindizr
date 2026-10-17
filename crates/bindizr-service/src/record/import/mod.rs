@@ -162,10 +162,9 @@ pub async fn import_zone(
     reconcile(cx, caller, zone_name, source, request, mode).await
 }
 
-/// Import every zone the request names, or every member of the source's
-/// catalog zone, from one server: each zone as `import_zone` would, in its
-/// own transaction, so one zone's rejection or failure stops nothing and
-/// is reported beside the rest.
+/// Import the zones named, or the source catalog's members, from one
+/// server, each as `import_zone` would in its own transaction; a rejected
+/// or failed zone is reported beside the rest.
 pub async fn import_zones(
     cx: &Context,
     caller: &Caller,

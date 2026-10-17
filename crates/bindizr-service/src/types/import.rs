@@ -1,5 +1,4 @@
-//! Zone import request, mode, and summary payloads, for one zone and for a
-//! server's worth of them.
+//! Zone import payloads, for one zone and for several from one server.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -133,15 +132,13 @@ impl Default for ImportZoneRequest {
     }
 }
 
-/// Request body for importing several zones from one server over AXFR: the
-/// zones named in `zone_names`, or every member of the server's catalog zone
-/// `from_catalog` (RFC 9432); exactly one of the two. Each zone is imported
-/// as `POST /zones/{name}/import` would, in its own transaction.
+/// Request body for importing several zones from one server over AXFR:
+/// those in `zone_names`, or the members of its catalog zone `from_catalog`
+/// (RFC 9432); exactly one of the two.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportZonesRequest {
-    /// Transfer source (`host[:port]`, port 53 default) every zone is pulled
-    /// from over AXFR; it must allow the transfers.
+    /// Transfer source (`host[:port]`, port 53 default); it must allow the transfers.
     #[schema(example = "192.0.2.1:53")]
     pub from_server: String,
     /// The zones to import, as the source serves them.
@@ -162,8 +159,8 @@ pub struct ImportZonesRequest {
     /// Pass over records bindizr has no type for instead of rejecting the zone.
     #[serde(default)]
     pub skip_unsupported: bool,
-    /// Create each missing zone from its SOA; otherwise a missing zone fails.
-    /// Requires `zone:create` and the mode's record actions in all zones.
+    /// Create a missing zone from its SOA; otherwise it fails. Requires
+    /// `zone:create` and the mode's record actions in all zones.
     #[serde(default)]
     pub create: bool,
 }
@@ -176,8 +173,8 @@ pub enum ImportResult {
     Ok,
     /// Validation errors; nothing applied, the errors in `import`.
     Rejected,
-    /// The zone was not imported at all: the transfer failed, the zone is
-    /// missing without `create`, or the caller may not touch it.
+    /// Never imported: the transfer failed, the zone is missing without
+    /// `create`, or the caller may not touch it.
     Failed,
 }
 
@@ -199,8 +196,7 @@ impl std::fmt::Display for ImportResult {
     }
 }
 
-/// One zone of a bulk import: its result, and the import summary or the
-/// error behind it.
+/// One zone of a bulk import: its result with the import answer or the error.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ImportZonesItemResponse {
     #[schema(example = "example.com")]
@@ -235,8 +231,7 @@ pub struct ImportZonesResponse {
 }
 
 impl ImportZonesResponse {
-    /// Whether any zone was rejected or never imported, which a script
-    /// must not read as success.
+    /// Whether any zone was rejected or failed; not a success for a script.
     pub fn has_rejected_or_failed(&self) -> bool {
         self.summary.rejected > 0 || self.summary.failed > 0
     }

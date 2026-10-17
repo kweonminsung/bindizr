@@ -222,14 +222,13 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
   named-compilezone -o - example.com db.example.com
 
 Several zones are pulled from one server in one run, each imported as a
-single zone would be, so a zone that is rejected or fails leaves the others
-standing; the command exits non-zero when any did:
+single zone would be; one that is rejected or fails leaves the others
+standing, and the command then exits non-zero:
   bindizr zone import --from-server 192.0.2.1 --zones zones.txt --mode replace --create
   bindizr zone import --from-server 192.0.2.1 --from-catalog catalog.example --mode replace --create
 
-The zones file names one zone per line; blank lines and lines starting with
-'#' are skipped. A catalog zone (RFC 9432) lists every zone the server
-provisions through it.")]
+The zones file names one zone per line ('#' lines and blank lines are
+skipped); a catalog zone (RFC 9432) names every zone the server provisions.")]
     Import {
         /// The name of the zone; omit it to import several zones with
         /// --zones or --from-catalog

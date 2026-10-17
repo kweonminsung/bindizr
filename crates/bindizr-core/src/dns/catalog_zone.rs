@@ -1,6 +1,5 @@
-//! The catalog zone (RFC 9432) as a wire artifact: how a member is named in
-//! the catalog Bindizr serves, and how the members are read back out of a
-//! catalog another server serves.
+//! The catalog zone (RFC 9432): how Bindizr names a member, and how another
+//! server's members are read back.
 
 use ring::digest::{SHA256, digest};
 use thiserror::Error;
@@ -42,10 +41,9 @@ pub enum ExtractMemberZonesError {
     },
 }
 
-/// The member zones a transferred catalog lists, sorted and without
-/// repeats: the PTR targets directly under `zones.<catalog>` (RFC 9432,
-/// Section 4.3), once the catalog's version record says schema 2
-/// (Section 4.2.1). Every other record is the catalog's own metadata.
+/// The member zones a transferred catalog lists, sorted: the PTR targets
+/// directly under `zones.<catalog>` (RFC 9432, Section 4.3), once its
+/// version record says schema 2 (Section 4.2.1).
 pub fn extract_member_zones(
     records: &[TransferRecord],
     catalog: &ZoneName,
@@ -127,8 +125,7 @@ mod tests {
         }
     }
 
-    /// Verify that `extract_member_zones` reads the PTR members under `zones`,
-    /// sorted and without repeats, and passes the catalog's other records over.
+    /// Verify that `extract_member_zones` reads the PTR members under `zones`, sorted and deduplicated.
     #[test]
     fn extract_member_zones_reads_ptr_members_under_zones_label() {
         let catalog = ZoneName::parse("catalog.example").unwrap();

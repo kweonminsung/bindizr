@@ -423,9 +423,7 @@ impl From<&ImportZoneResponse> for ImportSummaryRow {
     }
 }
 
-/// One zone of a bulk import, as `zone import --zones` / `--from-catalog`
-/// lists it: the counts of a zone whose import ran, or the error of one
-/// whose import did not.
+/// One zone of a bulk import, as the CLI table lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ImportZonesRow {
     #[tabled(rename = "ZONE")]
