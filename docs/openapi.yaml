@@ -3970,8 +3970,9 @@ components:
           - string
           - 'null'
           description: |-
-            What the change set, or what an update moved (`enabled true -> false`),
-            in the request's field names; null for a delete, never a secret.
+            What the change set or moved (`enabled true -> false`), or what a
+            deletion took with it, in the request's field names; null when there
+            is nothing to say, never a secret.
           example: role_name external-dns-prod, expires_at never
         entity:
           $ref: '#/components/schemas/AuditEntity'
@@ -5422,8 +5423,9 @@ components:
                 - string
                 - 'null'
                 description: |-
-                  What the change set, or what an update moved (`enabled true -> false`),
-                  in the request's field names; null for a delete, never a secret.
+                  What the change set or moved (`enabled true -> false`), or what a
+                  deletion took with it, in the request's field names; null when there
+                  is nothing to say, never a secret.
                 example: role_name external-dns-prod, expires_at never
               entity:
                 $ref: '#/components/schemas/AuditEntity'

@@ -50,8 +50,9 @@ pub struct AuditLogResponse {
     #[schema(example = "external-dns")]
     pub entity_name: String,
     pub operation: AuditOperation,
-    /// What the change set, or what an update moved (`enabled true -> false`),
-    /// in the request's field names; null for a delete, never a secret.
+    /// What the change set or moved (`enabled true -> false`), or what a
+    /// deletion took with it, in the request's field names; null when there
+    /// is nothing to say, never a secret.
     #[schema(example = "role_name external-dns-prod, expires_at never")]
     pub detail: Option<String>,
     /// The request path (`api` or `socket`) that made the change.

@@ -231,7 +231,7 @@ pub async fn update(
             Some(next) => {
                 let previous = match secondary.notify_tsig_key_id {
                     None => "none".to_string(),
-                    Some(id) => bindizr_db::tsig_key::get(cx.db(), id)
+                    Some(id) => bindizr_db::tsig_key::get_tx(&mut tx, id, LockLevel::Unlocked)
                         .await?
                         .map_or_else(|| format!("key {id}"), |key| key.name),
                 };

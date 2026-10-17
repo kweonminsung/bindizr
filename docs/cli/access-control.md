@@ -193,8 +193,9 @@ Every change to a token, role, grant, TSIG key, secondary, or DNSSEC policy,
 and every zone deletion, leaves an entry naming the entity, the operation,
 the request path (`api` or `socket`), the token that made it (a CLI command
 names none), when, and a detail: what a creation set, in the request's own
-field names (`role_name admin, expires_at never`), or what an update moved
-(`enabled true -> false`); a secret never appears. A grant's entry carries
+field names (`role_name admin, expires_at never`), what an update moved
+(`enabled true -> false`), or what a deletion took with it (`records_deleted
+3, versions_deleted 2`); a secret never appears. A grant's entry carries
 its role's name. Changes to
 a zone's records and settings are in its [versions](zones.md#zone-history)
 instead, so the two together answer who changed what, and when. A request
