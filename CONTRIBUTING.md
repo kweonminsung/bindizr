@@ -49,6 +49,13 @@ same guarantee.
 - Every named function carries a one-sentence purpose comment, private helpers
   and tests included. Beyond that, comments are for *why* something is done,
   especially where a protocol or RFC is behind it.
+- Two TSIG answers in `crates/bindizr-core/src/dns/tsig/mod.rs` work around
+  the `domain` crate instead of using it: its TSIG server reports a bad MAC as
+  FORMERR where RFC 8945 says BADSIG, and its error builder cannot carry OPT
+  and hashes Other Data as eight bytes rather than the six on the wire, so
+  Bindizr remaps the rcode and signs BADTIME itself. Each site's comment names
+  the last `domain` version checked; when you bump `domain`, re-check both and
+  move that bound, or delete a workaround upstream has made unnecessary.
 
 ## Pull requests
 
