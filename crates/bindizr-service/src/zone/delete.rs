@@ -67,6 +67,9 @@ pub async fn delete(
             AuditEntity::Zone,
             zone.name.as_str(),
             AuditOperation::Delete,
+            Some(format!(
+                "records_deleted {records}, versions_deleted {versions}"
+            )),
             caller.change_attribution(),
         )
         .await?;

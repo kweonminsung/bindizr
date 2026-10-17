@@ -98,6 +98,13 @@ pub async fn create(
             AuditEntity::Token,
             &token.name,
             AuditOperation::Create,
+            Some(format!(
+                "role_name {}, expires_at {}",
+                role.name,
+                token
+                    .expires_at
+                    .map_or("never".to_string(), |at| at.format("%Y-%m-%d").to_string())
+            )),
             caller.change_attribution(),
         )
         .await?;
@@ -177,6 +184,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             AuditEntity::Token,
             &token.name,
             AuditOperation::Delete,
+            None,
             caller.change_attribution(),
         )
         .await

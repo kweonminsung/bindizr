@@ -35,7 +35,8 @@ async fn audit_list_shows_socket_changes_via_cli() {
         assert!(item["changed_by"].is_null(), "{item}");
     }
 
-    // Without an entity, the role's own creation is listed beside its token's.
+    // Without an entity, the role's own creation is listed beside its token's;
+    // DETAIL says what each set.
     let table = app
         .run_cli_success(&["audit", "list", "--name", &name], None)
         .await;
@@ -46,6 +47,29 @@ async fn audit_list_shows_socket_changes_via_cli() {
             .any(|row| row.contains("role") && row.contains("create"))
     );
     assert!(rows.iter().all(|row| row.contains("socket")), "{table}");
+    assert!(
+        rows.iter().any(|row| row.contains("expires_at never")),
+        "{table}"
+    );
+
+    // Sorted by entity, oldest first within the role's changes.
+    let sorted = app
+        .run_cli_success(
+            &[
+                "audit", "list", "--name", &name, "--sort", "entity", "--order", "asc", "--output",
+                "json",
+            ],
+            None,
+        )
+        .await;
+    let sorted: Value = serde_json::from_str(&sorted).expect("CLI did not return valid JSON");
+    let entities: Vec<&str> = sorted["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["entity"].as_str().unwrap())
+        .collect();
+    assert_eq!(entities, ["role", "token", "token"], "{sorted}");
 
     // A span ago reaches the daemon as a time: everything is newer than an
     // hour ago, and nothing is older.

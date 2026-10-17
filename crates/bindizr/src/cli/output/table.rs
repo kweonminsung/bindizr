@@ -681,6 +681,8 @@ pub(crate) struct AuditLogRow {
     pub(crate) change_source: String,
     #[tabled(rename = "CHANGED BY")]
     pub(crate) changed_by: String,
+    #[tabled(rename = "DETAIL")]
+    pub(crate) detail: String,
 }
 
 impl From<&AuditLogResponse> for AuditLogRow {
@@ -693,6 +695,7 @@ impl From<&AuditLogResponse> for AuditLogRow {
             operation: log.operation.to_string(),
             change_source: log.change_source.to_string(),
             changed_by: display_option(&log.changed_by),
+            detail: display_option(&log.detail),
         }
     }
 }

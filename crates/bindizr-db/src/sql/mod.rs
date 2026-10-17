@@ -6,7 +6,7 @@ mod sort;
 use bindizr_core::dns::name::OwnerName;
 use chrono::{DateTime, TimeDelta, Utc};
 pub(crate) use grant::{concat_fn, concat_pipes, grant_record_match_sql};
-pub use sort::{ParseSortError, RecordSortField, SortOrder, ZoneSortField};
+pub use sort::{AuditLogSortField, ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 
 use crate::model::record::NAME_LIKE_RECORD_TYPES;
 

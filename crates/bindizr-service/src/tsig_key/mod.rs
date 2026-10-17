@@ -99,6 +99,10 @@ pub async fn create(
             AuditEntity::TsigKey,
             &tsig_key.name,
             AuditOperation::Create,
+            Some(format!(
+                "role_name {}, algorithm {}",
+                role.name, tsig_key.algorithm
+            )),
             caller.change_attribution(),
         )
         .await?;
@@ -221,6 +225,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             AuditEntity::TsigKey,
             &tsig_key.name,
             AuditOperation::Delete,
+            None,
             caller.change_attribution(),
         )
         .await

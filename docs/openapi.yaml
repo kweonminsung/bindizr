@@ -20,14 +20,14 @@ paths:
       - name: entity
         in: query
         description: |-
-          Only changes to this kind of object: `token`, `role`, `role_grant`,
+          Only changes to this kind of entity: `token`, `role`, `role_grant`,
           `tsig_key`, `secondary`, `dnssec_policy`, or `zone`.
         required: false
         schema:
           type: string
       - name: entity_name
         in: query
-        description: Only changes to the object of this name; a grant's is its role's.
+        description: Only changes to the entity of this name; a grant's is its role's.
         required: false
         schema:
           type: string
@@ -45,6 +45,18 @@ paths:
         schema:
           type: string
           format: date-time
+      - name: sort
+        in: query
+        description: '`created_at` (the default), `entity`, `entity_name`, or `operation`.'
+        required: false
+        schema:
+          type: string
+      - name: order
+        in: query
+        description: '`desc` (the default) or `asc`.'
+        required: false
+        schema:
+          type: string
       - name: limit
         in: query
         description: Items per page; the HTTP API defaults it, the daemon socket does not.
@@ -3953,11 +3965,20 @@ components:
         created_at:
           type: string
           format: date-time
+        detail:
+          type:
+          - string
+          - 'null'
+          description: |-
+            What the change set or moved (`enabled true -> false`), or what a
+            deletion took with it, in the request's field names; null when there
+            is nothing to say, never a secret.
+          example: role_name external-dns-prod, expires_at never
         entity:
           $ref: '#/components/schemas/AuditEntity'
         entity_name:
           type: string
-          description: The object's name as its row spelled it; a grant's is its role's.
+          description: The entity's name as its row spelled it; a grant's is its role's.
           example: external-dns
         id:
           type: integer
@@ -5397,11 +5418,20 @@ components:
               created_at:
                 type: string
                 format: date-time
+              detail:
+                type:
+                - string
+                - 'null'
+                description: |-
+                  What the change set or moved (`enabled true -> false`), or what a
+                  deletion took with it, in the request's field names; null when there
+                  is nothing to say, never a secret.
+                example: role_name external-dns-prod, expires_at never
               entity:
                 $ref: '#/components/schemas/AuditEntity'
               entity_name:
                 type: string
-                description: The object's name as its row spelled it; a grant's is its role's.
+                description: The entity's name as its row spelled it; a grant's is its role's.
                 example: external-dns
               id:
                 type: integer

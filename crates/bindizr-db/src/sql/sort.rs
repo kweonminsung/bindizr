@@ -37,6 +37,16 @@ pub enum RecordSortField {
     CreatedAt,
 }
 
+/// The column an audit log listing sorts by.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AuditLogSortField {
+    #[default]
+    CreatedAt,
+    Entity,
+    EntityName,
+    Operation,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SortOrder {
     #[default]
@@ -88,6 +98,47 @@ impl RecordSortField {
     /// [`ZoneSortField::order_by_sql`].
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
         format!("ORDER BY {} {}, r.id", self.column(), order.as_str())
+    }
+}
+
+impl AuditLogSortField {
+    /// Return the SQL column for this sort field.
+    fn column(self) -> &'static str {
+        match self {
+            AuditLogSortField::CreatedAt => "created_at",
+            AuditLogSortField::Entity => "entity",
+            AuditLogSortField::EntityName => "entity_name",
+            AuditLogSortField::Operation => "operation",
+        }
+    }
+
+    /// The `ORDER BY` an audit listing pages under; the id tie-breaker
+    /// follows the direction.
+    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
+        format!(
+            "ORDER BY {} {}, id {}",
+            self.column(),
+            order.as_str(),
+            order.as_str()
+        )
+    }
+}
+
+impl std::str::FromStr for AuditLogSortField {
+    type Err = ParseSortError;
+
+    /// Parse an audit sort from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "created_at" => Ok(AuditLogSortField::CreatedAt),
+            "entity" => Ok(AuditLogSortField::Entity),
+            "entity_name" => Ok(AuditLogSortField::EntityName),
+            "operation" => Ok(AuditLogSortField::Operation),
+            other => Err(ParseSortError::UnknownField {
+                value: other.to_string(),
+                expected: "created_at, entity, entity_name, or operation",
+            }),
+        }
     }
 }
 
@@ -163,6 +214,10 @@ mod tests {
         assert_eq!(
             RecordSortField::default().order_by_sql(SortOrder::default()),
             "ORDER BY r.name ASC, r.id"
+        );
+        assert_eq!(
+            AuditLogSortField::default().order_by_sql(SortOrder::Desc),
+            "ORDER BY created_at DESC, id DESC"
         );
     }
 }
