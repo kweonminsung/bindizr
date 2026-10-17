@@ -1159,11 +1159,11 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
     }
 }
 
-/// Verify that `create` is authorized once, before any transfer, while a
-/// zone the caller cannot reach fails on its own.
+/// Verify that `create` and a catalog are authorized before any transfer,
+/// while a zone the caller cannot reach fails on its own.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn import_zones_authorizes_create_before_transferring() {
+async fn import_zones_authorizes_create_and_catalog_before_transferring() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -1185,6 +1185,14 @@ async fn import_zones_authorizes_create_before_transferring() {
                 "zone_names": [zone_name],
                 "create": true,
             })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/import",
+            Some(json!({ "from_server": "127.0.0.1:1", "from_catalog": "catalog.bindizr" })),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");

@@ -517,7 +517,7 @@ pub(crate) async fn import_zone(
         path = "/import",
         tag = "Zone",
         summary = "Import zones from a server",
-        description = "Pull the zones in `zone_names`, or the members of the server's catalog zone `from_catalog` (RFC 9432), over AXFR from `from_server`, and import each as `POST /zones/{name}/import` would, in its own transaction. The answer lists every zone's result (`ok`, `rejected`, `failed`) with its import answer or error; the request itself fails only when malformed, when the catalog cannot be read, or when `create` lacks `zone:create` and the mode's record actions in all zones.",
+        description = "Pull the zones in `zone_names`, or the members of the server's catalog zone `from_catalog` (RFC 9432), over AXFR from `from_server`, and import each as `POST /zones/{name}/import` would, in its own transaction. The answer lists every zone's result (`ok`, `rejected`, `failed`) with its import answer or error; the request itself fails only when malformed, when the catalog cannot be read, or when `create` lacks `zone:create`, or a catalog the mode's record actions, in all zones.",
         request_body = ImportZonesRequest,
         responses(
             (status = 200, description = "One entry per zone, in the order imported", body = ImportZonesResponse),

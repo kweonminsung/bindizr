@@ -35,6 +35,7 @@ give it only where you would give `admin`.
 | `zone import --mode append` | `record:create` with no narrowing |
 | `zone import --mode upsert` / `replace` | `record:create` and `record:delete`, with no narrowing |
 | `zone import --create` | `zone:create`, and the mode's record actions in a grant without `--zone` |
+| `zone import --from-catalog` | The mode's record actions in a grant without `--zone`, since a catalog names every zone its server provisions |
 | Renaming a zone | `zone:update`, and `zone:create` in all zones |
 | Rollback | `zone:update`, plus `record:read`, `record:create` and `record:delete` with no narrowing |
 | `zone notify` | `zone:update`; for the catalog zone or all zones, `zone:update` in all zones |

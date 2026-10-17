@@ -190,6 +190,11 @@ pub async fn import_zones(
     let zone_names = match (&request.zone_names, &request.from_catalog) {
         (Some(names), None) => normalize_zone_names(names)?,
         (None, Some(catalog)) => {
+            // A catalog names every zone its server provisions, so reading it
+            // through Bindizr is an all-zones act.
+            for action in import_actions(mode) {
+                caller.authorize_all_whole_zones(*action)?;
+            }
             let catalog = zone::normalize_name(catalog)?;
             let records =
                 crate::dns_client::axfr::fetch_zone(server, &catalog, &cx.config().dns.import)

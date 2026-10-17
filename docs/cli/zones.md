@@ -148,10 +148,11 @@ or `from_server`, with the same `mode`, `dry_run`, and `skip_unsupported` option
 
 Several zones move from one server in one run. `--zones` names them in a
 file (one per line, `-` for stdin), and `--from-catalog` takes every member
-of a catalog zone (RFC 9432) the server serves. Each zone is imported as the
-single form above would, in its own transaction, so one that is rejected or
-fails leaves the others standing; the table lists each zone's result, and the
-command exits non-zero when any was not imported.
+of a catalog zone (RFC 9432) the server serves, which needs the mode's record
+actions in all zones. Each zone is imported as the single form above would,
+in its own transaction, so one that is rejected or fails leaves the others
+standing; the table lists each zone's result, and the command exits non-zero
+when any was not imported.
 
 ```bash
 bindizr zone import --from-server 192.0.2.1:53 --zones zones.txt --mode replace --create --dry-run
