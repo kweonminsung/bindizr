@@ -19,7 +19,7 @@ mod zone;
 use std::{
     fs::Permissions,
     io,
-    os::unix::fs::{FileTypeExt, PermissionsExt},
+    os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
     path::Path,
     sync::Arc,
 };
@@ -71,6 +71,15 @@ pub(crate) enum BindSocketPathError {
     /// Something other than a Unix socket sits at the path.
     #[error("socket path exists and is not a Unix socket: {path}")]
     NotASocket { path: String },
+    /// The socket's directory is not a directory, or is reached through a symlink.
+    #[error("socket directory is not a directory: {path}")]
+    NotADirectory { path: String },
+    /// Another user owns the socket's directory and could swap the path under the daemon.
+    #[error(
+        "socket directory '{path}' is owned by uid {uid}, neither this user nor root; remove what \
+         another user left there"
+    )]
+    ForeignDirectory { path: String, uid: u32 },
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -257,7 +266,25 @@ async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathEr
 /// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
     if let Some(parent) = Path::new(socket_path).parent() {
-        fs::create_dir_all(parent).await?;
+        // Whoever can write this directory could swap the path before the chmod below.
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)
+            .await?;
+        let metadata = fs::symlink_metadata(parent).await?;
+        if !metadata.is_dir() {
+            return Err(BindSocketPathError::NotADirectory {
+                path: parent.display().to_string(),
+            });
+        }
+        let own_uid = read_own_uid()?;
+        if metadata.uid() != own_uid && metadata.uid() != 0 {
+            return Err(BindSocketPathError::ForeignDirectory {
+                path: parent.display().to_string(),
+                uid: metadata.uid(),
+            });
+        }
     }
 
     match fs::symlink_metadata(socket_path).await {
