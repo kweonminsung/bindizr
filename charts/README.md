@@ -34,7 +34,7 @@ shows the tested arm64 image settings:
 
 ```sh
 helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.2 \
+  --version 0.1.0-rc.3 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
@@ -61,14 +61,14 @@ helm install bindizr ./charts \
   --set mysql.enabled=true
 ```
 
-Bindizr UI releases independently. Once its compatible
-[`0.1.0-rc.2` image](https://github.com/kweonminsung/bindizr-ui/releases)
-is published, enable it on an existing release:
+Bindizr UI releases independently. Set `bindizrUi.image.tag` to a
+[published UI image](https://hub.docker.com/r/kweonminsung/bindizr-ui/tags)
+compatible with this release, then enable it on an existing release:
 
 ```sh
 helm upgrade bindizr ./charts --reuse-values \
   --set bindizrUi.enabled=true \
-  --set bindizrUi.image.tag=0.1.0-rc.2
+  --set bindizrUi.image.tag=<ui-tag>
 ```
 
 For a new installation, add both UI settings to one of the database-backed
@@ -84,5 +84,5 @@ To try the chart in a local kind cluster, see [`examples/kind/`](../examples/kin
 - The secondaries live in Bindizr's database: a starting bindizr pod registers the BIND pods by their headless names, plus `bindizr.dns.extraSecondaries` (`name` and `address` each), through `bindizr secondary create`, one already registered takes the chart's address through `bindizr secondary update`, and the `bind9-N` rows of replicas scaled away are deleted. Every daemon option has a value under `bindizr.*`, rendered into the ConfigMap.
 - Non-secret daemon settings come from the ConfigMap; the database URL comes from its Secret through `BINDIZR_DATABASE_URL`.
 - SQLite is not supported by this Helm chart.
-- nsupdate TSIG keys and their zone grants are managed at runtime: `POST /tsig-keys` with a token, or `bindizr tsig-key` in the pod. `bindizr.dns.nsupdateTsigRequired` (default `true`) accepts unsigned updates when turned off, which is for testing only.
-- BIND accepts NOTIFY from any source by default through `allow-notify { any; }`.
+- nsupdate TSIG keys are managed at runtime: a key is created in a role (`POST /tsig-keys` with a token, or `bindizr tsig-key create <name> --role <role>` in the pod), and the role's grants (`POST /roles/{name}/grants`, or `bindizr role grant`) decide what it may change. `bindizr.dns.nsupdateTsigRequired` (default `true`) accepts unsigned updates when turned off, which is for testing only.
+- BIND accepts NOTIFY from any source: the chart's `named.conf` sets `allow-notify { any; }`, and no value narrows it.

@@ -17,7 +17,7 @@ First, you need to install Ruby and some development tools.
 *   **On Debian/Ubuntu:**
     ```bash
     sudo apt update
-    sudo apt install -y ruby ruby-dev build-essential
+    sudo apt install -y ruby ruby-dev build-essential rpm
     ```
 *   **On Fedora/CentOS/RHEL:**
     ```bash
@@ -87,9 +87,10 @@ $ TARGET=aarch64-unknown-linux-musl ./packaging/scripts/build_packages.sh
 
 `build_image.sh` builds the image for amd64 and arm64 as one manifest and
 pushes it. The argument is the tag (default: the Cargo version); `IMAGE`
-overrides the repository. The release workflows push the same image when a
-tag is released, and the Publish Image workflow pushes it under a tag you
-enter, so this is for a push from your own machine.
+overrides the repository. It also points `latest` at the image it pushes,
+whatever the tag. The release workflows push the same image when a tag is
+released, and the Publish Image workflow pushes it under a tag you enter, so
+this is for a push from your own machine.
 
 ```bash
 $ ./packaging/scripts/build_image.sh
@@ -106,4 +107,5 @@ $ sudo dpkg -i bindizr_*.deb
 ### Fedora/CentOS/RHEL
 
 ```bash
-$ sudo rpm -i bindizr_*.rpm
+$ sudo rpm -i bindizr-*.rpm
+```

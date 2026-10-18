@@ -1,13 +1,15 @@
 # Examples
 
 Self-contained environments for running the full Bindizr stack (Bindizr,
-BIND secondaries, PostgreSQL). All commands run from the repository root.
+BIND secondaries, PostgreSQL). All commands run from the repository root
+unless a section says otherwise.
 
 | Directory | Stack | Use it for |
 | --- | --- | --- |
 | [`compose/`](compose/) | Docker Compose: Bindizr, 2× BIND, dnsdist load balancer, PostgreSQL | Local development and testing |
 | [`swarm/`](swarm/) | Docker Swarm: Bindizr, global BIND service, PostgreSQL | A containerized deployment template |
 | [`kind/`](kind/) | 3-node Kubernetes cluster running the Helm chart, with an optional ExternalDNS setup | Testing the chart and the ExternalDNS integration without a cloud cluster |
+| [`monitoring/`](monitoring/) | Prometheus and Grafana with the Bindizr Overview dashboard and alert rules, scraping a Bindizr on the Docker host; see its [README](monitoring/README.md) | Watching metrics and trying the alert rules |
 
 ## compose
 

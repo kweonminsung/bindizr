@@ -20,7 +20,7 @@ metric reference: [Prometheus Metrics](../../docs/http-api/metrics.md).
 
 [alerts.yml](alerts.yml) carries rules for the failures worth paging on:
 bindizr unreachable, expired or lagging DNSSEC signatures, a failing
-scheduler pass, NOTIFY and transfer failures, unpruned history, 5xx rate, and
-a thrashing transfer cache. It has no Alertmanager attached, so the rules
-show under **Alerts** rather than notifying; point Prometheus at your own
-Alertmanager to route them.
+scheduler pass (which also carries history pruning), NOTIFY failures and
+refused transfers, 5xx rate, and a thrashing transfer cache. It has no
+Alertmanager attached, so the rules show under **Alerts** rather than
+notifying; point Prometheus at your own Alertmanager to route them.

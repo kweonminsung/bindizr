@@ -113,7 +113,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
 # zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
-# audit_max_days = 365          # Audit log entries: who changed a token, role, key, secondary, or policy
+# audit_max_days = 365          # Audit log entries: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace
