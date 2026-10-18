@@ -27,7 +27,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    policy.id = PolicyId::from(result.last_insert_rowid() as i32);
+    policy.id = PolicyId::from(super::last_insert_id(&result)?);
     policy.created_at = now;
     Ok(policy)
 }

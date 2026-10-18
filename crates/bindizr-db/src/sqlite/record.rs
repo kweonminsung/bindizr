@@ -54,7 +54,7 @@ pub(crate) async fn create_many_tx(
 
         // SQLite assigns contiguous rowids within a single insert; the last
         // one is `last_insert_rowid()`, so the chunk spans first..=last.
-        let last = result.last_insert_rowid() as i32;
+        let last = super::last_insert_id(&result)?;
         let first = last - chunk.len() as i32 + 1;
         for (offset, r) in chunk.iter().enumerate() {
             let mut rec = r.clone();

@@ -27,7 +27,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    secondary.id = SecondaryId::from(result.last_insert_rowid() as i32);
+    secondary.id = SecondaryId::from(super::last_insert_id(&result)?);
     secondary.created_at = now;
     Ok(secondary)
 }

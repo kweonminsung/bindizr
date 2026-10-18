@@ -37,7 +37,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    zone.id = ZoneId::from(result.last_insert_rowid() as i32);
+    zone.id = ZoneId::from(super::last_insert_id(&result)?);
     zone.created_at = now;
     Ok(zone)
 }

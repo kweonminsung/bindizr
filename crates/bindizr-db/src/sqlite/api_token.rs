@@ -25,7 +25,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    token.id = TokenId::from(result.last_insert_rowid() as i32);
+    token.id = TokenId::from(super::last_insert_id(&result)?);
     token.created_at = now;
     Ok(token)
 }
