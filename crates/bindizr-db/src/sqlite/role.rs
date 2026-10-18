@@ -22,7 +22,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    role.id = RoleId::from(result.last_insert_rowid() as i32);
+    role.id = RoleId::from(super::last_insert_id(&result)?);
     role.created_at = now;
     Ok(role)
 }

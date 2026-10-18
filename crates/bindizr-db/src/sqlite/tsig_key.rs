@@ -24,7 +24,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    key.id = TsigKeyId::from(result.last_insert_rowid() as i32);
+    key.id = TsigKeyId::from(super::last_insert_id(&result)?);
     key.created_at = now;
     Ok(key)
 }

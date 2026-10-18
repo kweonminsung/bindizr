@@ -55,7 +55,7 @@ fn command_round_trips_between_client_and_server() {
     );
 }
 
-/// Verify that `prepare_socket_path` creates parent directory.
+/// Verify that `prepare_socket_path` creates the parent directory owner-only.
 #[tokio::test]
 async fn prepare_socket_path_creates_parent_directory() {
     let dir = tempfile::tempdir().unwrap();
@@ -64,10 +64,30 @@ async fn prepare_socket_path_creates_parent_directory() {
 
     prepare_socket_path(socket_path).await.unwrap();
 
-    assert!(Path::new(socket_path).parent().unwrap().exists());
+    let parent = std::fs::metadata(Path::new(socket_path).parent().unwrap()).unwrap();
+    assert!(parent.is_dir());
+    assert_eq!(parent.mode() & 0o777, 0o700);
 }
 
-/// Verify owner-only socket permissions and the UID used for peer authorization.
+/// Verify that `prepare_socket_path` refuses a parent reached through a symlink.
+#[tokio::test]
+async fn prepare_socket_path_rejects_symlinked_parent_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
+    let socket_path = dir.path().join("link").join("bindizr.sock");
+
+    let err = prepare_socket_path(socket_path.to_str().unwrap())
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, BindSocketPathError::NotADirectory { .. }),
+        "{err}"
+    );
+}
+
+/// Verify the socket's owner and the UID both ends read for peer authorization.
 #[tokio::test]
 async fn accepted_connection_returns_peer_uid() {
     let dir = tempfile::tempdir().unwrap();
@@ -76,7 +96,6 @@ async fn accepted_connection_returns_peer_uid() {
 
     let listener = bind_socket(socket_path).await.unwrap();
     let metadata = std::fs::metadata(socket_path).unwrap();
-    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
     let own_uid = read_own_uid().unwrap();
     assert_eq!(own_uid, metadata.uid());
 

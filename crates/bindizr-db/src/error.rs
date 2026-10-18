@@ -23,6 +23,10 @@ pub enum DatabaseError {
     #[error("transaction failed: {0}")]
     TransactionFailed(#[source] sqlx::Error),
 
+    /// A SQLite rowid past the 32-bit range ids are carried in.
+    #[error("row id {id} exceeds the 32-bit id range")]
+    IdOutOfRange { id: i64 },
+
     #[error("pool timed out")]
     PoolTimedOut,
 

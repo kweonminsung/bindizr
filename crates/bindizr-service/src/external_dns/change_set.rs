@@ -1,14 +1,14 @@
 //! Turning an ExternalDNS change set into per-zone record operations: parsing
 //! the request, grouping it by zone, and computing what each zone must change.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
 
 use bindizr_core::{
     dns::{
         Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::record::RecordId,
+    model::record::{RecordId, RecordKey},
 };
 use chrono::Utc;
 
@@ -110,15 +110,13 @@ pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, 
     validate_record_set_shape(record, &record_type)?;
 
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
-    let mut values: Vec<String> = Vec::with_capacity(record.values.len());
+    let mut seen = HashSet::new();
+    let mut values: Vec<String> = Vec::new();
     for value in &record.values {
         let encoded = record_type
             .encoded_value(value, None)
             .map_err(ServiceError::invalid_record_value)?;
-        if !values
-            .iter()
-            .any(|existing| record_type.values_equal(existing, None, &encoded, None))
-        {
+        if seen.insert(record_type.canonical_value(&encoded, None).into_owned()) {
             values.push(encoded);
         }
     }
@@ -140,17 +138,17 @@ pub(crate) fn adjust_record_set(
     let ttl = normalize_ttl(record.ttl)?;
     validate_record_set_shape(record, &record_type)?;
 
-    let mut values: Vec<String> = Vec::with_capacity(record.values.len());
-    for value in &record.values {
-        let canonical = match record_type.encoded_value(value, None) {
+    let mut values: Vec<String> = record
+        .values
+        .iter()
+        .map(|value| match record_type.encoded_value(value, None) {
             Ok(encoded) => record_type.presentation_rdata(&encoded, None),
             Err(_) => value.clone(),
-        };
-        if !values.contains(&canonical) {
-            values.push(canonical);
-        }
-    }
+        })
+        .collect();
+    // The answer is sorted anyway, which puts duplicates side by side.
     values.sort();
+    values.dedup();
 
     Ok(ExternalDnsRecord {
         name: record.name.clone(),
@@ -236,48 +234,54 @@ impl ZoneChangeSet {
         zone: &Zone,
         existing: &[Record],
     ) -> Result<Self, ServiceError> {
-        let mut deletes: Vec<Record> = Vec::new();
+        let mut existing_by_key: HashMap<RecordKey, Vec<&Record>> = HashMap::new();
+        for row in existing {
+            existing_by_key
+                .entry(row.match_key())
+                .or_default()
+                .push(row);
+        }
+
+        // A cancelled delete leaves a hole, so a later add sees its row as surviving.
+        let mut deletes: Vec<Option<Record>> = Vec::new();
+        let mut delete_slots: HashMap<RecordId, usize> = HashMap::new();
         for del in &operations.deletes {
             for value in &del.values {
-                for row in existing {
-                    if row.name == del.name
-                        && row.record_type == del.record_type
-                        && row.has_rdata(value, None)
-                        && !deletes.iter().any(|d| d.id == row.id)
-                    {
-                        deletes.push(row.clone());
+                let key = RecordKey::new(&del.name, del.record_type, value, None);
+                for row in existing_by_key.get(&key).into_iter().flatten() {
+                    if let Entry::Vacant(slot) = delete_slots.entry(row.id) {
+                        slot.insert(deletes.len());
+                        deletes.push(Some((*row).clone()));
                     }
                 }
             }
         }
 
         let mut creates: Vec<Record> = Vec::new();
+        let mut created: HashSet<(RecordKey, Ttl)> = HashSet::new();
         for add in &operations.adds {
             let ttl = add.ttl.unwrap_or(zone.default_ttl);
             for value in &add.values {
-                let same_rdata = |record: &Record| {
-                    record.name == add.name
-                        && record.record_type == add.record_type
-                        && record.has_rdata(value, None)
-                };
-                let matches = |record: &Record| same_rdata(record) && record.ttl == ttl;
+                let key = RecordKey::new(&add.name, add.record_type, value, None);
+                let rows: &[&Record] = existing_by_key.get(&key).map_or(&[], Vec::as_slice);
 
                 // An unchanged update cancels its own delete instead of rewriting
                 // the row. TTL-sensitive, so a TTL-only update is still a change.
-                if let Some(pos) = deletes.iter().position(&matches) {
-                    deletes.remove(pos);
+                if let Some(slot) = rows
+                    .iter()
+                    .filter(|row| row.ttl == ttl)
+                    .find_map(|row| delete_slots.remove(&row.id))
+                {
+                    deletes[slot] = None;
                     continue;
                 }
                 // Idempotent create: a surviving row already holds this rdata. TTL
                 // is excluded to match the duplicate check behind this one, which
                 // would otherwise reject the create as a conflict.
-                if existing
-                    .iter()
-                    .any(|row| deletes.iter().all(|d| d.id != row.id) && same_rdata(row))
-                {
+                if rows.iter().any(|row| !delete_slots.contains_key(&row.id)) {
                     continue;
                 }
-                if creates.iter().any(matches) {
+                if !created.insert((key, ttl)) {
                     continue;
                 }
 
@@ -293,24 +297,24 @@ impl ZoneChangeSet {
                 });
             }
         }
+        let deletes: Vec<Record> = deletes.into_iter().flatten().collect();
 
         // Validate each insert against the post-delete state plus earlier inserts,
         // so CNAME exclusivity and record set TTL rules see the state they will land in.
-        for (index, create) in creates.iter().enumerate() {
-            let mut records_at_name: Vec<Record> = existing
-                .iter()
-                .filter(|row| deletes.iter().all(|d| d.id != row.id) && row.name == create.name)
-                .cloned()
-                .collect();
-            records_at_name.extend(
-                creates[..index]
-                    .iter()
-                    .filter(|row| row.name == create.name)
-                    .cloned(),
-            );
-
+        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|d| d.id).collect();
+        let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
+        for row in existing {
+            if !deleted_ids.contains(&row.id) {
+                simulated_by_name
+                    .entry(row.name.clone())
+                    .or_default()
+                    .push(row.clone());
+            }
+        }
+        for create in &creates {
+            let records_at_name = simulated_by_name.entry(create.name.clone()).or_default();
             validate_record_constraints(
-                &records_at_name,
+                records_at_name,
                 &create.name,
                 &create.record_type,
                 &create.value,
@@ -318,6 +322,7 @@ impl ZoneChangeSet {
                 create.priority,
                 None,
             )?;
+            records_at_name.push(create.clone());
         }
 
         Ok(ZoneChangeSet { deletes, creates })

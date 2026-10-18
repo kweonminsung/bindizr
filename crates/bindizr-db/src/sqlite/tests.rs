@@ -15,7 +15,9 @@ use bindizr_core::{
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
 
-use crate::{dnssec_record::DnssecRecordFilter, record::RecordFilter, zone::ZoneFilter};
+use crate::{
+    dnssec_record::DnssecRecordFilter, error::DatabaseError, record::RecordFilter, zone::ZoneFilter,
+};
 
 /// Owner names text matching gets wrong: `evil\.sub` is one label (RFC 1035,
 /// Section 5.1), and `xsub` shares a suffix with `sub` but not a label.
@@ -273,4 +275,35 @@ async fn delete_tx_reports_whether_a_row_went() {
             .unwrap()
     );
     tx.rollback().await.unwrap();
+}
+
+/// Verify that a rowid past the 32-bit id range is refused, not truncated.
+#[tokio::test]
+async fn create_tx_refuses_a_rowid_past_the_32_bit_range() {
+    let pool = fixture().await;
+    // AUTOINCREMENT continues past the largest id the table has held.
+    sqlx::query("INSERT INTO roles (id, name, created_at) VALUES (?, 'far', ?)")
+        .bind(i64::from(i32::MAX))
+        .bind(Utc::now())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+
+    let err = super::role::create_tx(
+        &mut tx,
+        Role {
+            id: RoleId::UNWRITTEN,
+            name: "next".to_string(),
+            description: None,
+            created_at: Utc::now(),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        matches!(err, DatabaseError::IdOutOfRange { id } if id == i64::from(i32::MAX) + 1),
+        "{err}"
+    );
 }

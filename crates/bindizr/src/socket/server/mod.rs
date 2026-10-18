@@ -17,9 +17,8 @@ mod tsig_key;
 mod zone;
 
 use std::{
-    fs::Permissions,
     io,
-    os::unix::fs::{FileTypeExt, PermissionsExt},
+    os::unix::fs::{FileTypeExt, MetadataExt},
     path::Path,
     sync::Arc,
 };
@@ -71,6 +70,15 @@ pub(crate) enum BindSocketPathError {
     /// Something other than a Unix socket sits at the path.
     #[error("socket path exists and is not a Unix socket: {path}")]
     NotASocket { path: String },
+    /// The socket's directory is not a directory, or is reached through a symlink.
+    #[error("socket directory is not a directory: {path}")]
+    NotADirectory { path: String },
+    /// Another user owns the socket's directory and could replace what the daemon binds there.
+    #[error(
+        "socket directory '{path}' is owned by uid {uid}, neither this user nor root; remove what \
+         another user left there"
+    )]
+    ForeignDirectory { path: String, uid: u32 },
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -245,19 +253,35 @@ async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathEr
     prepare_socket_path(socket_path).await?;
     // A daemon that bound this path after the check above answers EADDRINUSE
     // here: the same conflict, not a path to fall back from.
-    let listener = UnixListener::bind(socket_path).map_err(|e| match e.kind() {
+    UnixListener::bind(socket_path).map_err(|e| match e.kind() {
         io::ErrorKind::AddrInUse => BindSocketPathError::AlreadyRunning,
         _ => BindSocketPathError::Io(e),
-    })?;
-    // Owner-only refuses strangers at connect; the peer check in `serve` is the boundary.
-    fs::set_permissions(socket_path, Permissions::from_mode(0o600)).await?;
-    Ok(listener)
+    })
 }
 
 /// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
     if let Some(parent) = Path::new(socket_path).parent() {
-        fs::create_dir_all(parent).await?;
+        // No chmod of the socket by path, which a writable directory would let
+        // someone redirect; the peer check in `serve` is the boundary.
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)
+            .await?;
+        let metadata = fs::symlink_metadata(parent).await?;
+        if !metadata.is_dir() {
+            return Err(BindSocketPathError::NotADirectory {
+                path: parent.display().to_string(),
+            });
+        }
+        let own_uid = read_own_uid()?;
+        if metadata.uid() != own_uid && metadata.uid() != 0 {
+            return Err(BindSocketPathError::ForeignDirectory {
+                path: parent.display().to_string(),
+                uid: metadata.uid(),
+            });
+        }
     }
 
     match fs::symlink_metadata(socket_path).await {

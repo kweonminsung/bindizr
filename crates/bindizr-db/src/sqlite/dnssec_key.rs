@@ -37,7 +37,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    key.id = DnssecKeyId::from(result.last_insert_rowid() as i32);
+    key.id = DnssecKeyId::from(super::last_insert_id(&result)?);
     key.created_at = now;
     Ok(key)
 }

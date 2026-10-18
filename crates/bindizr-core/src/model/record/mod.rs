@@ -48,6 +48,22 @@ pub struct RecordKey {
     rdata: String,
 }
 
+impl RecordKey {
+    /// The identity of a record with these fields, canonicalizing its value once.
+    pub fn new(
+        name: &OwnerName,
+        record_type: RecordType,
+        value: &str,
+        priority: Option<i32>,
+    ) -> Self {
+        RecordKey {
+            name: name.clone(),
+            record_type,
+            rdata: record_type.canonical_value(value, priority).into_owned(),
+        }
+    }
+}
+
 impl Record {
     /// Encode RDATA using the transfer and signer encoder.
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
@@ -85,14 +101,7 @@ impl Record {
 
     /// This record's identity for set matching, shared with [`RecordData`].
     pub fn match_key(&self) -> RecordKey {
-        RecordKey {
-            name: self.name.clone(),
-            record_type: self.record_type,
-            rdata: self
-                .record_type
-                .canonical_value(&self.value, self.priority)
-                .into_owned(),
-        }
+        RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
     }
 }
 
@@ -130,14 +139,7 @@ impl From<Record> for RecordData {
 impl RecordData {
     /// This record's identity for set matching, shared with [`Record`].
     pub fn match_key(&self) -> RecordKey {
-        RecordKey {
-            name: self.name.clone(),
-            record_type: self.record_type,
-            rdata: self
-                .record_type
-                .canonical_value(&self.value, self.priority)
-                .into_owned(),
-        }
+        RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
     }
 }
 
