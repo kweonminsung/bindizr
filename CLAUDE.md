@@ -158,7 +158,7 @@ code, including core and db, propagates errors to its caller.
   Service-internal lookups that must skip visibility are `pub(crate)` under
   their own name (`zone::lookup_by_name`). The daemon socket
   authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
-  user or root); the socket's file mode is a courtesy, not the boundary.
+  user or root); the socket directory's mode is a courtesy, not the boundary.
   NOTIFY takes no caller. A transfer or an nsupdate authenticates its TSIG
   key into a `Caller` (`Caller::authenticate_tsig_key`), or takes
   `Caller::unsigned_dns()` where the address ACL or

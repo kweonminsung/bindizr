@@ -87,7 +87,7 @@ async fn prepare_socket_path_rejects_symlinked_parent_directory() {
     );
 }
 
-/// Verify owner-only socket permissions and the UID used for peer authorization.
+/// Verify the socket's owner and the UID both ends read for peer authorization.
 #[tokio::test]
 async fn accepted_connection_returns_peer_uid() {
     let dir = tempfile::tempdir().unwrap();
@@ -96,7 +96,6 @@ async fn accepted_connection_returns_peer_uid() {
 
     let listener = bind_socket(socket_path).await.unwrap();
     let metadata = std::fs::metadata(socket_path).unwrap();
-    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
     let own_uid = read_own_uid().unwrap();
     assert_eq!(own_uid, metadata.uid());
 
