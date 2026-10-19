@@ -20,7 +20,7 @@ use crate::{
     serial::generate_serial,
     text::normalize_description,
     transaction,
-    ttl::{validate_default_ttl, validate_soa_interval},
+    ttl::{validate_default_ttl, validate_minimum_ttl, validate_soa_interval},
     types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse},
     zone::validation::{
         normalize_mname, normalize_name, normalize_rname, reject_catalog_zone_name,
@@ -107,10 +107,7 @@ pub async fn update(
         .expire
         .map(|value| validate_soa_interval(value, "expire"))
         .transpose();
-    let minimum_ttl = request
-        .minimum_ttl
-        .map(|value| validate_soa_interval(value, "minimum_ttl"))
-        .transpose();
+    let minimum_ttl = request.minimum_ttl.map(validate_minimum_ttl).transpose();
     let mut tx = transaction::begin_tx(cx, "failed to update zone").await?;
 
     let apply_result: Result<UpdateZoneResult, ServiceError> = async {

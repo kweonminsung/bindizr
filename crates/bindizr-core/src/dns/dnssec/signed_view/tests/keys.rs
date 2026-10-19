@@ -30,7 +30,7 @@ fn test_zone() -> Zone {
 }
 
 /// Build a record fixture with the requested fields.
-fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
+fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),

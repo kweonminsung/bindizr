@@ -108,8 +108,8 @@ fn decode_update(
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
     match record.class {
         Class::IN => {
-            // RFC 2181, Section 8: a TTL with its top bit set reads as zero.
-            let ttl = Ttl::try_from(record.ttl).unwrap_or(Ttl::from_secs(0));
+            // RFC 8767, Section 4: every bit belongs to the positive TTL value.
+            let ttl = Ttl::from_secs(record.ttl);
             if record.record_type == Rtype::SOA {
                 return Ok(Some(UpdateOperation::ReplaceSoa {
                     name,

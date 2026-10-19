@@ -71,6 +71,16 @@ pub async fn list_by_filter(
     caller: &Caller,
     filter: ZoneFilter,
 ) -> Result<PaginatedResponse<ZoneResponse>, ServiceError> {
+    for ttl in [
+        filter.default_ttl,
+        filter.min_default_ttl,
+        filter.max_default_ttl,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        crate::ttl::validate_record_ttl(ttl)?;
+    }
     let scope_role_id = caller.scope_role_id();
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;

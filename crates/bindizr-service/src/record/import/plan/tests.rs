@@ -29,7 +29,7 @@ fn zone() -> Zone {
 }
 
 /// Build an existing database record for import planning.
-fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
+fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
     Record {
         id: RecordId::from(id),
         name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
@@ -43,7 +43,7 @@ fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32)
 }
 
 /// Build an imported record with its resolved TTL.
-fn desired(name: &str, record_type: RecordType, value: &str, ttl: i32) -> DesiredRecord {
+fn desired(name: &str, record_type: RecordType, value: &str, ttl: i64) -> DesiredRecord {
     DesiredRecord {
         source_name: name.to_string(),
         data: RecordData {

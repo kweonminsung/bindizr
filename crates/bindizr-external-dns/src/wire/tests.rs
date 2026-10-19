@@ -142,3 +142,20 @@ fn changes_to_bindizr_rejects_mismatched_update_pairs() {
 
     assert!(changes.to_apply_changes_request().is_err());
 }
+
+/// ExternalDNS keeps zero as unspecified while preserving the unsigned TTL range.
+#[test]
+fn endpoint_ttl_preserves_unsigned_boundaries() {
+    for ttl in [0i64, 2_147_483_647, 2_147_483_648, i64::from(u32::MAX)] {
+        let changes: Changes = serde_json::from_value(json!({"create": [{"dnsName": "ttl.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": ttl}]})).unwrap();
+        let request = changes.to_apply_changes_request().unwrap();
+        assert_eq!(request.creates[0].ttl, (ttl > 0).then_some(ttl));
+    }
+    for ttl in [-1i64, i64::from(u32::MAX) + 1] {
+        assert!(
+            endpoint("ttl.example.com", "A", ttl, &["192.0.2.1"])
+                .validate()
+                .is_err()
+        );
+    }
+}

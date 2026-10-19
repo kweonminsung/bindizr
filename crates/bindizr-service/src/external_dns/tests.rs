@@ -51,7 +51,7 @@ fn test_zone(id: i32, name: &str) -> Zone {
 }
 
 /// Build a record fixture with the requested fields.
-fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
+fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
     Record {
         id: RecordId::from(id),
         name: OwnerName::from_row(name),
@@ -68,7 +68,7 @@ fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i
 fn record_set(
     name: &str,
     record_type: &str,
-    ttl: Option<i32>,
+    ttl: Option<i64>,
     values: &[&str],
 ) -> ExternalDnsRecord {
     ExternalDnsRecord {

@@ -8,7 +8,10 @@ use bindizr_core::dns::{
 
 use super::{NsupdateError, operation::RecordOperation};
 use crate::{
-    error::ServiceError, model::zone::Zone, serial::generate_serial, ttl::validate_soa_interval,
+    error::ServiceError,
+    model::zone::Zone,
+    serial::generate_serial,
+    ttl::{validate_minimum_ttl, validate_soa_interval},
     zone::validation::normalize_soa,
 };
 
@@ -72,7 +75,7 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
     let rname = SoaMailbox::from_encoded(value.rname)
         .to_email()
         .map_err(ServiceError::invalid_zone_field)?;
-    let normalized = normalize_soa(&value.mname, &rname, i32::from(ttl))?;
+    let normalized = normalize_soa(&value.mname, &rname, i64::from(ttl))?;
     Ok(Zone {
         serial,
         mname: normalized.mname,
@@ -81,7 +84,7 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
         refresh: validate_soa_interval(interval(value.refresh)?, "refresh")?,
         retry: validate_soa_interval(interval(value.retry)?, "retry")?,
         expire: validate_soa_interval(interval(value.expire)?, "expire")?,
-        minimum_ttl: validate_soa_interval(interval(value.minimum)?, "minimum_ttl")?,
+        minimum_ttl: validate_minimum_ttl(i64::from(value.minimum))?,
         ..zone.clone()
     })
 }

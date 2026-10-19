@@ -22,7 +22,7 @@ use thiserror::Error;
 use super::{WireName, WireRecord};
 use crate::{
     dns::{
-        ConvertTtlError, LibraryError, Serial, Ttl,
+        LibraryError, Serial, Ttl,
         dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag},
         name::{OwnerName, ParseNameError, ZoneName},
         record::{EncodeRdataError, Rdata},
@@ -46,8 +46,6 @@ type SignRecord = WireRecord<ZoneRecordData<Vec<u8>, WireName>>;
 pub enum SignZoneError {
     #[error("zone has keys but no usable signer for the key records or the zone data")]
     NoUsableSigner,
-    #[error(transparent)]
-    Ttl(#[from] ConvertTtlError),
     #[error("derived owner '{owner}' is not inside zone '{zone}': {source}")]
     OwnerOutsideZone {
         owner: String,
@@ -176,7 +174,7 @@ impl SignedViewParams<'_> {
                 name: OwnerName::apex(),
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: Ttl::try_from(record.ttl().as_secs())?,
+                ttl: Ttl::from_secs(record.ttl().as_secs()),
                 rdata: to_rdata(record.data())?,
                 expires_at: None,
                 record_set_digest: None,
@@ -189,7 +187,7 @@ impl SignedViewParams<'_> {
                 name: parse_derived_owner(record.owner(), &zone.name)?,
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: Ttl::try_from(record.ttl().as_secs())?,
+                ttl: Ttl::from_secs(record.ttl().as_secs()),
                 rdata: to_rdata(record.data())?,
                 expires_at: None,
                 record_set_digest: None,
@@ -291,7 +289,7 @@ impl SignedViewParams<'_> {
                             name: owner.clone(),
                             record_type: DnssecRecordType::Rrsig,
                             covered_record_type: Some(covered),
-                            ttl: Ttl::try_from(rrsig.ttl().as_secs())?,
+                            ttl: Ttl::from_secs(rrsig.ttl().as_secs()),
                             rdata: to_rdata(rrsig.data())?,
                             expires_at: Some(expiration),
                             record_set_digest: Some(digest.clone()),

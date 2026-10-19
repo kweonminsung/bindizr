@@ -46,7 +46,7 @@ parts with nothing between them, so a space has to be inside a value.")]
         value: Vec<String>,
         /// TTL in seconds, defaulting to the zone TTL (records sharing a name and type share one TTL)
         #[arg(long)]
-        ttl: Option<i32>,
+        ttl: Option<i64>,
         /// Priority, MX and SRV only (default: 10)
         #[arg(long)]
         priority: Option<i32>,
@@ -120,13 +120,13 @@ Omit the zone to list records from all zones the caller can see."
         value: Option<String>,
         /// Filter by TTL
         #[arg(long)]
-        ttl: Option<i32>,
+        ttl: Option<i64>,
         /// Filter by minimum TTL
         #[arg(long)]
-        min_ttl: Option<i32>,
+        min_ttl: Option<i64>,
         /// Filter by maximum TTL
         #[arg(long)]
-        max_ttl: Option<i32>,
+        max_ttl: Option<i64>,
         /// Filter by priority
         #[arg(long)]
         priority: Option<i32>,
@@ -230,7 +230,7 @@ error when the name holds several, which --id then addresses individually.")]
         value: Vec<String>,
         /// TTL (records sharing a name and type share one TTL)
         #[arg(long)]
-        ttl: Option<i32>,
+        ttl: Option<i64>,
         /// Priority (MX and SRV only)
         #[arg(long)]
         priority: Option<i32>,

@@ -2243,3 +2243,88 @@ async fn ptr_record_rejects_alias_target() {
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
     }
 }
+
+/// Record TTLs survive API, filters, history, export and transfer import over the full wire range.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_ttl_preserves_unsigned_boundaries() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    for (index, ttl) in [0i64, 2_147_483_647, 2_147_483_648, i64::from(u32::MAX)]
+        .into_iter()
+        .enumerate()
+    {
+        let name = format!("ttl{index}");
+        let (status, body) = app.send_request(Method::POST, "/records", Some(json!({
+            "zone_name": zone_name, "name": name, "type": "A", "value": "192.0.2.44", "ttl": ttl
+        }))).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["record"]["ttl"], ttl);
+        if ttl > 0 {
+            let (status, body) = app
+                .send_request(
+                    Method::PUT,
+                    &format!("/zones/{zone_name}"),
+                    Some(json!({"minimum_ttl": ttl})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["zone"]["minimum_ttl"], ttl);
+        }
+        let serial = app.read_zone_serial(zone_name).await;
+        let (status, body) = app
+            .send_request(
+                Method::GET,
+                &format!("/zones/{zone_name}/versions/{serial}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(
+            body["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["name"] == format!("{name}.{zone_name}.") && row["ttl"] == ttl),
+            "{body}"
+        );
+        let (status, body) = app
+            .send_request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&ttl={ttl}&min_ttl={ttl}&max_ttl={ttl}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
+    }
+    let serial = app.read_zone_serial(zone_name).await;
+    for ttl in [-1i64, i64::from(u32::MAX) + 1] {
+        let (status, body) = app.send_request(Method::POST, "/records", Some(json!({
+            "zone_name": zone_name, "name": "invalid", "type": "A", "value": "192.0.2.45", "ttl": ttl
+        }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+    app.create_secondary("ttl-loopback", "127.0.0.1").await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({
+                "from_server": format!("127.0.0.1:{}", app.dns_port()), "mode": "replace"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["unchanged"], 5);
+    let records = app.list_records(zone_name).await;
+    for ttl in [0i64, 2_147_483_647, 2_147_483_648, i64::from(u32::MAX)] {
+        assert!(
+            records
+                .iter()
+                .any(|record| record["type"] == "A" && record["ttl"] == ttl)
+        );
+    }
+}

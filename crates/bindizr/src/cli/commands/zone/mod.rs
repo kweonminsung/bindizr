@@ -47,7 +47,7 @@ and the contact is the address a resolver operator writes to.")]
         rname: String,
         /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
         #[arg(long)]
-        default_ttl: Option<i32>,
+        default_ttl: Option<i64>,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<u32>,
@@ -62,7 +62,7 @@ and the contact is the address a resolver operator writes to.")]
         expire: Option<i32>,
         /// SOA minimum TTL (seconds)
         #[arg(long)]
-        minimum_ttl: Option<i32>,
+        minimum_ttl: Option<i64>,
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
@@ -91,13 +91,13 @@ and the contact is the address a resolver operator writes to.")]
         rname: Option<String>,
         /// Filter by default TTL
         #[arg(long)]
-        default_ttl: Option<i32>,
+        default_ttl: Option<i64>,
         /// Filter by minimum default TTL
         #[arg(long)]
-        min_default_ttl: Option<i32>,
+        min_default_ttl: Option<i64>,
         /// Filter by maximum default TTL
         #[arg(long)]
-        max_default_ttl: Option<i32>,
+        max_default_ttl: Option<i64>,
         /// Filter by serial
         #[arg(long)]
         serial: Option<u32>,
@@ -165,7 +165,7 @@ and the contact is the address a resolver operator writes to.")]
         rname: Option<String>,
         /// Default record TTL (seconds)
         #[arg(long)]
-        default_ttl: Option<i32>,
+        default_ttl: Option<i64>,
         /// SOA refresh interval (seconds)
         #[arg(long)]
         refresh: Option<i32>,
@@ -177,7 +177,7 @@ and the contact is the address a resolver operator writes to.")]
         expire: Option<i32>,
         /// SOA minimum TTL (seconds)
         #[arg(long)]
-        minimum_ttl: Option<i32>,
+        minimum_ttl: Option<i64>,
         /// Serve the zone or stop serving it without deleting it
         #[arg(long, value_name = "true|false")]
         enabled: Option<bool>,

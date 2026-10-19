@@ -75,7 +75,7 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 }
 
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
-fn normalize_ttl(ttl: Option<i32>) -> Result<Option<Ttl>, ServiceError> {
+fn normalize_ttl(ttl: Option<i64>) -> Result<Option<Ttl>, ServiceError> {
     match ttl {
         Some(0) | None => Ok(None),
         Some(ttl) => Ok(Some(validate_record_ttl(ttl)?)),
@@ -153,7 +153,7 @@ pub(crate) fn adjust_record_set(
     Ok(ExternalDnsRecord {
         name: record.name.clone(),
         record_type: record_type.to_string(),
-        ttl: ttl.map(i32::from),
+        ttl: ttl.map(i64::from),
         values,
     })
 }

@@ -519,7 +519,7 @@ defines flag meanings; DNS record validation does not restrict them to a list.
 
 Except for the explicit deviations below, the DNS plane implements the RFCs it
 cites (1034/1035, 1982, 1995, 1996,
-2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8945, 9103, 9432, 9619), and a
+2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8767, 8945, 9103, 9432, 9619), and a
 requirement one states is met as written: a MUST is implemented, a SHOULD
 is followed unless the reason not to stands in a comment beside the code,
 and a MAY is a design choice recorded here or in the docs. Interoperability

@@ -16,7 +16,7 @@ use crate::{
     serial::generate_serial,
     text::normalize_description,
     transaction,
-    ttl::normalize_soa_interval,
+    ttl::{normalize_minimum_ttl, normalize_soa_interval},
     types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse},
     zone::validation::{normalize_name, normalize_soa, reject_catalog_zone_name},
 };
@@ -116,7 +116,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
     let soa = normalize_soa(
         &request.mname,
         &request.rname,
-        request.default_ttl.unwrap_or(i32::from(defaults.ttl)),
+        request.default_ttl.unwrap_or(i64::from(defaults.ttl)),
     )?;
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
@@ -138,11 +138,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
         refresh: normalize_soa_interval(request.refresh, defaults.refresh, "refresh")?,
         retry: normalize_soa_interval(request.retry, defaults.retry, "retry")?,
         expire: normalize_soa_interval(request.expire, defaults.expire, "expire")?,
-        minimum_ttl: normalize_soa_interval(
-            request.minimum_ttl,
-            defaults.minimum_ttl,
-            "minimum_ttl",
-        )?,
+        minimum_ttl: normalize_minimum_ttl(request.minimum_ttl, defaults.minimum_ttl)?,
         created_at: Utc::now(),
     })
 }

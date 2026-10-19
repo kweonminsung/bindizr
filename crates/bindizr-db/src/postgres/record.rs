@@ -275,9 +275,9 @@ pub(crate) async fn list_by_filter_with_zone(
                 WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                 ELSE POSITION($31 IN r.display_value) > 0
           END))
-          AND ($10::INT4 IS NULL OR r.ttl = $11)
-          AND ($12::INT4 IS NULL OR r.ttl >= $13)
-          AND ($14::INT4 IS NULL OR r.ttl <= $15)
+          AND ($10::INT8 IS NULL OR r.ttl = $11)
+          AND ($12::INT8 IS NULL OR r.ttl >= $13)
+          AND ($14::INT8 IS NULL OR r.ttl <= $15)
           AND ($16::INT4 IS NULL OR r.priority = $17)
           AND ($18::INT4 IS NULL OR r.priority >= $19)
           AND ($20::INT4 IS NULL OR r.priority <= $21)
@@ -383,9 +383,9 @@ pub(crate) async fn count_by_filter(
                 WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                 ELSE POSITION($29 IN r.display_value) > 0
           END))
-          AND ($10::INT4 IS NULL OR r.ttl = $11)
-          AND ($12::INT4 IS NULL OR r.ttl >= $13)
-          AND ($14::INT4 IS NULL OR r.ttl <= $15)
+          AND ($10::INT8 IS NULL OR r.ttl = $11)
+          AND ($12::INT8 IS NULL OR r.ttl >= $13)
+          AND ($14::INT8 IS NULL OR r.ttl <= $15)
           AND ($16::INT4 IS NULL OR r.priority = $17)
           AND ($18::INT4 IS NULL OR r.priority >= $19)
           AND ($20::INT4 IS NULL OR r.priority <= $21)

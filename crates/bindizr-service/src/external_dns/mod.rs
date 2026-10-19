@@ -140,7 +140,7 @@ pub async fn list_records(
                 ExternalDnsRecord {
                     name: key.name.clone(),
                     record_type: key.record_type.to_text(),
-                    ttl: Some(i32::from(ttl)),
+                    ttl: Some(i64::from(ttl)),
                     values,
                 }
             })

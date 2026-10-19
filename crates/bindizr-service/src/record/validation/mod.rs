@@ -35,7 +35,7 @@ pub(crate) struct ParsedRecord {
 pub(crate) fn parse_record_fields(
     record_type: &str,
     value: &RecordValue,
-    ttl: Option<i32>,
+    ttl: Option<i64>,
     priority: Option<i32>,
 ) -> Result<ParsedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;

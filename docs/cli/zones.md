@@ -39,7 +39,8 @@ bindizr record get example.com www
 bindizr record update example.com www --value 192.0.2.2
 ```
 
-TTL defaults to the zone's TTL. Records sharing a name and type must share
+Record TTLs accept 0–4294967295 seconds (RFC 8767, Section 4); an omitted
+TTL defaults to the zone's TTL. The zone default remains 60–604800 seconds. Records sharing a name and type must share
 one TTL. `record get` returns all records at a name; `record update` by name
 requires exactly one. Use an ID from `record list` to select a specific record:
 

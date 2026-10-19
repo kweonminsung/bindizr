@@ -28,7 +28,7 @@ fn test_zone() -> Zone {
 }
 
 /// Build a record fixture with the requested fields.
-fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
+fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
@@ -176,7 +176,7 @@ fn signatures_validate_case_preserving_rdata() {
             None,
         ),
     ] {
-        let mut record = test_record("target", record_type, value, 300);
+        let mut record = test_record("target", record_type, value, i64::from(u32::MAX));
         record.priority = priority;
         let records = [record];
         let diff = compute(ComputeArgs {
@@ -198,6 +198,8 @@ fn signatures_validate_case_preserving_rdata() {
         assert_eq!(rows.len(), 1);
         let wire = rows[0].rdata.as_bytes();
         let signature = Rrsig::parse(&mut Parser::from_ref(wire)).unwrap();
+        assert_eq!(signature.original_ttl().as_secs(), u32::MAX);
+        assert_eq!(rows[0].ttl.as_secs(), u32::MAX);
         let rdata = EncodedRdata::from_columns(&record_type, canonical_value, priority)
             .unwrap()
             .rdata;

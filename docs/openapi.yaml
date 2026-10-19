@@ -705,21 +705,33 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: min_ttl
         in: query
         description: Filter by minimum TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: max_ttl
         in: query
         description: Filter by maximum TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: priority
         in: query
         description: Filter by priority.
@@ -2422,21 +2434,33 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: min_default_ttl
         in: query
         description: Filter by minimum default TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: max_default_ttl
         in: query
         description: Filter by maximum default TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: serial
         in: query
         description: Filter by serial.
@@ -4016,12 +4040,15 @@ components:
             record types reject it. Omitted, it is served and compared as 10.
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-          example: 3600
         type:
           type: string
           example: A
@@ -4266,12 +4293,15 @@ components:
             record types reject it. Omitted, it is served and compared as 10.
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-          example: 3600
         type:
           type: string
           example: A
@@ -4450,11 +4480,13 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
+          format: int64
           description: |-
             Record TTL the zone hands out when a record names none; defaults to
             `dns.zone_defaults.ttl`.
           example: 3600
+          maximum: 604800
+          minimum: 60
         description:
           type:
           - string
@@ -4475,8 +4507,11 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 1
         mname:
           type: string
           example: ns1.example.com
@@ -5053,12 +5088,15 @@ components:
           type: string
           example: app.example.com
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Optional on writes; an omitted or zero TTL resolves to the zone TTL.
-          example: 300
         type:
           type: string
           example: A
@@ -5552,8 +5590,11 @@ components:
                 example: 10
               ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               type:
                 $ref: '#/components/schemas/ServedRecordType'
               value:
@@ -5828,8 +5869,11 @@ components:
             properties:
               default_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               description:
                 type:
                 - string
@@ -5853,8 +5897,11 @@ components:
                 example: 1
               minimum_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               mname:
                 type: string
                 example: ns1.example.com
@@ -5922,16 +5969,22 @@ components:
                 format: date-time
               default_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               expire:
                 type: integer
                 format: int32
                 example: 604800
               minimum_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               mname:
                 type: string
                 example: ns1.example.com
@@ -6100,8 +6153,11 @@ components:
           example: 10
         ttl:
           type: integer
-          format: int32
-          example: 300
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         value:
           $ref: '#/components/schemas/RecordValue'
     RecordResponse:
@@ -6143,8 +6199,11 @@ components:
           example: 10
         ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         type:
           $ref: '#/components/schemas/ServedRecordType'
         value:
@@ -6794,12 +6853,15 @@ components:
           description: MX and SRV priority; other record types reject it.
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Records sharing a name and type share one TTL.
-          example: 3600
         type:
           type:
           - string
@@ -6844,8 +6906,10 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
+          format: int64
           example: 3600
+          maximum: 604800
+          minimum: 60
         description:
           type:
           - string
@@ -6872,8 +6936,11 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 1
         mname:
           type:
           - string
@@ -6925,8 +6992,11 @@ components:
           example: 10
         ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         type:
           $ref: '#/components/schemas/RecordType'
         value:
@@ -7009,8 +7079,11 @@ components:
       properties:
         default_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         description:
           type:
           - string
@@ -7034,8 +7107,11 @@ components:
           example: 1
         minimum_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         mname:
           type: string
           example: ns1.example.com
@@ -7116,16 +7192,22 @@ components:
           format: date-time
         default_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         expire:
           type: integer
           format: int32
           example: 604800
         minimum_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         mname:
           type: string
           example: ns1.example.com

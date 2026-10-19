@@ -3,7 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType};
+use bindizr_core::{
+    dns::Ttl,
+    model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType},
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -104,7 +107,7 @@ pub(crate) struct BindizrRecord {
     #[serde(rename = "type")]
     record_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    ttl: Option<i32>,
+    ttl: Option<i64>,
     values: Vec<String>,
 }
 
@@ -131,7 +134,7 @@ impl From<BindizrRecord> for Endpoint {
             dns_name: record.name,
             targets: record.values,
             record_type: record.record_type,
-            record_ttl: record.ttl.map(i64::from).unwrap_or(0),
+            record_ttl: record.ttl.unwrap_or(0),
             ..Endpoint::default()
         }
     }
@@ -175,7 +178,7 @@ impl Endpoint {
         if !self.set_identifier.is_empty() {
             return Err(ValidateEndpointError::SetIdentifier);
         }
-        if self.record_ttl < 0 || self.record_ttl > i64::from(i32::MAX) {
+        if self.record_ttl < 0 || self.record_ttl > i64::from(Ttl::MAX) {
             return Err(ValidateEndpointError::TtlOutOfRange {
                 ttl: self.record_ttl,
             });
@@ -190,7 +193,7 @@ impl Endpoint {
         BindizrRecord {
             name: self.dns_name.clone(),
             record_type: record_type.to_text(),
-            ttl: (self.record_ttl > 0).then_some(self.record_ttl as i32),
+            ttl: (self.record_ttl > 0).then_some(self.record_ttl),
             values: self.targets.clone(),
         }
     }
@@ -253,7 +256,7 @@ pub(crate) fn build_adjusted_endpoints(
         .map(|(mut endpoint, record)| {
             endpoint.provider_specific.clear();
             endpoint.record_type = record.record_type;
-            endpoint.record_ttl = record.ttl.map(i64::from).unwrap_or(0);
+            endpoint.record_ttl = record.ttl.unwrap_or(0);
             endpoint.targets = record.values;
             endpoint
         })

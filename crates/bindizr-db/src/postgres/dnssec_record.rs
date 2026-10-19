@@ -237,9 +237,9 @@ pub(crate) async fn list_by_filter_with_zone(
                 OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) = LOWER($5)
           )
           AND ($6::INT4 IS NULL OR d.record_type = $7)
-          AND ($8::INT4 IS NULL OR d.ttl = $9)
-          AND ($10::INT4 IS NULL OR d.ttl >= $11)
-          AND ($12::INT4 IS NULL OR d.ttl <= $13)
+          AND ($8::INT8 IS NULL OR d.ttl = $9)
+          AND ($10::INT8 IS NULL OR d.ttl >= $11)
+          AND ($12::INT8 IS NULL OR d.ttl <= $13)
           AND (
                 $14::TEXT IS NULL
                 OR LOWER(z.name) LIKE LOWER($15) ESCAPE '\'
@@ -324,9 +324,9 @@ pub(crate) async fn count_by_filter(
                 OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) = LOWER($5)
           )
           AND ($6::INT4 IS NULL OR d.record_type = $7)
-          AND ($8::INT4 IS NULL OR d.ttl = $9)
-          AND ($10::INT4 IS NULL OR d.ttl >= $11)
-          AND ($12::INT4 IS NULL OR d.ttl <= $13)
+          AND ($8::INT8 IS NULL OR d.ttl = $9)
+          AND ($10::INT8 IS NULL OR d.ttl >= $11)
+          AND ($12::INT8 IS NULL OR d.ttl <= $13)
           AND (
                 $14::TEXT IS NULL
                 OR LOWER(z.name) LIKE LOWER($15) ESCAPE '\'

@@ -85,7 +85,7 @@ fn nsupdate_decode_prescans_all_records_before_decoding_operations() {
 }
 
 /// Verify that execution receives the checked owner, and an add with a
-/// high-bit TTL still reads as zero (RFC 2181, Section 8).
+/// high-bit TTL retains its unsigned value (RFC 8767, Section 4).
 #[test]
 fn nsupdate_decode_returns_operations_with_checked_owners() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -96,7 +96,7 @@ fn nsupdate_decode_returns_operations_with_checked_owners() {
     match &operations[0] {
         UpdateOperation::Record(RecordOperation::AddRecord { name, ttl, .. }) => {
             assert_eq!(name.labels(), [b"host.name".to_vec()]);
-            assert_eq!(ttl.as_secs(), 0);
+            assert_eq!(ttl.as_secs(), u32::MAX);
         }
         other => panic!("{other:?}"),
     }

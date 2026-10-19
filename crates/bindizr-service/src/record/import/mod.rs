@@ -33,7 +33,7 @@ use crate::{
     serial::generate_serial,
     time::elapsed_ms,
     transaction,
-    ttl::validate_soa_interval,
+    ttl::{validate_minimum_ttl, validate_soa_interval},
     types::{
         ErrorResponse, ImportMode, ImportResult, ImportZoneRequest, ImportZoneResponse,
         ImportZoneSummaryResponse, ImportZonesItemResponse, ImportZonesRequest,
@@ -55,7 +55,7 @@ fn prepare_zone(
         .map_err(|e| {
             ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
         })?;
-    let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i32::from(default_ttl))?;
+    let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
         name: zone_name.clone(),
@@ -66,7 +66,7 @@ fn prepare_zone(
         refresh: validate_soa_interval(i32::from(soa.refresh), "refresh")?,
         retry: validate_soa_interval(i32::from(soa.retry), "retry")?,
         expire: validate_soa_interval(i32::from(soa.expire), "expire")?,
-        minimum_ttl: validate_soa_interval(i32::from(soa.minimum_ttl), "minimum_ttl")?,
+        minimum_ttl: validate_minimum_ttl(i64::from(soa.minimum_ttl))?,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,

@@ -218,16 +218,7 @@ impl ParsedZoneFile {
             },
         };
 
-        // Reject TTLs outside the stored range, as JSON and nsupdate do.
-        let Ok(ttl) = Ttl::try_from(ttl_secs) else {
-            self.errors.push(format!(
-                "TTL {} for '{}' exceeds the maximum of {}",
-                ttl_secs,
-                owner,
-                i32::MAX
-            ));
-            return;
-        };
+        let ttl = Ttl::from_secs(ttl_secs);
 
         let (value, priority) = if matches!(record_type, RecordType::Unknown(_)) {
             let mut bytes = Vec::new();
@@ -325,7 +316,7 @@ fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
         refresh: interval(soa.refresh())?,
         retry: interval(soa.retry())?,
         expire: interval(soa.expire())?,
-        minimum_ttl: Ttl::try_from(soa.minimum().as_secs()).ok()?,
+        minimum_ttl: Ttl::from_secs(soa.minimum().as_secs()),
     })
 }
 

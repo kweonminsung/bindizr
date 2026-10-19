@@ -58,6 +58,12 @@ pub async fn list_by_filter_with_zone(
     caller: &Caller,
     filter: RecordFilter,
 ) -> Result<PaginatedResponse<RecordResponse>, ServiceError> {
+    for ttl in [filter.ttl, filter.min_ttl, filter.max_ttl]
+        .into_iter()
+        .flatten()
+    {
+        crate::ttl::validate_record_ttl(ttl)?;
+    }
     let scope_role_id = caller.scope_role_id();
     let zone_name = filter
         .zone_name

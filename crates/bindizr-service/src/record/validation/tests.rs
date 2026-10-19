@@ -16,7 +16,7 @@ use crate::{
 
 /// TTL of every [`test_record`], so adds under test share their record set's TTL
 /// instead of tripping the record set TTL rule.
-const RRSET_TTL: i32 = 3600;
+const RRSET_TTL: i64 = 3600;
 
 /// Verify that `normalize_record_owner_name` maps parse failures to record name errors.
 #[test]
@@ -40,7 +40,7 @@ fn validate_add(
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
-    ttl: i32,
+    ttl: i64,
     priority: Option<i32>,
 ) -> Result<(), ServiceError> {
     validate_record_constraints(

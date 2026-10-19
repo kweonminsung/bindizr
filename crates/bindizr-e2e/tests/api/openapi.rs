@@ -46,11 +46,27 @@ async fn openapi_serves_documents_without_token_when_enabled() {
                 continue;
             };
             for parameter in parameters {
-                if matches!(
+                let ttl_filter = matches!(
                     parameter["name"].as_str(),
-                    Some("serial" | "min_serial" | "max_serial")
-                ) || (path == "/zones/{name}/versions/diff"
-                    && matches!(parameter["name"].as_str(), Some("from" | "to")))
+                    Some(
+                        "ttl"
+                            | "min_ttl"
+                            | "max_ttl"
+                            | "default_ttl"
+                            | "min_default_ttl"
+                            | "max_default_ttl"
+                    )
+                );
+                if ttl_filter {
+                    assert_eq!(parameter["required"], false, "{path}");
+                }
+                if ttl_filter
+                    || matches!(
+                        parameter["name"].as_str(),
+                        Some("serial" | "min_serial" | "max_serial")
+                    )
+                    || (path == "/zones/{name}/versions/diff"
+                        && matches!(parameter["name"].as_str(), Some("from" | "to")))
                 {
                     assert_eq!(parameter["schema"]["minimum"], 0, "{path}");
                     assert_eq!(parameter["schema"]["maximum"], u32::MAX, "{path}");
@@ -58,6 +74,28 @@ async fn openapi_serves_documents_without_token_when_enabled() {
                 }
             }
         }
+    }
+    for name in [
+        "CreateRecordRequest",
+        "UpdateRecordRequest",
+        "BulkRecordItem",
+        "ExternalDnsRecord",
+    ] {
+        let ttl = &body["components"]["schemas"][name]["properties"]["ttl"];
+        let alternatives = ttl["oneOf"].as_array().expect("TTL accepts null");
+        assert!(alternatives.iter().any(|schema| schema["type"] == "null"));
+        let integer = alternatives
+            .iter()
+            .find(|schema| schema["type"] == "integer")
+            .unwrap();
+        assert_eq!(integer["minimum"], 0, "{name}");
+        assert_eq!(integer["maximum"], u32::MAX, "{name}");
+        assert_eq!(integer["format"], "int64", "{name}");
+    }
+    for name in ["CreateZoneRequest", "UpdateZoneRequest"] {
+        let minimum = &body["components"]["schemas"][name]["properties"]["minimum_ttl"];
+        assert_eq!(minimum["minimum"], 1, "{name}");
+        assert_eq!(minimum["maximum"], u32::MAX, "{name}");
     }
     let record_type = &body["components"]["schemas"]["RecordType"];
     assert_eq!(record_type["type"], "string");

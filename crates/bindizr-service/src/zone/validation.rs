@@ -32,7 +32,7 @@ pub(crate) struct NormalizedSoa {
 pub(crate) fn normalize_soa(
     mname: &str,
     rname: &str,
-    ttl: i32,
+    ttl: i64,
 ) -> Result<NormalizedSoa, ServiceError> {
     let mname = normalize_mname(mname)?;
     let rname = normalize_rname(rname)?;
