@@ -45,9 +45,7 @@ pub(crate) enum UpdateError {
     LoadTsigKey(#[source] ServiceError),
 }
 
-/// Apply an UPDATE request, returning whether zone data actually changed. The
-/// returned signer is `Some` once the request's TSIG was validated, so the
-/// response — success or failure — can be signed.
+/// Apply UPDATE and report whether data changed, retaining a verified signer for any response.
 pub(crate) async fn apply_update(
     dns_cx: &DnsContext,
     request: UpdateRequest,
@@ -75,9 +73,7 @@ pub(crate) async fn apply_update(
             ));
         }
 
-        // An unsigned update carries no identity, so admitting one admits
-        // every client that reaches the listener — the same trade
-        // `api.authentication_required = false` makes for the API.
+        // Like unauthenticated API access, unsigned UPDATE admits every reachable client.
         let caller = match tsig_key {
             Some(tsig_key) => Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
                 .await
@@ -95,9 +91,7 @@ pub(crate) async fn apply_update(
             return Err(UpdateError::Edns(rcode));
         }
 
-        // The parser renders the zone absolute; decoding it into labels here
-        // leaves no string test to decide where its root dot ends the name. A
-        // name no zone can carry is not served here (RFC 2136, Section 3.1.2).
+        // Parse absolute labels; unrepresentable zone names are not served (RFC 2136, Section 3.1.2).
         if request.zone_name == "." {
             return Err(UpdateError::NotAuth(
                 "the root zone is not served here".to_string(),

@@ -2,9 +2,7 @@
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::message::{
-    self, Class, ExtendedErrorCode, Keepalive, Opcode, OptRcode, Rtype,
-};
+use bindizr_core::dns::message::{self, Keepalive, Rtype};
 use tokio::{task::JoinSet, time::timeout};
 
 use super::{
@@ -154,51 +152,8 @@ async fn dispatch_query(
         }
     };
 
-    // Each refusal below is answered under the query's key when it has one.
-    let refusal = if let Some(rcode) = query.format_error() {
-        log::info!(
-            "Refusing DNS {} query format from {}: {}",
-            transport,
-            client_addr,
-            rcode
-        );
-        Some((rcode, None))
-    } else if query.qclass != Class::IN {
-        // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
-        log::info!(
-            "Refusing DNS {} class {} from {}",
-            transport,
-            query.qclass,
-            client_addr
-        );
-        Some((
-            OptRcode::NOTAUTH,
-            Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-        ))
-    } else if query.opcode != Opcode::QUERY {
-        log::info!(
-            "Refusing DNS {} opcode {:?} from {}",
-            transport,
-            query.opcode,
-            client_addr
-        );
-        Some((OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED)))
-    } else if query.qtype != Rtype::SOA && !server::is_xfr_query_type(query.qtype) {
-        // bindizr answers secondaries, not resolvers; over TLS the refusal
-        // names its reason (RFC 9103, Section 7.8).
-        log::info!(
-            "Refusing out-of-scope DNS {} query from {} (qtype={:?})",
-            transport,
-            client_addr,
-            query.qtype
-        );
-        Some((OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED)))
-    } else {
-        None
-    };
-
     let result = async {
-        if let Some((rcode, ede)) = refusal {
+        if let Some((rcode, ede)) = server::query_refusal(&query, transport, client_addr) {
             let response = server::refuse_query(dns_cx, &query, query_data, rcode, ede).await?;
             writer.write_message(&response).await
         } else if query.qtype == Rtype::SOA {

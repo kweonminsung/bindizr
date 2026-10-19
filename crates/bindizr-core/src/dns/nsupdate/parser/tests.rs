@@ -107,6 +107,29 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
+/// TSIG belongs only at the end of Additional (RFC 8945, Section 5.2),
+/// even when a misplaced owner would fail a later zone or grant check.
+#[test]
+fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
+    for count_offset in [6, 8] {
+        for owner in [&b"\xc0\x0c"[..], &b"\x03key\x00"[..]] {
+            for additional_tsig in [false, true] {
+                let mut message = minimal_update_with_ztype(6);
+                message[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
+                append_tsig_record_with_owner(&mut message, owner);
+                if additional_tsig {
+                    set_arcount(&mut message, 1);
+                    append_tsig_record(&mut message);
+                }
+                assert!(matches!(
+                    UpdateRequest::parse(&message),
+                    Err(ParseUpdateError::InvalidTsig)
+                ));
+            }
+        }
+    }
+}
+
 /// Reject non-SOA zone types before the service considers authority.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {

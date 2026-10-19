@@ -12,8 +12,9 @@ use std::{
     sync::Arc,
 };
 
-use bindizr_core::dns::message::{
-    self, Class, ExtendedErrorCode, Keepalive, Opcode, OptRcode, Rtype,
+use bindizr_core::{
+    dns::message::{self, Keepalive, Rtype},
+    model::transfer::TransferTransport,
 };
 use nix::{
     libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo},
@@ -251,36 +252,7 @@ async fn handle_udp_query(
         }
     };
 
-    // Each refusal below is answered under the query's key when it has one.
-    let refusal = if let Some(rcode) = query.format_error() {
-        log::info!(
-            "Refusing DNS UDP query format from {}: {}",
-            client_addr,
-            rcode
-        );
-        Some((rcode, None))
-    } else if query.qclass != Class::IN {
-        // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
-        log::info!(
-            "Refusing DNS UDP class {} from {}",
-            query.qclass,
-            client_addr
-        );
-        Some((
-            OptRcode::NOTAUTH,
-            Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-        ))
-    } else if query.opcode != Opcode::QUERY {
-        log::info!(
-            "Refusing DNS UDP opcode {:?} from {}",
-            query.opcode,
-            client_addr
-        );
-        Some((OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED)))
-    } else {
-        None
-    };
-    if let Some((rcode, ede)) = refusal {
+    if let Some((rcode, ede)) = server::query_refusal(&query, TransferTransport::Udp, client_addr) {
         match server::refuse_query(dns_cx, &query, query_data, rcode, ede).await {
             Ok(response) => send_udp_response(socket, target, &response).await,
             Err(e) => log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e),
@@ -311,38 +283,15 @@ async fn handle_udp_query(
         return;
     }
 
-    let response = if server::is_xfr_query_type(query.qtype) {
-        match server::handle_udp_xfr(dns_cx, client_addr, &query, query_data).await {
-            Ok(response) => response,
-            Err(error) => {
-                log::warn!(
-                    "Failed to answer DNS UDP transfer from {}: {}",
-                    client_addr,
-                    error
-                );
-                return;
-            }
-        }
-    } else {
-        log::info!(
-            "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",
-            client_addr,
-            query.qtype
-        );
-        match server::refuse_query(
-            dns_cx,
-            &query,
-            query_data,
-            OptRcode::REFUSED,
-            Some(ExtendedErrorCode::NOT_SUPPORTED),
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e);
-                return;
-            }
+    let response = match server::handle_udp_xfr(dns_cx, client_addr, &query, query_data).await {
+        Ok(response) => response,
+        Err(error) => {
+            log::warn!(
+                "Failed to answer DNS UDP transfer from {}: {}",
+                client_addr,
+                error
+            );
+            return;
         }
     };
     send_udp_response(socket, target, &response).await;

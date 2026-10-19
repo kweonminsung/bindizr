@@ -122,10 +122,7 @@ pub async fn import_zone(
     // Checked before any fetch or parse: with `create` there is no zone yet,
     // and only an all-zones grant will reach the one made.
     if request.create {
-        caller.authorize_action(Action::ZoneCreate)?;
-        for action in import_actions(mode) {
-            caller.authorize_all_whole_zones(*action)?;
-        }
+        authorize_new_zone_import(caller, mode)?;
     }
 
     let source = match (&request.content, &request.from_server) {
@@ -181,10 +178,7 @@ pub async fn import_zones(
     }
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
-        caller.authorize_action(Action::ZoneCreate)?;
-        for action in import_actions(mode) {
-            caller.authorize_all_whole_zones(*action)?;
-        }
+        authorize_new_zone_import(caller, mode)?;
     }
     let zone_names = match (&request.zone_names, &request.from_catalog) {
         (Some(names), None) => normalize_zone_names(names)?,
@@ -298,6 +292,15 @@ fn import_actions(mode: ImportMode) -> &'static [Action] {
     }
 }
 
+/// Authorize zone creation and the import mode's record actions in all zones.
+fn authorize_new_zone_import(caller: &Caller, mode: ImportMode) -> Result<(), ServiceError> {
+    caller.authorize_action(Action::ZoneCreate)?;
+    for action in import_actions(mode) {
+        caller.authorize_all_whole_zones(*action)?;
+    }
+    Ok(())
+}
+
 /// Authorize each record action the import mode performs over the zone whole.
 fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<(), ServiceError> {
     for action in import_actions(mode) {
@@ -331,10 +334,7 @@ async fn reconcile(
             authorize_import(caller, mode, zone)?;
             zone.default_ttl
         } else if request.create {
-            caller.authorize_action(Action::ZoneCreate)?;
-            for action in import_actions(mode) {
-                caller.authorize_all_whole_zones(*action)?;
-            }
+            authorize_new_zone_import(caller, mode)?;
             cx.config().dns.zone_defaults.ttl
         } else {
             return Err(ServiceError::zone_not_found(zone_name));

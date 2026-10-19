@@ -27,6 +27,80 @@ use crate::common::{
     exchange_tcp,
 };
 
+/// Misplaced TSIG is FORMERR before authority or grants, with no partial write.
+#[tokio::test]
+#[serial]
+async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
+    for tsig_required in [false, true] {
+        let app = TestApp::start_with_options(TestAppOptions {
+            nsupdate_tsig_required: tsig_required,
+            ..Default::default()
+        })
+        .await;
+        let zone = app.create_test_zone().await;
+        let zone_name = zone["name"].as_str().unwrap();
+        let serial = app.read_zone_serial(zone_name).await;
+        let records = exported_record_sets(&app, zone_name).await;
+        for prerequisite in [false, true] {
+            for owner in [zone_name, "outside.invalid"] {
+                for additional_tsig in [false, true] {
+                    let mut request = build_update(
+                        8945,
+                        zone_name,
+                        Class::IN,
+                        &[],
+                        &[UpdateRecord::AddA {
+                            name: format!("host.{zone_name}."),
+                            ttl: 300,
+                            addr: "192.0.2.1".into(),
+                        }],
+                    )
+                    .unwrap()
+                    .finish();
+                    let message = Message::from_octets(request.as_slice()).unwrap();
+                    let offset = if prerequisite {
+                        message.answer().unwrap().pos()
+                    } else {
+                        message.additional().unwrap().pos()
+                    };
+                    let mut record = parse_name(owner).unwrap().as_slice().to_vec();
+                    let mut rdata = parse_name("hmac-sha256").unwrap().as_slice().to_vec();
+                    rdata.extend_from_slice(&Time48::now().into_octets());
+                    rdata.extend_from_slice(&300u16.to_be_bytes());
+                    rdata.extend_from_slice(&32u16.to_be_bytes());
+                    rdata.extend_from_slice(&[0; 32]);
+                    rdata.extend_from_slice(&8945u16.to_be_bytes());
+                    rdata.extend_from_slice(&[0; 4]);
+                    record.extend_from_slice(&[0, 250, 0, 255, 0, 0, 0, 0]);
+                    record.extend_from_slice(&u16::try_from(rdata.len()).unwrap().to_be_bytes());
+                    record.extend_from_slice(&rdata);
+                    request.splice(offset..offset, record.iter().copied());
+                    let (count_offset, count) = if prerequisite { (6, 1u16) } else { (8, 2u16) };
+                    request[count_offset..count_offset + 2].copy_from_slice(&count.to_be_bytes());
+                    if additional_tsig {
+                        request.extend_from_slice(&record);
+                        request[10..12].copy_from_slice(&1u16.to_be_bytes());
+                    }
+                    for bytes in [
+                        exchange_udp(app.dns_port(), &request).unwrap(),
+                        exchange_tcp(app.dns_port(), &request).unwrap(),
+                    ] {
+                        let response = Message::from_octets(bytes).unwrap();
+                        assert_eq!(
+                            response.header().rcode(),
+                            Rcode::FORMERR,
+                            "tsig_required={tsig_required}, prerequisite={prerequisite}, owner={owner}"
+                        );
+                        assert!(!crate::common::dns::tsig::is_signed(&response).unwrap());
+                    }
+                }
+            }
+        }
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        assert_eq!(exported_record_sets(&app, zone_name).await, records);
+    }
+}
+
 /// Refuse managed changes atomically while keeping DNSSEC prerequisites.
 #[tokio::test]
 #[serial]

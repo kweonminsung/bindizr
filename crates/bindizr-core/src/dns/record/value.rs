@@ -3,6 +3,7 @@
 use super::ParseRecordValueError;
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
+    message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN},
     name::{MAX_DOMAIN_LEN, decode_name_labels},
     tsig::MAX_TSIG_RECORD,
 };
@@ -11,10 +12,15 @@ use crate::dns::{
 /// and compared as this value, so both types must agree on it.
 pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 
-/// RDATA limit after reserving the TCP envelope, worst-case question, and TSIG.
-/// A record must fit one transfer message even when the secondary uses a key.
-pub(crate) const MAX_RECORD_RDATA: usize =
-    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10) - MAX_TSIG_RECORD;
+/// RDATA limit reserving worst-case question, owner, TSIG, OPT and keepalive.
+/// Every stored record must fit one signed EDNS transfer message.
+pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
+    - 12
+    - (MAX_DOMAIN_LEN + 2 + 4)
+    - (MAX_DOMAIN_LEN + 2 + 10)
+    - MAX_TSIG_RECORD
+    - OPT_RECORD_LEN
+    - KEEPALIVE_OPTION_LEN;
 
 /// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(

@@ -298,7 +298,8 @@ impl TsigKey {
     }
 }
 
-/// Authenticate a request and prepare its response signer; an unknown key yields BADKEY.
+/// Verify MAC and Time Signed/Fudge, returning a response signer or BADKEY for an unknown key.
+/// Omit the latest-time cache to accept reordered requests (RFC 8945, Section 5.2.3 SHOULD exception).
 pub fn verify_tsig(
     query_data: &[u8],
     key: Option<TsigSigningKey>,
@@ -479,9 +480,8 @@ fn build_signed_error_response(
         .additional();
     Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
 
-    // domain's error builder cannot include OPT and hashes Other Data as eight
-    // bytes through 0.12.3; RFC 8945, Section 4.3 requires the six bytes actually
-    // carried on the wire.
+    // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
+    // Section 4.3 requires the six carried on the wire.
     let name = key.domain.name().to_canonical_name::<Vec<u8>>();
     let algorithm = key.domain.algorithm().to_name();
     let (rcode, time_signed, other) = match error {

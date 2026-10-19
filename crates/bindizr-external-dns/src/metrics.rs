@@ -35,9 +35,7 @@ impl AdapterMetrics {
         )?;
         registry.register(Box::new(request_duration_seconds.clone()))?;
 
-        // Pre-create every label combination `server::track_webhook_metrics`
-        // emits: an empty metric family fails text encoding, which would blank
-        // /metrics until the first webhook request.
+        // Pre-create labels: empty families fail encoding and blank /metrics before the first request.
         let endpoints = [
             "negotiate",
             "records_get",

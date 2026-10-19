@@ -58,15 +58,12 @@ pub(crate) struct ParentDs {
     /// The nameservers asked, as `host[:port]` entries from the zone's
     /// `parent_ns_addrs`.
     pub(crate) ns_addrs: Vec<String>,
-    /// Each server's answer in `ns_addrs` order: its DS record set, or `None` when
-    /// it serves none. Kept apart because dropping trust is unsafe while any
-    /// server still serves a DS, and promoting a key until every server does.
+    /// Per-server DS sets in `ns_addrs` order; `None` means no DS.
+    /// Removal needs all servers empty; promotion needs a match at each.
     pub(crate) answers: Vec<Option<DsRecordSet>>,
 }
 
-/// Ask every parent server for the zone's DS record set. `Err` when the zone
-/// names no parent or any server fails to answer: silence never reads as
-/// absence.
+/// Query every parent for DS; missing configuration or unanswered servers are errors, not absence.
 pub(crate) async fn probe_parent_ds(
     cx: &Context,
     zone: &Zone,
@@ -105,9 +102,7 @@ async fn resolve_parent_ns_addrs(
     Ok(servers)
 }
 
-/// Ask every server for the zone's DS record set in parallel, reporting each
-/// answer in `servers` order; a server none of whose addresses answers
-/// fails the probe.
+/// Query parent DS sets in parallel, preserving server order; each server must answer.
 async fn query_ds(
     zone_name: &ZoneName,
     servers: &[(String, Vec<SocketAddr>)],

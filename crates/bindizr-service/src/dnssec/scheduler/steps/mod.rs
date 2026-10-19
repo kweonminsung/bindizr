@@ -1,5 +1,4 @@
-//! What one scheduler step does to one zone: the transaction each scan's
-//! zone ids are handed to, and the journal retention that runs beside them.
+//! Per-zone scheduler transactions for signing, rollover, and history retention.
 
 use bindizr_core::{
     dns::{dnssec::SigningPass, name::ZoneName},
@@ -60,9 +59,8 @@ pub(crate) async fn prune_zone_history_by_zone_id(
     transaction::finish_tx(tx, result, "failed to prune zone history").await
 }
 
-/// Re-sign one zone in its own transaction, bumping the serial only when the
-/// pass actually replaced signatures. `None` when there was nothing to do
-/// (zone deleted or unsigned meanwhile, or a concurrent mutation re-signed it).
+/// Re-sign a zone transactionally, advancing its serial only for changed signatures.
+/// Return `None` if the zone is gone, unsigned, or needs no new signatures.
 pub(crate) async fn resign_zone_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
@@ -270,10 +268,8 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
     Ok(changed)
 }
 
-/// The retired keys past their hold-down that the zone can afford to drop:
-/// either another key of that algorithm still signs zone data, or the whole
-/// algorithm is leaving at once (RFC 6840, Section 5.11 keeps an algorithm's
-/// DNSKEYs and its signatures together).
+/// Select retired keys past hold-down, retaining a signer per algorithm unless all leave together.
+/// RFC 6840, Section 5.11 keeps an algorithm's DNSKEYs and signatures together.
 fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<DnssecKeyId> {
     keys.iter()
         .filter(|key| {

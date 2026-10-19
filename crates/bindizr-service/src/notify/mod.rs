@@ -1,6 +1,4 @@
-//! When a committed change is propagated: the NOTIFY entry points and the
-//! `dns.notify.batch_ms` choice between sending inline and queueing. The
-//! batching worker lives in `queue`.
+//! Propagate committed changes by NOTIFY, inline or batched by `queue` per `dns.notify.batch_ms`.
 
 pub mod queue;
 
@@ -66,9 +64,8 @@ pub(crate) async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Resul
     Ok(crate::dns_client::notify::send_zone_notify(cx, zone_name).await?)
 }
 
-/// NOTIFY the secondaries after a zone update: queued when `dns.notify.batch_ms`
-/// sets a window, otherwise sent inline before the write is answered. The write
-/// has committed, so a failure is logged rather than reported.
+/// NOTIFY after commit, queued when batching is enabled and inline otherwise.
+/// Log failures without failing the committed write.
 pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
     if cx.config().dns.notify.batch_ms > 0 && cx.enqueue_notify(NotifyTarget::Zone(zone_name)) {
         return;

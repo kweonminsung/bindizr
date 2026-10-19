@@ -362,6 +362,118 @@ fn signed_message_reserves_space_for_tsig() {
     assert!(signed.message_len() > unsigned.message_len());
 }
 
+/// Every storable variable-size record fits a signed EDNS TCP envelope,
+/// including maximal, unrelated question and key names.
+#[test]
+fn maximum_record_values_fit_signed_edns_transfer_frames() {
+    use crate::dns::{
+        name::{OwnerName, ZoneName},
+        record::{MAX_RECORD_RDATA, TxtRecordValue},
+        tsig::tests::test_key,
+    };
+
+    let longest_name = |labels: [char; 4]| {
+        labels
+            .into_iter()
+            .zip([63, 63, 63, 61])
+            .map(|(ch, len)| ch.to_string().repeat(len))
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    let zone = ZoneName::parse(&longest_name(['a', 'b', 'c', 'd'])).unwrap();
+    let qname = zone.to_wire_name().unwrap();
+    let key = crate::model::tsig_key::TsigKey {
+        name: longest_name(['k', 'l', 'm', 'n']),
+        ..test_key(TsigAlgorithm::HmacSha512)
+    }
+    .to_signing_key()
+    .unwrap();
+    let mut remaining = MAX_RECORD_RDATA;
+    let mut segments = Vec::new();
+    while remaining > 0 {
+        let len = (remaining - 1).min(255);
+        segments.push(vec![b'x'; len]);
+        remaining -= len + 1;
+    }
+    let values = [
+        (
+            RecordType::Txt,
+            TxtRecordValue::from_octet_segments(segments.iter().map(Vec::as_slice))
+                .unwrap()
+                .to_presentation(),
+        ),
+        (
+            RecordType::Caa,
+            format!("0 issue \"{}\"", "x".repeat(MAX_RECORD_RDATA - 7)),
+        ),
+        (
+            RecordType::Ds,
+            format!("1 13 253 {}", "AB".repeat(MAX_RECORD_RDATA - 4)),
+        ),
+        (
+            RecordType::Sshfp,
+            format!("4 253 {}", "AB".repeat(MAX_RECORD_RDATA - 2)),
+        ),
+        (
+            RecordType::Tlsa,
+            format!("3 0 0 {}", "AB".repeat(MAX_RECORD_RDATA - 3)),
+        ),
+    ];
+    for (record_type, value) in values {
+        record_type.validate_value(&value, None).unwrap();
+        let mut question = MessageBuilder::new_vec().question();
+        question.push((&qname, Rtype::AXFR)).unwrap();
+        let mut additional = question.additional();
+        additional
+            .opt(|opt| {
+                opt.set_udp_payload_size(1232);
+                Ok(())
+            })
+            .unwrap();
+        let mut client =
+            ClientSequence::request(key.clone(), &mut additional, Time48::now()).unwrap();
+        let request = additional.finish();
+        let query =
+            ParsedQuery::parse(&request, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
+        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
+            .sign_with(verify_tsig(&request, Some(key.clone())).unwrap().into());
+        let mut frames = Vec::new();
+        for _ in 0..2 {
+            if let Some(frame) = builder
+                .add_answer_or_overflow(|builder| {
+                    builder.add_record_parts(
+                        &zone,
+                        &OwnerName::apex(),
+                        &record_type,
+                        &value,
+                        crate::dns::Ttl::from_secs(300),
+                        None,
+                    )
+                })
+                .unwrap_or_else(|error| panic!("{record_type}: {error}"))
+            {
+                frames.push(frame);
+            }
+        }
+        frames.push(builder.take_frame().unwrap().unwrap());
+        assert_eq!(frames.len(), 2);
+        for frame in frames {
+            assert_eq!(
+                usize::from(u16::from_be_bytes([frame[0], frame[1]])),
+                frame.len() - 2
+            );
+            let mut message = Message::from_octets(strip_frame_length(frame)).unwrap();
+            assert!(message.as_slice().len() <= DNS_TCP_MAX_SIZE);
+            assert!(message.opt().unwrap().opt().tcp_keepalive().is_some());
+            let answer = message.answer().unwrap().next().unwrap().unwrap();
+            assert_eq!(answer.rtype().to_int(), record_type.wire_type());
+            assert_eq!(usize::from(answer.rdlen()), MAX_RECORD_RDATA);
+            client.answer(&mut message, Time48::now()).unwrap();
+        }
+        client.done().unwrap();
+    }
+}
+
 /// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3: echoed
 /// with the extended error, FORMERR when doubled, BADVERS for a newer version.
 #[test]

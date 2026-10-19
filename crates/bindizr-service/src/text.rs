@@ -1,15 +1,12 @@
-//! Text the API stores as given, held to the columns it fills: the plain
-//! identifiers naming tokens, secondaries, and DNSSEC policies, and the
-//! free-text descriptions beside them.
+//! Validate stored identifiers and descriptions against their column constraints.
 
 use crate::error::ServiceError;
 
 /// The width of a VARCHAR(255) column, in characters.
 pub(crate) const MAX_COLUMN_TEXT_LEN: usize = 255;
 
-/// Trim and lowercase a plain identifier: one URL path segment, folded so one
-/// name means one row on every backend (MySQL compares case-insensitively).
-/// `what` names the field in the error.
+/// Trim and lowercase a single URL path segment for consistent backend matching.
+/// `what` names the field in errors.
 pub(crate) fn normalize_identifier(
     value: &str,
     what: &str,
@@ -40,9 +37,8 @@ pub(crate) fn normalize_identifier(
     Ok(name)
 }
 
-/// Trim a description; empty clears it. Length and NUL are refused here as
-/// 400s rather than as a backend-dependent insert failure (PostgreSQL text
-/// cannot hold NUL); `error` phrases the rejection in the caller's field class.
+/// Trim a description; empty clears it, while excess length and NUL yield input errors.
+/// `error` supplies the field-specific rejection; PostgreSQL cannot store NUL.
 pub(crate) fn normalize_description(
     value: Option<&str>,
     error: fn(String) -> ServiceError,

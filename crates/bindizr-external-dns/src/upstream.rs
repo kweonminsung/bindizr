@@ -153,9 +153,7 @@ impl UpstreamClient {
         Ok(body.records)
     }
 
-    /// Probe whether the adapter can work at all: bindizr answers, accepts this
-    /// token, and grants it something to manage. The unauthenticated `/health`
-    /// stays green through a token rotated away or never granted a zone.
+    /// Check token access to at least one manageable name; unauthenticated `/health` cannot prove it.
     pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
         match self.list_domains().await?.is_empty() {
             true => Err(UpstreamError::NoManageableNames),

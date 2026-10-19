@@ -74,9 +74,7 @@ fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValueRes
     record_set.into_iter().map(|r| r.value).collect()
 }
 
-/// Diff two serials' records at the record set level. TTL is part of a record's identity,
-/// so a TTL-only change shows as `changed`. Both sides are [`ReadableRecords`], so a
-/// diff shows only rows the caller may read.
+/// Diff authorized [`ReadableRecords`] by record set, counting TTL-only edits as changes.
 pub(crate) fn build_record_diff(
     zone: &Zone,
     before: &ReadableRecords<RecordData>,

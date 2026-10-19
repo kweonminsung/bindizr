@@ -1,6 +1,4 @@
-//! Unix-socket daemon API for the CLI. Every command runs with global access
-//! (no token scoping), so a connection is admitted only from the daemon's own
-//! user or root, by the peer credentials the kernel reports.
+//! Serve globally authorized CLI commands over Unix sockets, restricted to the daemon user or root.
 
 mod audit;
 pub(crate) mod control;
@@ -43,9 +41,7 @@ use crate::{
     tls::TlsCertificates,
 };
 
-/// Upper bound on a single command line, so a buggy or malicious client cannot
-/// force unbounded allocation. Sized above the HTTP upload cap (32 MB) because
-/// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
+/// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Why the control socket could not be bound.
@@ -90,9 +86,7 @@ pub(crate) enum ServeSocketError {
     ReadUid(#[source] io::Error),
 }
 
-/// The socket front end's context: the daemon's, plus the control channel
-/// the lifecycle loop awaits. A command handler takes the daemon's context;
-/// only a control command needs this one.
+/// Daemon context and lifecycle control channel; only control commands need the latter.
 #[derive(Debug, Clone)]
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,

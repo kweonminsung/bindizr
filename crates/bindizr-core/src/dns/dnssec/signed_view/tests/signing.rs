@@ -344,6 +344,51 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
     );
 }
 
+/// A stored NS/DS pair below a zone cut belongs to the delegated child,
+/// so it must not acquire signatures from this zone (RFC 4035, Section 2.2).
+#[test]
+fn signing_excludes_ds_below_an_existing_delegation() {
+    let zone = test_zone();
+    let keys = [test_key(
+        &zone,
+        1,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+    )];
+    let digest = format!("12345 13 2 {}", "AB".repeat(32));
+    let records = [
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
+        test_record("sub", RecordType::Ns, "ns.sub.example.com", 3600),
+        test_record("sub", RecordType::Ds, &digest, 3600),
+        test_record("deep.sub", RecordType::Ns, "ns.deep.sub.example.com", 3600),
+        test_record("deep.sub", RecordType::Ds, &digest, 3600),
+    ];
+    let delegation = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
+    let below_cut = OwnerName::parse_in_zone("deep.sub", &zone.name).unwrap();
+    for denial in [DnssecDenial::Nsec, DnssecDenial::Nsec3] {
+        let diff = compute(ComputeArgs {
+            zone: &zone,
+            records: &records,
+            keys: &keys,
+            prev: &[],
+            denial,
+            new_serial: 6,
+            expiration: default_expiration(),
+            expiration_jitter_secs: 0,
+            pass: SigningPass::Refresh,
+        });
+        assert_eq!(
+            rrsigs_covering(&diff.added, &delegation, RECORD_TYPE_DS).len(),
+            1
+        );
+        assert!(
+            rrsigs_covering(&diff.added, &below_cut, RECORD_TYPE_DS).is_empty(),
+            "{denial:?}"
+        );
+        assert!(!diff.added.iter().any(|row| row.name == below_cut));
+    }
+}
+
 /// Verify that mixed TTL RRSET signs at the minimum.
 #[test]
 fn mixed_ttl_record_set_signs_at_the_minimum() {

@@ -1,8 +1,5 @@
-//! Who may transfer a zone: the key that signed the request, or — when it
-//! carried no TSIG — the address ACL a deployment with no keys keeps using.
-//! Over TLS the two are required together (RFC 9103, Section 7.5). A real
-//! zone's grant is decided in the service beside the row it serves; the
-//! virtual catalog zone, which has no row, is gated here.
+//! Authenticate transfers by TSIG or address ACL; TLS requires both (RFC 9103, Section 7.5).
+//! The service gates stored zones; this module gates the virtual catalog.
 
 use std::net::IpAddr;
 
@@ -156,10 +153,8 @@ pub(crate) async fn authenticate_tsig_key(
     }))
 }
 
-/// Authenticate a transfer request: verify its TSIG under the key it names, or
-/// admit an unsigned one by the address ACL; over TLS both must pass (RFC
-/// 9103, Section 7.5). What the key may read is decided where the content is
-/// loaded, the catalog's included.
+/// Authenticate TSIG or admit an unsigned address; TLS requires both (RFC 9103, Section 7.5).
+/// Content grants are checked when loading the zone or catalog.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
     query_data: &[u8],

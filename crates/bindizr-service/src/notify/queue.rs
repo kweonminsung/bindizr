@@ -1,6 +1,5 @@
-//! The NOTIFY queue behind `dns.notify.batch_ms`: committed writes enqueue a
-//! NOTIFY here and return, and the worker batches a burst into one NOTIFY per
-//! zone. The sender lives in the `Context`; the worker holds an `Arc` of it.
+//! Batch committed writes into one NOTIFY per zone over `dns.notify.batch_ms`.
+//! `Context` owns the sender; the worker holds an `Arc<Context>`.
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -91,14 +90,10 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
             send_batch(&cx, batch).await;
         }
 
-        // Refuse new jobs before flushing: an enqueue racing this shutdown
-        // then fails and its caller sends inline, while `recv` still drains
-        // what the channel already holds.
+        // Reject new jobs before draining so racing callers fall back to inline NOTIFY.
         rx.close();
 
-        // A batched write was answered as soon as its NOTIFY was queued, so
-        // send what is left; otherwise secondaries keep serving the old serial
-        // until their own refresh timer.
+        // Flush acknowledged writes so secondaries need not wait for their refresh timer.
         let mut last = NotifyBatch::default();
         while let Some(job) = rx.recv().await {
             last.add(job);

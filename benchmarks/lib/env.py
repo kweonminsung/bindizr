@@ -25,10 +25,7 @@ def _read_command_output(args: list[str]) -> str:
 
 
 def _load_compose_images() -> dict[str, str]:
-    """Image tag per service across systems/*/compose.yml, derived so the report
-    cannot drift from what the stack runs. An ARM run layers each system's
-    `compose.arm.yml` exactly as the harness does, since it swaps images.
-    `seed` containers are scaffolding."""
+    """Read service images from Compose, applying ARM overrides and excluding seed scaffolding."""
     images: dict[str, str] = {}
     for compose in sorted(SYSTEMS_DIR.glob("*/compose.yml")):
         files = [compose]

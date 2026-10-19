@@ -160,6 +160,10 @@ fn parse_record(
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidRecord)?,
     );
+    // RFC 8945, Section 5.2 confines TSIG to the Additional section.
+    if record_type == Rtype::TSIG {
+        return Err(ParseUpdateError::InvalidTsig);
+    }
     let class = Class::from_int(
         parser
             .parse_u16_be()

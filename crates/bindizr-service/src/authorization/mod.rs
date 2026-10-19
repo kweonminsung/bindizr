@@ -1,10 +1,5 @@
-//! Authorize a caller through its role's grants. Invisible zones read as 404;
-//! denied operations as 403.
-//!
-//! Management entry points authorize their [`Caller`]; the local socket passes
-//! [`Caller::socket`]. The DNS plane authenticates its TSIG key into a
-//! [`Caller`] as well, or takes [`Caller::unsigned_dns`] where the address
-//! ACL or the configuration admits an unsigned request.
+//! Authorize [`Caller`] through role grants: invisible zones yield 404, denied actions 403.
+//! Socket callers are unrestricted; DNS callers use TSIG or explicitly admitted unsigned access.
 
 use bindizr_core::{
     dns::name::OwnerName,
@@ -335,39 +330,23 @@ impl Caller {
         }
     }
 
-    /// This caller authenticated again in `tx`: its token and its role's grants
-    /// re-read, share-locked where the backend locks rows. A revocation waits
-    /// for a write (SQLite's writer reservation serializes them too); a read
-    /// decides on what its own snapshot holds. Taken right after the zone row.
+    /// Re-read the credential and grants in `tx`, after locking the zone.
+    /// Shared row locks or SQLite's writer reservation serialize revocation with writes.
     pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
     ) -> Result<Caller, ServiceError> {
-        match &self.scope {
-            CallerScope::Global => Ok(self.clone()),
+        let (role_id, credential) = match &self.scope {
+            CallerScope::Global => return Ok(self.clone()),
             CallerScope::Role {
                 credential: Credential::TsigKey(key_id),
                 ..
             } => {
-                // The key that signed may have been deleted since; locked, a
-                // deletion waits for this transaction.
+                // Lock the key so deletion waits for this transaction.
                 let tsig_key = bindizr_db::tsig_key::get_tx(tx, *key_id, LockLevel::Shared)
                     .await?
                     .ok_or_else(|| ServiceError::invalid_token("TSIG key no longer exists"))?;
-                let grants = bindizr_db::role_grant::list_by_role_id_tx(
-                    tx,
-                    tsig_key.role_id,
-                    LockLevel::Shared,
-                )
-                .await?;
-                Ok(Caller {
-                    scope: CallerScope::Role {
-                        id: tsig_key.role_id,
-                        credential: Credential::TsigKey(tsig_key.id),
-                        grants: grants.into(),
-                    },
-                    attribution: self.attribution.clone(),
-                })
+                (tsig_key.role_id, Credential::TsigKey(tsig_key.id))
             }
             CallerScope::Role {
                 credential: Credential::Token(token_id),
@@ -381,22 +360,19 @@ impl Caller {
                             .is_none_or(|expires_at| Utc::now() < expires_at)
                     })
                     .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
-                let grants = bindizr_db::role_grant::list_by_role_id_tx(
-                    tx,
-                    token.role_id,
-                    LockLevel::Shared,
-                )
-                .await?;
-                Ok(Caller {
-                    scope: CallerScope::Role {
-                        id: token.role_id,
-                        credential: Credential::Token(token.id),
-                        grants: grants.into(),
-                    },
-                    attribution: self.attribution.clone(),
-                })
+                (token.role_id, Credential::Token(token.id))
             }
-        }
+        };
+        let grants =
+            bindizr_db::role_grant::list_by_role_id_tx(tx, role_id, LockLevel::Shared).await?;
+        Ok(Caller {
+            scope: CallerScope::Role {
+                id: role_id,
+                credential,
+                grants: grants.into(),
+            },
+            attribution: self.attribution.clone(),
+        })
     }
 
     /// Authorize record reads and writes in `zone`; a zone no grant reaches

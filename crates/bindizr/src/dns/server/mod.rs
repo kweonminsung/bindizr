@@ -17,7 +17,7 @@ use std::{net::SocketAddr, sync::Arc};
 pub(crate) use auth::refuse_query;
 use auth::{TransferRefusal, authenticate_transfer, authorize_transport};
 use bindizr_core::{
-    dns::message::{ExtendedErrorCode, OptRcode, Rtype},
+    dns::message::{Class, ExtendedErrorCode, Opcode, OptRcode, Rtype},
     metrics::XfrResult,
     model::transfer::{TransferKind, TransferTransport},
 };
@@ -52,6 +52,61 @@ impl DnsContext {
 /// Check whether a query type requests AXFR or IXFR.
 pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
+}
+
+/// Classify unsupported queries, checking format before class, opcode, and type.
+pub(crate) fn query_refusal(
+    query: &message::ParsedQuery,
+    transport: TransferTransport,
+    client_addr: SocketAddr,
+) -> Option<(OptRcode, Option<ExtendedErrorCode>)> {
+    if let Some(rcode) = query.format_error() {
+        log::info!(
+            "Refusing DNS {} query format from {}: {}",
+            transport,
+            client_addr,
+            rcode
+        );
+        return Some((rcode, None));
+    }
+    if query.qclass != Class::IN {
+        // RFC 5936, Section 2.2.2: only IN is served; echo the requested class.
+        log::info!(
+            "Refusing DNS {} class {} from {}",
+            transport,
+            query.qclass,
+            client_addr
+        );
+        return Some((
+            OptRcode::NOTAUTH,
+            Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+        ));
+    }
+    if query.opcode != Opcode::QUERY {
+        log::info!(
+            "Refusing DNS {} opcode {:?} from {}",
+            transport,
+            query.opcode,
+            client_addr
+        );
+        // RFC 9103, Section 7.8: TLS refusals use REFUSED and EDE 21.
+        let rcode = if transport == TransferTransport::Tls {
+            OptRcode::REFUSED
+        } else {
+            OptRcode::NOTIMP
+        };
+        return Some((rcode, Some(ExtendedErrorCode::NOT_SUPPORTED)));
+    }
+    if query.qtype != Rtype::SOA && !is_xfr_query_type(query.qtype) {
+        log::info!(
+            "Refusing out-of-scope DNS {} query from {} (qtype={:?})",
+            transport,
+            client_addr,
+            query.qtype
+        );
+        return Some((OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED)));
+    }
+    None
 }
 
 /// Authenticate and serve a TCP zone transfer, returning refusals as DNS responses.

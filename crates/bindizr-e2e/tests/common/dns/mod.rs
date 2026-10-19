@@ -14,7 +14,8 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferResult, axfr, xot};
 pub(crate) use transport::{
-    exchange_request, exchange_tcp, exchange_udp, exchange_xot, read_frame, write_frame,
+    connect_tcp, connect_tls, exchange_request, exchange_tcp, exchange_udp, exchange_xot,
+    read_frame, write_frame,
 };
 
 use super::TestApp;

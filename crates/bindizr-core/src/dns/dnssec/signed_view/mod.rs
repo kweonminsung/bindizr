@@ -1,6 +1,5 @@
-//! Compute the DNSSEC plane and diff it against storage for IXFR.
-//! Reuse signatures while their record set, signer set, and validity are unchanged;
-//! rollovers re-sign only the affected sets.
+//! Compute the DNSSEC view and IXFR diff, reusing signatures with unchanged records,
+//! signers and validity; rollovers re-sign only affected sets.
 
 mod input;
 #[cfg(test)]
@@ -217,10 +216,8 @@ impl SignedViewParams<'_> {
         }
         signable.retain(|record_set| {
             let owner = record_set[0].owner();
-            if delegations.contains(owner.as_slice()) {
-                return record_set[0].rtype() == Rtype::DS;
-            }
             !is_below_cut(owner, &apex, &delegations)
+                && (!delegations.contains(owner.as_slice()) || record_set[0].rtype() == Rtype::DS)
         });
         for record in &denial_records {
             signable.push(vec![record]);

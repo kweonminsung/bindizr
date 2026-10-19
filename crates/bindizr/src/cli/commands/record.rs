@@ -278,9 +278,7 @@ serial and the secondaries transfer once."
         /// The record ID; deletes exactly that one record
         #[arg(long, value_name = "RECORD_ID", conflicts_with = "name")]
         id: Option<i32>,
-        // `requires = "name"` does not hold when the owner name is a positional
-        // `--id` excludes, so each narrowing flag refuses `--id` outright
-        // rather than being taken and ignored.
+        // Clap's positional `name` can be waived by --id; narrowing flags must explicitly conflict.
         /// Narrow to one record type
         #[arg(long = "type", requires = "name", conflicts_with = "id")]
         record_type: Option<String>,

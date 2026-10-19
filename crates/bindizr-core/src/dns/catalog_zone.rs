@@ -49,11 +49,8 @@ pub enum ExtractMemberZonesError {
     MemberRepeated { name: String },
 }
 
-/// The member zones a transferred catalog lists, sorted: the PTR targets
-/// directly under `zones.<catalog>` (RFC 9432, Section 4.3), once its
-/// one version record says schema 2 (Section 4.2.1); a second version
-/// record, a node with two PTRs or a zone under two nodes is a broken
-/// catalog (Sections 4.1 and 4.2.1).
+/// Extract sorted member PTR targets from a schema-2 catalog.
+/// Reject duplicate versions, PTRs or members (RFC 9432, Sections 4.1–4.3).
 pub fn extract_member_zones(
     records: &[TransferRecord],
     catalog: &ZoneName,

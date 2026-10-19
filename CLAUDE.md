@@ -547,6 +547,24 @@ key and its registered address both pass (RFC 9103, Section 7.5), though
 the plain listener takes either alone. Code that meets a requirement cites
 the section (`RFC 9103, Section 7.1`), so a reader can check the text.
 
+Two SHOULD recommendations have explicit exceptions. TSIG verification does
+not retain the latest Time Signed per key (RFC 8945, Section 5.2.3), because
+UDP and concurrent stream requests can arrive out of order; every request
+still passes MAC and Time Signed/Fudge checks. Delegation NS and DS TTLs are
+recommended to match (RFC 4035, Section 2.4), but independently edited or
+imported sets retain the operator's explicit per-type TTLs. Each RRset still
+has one TTL.
+
+Generated DS/CDS use SHA-256, recommended by the IANA DS registry under
+RFC 9904. Storing a user-supplied DS is not digest generation; do not apply
+the signer's algorithm policy to raw DS input or parent-DS matching.
+DNSSEC signs DS at an authoritative delegation, never data below an earlier cut.
+
+Stored RDATA must fit a signed EDNS transfer message with worst-case question,
+owner and key names, including OPT and TCP keepalive overhead. TLS requests
+with an unsupported opcode receive REFUSED and EDE 21 (RFC 9103, Section 7.8);
+plain TCP/UDP retain NOTIMP.
+
 QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
 (RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
 readable queries; an unreadable question receives a header-only response.
@@ -571,6 +589,8 @@ server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3).
 Bindizr requires full-length TSIG MACs. Key, MAC, and time validation precede
 this policy; authenticated truncations receive signed BADTRUNC, while invalid MACs
 receive unsigned BADSIG (RFC 8945, Sections 5.2 and 5.3.2).
+TSIG outside Additional, or other malformed TSIG placement, receives unsigned
+FORMERR before UPDATE authority or permission checks (RFC 8945, Section 5.2).
 
 An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority

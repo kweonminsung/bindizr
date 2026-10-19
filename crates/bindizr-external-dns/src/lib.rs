@@ -1,7 +1,5 @@
-//! ExternalDNS webhook provider adapter for bindizr: speaks the webhook
-//! protocol on a localhost listener and forwards every operation to the
-//! authenticated bindizr `/external-dns` API. All DNS logic and state stay
-//! in the bindizr server.
+//! Forward localhost ExternalDNS webhooks to the authenticated bindizr API.
+//! DNS logic and state stay in the server.
 
 mod config;
 mod metrics;

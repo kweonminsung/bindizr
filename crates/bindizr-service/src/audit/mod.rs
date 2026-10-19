@@ -1,6 +1,4 @@
-//! The audit log: one row per management change, saved in the change's
-//! own transaction so the two commit or roll back together, and read back
-//! under `audit:read`.
+//! Record management changes in their transaction; reads require `audit:read`.
 
 use std::fmt;
 
@@ -20,9 +18,7 @@ use crate::{
     zone::version::ChangeAttribution,
 };
 
-/// Save the audit log row of a management change in its transaction, after
-/// the change's own row write and before commit; `detail` says what the
-/// change set or moved, never a secret.
+/// Audit a management write before commit; `detail` describes changes without secrets.
 pub(crate) async fn save_tx(
     tx: &mut Transaction<'_>,
     entity: AuditEntity,

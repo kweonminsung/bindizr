@@ -834,16 +834,13 @@ impl Config {
         if self.dns.listen_port != next.dns.listen_port {
             fixed.push("dns.listen_port".to_string());
         }
-        // The TLS listener and its certificate are both built at startup.
         if self.dns.tls != next.dns.tls {
             fixed.push("dns.tls".to_string());
         }
-        // The connection slots are allotted when the listener starts.
         if self.dns.tcp_max_connections != next.dns.tcp_max_connections {
             fixed.push("dns.tcp_max_connections".to_string());
         }
-        // Renaming the catalog live would strand its stored row and the
-        // secondaries configured to request its old name.
+        // A live rename would strand the catalog row and configured secondaries.
         if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
             fixed.push("dns.catalog_zone_name".to_string());
         }

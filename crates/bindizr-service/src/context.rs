@@ -33,9 +33,7 @@ impl From<ReloadConfigError> for ServiceError {
     }
 }
 
-/// Shared state for service flows. The workers that need it back
-/// (the NOTIFY queue, the scheduler) are spawned after it with an `Arc` of
-/// their own; only their senders live here.
+/// Shared service state; workers hold an `Arc`, and only their senders live here.
 #[derive(Debug)]
 pub struct Context {
     /// Swapped whole by `reload_config`; a reader takes a snapshot, so one
@@ -101,9 +99,7 @@ impl Context {
         Ok(next)
     }
 
-    /// Replace the running configuration with one `load_config` read, naming
-    /// the sections that changed. The caller applies the logger level and
-    /// scheduler period.
+    /// Replace configuration and report changed sections; the caller updates logging and scheduling.
     pub fn set_config(&self, next: Config) -> Vec<String> {
         let mut stored = self
             .config

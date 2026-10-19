@@ -22,10 +22,7 @@ API_PORT = 18081
 DNS_PORT = 15354
 API_KEY = "benchkey"
 
-# pdns-auth's webserver stops accepting somewhere above ten concurrent
-# connections and 4.9 exposes no setting to raise that, so the surplus stalls on
-# the client's TCP SYN retransmit (1s, then 2s) — which measures the retransmit
-# timer, not the API. Cap the pool so a wider workload queues client-side.
+# PowerDNS 4.9 stalls above roughly ten API connections; queue client-side to avoid measuring SYN retries.
 API_MAX_CONNECTIONS = 8
 
 

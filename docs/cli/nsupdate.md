@@ -55,6 +55,12 @@ refused for all zones.
     `api.authentication_required = false` does for the HTTP API. Signed
     requests are always verified either way.
 
+Each signed request must pass MAC verification and its Time Signed/Fudge
+window. Bindizr does not retain a latest Time Signed per key: UDP and
+concurrent stream requests can arrive out of order. This is an explicit
+exception to the cache recommendation in
+[RFC 8945, Section 5.2.3](https://www.rfc-editor.org/rfc/rfc8945.html#section-5.2.3).
+
 ## Response codes
 
 The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone or class
@@ -63,12 +69,12 @@ existing zone (Section 3.1.1). `NOTZONE` names an owner outside the zone,
 `FORMERR` a malformed section (a prerequisite with a TTL, an ANY-class delete carrying
 rdata, malformed wire RDATA, or a query/meta type no update may carry), and
 `REFUSED` a policy decision: an unsigned request where a signature is
-required, a key whose role does not reach what the update touches, or an
-an unsupported ordinary type, a direct addition or deletion of signer-managed
+required, a key whose role does not reach what the update touches, an
+unsupported ordinary type, a direct addition or deletion of signer-managed
 DNSSEC records, or an update sent to the TLS listener, which serves transfers alone (RFC 9103,
 Section 7.8). A
 request whose key verifies is answered under that key whatever the code; a
-TSIG record that is doubled, not last, unreadable, or carries a MAC of a size
+TSIG record outside Additional, doubled, not last, unreadable, or carrying a MAC of a size
 its algorithm cannot produce is a `FORMERR` signed by no one (RFC 8945,
 Section 5.2). The
 prerequisite codes (`NXDOMAIN`, `YXDOMAIN`, `NXRRSET`, `YXRRSET`) report the

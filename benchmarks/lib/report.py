@@ -84,10 +84,7 @@ DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status")
 
 
 def _aggregate(rows: list[dict]) -> list[dict]:
-    """Group repeats by dimensions and report each metric's mean, sample deviation, and run count.
-
-    Average only metrics numeric in every run; otherwise retain the first value
-    so a partial mean cannot imply coverage of all runs."""
+    """Report mean, sample deviation and count by dimension, averaging only complete numeric metrics."""
     groups: dict[tuple, list[dict]] = {}
     for r in rows:
         groups.setdefault(tuple(str(r.get(f)) for f in DIMENSION_FIELDS), []).append(r)
@@ -159,10 +156,7 @@ QUERY_BASELINES = {
 
 
 def _b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
-    """Render a query row's QPS relative to its standalone server: the signed
-    percentage for a pairing whose server ran, `baseline` for a server a
-    pairing is read against, `-` otherwise or where either side lacks a
-    positive QPS."""
+    """Render QPS change against a measured positive baseline, `baseline` for it, or `-` if absent."""
     standalone = comparable.get(QUERY_BASELINES.get(row["system"], ""))
     if standalone and row["system"] in comparable:
         return f'{(row["qps"] / standalone["qps"] - 1) * 100:+.1f}%'
@@ -355,11 +349,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         results = _rows(data, "b08_query_perf")
 
         def _ok(r):
-            """Select query runs with a QPS measurement for numeric comparisons.
-
-            Failed runs lack QPS, so they are reported separately from the
-            numeric table and the overhead calculation, which divides by QPS.
-            """
+            """Select non-failed runs with QPS; failures are reported outside numeric comparisons."""
             return r.get("status") != "FAILED" and r.get("qps") is not None
 
         failed = [r for r in results if not _ok(r)]

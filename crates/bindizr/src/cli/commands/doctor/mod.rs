@@ -1,6 +1,4 @@
-//! `bindizr doctor`: installation checks reported as OK, FAIL, or SKIP. A
-//! running daemon answers for itself; without one, the checks a failed start
-//! would have hit run here.
+//! Report installation checks as OK, FAIL or SKIP, using daemon state or local startup checks.
 
 mod daemon;
 mod offline;

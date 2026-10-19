@@ -1,6 +1,4 @@
-//! What Bindizr served each client: the latest transfer per client address
-//! and zone, refusals and failures included, kept in the database so a
-//! secondary's transfers read back across restarts and instances.
+//! Persist each client's latest transfer, refusal or failure per zone across restarts and instances.
 
 use std::net::IpAddr;
 

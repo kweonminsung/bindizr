@@ -64,8 +64,8 @@ fn dnssec_keys_advertise_sha256_ds_digest() {
 
     let apex = zone.name.to_wire_name().unwrap();
     let rdata = key.ds_rdata(&apex, DS_DIGEST_TYPE).unwrap();
-    // RFC 8624, Section 3.3: SHA-256 is the digest a delegation must take,
-    // a P-384 key's included; SHA-384 is only a MAY.
+    // Generated DS records use the recommended SHA-256 digest independently
+    // of the key's signing algorithm (RFC 9904 / IANA DS registry).
     assert_eq!(rdata.as_bytes()[3], 2);
     assert_eq!(rdata.as_bytes().len(), 4 + 32);
 }

@@ -1,6 +1,4 @@
-//! BIND key files (`K*.key` and `K*.private`), read and written. Their timing
-//! fields carry a key's place in its rollover, so a signed zone changes hands
-//! without losing one.
+//! Read and write BIND `K*.key` / `K*.private` files, preserving rollover timings.
 
 #[cfg(test)]
 mod tests;

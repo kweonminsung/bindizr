@@ -1,10 +1,6 @@
-//! DNSSEC keys, rollover, scheduling, and the signing hook run before each serial bump.
-//! Key rows indicate signing state; `zones.dnssec_policy_id` selects its parameters.
-//! Every transition journals its delta for IXFR.
-//!
-//! Promotion waits for publish TTL and SEP parent-DS confirmation (scheduler or `ds-seen`);
-//! retired keys stay until cache expiry. Parent probes run under the acting transaction's
-//! zone lock to keep their inputs current; `dns.notify.timeout_secs` bounds each exchange.
+//! Manage DNSSEC keys and rollovers; sign and journal changes before each serial bump.
+//! Promotion waits for publication and SEP parent-DS confirmation; retirement waits for caches.
+//! Parent probes hold the transaction's zone lock, bounded by `dns.notify.timeout_secs`.
 
 mod delegation;
 mod keys;

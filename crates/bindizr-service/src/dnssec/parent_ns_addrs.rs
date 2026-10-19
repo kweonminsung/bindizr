@@ -8,9 +8,7 @@ use crate::error::ServiceError;
 /// The width of the `zones.parent_ns_addrs` column.
 const MAX_PARENT_NS_ADDRS_LEN: usize = 1024;
 
-/// Trim a list of `host[:port]` entries into its stored form, the entries
-/// joined with commas. A zone's DS can only be asked at the servers it names,
-/// so an empty list is an error.
+/// Normalize parent `host[:port]` entries into comma-separated storage; DS probes need a nonempty list.
 pub(crate) fn normalize_parent_ns_addrs(entries: &[String]) -> Result<String, ServiceError> {
     let entries: Vec<&str> = entries
         .iter()

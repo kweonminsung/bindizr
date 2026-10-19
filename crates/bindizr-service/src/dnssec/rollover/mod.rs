@@ -127,9 +127,7 @@ pub async fn start_rollover(
     Ok(response)
 }
 
-/// Pre-publish a replacement for every key with `policy`'s algorithm,
-/// double-signing the zone through the transition (RFC 6840, Section
-/// 5.11). Returns the key set with the replacements appended.
+/// Append replacement keys under `policy`, double-signing through rollover (RFC 6840, Section 5.11).
 pub(crate) async fn start_algorithm_rollover_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

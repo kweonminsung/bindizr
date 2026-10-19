@@ -70,9 +70,7 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
         config.api.listen_port,
     );
 
-    // Under TLS the probe stops at the connection: a listening daemon has
-    // already loaded the pair, and speaking TLS here would mean trusting
-    // whatever it presents.
+    // Probe TCP only under TLS: the daemon loaded its keypair; this check has no certificate trust.
     if config.api.tls.tls_files().is_some() {
         match tokio::time::timeout(API_CHECK_TIMEOUT, TcpStream::connect(addr)).await {
             Ok(Ok(_)) => report.ok(format!(

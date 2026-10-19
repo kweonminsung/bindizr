@@ -4,7 +4,7 @@
 use domain::{
     base::{
         Message, MessageBuilder,
-        iana::{Class, ExtendedErrorCode, OptRcode, Rcode, Rtype, TsigRcode},
+        iana::{Class, ExtendedErrorCode, Opcode, OptRcode, Rcode, Rtype, TsigRcode},
         opt::exterr::ExtendedError,
     },
     rdata::{
@@ -59,6 +59,155 @@ fn xot_client(
 /// The client a BIND, Knot, or NSD secondary is: TLS 1.3 offering "dot".
 fn dot_client(app: &TestApp) -> ClientConfig {
     xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
+}
+
+/// Finish a signed transfer, verifying every frame and its closing signature.
+fn exchange_signed_boundary_transfer<S: std::io::Read + std::io::Write>(
+    stream: &mut S,
+    mut request: domain::base::message_builder::AdditionalBuilder<Vec<u8>>,
+    key: domain::tsig::Key,
+) -> Vec<Message<Vec<u8>>> {
+    use crate::common::dns::{read_frame, write_frame};
+
+    let mut client =
+        domain::tsig::ClientSequence::request(key, &mut request, Time48::now()).unwrap();
+    write_frame(stream, &request.finish()).unwrap();
+    let mut messages = Vec::new();
+    let mut soa_count = 0;
+    while soa_count < 2 {
+        let mut message =
+            Message::from_octets(read_frame(stream).unwrap().expect("closing SOA")).unwrap();
+        assert_eq!(message.header().rcode(), Rcode::NOERROR);
+        client.answer(&mut message, Time48::now()).unwrap();
+        soa_count += message
+            .answer()
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|record| record.rtype() == Rtype::SOA)
+            .count();
+        messages.push(message);
+    }
+    client.done().unwrap();
+    messages
+}
+
+/// Maximum storable RDATA fits SHA-512-signed EDNS AXFR over TCP and TLS.
+#[tokio::test]
+#[serial]
+async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
+    use std::str::FromStr;
+
+    use base64::Engine;
+    use domain::tsig::{Algorithm, Key, KeyName};
+    use serde_json::json;
+
+    use crate::common::dns::{connect_tcp, connect_tls};
+
+    let app = xot_app().await;
+    app.create_secondary("boundary-loopback", "127.0.0.1:9")
+        .await;
+    let longest_name = |labels: [char; 4]| {
+        labels
+            .into_iter()
+            .zip([63, 63, 63, 61])
+            .map(|(ch, len)| ch.to_string().repeat(len))
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    let zone_name = longest_name(['a', 'b', 'c', 'd']);
+    let key_name = longest_name(['k', 'l', 'm', 'n']);
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name, "mname": "ns.example", "rname": "admin@example.com"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/tsig-keys",
+            Some(json!({
+                "name": key_name, "algorithm": "hmac-sha512", "role_name": "admin"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let secret = base64::engine::general_purpose::STANDARD
+        .decode(body["secret"].as_str().unwrap())
+        .unwrap();
+    let key = Key::new(
+        Algorithm::Sha512,
+        &secret,
+        KeyName::from_str(&key_name).unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    // 64,618 wire bytes leave room for maximal names, TSIG, OPT and keepalive.
+    let value = format!("3 0 0 {}", "AB".repeat(64_618 - 3));
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "zone_name": zone_name, "name": "@", "type": "TLSA", "value": value, "ttl": 300
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let serial = app.read_zone_serial(&zone_name).await;
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "zone_name": zone_name, "name": "@", "type": "TLSA",
+                "value": format!("{value}AB"), "ttl": 300
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(app.read_zone_serial(&zone_name).await, serial);
+
+    let plain = exchange_signed_boundary_transfer(
+        &mut connect_tcp(app.dns_port()).unwrap(),
+        build_edns_query(&zone_name, Rtype::AXFR, &[(0, false)]),
+        key.clone(),
+    );
+    let tls = exchange_signed_boundary_transfer(
+        &mut connect_tls(app.dns_tls_port(), dot_client(&app)).unwrap(),
+        build_edns_query(&zone_name, Rtype::AXFR, &[(0, false)]),
+        key,
+    );
+    for messages in [plain, tls] {
+        assert!(messages.len() >= 2);
+        let mut types = Vec::new();
+        for message in messages {
+            assert_eq!(message.header().id(), 3225);
+            assert!(!message.header().tc());
+            assert!(message.opt().unwrap().opt().tcp_keepalive().is_some());
+            for record in message.answer().unwrap().map(Result::unwrap) {
+                types.push(record.rtype());
+                if record.rtype() == Rtype::TLSA {
+                    assert_eq!(record.rdlen(), 64_618);
+                }
+            }
+        }
+        assert_eq!(types.first(), Some(&Rtype::SOA));
+        assert_eq!(types.last(), Some(&Rtype::SOA));
+        assert_eq!(
+            types.iter().filter(|&&rtype| rtype == Rtype::SOA).count(),
+            2
+        );
+        assert_eq!(
+            types.iter().filter(|&&rtype| rtype == Rtype::TLSA).count(),
+            1
+        );
+    }
 }
 
 /// SOA replies carry verifiable RRSIGs only with DO; IXFR stays SOA-only.
@@ -636,6 +785,59 @@ async fn tls_query_returns_not_supported_for_unserved_type() {
         extended_error_code(&frame),
         ExtendedErrorCode::NOT_SUPPORTED
     );
+}
+
+/// Unsupported NOTIFY is REFUSED on TLS and NOTIMP on plain transports.
+#[tokio::test]
+#[serial]
+async fn tls_notify_returns_refused_with_not_supported() {
+    use crate::common::exchange_tcp;
+
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "notify-refusal-key", KeyRole::Admin).await;
+    for key in [None, Some(&key)] {
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(9103);
+        builder.header_mut().set_opcode(Opcode::NOTIFY);
+        builder.header_mut().set_aa(true);
+        let mut question = builder.question();
+        question
+            .push((&parse_name(zone_name).unwrap(), Rtype::SOA))
+            .unwrap();
+        let mut request = question.additional();
+        request
+            .opt(|opt| {
+                opt.set_udp_payload_size(1232);
+                Ok(())
+            })
+            .unwrap();
+        let response = exchange_request(request, key, |request| {
+            for bytes in [
+                exchange_udp(app.dns_port(), request)?,
+                exchange_tcp(app.dns_port(), request)?,
+            ] {
+                let message = Message::from_octets(bytes).unwrap();
+                assert_eq!(message.header().rcode(), Rcode::NOTIMP);
+                assert_eq!(
+                    extended_error_code(message.as_slice()),
+                    ExtendedErrorCode::NOT_SUPPORTED
+                );
+                if let Some(key) = key {
+                    verify_response_mac(request, &message, key).unwrap();
+                }
+            }
+            exchange_xot(app.dns_tls_port(), request, dot_client(&app))
+        })
+        .unwrap();
+        assert_eq!(response.header().rcode(), Rcode::REFUSED);
+        assert_eq!(
+            extended_error_code(response.as_slice()),
+            ExtendedErrorCode::NOT_SUPPORTED
+        );
+        assert_eq!(is_signed(&response).unwrap(), key.is_some());
+    }
 }
 
 /// Verify the transfer-only TLS listener refuses UPDATE (RFC 9103, Section 7.8),

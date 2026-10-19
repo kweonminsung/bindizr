@@ -20,8 +20,8 @@ pub enum ParseDnssecKeyError {
     State { value: String },
 }
 
-/// The digest of every DS and CDS bindizr publishes: SHA-256, the one a
-/// delegation MUST carry (RFC 8624, Section 3.3); SHA-384 is only a MAY.
+/// Digest for DS/CDS generated from bindizr's keys: SHA-256, recommended by
+/// the IANA registry under RFC 9904. Raw user-supplied DS records are separate.
 pub const DS_DIGEST_TYPE: u8 = 2;
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.

@@ -52,6 +52,11 @@ bindizr record get --id 42
 bindizr record update --id 42 --value 192.0.2.2
 ```
 
+Use the same TTL for a delegation's NS and DS sets, as recommended by
+[RFC 4035, Section 2.4](https://www.rfc-editor.org/rfc/rfc4035.html#section-2.4).
+Bindizr preserves different explicit TTLs so independently edited or imported
+sets keep the operator's values; it enforces one TTL within each set.
+
 Use `--new-name` to rename a record. A TXT value over 255 bytes is split into
 segments automatically; repeat `--value` to choose the segments yourself.
 Resolvers join them without inserting spaces. Zone-file imports preserve
@@ -69,6 +74,12 @@ flags `0` or `128`; imports and DNS UPDATE preserve unknown flag bits
 Supported user types are A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, TXT,
 NS, SRV, PTR, SSHFP, TLSA, and WKS. Other types are rejected, including numeric
 `TYPE<number>` values that do not resolve to a supported type.
+
+Supplied DS records store the child's digest; Bindizr does not generate it or
+restrict its algorithm to the local signing policy. DS/CDS generated from
+Bindizr's own keys use SHA-256. Variable-size record values are limited to
+64,618 bytes of wire RDATA so they fit a signed EDNS transfer even with
+maximum-length names and TCP keepalive.
 
 WKS values use `<IPv4> <protocol> [ports...]`, for example
 `--type WKS --value '192.0.2.1 TCP 22 80 443'`. Protocols accept an 8-bit number

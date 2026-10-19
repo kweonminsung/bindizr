@@ -27,9 +27,8 @@ pub enum EncodeKeyRdataError {
     Rdata(#[from] EncodeRdataError),
 }
 
-/// The digest types `DnssecKey::ds_rdata` computes. SHA-1 only matches a parent's
-/// existing DS: RFC 8624, Section 3.3 forbids it for new delegations, so
-/// `DS_DIGEST_TYPE` is never it.
+/// Supported DS digests; SHA-1 only matches existing parent DS records.
+/// New DS/CDS use `DS_DIGEST_TYPE` (RFC 9905, Section 5).
 pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 
 impl DnssecKey {

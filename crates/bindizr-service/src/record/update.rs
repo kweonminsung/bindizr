@@ -101,14 +101,15 @@ fn resolve_update(
         None
     };
     let encoded_value = match &request.value {
-        Some(value) => value
-            .to_encoded_value(&record_type, priority)
-            .map_err(ServiceError::invalid_record_value)?,
+        Some(value) => {
+            let encoded = value
+                .to_encoded_value(&record_type, priority)
+                .map_err(ServiceError::invalid_record_value)?;
+            validate_management_value(record_type, &encoded)?;
+            encoded
+        }
         None => existing.value.clone(),
     };
-    if request.value.is_some() {
-        validate_management_value(record_type, &encoded_value)?;
-    }
     let ttl = match request.ttl {
         Some(ttl) => validate_record_ttl(ttl)?,
         None => existing.ttl,

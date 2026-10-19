@@ -13,10 +13,8 @@ pub enum TxtContent {
 pub struct TxtRecordValue(Vec<u8>);
 
 impl TxtRecordValue {
-    /// Parse a presentation-form value: a leading `"` reads space-separated
-    /// quoted strings (max 255 bytes each, `\"`/`\\`/`\DDD` escapes per
-    /// RFC 1035, Section 5.1); any other value is one raw string kept
-    /// byte-for-byte, split at 255 bytes on UTF-8 boundaries.
+    /// Parse quoted strings and escapes per RFC 1035, Section 5.1, or unquoted raw text.
+    /// Raw text splits at UTF-8 boundaries; each segment is at most 255 bytes.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         if !value.trim().starts_with('"') {
             if value.is_empty() {
