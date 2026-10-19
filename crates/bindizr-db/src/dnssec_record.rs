@@ -48,6 +48,24 @@ pub async fn create_many_tx(
     }
 }
 
+/// Read apex SOA signatures in the same snapshot as the locked zone row.
+pub async fn list_soa_signatures_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+) -> Result<Vec<DnssecRecord>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::dnssec_record::list_soa_signatures_tx(tx, zone_id).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::dnssec_record::list_soa_signatures_tx(tx, zone_id).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::dnssec_record::list_soa_signatures_tx(tx, zone_id).await
+        }
+    }
+}
+
 /// List derived DNSSEC records for a zone in the current transaction.
 pub async fn list_tx(
     tx: &mut Transaction<'_>,

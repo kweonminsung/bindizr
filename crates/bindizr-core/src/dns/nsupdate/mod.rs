@@ -6,7 +6,7 @@ pub mod parser;
 
 use domain::{
     base::{
-        Message, MessageBuilder,
+        Message,
         iana::{Opcode, OptRcode},
     },
     rdata::tsig::Time48,
@@ -32,21 +32,33 @@ pub fn build_response(
     ede: Option<ExtendedErrorCode>,
     signer: Option<crate::dns::tsig::ResponseSigner>,
     fudge: u16,
+    max_len: usize,
 ) -> Option<Vec<u8>> {
     let msg = Message::from_octets(query_data).ok()?;
-    let answer = MessageBuilder::new_vec()
-        .start_answer(&msg, rcode.rcode())
-        .ok()?;
-    let mut additional = answer.additional();
-    Edns::from_message(&msg).push_response(&mut additional, rcode, ede, None);
-
-    if let Some(signer) = signer {
-        signer
-            .answer_with_fudge(&mut additional, Time48::now(), fudge)
+    for minimal in [false, true] {
+        let rcode = if minimal { OptRcode::NOERROR } else { rcode };
+        let mut answer = crate::dns::message::response_builder()
+            .start_answer(&msg, rcode.rcode())
             .ok()?;
+        answer.header_mut().set_tc(minimal);
+        let mut additional = answer.additional();
+        Edns::from_message(&msg).push_response(
+            &mut additional,
+            rcode,
+            if minimal { None } else { ede },
+            None,
+        );
+        if let Some(signer) = signer.clone() {
+            signer
+                .answer_with_fudge(&mut additional, Time48::now(), fudge)
+                .ok()?;
+        }
+        let response = additional.finish().into_target();
+        if response.len() <= max_len {
+            return Some(response);
+        }
     }
-
-    Some(additional.finish())
+    None
 }
 
 #[cfg(test)]

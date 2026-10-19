@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::{
     dns::{
-        message::{ExtendedErrorCode, OptRcode, Rcode},
+        message::{ExtendedErrorCode, Keepalive, OptRcode, ParsedQuery, Rcode},
         nsupdate::{DEFAULT_FUDGE, build_response},
         tsig::{RequestSignature, TsigError, request_signature},
     },
@@ -79,6 +79,12 @@ async fn handle_nsupdate_request(
     transport: TransferTransport,
 ) -> Option<Vec<u8>> {
     let cx = dns_cx.daemon();
+    let max_len = if transport == TransferTransport::Udp {
+        ParsedQuery::parse(query_data, Keepalive::None)
+            .map_or(512, |query| query.udp_payload_limit())
+    } else {
+        bindizr_core::dns::DNS_TCP_MAX_SIZE
+    };
     let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
         Ok(req) => req,
         Err(e) => {
@@ -92,7 +98,7 @@ async fn handle_nsupdate_request(
                         Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, response })) => {
                             log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
                             cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
-                            return Some(response);
+                            return (response.len() <= max_len).then_some(response);
                         }
                         Err(err) => {
                             log::warn!("NSUPDATE key check failed from {}: {}", client_addr, err);
@@ -104,7 +110,7 @@ async fn handle_nsupdate_request(
             };
             cx.metrics()
                 .track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
-            return build_response(query_data, OptRcode::FORMERR, None, signer, fudge);
+            return build_response(query_data, OptRcode::FORMERR, None, signer, fudge, max_len);
         }
     };
 
@@ -130,7 +136,7 @@ async fn handle_nsupdate_request(
         Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, response })) => {
             log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
             cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
-            return Some(response);
+            return (response.len() <= max_len).then_some(response);
         }
         Err(update::UpdateError::Edns(rcode)) => {
             log::info!("Refusing the EDNS of an NSUPDATE from {}", client_addr);
@@ -172,5 +178,5 @@ async fn handle_nsupdate_request(
 
     cx.metrics()
         .track_nsupdate(NsupdateResult::Rcode(rcode.rcode()));
-    build_response(query_data, rcode, ede, signer, fudge)
+    build_response(query_data, rcode, ede, signer, fudge, max_len)
 }

@@ -28,7 +28,7 @@ Examples:
         /// Role whose grants decide what the key may sign (see `role grant`)
         #[arg(long, value_name = "ROLE_NAME")]
         role: String,
-        /// HMAC algorithm: hmac-sha256 (default), hmac-sha384, hmac-sha512
+        /// HMAC algorithm: hmac-sha256 (default), hmac-sha384, hmac-sha512, hmac-sha1 (legacy)
         #[arg(long, value_name = "ALG")]
         algorithm: Option<String>,
         /// Existing base64 secret to import (omit to generate a random one)

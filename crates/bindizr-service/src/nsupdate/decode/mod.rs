@@ -115,13 +115,20 @@ fn decode_prerequisite(
     }
 }
 
-/// Decode a prescanned UPDATE, skipping SOA or managed-DNSSEC deletes.
+/// Decode updates; refuse signer-managed changes.
 /// SOA deletes are ignored per RFC 2136, Sections 3.4.2.3 and 3.4.2.4.
 fn decode_update(
     record: &UpdateRecord,
     name: OwnerName,
     query_data: &[u8],
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
+    if DnssecRecordType::try_from(i32::from(record.record_type.to_int())).is_ok() {
+        // Malformed RDATA must remain FORMERR, ahead of policy refusal.
+        if record.class != Class::ANY {
+            record.to_rdata(query_data)?;
+        }
+        return Err(NsupdateError::ManagedType(record.record_type));
+    }
     match record.class {
         Class::IN => {
             // RFC 8767, Section 4: every bit belongs to the positive TTL value.

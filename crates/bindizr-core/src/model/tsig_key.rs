@@ -25,6 +25,8 @@ pub struct ParseTsigAlgorithmError {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum TsigAlgorithm {
+    /// Required for interoperability by RFC 8945, Section 6; prefer SHA256.
+    HmacSha1,
     /// The default a key is created with, matching `tsig-keygen`'s.
     #[default]
     HmacSha256,
@@ -37,6 +39,7 @@ impl TsigAlgorithm {
     /// the trailing root dot (e.g. `"hmac-sha256"`).
     pub fn as_str(&self) -> &'static str {
         match self {
+            TsigAlgorithm::HmacSha1 => "hmac-sha1",
             TsigAlgorithm::HmacSha256 => "hmac-sha256",
             TsigAlgorithm::HmacSha384 => "hmac-sha384",
             TsigAlgorithm::HmacSha512 => "hmac-sha512",
@@ -45,7 +48,7 @@ impl TsigAlgorithm {
 
     /// All supported algorithm names, for error messages.
     fn supported_names() -> &'static [&'static str] {
-        &["hmac-sha256", "hmac-sha384", "hmac-sha512"]
+        &["hmac-sha1", "hmac-sha256", "hmac-sha384", "hmac-sha512"]
     }
 }
 
@@ -63,6 +66,7 @@ impl std::str::FromStr for TsigAlgorithm {
     /// case-insensitively.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim_end_matches('.').to_ascii_lowercase().as_str() {
+            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
             "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
             "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
             "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
@@ -130,6 +134,7 @@ mod tests {
     #[test]
     fn tsig_algorithm_spells_itself_once() {
         for value in [
+            TsigAlgorithm::HmacSha1,
             TsigAlgorithm::HmacSha256,
             TsigAlgorithm::HmacSha384,
             TsigAlgorithm::HmacSha512,

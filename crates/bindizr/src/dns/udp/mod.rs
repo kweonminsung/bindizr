@@ -312,7 +312,17 @@ async fn handle_udp_query(
     }
 
     let response = if server::is_xfr_query_type(query.qtype) {
-        server::handle_udp_xfr(dns_cx, client_addr, &query, query_data).await
+        match server::handle_udp_xfr(dns_cx, client_addr, &query, query_data).await {
+            Ok(response) => response,
+            Err(error) => {
+                log::warn!(
+                    "Failed to answer DNS UDP transfer from {}: {}",
+                    client_addr,
+                    error
+                );
+                return;
+            }
+        }
     } else {
         log::info!(
             "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",

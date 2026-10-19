@@ -18,9 +18,8 @@ use bindizr_service::{authorization::Caller, tsig_key};
 use super::acl;
 use crate::dns::{error::DnsError, server::DnsContext};
 
-/// A refused transfer and the response it owes the client: a TSIG failure
-/// its own error record, a malformed TSIG an unsigned FORMERR (RFC 8945,
-/// Section 5.2), anything else REFUSED under the key that got that far.
+/// A rejected transfer's response and any authenticated signer.
+/// TSIG failures retain their RFC 8945, Section 5.2 response.
 #[derive(Debug, Clone)]
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
@@ -33,6 +32,22 @@ pub(crate) struct TransferRefusal {
 }
 
 impl TransferRefusal {
+    /// Return SERVFAIL under the verified key, if any.
+    pub(crate) fn failed(reason: String, signer: Option<TransferSigner>) -> Self {
+        Self {
+            reason,
+            rcode: OptRcode::SERVFAIL,
+            ede: None,
+            response: None,
+            signer: signer.map(Box::new),
+        }
+    }
+
+    /// Identify SERVFAIL for transfer metrics.
+    pub(crate) fn is_failure(&self) -> bool {
+        self.rcode == OptRcode::SERVFAIL
+    }
+
     /// A refusal by policy: REFUSED, prohibited.
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         TransferRefusal {
@@ -58,6 +73,12 @@ impl TransferRefusal {
     /// Convert the refusal into a DNS response.
     pub(crate) fn into_response(mut self, query: &ParsedQuery) -> Result<Vec<u8>, DnsError> {
         if let Some(response) = self.response {
+            if response.len() > query.response_limit() {
+                return Err(bindizr_core::dns::message::EncodeMessageError::TooLarge {
+                    len: response.len(),
+                }
+                .into());
+            }
             return Ok(response);
         }
         Ok(query.build_signed_error_response(self.rcode, self.ede, self.signer.as_deref_mut())?)
@@ -108,7 +129,7 @@ pub(crate) async fn authenticate_tsig_key(
 
     let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
         .await
-        .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
+        .map_err(|e| TransferRefusal::failed(format!("failed to load TSIG key: {}", e), None))?;
     let Some(tsig_key) = tsig_key else {
         // An unknown key still runs validation: the empty key store makes it
         // produce the BADKEY error response.
@@ -120,11 +141,15 @@ pub(crate) async fn authenticate_tsig_key(
     };
     let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
     let signer = verify_tsig(query_data, Some(signing_key)).map_err(TransferRefusal::from)?;
-    let caller = Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
-        .await
-        .map_err(|e| {
-            TransferRefusal::refused(format!("failed to load the key's grants: {}", e), None)
-        })?;
+    let caller = match Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key).await {
+        Ok(caller) => caller,
+        Err(e) => {
+            return Err(TransferRefusal::failed(
+                format!("failed to load the key's grants: {}", e),
+                Some(signer.into()),
+            ));
+        }
+    };
     Ok(Some(TransferIdentity {
         caller,
         signer: Some(signer.into()),
@@ -160,7 +185,7 @@ pub(crate) async fn authenticate_transfer(
                 format!("IP {} is not an enabled secondary", client_ip),
                 None,
             )),
-            Err(e) => Err(TransferRefusal::refused(
+            Err(e) => Err(TransferRefusal::failed(
                 format!("failed to load secondaries: {}", e),
                 None,
             )),
@@ -181,7 +206,7 @@ pub(crate) async fn authenticate_transfer(
                 ));
             }
             Err(e) => {
-                return Err(TransferRefusal::refused(
+                return Err(TransferRefusal::failed(
                     format!("failed to load secondaries: {}", e),
                     identity.signer,
                 ));
@@ -221,7 +246,11 @@ impl From<TsigError> for TransferRefusal {
                 response: Some(response),
                 signer: None,
             },
-            other => TransferRefusal::refused(other.to_string(), None),
+            TsigError::Malformed(error) => TransferRefusal::malformed(error.to_string()),
+            other => TransferRefusal::failed(other.to_string(), None),
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

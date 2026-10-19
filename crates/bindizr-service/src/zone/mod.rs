@@ -28,7 +28,8 @@ pub use notify::notify;
 pub use status::get_status;
 pub use transfer::{
     IxfrPlan, TransferAccess, TransferContent, authorize_catalog_content,
-    authorize_ixfr_plan_by_name, authorize_transfer_by_name, authorize_transfer_content_by_name,
+    authorize_ixfr_plan_by_name, authorize_soa_content_by_name, authorize_transfer_by_name,
+    authorize_transfer_content_by_name,
 };
 pub(crate) use update::soa_replacement_changes;
 pub use update::update;

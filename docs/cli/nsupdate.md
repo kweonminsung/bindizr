@@ -60,11 +60,12 @@ refused for all zones.
 The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone or class
 Bindizr does not serve: only IN is served, even when another class names an
 existing zone (Section 3.1.1). `NOTZONE` names an owner outside the zone,
-`FORMERR` a malformed section (a prerequisite with a TTL, a delete carrying
-rdata, a type no update may carry, or a type Bindizr does not store in an add), and
+`FORMERR` a malformed section (a prerequisite with a TTL, an ANY-class delete carrying
+rdata, malformed wire RDATA, or a query/meta type no update may carry), and
 `REFUSED` a policy decision: an unsigned request where a signature is
 required, a key whose role does not reach what the update touches, or an
-update sent to the TLS listener, which serves transfers alone (RFC 9103,
+an unsupported ordinary type, a direct addition or deletion of signer-managed
+DNSSEC records, or an update sent to the TLS listener, which serves transfers alone (RFC 9103,
 Section 7.8). A
 request whose key verifies is answered under that key whatever the code; a
 TSIG record that is doubled, not last, unreadable, or carries a MAC of a size
@@ -80,7 +81,7 @@ must match the entire RRset; order, duplicates, and TTL do not affect equality
 Some records in an update are passed over rather than refused, as the RFC
 says: a delete that would remove the SOA or the last apex NS record, a CNAME
 added beside other data or data added beside a CNAME, a DNAME added beside a
-CNAME, and a delete of a data type Bindizr never stores. Every update record
+CNAME. Every update record
 must first pass the zone and wire-shape checks, including a delete that will
 be ignored (RFC 2136, Section 3.4.1). An out-of-zone owner or forbidden
 query/meta type rejects the whole update without changing records or the

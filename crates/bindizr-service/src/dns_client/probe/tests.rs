@@ -10,6 +10,46 @@ fn zone() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
 }
 
+/// SOA probes retry truncated UDP answers over TCP.
+#[tokio::test]
+async fn soa_probe_returns_serial_after_tcp_fallback() {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, UdpSocket},
+    };
+    let (tcp, udp) = loop {
+        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        if let Ok(udp) = UdpSocket::bind(tcp.local_addr().unwrap()).await {
+            break (tcp, udp);
+        }
+    };
+    let address = tcp.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let mut query = [0; 4096];
+        let (len, peer) = udp.recv_from(&mut query).await.unwrap();
+        let id = u16::from_be_bytes([query[0], query[1]]);
+        udp.send_to(
+            &build_soa_response(id, 0x8600, "example.com", false, 0),
+            peer,
+        )
+        .await
+        .unwrap();
+        let (mut stream, _) = tcp.accept().await.unwrap();
+        let tcp_len = stream.read_u16().await.unwrap();
+        let mut request = vec![0; usize::from(tcp_len)];
+        stream.read_exact(&mut request).await.unwrap();
+        assert_eq!(request, query[..len]);
+        let response = build_soa_response(id, 0x8400, "example.com", true, 2026);
+        stream.write_u16(response.len() as u16).await.unwrap();
+        stream.write_all(&response).await.unwrap();
+    });
+    let result = probe_address(&zone(), address, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert_eq!(result, Serial::from(2026));
+    server.await.unwrap();
+}
+
 /// Build an SOA response fixture with the requested header and serial.
 fn build_soa_response(
     query_id: u16,

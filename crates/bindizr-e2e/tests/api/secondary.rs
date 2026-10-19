@@ -202,8 +202,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "TSIG_KEY_IN_USE");
 
-    // A server that holds another key answers with the TSIG error, which
-    // the NOTIFY reports instead of an acknowledgement.
+    // Ignore unsigned BADKEY until timeout (RFC 8945, Section 5.4).
     let other = create_tsig_key(&app, "other-key", KeyRole::Own).await;
     let wrong_receiver = FakeSecondary::start(Some(&other));
     let (status, body) = app
@@ -218,7 +217,12 @@ async fn notify_signs_requests_when_secondary_has_key() {
         .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
         .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
-    assert!(body["error"].to_string().contains("TSIG"), "{body}");
+    assert!(
+        body["error"]
+            .to_string()
+            .contains("NOTIFY response timeout"),
+        "{body}"
+    );
     assert_eq!(
         wrong_receiver.received(),
         vec![ReceivedNotify {

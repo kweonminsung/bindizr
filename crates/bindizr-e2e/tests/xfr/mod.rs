@@ -46,6 +46,48 @@ async fn transfer_app() -> TestApp {
     app
 }
 
+/// SHA1 authenticates queries and updates (RFC 8945, Section 6).
+#[tokio::test]
+#[serial]
+async fn sha1_tsig_key_authenticates_queries_and_updates() {
+    use base64::Engine;
+    use domain::tsig::{Algorithm, Key, KeyName};
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/tsig-keys",
+            Some(json!({"name": "sha1-key", "role_name": "admin", "algorithm": "hmac-sha1"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha1");
+    let secret = base64::engine::general_purpose::STANDARD
+        .decode(body["secret"].as_str().unwrap())
+        .unwrap();
+    let key = std::sync::Arc::new(
+        Key::new(
+            Algorithm::Sha1,
+            &secret,
+            KeyName::from_str("sha1-key").unwrap(),
+            None,
+            None,
+        )
+        .unwrap(),
+    );
+    for opcode in [Opcode::QUERY, Opcode::UPDATE] {
+        let mut query = build_edns_query(name, Rtype::SOA, &[]);
+        query.header_mut().set_opcode(opcode);
+        let client = ClientTransaction::request(key.clone(), &mut query, Time48::now()).unwrap();
+        let response = exchange_udp(app.dns_port(), &query.finish()).unwrap();
+        let mut response = Message::from_octets(response).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        client.answer(&mut response, Time48::now()).unwrap();
+    }
+}
+
 /// Verify that an unsigned transfer is admitted only while its secondary is
 /// registered and enabled.
 #[tokio::test]

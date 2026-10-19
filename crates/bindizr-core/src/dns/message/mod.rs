@@ -7,8 +7,9 @@ pub use domain::base::{
 };
 use domain::{
     base::{
-        MessageBuilder, ToName, Ttl, UnknownRecordData, opt::keepalive::TcpKeepalive,
-        rdata::ComposeRecordData, record::ComposeRecord, wire::Composer,
+        MessageBuilder, ToName, Ttl, UnknownRecordData, message_builder::TreeCompressor,
+        opt::keepalive::TcpKeepalive, rdata::ComposeRecordData, record::ComposeRecord,
+        wire::Composer,
     },
     rdata::tsig::Time48,
 };
@@ -21,6 +22,12 @@ use crate::dns::{
     record::{EncodeRdataError, Rdata},
     tsig::{TransferSigner, signature_len},
 };
+
+/// Compress response names before signing.
+pub(crate) fn response_builder() -> MessageBuilder<TreeCompressor<Vec<u8>>> {
+    MessageBuilder::from_target(TreeCompressor::new(Vec::new()))
+        .expect("a Vec holds the DNS header")
+}
 
 /// Why a response could not be composed, signed, or framed.
 #[derive(Debug, Error)]
@@ -261,7 +268,7 @@ impl DnsMessageBuilder {
 
     /// Compose the buffered answers into an authoritative response, signing when configured.
     fn build_message(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
-        let mut builder = MessageBuilder::new_vec();
+        let mut builder = response_builder();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
@@ -290,7 +297,7 @@ impl DnsMessageBuilder {
                 .answer(&mut additional, Time48::now())
                 .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
         }
-        Ok(additional.finish())
+        Ok(additional.finish().into_target())
     }
 
     /// Serializes into a length-prefixed TCP frame.
@@ -302,11 +309,22 @@ impl DnsMessageBuilder {
     /// Build the response within `max_len`: over it, the answers are dropped
     /// and TC set (RFC 6891, Section 6.2.5 keeps the header, question, and OPT).
     pub fn build(mut self, max_len: usize) -> Result<Vec<u8>, EncodeMessageError> {
-        if self.message_len() > max_len {
+        let signer = self.signer.clone();
+        let response = self.build_message()?;
+        if response.len() > max_len {
+            // Rebuild from the original MAC chain (RFC 8945, Section 5.3).
+            self.signer = signer;
             self.clear_answers();
             self.truncated = true;
+            let response = self.build_message()?;
+            if response.len() > max_len {
+                return Err(EncodeMessageError::TooLarge {
+                    len: response.len(),
+                });
+            }
+            return Ok(response);
         }
-        self.build_message()
+        Ok(response)
     }
 }
 

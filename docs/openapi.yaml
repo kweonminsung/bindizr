@@ -4444,7 +4444,7 @@ components:
           type:
           - string
           - 'null'
-          description: Defaults to `hmac-sha256`; also accepts `hmac-sha384` and `hmac-sha512`.
+          description: Defaults to `hmac-sha256`; also accepts `hmac-sha384`, `hmac-sha512`, and legacy `hmac-sha1` (RFC 8945).
           example: hmac-sha256
         name:
           type: string
@@ -6748,6 +6748,7 @@ components:
       type: string
       description: TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
       enum:
+      - hmac-sha1
       - hmac-sha256
       - hmac-sha384
       - hmac-sha512

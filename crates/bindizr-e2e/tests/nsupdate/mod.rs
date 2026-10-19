@@ -27,6 +27,130 @@ use crate::common::{
     exchange_tcp,
 };
 
+/// Refuse managed changes atomically while keeping DNSSEC prerequisites.
+#[tokio::test]
+#[serial]
+async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
+    use domain::{base::rdata::ComposeRecordData, rdata::AllRecordData};
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "managed-key", KeyRole::Admin).await;
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{name}/dnssec"),
+            Some(json!({"parent_ns_addrs": ["127.0.0.1:9"]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let serial = app.read_zone_serial(name).await;
+    let versions = app
+        .send_request(
+            Method::GET,
+            &format!("/zones/{name}/versions?include_signer_serials=true"),
+            None,
+        )
+        .await
+        .1;
+    let request = domain::base::MessageBuilder::new_vec().question();
+    let mut request = request;
+    request
+        .push((&parse_name(name).unwrap(), Rtype::AXFR))
+        .unwrap();
+    let transfer = exchange_request(request.additional(), Some(&key), |request| {
+        exchange_tcp(app.dns_port(), request)
+    })
+    .unwrap();
+    let rows = transfer
+        .answer()
+        .unwrap()
+        .limit_to::<AllRecordData<_, _>>()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    for row in rows
+        .iter()
+        .filter(|row| matches!(row.rtype().to_int(), 46..=48 | 50 | 51 | 59 | 60))
+    {
+        let mut rdata = Vec::new();
+        row.data().compose_canonical_rdata(&mut rdata).unwrap();
+        let owner = row.owner().to_string();
+        assert_eq!(
+            send_update_udp(
+                app.dns_port(),
+                name,
+                &[PrerequisiteRecord::RecordSetInUse {
+                    name: owner.clone(),
+                    rtype: row.rtype()
+                }],
+                &[],
+                Some(&key)
+            )
+            .unwrap(),
+            Rcode::NOERROR
+        );
+        for operation in [
+            UpdateRecord::AddRecord {
+                name: owner.clone(),
+                rtype: row.rtype(),
+                ttl: row.ttl().as_secs(),
+                rdata: rdata.clone(),
+            },
+            UpdateRecord::DeleteRecordSet {
+                name: owner.clone(),
+                rtype: row.rtype(),
+            },
+            UpdateRecord::DeleteRecord {
+                name: owner.clone(),
+                rtype: row.rtype(),
+                rdata,
+            },
+        ] {
+            let changes = [
+                UpdateRecord::AddA {
+                    name: format!("rollback.{name}"),
+                    ttl: 3600,
+                    addr: "192.0.2.1".into(),
+                },
+                operation,
+            ];
+            for tcp in [false, true] {
+                let code = if tcp {
+                    send_update_tcp(app.dns_port(), name, &[], &changes, Some(&key))
+                } else {
+                    send_update_udp(app.dns_port(), name, &[], &changes, Some(&key))
+                }
+                .unwrap();
+                assert_eq!(code, Rcode::REFUSED);
+            }
+        }
+    }
+    assert_eq!(app.read_zone_serial(name).await, serial);
+    assert_eq!(
+        app.send_request(
+            Method::GET,
+            &format!("/zones/{name}/versions?include_signer_serials=true"),
+            None
+        )
+        .await
+        .1,
+        versions
+    );
+    assert_eq!(
+        send_update_udp(
+            app.dns_port(),
+            name,
+            &[PrerequisiteRecord::NameNotInUse {
+                name: format!("rollback.{name}")
+            }],
+            &[],
+            Some(&key)
+        )
+        .unwrap(),
+        Rcode::NOERROR
+    );
+}
+
 /// Preserve CAA property octets through signed additions, prerequisites and deletions.
 #[tokio::test]
 #[serial]

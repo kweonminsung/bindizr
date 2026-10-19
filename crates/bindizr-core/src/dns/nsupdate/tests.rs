@@ -20,7 +20,7 @@ use crate::{
 fn build_response_echoes_request_header_and_question() {
     let query = minimal_update_with_ztype(6);
 
-    let response = build_response(&query, OptRcode::REFUSED, None, None, 300).unwrap();
+    let response = build_response(&query, OptRcode::REFUSED, None, None, 300, 512).unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     let header = msg.header();
@@ -42,7 +42,7 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ]);
 
-    let response = build_response(&query, OptRcode::BADVERS, None, None, 300).unwrap();
+    let response = build_response(&query, OptRcode::BADVERS, None, None, 300, 1232).unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     let opt = msg.opt().expect("the OPT is echoed");
@@ -59,7 +59,7 @@ fn build_response_signs_with_request_mac_chain() {
         .unwrap();
     let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
 
-    let response = build_response(&query, OptRcode::NOERROR, None, Some(signer), 300).unwrap();
+    let response = build_response(&query, OptRcode::NOERROR, None, Some(signer), 300, 512).unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     assert_eq!(msg.header().rcode(), Rcode::NOERROR);
@@ -79,7 +79,7 @@ fn build_response_signs_with_request_mac_chain() {
     let request_mac = query[query.len() - 6 - 32..query.len() - 6].to_vec();
 
     // The unsigned build supplies the response before TSIG, including ARCOUNT.
-    let unsigned = build_response(&query, OptRcode::NOERROR, None, None, 300).unwrap();
+    let unsigned = build_response(&query, OptRcode::NOERROR, None, None, 300, 512).unwrap();
 
     // RFC 8945, Section 4.3.3: request MAC, unsigned response, TSIG variables.
     let mut digest = Vec::new();
@@ -97,4 +97,83 @@ fn build_response_signs_with_request_mac_chain() {
 
     let expected = hmac_sign(TsigAlgorithm::HmacSha256, &digest);
     assert_eq!(*data.mac(), &expected[..]);
+}
+/// UPDATE replies preserve MACs within the UDP limit.
+#[test]
+fn update_responses_fit_udp_with_long_compressed_key_names() {
+    use std::str::FromStr;
+
+    use domain::{
+        base::{Name, Rtype},
+        tsig::ClientTransaction,
+    };
+
+    use crate::{
+        dns::{
+            message::response_builder,
+            tsig::{
+                tests::{assert_response_mac, test_key},
+                verify_tsig,
+            },
+        },
+        model::tsig_key::{TsigAlgorithm, TsigKey},
+    };
+    let name = format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    );
+    let key = TsigKey {
+        name: name.clone(),
+        ..test_key(TsigAlgorithm::HmacSha512)
+    }
+    .to_signing_key()
+    .unwrap();
+    for size in [None, Some(512), Some(1232)] {
+        let mut builder = response_builder();
+        builder.header_mut().set_opcode(Opcode::UPDATE);
+        let mut question = builder.question();
+        question
+            .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+            .unwrap();
+        let mut additional = question.additional();
+        if let Some(size) = size {
+            additional
+                .opt(|opt| {
+                    opt.set_udp_payload_size(size);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let client =
+            ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
+        let request = additional.finish().into_target();
+        let signer = verify_tsig(&request, Some(key.clone())).unwrap();
+        for rcode in [
+            OptRcode::NOERROR,
+            OptRcode::REFUSED,
+            OptRcode::FORMERR,
+            OptRcode::SERVFAIL,
+        ] {
+            let response = build_response(
+                &request,
+                rcode,
+                None,
+                Some(signer.clone()),
+                300,
+                size.unwrap_or(512) as usize,
+            )
+            .unwrap();
+            assert!(response.len() <= size.unwrap_or(512) as usize);
+            client
+                .answer(
+                    &mut Message::from_octets(response.clone()).unwrap(),
+                    Time48::now(),
+                )
+                .unwrap();
+            assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+        }
+    }
 }

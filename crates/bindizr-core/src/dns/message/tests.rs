@@ -12,6 +12,105 @@ use crate::{
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
+/// Signed replies with long keys fit the UDP limit without breaking their MAC.
+#[test]
+fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
+    use domain::tsig::ClientTransaction;
+
+    use crate::dns::tsig::tests::{assert_response_mac, test_key};
+    let long_name = format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    );
+    let key = crate::model::tsig_key::TsigKey {
+        name: long_name.clone(),
+        ..test_key(TsigAlgorithm::HmacSha512)
+    }
+    .to_signing_key()
+    .unwrap();
+    for udp_size in [None, Some(512), Some(1232)] {
+        let mut question = response_builder().question();
+        question
+            .push((Name::<Vec<u8>>::from_str(&long_name).unwrap(), Rtype::SOA))
+            .unwrap();
+        let mut additional = question.additional();
+        if let Some(size) = udp_size {
+            additional
+                .opt(|opt| {
+                    opt.set_udp_payload_size(size);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let client =
+            ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
+        let request = additional.finish().into_target();
+        assert!(request.len() < 512);
+        let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
+        let signer: TransferSigner = verify_tsig(&request, Some(key.clone())).unwrap().into();
+        for rcode in [
+            OptRcode::REFUSED,
+            OptRcode::SERVFAIL,
+            OptRcode::NOTAUTH,
+            OptRcode::FORMERR,
+        ] {
+            let response = query
+                .build_signed_error_response(
+                    rcode,
+                    Some(ExtendedErrorCode::PROHIBITED),
+                    Some(&mut signer.clone()),
+                )
+                .unwrap();
+            assert!(response.len() <= query.udp_payload_limit());
+            assert_eq!(
+                Message::from_octets(response.as_slice())
+                    .unwrap()
+                    .header()
+                    .rcode(),
+                rcode.rcode()
+            );
+            client
+                .answer(
+                    &mut Message::from_octets(response.clone()).unwrap(),
+                    Time48::now(),
+                )
+                .unwrap();
+            assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+        }
+        let response = query
+            .build_signed_truncated_response(Some(&mut signer.clone()))
+            .unwrap();
+        assert!(response.len() <= query.udp_payload_limit());
+        assert!(
+            Message::from_octets(response.as_slice())
+                .unwrap()
+                .header()
+                .tc()
+        );
+        assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+
+        let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA).sign_with(signer);
+        builder
+            .add_raw_rdata(
+                query.qname.clone(),
+                16,
+                3600,
+                Rdata::new(vec![0; 1400]).unwrap(),
+            )
+            .unwrap();
+        let response = builder.build(query.udp_payload_limit()).unwrap();
+        let message = Message::from_octets(response.clone()).unwrap();
+        assert!(message.header().tc());
+        assert_eq!(message.header_counts().ancount(), 0);
+        assert!(response.len() <= query.udp_payload_limit());
+        client.answer(&mut message.clone(), Time48::now()).unwrap();
+        assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+    }
+}
+
 /// A question for example.com and `qtype`, with one OPT record per entry
 /// of `opt_versions`, each advertising 4096 octets.
 fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {

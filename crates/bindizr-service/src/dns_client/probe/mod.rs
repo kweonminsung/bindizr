@@ -252,12 +252,10 @@ async fn probe_address(
 ) -> Result<Serial, ProbeSoaError> {
     let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA, None);
     let query = builder.finish();
-    let (received, response) =
-        super::exchange_over_udp(server_addr, timeout, &query, "SOA probe").await?;
+    let response =
+        super::exchange_with_tcp_fallback(server_addr, timeout, &query, "SOA probe").await?;
     Ok(Serial::from(extract_soa_serial(
-        query_id,
-        qname,
-        &response[..received],
+        query_id, qname, &response,
     )?))
 }
 

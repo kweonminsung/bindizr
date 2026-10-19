@@ -35,6 +35,8 @@ use crate::{
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
 pub enum NsupdateError {
+    #[error("record type {0} is managed by the DNSSEC signer")]
+    ManagedType(Rtype),
     #[error("unsupported record type: {0}")]
     UnsupportedType(Rtype),
     #[error("{0}")]
@@ -77,7 +79,9 @@ impl NsupdateError {
     pub fn rcode(&self) -> Rcode {
         match self {
             Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) => Rcode::FORMERR,
-            Self::RecordValue { .. } | Self::UnsupportedType(_) => Rcode::REFUSED,
+            Self::RecordValue { .. } | Self::UnsupportedType(_) | Self::ManagedType(_) => {
+                Rcode::REFUSED
+            }
             Self::Owner {
                 source: ParseNameError::OutsideZone,
                 ..

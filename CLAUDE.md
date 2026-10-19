@@ -515,6 +515,11 @@ transparent-handling requirement. A failed import leaves the zone unchanged. Num
 resolve only to implemented types. SOA and signer-managed DNSSEC data retain
 their separate contracts.
 
+Explicit UPDATE additions and deletions naming signer-managed DNSSEC types are
+refused by policy (REFUSED), after wire-shape and RDATA validation (FORMERR).
+Prerequisites may read these types; a name-wide delete changes user records and
+lets the signer rebuild the derived view.
+
 `WksRecordValue` owns IPv4/protocol/port parsing and bitmap encoding. WKS UPDATE
 replacement compares its address and protocol (RFC 2136, Section 1.1.5). Ports
 are numeric and protocols are numeric or TCP/UDP. Empty service lists encode no

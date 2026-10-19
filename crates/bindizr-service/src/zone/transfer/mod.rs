@@ -47,6 +47,31 @@ pub struct TransferContent {
     pub dnssec_records: Vec<DnssecRecord>,
 }
 
+/// Read SOA and its signatures under the same authorization and zone snapshot.
+pub async fn authorize_soa_content_by_name(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    include_signatures: bool,
+) -> Result<TransferAccess<(Zone, Vec<DnssecRecord>)>, ServiceError> {
+    let mut tx = transaction::begin_read_tx(cx, "failed to load SOA content").await?;
+    let result = async {
+        let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
+            TransferAccess::Granted(zone) => zone,
+            TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
+            TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
+        };
+        let signatures = if include_signatures {
+            bindizr_db::dnssec_record::list_soa_signatures_tx(&mut tx, zone.id).await?
+        } else {
+            Vec::new()
+        };
+        Ok(TransferAccess::Granted((zone, signatures)))
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to load SOA content").await
+}
+
 /// The enabled zone `zone_name` names, if `caller` may transfer it. Decided
 /// on the row this transaction share-locks, with the grants re-read beside it.
 pub async fn authorize_transfer_by_name(

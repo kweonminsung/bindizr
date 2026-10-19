@@ -61,6 +61,158 @@ fn dot_client(app: &TestApp) -> ClientConfig {
     xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
 }
 
+/// SOA replies carry verifiable RRSIGs only with DO; IXFR stays SOA-only.
+#[tokio::test]
+#[serial]
+async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
+    use domain::{
+        base::{ToName, rdata::ComposeRecordData},
+        rdata::{Dnskey, Rrsig},
+    };
+    use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
+    use serde_json::json;
+
+    use crate::common::exchange_tcp;
+
+    let app = xot_app().await;
+    app.create_secondary("loopback", "127.0.0.1:9").await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "soa-signature-key", KeyRole::Admin).await;
+    for stage in 0..3 {
+        if stage == 1 {
+            let (status, _) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{name}/dnssec"),
+                    Some(json!({"parent_ns_addrs": ["127.0.0.1:9"]})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::CREATED);
+        } else if stage == 2 {
+            let (status, _) = app.send_request(Method::POST, "/records", Some(json!({"zone_name": name, "name": "new", "type": "A", "value": "192.0.2.1", "ttl": 3600}))).await;
+            assert_eq!(status, StatusCode::CREATED);
+        }
+        let current_serial = app.read_zone_serial(name).await as u32;
+        let transfer = exchange_request(
+            build_edns_query(name, Rtype::AXFR, &[]),
+            Some(&key),
+            |request| exchange_tcp(app.dns_port(), request),
+        )
+        .unwrap();
+        let public = transfer
+            .answer()
+            .unwrap()
+            .limit_to::<Dnskey<_>>()
+            .next()
+            .map(|record| record.unwrap().data().public_key().to_vec());
+        for do_bit in [false, true] {
+            for signed in [false, true] {
+                for transport in ["udp", "tcp", "tls"] {
+                    let signer = if signed || transport == "tls" {
+                        Some(&key)
+                    } else {
+                        None
+                    };
+                    let response = exchange_request(
+                        build_edns_query(name, Rtype::SOA, &[(0, do_bit)]),
+                        signer,
+                        |request| match transport {
+                            "udp" => exchange_udp(app.dns_port(), request),
+                            "tcp" => exchange_tcp(app.dns_port(), request),
+                            _ => exchange_xot(app.dns_tls_port(), request, dot_client(&app)),
+                        },
+                    )
+                    .unwrap();
+                    assert!(!response.header().tc());
+                    let soa = response
+                        .answer()
+                        .unwrap()
+                        .limit_to::<Soa<_>>()
+                        .next()
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(soa.data().serial().into_int(), current_serial);
+                    let signatures = response
+                        .answer()
+                        .unwrap()
+                        .limit_to::<Rrsig<_, _>>()
+                        .collect::<Result<Vec<_>, _>>()
+                        .unwrap();
+                    assert_eq!(signatures.len(), usize::from(stage > 0 && do_bit));
+                    for signature in signatures {
+                        let data = signature.data();
+                        assert_eq!(data.type_covered(), Rtype::SOA);
+                        let mut signed_data = Vec::new();
+                        data.compose_canonical_rdata(&mut signed_data).unwrap();
+                        signed_data.truncate(signed_data.len() - data.signature().len());
+                        soa.owner().compose_canonical(&mut signed_data).unwrap();
+                        signed_data.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+                        signed_data.extend_from_slice(&Class::IN.to_int().to_be_bytes());
+                        signed_data.extend_from_slice(&data.original_ttl().as_secs().to_be_bytes());
+                        let mut rdata = Vec::new();
+                        soa.data().compose_canonical_rdata(&mut rdata).unwrap();
+                        signed_data.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+                        signed_data.extend_from_slice(&rdata);
+                        let mut point = vec![4];
+                        point.extend_from_slice(public.as_ref().unwrap());
+                        UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, point)
+                            .verify(&signed_data, data.signature())
+                            .unwrap();
+                    }
+                }
+            }
+        }
+        let response = exchange_request(
+            build_edns_query(name, Rtype::IXFR, &[(0, true)]),
+            Some(&key),
+            |request| exchange_udp(app.dns_port(), request),
+        )
+        .unwrap();
+        assert_eq!(response.header_counts().ancount(), 1);
+        if stage == 2 {
+            let long_name = format!(
+                "{}.{}.{}.{}",
+                "a".repeat(63),
+                "b".repeat(63),
+                "c".repeat(63),
+                "d".repeat(61)
+            );
+            let long_key = create_tsig_key(&app, &long_name, KeyRole::Admin).await;
+            for tcp in [false, true] {
+                let mut query = MessageBuilder::new_vec().question();
+                query
+                    .push((&parse_name(name).unwrap(), Rtype::SOA))
+                    .unwrap();
+                let mut query = query.additional();
+                query
+                    .opt(|opt| {
+                        opt.set_udp_payload_size(512);
+                        opt.set_dnssec_ok(true);
+                        Ok(())
+                    })
+                    .unwrap();
+                let response = exchange_request(query, Some(&long_key), |request| {
+                    if tcp {
+                        exchange_tcp(app.dns_port(), request)
+                    } else {
+                        exchange_udp(app.dns_port(), request)
+                    }
+                })
+                .unwrap();
+                assert_eq!(response.header().tc(), !tcp);
+                assert!(response.opt().unwrap().dnssec_ok());
+                if tcp {
+                    assert_eq!(response.header_counts().ancount(), 2);
+                } else {
+                    assert_eq!(response.header_counts().ancount(), 0);
+                    assert!(response.as_slice().len() <= 512);
+                }
+            }
+        }
+    }
+}
+
 /// Verify that over TLS a transfer needs its key and a registered address
 /// together, while the plain listener keeps admitting either alone.
 #[tokio::test]

@@ -5,7 +5,7 @@ use std::{str::FromStr, sync::Arc};
 use base64::Engine;
 use domain::{
     base::{
-        Message, MessageBuilder, Rtype, ToName,
+        Message, Rtype, ToName,
         iana::{Class, OptRcode, Rcode, TsigRcode},
         message_builder::AdditionalBuilder,
     },
@@ -67,8 +67,19 @@ pub enum VerifyResponseError {
     Malformed(#[source] LibraryError),
     #[error("TSIG validation of the answer failed: {0}")]
     Rejected(#[source] LibraryError),
+    #[error("authenticated TSIG server clock error: {0}")]
+    ServerBadTime(#[source] LibraryError),
+    #[error("authenticated TSIG server error: {0}")]
+    ServerError(TsigRcode),
     #[error("TSIG response MAC is shorter than the full-length policy permits")]
     TruncatedMac,
+}
+
+impl VerifyResponseError {
+    /// Report whether MAC validation authenticated the server error.
+    pub fn is_authenticated(&self) -> bool {
+        matches!(self, Self::ServerBadTime(_) | Self::ServerError(_))
+    }
 }
 
 /// Context for signing the response to a validated TSIG request.
@@ -92,8 +103,13 @@ impl AsRef<Key> for TsigSigningKey {
     }
 }
 
-/// Context for checking the one answer to a request this side signed.
-pub type RequestSigner = ClientTransaction<TsigSigningKey>;
+/// An outbound transaction and its request MAC for BADTIME verification.
+#[derive(Debug)]
+pub struct RequestSigner {
+    context: ClientTransaction<TsigSigningKey>,
+    key: TsigSigningKey,
+    request_mac: Vec<u8>,
+}
 
 /// Sign a request bindizr is about to send (RFC 8945, Section 5.1) and
 /// return the context that checks its answer.
@@ -101,8 +117,22 @@ pub fn sign_request(
     builder: &mut AdditionalBuilder<Vec<u8>>,
     key: TsigSigningKey,
 ) -> Result<RequestSigner, SignRequestError> {
-    ClientTransaction::request(key, builder, Time48::now())
-        .map_err(|e| SignRequestError(Box::new(e)))
+    let context = ClientTransaction::request(key.clone(), builder, Time48::now())
+        .map_err(|e| SignRequestError(Box::new(e)))?;
+    let message =
+        Message::from_octets(builder.as_slice()).map_err(|e| SignRequestError(Box::new(e)))?;
+    let tsig = message
+        .additional()
+        .map_err(|e| SignRequestError(Box::new(e)))?
+        .limit_to::<Tsig<_, _>>()
+        .last()
+        .ok_or_else(|| SignRequestError(Box::new(TsigError::RecordMissing)))?
+        .map_err(|e| SignRequestError(Box::new(e)))?;
+    Ok(RequestSigner {
+        context,
+        key,
+        request_mac: tsig.data().mac().to_vec(),
+    })
 }
 
 /// Check the answer to a signed request against the key that signed it
@@ -110,20 +140,101 @@ pub fn sign_request(
 pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), VerifyResponseError> {
     let mut message = Message::from_octets(response.to_vec())
         .map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
-    let mac_len = message.additional().ok().and_then(|additional| {
+    let tsig_fields = message.additional().ok().and_then(|additional| {
         additional
             .limit_to::<Tsig<_, _>>()
             .last()?
             .ok()
-            .map(|tsig| tsig.data().mac().len())
+            .map(|tsig| (tsig.data().mac().len(), tsig.data().error()))
     });
+    if message.header().rcode() == Rcode::NOTAUTH
+        && tsig_fields.is_some_and(|(_, error)| error == TsigRcode::BADTIME)
+    {
+        return verify_badtime_response(signer, response);
+    }
     signer
+        .context
         .answer(&mut message, Time48::now())
-        .map_err(|e| VerifyResponseError::Rejected(Box::new(e)))?;
-    if mac_len != Some(signer.key().native_len()) {
+        .map_err(|error| VerifyResponseError::Rejected(Box::new(error)))?;
+    if tsig_fields.map(|(len, _)| len) != Some(signer.key.as_ref().native_len()) {
         return Err(VerifyResponseError::TruncatedMac);
     }
+    if let Some((_, error)) = tsig_fields
+        && error != TsigRcode::NOERROR
+    {
+        return Err(VerifyResponseError::ServerError(error));
+    }
     Ok(())
+}
+
+/// Verify BADTIME's six-byte Other Data (RFC 8945, Section 4.3).
+/// domain 0.12.3 incorrectly hashes eight bytes.
+fn verify_badtime_response(
+    signer: &RequestSigner,
+    response: &[u8],
+) -> Result<(), VerifyResponseError> {
+    let rejected = |error| VerifyResponseError::Rejected(Box::new(error));
+    if !matches!(request_signature(response), RequestSignature::Key { .. }) {
+        return Err(rejected(domain::tsig::ValidationError::FormErr));
+    }
+    let message =
+        Message::from_octets(response).map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
+    let mut additional = message
+        .additional()
+        .map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
+    let mut tsig_start = additional.pos();
+    while let Some(record) = additional.next() {
+        let record = record.map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
+        if record.rtype() == Rtype::TSIG {
+            break;
+        }
+        tsig_start = additional.pos();
+    }
+    let tsig = message
+        .additional()
+        .map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?
+        .limit_to::<Tsig<_, _>>()
+        .last()
+        .ok_or_else(|| rejected(domain::tsig::ValidationError::ServerUnsigned))?
+        .map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
+    let data = tsig.data();
+    if !tsig.owner().name_eq(signer.key.domain.name())
+        || !data
+            .algorithm()
+            .name_eq(&signer.key.domain.algorithm().to_name())
+    {
+        return Err(rejected(domain::tsig::ValidationError::BadKey));
+    }
+    let mut digest = (signer.request_mac.len() as u16).to_be_bytes().to_vec();
+    digest.extend_from_slice(&signer.request_mac);
+    let mut unsigned = response[..tsig_start].to_vec();
+    unsigned[..2].copy_from_slice(&data.original_id().to_be_bytes());
+    unsigned[10..12].copy_from_slice(&(message.header_counts().arcount() - 1).to_be_bytes());
+    digest.extend_from_slice(&unsigned);
+    tsig.owner()
+        .compose_canonical(&mut digest)
+        .expect("a Vec holds a name");
+    digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
+    digest.extend_from_slice(&0u32.to_be_bytes());
+    data.algorithm()
+        .compose_canonical(&mut digest)
+        .expect("a Vec holds a name");
+    digest.extend_from_slice(&data.time_signed().into_octets());
+    digest.extend_from_slice(&data.fudge().to_be_bytes());
+    digest.extend_from_slice(&data.error().to_int().to_be_bytes());
+    digest.extend_from_slice(&(data.other().len() as u16).to_be_bytes());
+    digest.extend_from_slice(data.other());
+    hmac::verify(&signer.key.hmac, &digest, data.mac())
+        .map_err(|_| rejected(domain::tsig::ValidationError::BadSig))?;
+    let server = data
+        .other_time()
+        .ok_or_else(|| rejected(domain::tsig::ValidationError::FormErr))?;
+    Err(VerifyResponseError::ServerBadTime(Box::new(
+        domain::tsig::ValidationError::ServerBadTime {
+            client: data.time_signed(),
+            server,
+        },
+    )))
 }
 
 /// Reserve the maximum TSIG size: longest key name, `hmac-sha512.`,
@@ -159,6 +270,7 @@ impl TsigKey {
         })?;
 
         let (algorithm, hmac_algorithm) = match self.algorithm {
+            TsigAlgorithm::HmacSha1 => (Algorithm::Sha1, hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY),
             TsigAlgorithm::HmacSha256 => (Algorithm::Sha256, hmac::HMAC_SHA256),
             TsigAlgorithm::HmacSha384 => (Algorithm::Sha384, hmac::HMAC_SHA384),
             TsigAlgorithm::HmacSha512 => (Algorithm::Sha512, hmac::HMAC_SHA512),
@@ -361,7 +473,7 @@ fn build_signed_error_response(
         .last()?
         .ok()?;
     let request = request_tsig.data();
-    let mut builder = MessageBuilder::new_vec()
+    let mut builder = crate::dns::message::response_builder()
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?
         .additional();
@@ -412,7 +524,7 @@ fn build_signed_error_response(
             .ok()?,
         ))
         .ok()?;
-    Some(builder.finish())
+    Some(builder.finish().into_target())
 }
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that
@@ -425,7 +537,7 @@ fn build_unsigned_error_response(msg: &Message<&[u8]>, error: TsigRcode) -> Opti
         .last()?
         .ok()?;
 
-    let builder = MessageBuilder::new_vec()
+    let builder = crate::dns::message::response_builder()
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?;
     let mut builder = builder.additional();
@@ -448,7 +560,7 @@ fn build_unsigned_error_response(msg: &Message<&[u8]>, error: TsigRcode) -> Opti
         ))
         .ok()?;
 
-    Some(builder.finish())
+    Some(builder.finish().into_target())
 }
 
 #[cfg(test)]

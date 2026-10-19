@@ -8,12 +8,13 @@ use domain::{
     base::{
         Message, MessageBuilder, Name, Rtype, ToName,
         iana::{Class, Opcode, OptRcode, Rcode},
-        message_builder::AdditionalBuilder,
+        message_builder::{AdditionalBuilder, TreeCompressor},
         opt::{
             Opt, OptRecord,
             exterr::ExtendedError,
             keepalive::{IdleTimeout, TcpKeepalive},
         },
+        wire::Composer,
     },
     rdata::{Soa, tsig::Time48},
 };
@@ -48,6 +49,17 @@ pub enum Edns {
 }
 
 impl Edns {
+    /// Whether the requester asks for DNSSEC records (RFC 3225).
+    pub fn dnssec_ok(self) -> bool {
+        matches!(
+            self,
+            Self::Present {
+                dnssec_ok: true,
+                ..
+            }
+        )
+    }
+
     /// Read the request's OPT metadata, retaining flags even for unsupported versions.
     pub(crate) fn from_message(message: &Message<&[u8]>) -> Self {
         // RFC 6891, Section 6.1.1: OPT belongs only in Additional, once per message.
@@ -95,9 +107,9 @@ impl Edns {
     }
 
     /// Append response EDNS metadata and options when requested (RFC 6891, Section 6.1.1).
-    pub(crate) fn push_response(
+    pub(crate) fn push_response<Target: Composer>(
         self,
-        additional: &mut AdditionalBuilder<Vec<u8>>,
+        additional: &mut AdditionalBuilder<Target>,
         rcode: OptRcode,
         ede: Option<ExtendedErrorCode>,
         keepalive: Option<TcpKeepalive>,
@@ -283,6 +295,14 @@ impl ParsedQuery {
         usize::from(size)
     }
 
+    /// Bound UDP replies; streams are identified by their idle timeout.
+    pub fn response_limit(&self) -> usize {
+        match self.keepalive {
+            Keepalive::None => self.udp_payload_limit(),
+            Keepalive::IdleTimeout(_) => crate::dns::DNS_TCP_MAX_SIZE,
+        }
+    }
+
     /// The response code for an invalid question count or EDNS record.
     pub fn format_error(&self) -> Option<OptRcode> {
         if let Some(rcode) = question_count_error(self.opcode, self.question_count) {
@@ -294,7 +314,9 @@ impl ParsedQuery {
     /// An empty authoritative answer with TC set, so a transfer client asks
     /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.1.1).
     pub fn build_truncated_response(&self) -> Vec<u8> {
-        self.build_response(OptRcode::NOERROR, true, None).finish()
+        self.build_response(OptRcode::NOERROR, true, None)
+            .finish()
+            .into_target()
     }
 
     /// A response echoing this query with only `rcode` set, and the extended
@@ -302,6 +324,7 @@ impl ParsedQuery {
     pub fn build_error_response(&self, rcode: Rcode, ede: Option<ExtendedErrorCode>) -> Vec<u8> {
         self.build_response(OptRcode::from(rcode), false, ede)
             .finish()
+            .into_target()
     }
 
     /// The truncated answer, signed when the question was.
@@ -309,13 +332,7 @@ impl ParsedQuery {
         &self,
         signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
-        let mut additional = self.build_response(OptRcode::NOERROR, true, None);
-        if let Some(signer) = signer {
-            signer
-                .answer(&mut additional, Time48::now())
-                .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
-        }
-        Ok(additional.finish())
+        self.finish_signed_response(OptRcode::NOERROR, true, None, signer)
     }
 
     /// The error response, signed when a key was accepted: an accepted key
@@ -326,13 +343,43 @@ impl ParsedQuery {
         ede: Option<ExtendedErrorCode>,
         signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
-        let mut additional = self.build_response(rcode, false, ede);
-        if let Some(signer) = signer {
-            signer
-                .answer(&mut additional, Time48::now())
-                .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
+        self.finish_signed_response(rcode, false, ede, signer)
+    }
+
+    /// Sign a bounded response, rebuilding with TC on overflow.
+    fn finish_signed_response(
+        &self,
+        rcode: OptRcode,
+        truncated: bool,
+        ede: Option<ExtendedErrorCode>,
+        mut signer: Option<&mut TransferSigner>,
+    ) -> Result<Vec<u8>, EncodeMessageError> {
+        let original = signer.as_deref().cloned();
+        for minimal in [false, true] {
+            let mut additional = self.build_response(
+                if minimal { OptRcode::NOERROR } else { rcode },
+                truncated || minimal,
+                if minimal { None } else { ede },
+            );
+            if let Some(signer) = signer.as_deref_mut() {
+                if let Some(original) = &original {
+                    *signer = original.clone();
+                }
+                signer
+                    .answer(&mut additional, Time48::now())
+                    .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
+            }
+            let response = additional.finish().into_target();
+            if response.len() <= self.response_limit() {
+                return Ok(response);
+            }
+            if minimal {
+                return Err(EncodeMessageError::TooLarge {
+                    len: response.len(),
+                });
+            }
         }
-        Ok(additional.finish())
+        unreachable!()
     }
 
     /// Build a question-only response with EDNS, ready for optional TSIG signing.
@@ -341,8 +388,8 @@ impl ParsedQuery {
         rcode: OptRcode,
         truncated: bool,
         ede: Option<ExtendedErrorCode>,
-    ) -> AdditionalBuilder<Vec<u8>> {
-        let mut builder = MessageBuilder::new_vec();
+    ) -> AdditionalBuilder<TreeCompressor<Vec<u8>>> {
+        let mut builder = super::response_builder();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);

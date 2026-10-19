@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::Engine;
 use chrono::Utc;
 use domain::base::{
-    Name,
+    MessageBuilder, Name,
     iana::{Class, Opcode, Rtype},
 };
 use ring::hmac;
@@ -15,6 +15,106 @@ use crate::{
 };
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
+
+/// TSIG errors fit long queries and distinguish authenticated responses.
+#[test]
+fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
+    let name = format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    );
+    let key = TsigKey {
+        name: name.clone(),
+        ..test_key(TsigAlgorithm::HmacSha512)
+    }
+    .to_signing_key()
+    .unwrap();
+    let truncated_key = Arc::new(
+        Key::new(
+            Algorithm::Sha512,
+            SECRET,
+            key.as_ref().name().clone(),
+            None,
+            Some(32),
+        )
+        .unwrap(),
+    );
+    let mut question = crate::dns::message::response_builder().question();
+    question
+        .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+        .unwrap();
+    let mut additional = question.additional();
+    ClientTransaction::request(truncated_key, &mut additional, Time48::now()).unwrap();
+    let query = additional.finish().into_target();
+    let response = extract_failed_response(verify_tsig(&query, Some(key.clone())).unwrap_err());
+    assert!(response.len() <= 512);
+    assert_eq!(extract_response_tsig(&response).1, TsigRcode::BADTRUNC);
+    assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
+    for stale in [false, true] {
+        let mut question = crate::dns::message::response_builder().question();
+        question
+            .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
+            .unwrap();
+        let mut additional = question.additional();
+        let time = Time48::from_u64(now_secs() - if stale { 3600 } else { 0 });
+        let client =
+            ClientTransaction::request_with_fudge(key.clone(), &mut additional, time, 300).unwrap();
+        let query = additional.finish().into_target();
+        let request_message = Message::from_octets(query.as_slice()).unwrap();
+        let request_tsig = request_message
+            .additional()
+            .unwrap()
+            .limit_to::<Tsig<_, _>>()
+            .last()
+            .unwrap()
+            .unwrap();
+        let client = RequestSigner {
+            context: client,
+            key: key.clone(),
+            request_mac: request_tsig.data().mac().to_vec(),
+        };
+        let unknown = extract_failed_response(verify_tsig(&query, None).unwrap_err());
+        assert!(unknown.len() <= 512);
+        assert!(
+            !verify_response(&client, &unknown)
+                .unwrap_err()
+                .is_authenticated()
+        );
+        if stale {
+            let response =
+                extract_failed_response(verify_tsig(&query, Some(key.clone())).unwrap_err());
+            assert!(response.len() <= 512);
+            assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
+            assert!(matches!(
+                verify_response(&client, &response),
+                Err(VerifyResponseError::ServerBadTime(_))
+            ));
+            let mut forged = response;
+            let index = forged.len() - 13;
+            forged[index] ^= 1;
+            assert!(
+                !verify_response(&client, &forged)
+                    .unwrap_err()
+                    .is_authenticated()
+            );
+        } else {
+            let mut forged = query;
+            forged[2] ^= 1;
+            let response =
+                extract_failed_response(verify_tsig(&forged, Some(key.clone())).unwrap_err());
+            assert!(response.len() <= 512);
+            assert_eq!(extract_response_tsig(&response).1, TsigRcode::BADSIG);
+            assert!(
+                !verify_response(&client, &response)
+                    .unwrap_err()
+                    .is_authenticated()
+            );
+        }
+    }
+}
 
 /// Build a signing-key fixture for the test.
 pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
@@ -53,6 +153,7 @@ pub(crate) fn encode_u48(value: u64) -> [u8; 6] {
 /// Sign test message bytes with the selected HMAC algorithm.
 pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
     let algorithm = match algorithm {
+        TsigAlgorithm::HmacSha1 => hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
         TsigAlgorithm::HmacSha256 => hmac::HMAC_SHA256,
         TsigAlgorithm::HmacSha384 => hmac::HMAC_SHA384,
         TsigAlgorithm::HmacSha512 => hmac::HMAC_SHA512,
@@ -128,7 +229,7 @@ fn extract_failed_response(err: TsigError) -> Vec<u8> {
 }
 
 /// Check the response MAC against the request and actual wire fields.
-fn assert_response_mac(query: &[u8], response: &[u8], algorithm: TsigAlgorithm) {
+pub(crate) fn assert_response_mac(query: &[u8], response: &[u8], algorithm: TsigAlgorithm) {
     let request = Message::from_octets(query).unwrap();
     let request_tsig = request
         .additional()
@@ -182,6 +283,7 @@ fn assert_response_mac(query: &[u8], response: &[u8], algorithm: TsigAlgorithm) 
 #[test]
 fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     for algorithm in [
+        TsigAlgorithm::HmacSha1,
         TsigAlgorithm::HmacSha256,
         TsigAlgorithm::HmacSha384,
         TsigAlgorithm::HmacSha512,
@@ -291,6 +393,7 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
 #[test]
 fn badtime_response_preserves_edns() {
     for algorithm in [
+        TsigAlgorithm::HmacSha1,
         TsigAlgorithm::HmacSha256,
         TsigAlgorithm::HmacSha384,
         TsigAlgorithm::HmacSha512,
@@ -369,6 +472,7 @@ fn badtime_response_preserves_edns() {
 #[test]
 fn truncated_requests_follow_validation_order() {
     for algorithm in [
+        TsigAlgorithm::HmacSha1,
         TsigAlgorithm::HmacSha256,
         TsigAlgorithm::HmacSha384,
         TsigAlgorithm::HmacSha512,

@@ -14,6 +14,46 @@ fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRec
     }
 }
 
+/// Managed changes return REFUSED; malformed RDATA returns FORMERR.
+#[test]
+fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    for class in [Class::IN, Class::NONE, Class::ANY] {
+        let data = if class == Class::ANY {
+            &[][..]
+        } else {
+            &[1, 1, 3, 13, 1][..]
+        };
+        let err =
+            decode_updates(&[record(class, Rtype::DNSKEY, 0, data)], &zone, data).unwrap_err();
+        assert!(matches!(err, NsupdateError::ManagedType(Rtype::DNSKEY)));
+        assert_eq!(err.rcode(), Rcode::REFUSED);
+    }
+    for class in [Class::IN, Class::NONE] {
+        let err =
+            decode_updates(&[record(class, Rtype::DNSKEY, 0, &[1])], &zone, &[1]).unwrap_err();
+        assert_eq!(err.rcode(), Rcode::FORMERR);
+    }
+    let value = [1, 1, 3, 13, 1];
+    for class in [Class::IN, Class::ANY, Class::NONE] {
+        let data = if class == Class::IN {
+            &value[..]
+        } else {
+            &[][..]
+        };
+        assert!(
+            decode_prerequisites(&[record(class, Rtype::DNSKEY, 0, data)], &zone, data).is_ok()
+        );
+    }
+    assert!(matches!(
+        &decode_updates(&[record(Class::ANY, Rtype::ANY, 0, &[])], &zone, &[]).unwrap()[0],
+        UpdateOperation::Record(RecordOperation::DeleteRecordSet {
+            record_type: None,
+            ..
+        })
+    ));
+}
+
 /// Verify the prerequisite and update shapes are reported as FORMERR
 /// (RFC 2136, Sections 3.2.1 and 3.4.1).
 #[test]

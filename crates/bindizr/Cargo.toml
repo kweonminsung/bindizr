@@ -48,6 +48,7 @@ tower-http.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
+sqlx = { workspace = true, features = ["sqlite"] }
 # `test-util` so a write deadline is asserted on a paused clock, not in real time.
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true

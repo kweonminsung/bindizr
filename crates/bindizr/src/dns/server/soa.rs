@@ -154,6 +154,11 @@ async fn handle_soa_request(
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
+            let outcome = if refusal.is_failure() {
+                SoaResult::Failed
+            } else {
+                SoaResult::Refused
+            };
             log::warn!(
                 "Refused {} query for {:?} from {}: {}",
                 query.qtype,
@@ -163,7 +168,7 @@ async fn handle_soa_request(
             );
             return refusal
                 .into_response(query)
-                .map(|response| (response, SoaResult::Refused));
+                .map(|response| (response, outcome));
         }
     };
 
@@ -189,7 +194,15 @@ async fn handle_soa_request(
             query.qtype,
             cx.config().dns.catalog_zone_name
         );
-        let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
+        let access = match zone::authorize_catalog_content(cx, &identity.caller).await {
+            Ok(access) => access,
+            Err(error) => {
+                return TransferRefusal::failed(error.to_string(), identity.signer)
+                    .into_response(query)
+                    .map(|response| (response, SoaResult::Failed));
+            }
+        };
+        let zones = match access {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
                 return Ok(query.build_signed_error_response(
@@ -212,21 +225,41 @@ async fn handle_soa_request(
                     .map(|response| (response, SoaResult::Refused));
             }
         };
-        let (catalog_zone, _) = catalog::generate_catalog_zone(dns_cx, zones).await?;
+        let (catalog_zone, _) = match catalog::generate_catalog_zone(dns_cx, zones).await {
+            Ok(content) => content,
+            Err(error) => {
+                return TransferRefusal::failed(error.to_string(), identity.signer)
+                    .into_response(query)
+                    .map(|response| (response, SoaResult::Failed));
+            }
+        };
         let mut builder = build(identity.signer);
         builder.add_catalog_soa(&catalog_zone, catalog_zone.serial)?;
         return Ok((builder.build(max_len)?, SoaResult::Ok));
     }
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
+    let include_signatures = query.qtype == Rtype::SOA && query.edns.dnssec_ok();
     let access = match zone::normalize_name(zone_name_str) {
-        Ok(zone_name) => zone::authorize_transfer_by_name(cx, &identity.caller, &zone_name)
-            .await?
-            .map(|(zone, _)| zone),
+        Ok(zone_name) => match zone::authorize_soa_content_by_name(
+            cx,
+            &identity.caller,
+            &zone_name,
+            include_signatures,
+        )
+        .await
+        {
+            Ok(access) => access,
+            Err(e) => {
+                return TransferRefusal::failed(e.to_string(), identity.signer)
+                    .into_response(query)
+                    .map(|response| (response, SoaResult::Failed));
+            }
+        },
         Err(_) => TransferAccess::NotAuth,
     };
-    let zone = match access {
-        TransferAccess::Granted(zone) => zone,
+    let (zone, signatures) = match access {
+        TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => {
             return Ok(query.build_signed_error_response(
                 OptRcode::NOTAUTH,
@@ -257,6 +290,14 @@ async fn handle_soa_request(
 
     let mut builder = build(identity.signer);
     builder.add_soa(&zone, zone.serial)?;
+    for signature in signatures {
+        builder.add_raw_rdata(
+            query.qname.clone(),
+            signature.record_type.wire_type(),
+            signature.ttl.as_secs(),
+            signature.rdata,
+        )?;
+    }
 
     Ok((builder.build(max_len)?, SoaResult::Ok))
 }

@@ -159,6 +159,10 @@ the NOTIFY Bindizr sends to a secondary registered with `--notify-key` — see
 [Signed NOTIFY](secondaries.md#signed-notify). A key's name is what appears
 on the wire.
 
+New keys default to HMAC-SHA256. HMAC-SHA384 and HMAC-SHA512 are also supported;
+HMAC-SHA1 is available for interoperability as required by RFC 8945, Section 6,
+which discourages its use for new deployments.
+
 ```bash
 # Create a key in a role; use `get` below to retrieve its secret later
 bindizr tsig-key create update-key --role external-dns-prod
