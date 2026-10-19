@@ -54,8 +54,7 @@ impl WksRecordValue {
         if !(WKS_PREFIX_LEN..=WKS_PREFIX_LEN + MAX_SERVICE_BITMAP_LEN).contains(&bytes.len()) {
             return Err(ParseRecordValueError::WksRdata);
         }
-        // BIND's WKS wire parser rejects trailing zero bitmap octets. Reject
-        // those before a stored value can prevent a secondary from loading its zone.
+        // BIND rejects trailing zero bitmap bytes, which would prevent zone loading.
         if bytes.len() > WKS_PREFIX_LEN && bytes.last() == Some(&0) {
             return Err(ParseRecordValueError::WksBitmapPadding);
         }
@@ -102,7 +101,7 @@ impl WksRecordValue {
 mod tests {
     use super::*;
 
-    /// Numeric ports cover byte boundaries, deduplicate, and retain the highest legal port.
+    /// Check bitmap boundaries, duplicate ports, and port 65535.
     #[test]
     fn parse_encodes_port_bitmap_boundaries() {
         let parsed = WksRecordValue::parse("192.0.2.1 TCP ( 65535 8 7 0 8 )").unwrap();
@@ -117,7 +116,7 @@ mod tests {
         assert_eq!(WksRecordValue::parse(&parsed.canonical()).unwrap(), parsed);
     }
 
-    /// Empty service lists and arbitrary protocol numbers round-trip without changing bytes.
+    /// Preserve empty bitmaps and protocol numbers across wire/text round trips.
     #[test]
     fn wire_roundtrip_preserves_empty_and_nonempty_bitmaps() {
         for bytes in [

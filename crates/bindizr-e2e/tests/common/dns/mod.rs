@@ -469,7 +469,7 @@ pub(crate) async fn exported_record_sets(
     sets
 }
 
-/// Adapt the export's numeric WKS fields independently because `domain` has no native WKS scanner.
+/// Encode exported WKS independently for `domain`, which lacks a native scanner.
 fn generic_wks_export(text: &str) -> String {
     let mut normalized = text
         .lines()

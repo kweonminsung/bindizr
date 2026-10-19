@@ -6,7 +6,7 @@ use domain::base::iana::Rtype;
 
 use crate::dns::record::WksRecordValue;
 
-/// Rewrite only WKS data, respecting master-file owners, comments, quotes, and parentheses.
+/// Normalize native WKS syntax while preserving other records and source lines.
 pub(crate) fn normalize_records(content: &str) -> Result<String, String> {
     let mut output = String::with_capacity(content.len());
     let mut fields = Vec::new();
@@ -145,7 +145,7 @@ fn append_entry(
 mod tests {
     use super::*;
 
-    /// Only native WKS data is rewritten, with origin, inherited owners, and line counts preserved.
+    /// Preserve other records, inherited owners, and line numbers around multiline WKS.
     #[test]
     fn normalize_records_preserves_other_records_and_multiline_wks() {
         let content = "$ORIGIN example.com.\n@ IN NS ns.example.com.\nhost IN WKS 192.0.2.1 TCP ( 0 ; services\n 7 8 )\n 300 WKS 192.0.2.2 UDP 53\ntext IN TXT \"WKS\" \"192.0.2.1 6 80\"\nWKS IN A 192.0.2.8\n";

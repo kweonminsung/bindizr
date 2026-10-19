@@ -1,7 +1,5 @@
-//! nsupdate (RFC 2136), from the point the wire message is decoded.
-//! Prerequisite evaluation, per-key authorization, and the transactional apply
-//! live here; core reads the wire format, and the DNS front end owns TSIG.
-//! The service prescans the complete sections before choosing operations.
+//! Prescan and apply nsupdate (RFC 2136) with prerequisite checks and role grants.
+//! Core decodes the wire format; the DNS front end authenticates TSIG.
 
 mod decode;
 mod operation;
@@ -105,9 +103,8 @@ impl From<bindizr_db::error::DatabaseError> for NsupdateError {
     }
 }
 
-/// The complete wire sections of an UPDATE, retained until the service has
-/// checked the zone and prescanned every record. RDATA compression addresses
-/// `message`, the original packet.
+/// Keep complete UPDATE sections for zone checks and prescanning;
+/// RDATA compression offsets refer to the original `message`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Update<'a> {
     pub zone_name: ZoneName,

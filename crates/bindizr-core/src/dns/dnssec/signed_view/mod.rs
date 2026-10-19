@@ -194,9 +194,8 @@ impl SignedViewParams<'_> {
             });
         }
 
-        // Record sets to sign: every authoritative record set. At a delegation the parent
-        // signs only the DS record set; the NS beside it and glue at or below the cut
-        // are served but not signed (RFC 4035, Section 2.2).
+        // Sign authoritative records, excluding delegation NS and glue
+        // at or below the cut (RFC 4035, Section 2.2).
         let delegations: BTreeSet<Vec<u8>> = input
             .iter()
             .filter(|record| record.rtype() == Rtype::NS && *record.owner() != apex)
@@ -244,9 +243,8 @@ impl SignedViewParams<'_> {
         for record_set in &signable {
             let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
             let covered = i32::from(record_set[0].rtype().to_int());
-            // The apex key record sets must be signed by keys the parent DS names
-            // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
-            // active zone-data keys.
+            // Keys named by parent DS sign apex key records (RFC 7344, Section 4.1 for CDS/CDNSKEY);
+            // active zone-data keys sign the rest.
             let record_set_signers: &[&Signer<'_>] =
                 if *record_set[0].owner() == apex && is_key_rtype(record_set[0].rtype()) {
                     &key_signers

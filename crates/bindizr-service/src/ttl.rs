@@ -1,9 +1,5 @@
-//! The TTL rules the API applies. They differ on purpose: a record may carry
-//! TTL 0 (RFC 8767, Section 4), a zone's default TTL, which every record
-//! without one inherits, stays within a sane range, and an SOA interval of
-//! zero would stop secondaries refreshing. Explicit record TTLs retain the
-//! operator's value so imports and UPDATE do not silently change authoritative
-//! data; the creation default follows RFC 8767's recommended one-week cap.
+//! Record TTLs retain explicit values, including zero (RFC 8767, Section 4).
+//! Zone defaults follow its one-week cap; SOA intervals and minimums stay positive.
 
 use bindizr_core::dns::Ttl;
 
@@ -15,8 +11,7 @@ const MIN_DEFAULT_TTL: i64 = 60;
 /// Largest default TTL a zone may hand out: one week.
 const MAX_DEFAULT_TTL: i64 = 604_800;
 
-/// A record TTL as requested, checked against the unsigned wire range;
-/// the zone's default stands in for an omitted one.
+/// Validate a record TTL against the unsigned wire range.
 pub(crate) fn validate_record_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     Ttl::try_from(ttl).map_err(ServiceError::invalid_input)
 }
@@ -38,8 +33,7 @@ pub(crate) fn validate_default_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     Ttl::try_from(ttl).map_err(ServiceError::invalid_zone_field)
 }
 
-/// Resolve an omitted SOA timer to its fallback and require a given one
-/// positive for refresh, retry and expire.
+/// Use the fallback for an omitted SOA timer; require supplied values to be positive.
 pub(crate) fn normalize_soa_interval<T: TryFrom<i32>>(
     value: Option<i32>,
     fallback: T,
@@ -65,7 +59,7 @@ pub(crate) fn validate_soa_interval<T: TryFrom<i32>>(
     T::try_from(secs).map_err(|_| positive())
 }
 
-/// Resolve an omitted SOA minimum and retain the positive minimum policy.
+/// Use the fallback for an omitted minimum TTL; validate supplied values.
 pub(crate) fn normalize_minimum_ttl(
     value: Option<i64>,
     fallback: Ttl,

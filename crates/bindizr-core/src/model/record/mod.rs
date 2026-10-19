@@ -99,7 +99,7 @@ impl Record {
             .values_equal(&self.value, self.priority, value, priority)
     }
 
-    /// Whether an UPDATE add replaces this value under the singleton or WKS identity rules.
+    /// Test UPDATE replacement by singleton type or WKS address/protocol.
     pub fn is_replaced_by(&self, value: &str, priority: Option<i32>) -> bool {
         if self.has_rdata(value, priority) {
             return false;

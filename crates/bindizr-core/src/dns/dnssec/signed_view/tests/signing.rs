@@ -323,9 +323,8 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
     let sub = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
     let glue = OwnerName::parse_in_zone("ns.sub", &zone.name).unwrap();
 
-    // RFC 4035, Section 2.2: the delegation NS record set and glue — the A at the
-    // cut owner included — are not signed, and glue owns no NSEC; the
-    // delegation point itself stays in the chain.
+    // RFC 4035, Section 2.2: delegation NS and glue, including A at the cut,
+    // are unsigned. NSEC covers the delegation point, not glue.
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_A).is_empty());
     assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());

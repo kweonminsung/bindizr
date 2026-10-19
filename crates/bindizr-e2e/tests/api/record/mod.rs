@@ -2276,7 +2276,7 @@ async fn ptr_record_rejects_alias_target() {
     }
 }
 
-/// Record TTLs survive API, filters, history, export and transfer import over the full wire range.
+/// Preserve the full TTL range across record reads, writes, and imports.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_ttl_preserves_unsigned_boundaries() {

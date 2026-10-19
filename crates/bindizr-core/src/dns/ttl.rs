@@ -88,7 +88,7 @@ impl fmt::Display for Ttl {
 }
 
 impl utoipa::PartialSchema for Ttl {
-    /// Describe the wire range from the same maximum used by the TTL domain value.
+    /// Describe the wire range using the domain value's maximum.
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
         use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, Type};
 

@@ -145,9 +145,8 @@ pub(crate) async fn apply_record_operation_tx(
                 changed = true;
             }
 
-            // RFC 2136, Section 3.4.2.2 and RFC 2181, Section 5.2: an add with
-            // a new TTL moves the rest of the record set to it, as a delete and
-            // an add.
+            // RFC 2136, Section 3.4.2.2 and RFC 2181, Section 5.2:
+            // retime the name/type's records through delete/add journal changes.
             let retimed: Vec<Record> = records_at_name
                 .iter()
                 .filter(|r| {

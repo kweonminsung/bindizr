@@ -53,7 +53,7 @@ pub(crate) fn decode_updates(
         .collect()
 }
 
-/// Enforce the supported-type policy while retaining SOA, ANY, and managed DNSSEC semantics.
+/// Reject unsupported types while allowing SOA, ANY, and managed DNSSEC.
 fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
     if matches!(record_type, Rtype::SOA | Rtype::ANY)
         || RecordType::try_from(record_type).is_ok()
@@ -115,9 +115,8 @@ fn decode_prerequisite(
     }
 }
 
-/// Decode a prescanned record into a service operation, or
-/// `None` for a record RFC 2136 has the server pass over: a SOA delete
-/// (Sections 3.4.2.3 and 3.4.2.4) or a delete of a type bindizr never stores.
+/// Decode a prescanned UPDATE, skipping SOA or managed-DNSSEC deletes.
+/// SOA deletes are ignored per RFC 2136, Sections 3.4.2.3 and 3.4.2.4.
 fn decode_update(
     record: &UpdateRecord,
     name: OwnerName,
