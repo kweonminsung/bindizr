@@ -2750,3 +2750,44 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
             .all(|row| row["ttl"] == u32::MAX)
     );
 }
+
+/// Reply to pipelined UPDATEs after a TCP write-half close.
+#[tokio::test]
+#[serial]
+async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
+    use std::net::{Shutdown, TcpStream};
+
+    use crate::common::dns::{read_frame, write_frame};
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let mut stream = TcpStream::connect(("127.0.0.1", app.dns_port())).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    for id in [81, 82] {
+        let request = build_update(
+            id,
+            zone_name,
+            Class::IN,
+            &[],
+            &[UpdateRecord::AddA {
+                name: format!("half{id}.{zone_name}."),
+                ttl: u32::MAX,
+                addr: "192.0.2.5".to_string(),
+            }],
+        )
+        .unwrap()
+        .finish();
+        write_frame(&mut stream, &request).unwrap();
+    }
+    stream.shutdown(Shutdown::Write).unwrap();
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let response = Message::from_octets(read_frame(&mut stream).unwrap().unwrap()).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        ids.push(response.header().id());
+    }
+    ids.sort();
+    assert_eq!(ids, [81, 82]);
+}

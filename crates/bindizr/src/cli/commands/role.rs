@@ -86,7 +86,7 @@ Actions:
                     export the zone and read its versions and diffs
   record:create     add records, including by import, nsupdate and ExternalDNS
   record:update     change a record in place; without record:read on it, every
-                    field must be given
+                    field must be given; also needed when nsupdate changes existing records' TTL
   record:delete     delete records, including by nsupdate and ExternalDNS; also needed for
                     nsupdate CNAME, DNAME, or matching WKS replacement
   dnssec:read       read DNSSEC status and check the parent DS; in all zones,

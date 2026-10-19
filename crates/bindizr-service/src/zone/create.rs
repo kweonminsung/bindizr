@@ -98,7 +98,9 @@ pub async fn create(
     let config = cx.config();
     if !create_zone_request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        if created_zone.enabled {
+            crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        }
     }
 
     Ok(WriteZoneResponse {
@@ -125,7 +127,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
         rname: soa.rname,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
-        enabled: true,
+        enabled: request.apex_ns,
         description: normalize_description(
             request.description.as_deref(),
             ServiceError::invalid_zone_field,

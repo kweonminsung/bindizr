@@ -55,7 +55,6 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
 }
 
 /// Authenticate and serve a TCP zone transfer, returning refusals as DNS responses.
-///
 /// Count by the requested type so an IXFR falling back to AXFR still counts as IXFR.
 pub(crate) async fn handle_tcp_xfr(
     dns_cx: &DnsContext,
@@ -71,9 +70,12 @@ pub(crate) async fn handle_tcp_xfr(
 
     // The key or the address, then the transport the policy allows; the
     // zone's grant is decided beside its row inside the transfer.
-    let identity = authenticate_transfer(dns_cx, query_data, client_ip, transport)
-        .await
-        .and_then(|identity| authorize_transport(dns_cx, transport, identity));
+    let identity = tokio::select! {
+        biased;
+        () = writer.failed() => return Err(DnsError::PeerClosed),
+        result = authenticate_transfer(dns_cx, query_data, client_ip, transport) => result,
+    }
+    .and_then(|identity| authorize_transport(dns_cx, transport, identity));
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
@@ -176,9 +178,11 @@ pub(crate) async fn handle_tcp_xfr(
                 err.to_string(),
             )
             .await;
-            // RFC 5936, Section 2.2: an error message ends the session, as the
-            // connection stays open for the other queries it carries; it is
-            // signed under the key that got this far (RFC 8945, Section 5.3.1).
+            if matches!(err, DnsError::PeerClosed) {
+                return Err(err);
+            }
+            // End this transfer on error, retaining the connection (RFC 5936, Section 2.2).
+            // Sign the error under the authenticated key (RFC 8945, Section 5.3.1).
             let ended = async {
                 let response = query.build_signed_error_response(
                     OptRcode::SERVFAIL,
@@ -196,10 +200,8 @@ pub(crate) async fn handle_tcp_xfr(
     }
 }
 
-/// Answer an AXFR received over UDP with TC set, so an allowed client asks
-/// again over TCP; the caller checked the qtype. A signed question is
-/// answered under its key here too (RFC 8945, Section 5.3), truncated or not;
-/// the zone's grant is decided on the TCP retry, beside the row it serves.
+/// Answer a caller-checked UDP AXFR with TC; defer zone grants to the TCP retry.
+/// Sign even truncated replies under the request's key (RFC 8945, Section 5.3).
 pub(crate) async fn handle_udp_xfr(
     dns_cx: &DnsContext,
     client_addr: SocketAddr,

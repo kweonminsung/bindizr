@@ -38,7 +38,7 @@ pub struct ParseActionError {
 ///   export the zone and read its versions and diffs
 /// - `record:create` — add records, including by import, nsupdate and ExternalDNS
 /// - `record:update` — change a record in place; without `record:read` on it,
-///   every field must be given
+///   every field must be given; also required when nsupdate changes existing records' TTL
 /// - `record:delete` — delete records, including by nsupdate and ExternalDNS; also required
 ///   when nsupdate replaces a CNAME, DNAME, or matching WKS record
 /// - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
@@ -301,9 +301,8 @@ impl From<Option<ZoneId>> for RoleZoneScope {
     }
 }
 
-/// One grant of a role: the actions it permits in its zone scope. The name
-/// pattern and type list, in [`super::grant_pattern`] syntax, narrow its
-/// `record:*` actions only.
+/// A role's actions and zone scope; name/type patterns narrow only `record:*`.
+/// Pattern syntax is defined by [`super::grant_pattern`].
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RoleGrant {
     pub id: RoleGrantId,

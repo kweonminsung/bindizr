@@ -166,7 +166,13 @@ impl ParsedZoneFile {
             if index > 0
                 && index + 1 == records.len()
                 && record.rtype == Rtype::SOA
-                && record.rdata == records[0].rdata
+                && to_fqdn_lowercase(&record.name) == to_fqdn_lowercase(&records[0].name)
+                && record.rdata.to_canonical(Rtype::SOA).is_ok_and(|closing| {
+                    records[0]
+                        .rdata
+                        .to_canonical(Rtype::SOA)
+                        .is_ok_and(|opening| closing == opening)
+                })
             {
                 continue;
             }

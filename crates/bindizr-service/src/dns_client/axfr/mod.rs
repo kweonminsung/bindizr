@@ -61,6 +61,8 @@ pub(crate) enum FetchZoneError {
     WrongZone { found: String, expected: String },
     #[error("transfer carries a SOA that is not the opening one")]
     ForeignClosingSoa,
+    #[error("transfer carries records after the closing SOA")]
+    RecordsAfterClosingSoa,
     #[error("transfer exceeds {limit} records")]
     TooManyRecords { limit: usize },
     #[error("invalid owner name '{name}': {source}")]
@@ -145,7 +147,8 @@ async fn fetch_zone_from_address(
             TransferMessagePosition::Following
         };
         let batch = extract_transfer_records(query_id, qname, position, &response)?;
-        for record in batch {
+        let batch_len = batch.len();
+        for (index, record) in batch.into_iter().enumerate() {
             if records.is_empty() {
                 if record.rtype != Rtype::SOA {
                     return Err(FetchZoneError::NoOpeningSoa);
@@ -165,6 +168,9 @@ async fn fetch_zone_from_address(
                         != opening.rdata.to_canonical(Rtype::SOA)?
                 {
                     return Err(FetchZoneError::ForeignClosingSoa);
+                }
+                if index + 1 != batch_len {
+                    return Err(FetchZoneError::RecordsAfterClosingSoa);
                 }
                 records.push(record);
                 return Ok(records);

@@ -1,7 +1,7 @@
 //! Writing and reading the frames [`bindizr_core::dns::message`] composes:
 //! the 2-byte length prefix of DNS over TCP (RFC 1035, Section 4.2.2).
 
-use std::{io::ErrorKind, time::Duration};
+use std::time::Duration;
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
@@ -51,13 +51,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
             return Ok(message);
         }
 
-        // A TLS peer that hangs up without close_notify reads as UnexpectedEof
-        // rather than as zero bytes; between messages both are the client leaving.
-        let read = match reader.read(&mut chunk).await {
-            Ok(read) => read,
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => 0,
-            Err(e) => return Err(DnsError::Io(e)),
-        };
+        let read = reader.read(&mut chunk).await.map_err(DnsError::Io)?;
         if read == 0 {
             return Err(match expected {
                 None if pending.is_empty() => DnsError::PeerClosed,

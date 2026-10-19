@@ -81,6 +81,7 @@ async fn serial_bumps_count_only_committed_versions() {
     let import_path = format!("/zones/{}/import", app.zone_name("preview-metrics.example"));
     let content = concat!(
         "@ IN SOA ns.example.net. admin.example.net. 42 300 60 86400 300\n",
+        "@ IN NS ns.example.net.\n",
         "www IN A 192.0.2.1\n",
     );
     let (status, body) = app

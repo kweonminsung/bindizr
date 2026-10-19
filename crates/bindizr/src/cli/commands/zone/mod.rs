@@ -66,7 +66,7 @@ and the contact is the address a resolver operator writes to.")]
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
-        /// Start without the apex NS record that would name --mname
+        /// Create a disabled zone without apex NS; add NS records before enabling
         #[arg(long)]
         no_apex_ns: bool,
         /// Validate and report the change without writing it

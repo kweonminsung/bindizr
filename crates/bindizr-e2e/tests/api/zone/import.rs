@@ -102,9 +102,8 @@ async fn zone_import_replace_removes_records_absent_from_file() {
     )
     .await;
 
-    // Replace: keep stays (same value), add is created, and both drop and the
-    // apex NS go — the file is the desired state and lists neither.
-    let content = "keep IN A 192.0.2.1\nadd IN A 192.0.2.3\n";
+    // Replace retains the apex NS while removing the absent address.
+    let content = format!("@ IN NS ns1.{zone_name}.\nkeep IN A 192.0.2.1\nadd IN A 192.0.2.3\n");
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -115,8 +114,8 @@ async fn zone_import_replace_removes_records_absent_from_file() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
-    assert_eq!(body["summary"]["deleted"], 2);
-    assert_eq!(body["summary"]["unchanged"], 1);
+    assert_eq!(body["summary"]["deleted"], 1);
+    assert_eq!(body["summary"]["unchanged"], 2);
 
     let (_, body) = app
         .send_request(
@@ -1213,4 +1212,134 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zones"][0]["result"], "failed");
     assert_eq!(body["zones"][0]["error"]["code"], "ZONE_NOT_FOUND");
+}
+
+/// Serve a case-varied AXFR with TC set, AA clear, and optional trailing data.
+fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::JoinHandle<()>) {
+    use domain::{
+        base::{Message, MessageBuilder, Serial, Ttl},
+        rdata::{A, Ns, Soa},
+    };
+
+    use crate::common::dns::{parse_name, read_frame, write_frame};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let query = read_frame(&mut stream).unwrap().unwrap();
+        let message = Message::from_octets(query.as_slice()).unwrap();
+        let owner = parse_name(&zone).unwrap();
+        let primary = parse_name(&format!("NS1.{zone}.")).unwrap();
+        let mailbox = parse_name(&format!("Hostmaster.{zone}.")).unwrap();
+        let soa = Soa::new(
+            primary.clone(),
+            mailbox,
+            Serial::from(42),
+            Ttl::from_secs(7200),
+            Ttl::from_secs(3600),
+            Ttl::from_secs(604800),
+            Ttl::from_secs(300),
+        );
+        let closing = Soa::new(
+            parse_name(&format!("ns1.{zone}.")).unwrap(),
+            parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+            Serial::from(42),
+            Ttl::from_secs(7200),
+            Ttl::from_secs(3600),
+            Ttl::from_secs(604800),
+            Ttl::from_secs(300),
+        );
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(message.header().id());
+        builder.header_mut().set_qr(true);
+        builder.header_mut().set_tc(true);
+        let mut question = builder.question();
+        question.push((&owner, domain::base::Rtype::AXFR)).unwrap();
+        let mut answer = question.answer();
+        answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
+        answer
+            .push((&owner, Ttl::from_secs(300), Ns::new(primary)))
+            .unwrap();
+        answer
+            .push((
+                &parse_name(&format!("www.{zone}.")).unwrap(),
+                Ttl::from_secs(u32::MAX),
+                A::new("192.0.2.50".parse().unwrap()),
+            ))
+            .unwrap();
+        answer.push((&owner, Ttl::from_secs(300), closing)).unwrap();
+        if trailing {
+            answer
+                .push((
+                    &owner,
+                    Ttl::from_secs(300),
+                    A::new("192.0.2.51".parse().unwrap()),
+                ))
+                .unwrap();
+        }
+        write_frame(&mut stream, &answer.finish()).unwrap();
+    });
+    (address, server)
+}
+
+/// Accept AXFR case/flag variations over HTTP/CLI; reject trailing records atomically.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    for cli in [false, true] {
+        let (address, server) = serve_import_transfer(zone_name.to_string(), false);
+        if cli {
+            app.run_cli_success(
+                &[
+                    "zone",
+                    "import",
+                    zone_name,
+                    "--from-server",
+                    &address,
+                    "--mode",
+                    "replace",
+                ],
+                None,
+            )
+            .await;
+        } else {
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{zone_name}/import"),
+                    Some(json!({"from_server": address, "mode": "replace"})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["errors"], json!([]));
+        }
+        server.join().unwrap();
+        assert!(
+            app.list_records(zone_name)
+                .await
+                .iter()
+                .any(|row| row["type"] == "A" && row["ttl"] == u32::MAX)
+        );
+    }
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let (address, server) = serve_import_transfer(zone_name.to_string(), true);
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({"from_server": address, "mode": "replace"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("after the closing SOA"), "{body}");
+    server.join().unwrap();
+    assert_eq!(app.list_records(zone_name).await, before);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
 }

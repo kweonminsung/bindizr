@@ -17,9 +17,7 @@ fn name(value: &str) -> Name<Vec<u8>> {
     Name::from_str(value).unwrap()
 }
 
-/// A response to a `qname`/`qtype` question with the flags and rcode given,
-/// whose answer section holds `records` (owner, TTL, DS fields) and whose
-/// authority section holds the SOA of `authority_soa`, if any.
+/// Build a DNS response with DS answers and an optional authority SOA.
 fn build_ds_response(
     query_id: u16,
     qr: bool,
@@ -141,9 +139,9 @@ fn transfer_rejects_a_non_in_record() {
     );
 }
 
-/// Verify that transfer first message must echo the question and be authoritative.
+/// AXFR requires its question but ignores AA and TC without relaxing ordinary queries.
 #[test]
-fn transfer_requires_authoritative_first_message_with_question() {
+fn transfer_requires_question_and_ignores_aa_and_tc() {
     let apex = name("example.com");
     let whole = build_transfer_message(7, &apex, true, true);
     assert_eq!(
@@ -163,11 +161,20 @@ fn transfer_requires_authoritative_first_message_with_question() {
         1
     );
 
-    let cached = build_transfer_message(7, &apex, true, false);
-    assert!(matches!(
-        extract_transfer_records(7, &apex, TransferMessagePosition::First, &cached).unwrap_err(),
-        ParseResponseError::NotAuthoritative
-    ));
+    for aa in [false, true] {
+        let mut response = build_transfer_message(7, &apex, true, aa);
+        response[2] |= 0x02; // TC is ignored by AXFR clients (RFC 5936, Section 2).
+        assert_eq!(
+            extract_transfer_records(7, &apex, TransferMessagePosition::First, &response)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(matches!(
+            parse_response(7, Opcode::QUERY, &response),
+            Err(ParseResponseError::Truncated)
+        ));
+    }
 
     let other = build_transfer_message(7, &name("other.com"), true, true);
     assert!(matches!(

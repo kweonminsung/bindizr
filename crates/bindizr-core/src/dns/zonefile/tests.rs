@@ -307,3 +307,30 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         ZoneFileValue::Rdata(r#""\255""#.into())
     );
 }
+
+/// Match closing SOA case-insensitively without changing received RDATA.
+#[test]
+fn transfer_import_accepts_case_varied_closing_soa() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let opening = transfer_record(
+        "example.com.",
+        Rtype::SOA,
+        "NS1.Example.COM. Hostmaster.Example.COM. 42 7200 3600 604800 300",
+    );
+    let closing = transfer_record(
+        "EXAMPLE.COM.",
+        Rtype::SOA,
+        "ns1.example.com. hostmaster.example.com. 42 7200 3600 604800 300",
+    );
+    let original = opening.rdata.clone();
+    let records = [
+        opening,
+        transfer_record("example.com.", Rtype::NS, "ns1.example.com."),
+        closing,
+    ];
+    let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert!(parsed.soa.is_some());
+    assert_eq!(parsed.records.len(), 1);
+    assert_eq!(records[0].rdata, original);
+}

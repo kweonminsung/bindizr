@@ -804,10 +804,10 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     );
 }
 
-/// Verify that a new zone starts with a deletable apex NS naming its MNAME.
+/// Keep an apex NS while the zone is enabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_starts_with_a_deletable_apex_ns() {
+async fn zone_preserves_last_apex_ns_while_enabled() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -830,15 +830,48 @@ async fn zone_create_starts_with_a_deletable_apex_ns() {
             None,
         )
         .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    for path in [
+        format!("/records/{}?dry_run=true", ns["id"].as_i64().unwrap()),
+        format!("/records?zone_name={zone_name}&name=@&type=NS"),
+    ] {
+        let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    }
+    for dry_run in [true, false] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(
+                    json!({"content": "www IN A 192.0.2.1", "mode": "replace", "dry_run": dry_run}),
+                ),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    }
+    assert_eq!(app.list_records(zone_name).await, records);
+    assert_eq!(app.read_zone_serial(zone_name).await, 10);
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({
+                "content": "@ IN NS replacement.example.net.\n", "mode": "replace"
+            })),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(app.list_records(zone_name).await.is_empty());
+    let records = app.list_records(zone_name).await;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["value"], "replacement.example.net.");
 }
 
-/// Verify that `apex_ns: false` creates a zone with no records.
+/// Require apex NS before explicitly enabling a preparation zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_create_omits_records_when_apex_ns_is_disabled() {
-    let app = TestApp::start().await;
+    let app = TestApp::start_local().await;
     let zone_name = app.zone_name("bare.example.com");
 
     let (status, body) = app
@@ -855,4 +888,31 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert!(app.list_records(&zone_name).await.is_empty());
+    assert_eq!(body["zone"]["enabled"], false, "{body}");
+    let serial = app.read_zone_serial(&zone_name).await;
+    assert!(!probe_zone_soa(app.dns_port(), &zone_name));
+    let path = format!("/zones/{zone_name}");
+    let (status, body) = app
+        .send_request(Method::PUT, &path, Some(json!({"enabled": true})))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(app.read_zone_serial(&zone_name).await, serial);
+    let (status, body) = app.send_request(Method::POST, "/records", Some(json!({"zone_name": zone_name, "name": "@", "type": "NS", "value": format!("ns1.{zone_name}")}))).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(Method::PUT, &path, Some(json!({"enabled": true})))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(probe_zone_soa(app.dns_port(), &zone_name));
+    // Rolling back to the initial empty version cannot remove the active zone's NS.
+    for suffix in ["?dry_run=true", ""] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                &format!("/zones/{zone_name}/versions/{serial}/rollback{suffix}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    }
 }

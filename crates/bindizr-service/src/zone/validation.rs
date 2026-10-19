@@ -220,6 +220,11 @@ pub(crate) async fn validate_record_changes_tx(
             .collect()
     };
     let delegations = owners_of(RecordType::Ns);
+    if zone.enabled && !delegations.iter().any(|name| name.is_apex()) {
+        return Err(ServiceError::record_conflict(
+            "an enabled zone requires at least one apex NS record (RFC 2181, Section 6.1)",
+        ));
+    }
     if records
         .iter()
         .any(|record| record.record_type == RecordType::Ds && !delegations.contains(&record.name))

@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use bindizr_core::dns::message::encode_tcp_message;
 
 use super::*;
@@ -68,15 +70,17 @@ impl AsyncRead for AbruptEof {
     }
 }
 
-/// Verify that a TLS peer leaving without close_notify between messages
-/// is not a protocol error.
+/// An abrupt TLS EOF is a transport failure even between frames.
 #[tokio::test]
-async fn framing_accepts_peer_close_without_close_notify() {
+async fn framing_rejects_peer_close_without_close_notify() {
     let error = read_tcp_message(&mut AbruptEof, &mut Vec::new())
         .await
         .unwrap_err();
 
-    assert!(matches!(error, DnsError::PeerClosed), "{error:?}");
+    assert!(
+        matches!(error, DnsError::Io(ref source) if source.kind() == ErrorKind::UnexpectedEof),
+        "{error:?}"
+    );
 }
 
 /// Verify that a truncated length prefix is a protocol error.

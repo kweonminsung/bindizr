@@ -17,7 +17,10 @@ bindizr zone get example.com
 `--serial` is given, and includes an apex `NS` record naming `--mname`. Serials
 accept 0–4294967295 and advance modulo 2^32. Zone and record names accept DNS
 octets with RFC 1035 escapes, including `\DDD` for arbitrary bytes.
-Use `--no-apex-ns` to supply the NS records yourself.
+Use `--no-apex-ns` to create a disabled preparation zone. Add an apex NS record,
+then explicitly enable it with `bindizr zone update example.com --enabled true`.
+An enabled zone must retain at least one apex NS record; deletion, replace
+imports, and rollbacks validate their final records before applying.
 
 Add any other name servers and address records for names inside the zone.
 Public delegation also needs matching glue at the parent for those names:

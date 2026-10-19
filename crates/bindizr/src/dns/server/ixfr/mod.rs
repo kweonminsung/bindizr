@@ -52,8 +52,11 @@ pub(crate) async fn handle_ixfr(
     // Authorize and select a response atomically; invalid names receive NOTAUTH.
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
-            zone::authorize_ixfr_plan_by_name(cx, &identity.caller, &zone_name, client_serial)
-                .await?
+            tokio::select! {
+                biased;
+                () = writer.failed() => return Err(DnsError::PeerClosed),
+                access = zone::authorize_ixfr_plan_by_name(cx, &identity.caller, &zone_name, client_serial) => access?,
+            }
         }
         Err(_) => TransferAccess::NotAuth,
     };

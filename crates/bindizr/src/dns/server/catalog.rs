@@ -93,7 +93,11 @@ pub(crate) async fn handle_catalog_transfer(
     );
 
     // Materialize the virtual catalog from the current member zones.
-    let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx, zones).await?;
+    let (catalog_zone, member_zones) = tokio::select! {
+        biased;
+        () = writer.failed() => return Err(DnsError::PeerClosed),
+        result = generate_catalog_zone(dns_cx, zones) => result?,
+    };
 
     let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
     if let Some(signer) = signer.take() {

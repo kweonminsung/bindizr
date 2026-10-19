@@ -105,8 +105,8 @@ the fix for the common ones.
 ## 6. Create a zone and query it
 
 ```bash
-# The zone starts with an apex NS record naming ns1.example.com, which a
-# secondary needs before it will load the zone; --no-apex-ns leaves that to you.
+# Apex NS names ns1.example.com so secondaries can load the zone.
+# --no-apex-ns starts disabled; add apex NS, then enable the zone explicitly.
 sudo bindizr zone create example.com --mname ns1.example.com --rname admin@example.com
 sudo bindizr record create example.com www --type A --value 192.0.2.1
 

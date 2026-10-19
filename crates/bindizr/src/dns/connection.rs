@@ -34,34 +34,47 @@ pub(crate) async fn serve_connection(
     let outcome = loop {
         // A connection with a query in flight is not idle (RFC 7766, Section
         // 6.2.3); the cancel-safe read may be interrupted by a query finishing.
-        let read = wire::read_tcp_message(&mut reader, &mut pending);
-        let result = if in_flight.is_empty() {
-            match timeout(idle_timeout, read).await {
-                Ok(result) => result,
-                Err(_) => {
-                    log::info!(
-                        "Closing idle DNS {} connection from {} after {:?}",
-                        transport,
-                        client_addr,
-                        idle_timeout
-                    );
-                    break Ok(());
+        let busy = !in_flight.is_empty();
+        let read = async {
+            let read = wire::read_tcp_message(&mut reader, &mut pending);
+            if busy {
+                read.await
+            } else {
+                match timeout(idle_timeout, read).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        log::info!(
+                            "Closing idle DNS {} connection from {} after {:?}",
+                            transport,
+                            client_addr,
+                            idle_timeout
+                        );
+                        Err(DnsError::PeerClosed)
+                    }
                 }
             }
-        } else {
-            tokio::select! {
-                result = read => result,
-                Some(_) = in_flight.join_next() => continue,
-            }
+        };
+        let result = tokio::select! {
+            biased;
+            () = writer.failed() => break Err(DnsError::PeerClosed),
+            Some(_) = in_flight.join_next(), if busy => continue,
+            result = read => result,
         };
         let query_data = match result {
             Ok(query_data) => query_data,
             Err(DnsError::PeerClosed) => break Ok(()),
-            Err(error) => break Err(error),
+            Err(error) => {
+                writer.fail();
+                break Err(error);
+            }
         };
 
         if in_flight.len() >= MAX_QUERIES_IN_FLIGHT {
-            in_flight.join_next().await;
+            tokio::select! {
+                biased;
+                () = writer.failed() => break Err(DnsError::PeerClosed),
+                _ = in_flight.join_next() => {},
+            }
         }
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
@@ -70,11 +83,14 @@ pub(crate) async fn serve_connection(
         });
     };
 
-    // The queries in flight are answered before the connection closes.
+    // Clean FIN keeps replies open (RFC 9293, Section 3.6.1); failures cancel transfers.
+    // Finish UPDATE and NOTIFY without replies after failure (RFC 7766, Section 6.2.4).
     while in_flight.join_next().await.is_some() {}
 
     // A TLS peer is owed close_notify ahead of the FIN; a plain socket closes.
-    if let Err(e) = writer.shutdown().await {
+    if outcome.is_ok()
+        && let Err(e) = writer.shutdown().await
+    {
         log::debug!(
             "Closing DNS {} connection from {}: {}",
             transport,

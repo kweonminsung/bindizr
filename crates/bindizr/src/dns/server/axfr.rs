@@ -32,7 +32,12 @@ pub(crate) async fn handle_axfr(
     );
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        let zones = match zone::authorize_catalog_content(cx, &identity.caller).await? {
+        let access = tokio::select! {
+            biased;
+            () = writer.failed() => return Err(DnsError::PeerClosed),
+            access = zone::authorize_catalog_content(cx, &identity.caller) => access?,
+        };
+        let zones = match access {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
                 return Err(DnsError::NotAuth(zone_name_str.to_string()));
@@ -53,8 +58,11 @@ pub(crate) async fn handle_axfr(
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
-            transfer_cache::authorize_transfer_content_by_name(dns_cx, &identity.caller, &zone_name)
-                .await?
+            tokio::select! {
+                biased;
+                () = writer.failed() => return Err(DnsError::PeerClosed),
+                access = transfer_cache::authorize_transfer_content_by_name(dns_cx, &identity.caller, &zone_name) => access?,
+            }
         }
         Err(_) => TransferAccess::NotAuth,
     };

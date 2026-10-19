@@ -170,6 +170,16 @@ fn parse_question_response<'a>(
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
     let message = parse_response(query_id, opcode, response)?;
+    validate_question(&message, qname, rtype)?;
+    Ok(message)
+}
+
+/// Require exactly the IN question that was sent.
+fn validate_question(
+    message: &Message<&[u8]>,
+    qname: &Name<Vec<u8>>,
+    rtype: Rtype,
+) -> Result<(), ParseResponseError> {
     let question = message
         .sole_question()
         .map_err(|e| ParseResponseError::MalformedQuestion(Box::new(e)))?;
@@ -179,7 +189,7 @@ fn parse_question_response<'a>(
     {
         return Err(ParseResponseError::OtherQuestion);
     }
-    Ok(message)
+    Ok(())
 }
 
 /// Parse a matching question response and require the authoritative (AA) flag.
@@ -203,6 +213,19 @@ fn parse_response(
     opcode: Opcode,
     response: &[u8],
 ) -> Result<Message<&[u8]>, ParseResponseError> {
+    let message = parse_response_header(query_id, opcode, response)?;
+    if message.header().tc() {
+        return Err(ParseResponseError::Truncated);
+    }
+    Ok(message)
+}
+
+/// Validate response identity and direction, leaving flag policy to the caller.
+fn parse_response_header(
+    query_id: u16,
+    opcode: Opcode,
+    response: &[u8],
+) -> Result<Message<&[u8]>, ParseResponseError> {
     let message =
         Message::from_octets(response).map_err(|e| ParseResponseError::Malformed(Box::new(e)))?;
 
@@ -222,9 +245,6 @@ fn parse_response(
     if !header.qr() {
         return Err(ParseResponseError::NotResponse);
     }
-    if header.tc() {
-        return Err(ParseResponseError::Truncated);
-    }
     Ok(message)
 }
 
@@ -238,10 +258,8 @@ pub struct TransferRecord {
     pub rdata: Rdata,
 }
 
-/// Validate one AXFR response message and collect every answer record; the
-/// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
-/// The first message must echo the question and be authoritative; later
-/// ones may omit the question (RFC 5936, Sections 2.2.1 and 2.2.2).
+/// Collect an AXFR answer batch; the caller handles SOA delimiters (RFC 5936, Section 2.2).
+/// Require the initial echoed question; ignore AA/TC (RFC 5936, Sections 2 and 2.2.1).
 pub fn extract_transfer_records(
     query_id: u16,
     qname: &Name<Vec<u8>>,
@@ -250,17 +268,10 @@ pub fn extract_transfer_records(
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {
     use domain::rdata::AllRecordData;
 
-    let message = if position == TransferMessagePosition::First {
-        parse_authoritative_response(query_id, qname, Rtype::AXFR, response)?
-    } else if parse_response(query_id, Opcode::QUERY, response)?
-        .header_counts()
-        .qdcount()
-        == 1
-    {
-        parse_question_response(query_id, Opcode::QUERY, qname, Rtype::AXFR, response)?
-    } else {
-        parse_response(query_id, Opcode::QUERY, response)?
-    };
+    let message = parse_response_header(query_id, Opcode::QUERY, response)?;
+    if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {
+        validate_question(&message, qname, Rtype::AXFR)?;
+    }
     if message.header().rcode() != Rcode::NOERROR {
         return Err(ParseResponseError::Rcode(message.header().rcode().to_int()));
     }

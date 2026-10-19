@@ -3862,7 +3862,7 @@ components:
           export the zone and read its versions and diffs
         - `record:create` — add records, including by import, nsupdate and ExternalDNS
         - `record:update` — change a record in place; without `record:read` on it,
-          every field must be given
+          every field must be given; also required when nsupdate changes existing records' TTL
         - `record:delete` — delete records, including by nsupdate and ExternalDNS; also required
           when nsupdate replaces a CNAME, DNAME, or matching WKS record
         - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
@@ -4473,8 +4473,8 @@ components:
         apex_ns:
           type: boolean
           description: |-
-            Start the zone with an apex NS record naming the SOA MNAME; false
-            leaves every NS record to the caller.
+            Start with apex NS naming MNAME; false creates a disabled zone.
+            Add apex NS before explicitly enabling a zone created without it.
           default: true
           example: true
         default_ttl:
