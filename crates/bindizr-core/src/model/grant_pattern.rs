@@ -56,7 +56,7 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
         // grant cannot cover it.
         None => false,
         Some(record_type) => {
-            let record_type = record_type.to_text();
+            let record_type = record_type.as_str();
             types.split(',').any(|t| t == record_type)
         }
     }

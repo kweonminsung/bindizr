@@ -529,63 +529,69 @@ async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify that zone import passes over unsupported types only when asked.
+/// Native WKS master-file values survive export and re-import as the supported type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_passes_over_unsupported_types_only_when_asked() {
-    let app = TestApp::start().await;
+async fn zone_import_preserves_native_wks_values() {
+    let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-
-    // A real BIND zone file carries types bindizr does not store.
-    let content = "www IN A 192.0.2.1\nbox IN TYPE128 \\# 0\n";
-
     let (status, body) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({ "content": content })),
+            Some(json!({"content": "services IN WKS 192.0.2.1 TCP ( 443 22\n 80 22 )\n"})),
         )
         .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["applied"], false, "{body}");
-    assert!(
-        body["errors"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|error| error.as_str().unwrap().contains("NXNAME")),
-        "{body}"
-    );
-
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let records = app.list_records(zone_name).await;
+    let wks = records
+        .iter()
+        .find(|record| record["type"] == "WKS")
+        .unwrap();
+    assert_eq!(wks["value"], "192.0.2.1 6 22 80 443");
+    let (_, export) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    let serial = app.read_zone_serial(zone_name).await;
     let (status, body) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({ "content": content, "skip_unsupported": true })),
+            Some(json!({"content": export, "mode": "replace"})),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["applied"], true, "{body}");
-    assert!(body["errors"].as_array().unwrap().is_empty(), "{body}");
-    assert_eq!(body["summary"]["skipped"], 1, "{body}");
-    assert!(
-        body["skipped_records"][0]
-            .as_str()
-            .unwrap()
-            .contains("NXNAME"),
-        "{body}"
-    );
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(app.list_records(zone_name).await, records);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+}
 
-    // The supported line still landed.
-    let (_, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&name=www"),
-            None,
-        )
-        .await;
-    assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
+/// Unsupported types reject the whole import without changing data or serial.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejects_unsupported_types_atomically() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    for rtype in ["TYPE128", "HINFO", "TYPE65280"] {
+        for dry_run in [false, true] {
+            let content = format!("www IN A 192.0.2.1\nbox IN {rtype} \\# 2 0000\n");
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{zone_name}/import"),
+                    Some(json!({"content": content, "dry_run": dry_run})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert_eq!(body["applied"], false, "{body}");
+            assert!(!body["errors"].as_array().unwrap().is_empty(), "{body}");
+            assert_eq!(app.list_records(zone_name).await, before);
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        }
+    }
 }
 
 /// Verify that zone import zone file reports validation errors.
@@ -940,7 +946,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
                 .send_request(
                     Method::POST,
                     &format!("/zones/{zone_name}/import"),
-                    Some(json!({"content": content, "dry_run": dry_run, "skip_unsupported": true})),
+                    Some(json!({"content": content, "dry_run": dry_run})),
                 )
                 .await;
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");

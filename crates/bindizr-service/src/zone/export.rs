@@ -70,7 +70,7 @@ pub async fn export(
     records.sort_by_cached_key(|r| {
         (
             r.name.clone(),
-            r.record_type.to_text(),
+            r.record_type.as_str(),
             r.record_type.presentation_rdata(&r.value, r.priority),
         )
     });

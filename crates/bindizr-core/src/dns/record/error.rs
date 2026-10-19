@@ -11,10 +11,14 @@ use crate::{dns::name::ParseNameError, model::record::RecordType};
 pub enum ParseRecordValueError {
     #[error("CAA flags must be 0 or 128; reserved bits must be zero")]
     CaaReservedFlags,
-    #[error("generic record value must be '\\# <length> <hex>' with matching length")]
-    GenericRdata,
-    #[error("generic record value exceeds the maximum of {max} bytes")]
-    GenericRdataTooLong { max: usize },
+    #[error("WKS record value must be '<IPv4> <protocol> [ports...]'")]
+    WksShape,
+    #[error("WKS address must be a valid IPv4 address")]
+    WksAddress,
+    #[error("WKS rdata must contain an IPv4 address, protocol, and at most 8192 bitmap bytes")]
+    WksRdata,
+    #[error("WKS service bitmap must not end in a zero byte (not accepted by BIND)")]
+    WksBitmapPadding,
     #[error("{field} must be between 0 and 65535")]
     OutOfRange { field: &'static str },
     #[error("{field} must be an unsigned 8-bit integer: {value}")]

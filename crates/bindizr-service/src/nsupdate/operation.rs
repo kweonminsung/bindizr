@@ -123,13 +123,10 @@ pub(crate) async fn apply_record_operation_tx(
             }
 
             // RFC 2136, Section 3.4.2.2 and RFC 6672, Section 5.2: a second
-            // CNAME or DNAME with other rdata replaces the first.
-            let is_alias = matches!(record_type, RecordType::Cname | RecordType::Dname);
+            // CNAME or DNAME replaces the first; WKS replaces its address/protocol match.
             let replaced: Vec<Record> = records_at_name
                 .iter()
-                .filter(|r| {
-                    is_alias && r.record_type == *record_type && !r.has_rdata(&value, *priority)
-                })
+                .filter(|r| r.record_type == *record_type && r.is_replaced_by(&value, *priority))
                 .cloned()
                 .collect();
             let mut changed = false;

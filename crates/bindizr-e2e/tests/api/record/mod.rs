@@ -1568,6 +1568,7 @@ async fn record_create_accepts_supported_types() {
         ("_sip._tcp", "SRV", "5 5060 sip.example.com", Some(10)),
         ("@", "TXT", "v=spf1 include:_spf.google.com ~all", None),
         ("ipv6", "AAAA", "2001:db8::1", None),
+        ("services", "WKS", "192.0.2.1 TCP 22 80 443", None),
         ("alias", "CNAME", "www.example.com", None),
         ("@", "CAA", "0 ISSUE letsencrypt.org", None),
         (
@@ -1606,6 +1607,7 @@ async fn record_create_accepts_supported_types() {
             "CAA" => "0 ISSUE \"letsencrypt.org\"",
             "SSHFP" => "4 2 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             "TLSA" => "3 1 1 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+            "WKS" => "192.0.2.1 6 22 80 443",
             _ => value,
         };
         assert_eq!(body["record"]["value"], expected_value);
@@ -1624,9 +1626,11 @@ async fn record_create_accepts_supported_types() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
-    // 8 created here + the apex NS record auto-created with the zone.
-    assert_eq!(records.len(), 9);
-    for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME", "CAA", "SSHFP", "TLSA"] {
+    // 9 created here + the apex NS record auto-created with the zone.
+    assert_eq!(records.len(), 10);
+    for record_type in [
+        "MX", "SRV", "TXT", "AAAA", "CNAME", "CAA", "SSHFP", "TLSA", "WKS",
+    ] {
         assert!(
             records.iter().any(|record| record["type"] == record_type),
             "expected {record_type} record in list"
@@ -2157,10 +2161,39 @@ async fn signed_record_listing_filters_derived_records_by_name() {
     );
 }
 
-/// Binary TXT and generic types retain their exact RDATA when API responses are written back.
+/// Unsupported named and numeric types cannot be created or replace an existing record.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn binary_txt_and_unknown_types_round_trip() {
+async fn record_writes_reject_unsupported_types_without_changes() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    let record_id = before[0]["id"].as_i64().unwrap();
+    for record_type in ["HINFO", "TYPE13", "HTTPS", "TYPE65280"] {
+        for (method, path) in [
+            (Method::POST, "/records".into()),
+            (Method::PUT, format!("/records/{record_id}")),
+        ] {
+            let payload = json!({"zone_name": zone_name, "name": "unsupported", "type": record_type, "value": r"\# 2 0000"});
+            let payload = if method == Method::PUT {
+                json!({"name": "unsupported", "type": record_type, "value": r"\# 2 0000"})
+            } else {
+                payload
+            };
+            let (status, body) = app.send_request(method, &path, Some(payload)).await;
+            assert!(status.is_client_error(), "{record_type}: {body}");
+            assert_eq!(app.list_records(zone_name).await, before);
+            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        }
+    }
+}
+
+/// Binary TXT and WKS retain their exact RDATA when API responses are written back.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn binary_txt_and_wks_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone = zone["name"].as_str().unwrap();
@@ -2171,12 +2204,11 @@ async fn binary_txt_and_unknown_types_round_trip() {
             json!({"presentation": r#""\255\000" "\195" "\169""#}),
             vec![2, 255, 0, 1, 195, 1, 169],
         ),
-        ("empty", "TYPE65280", json!(r"\# 0"), vec![]),
         (
-            "other",
-            "TYPE65281",
-            json!(r"\# 4 00ff C00C"),
-            vec![0, 255, 192, 12],
+            "wks",
+            "WKS",
+            json!("192.0.2.1 TCP 0 15"),
+            vec![192, 0, 2, 1, 6, 0x80, 1],
         ),
     ] {
         let (status, body) = app

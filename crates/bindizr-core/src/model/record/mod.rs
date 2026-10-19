@@ -12,9 +12,9 @@ use crate::{
         record::{
             ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
             DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
-            NaptrRecordValue, NsRecordValue, OpaqueRecordValue, ParseRecordValueError,
-            PtrRecordValue, Rdata, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent,
-            TxtRecordValue,
+            NaptrRecordValue, NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata,
+            SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
+            WksRecordValue,
         },
     },
     model::zone::ZoneId,
@@ -97,6 +97,25 @@ impl Record {
     pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
         self.record_type
             .values_equal(&self.value, self.priority, value, priority)
+    }
+
+    /// Whether an UPDATE add replaces this value under the singleton or WKS identity rules.
+    pub fn is_replaced_by(&self, value: &str, priority: Option<i32>) -> bool {
+        if self.has_rdata(value, priority) {
+            return false;
+        }
+        match self.record_type {
+            RecordType::Cname | RecordType::Dname => true,
+            RecordType::Wks => {
+                let identity = |value| {
+                    WksRecordValue::parse(value)
+                        .ok()
+                        .map(|parsed| parsed.address_and_protocol())
+                };
+                identity(&self.value).is_some_and(|existing| identity(value) == Some(existing))
+            }
+            _ => false,
+        }
     }
 
     /// This record's identity for set matching, shared with [`RecordData`].
@@ -192,14 +211,13 @@ pub enum RecordType {
     Ptr,
     Sshfp,
     Tlsa,
-    /// An ordinary type stored as RFC 3597 opaque data.
-    Unknown(u16),
+    Wks,
 }
 
 impl std::fmt::Display for RecordType {
     /// Write the record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.pad(&self.to_text())
+        f.pad(self.as_str())
     }
 }
 
@@ -248,7 +266,7 @@ where
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_text().encode_by_ref(buf)
+        self.as_str().to_owned().encode_by_ref(buf)
     }
 }
 
@@ -272,6 +290,7 @@ impl std::str::FromStr for RecordType {
             "PTR" => Ok(RecordType::Ptr),
             "SSHFP" => Ok(RecordType::Sshfp),
             "TLSA" => Ok(RecordType::Tlsa),
+            "WKS" => Ok(RecordType::Wks),
             _ => s
                 .parse::<Rtype>()
                 .map_err(|_| ParseRecordTypeError::Unknown(s.to_string()))
@@ -301,19 +320,15 @@ impl TryFrom<Rtype> for RecordType {
             Rtype::TXT => Ok(RecordType::Txt),
             Rtype::AAAA => Ok(RecordType::Aaaa),
             Rtype::SRV => Ok(RecordType::Srv),
-            // SOA and derived DNSSEC data have their own write contracts;
-            // meta/query types are not opaque user data (RFC 3597, Section 2).
-            _ if matches!(rtype.to_int(), 0 | 6 | 41 | 46..=48 | 50..=51 | 59..=60 | 128..=255 | 65535) => {
-                Err(ParseRecordTypeError::Unsupported(rtype))
-            }
-            _ => Ok(RecordType::Unknown(rtype.to_int())),
+            Rtype::WKS => Ok(RecordType::Wks),
+            _ => Err(ParseRecordTypeError::Unsupported(rtype)),
         }
     }
 }
 
 impl RecordType {
-    /// Render the stored and API mnemonic or RFC 3597 `TYPE<number>` form.
-    pub fn to_text(&self) -> String {
+    /// Render the stored and API mnemonic.
+    pub fn as_str(&self) -> &'static str {
         match self {
             RecordType::A => "A",
             RecordType::Aaaa => "AAAA",
@@ -329,9 +344,8 @@ impl RecordType {
             RecordType::Ptr => "PTR",
             RecordType::Sshfp => "SSHFP",
             RecordType::Tlsa => "TLSA",
-            RecordType::Unknown(code) => return format!("TYPE{code}"),
+            RecordType::Wks => "WKS",
         }
-        .to_owned()
     }
 
     /// The record TYPE number this type's records carry on the wire.
@@ -351,7 +365,7 @@ impl RecordType {
             RecordType::Sshfp => 44,
             RecordType::Tlsa => 52,
             RecordType::Caa => 257,
-            RecordType::Unknown(code) => *code,
+            RecordType::Wks => 11,
         }
     }
 
@@ -386,7 +400,7 @@ impl RecordType {
             RecordType::Ptr => PtrRecordValue::parse(value).map(|_| ()),
             RecordType::Sshfp => SshfpRecordValue::parse(value)?.validate(),
             RecordType::Tlsa => TlsaRecordValue::parse(value)?.validate(),
-            RecordType::Unknown(_) => OpaqueRecordValue::parse(value).map(|_| ()),
+            RecordType::Wks => WksRecordValue::parse(value).map(|_| ()),
         }
     }
 
@@ -442,9 +456,7 @@ impl RecordType {
         // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
         let trimmed = value.trim();
         match self {
-            RecordType::Unknown(_) => {
-                OpaqueRecordValue::parse(value).map(|parsed| parsed.to_presentation())
-            }
+            RecordType::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::Caa => {
@@ -607,7 +619,7 @@ mod tests;
 impl Ord for RecordType {
     /// Preserve mnemonic ordering in record lists and diffs.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.to_text().cmp(&other.to_text())
+        self.as_str().cmp(other.as_str())
     }
 }
 
@@ -619,18 +631,19 @@ impl PartialOrd for RecordType {
 }
 
 impl From<RecordType> for String {
-    /// Render the wire-facing mnemonic or RFC 3597 type number for serde.
+    /// Render the canonical mnemonic for serde.
     fn from(value: RecordType) -> Self {
-        value.to_text()
+        value.as_str().to_owned()
     }
 }
 
 impl utoipa::PartialSchema for RecordType {
-    /// Describe both familiar mnemonics and RFC 3597 TYPE numbers as strings.
+    /// Describe the closed list of supported user record types.
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
         utoipa::openapi::schema::ObjectBuilder::new()
             .schema_type(utoipa::openapi::schema::Type::String)
-            .description(Some("Ordinary DNS record type: a supported mnemonic or TYPE<number> (RFC 3597). Other ordinary types use generic \\# <length> <hex> values; SOA, managed DNSSEC, query and meta types have separate contracts."))
+            .enum_values(Some(["A", "AAAA", "CAA", "CNAME", "DNAME", "DS", "MX", "NAPTR", "TXT", "NS", "SRV", "PTR", "SSHFP", "TLSA", "WKS"]))
+            .description(Some("Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts."))
             .into()
     }
 }

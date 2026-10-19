@@ -93,10 +93,10 @@ pub enum JournalRecordType {
 }
 
 impl JournalRecordType {
-    /// Render the stored mnemonic or RFC 3597 `TYPE<number>` form.
+    /// Render the stored record mnemonic.
     pub fn to_text(&self) -> String {
         match self {
-            JournalRecordType::User(record_type) => record_type.to_text(),
+            JournalRecordType::User(record_type) => record_type.as_str().to_owned(),
             JournalRecordType::Derived(record_type) => record_type.as_str().to_owned(),
             JournalRecordType::Soa => "SOA".to_owned(),
         }

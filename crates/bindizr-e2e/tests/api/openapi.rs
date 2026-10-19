@@ -99,7 +99,22 @@ async fn openapi_serves_documents_without_token_when_enabled() {
     }
     let record_type = &body["components"]["schemas"]["RecordType"];
     assert_eq!(record_type["type"], "string");
-    assert!(record_type.get("enum").is_none());
+    let supported_types = record_type["enum"].as_array().unwrap();
+    assert_eq!(supported_types.len(), 15);
+    assert!(supported_types.iter().any(|name| name == "WKS"));
+    assert!(!supported_types.iter().any(|name| name == "TYPE65280"));
+    for name in ["ImportZoneRequest", "ImportZonesRequest"] {
+        assert!(
+            body["components"]["schemas"][name]["properties"]
+                .get("skip_unsupported")
+                .is_none()
+        );
+    }
+    assert!(
+        body["components"]["schemas"]["ImportZoneResponse"]["properties"]
+            .get("skipped_records")
+            .is_none()
+    );
     assert!(
         body["components"]["schemas"]["RecordValue"]["oneOf"]
             .as_array()

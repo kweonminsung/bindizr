@@ -46,14 +46,10 @@ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --
 bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create
 ```
 
-A zone file written for BIND often carries record types Bindizr does not
-store, and one of them fails the whole import. `--skip-unsupported` passes
-over those lines and lists each one, so you can decide whether what it skipped
-matters:
-
-```bash
-bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --skip-unsupported --dry-run
-```
+A zone file or AXFR can carry types Bindizr does not implement. An unsupported
+user record rejects the whole import, leaving records and serial unchanged.
+Review the supported types before moving a zone; there is no option to skip
+unsupported records.
 
 To choose your own SOA fields, create the zone first and import without
 `--create`. Choose an initial serial consistent with the old primary:
@@ -132,8 +128,8 @@ the serial the secondaries currently serve.
 ## Zones with DNSSEC
 
 Import the user records first. A signed AXFR also carries generated DNSSEC
-records; use `--skip-unsupported --dry-run` to review which records the import
-omits. Before switching secondaries, choose one of these paths:
+records, which are managed separately and omitted from the user-record import.
+Use `--dry-run` to review the result. Before switching secondaries, choose one of these paths:
 
 - **Re-sign with Bindizr's own keys.** `bindizr dnssec enable example.com
   --parent-ns-addrs <parent name servers>` generates fresh keys, and the

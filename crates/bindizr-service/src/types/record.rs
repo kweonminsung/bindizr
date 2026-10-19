@@ -377,10 +377,10 @@ pub enum ServedRecordType {
 }
 
 impl ServedRecordType {
-    /// Render the API mnemonic or RFC 3597 `TYPE<number>` form.
+    /// Render the canonical API mnemonic.
     pub fn to_text(self) -> String {
         match self {
-            Self::User(value) => value.to_text(),
+            Self::User(value) => value.as_str().to_owned(),
             Self::Derived(value) => value.as_str().to_owned(),
         }
     }
@@ -429,10 +429,7 @@ mod tests {
             (ServedRecordType::from(RecordType::Ptr), "PTR"),
             (ServedRecordType::from(RecordType::Sshfp), "SSHFP"),
             (ServedRecordType::from(RecordType::Tlsa), "TLSA"),
-            (
-                ServedRecordType::from(RecordType::Unknown(65280)),
-                "TYPE65280",
-            ),
+            (ServedRecordType::from(RecordType::Wks), "WKS"),
             (ServedRecordType::from(DnssecRecordType::Rrsig), "RRSIG"),
             (ServedRecordType::from(DnssecRecordType::Nsec), "NSEC"),
             (ServedRecordType::from(DnssecRecordType::Dnskey), "DNSKEY"),

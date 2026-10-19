@@ -11,7 +11,7 @@ mod prerequisite;
 use bindizr_core::{
     dns::{
         Serial,
-        message::{Class, Rcode},
+        message::{Class, Rcode, Rtype},
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
         nsupdate::parser::{ParseUpdateError, UpdateRecord, ValidateUpdateShapeError},
         record::ParseRecordValueError,
@@ -37,6 +37,8 @@ use crate::{
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
 pub enum NsupdateError {
+    #[error("unsupported record type: {0}")]
+    UnsupportedType(Rtype),
     #[error("{0}")]
     FormErr(String),
     #[error("{0}")]
@@ -77,7 +79,7 @@ impl NsupdateError {
     pub fn rcode(&self) -> Rcode {
         match self {
             Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) => Rcode::FORMERR,
-            Self::RecordValue { .. } => Rcode::REFUSED,
+            Self::RecordValue { .. } | Self::UnsupportedType(_) => Rcode::REFUSED,
             Self::Owner {
                 source: ParseNameError::OutsideZone,
                 ..

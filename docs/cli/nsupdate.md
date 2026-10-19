@@ -4,8 +4,15 @@ Bindizr serves nsupdate, the RFC 2136 UPDATE message, through the DNS listener,
 authenticated with TSIG. The key named in the request's TSIG record says who
 is calling; the key's [role](access-control.md) says what it may change.
 
+Only the [implemented user record types](zones.md) are accepted. Unsupported
+ordinary types receive `REFUSED` in prerequisites and updates, including deletes;
+the entire request leaves records and the serial unchanged.
+
+A WKS addition replaces the WKS at the same name, IPv4 address, and protocol.
+Different addresses or protocols can coexist.
+
 The role needs `record:read` for prerequisites, `record:create` for ordinary additions,
-and `record:delete` for deletions. An addition that replaces a CNAME or DNAME
+and `record:delete` for deletions. An addition that replaces a CNAME, DNAME, or matching WKS record
 needs `record:delete` as well, and one whose TTL differs from the record set's
 needs `record:update`, since it moves the whole set. An SOA addition needs
 `zone:update`, since it changes the zone's metadata. If any record falls
@@ -78,8 +85,9 @@ must first pass the zone and wire-shape checks, including a delete that will
 be ignored (RFC 2136, Section 3.4.1). An out-of-zone owner or forbidden
 query/meta type rejects the whole update without changing records or the
 serial. A second CNAME or DNAME
-replaces the first, and an add whose TTL differs from the record set's moves
-the whole set to the new TTL. A record below a DNAME, or a DNAME above
+replaces the first. A WKS addition replaces the record with the same owner,
+address, and protocol; other addresses and protocols remain. An add whose TTL differs from its name and type's current TTL moves all
+those records to the new TTL. A record below a DNAME, or a DNAME above
 existing records, is refused: nothing may exist under a DNAME (RFC 6672,
 Section 2.4).
 

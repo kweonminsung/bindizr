@@ -272,10 +272,6 @@ skipped); a catalog zone (RFC 9432) names every zone the server provisions.")]
         /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
-        /// Pass over record types bindizr does not store instead of failing
-        /// the whole file
-        #[arg(long)]
-        skip_unsupported: bool,
         /// Create the zone from the file's SOA when it does not exist yet
         #[arg(long)]
         create: bool,
@@ -528,7 +524,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_catalog,
             mode,
             dry_run,
-            skip_unsupported,
             create,
             output,
             ..
@@ -552,7 +547,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     from_catalog,
                     mode: types::ImportMode::from(mode).as_str().to_owned(),
                     dry_run,
-                    skip_unsupported,
                     create,
                 },
             ))
@@ -568,9 +562,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         };
                         for error in &zone_import.errors {
                             errln!("  {} - {}", item.zone_name, error);
-                        }
-                        for skipped in &zone_import.skipped_records {
-                            errln!("  {} ~ {}", item.zone_name, skipped);
                         }
                     }
                     print_table(import.zones.iter().map(ImportZonesRow::from).collect());
@@ -592,7 +583,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_server,
             mode,
             dry_run,
-            skip_unsupported,
             create,
             output,
             ..
@@ -605,7 +595,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     from_server,
                     mode: types::ImportMode::from(mode).as_str().to_owned(),
                     dry_run,
-                    skip_unsupported,
                     create,
                 },
             })
@@ -617,9 +606,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     // Diagnostics go to stderr, so a pipeline keeps the summary clean.
                     for error in &import.errors {
                         errln!("  - {}", error);
-                    }
-                    for skipped in &import.skipped_records {
-                        errln!("  ~ {}", skipped);
                     }
                     print_table(vec![ImportSummaryRow::from(import)]);
                     if dry_run {

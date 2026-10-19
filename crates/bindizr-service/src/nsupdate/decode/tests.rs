@@ -52,12 +52,12 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
         for class in [Class::ANY, Class::NONE] {
             let data = if class == Class::ANY { &[][..] } else { &data };
             let valid = record(class, rtype, 0, data);
-            assert_eq!(
-                decode_updates(std::slice::from_ref(&valid), &zone, data)
-                    .unwrap()
-                    .is_empty(),
-                rtype == Rtype::SOA
-            );
+            let result = decode_updates(std::slice::from_ref(&valid), &zone, data);
+            if rtype == Rtype::SOA {
+                assert!(result.unwrap().is_empty());
+            } else {
+                assert_eq!(result.unwrap_err().rcode(), Rcode::REFUSED);
+            }
             for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
                 let mut outside = valid.clone();
                 outside.name = name.to_string();

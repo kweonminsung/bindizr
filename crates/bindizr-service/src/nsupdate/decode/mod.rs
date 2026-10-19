@@ -8,7 +8,7 @@ use bindizr_core::{
         name::{OwnerName, ZoneName},
         nsupdate::parser::UpdateRecord,
     },
-    model::record::RecordType,
+    model::{dnssec_record::DnssecRecordType, record::RecordType},
 };
 
 use super::{
@@ -45,8 +45,24 @@ pub(crate) fn decode_updates(
 
     checked
         .into_iter()
-        .filter_map(|(record, owner)| decode_update(record, owner, message).transpose())
+        .filter_map(|(record, owner)| {
+            validate_supported_type(record.record_type)
+                .and_then(|()| decode_update(record, owner, message))
+                .transpose()
+        })
         .collect()
+}
+
+/// Enforce the supported-type policy while retaining SOA, ANY, and managed DNSSEC semantics.
+fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
+    if matches!(record_type, Rtype::SOA | Rtype::ANY)
+        || RecordType::try_from(record_type).is_ok()
+        || DnssecRecordType::try_from(i32::from(record_type.to_int())).is_ok()
+    {
+        Ok(())
+    } else {
+        Err(NsupdateError::UnsupportedType(record_type))
+    }
 }
 
 /// Check and decode a prerequisite (RFC 2136, Section 3.2).
@@ -62,6 +78,7 @@ fn decode_prerequisite(
     }
 
     let name = parse_update_owner(&record.name, zone_name)?;
+    validate_supported_type(record.record_type)?;
     match record.class {
         Class::ANY | Class::NONE => {
             let is_any_class = record.class == Class::ANY;

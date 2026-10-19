@@ -170,9 +170,9 @@ fn signatures_validate_case_preserving_rdata() {
             None,
         ),
         (
-            RecordType::Unknown(65280),
-            r"\# 4 41FF5A00",
-            r"\# 4 41FF5A00",
+            RecordType::Wks,
+            "192.0.2.1 6 0 7 8",
+            "192.0.2.1 6 0 7 8",
             None,
         ),
     ] {

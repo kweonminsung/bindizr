@@ -306,7 +306,7 @@ than returning anything.
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
   `record:read`, an add `record:create`, a delete `record:delete`, against the
-  signing key's role; an add that replaces a CNAME or DNAME needs
+  signing key's role; an add that replaces a CNAME, DNAME, or matching WKS record needs
   `record:delete` too, one that moves the record set's TTL `record:update`.
   An SOA addition needs `zone:update`, since it replaces zone metadata.
   A TSIG-signed transfer needs `zone:transfer` (the
@@ -507,9 +507,20 @@ SRV, DNAME and NAPTR RDATA retain their original case; comparison and DNSSEC
 canonicalization operate on separate wire data. Management creation of CAA
 permits flags 0 or 128; UPDATE and import preserve unknown flag bits.
 
-Ordinary record types without a typed editor use `TYPE<number>` and RFC 3597
-`\# <length> <hex>` values, including zero-length RDATA. Meta/query types and
-SOA or signer-managed DNSSEC types remain outside ordinary record writes.
+User records use a closed list of implemented types, including WKS. Unsupported
+ordinary types are rejected across API, CLI, imports, and DNS UPDATE; there is
+no opaque fallback or option to skip unsupported import records. Rejecting
+unknown types is an explicit product exception to RFC 3597, Section 3's
+transparent-handling requirement. A failed import leaves the zone unchanged. Numeric TYPE aliases
+resolve only to implemented types. SOA and signer-managed DNSSEC data retain
+their separate contracts.
+
+`WksRecordValue` owns IPv4/protocol/port parsing and bitmap encoding. WKS UPDATE
+replacement compares its address and protocol (RFC 2136, Section 1.1.5). Ports
+are numeric and protocols are numeric or TCP/UDP. Empty service lists encode no
+bitmap bytes. As BIND's `fromwire_in_wks` does, reject trailing zero bitmap octets
+before storing them, so the zone remains loadable by BIND. This is an
+interoperability restriction, not an RFC 1035 requirement.
 
 `NaptrRecordValue` validates flags after decoding presentation escapes:
 empty or ASCII letters and digits (RFC 3403, Section 4.1). The application
@@ -1179,7 +1190,7 @@ grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
 
 An enum with a stored, wire, or textual representation has two spellings and no more.
 The storage and API form uses `as_str() -> &str` when it can borrow its text, or
-`to_text() -> String` when variant data must be formatted (`TYPE<number>`).
+`to_text() -> String` when variant data must be formatted.
 Serde produces the same form; each such enum's `spells_itself_once` test holds
 them together. Rows and metric labels use that form. `Display` is the presentation
 form, the one a person reads in a table cell or a message, and every front end

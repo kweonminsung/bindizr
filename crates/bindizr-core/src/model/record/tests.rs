@@ -10,6 +10,28 @@ use crate::{
     model::{record::RecordId, zone::ZoneId},
 };
 
+/// The stored model admits exactly the implemented wire types and canonicalizes numeric aliases.
+#[test]
+fn record_type_rejects_unimplemented_wire_types() {
+    let supported = [1, 2, 5, 11, 12, 15, 16, 28, 33, 35, 39, 43, 44, 52, 257];
+    for code in 0..=u16::MAX {
+        let parsed = RecordType::try_from(Rtype::from_int(code));
+        assert_eq!(parsed.is_ok(), supported.contains(&code), "TYPE{code}");
+        if let Ok(record_type) = parsed {
+            assert_eq!(
+                format!("TYPE{code}").parse::<RecordType>().unwrap(),
+                record_type
+            );
+            let json = serde_json::to_string(&record_type).unwrap();
+            assert_eq!(
+                serde_json::from_str::<RecordType>(&json).unwrap(),
+                record_type
+            );
+        }
+    }
+    assert_eq!("WKS".parse::<RecordType>().unwrap(), RecordType::Wks);
+}
+
 /// Verify that `values_equal` normalizes name like values.
 #[test]
 fn values_equal_normalizes_name_like_values() {

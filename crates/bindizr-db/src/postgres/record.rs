@@ -52,7 +52,7 @@ pub(crate) async fn create_many_tx(
         for r in chunk {
             query = query
                 .bind(&r.name)
-                .bind(r.record_type.to_text())
+                .bind(r.record_type.as_str())
                 .bind(r.value.clone())
                 .bind(r.record_type.display_value(&r.value))
                 .bind(r.ttl)
@@ -186,7 +186,7 @@ pub(crate) async fn list_by_record_types_tx(
 
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
     for record_type in record_types {
-        query = query.bind(record_type.to_text());
+        query = query.bind(record_type.as_str());
     }
     let records = query.fetch_all(&mut **tx).await?;
 
@@ -453,7 +453,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.to_text())
+    .bind(record.record_type.as_str())
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)

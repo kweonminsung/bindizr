@@ -12,6 +12,7 @@ use thiserror::Error;
 use super::{
     CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, ParseMailboxError,
     ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
+    WksRecordValue,
 };
 use crate::{
     dns::name::{EncodeNameError, encode_name},
@@ -152,7 +153,7 @@ impl EncodedRdata {
             value: value.to_string(),
         };
         let rdata = match record_type {
-            RecordType::Unknown(_) => super::OpaqueRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
                 let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?

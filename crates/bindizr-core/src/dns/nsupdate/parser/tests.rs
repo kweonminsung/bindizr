@@ -512,28 +512,11 @@ fn parse_update_request_reads_the_opt_record() {
     );
 }
 
-/// Generic legacy types decompress names before storage; unknown bytes and empty values stay opaque.
+/// Unsupported ordinary types cannot become stored update values.
 #[test]
-fn generic_records_preserve_uncompressed_rdata() {
-    for data in [vec![], vec![0, 255, 0xc0, 12]] {
-        let record = update_record(Rtype::from_int(65280), Class::NONE, 0, data.clone());
-        record.validate_update_shape().unwrap();
-        let (rtype, value, priority) = record.to_record_value(&data).unwrap();
-        assert_eq!(rtype, RecordType::Unknown(65280));
-        assert_eq!(priority, None);
-        assert_eq!(
-            crate::dns::record::OpaqueRecordValue::parse(&value)
-                .unwrap()
-                .to_rdata()
-                .unwrap()
-                .as_bytes(),
-            data
-        );
+fn to_record_value_rejects_unsupported_ordinary_types() {
+    for rtype in [Rtype::HINFO, Rtype::from_int(65280)] {
+        let record = update_record(rtype, Class::IN, 300, vec![0, 0]);
+        assert!(record.to_record_value(&record.rdata).is_err());
     }
-    // RP has two compressible domain names, each pointing to offset zero.
-    let message = [1, b'X', 0, 0xc0, 0, 0xc0, 0];
-    let mut record = update_record(Rtype::RP, Class::IN, 300, message[3..].to_vec());
-    record.rdata_start = 3;
-    let (_, value, _) = record.to_record_value(&message).unwrap();
-    assert_eq!(value, r"\# 6 015800015800");
 }

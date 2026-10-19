@@ -70,7 +70,7 @@ What a key may sign follows its role:
 | Request | Needs |
 | --- | --- |
 | nsupdate prerequisite | `record:read` at its name and type |
-| nsupdate ordinary record add | `record:create` at its name and type; `record:delete` too when it replaces a CNAME or DNAME, `record:update` when its TTL moves the record set |
+| nsupdate ordinary record add | `record:create` at its name and type; `record:delete` too when it replaces a CNAME, DNAME, or matching WKS record, `record:update` when its TTL moves the record set |
 | nsupdate SOA add | `zone:update` reaching the zone |
 | nsupdate delete | `record:delete` at its name and type |
 | Signed AXFR/IXFR of a zone | `zone:transfer` reaching the zone |

@@ -71,7 +71,7 @@ pub(crate) fn normalize_types(value: Option<&str>) -> Result<String, ServiceErro
     let mut types: Vec<String> = Vec::new();
     for part in raw.split(',') {
         let record_type: RecordType = part.trim().parse().map_err(ServiceError::invalid_input)?;
-        let name = record_type.to_text();
+        let name = record_type.as_str().to_owned();
         if !types.contains(&name) {
             types.push(name);
         }

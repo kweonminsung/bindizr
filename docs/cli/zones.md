@@ -63,9 +63,14 @@ binary octets use DNS decimal escapes such as `\000` and `\255`. Tags contain
 flags `0` or `128`; imports and DNS UPDATE preserve unknown flag bits
 (RFC 8659, Section 4.1).
 
-Other ordinary DNS types use `TYPE<number>` with RFC 3597 generic values,
-for example `--type TYPE65280 --value '\# 2 CAFe'`. The declared length
-must match the hex octets; `\# 0` represents empty RDATA.
+Supported user types are A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, TXT,
+NS, SRV, PTR, SSHFP, TLSA, and WKS. Other types are rejected, including numeric
+`TYPE<number>` values that do not resolve to a supported type.
+
+WKS values use `<IPv4> <protocol> [ports...]`, for example
+`--type WKS --value '192.0.2.1 TCP 22 80 443'`. Protocols accept an 8-bit number
+or TCP/UDP; ports are numbers from 0 to 65535. An empty port list is allowed.
+Imports and DNS UPDATE reject WKS bitmaps ending in a zero byte, as BIND does.
 
 NAPTR flags may be empty or contain ASCII letters and digits. Their meaning
 depends on the application; letter case is preserved (RFC 3403, Section 4.1).
@@ -139,13 +144,12 @@ pull, 30 seconds and 200,000 records by default. See
 bindizr zone import example.com --from-server 192.0.2.1:53 --mode replace --create --dry-run
 ```
 
-Validation errors reject the whole import. `--skip-unsupported` skips record
-types Bindizr does not store and reports each one; review that list before
-applying. Zone-file TTLs must be decimal seconds. Convert BIND time units such
+Validation errors and unsupported record types reject the whole import;
+no records or serial changes are applied. Zone-file TTLs must be decimal seconds. Convert BIND time units such
 as `1h` with `named-compilezone -o zone.txt example.com source.zone` first.
 
 Over HTTP, `POST /zones/{name}/import` accepts either `content` (zone-file text)
-or `from_server`, with the same `mode`, `dry_run`, and `skip_unsupported` options.
+or `from_server`, with the same `mode` and `dry_run` options.
 
 Several zones move from one server in one run. `--zones` names them in a
 file (one per line, `-` for stdin), and `--from-catalog` takes every member

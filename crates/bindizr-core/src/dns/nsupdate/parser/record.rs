@@ -5,16 +5,15 @@ use domain::{
     base::{
         iana::{Class, Rtype},
         name::ParsedName,
-        rdata::{ComposeRecordData, ParseRecordData},
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, AllRecordData, Mx, Soa, Srv},
+    rdata::{A, Aaaa, Mx, Soa, Srv},
 };
 use thiserror::Error;
 
 use super::{ParseUpdateError, to_presentation_name};
 use crate::{
-    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue},
+    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue},
     model::record::RecordType,
 };
 
@@ -71,6 +70,9 @@ impl UpdateRecord {
 
     /// Decode prerequisite RDATA for comparison, resolving names in `message`.
     pub fn to_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
+        if self.record_type == Rtype::WKS {
+            WksRecordValue::from_rdata(&self.rdata)?;
+        }
         Ok(Rdata::parse_canonical(
             self.record_type,
             message,
@@ -127,24 +129,11 @@ impl UpdateRecord {
         message: &[u8],
     ) -> Result<(RecordType, String, Option<i32>), ParseUpdateError> {
         match RecordType::try_from(self.record_type)? {
-            record_type @ RecordType::Unknown(_) => {
-                // Known legacy types may contain compressed names. Unknown types
-                // remain opaque (RFC 3597, Sections 3 and 4).
-                let data = self.parse_rdata(message, &record_type.to_text(), |parser| {
-                    AllRecordData::<_, ParsedName<_>>::parse_rdata(self.record_type, parser)
-                        .ok()
-                        .flatten()
-                })?;
-                let mut bytes = Vec::new();
-                let Ok(()) = data.compose_rdata(&mut bytes);
-                Ok((
-                    record_type,
-                    format!(r"\# {} {}", bytes.len(), hex::encode_upper(bytes))
-                        .trim_end()
-                        .to_string(),
-                    None,
-                ))
-            }
+            RecordType::Wks => Ok((
+                RecordType::Wks,
+                WksRecordValue::from_rdata(&self.rdata)?.canonical(),
+                None,
+            )),
             RecordType::A => {
                 let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
                 Ok((RecordType::A, data.addr().to_string(), None))
@@ -157,12 +146,12 @@ impl UpdateRecord {
             | RecordType::Dname
             | RecordType::Ns
             | RecordType::Ptr) => {
-                let name = self.parse_rdata(message, &record_type.to_text(), |parser| {
+                let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
                 let value =
                     to_presentation_name(&name).map_err(|e| ParseUpdateError::RdataName {
-                        record_type: record_type.to_text(),
+                        record_type: record_type.as_str().to_owned(),
                         source: Box::new(e),
                     })?;
                 Ok((record_type, value, None))

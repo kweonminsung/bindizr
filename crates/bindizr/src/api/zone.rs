@@ -479,7 +479,7 @@ pub(crate) async fn delete_zone(
         path = "/zones/{name}/import",
         tag = "Zone",
         summary = "Import records into a zone",
-        description = "Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.",
+        description = "Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. An unsupported record type rejects the whole import; no records are skipped to bypass validation. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),

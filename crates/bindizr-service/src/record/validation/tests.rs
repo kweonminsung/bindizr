@@ -18,6 +18,34 @@ use crate::{
 /// instead of tripping the record set TTL rule.
 const RRSET_TTL: i64 = 3600;
 
+/// WKS values may coexist only when their IPv4 address or protocol differs.
+#[test]
+fn add_rejects_duplicate_wks_address_and_protocol() {
+    let existing = [test_record(
+        1,
+        "host",
+        RecordType::Wks,
+        "192.0.2.1 TCP 22",
+        None,
+    )];
+    assert_eq!(
+        validate_add(
+            &existing,
+            "host",
+            &RecordType::Wks,
+            "192.0.2.1 6 80",
+            RRSET_TTL,
+            None
+        )
+        .unwrap_err()
+        .code(),
+        ErrorCode::RecordConflict
+    );
+    for value in ["192.0.2.2 TCP 22", "192.0.2.1 UDP 22"] {
+        assert!(validate_add(&existing, "host", &RecordType::Wks, value, RRSET_TTL, None).is_ok());
+    }
+}
+
 /// Verify that `normalize_record_owner_name` maps parse failures to record name errors.
 #[test]
 fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {

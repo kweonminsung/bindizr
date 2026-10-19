@@ -59,10 +59,9 @@ Every server above has been run as a Bindizr secondary: transfers, updates on NO
 - **Webhooks** — a change is visible today only by polling the API or the
   zone versions. Posting each zone, record, and DNSSEC key event to a
   configured URL lets other systems react as it happens.
-- **More Record Types** — fourteen types are parsed and validated natively
-  today; every other ordinary type is stored in its RFC 3597 generic form
-  (`TYPE<number>`, `\# <len> <hex>`). Native SVCB/HTTPS syntax would let
-  those records be written and read the way their RFCs spell them.
+- **More Record Types** — fifteen types are parsed and validated today,
+  including WKS. Other ordinary types are rejected. Adding SVCB/HTTPS would
+  let those records be managed through the same API and CLI.
 - **Terraform Provider** — infrastructure as code reaches Bindizr through
   the ExternalDNS adapter alone. A provider over the HTTP API lets zones,
   records, and access rights be declared beside the rest of the stack.

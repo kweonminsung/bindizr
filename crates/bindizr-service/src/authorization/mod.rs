@@ -543,7 +543,7 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map(RecordType::to_text)
+                    .map(|record_type| record_type.as_str().to_owned())
                     .unwrap_or("records".into()),
                 zone.name
             )));

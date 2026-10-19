@@ -689,7 +689,11 @@ async fn nsupdate_prescans_ignored_deletes() {
                 assert_eq!(
                     rcode,
                     if in_zone {
-                        Rcode::NOERROR
+                        if rtype == Rtype::SOA {
+                            Rcode::NOERROR
+                        } else {
+                            Rcode::REFUSED
+                        }
                     } else {
                         Rcode::NOTZONE
                     },
@@ -902,8 +906,15 @@ async fn nsupdate_create_grant_preserves_existing_records() {
     .await;
     let alias = format!("alias.{zone_name}.");
     let host = format!("host.{zone_name}.");
+    let wks = format!("wks.{zone_name}.");
 
     for updates in [
+        vec![UpdateRecord::AddRecord {
+            name: wks.clone(),
+            rtype: Rtype::from_int(11),
+            ttl: 300,
+            rdata: vec![192, 0, 2, 1, 6, 0x80],
+        }],
         vec![UpdateRecord::AddCname {
             name: alias.clone(),
             ttl: 300,
@@ -930,9 +941,26 @@ async fn nsupdate_create_grant_preserves_existing_records() {
         ttl: 600,
         addr: "192.0.2.131".to_string(),
     }];
-    for updates in [&replace, &retime] {
+    let wks_replace = vec![
+        UpdateRecord::AddA {
+            name: format!("before-wks.{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.50".to_string(),
+        },
+        UpdateRecord::AddRecord {
+            name: wks.clone(),
+            rtype: Rtype::from_int(11),
+            ttl: 300,
+            rdata: vec![192, 0, 2, 1, 6, 0x40],
+        },
+    ];
+    let before = app.list_records(&zone_name).await;
+    let serial = app.read_zone_serial(&zone_name).await;
+    for updates in [&replace, &retime, &wks_replace] {
         let rcode = send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
         assert_eq!(rcode, Rcode::REFUSED, "{updates:?}");
+        assert_eq!(app.list_records(&zone_name).await, before);
+        assert_eq!(app.read_zone_serial(&zone_name).await, serial);
     }
 
     app.run_cli_success(
@@ -948,7 +976,7 @@ async fn nsupdate_create_grant_preserves_existing_records() {
         None,
     )
     .await;
-    for updates in [&replace, &retime] {
+    for updates in [&replace, &retime, &wks_replace] {
         let rcode = send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
         assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
     }
@@ -1931,7 +1959,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     assert_eq!(rcode, Rcode::NOERROR);
     for (rtype, rdata, expected) in [
         (Rtype::DNSKEY, vec![1, 1, 3], Rcode::FORMERR),
-        (Rtype::from_int(65280), vec![], Rcode::NXRRSET),
+        (Rtype::from_int(65280), vec![], Rcode::REFUSED),
     ] {
         let prerequisite = PrerequisiteRecord::RecordEquals {
             name: apex.clone(),
@@ -1945,10 +1973,10 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     assert_eq!(exported_record_sets(&app, zone_name).await, sets);
 }
 
-/// Preserve binary owners, TXT segment octets, zero-length unknown values and RDATA case.
+/// Preserve binary owners, TXT octets, WKS service bitmaps, and RDATA case.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn update_preserves_opaque_values_and_names() {
+async fn update_preserves_binary_values_and_names() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone = zone["name"].as_str().unwrap();
@@ -1960,8 +1988,7 @@ async fn update_preserves_opaque_values_and_names() {
     for (label, rtype, rdata) in [
         (r"\255\032", Rtype::TXT, vec![1, 255, 1, 0]),
         ("split", Rtype::TXT, vec![1, 0xc3, 1, 0xa9]),
-        ("empty", Rtype::from_int(65280), vec![]),
-        ("opaque", Rtype::from_int(65281), vec![0, 255, 192, 12]),
+        ("wks", Rtype::WKS, vec![192, 0, 2, 1, 6, 0x80, 1]),
         (
             "srv",
             Rtype::SRV,
@@ -2622,4 +2649,104 @@ async fn unsigned_nsupdate_app() -> TestApp {
         ..TestAppOptions::default()
     })
     .await
+}
+
+/// A policy-refused ordinary type rolls back every operation in the request.
+#[tokio::test]
+#[serial]
+async fn nsupdate_rejects_unsupported_types_and_invalid_wks_atomically() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let before = app.list_records(zone_name).await;
+    let serial = app.read_zone_serial(zone_name).await;
+    for (rtype, rdata, expected) in [
+        (Rtype::HINFO, vec![0, 0], Rcode::REFUSED),
+        (Rtype::from_int(65280), vec![0, 0], Rcode::REFUSED),
+        (Rtype::WKS, vec![192, 0, 2, 1, 6, 0x80, 0], Rcode::FORMERR),
+    ] {
+        let updates = [
+            UpdateRecord::AddA {
+                name: format!("before.{zone_name}."),
+                ttl: 300,
+                addr: "192.0.2.1".into(),
+            },
+            UpdateRecord::AddRecord {
+                name: format!("unsupported.{zone_name}."),
+                rtype,
+                ttl: 300,
+                rdata,
+            },
+        ];
+        for rcode in [
+            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+            send_update_tcp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+        ] {
+            assert_eq!(rcode, expected);
+        }
+        assert_eq!(app.list_records(zone_name).await, before);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    }
+}
+
+/// UPDATE preserves high-bit TTLs and replaces only a WKS address/protocol match.
+#[tokio::test]
+#[serial]
+async fn nsupdate_replaces_wks_by_address_and_protocol() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let owner = format!("wks.{zone_name}.");
+    let rtype = Rtype::from_int(11);
+    let original = vec![192, 0, 2, 1, 6, 0x80];
+    let replacement = vec![192, 0, 2, 1, 6, 0x40];
+    let other_address = vec![192, 0, 2, 2, 6, 0x80];
+    let other_protocol = vec![192, 0, 2, 1, 17, 0x80];
+    for rdata in [&original, &other_address, &other_protocol, &replacement] {
+        let serial = app.read_zone_serial(zone_name).await;
+        let rcode = send_update_tcp(
+            app.dns_port(),
+            zone_name,
+            &[],
+            &[UpdateRecord::AddRecord {
+                name: owner.clone(),
+                rtype,
+                ttl: u32::MAX,
+                rdata: rdata.clone(),
+            }],
+            None,
+        )
+        .unwrap();
+        assert_eq!(rcode, Rcode::NOERROR);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
+    }
+    let serial = app.read_zone_serial(zone_name).await;
+    let rcode = send_update_tcp(
+        app.dns_port(),
+        zone_name,
+        &[],
+        &[UpdateRecord::AddRecord {
+            name: owner.clone(),
+            rtype,
+            ttl: u32::MAX,
+            rdata: replacement.clone(),
+        }],
+        None,
+    )
+    .unwrap();
+    assert_eq!(rcode, Rcode::NOERROR);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    let sets = exported_record_sets(&app, zone_name).await;
+    let mut actual = sets.get(&(owner, rtype)).unwrap().clone();
+    actual.sort();
+    let mut expected = vec![replacement, other_address, other_protocol];
+    expected.sort();
+    assert_eq!(actual, expected);
+    assert!(
+        app.list_records(zone_name)
+            .await
+            .iter()
+            .filter(|row| row["type"] == "WKS")
+            .all(|row| row["ttl"] == u32::MAX)
+    );
 }

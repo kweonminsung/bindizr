@@ -3439,7 +3439,7 @@ paths:
       tags:
       - Zone
       summary: Import records into a zone
-      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. An unsupported record type rejects the whole import; no records are skipped to bypass validation. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
       operationId: import_zone
       parameters:
       - name: name
@@ -3863,7 +3863,8 @@ components:
         - `record:create` — add records, including by import, nsupdate and ExternalDNS
         - `record:update` — change a record in place; without `record:read` on it,
           every field must be given
-        - `record:delete` — delete records, including by nsupdate and ExternalDNS
+        - `record:delete` — delete records, including by nsupdate and ExternalDNS; also required
+          when nsupdate replaces a CNAME, DNAME, or matching WKS record
         - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
           also read signing policies
         - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
@@ -5197,11 +5198,6 @@ components:
           $ref: '#/components/schemas/ImportMode'
           description: 'Reconciliation mode: `append` (default), `upsert`, or `replace`.'
           default: append
-        skip_unsupported:
-          type: boolean
-          description: |-
-            Pass over records bindizr has no type for instead of failing the whole
-            file; they are counted as skipped and listed in `skipped_records`.
       additionalProperties: false
     ImportZoneResponse:
       type: object
@@ -5227,11 +5223,6 @@ components:
           items:
             type: string
           description: Per-record validation errors. When non-empty nothing is applied.
-        skipped_records:
-          type: array
-          items:
-            type: string
-          description: Records passed over under `skip_unsupported`.
         summary:
           $ref: '#/components/schemas/ImportZoneSummaryResponse'
     ImportZoneSummaryResponse:
@@ -5328,9 +5319,6 @@ components:
           $ref: '#/components/schemas/ImportMode'
           description: 'Reconciliation mode for every zone: `append` (default), `upsert`, or `replace`.'
           default: append
-        skip_unsupported:
-          type: boolean
-          description: Pass over records bindizr has no type for instead of rejecting the zone.
         zone_names:
           type:
           - array
@@ -6217,7 +6205,23 @@ components:
           example: example.com
     RecordType:
       type: string
-      description: 'Ordinary DNS record type: a supported mnemonic or TYPE<number> (RFC 3597). Other ordinary types use generic \# <length> <hex> values; SOA, managed DNSSEC, query and meta types have separate contracts.'
+      description: Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts.
+      enum:
+      - A
+      - AAAA
+      - CAA
+      - CNAME
+      - DNAME
+      - DS
+      - MX
+      - NAPTR
+      - TXT
+      - NS
+      - SRV
+      - PTR
+      - SSHFP
+      - TLSA
+      - WKS
     RecordValue:
       oneOf:
       - type: string

@@ -65,7 +65,7 @@ async fn fixture() -> Pool<Sqlite> {
                      VALUES (?, ?, 'v', 'v', 300, ?, ?)",
                 )
                 .bind(&owner)
-                .bind(record_type.to_text())
+                .bind(record_type.as_str())
                 .bind(Utc::now())
                 .bind(id)
                 .execute(&pool)

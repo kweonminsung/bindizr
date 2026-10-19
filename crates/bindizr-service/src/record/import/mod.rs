@@ -229,7 +229,6 @@ pub async fn import_zones(
         from_server: Some(server.to_string()),
         mode: mode.as_str().to_owned(),
         dry_run: request.dry_run,
-        skip_unsupported: request.skip_unsupported,
         create: request.create,
     };
     let mut summary = ImportZonesSummaryResponse {
@@ -360,16 +359,6 @@ async fn reconcile(
         timings.parse_ms = elapsed_ms(t);
         let mut errors = parsed.errors;
         let mut skipped = 0usize;
-
-        // Refusing a whole file over one line it cannot store leaves a
-        // zone served elsewhere no way in.
-        let skipped_records = if request.skip_unsupported {
-            skipped += parsed.unsupported.len();
-            parsed.unsupported
-        } else {
-            errors.extend(parsed.unsupported);
-            Vec::new()
-        };
 
         // Normalize parsed records and drop duplicates within the file by identity.
         let t = Instant::now();
@@ -577,7 +566,6 @@ async fn reconcile(
             summary,
             diff,
             errors,
-            skipped_records,
         };
 
         Ok(ReconcileResult {

@@ -456,7 +456,7 @@ pub(crate) async fn exported_record_sets(
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let mut file = Zonefile::new();
-    file.extend_from_slice(body.as_str().unwrap().as_bytes());
+    file.extend_from_slice(generic_wks_export(body.as_str().unwrap()).as_bytes());
     let mut sets = std::collections::BTreeMap::<_, Vec<_>>::new();
     while let Some(entry) = file.next_entry().unwrap() {
         if let Entry::Record(record) = entry {
@@ -467,4 +467,38 @@ pub(crate) async fn exported_record_sets(
         }
     }
     sets
+}
+
+/// Adapt the export's numeric WKS fields independently because `domain` has no native WKS scanner.
+fn generic_wks_export(text: &str) -> String {
+    let mut normalized = text
+        .lines()
+        .map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            if fields.get(3) != Some(&"WKS") || fields.get(4) == Some(&r"\#") {
+                return line.to_owned();
+            }
+            let address: std::net::Ipv4Addr = fields[4].parse().unwrap();
+            let protocol: u8 = fields[5].parse().unwrap();
+            let mut bitmap = vec![0u8; 8192];
+            for port in &fields[6..] {
+                let port = usize::from(port.parse::<u16>().unwrap());
+                bitmap[port / 8] |= 1 << (7 - port % 8);
+            }
+            bitmap.truncate(
+                bitmap
+                    .iter()
+                    .rposition(|byte| *byte != 0)
+                    .map_or(0, |last| last + 1),
+            );
+            let mut bytes = address.octets().to_vec();
+            bytes.push(protocol);
+            bytes.extend(bitmap);
+            let hex: String = bytes.iter().map(|byte| format!("{byte:02X}")).collect();
+            format!(r"{} \# {} {}", fields[..4].join(" "), bytes.len(), hex)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    normalized.push('\n');
+    normalized
 }

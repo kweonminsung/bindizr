@@ -41,10 +41,6 @@ pub struct ImportZoneRequest {
     /// When true, parse and validate without applying any change.
     #[serde(default)]
     pub dry_run: bool,
-    /// Pass over records bindizr has no type for instead of failing the whole
-    /// file; they are counted as skipped and listed in `skipped_records`.
-    #[serde(default)]
-    pub skip_unsupported: bool,
     /// Create a missing zone from the SOA; otherwise a missing zone is an error.
     /// Requires `zone:create` and the mode's record actions in all zones.
     /// The initial serial accepts the full unsigned 32-bit range (0..=4294967295);
@@ -65,9 +61,6 @@ pub struct ImportZoneResponse {
     pub diff: RecordDiffResponse,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
-    /// Records passed over under `skip_unsupported`.
-    #[serde(default)]
-    pub skipped_records: Vec<String>,
 }
 
 impl ImportZoneResponse {
@@ -126,7 +119,6 @@ impl Default for ImportZoneRequest {
             from_server: None,
             mode: default_import_mode(),
             dry_run: false,
-            skip_unsupported: false,
             create: false,
         }
     }
@@ -156,9 +148,6 @@ pub struct ImportZonesRequest {
     /// When true, parse and validate every zone without applying any change.
     #[serde(default)]
     pub dry_run: bool,
-    /// Pass over records bindizr has no type for instead of rejecting the zone.
-    #[serde(default)]
-    pub skip_unsupported: bool,
     /// Create a missing zone from its SOA; otherwise it fails. Requires
     /// `zone:create` and the mode's record actions in all zones.
     #[serde(default)]

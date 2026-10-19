@@ -197,9 +197,9 @@ fn transfer_keeps_one_soa_for_creation() {
     assert_eq!(parsed.records.len(), 1);
 }
 
-/// Store ordinary types without a typed editor in RFC 3597 presentation form.
+/// Unsupported ordinary types reject the transferred zone.
 #[test]
-fn transfer_preserves_other_ordinary_types() {
+fn transfer_rejects_unsupported_ordinary_types() {
     let records = [
         transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
         transfer_record("example.com.", Rtype::HINFO, r#""rfc" "8482""#),
@@ -207,13 +207,8 @@ fn transfer_preserves_other_ordinary_types() {
 
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
-    assert_eq!(parsed.records.len(), 2);
-    assert!(parsed.unsupported.is_empty());
-    assert_eq!(parsed.records[1].record_type, RecordType::Unknown(13));
-    assert_eq!(
-        parsed.records[1].value,
-        ZoneFileValue::Rdata(r"\# 9 037266630438343832".into())
-    );
+    assert_eq!(parsed.records.len(), 1);
+    assert!(parsed.errors.iter().any(|error| error.contains("HINFO")));
 }
 
 /// Wire conversion preserves label boundaries.
@@ -234,7 +229,6 @@ fn transfer_preserves_escaped_names() {
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-    assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);
     let carried: Vec<_> = parsed
         .records
         .iter()

@@ -142,6 +142,16 @@ pub(crate) fn validate_record_constraints(
         )));
     }
 
+    if *record_type == RecordType::Wks
+        && records_at_name.iter().any(|record| {
+            record.record_type == RecordType::Wks && record.is_replaced_by(value, priority)
+        })
+    {
+        return Err(ServiceError::record_conflict(
+            "WKS records at the same name must have distinct addresses or protocols",
+        ));
+    }
+
     if *record_type == RecordType::Mx {
         let adding_null_mx = MxRecordValue::parse(value, priority).is_ok_and(|mx| mx.is_null());
         let has_existing_null_mx = records_at_name.iter().any(|r| {

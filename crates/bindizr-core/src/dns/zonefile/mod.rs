@@ -1,5 +1,7 @@
 //! Convert BIND master files and AXFR records into import data.
 
+mod wks;
+
 use domain::{
     base::{
         ToName,
@@ -17,7 +19,7 @@ use crate::{
         Serial, SoaInterval, Ttl,
         name::{ZoneName, to_fqdn_lowercase},
         query::TransferRecord,
-        record::NaptrRecordValue,
+        record::{NaptrRecordValue, WksRecordValue},
     },
     model::record::RecordType,
 };
@@ -64,21 +66,28 @@ pub struct ParsedZoneFile {
     /// Human-readable problems (parse failure, out-of-range TTL, unsupported
     /// directive).
     pub errors: Vec<String>,
-    /// Records bindizr has no type or class for, apart from `errors` so an
-    /// import can pass over them.
-    pub unsupported: Vec<String>,
 }
 
 impl ParsedZoneFile {
     /// Parse a BIND zone file using its origin and `default_ttl` for omitted TTLs.
     /// Keep the SOA separately: the zone stores its fields, not an SOA record.
     pub fn parse(content: &str, zone_name: &ZoneName, default_ttl: Ttl) -> Self {
+        let content = match wks::normalize_records(content) {
+            Ok(content) => content,
+            Err(error) => {
+                return Self {
+                    records: Vec::new(),
+                    soa: None,
+                    errors: vec![error],
+                };
+            }
+        };
         let origin_fqdn = zone_name.to_fqdn();
 
         // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
         // TTLs. PRELUDE_LINES counts them.
         let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
-        buffer.push_str(content);
+        buffer.push_str(&content);
         if !buffer.ends_with('\n') {
             buffer.push('\n');
         }
@@ -91,14 +100,13 @@ impl ParsedZoneFile {
             records: Vec::new(),
             soa: None,
             errors: Vec::new(),
-            unsupported: Vec::new(),
         };
 
         loop {
             match zonefile.next_entry() {
                 Ok(Some(Entry::Record(record))) => {
                     if record.class() != Class::IN {
-                        parsed.unsupported.push(format!(
+                        parsed.errors.push(format!(
                             "unsupported record class '{}' for '{}'",
                             record.class(),
                             record.owner()
@@ -140,7 +148,6 @@ impl ParsedZoneFile {
             records: Vec::new(),
             soa: None,
             errors: Vec::new(),
-            unsupported: Vec::new(),
         };
         let origin = zone_name.to_fqdn();
         for (index, record) in records.iter().enumerate() {
@@ -209,7 +216,7 @@ impl ParsedZoneFile {
             other => match RecordType::try_from(other) {
                 Ok(record_type) => record_type,
                 Err(_) => {
-                    self.unsupported.push(format!(
+                    self.errors.push(format!(
                         "unsupported record type '{}' for '{}'",
                         other, owner
                     ));
@@ -220,13 +227,17 @@ impl ParsedZoneFile {
 
         let ttl = Ttl::from_secs(ttl_secs);
 
-        let (value, priority) = if matches!(record_type, RecordType::Unknown(_)) {
+        let (value, priority) = if record_type == RecordType::Wks {
             let mut bytes = Vec::new();
             let Ok(()) = data.compose_rdata(&mut bytes);
-            (
-                ZoneFileValue::Rdata(format!(r"\# {} {}", bytes.len(), hex::encode_upper(bytes))),
-                None,
-            )
+            match WksRecordValue::from_rdata(&bytes) {
+                Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
+                Err(error) => {
+                    self.errors
+                        .push(format!("WKS value for '{}': {}", owner, error));
+                    return;
+                }
+            }
         } else {
             match data {
                 // Use parsed NAPTR fields because `domain` renders a root replacement as `..`.
