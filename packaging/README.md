@@ -1,6 +1,6 @@
 # Packaging Bindizr
 
-This document provides instructions for building Debian and RPM packages for Bindizr from the source code using `fpm`.
+This document provides instructions for building Debian, RPM, and Alpine packages for Bindizr from the source code using `fpm`.
 
 ## Prerequisites
 
@@ -62,7 +62,9 @@ covers the toolchain and the dynamic build in more detail.
 
 ## Building Packages
 
-A helper script is provided to build both `.deb` and `.rpm` packages.
+A helper script is provided to build the `.deb`, `.rpm`, and `.apk` packages.
+The `.apk` is built by `abuild` in an `alpine` container, so Docker must be
+running; fpm's own Alpine output is refused by apk-tools 3.
 
 ```bash
 # Clone the repository
@@ -108,4 +110,13 @@ $ sudo dpkg -i bindizr_*.deb
 
 ```bash
 $ sudo rpm -i bindizr-*.rpm
+```
+
+### Alpine
+
+The `.apk` carries an OpenRC script instead of the systemd unit and is signed
+with a key made for that build alone, so `apk` has to be told to trust it:
+
+```bash
+$ sudo apk add --allow-untrusted bindizr-*.apk
 ```

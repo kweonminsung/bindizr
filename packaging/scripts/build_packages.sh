@@ -12,6 +12,8 @@ case "$TARGET" in
     aarch64-*) DEB_ARCH="arm64"; RPM_ARCH="aarch64" ;;
     *) echo "Unsupported target: $TARGET (expected x86_64-* or aarch64-*)" >&2; exit 2 ;;
 esac
+# Alpine spells a prerelease 0.1.0_rc3.
+APK_VERSION=$(printf '%s' "$VERSION" | sed -E 's/-(alpha|beta|rc)\./_\1/')
 
 # Point cargo at musl-gcc for the target.
 TARGET_ENV="${TARGET//-/_}"
@@ -31,6 +33,7 @@ trap 'rm -rf -- "$TMP_DIR"' EXIT
 mkdir -p "$TMP_DIR/usr/bin"
 mkdir -p "$TMP_DIR/etc/bindizr"
 mkdir -p "$TMP_DIR/usr/lib/systemd/system"
+mkdir -p "$TMP_DIR/etc/init.d"
 mkdir -p "$TMP_DIR/usr/share/doc/bindizr"
 mkdir -p "$TMP_DIR/usr/share/licenses/bindizr"
 mkdir -p "$TMP_DIR/usr/share/man/man1"
@@ -44,6 +47,7 @@ install -D -m 755 "target/$TARGET/release/bindizr" "$TMP_DIR/usr/bin/bindizr"
 # Keep credentials owner-only in the package; postinstall grants the daemon group access.
 install -p -m 600 bindizr.conf.toml "$TMP_DIR/etc/bindizr/bindizr.conf.toml"
 install -p -m 644 packaging/bindizr.service "$TMP_DIR/usr/lib/systemd/system/bindizr.service"
+install -p -m 755 packaging/bindizr.initd "$TMP_DIR/etc/init.d/bindizr"
 install -p -m 644 README.md "$TMP_DIR/usr/share/doc/bindizr/README.md"
 install -p -m 644 LICENSE "$TMP_DIR/usr/share/licenses/bindizr/LICENSE"
 
@@ -81,5 +85,15 @@ fpm -s dir -t rpm -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     -C "$TMP_DIR" \
     usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE usr/share/man/man1/bindizr.1.gz usr/share/bash-completion/completions/bindizr usr/share/zsh/site-functions/_bindizr usr/share/fish/vendor_completions.d/bindizr.fish
 
+# Alpine: abuild, in an Alpine container, packages the same tree with the
+# OpenRC script in place of the systemd unit (fpm's apk output is refused
+# by apk-tools 3).
+if ! command -v docker >/dev/null 2>&1; then
+    echo "docker is required to build the Alpine package" >&2
+    exit 2
+fi
+docker run --rm -v "$TMP_DIR:/stage:ro" -v "$PWD/packaging:/packaging:ro" -v "$PWD:/out" \
+    alpine:3.24 sh /packaging/scripts/build_apk.sh "$APK_VERSION" "$RELEASE"
+
 echo "Packages created successfully."
-ls -l bindizr*.{deb,rpm}
+ls -l bindizr*.{deb,rpm,apk}

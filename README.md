@@ -121,6 +121,7 @@ $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```bash
 $ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu (bindizr_*_arm64.deb on arm64)
 $ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL (bindizr-*.aarch64.rpm on arm64)
+$ sudo apk add --allow-untrusted bindizr-*.x86_64.apk    # Alpine (bindizr-*.aarch64.apk on arm64)
 ```
 
 The package runs on SQLite out of the box and serves zone transfers on port
