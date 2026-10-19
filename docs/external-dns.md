@@ -15,6 +15,12 @@ external-dns ──127.0.0.1:8888──▶ bindizr-external-dns ──Bearer tok
 
 Validated against external-dns **v0.21.0**.
 
+The adapter's GET routes negotiate `application/external.dns.webhook+json;version=1`.
+Equivalent media types, quoted version values and wildcards are accepted;
+`q` weights and range specificity apply (RFC 9110, Section 12.5.1).
+An `Accept` header excluding this representation receives `406` before any
+Bindizr request. Successful replies retain the exact media type above.
+
 ## 1. Enable the provider API
 
 On the Bindizr server, enable the provider API and restart the daemon:

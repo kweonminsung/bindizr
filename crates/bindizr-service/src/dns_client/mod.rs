@@ -124,7 +124,7 @@ pub(crate) async fn exchange_over_udp_checked(
     timeout: Duration,
     request: &[u8],
     what: &'static str,
-    accept: impl Fn(&[u8]) -> bool,
+    is_response_acceptable: impl Fn(&[u8]) -> bool,
 ) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
@@ -153,7 +153,7 @@ pub(crate) async fn exchange_over_udp_checked(
         loop {
             let received = socket.recv(&mut response).await?;
             if matches_response_to_request(request, &response[..received])
-                && accept(&response[..received])
+                && is_response_acceptable(&response[..received])
             {
                 return Ok::<_, std::io::Error>(received);
             }

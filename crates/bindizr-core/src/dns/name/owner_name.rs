@@ -1,6 +1,8 @@
 //! A record's owner name, held as decoded labels.
 
-use super::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, trim_presentation_name};
+use super::{
+    MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName, trim_presentation_name,
+};
 
 /// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
 /// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
@@ -279,7 +281,7 @@ fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNam
         .map(|label| label.len() + 1)
         .sum::<usize>()
         + 1;
-    if wire_len > MAX_DOMAIN_LEN + 2 {
+    if wire_len > MAX_WIRE_NAME_LEN {
         return Err(ParseNameError::TooLong);
     }
     Ok(())

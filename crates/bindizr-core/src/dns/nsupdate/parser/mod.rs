@@ -14,16 +14,13 @@ use thiserror::Error;
 
 use crate::{
     dns::{
-        message::Edns,
+        message::{DNS_HEADER_LEN, Edns},
         name::labels_to_presentation,
         record::{ParseRdataError, ParseRecordValueError},
         tsig::is_mac_size_in_bounds,
     },
     model::record::ParseRecordTypeError,
 };
-
-/// Fixed length of a DNS message header, in bytes.
-const DNS_HEADER_LEN: usize = 12;
 
 /// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -29,11 +29,14 @@ pub(crate) async fn auth_middleware(
         Err(_) => return Ok(unauthorized("invalid authorization header")),
     };
 
-    if !auth_str.starts_with("Bearer ") {
+    let Some((scheme, credentials)) = auth_str.split_once(' ') else {
+        return Ok(unauthorized("invalid authentication scheme"));
+    };
+    // RFC 9110, Sections 11.1 and 11.4: schemes ignore case; 1*SP separates credentials.
+    if !scheme.eq_ignore_ascii_case("Bearer") {
         return Ok(unauthorized("invalid authentication scheme"));
     }
-
-    let token = &auth_str[7..];
+    let token = credentials.trim_start_matches(' ');
 
     match Caller::authenticate_token(&cx, token).await {
         Ok((caller, token)) => {

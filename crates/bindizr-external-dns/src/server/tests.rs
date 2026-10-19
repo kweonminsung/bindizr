@@ -217,10 +217,39 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
-    let (status, _, _) = get(&base, Some("application/xml")).await;
-
-    assert_eq!(status, StatusCode::NOT_ACCEPTABLE);
+    for path in ["", "/records"] {
+        for accept in [
+            "application/xml",
+            "application/external.dns.webhook+json;version=10",
+            "application/external.dns.webhook+json;version=1;q=0, */*;q=1",
+        ] {
+            let (status, _, _) = get(&format!("{base}{path}"), Some(accept)).await;
+            assert_eq!(status, StatusCode::NOT_ACCEPTABLE, "{path} {accept}");
+        }
+    }
     assert!(mock.recorded().is_empty());
+}
+
+/// Both GET routes accept equivalent ranges and retain the exact ExternalDNS response type.
+#[tokio::test]
+async fn webhook_get_routes_negotiate_equivalent_accept_ranges() {
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
+    let base = spawn_adapter(mock.addr, None).await;
+    for path in ["", "/records"] {
+        for accept in [
+            None,
+            Some("*/*"),
+            Some("application/*"),
+            Some("APPLICATION/EXTERNAL.DNS.WEBHOOK+JSON;VERSION=1"),
+            Some("application/external.dns.webhook+json; version=\"1\""),
+            Some("text/plain;q=1, application/external.dns.webhook+json;version=1;q=0.1"),
+        ] {
+            let (status, content_type, _) = get(&format!("{base}{path}"), accept).await;
+            assert_eq!(status, StatusCode::OK, "{path} {accept:?}");
+            assert_eq!(content_type.as_deref(), Some(MEDIA_TYPE));
+        }
+    }
 }
 
 /// Verify that `list_records` maps records to endpoints.

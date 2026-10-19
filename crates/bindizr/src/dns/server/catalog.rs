@@ -1,5 +1,8 @@
 use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, message, message::Rtype, tsig::TransferSigner},
+    dns::{
+        CATALOG_SOA_REFRESH, Serial, SoaInterval, Ttl, message, message::Rtype,
+        tsig::TransferSigner,
+    },
     model::zone::{Zone, ZoneId},
 };
 use bindizr_service::zone;
@@ -7,6 +10,18 @@ use chrono::Utc;
 use ring::digest::{Context, SHA256};
 
 use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
+
+/// TTL used by the generated catalog's records.
+const DEFAULT_TTL: Ttl = Ttl::from_secs(3_600);
+
+/// SOA retry interval of the generated catalog.
+const SOA_RETRY: SoaInterval = SoaInterval::from_secs(600);
+
+/// SOA expiry interval of the generated catalog.
+const SOA_EXPIRE: SoaInterval = SoaInterval::from_secs(86_400);
+
+/// Negative caching TTL of the generated catalog.
+const MINIMUM_TTL: Ttl = Ttl::from_secs(60);
 
 /// Generates the catalog zone and its member zone list from `zones`, the
 /// served zones loaded where the transfer was authorized.
@@ -45,12 +60,12 @@ pub(crate) async fn generate_catalog_zone(
         name: catalog_zone_name.clone(),
         mname: "invalid".to_string(),
         rname: "invalid".to_string(),
-        default_ttl: Ttl::from_secs(3600),
+        default_ttl: DEFAULT_TTL,
         serial,
-        refresh: SoaInterval::from_secs(3600),
-        retry: SoaInterval::from_secs(600),
-        expire: SoaInterval::from_secs(86400),
-        minimum_ttl: Ttl::from_secs(60),
+        refresh: CATALOG_SOA_REFRESH,
+        retry: SOA_RETRY,
+        expire: SOA_EXPIRE,
+        minimum_ttl: MINIMUM_TTL,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,

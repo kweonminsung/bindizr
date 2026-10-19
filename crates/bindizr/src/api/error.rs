@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{FromRequestParts, rejection::JsonRejection},
-    http::{StatusCode, request::Parts},
+    http::{HeaderValue, StatusCode, header::WWW_AUTHENTICATE, request::Parts},
     response::{IntoResponse, Response},
 };
 use bindizr_service::{
@@ -75,11 +75,15 @@ impl From<ServiceError> for ApiError {
 impl IntoResponse for ApiError {
     /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
-        (
-            http_status(self.0.code()),
-            Json(ErrorResponse::from(&self.0)),
-        )
-            .into_response()
+        let status = http_status(self.0.code());
+        let mut response = (status, Json(ErrorResponse::from(&self.0))).into_response();
+        // RFC 9110, Section 15.5.2: every 401 carries an applicable challenge.
+        if status == StatusCode::UNAUTHORIZED {
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        }
+        response
     }
 }
 

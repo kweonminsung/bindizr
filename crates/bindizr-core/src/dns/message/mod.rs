@@ -23,6 +23,15 @@ use crate::dns::{
     tsig::{TransferSigner, signature_len},
 };
 
+/// Fixed DNS message header length (RFC 1035, Section 4.1.1).
+pub(crate) const DNS_HEADER_LEN: usize = 12;
+
+/// QTYPE and QCLASS length, excluding the question name.
+pub(crate) const QUESTION_FIELDS_LEN: usize = 4;
+
+/// TYPE, CLASS, TTL and RDLENGTH length, excluding owner name and RDATA.
+pub(crate) const RECORD_FIELDS_LEN: usize = 10;
+
 /// Compress response names before signing.
 pub(crate) fn response_builder() -> MessageBuilder<TreeCompressor<Vec<u8>>> {
     MessageBuilder::from_target(TreeCompressor::new(Vec::new()))
@@ -186,7 +195,7 @@ impl DnsMessageBuilder {
         } else {
             0
         };
-        12 + self.qname.len() + 4 + self.answers_len + opt + signature
+        DNS_HEADER_LEN + self.qname.len() + QUESTION_FIELDS_LEN + self.answers_len + opt + signature
     }
 
     /// Remove the last answer and update the buffered byte count.
@@ -344,7 +353,10 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
 pub(crate) mod query;
 mod records;
 
-pub use query::{Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery, is_response};
+pub use query::{
+    Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
+    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, is_response,
+};
 use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 
 #[cfg(test)]

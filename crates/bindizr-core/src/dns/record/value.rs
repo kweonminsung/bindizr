@@ -3,8 +3,11 @@
 use super::ParseRecordValueError;
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
-    message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN},
-    name::{MAX_DOMAIN_LEN, decode_name_labels},
+    message::{
+        DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN,
+        query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN},
+    },
+    name::{MAX_WIRE_NAME_LEN, decode_name_labels},
     tsig::MAX_TSIG_RECORD,
 };
 
@@ -12,12 +15,15 @@ use crate::dns::{
 /// and compared as this value, so both types must agree on it.
 pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 
+/// DNS character-string contents use a one-octet length (RFC 1035, Section 3.3).
+pub(crate) const MAX_CHARACTER_STRING_LEN: usize = u8::MAX as usize;
+
 /// RDATA limit reserving worst-case question, owner, TSIG, OPT and keepalive.
 /// Every stored record must fit one signed EDNS transfer message.
 pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
-    - 12
-    - (MAX_DOMAIN_LEN + 2 + 4)
-    - (MAX_DOMAIN_LEN + 2 + 10)
+    - DNS_HEADER_LEN
+    - (MAX_WIRE_NAME_LEN + QUESTION_FIELDS_LEN)
+    - (MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN)
     - MAX_TSIG_RECORD
     - OPT_RECORD_LEN
     - KEEPALIVE_OPTION_LEN;
@@ -163,7 +169,7 @@ pub(crate) fn parse_char_string<'a>(
     }
     let (octets, rest) = parse_string_octets(field, input)?;
     let text = String::from_utf8(octets).map_err(|_| ParseRecordValueError::NotUtf8 { field })?;
-    if text.len() > 255 {
+    if text.len() > MAX_CHARACTER_STRING_LEN {
         return Err(ParseRecordValueError::CharStringTooLong { field });
     }
 

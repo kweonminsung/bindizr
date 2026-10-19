@@ -19,7 +19,11 @@ use ring::hmac;
 use thiserror::Error;
 
 use crate::{
-    dns::{LibraryError, message::Edns, name::MAX_DOMAIN_LEN},
+    dns::{
+        LibraryError,
+        message::{Edns, RECORD_FIELDS_LEN},
+        name::MAX_WIRE_NAME_LEN,
+    },
     model::tsig_key::{TsigAlgorithm, TsigKey},
 };
 
@@ -240,7 +244,7 @@ fn verify_badtime_response(
 /// Reserve the maximum TSIG size: longest key name, `hmac-sha512.`,
 /// 64-byte MAC and 6-byte BADTIME data (RFC 8945, Section 4.2).
 pub(crate) const MAX_TSIG_RECORD: usize =
-    (MAX_DOMAIN_LEN + 2) + (2 + 2 + 4 + 2) + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
+    MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
 /// Bytes a signed message must leave for its TSIG record.
 pub(crate) fn signature_len(signer: &TransferSigner) -> usize {

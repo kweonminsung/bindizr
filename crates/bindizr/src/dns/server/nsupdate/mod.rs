@@ -8,7 +8,10 @@ use std::net::SocketAddr;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::{
     dns::{
-        message::{ExtendedErrorCode, Keepalive, OptRcode, ParsedQuery, Rcode},
+        message::{
+            ExtendedErrorCode, Keepalive, OptRcode, ParsedQuery, Rcode,
+            UDP_PAYLOAD_SIZE_WITHOUT_EDNS,
+        },
         nsupdate::{DEFAULT_FUDGE, build_response},
         tsig::{RequestSignature, TsigError, request_signature},
     },
@@ -81,7 +84,9 @@ async fn handle_nsupdate_request(
     let cx = dns_cx.daemon();
     let max_len = if transport == TransferTransport::Udp {
         ParsedQuery::parse(query_data, Keepalive::None)
-            .map_or(512, |query| query.udp_payload_limit())
+            .map_or(usize::from(UDP_PAYLOAD_SIZE_WITHOUT_EDNS), |query| {
+                query.udp_payload_limit()
+            })
     } else {
         bindizr_core::dns::DNS_TCP_MAX_SIZE
     };

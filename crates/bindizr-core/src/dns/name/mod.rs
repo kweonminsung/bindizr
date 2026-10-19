@@ -11,9 +11,13 @@ pub use zone_name::ZoneName;
 
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
 pub(crate) const MAX_DNS_LABEL_LEN: usize = 63;
+
+/// Maximum encoded name length, including the terminating root label (RFC 1035).
+pub(crate) const MAX_WIRE_NAME_LEN: usize = 255;
+
 /// Maximum unescaped presentation length, excluding the root dot.
 /// The wire form adds a label-length octet and the terminating zero.
-pub(crate) const MAX_DOMAIN_LEN: usize = 253;
+pub(crate) const MAX_DOMAIN_LEN: usize = MAX_WIRE_NAME_LEN - 2;
 
 /// Check whether text contains whitespace or control characters.
 pub fn has_whitespace_or_control(value: &str) -> bool {
@@ -143,7 +147,7 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a [u8]>) -> Result<Vec<u8>,
         wire.extend_from_slice(label);
     }
     wire.push(0);
-    if wire.len() > MAX_DOMAIN_LEN + 2 {
+    if wire.len() > MAX_WIRE_NAME_LEN {
         return Err(ParseNameError::TooLong);
     }
     Ok(wire)

@@ -1285,6 +1285,156 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
     (address, server)
 }
 
+/// Serve a catalog with repeated version/PTR records, then its single member's AXFR.
+fn serve_repeated_catalog(member: String, split: bool) -> (String, std::thread::JoinHandle<()>) {
+    use domain::{
+        base::{Message, MessageBuilder, Serial, Ttl},
+        rdata::{A, Ns, Ptr, Soa, Txt},
+    };
+
+    use crate::common::dns::{parse_name, read_frame, write_frame};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let server = std::thread::spawn(move || {
+        for catalog in [true, false] {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let query = read_frame(&mut stream).unwrap().unwrap();
+            let message = Message::from_octets(query.as_slice()).unwrap();
+            let zone = if catalog { "catalog.example" } else { &member };
+            let owner = parse_name(zone).unwrap();
+            let primary = parse_name(&format!("ns1.{zone}.")).unwrap();
+            let soa = Soa::new(
+                primary.clone(),
+                parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+                Serial::from(42),
+                Ttl::from_secs(7200),
+                Ttl::from_secs(3600),
+                Ttl::from_secs(604800),
+                Ttl::from_secs(300),
+            );
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(message.header().id());
+            builder.header_mut().set_qr(true);
+            let mut question = builder.question();
+            question.push((&owner, domain::base::Rtype::AXFR)).unwrap();
+            let mut answer = question.answer();
+            answer
+                .push((&owner, Ttl::from_secs(300), soa.clone()))
+                .unwrap();
+            answer
+                .push((&owner, Ttl::from_secs(300), Ns::new(primary)))
+                .unwrap();
+            if catalog {
+                answer
+                    .push((
+                        &parse_name("version.catalog.example").unwrap(),
+                        Ttl::from_secs(0),
+                        Txt::from_octets(vec![1, b'2']).unwrap(),
+                    ))
+                    .unwrap();
+                answer
+                    .push((
+                        &parse_name("member.zones.catalog.example").unwrap(),
+                        Ttl::from_secs(0),
+                        Ptr::new(parse_name(&member).unwrap()),
+                    ))
+                    .unwrap();
+                if split {
+                    write_frame(&mut stream, &answer.finish()).unwrap();
+                    let mut builder = MessageBuilder::new_vec();
+                    builder.header_mut().set_id(message.header().id());
+                    builder.header_mut().set_qr(true);
+                    answer = builder.answer();
+                }
+                answer
+                    .push((
+                        &parse_name("VERSION.CATALOG.example").unwrap(),
+                        Ttl::from_secs(120),
+                        Txt::from_octets(vec![1, b'2']).unwrap(),
+                    ))
+                    .unwrap();
+                answer
+                    .push((
+                        &parse_name("MEMBER.ZONES.CATALOG.example").unwrap(),
+                        Ttl::from_secs(120),
+                        Ptr::new(parse_name(&member.to_ascii_uppercase()).unwrap()),
+                    ))
+                    .unwrap();
+            } else {
+                answer
+                    .push((
+                        &parse_name(&format!("www.{member}")).unwrap(),
+                        Ttl::from_secs(300),
+                        A::new("192.0.2.50".parse().unwrap()),
+                    ))
+                    .unwrap();
+            }
+            answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
+            write_frame(&mut stream, &answer.finish()).unwrap();
+        }
+    });
+    (address, server)
+}
+
+/// HTTP and CLI ignore repeated catalog records within and across AXFR messages.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
+    let app = TestApp::start_local().await;
+    for cli in [false, true] {
+        for split in [false, true] {
+            let member = app.zone_name(&format!("member-{cli}-{split}.example"));
+            app.create_zone_cli(&member, "3600").await;
+            let (address, server) = serve_repeated_catalog(member.clone(), split);
+            let body = if cli {
+                let output = app
+                    .run_cli_success(
+                        &[
+                            "zone",
+                            "import",
+                            "--from-server",
+                            &address,
+                            "--from-catalog",
+                            "catalog.example",
+                            "--output",
+                            "json",
+                        ],
+                        None,
+                    )
+                    .await;
+                serde_json::from_str::<Value>(&output).unwrap()
+            } else {
+                let (status, body) = app
+                    .send_request(
+                        Method::POST,
+                        "/import",
+                        Some(json!({"from_server": address, "from_catalog": "catalog.example"})),
+                    )
+                    .await;
+                assert_eq!(status, StatusCode::OK, "{body}");
+                body
+            };
+            server.join().unwrap();
+            assert_eq!(body["summary"]["ok"], 1, "{body}");
+            assert_eq!(body["summary"]["zones"], 1, "{body}");
+            assert_eq!(body["zones"][0]["import"]["applied"], true, "{body}");
+            let (status, records) = app
+                .send_request(
+                    Method::GET,
+                    &format!("/records?zone_name={member}&type=A"),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(records["items"][0]["value"], "192.0.2.50", "{records}");
+        }
+    }
+}
+
 /// Accept AXFR case/flag variations over HTTP/CLI; reject trailing records atomically.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

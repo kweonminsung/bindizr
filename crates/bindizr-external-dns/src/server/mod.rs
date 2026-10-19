@@ -1,5 +1,7 @@
 //! The webhook listener (external-dns side) and the health/metrics listener.
 
+mod media_type;
+
 use std::{sync::Arc, time::Instant};
 
 use axum::{
@@ -107,16 +109,6 @@ fn build_json_response<T: serde::Serialize>(value: &T) -> Response {
     }
 }
 
-/// Check whether the client accepts the supported webhook media type.
-fn is_accept_supported(headers: &HeaderMap) -> bool {
-    match headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
-        // external-dns always sends the exact media type; tolerate wildcard
-        // and absent Accept for manual diagnostics.
-        Some(accept) => accept.contains(MEDIA_TYPE) || accept.contains("*/*"),
-        None => true,
-    }
-}
-
 /// Classify a response status for request metrics.
 fn result_label(response: &Response) -> &'static str {
     match response.status() {
@@ -172,7 +164,7 @@ async fn track_webhook_metrics(
 
 /// `GET /` — negotiation: return the DomainFilter of manageable names.
 async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !is_accept_supported(&headers) {
+    if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
             format!("supported media type: {}", MEDIA_TYPE),
@@ -194,7 +186,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
 
 /// `GET /records` — all managed records as grouped endpoints.
 async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !is_accept_supported(&headers) {
+    if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
             format!("supported media type: {}", MEDIA_TYPE),

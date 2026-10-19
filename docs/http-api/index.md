@@ -25,6 +25,10 @@ export BINDIZR_TOKEN='<your-token>'
 curl -H "Authorization: Bearer $BINDIZR_TOKEN" http://127.0.0.1:3000/zones
 ```
 
+The `Bearer` scheme is case-insensitive and accepts one or more spaces before
+the case-sensitive token. Every `401` response includes `WWW-Authenticate: Bearer`
+and the usual JSON error body (RFC 9110, Sections 11.1, 11.4 and 15.5.2).
+
 Each token belongs to a [role](../cli/access-control.md). The built-in `admin`
 role has full access; create narrower roles for applications. A token with
 `access:manage` can create roles and further tokens through the API.

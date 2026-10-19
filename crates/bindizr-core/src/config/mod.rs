@@ -406,7 +406,7 @@ fn default_dns_listen_port() -> u16 {
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
     /// NOTIFY coalescing window in milliseconds; queued sends follow the write response.
-    /// `0` sends every change before responding.
+    /// Capped at SOA REFRESH from enqueue time; `0` sends every change before responding.
     #[serde(default)]
     pub batch_ms: u64,
     #[serde(default = "default_notify_retries")]

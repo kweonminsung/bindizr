@@ -20,15 +20,15 @@ use domain::{
 };
 use thiserror::Error;
 
-use super::EncodeMessageError;
+use super::{EncodeMessageError, RECORD_FIELDS_LEN};
 use crate::dns::{LibraryError, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
-pub(crate) const UDP_PAYLOAD_SIZE_WITHOUT_EDNS: u16 = 512;
+pub const UDP_PAYLOAD_SIZE_WITHOUT_EDNS: u16 = 512;
 
 /// The wire size of the OPT record a response carries, options aside.
-pub(crate) const OPT_RECORD_LEN: usize = 11;
+pub(crate) const OPT_RECORD_LEN: usize = 1 + RECORD_FIELDS_LEN;
 
 /// The wire size of the edns-tcp-keepalive option with its timeout.
 pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;

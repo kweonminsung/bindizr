@@ -57,6 +57,7 @@ pub(crate) struct TestApp {
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct TestAppOptions {
+    pub(crate) notify_batch_ms: u64,
     pub(crate) authentication_required: bool,
     pub(crate) external_dns_enabled: bool,
     /// `false` accepts unsigned nsupdate requests.
@@ -75,6 +76,7 @@ impl Default for TestAppOptions {
     /// and the daemon's own answer for everything else.
     fn default() -> Self {
         Self {
+            notify_batch_ms: 0,
             authentication_required: false,
             external_dns_enabled: false,
             nsupdate_tsig_required: true,

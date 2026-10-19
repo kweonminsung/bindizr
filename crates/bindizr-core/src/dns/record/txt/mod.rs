@@ -1,4 +1,7 @@
-use super::{ParseRecordValueError, value::MAX_RECORD_RDATA};
+use super::{
+    ParseRecordValueError,
+    value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA},
+};
 
 /// The content of a TXT value: a single string or multiple character-strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,7 +55,7 @@ impl TxtRecordValue {
         let mut has_segments = false;
         for bytes in segments {
             has_segments = true;
-            if bytes.len() > 255 {
+            if bytes.len() > MAX_CHARACTER_STRING_LEN {
                 return Err(ParseRecordValueError::CharStringTooLong {
                     field: "TXT character-string",
                 });
@@ -75,7 +78,7 @@ impl TxtRecordValue {
 
         for (idx, ch) in value.char_indices() {
             let char_len = ch.len_utf8();
-            if chunk_len + char_len > 255 {
+            if chunk_len + char_len > MAX_CHARACTER_STRING_LEN {
                 rdata.push(chunk_len as u8);
                 rdata.extend_from_slice(&value.as_bytes()[chunk_start..idx]);
                 chunk_start = idx;
@@ -171,7 +174,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                         let code = u16::from(d - b'0') * 100
                             + u16::from(d2 - b'0') * 10
                             + u16::from(d3 - b'0');
-                        if code > 255 {
+                        if code > u16::from(u8::MAX) {
                             return Err(ParseRecordValueError::InvalidEscape {
                                 field: "TXT value",
                             });
@@ -186,7 +189,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
             }
         }
 
-        if segment.len() > 255 {
+        if segment.len() > MAX_CHARACTER_STRING_LEN {
             return Err(ParseRecordValueError::CharStringTooLong {
                 field: "TXT character-string",
             });

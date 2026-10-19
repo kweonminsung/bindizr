@@ -251,7 +251,60 @@ async fn tokens_self_requires_token_when_authentication_is_disabled() {
     .await;
 
     for path in ["/tokens/self", "/tokens/self/grants"] {
-        let (status, _) = app.send_request(Method::GET, path, None).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
+        let response = reqwest::Client::new()
+            .get(format!("{}{path}", app.base_url()))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(response.headers()["www-authenticate"], "Bearer", "{path}");
+    }
+}
+
+/// Authenticate equivalent schemes and SP separators without changing token bytes.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn bearer_authentication_obeys_http_grammar_and_challenges_failures() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, token) = app.create_api_token().await;
+    let client = reqwest::Client::new();
+    for prefix in ["Bearer ", "bearer ", "BEARER ", "bEaReR   "] {
+        let response = client
+            .get(format!("{}/tokens/self", app.base_url()))
+            .header("authorization", format!("{prefix}{token}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{prefix:?}");
+        assert!(!response.headers().contains_key("www-authenticate"));
+    }
+    for authorization in [
+        None,
+        Some("Basic ignored".to_string()),
+        Some("Bearer".to_string()),
+        Some("Bearer   ".to_string()),
+        Some(format!("Bearer\t{token}")),
+        Some(format!("Bearer invalid-{token}")),
+        Some(format!("Bearer {token} extra")),
+    ] {
+        let mut request = client.get(format!("{}/tokens/self", app.base_url()));
+        if let Some(value) = authorization {
+            request = request.header("authorization", value);
+        }
+        let response = request.send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()["www-authenticate"], "Bearer");
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert!(
+            matches!(
+                body["code"].as_str(),
+                Some("UNAUTHORIZED" | "INVALID_TOKEN")
+            ),
+            "{body}"
+        );
     }
 }

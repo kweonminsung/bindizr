@@ -17,6 +17,15 @@ a window in milliseconds
     window collapse into one NOTIFY, sent from a queue. Worth it when many
     records change at once.
 
+The batching delay is capped at the zone's SOA REFRESH (RFC 1996, Section 4.3),
+measured from enqueue time. The generated catalog uses a 3600-second REFRESH.
+Later writes can shorten a pending window but cannot extend it; jobs delayed
+by an earlier send do not start a new window. Shutdown flushes queued changes.
+
+A secondary's validated `NOTIMP` response completes its NOTIFY transaction
+without retries (RFC 1996, Section 3.12). Bindizr logs the unsupported capability;
+timeouts and other errors retain the configured retries.
+
 ## Sizing the transfer cache
 
 `dns.transfer.cache_max_records` limits the record count. Approximate memory
