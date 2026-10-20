@@ -8,7 +8,9 @@ use domain::{
         Message, Rtype, ToName,
         iana::{Class, OptRcode, Rcode, TsigRcode},
         message_builder::AdditionalBuilder,
+        name::ParsedName,
     },
+    dep::octseq::parse::Parser,
     rdata::tsig::{Time48, Tsig},
     tsig::{
         Algorithm, ClientTransaction, Key, KeyName, KeyStore, ServerError, ServerSequence,
@@ -310,8 +312,14 @@ pub fn verify_tsig(
 ) -> Result<ResponseSigner, TsigError> {
     let original =
         Message::from_octets(query_data).map_err(|e| TsigError::Malformed(Box::new(e)))?;
+    // The digest takes the canonical algorithm name (RFC 8945, Section 4.3.3), so
+    // any case is valid on the wire (RFC 1035, Section 2.3.3); `domain` matches bytes.
+    let mut octets = query_data.to_vec();
+    if let Some(range) = tsig_algorithm_name_range(&original) {
+        octets[range].make_ascii_lowercase();
+    }
     let mut message =
-        Message::from_octets(query_data.to_vec()).map_err(|e| TsigError::Malformed(Box::new(e)))?;
+        Message::from_octets(octets).map_err(|e| TsigError::Malformed(Box::new(e)))?;
 
     let store = RequestKeyStore(key);
     let now = Time48::now();
@@ -415,11 +423,60 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
 /// Accept MAC lengths from max(10, half the hash length) to the full length
 /// (RFC 8945, Section 5.2.2.1); defer unknown algorithms to the BADKEY check.
 pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) -> bool {
-    let Some(algorithm) = Algorithm::from_name(algorithm) else {
+    let Some(algorithm) = algorithm_from_name(algorithm) else {
         return true;
     };
     let native = algorithm.native_len();
     mac_len <= native && mac_len >= 10.max(native / 2)
+}
+
+/// Match a supported algorithm name ignoring ASCII case (RFC 1035, Section
+/// 2.3.3), where `domain::tsig::Algorithm::from_name` compares bytes.
+fn algorithm_from_name<N: ToName>(name: &N) -> Option<Algorithm> {
+    let mut labels = name.iter_labels();
+    let first = labels.next()?;
+    if !labels.next()?.is_root() || labels.next().is_some() {
+        return None;
+    }
+    [
+        ("hmac-sha1", Algorithm::Sha1),
+        ("hmac-sha256", Algorithm::Sha256),
+        ("hmac-sha384", Algorithm::Sha384),
+        ("hmac-sha512", Algorithm::Sha512),
+    ]
+    .into_iter()
+    .find(|(text, _)| first.as_slice().eq_ignore_ascii_case(text.as_bytes()))
+    .map(|(_, algorithm)| algorithm)
+}
+
+/// Locate the TSIG RDATA's algorithm name, or `None` when the message has no
+/// TSIG record or the name is compressed (its octets may then be signed data).
+fn tsig_algorithm_name_range(message: &Message<&[u8]>) -> Option<std::ops::Range<usize>> {
+    let octets = message.as_slice();
+    let mut section = message.additional().ok()?;
+    loop {
+        let start = section.pos();
+        let record = section.next()?.ok()?;
+        if record.rtype() != Rtype::TSIG {
+            continue;
+        }
+        let mut parser = Parser::from_ref(octets);
+        parser.seek(start).ok()?;
+        ParsedName::skip(&mut parser).ok()?;
+        parser.advance(RECORD_FIELDS_LEN).ok()?;
+        let name_start = parser.pos();
+        let mut end = name_start;
+        loop {
+            let len = usize::from(*octets.get(end)?);
+            if len == 0 {
+                return Some(name_start..end);
+            }
+            if len >= 0xC0 {
+                return None;
+            }
+            end += 1 + len;
+        }
+    }
 }
 
 /// Map a TSIG validation failure to the complete NOTAUTH response to send.

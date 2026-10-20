@@ -222,7 +222,8 @@ fn is_response_separates_a_reply_from_a_query() {
     assert!(is_response(&reply));
 }
 
-/// Enforce QUERY's question limit from QDCOUNT, even when the body is incomplete.
+/// Enforce QUERY's question limit from QDCOUNT, even when the body is incomplete;
+/// a header whose question cannot be read is answered FORMERR for every opcode.
 #[test]
 fn multi_question_headers_receive_formerr_only_for_query() {
     for (opcode, count, expected) in [
@@ -254,17 +255,35 @@ fn multi_question_headers_receive_formerr_only_for_query() {
             let mut unreadable = wire[..12].to_vec();
             unreadable.extend_from_slice(body);
             let error = ParsedQuery::parse(&unreadable, Keepalive::None).unwrap_err();
-            let response = error.to_response();
-            assert_eq!(response.is_some(), expected.is_some());
-            if let Some(response) = response {
-                let response = Message::from_octets(response).unwrap();
-                assert_eq!(response.header().id(), 1234);
-                assert_eq!(response.header().rcode(), Rcode::FORMERR);
-                assert_eq!(response.header_counts().qdcount(), 0);
-                assert_eq!(response.header_counts().ancount(), 0);
-            }
+            let response = Message::from_octets(error.to_response().unwrap()).unwrap();
+            assert_eq!(response.header().id(), 1234);
+            assert_eq!(response.header().opcode(), opcode);
+            assert_eq!(response.header().rcode(), Rcode::FORMERR);
+            assert_eq!(response.header_counts().qdcount(), 0);
+            assert_eq!(response.header_counts().ancount(), 0);
         }
     }
+}
+
+/// A QUERY without a question is answered FORMERR, not dropped (RFC 9619,
+/// Section 4 leaves QDCOUNT = 0 to the server).
+#[test]
+fn question_less_queries_receive_formerr() {
+    let mut wire = build_question(Rtype::SOA, &[])[..12].to_vec();
+    wire[4..6].copy_from_slice(&0u16.to_be_bytes());
+    let error = ParsedQuery::parse(&wire, Keepalive::None).unwrap_err();
+    let response = Message::from_octets(error.to_response().unwrap()).unwrap();
+    assert_eq!(response.header().id(), 1234);
+    assert!(response.header().qr());
+    assert_eq!(response.header().rcode(), Rcode::FORMERR);
+    assert_eq!(response.header_counts().qdcount(), 0);
+    // A header shorter than twelve octets names no query to answer.
+    assert!(
+        ParsedQuery::parse(&wire[..11], Keepalive::None)
+            .unwrap_err()
+            .to_response()
+            .is_none()
+    );
 }
 
 /// Build a signed AXFR query for `example.com.` and a `domain` client

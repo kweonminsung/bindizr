@@ -1380,6 +1380,69 @@ async fn nsupdate_adds_at_the_zone_apex() {
     );
 }
 
+/// Verify that an unsigned update is NOTAUTH for an unserved zone and REFUSED
+/// for a served one: authority before the signature policy (RFC 2136, Section 3.1.1).
+#[tokio::test]
+#[serial]
+async fn nsupdate_checks_authority_before_refusing_unsigned_requests() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        nsupdate_tsig_required: true,
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let serial = app.read_zone_serial(zone_name).await;
+    let unserved = app.zone_name("nsupdate-unsigned-notauth.example");
+    let update = |zone: &str| {
+        [UpdateRecord::AddA {
+            name: format!("host.{zone}."),
+            ttl: 300,
+            addr: "192.0.2.71".to_string(),
+        }]
+    };
+    assert_eq!(
+        send_update_udp(app.dns_port(), &unserved, &[], &update(&unserved), None).unwrap(),
+        Rcode::NOTAUTH
+    );
+    assert_eq!(
+        send_update_udp(app.dns_port(), zone_name, &[], &update(zone_name), None).unwrap(),
+        Rcode::REFUSED
+    );
+    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+}
+
+/// Verify that prerequisites are evaluated in wire order (RFC 2136, Section
+/// 3.2.5): the first failure answers before a later one is decoded.
+#[tokio::test]
+#[serial]
+async fn nsupdate_evaluates_prerequisites_in_wire_order() {
+    let app = unsigned_nsupdate_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let absent = PrerequisiteRecord::NameInUse {
+        name: format!("absent.{zone_name}."),
+    };
+    let outside = PrerequisiteRecord::RecordSetInUse {
+        name: "outside.invalid.".to_string(),
+        rtype: Rtype::A,
+    };
+    let update = [UpdateRecord::AddA {
+        name: format!("host.{zone_name}."),
+        ttl: 300,
+        addr: "192.0.2.72".to_string(),
+    }];
+    for (prerequisites, rcode) in [
+        (vec![absent.clone(), outside.clone()], Rcode::NXDOMAIN),
+        (vec![outside, absent], Rcode::NOTZONE),
+    ] {
+        assert_eq!(
+            send_update_udp(app.dns_port(), zone_name, &prerequisites, &update, None).unwrap(),
+            rcode
+        );
+    }
+}
+
 /// Verify NOTAUTH for unserved zones and NOTZONE for out-of-zone owners
 /// (RFC 2136, Section 3.1.2).
 #[tokio::test]

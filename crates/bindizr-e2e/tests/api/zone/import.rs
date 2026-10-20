@@ -420,6 +420,8 @@ async fn zone_import_preserves_supported_initial_serials() {
 
     for serial in [0u32, 1, 2137483647, 2147483648, u32::MAX] {
         let zone_name = app.zone_name(&format!("import-serial-{serial}.example"));
+        // The increment passes over zero (RFC 2136, Section 7.11).
+        let next = if serial == u32::MAX { 1 } else { serial + 1 };
         let content = format!(
             "@ IN SOA ns.old.example. hostmaster.{zone_name}. ({serial} 7200 1800 1209600 300)\n\
              @ IN NS ns.old.example.\n\
@@ -442,7 +444,7 @@ async fn zone_import_preserves_supported_initial_serials() {
                 assert_eq!(status, StatusCode::NOT_FOUND);
             } else {
                 assert_eq!(status, StatusCode::OK, "{body}");
-                assert_eq!(body["zone"]["serial"], serial.wrapping_add(1));
+                assert_eq!(body["zone"]["serial"], next);
             }
         }
 
@@ -456,10 +458,7 @@ async fn zone_import_preserves_supported_initial_serials() {
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["summary"]["added"], 0);
-        assert_eq!(
-            app.read_zone_serial(&zone_name).await,
-            i64::from(serial.wrapping_add(1))
-        );
+        assert_eq!(app.read_zone_serial(&zone_name).await, i64::from(next));
     }
 }
 

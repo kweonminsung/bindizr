@@ -518,6 +518,35 @@ fn from_toml_rejects_port_zero() {
     );
 }
 
+/// Verify that `from_toml` keeps 853 for TLS and 53 for cleartext (RFC 7858,
+/// Section 3.1), whether or not the TLS listener is on.
+#[test]
+fn from_toml_rejects_the_ports_rfc_7858_reserves() {
+    let err = parse_config(&TestConfigToml {
+        dns_listen_port: 853,
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns.listen_port must not be 853: it carries DNS over TLS"),
+        "{}",
+        err
+    );
+
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "[dns.tls]\nlisten_port = 53",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("dns.tls.listen_port must not be 53: it carries cleartext DNS"),
+        "{}",
+        err
+    );
+}
+
 /// Verify that `from_toml` rejects a TLS certificate without its key, and
 /// the reverse, for the API and the DNS listener alike.
 #[test]
@@ -617,14 +646,14 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
 
     // The TLS listener shares the DNS address, so equal ports always collide.
     let err = parse_config(&TestConfigToml {
-        dns_listen_port: 853,
-        dns_extra: on,
+        dns_listen_port: 8853,
+        dns_extra: "[dns.tls]\nlisten_port = 8853\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"",
         ..Default::default()
     })
     .unwrap_err();
     assert!(
         err.to_string()
-            .contains("dns and dns.tls cannot share port 853"),
+            .contains("dns and dns.tls cannot share port 8853"),
         "{}",
         err
     );

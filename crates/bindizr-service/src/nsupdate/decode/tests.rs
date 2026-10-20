@@ -41,9 +41,7 @@ fn nsupdate_decode_refuses_managed_dnssec_changes_after_validating_wire_data() {
         } else {
             &[][..]
         };
-        assert!(
-            decode_prerequisites(&[record(class, Rtype::DNSKEY, 0, data)], &zone, data).is_ok()
-        );
+        assert!(decode_prerequisite(&record(class, Rtype::DNSKEY, 0, data), &zone, data).is_ok());
     }
     assert!(matches!(
         &decode_updates(&[record(Class::ANY, Rtype::ANY, 0, &[])], &zone, &[]).unwrap()[0],
@@ -65,7 +63,7 @@ fn nsupdate_decode_returns_formerr_for_malformed_sections() {
         record(Class::IN, Rtype::ANY, 0, &[]),
         record(Class::CH, Rtype::ANY, 0, &[]),
     ] {
-        let err = decode_prerequisites(&[prerequisite], &zone, &[]).unwrap_err();
+        let err = decode_prerequisite(&prerequisite, &zone, &[]).unwrap_err();
         assert_eq!(err.rcode(), Rcode::FORMERR, "{err}");
     }
     for update in [

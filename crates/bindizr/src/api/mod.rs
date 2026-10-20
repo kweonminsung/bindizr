@@ -57,7 +57,7 @@ where
 }
 
 /// The token a request authenticated with, attached by the auth middleware;
-/// absent (so a 401) when authentication is disabled.
+/// absent when authentication is disabled, so a self-reading route answers 404.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
 
@@ -73,7 +73,11 @@ where
             .extensions
             .get::<AuthenticatedToken>()
             .cloned()
-            .ok_or_else(|| ApiError(ServiceError::unauthorized("request carries no API token")))
+            .ok_or_else(|| {
+                ApiError(ServiceError::TokenNotFound(
+                    "the request presents no API token: authentication is disabled".to_string(),
+                ))
+            })
     }
 }
 

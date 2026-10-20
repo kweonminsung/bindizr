@@ -549,18 +549,38 @@ key and its registered address both pass (RFC 9103, Section 7.5), though
 the plain listener takes either alone. Code that meets a requirement cites
 the section (`RFC 9103, Section 7.1`), so a reader can check the text.
 
-Two SHOULD recommendations have explicit exceptions. TSIG verification does
+These SHOULD recommendations have explicit exceptions. TSIG verification does
 not retain the latest Time Signed per key (RFC 8945, Section 5.2.3), because
 UDP and concurrent stream requests can arrive out of order; every request
-still passes MAC and Time Signed/Fudge checks. Delegation NS and DS TTLs are
-recommended to match (RFC 4035, Section 2.4), but independently edited or
-imported sets retain the operator's explicit per-type TTLs. Each RRset still
-has one TTL.
+still passes MAC and Time Signed/Fudge checks. A truncated MAC, the
+`hmac-sha1-96` Section 6 asks implementations to accept, is refused with
+BADTRUNC under the local policy Section 7 permits: every key carries a
+full-length MAC. Delegation NS and DS TTLs are recommended to match (RFC
+4035, Section 2.4), but independently edited or imported sets retain the
+operator's explicit per-type TTLs. Each RRset still has one TTL. Names are
+lowercased when they enter, rather than preserved as RFC 1035, Section 2.3.3
+and RFC 4343, Section 4 prefer, so that one name has one spelling in rows,
+grants and exports; comparison stays case-insensitive either way.
 
 A NOTIFY transaction ends on any matching response, whatever its RCODE, or on
 an ICMP port-unreachable error (RFC 1996, Sections 3.6 and 4.8); only silence
 is retransmitted, `dns.notify.retries` times at `dns.notify.timeout_secs`
-intervals, the operational parameters Section 3.6 leaves to the operator.
+intervals, the operational parameters Section 3.6 leaves to the operator. A
+retransmission repeats the same message on the same socket, so a late reply
+to an earlier copy still ends it. An unsigned or unverifiable reply to a
+signed NOTIFY is logged and ignored while the request waits (RFC 8945,
+Section 5.4). An all-zones round notifies zones concurrently, so one silent
+secondary cannot push later zones past their REFRESH (Section 4.3).
+
+Serials wrap past 4294967295 to 1, never 0 (RFC 2136, Section 7.11), on
+every automatic increment, the catalog serial included; a serial a request
+states is taken as given. A zone's SOA REFRESH, RETRY, EXPIRE and MINIMUM
+accept zero (RFC 1035, Section 3.3.13 sets no floor; MINIMUM 0 turns negative
+caching off), though `dns.zone_defaults` may not default a new zone to it.
+A CDS/CDNSKEY pair is published for a pre-published SEP key at once, before
+the DNSKEY propagation interval RFC 7583, Section 3.3.1 waits out: the old DS
+stays beside it (double-DS, RFC 6781, Section 4.1.2), so every validator keeps
+a chain, and promotion still waits for both the interval and the parent's DS.
 
 Generated DS/CDS use SHA-256, recommended by the IANA DS registry under
 RFC 9904. Storing a user-supplied DS is not digest generation; do not apply
@@ -574,7 +594,13 @@ plain TCP/UDP retain NOTIMP.
 
 QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
 (RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
-readable queries; an unreadable question receives a header-only response.
+readable queries; a message with no readable question, QDCOUNT 0 included,
+receives a header-only FORMERR rather than silence. A transfer error about a
+zone this server holds (REFUSED, SERVFAIL) keeps AA set, as RFC 5936,
+Section 2.2.1 recommends when in doubt; NOTAUTH, FORMERR and NOTIMP clear it.
+The TSIG algorithm name is matched case-insensitively (RFC 1035, Section
+2.3.3): the digest takes its canonical form (RFC 8945, Section 4.3.3), so
+`HMAC-SHA256.` on the wire names the same key.
 
 `dns.listen_addr` accepts a specific local IP or a wildcard (`0.0.0.0`, `::`).
 UDP replies use the query's local destination IP and the listener's bound port
@@ -603,8 +629,11 @@ An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority
 over the name and class. A class other than IN is NOTAUTH, even when its name
 matches a stored zone (RFC 2136, Section 3.1.1). After locating the authoritative
-zone, the service keeps RFC 2136, Section 3's order: the prerequisites are
-evaluated first (Section 3.2, once the read grant each needs is checked), then
+zone, the service keeps RFC 2136, Section 3's order: an unsigned request
+`dns.nsupdate.tsig_required` refuses is refused there, after NOTAUTH and before
+anything is read; then the prerequisites are decoded and evaluated one by one
+in wire order (Section 3.2.5, once the read grant each needs is checked), the
+value-dependent sets compared whole after the section (Section 3.2.3); then
 every update record's owner, wire shape and type are checked before the grants
 on it and before any operation is selected (Sections 3.3 and 3.4.1). Even a
 delete that will be ignored must pass that prescan. An unsupported EDNS version

@@ -18,9 +18,30 @@ pub struct DsRecordValue {
     digest: Vec<u8>,
 }
 
+/// The algorithm mnemonics a DS may spell instead of a number (RFC 4034,
+/// Appendix A.1 and the IANA DNS Security Algorithm Numbers registry).
+const ALGORITHM_MNEMONICS: [(&str, u8); 16] = [
+    ("RSAMD5", 1),
+    ("DH", 2),
+    ("DSA", 3),
+    ("RSASHA1", 5),
+    ("DSA-NSEC3-SHA1", 6),
+    ("RSASHA1-NSEC3-SHA1", 7),
+    ("RSASHA256", 8),
+    ("RSASHA512", 10),
+    ("ECC-GOST", 12),
+    ("ECDSAP256SHA256", 13),
+    ("ECDSAP384SHA384", 14),
+    ("ED25519", 15),
+    ("ED448", 16),
+    ("INDIRECT", 252),
+    ("PRIVATEDNS", 253),
+    ("PRIVATEOID", 254),
+];
+
 impl DsRecordValue {
-    /// The value is `<key tag> <algorithm> <digest type> <digest>`; the hex
-    /// digest may be split into whitespace-separated groups, as `dig` prints.
+    /// The value is `<key tag> <algorithm> <digest type> <digest>`: the algorithm
+    /// a number or mnemonic (RFC 4034, Section 5.3), the hex digest groupable as `dig` prints.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
         let (Some(key_tag), Some(algorithm), Some(digest_type)) =
@@ -30,9 +51,16 @@ impl DsRecordValue {
                 value: value.to_string(),
             });
         };
+        let algorithm = match ALGORITHM_MNEMONICS
+            .iter()
+            .find(|(mnemonic, _)| mnemonic.eq_ignore_ascii_case(algorithm))
+        {
+            Some((_, number)) => *number,
+            None => parse_u8_record_field("DS algorithm", algorithm)?,
+        };
         Ok(Self {
             key_tag: KeyTag::from(parse_u16_record_field("DS key tag", key_tag)?),
-            algorithm: parse_u8_record_field("DS algorithm", algorithm)?,
+            algorithm,
             digest_type: parse_u8_record_field("DS digest type", digest_type)?,
             digest: parse_hex_record_field("DS digest", fields)?,
         })
@@ -100,6 +128,17 @@ mod tests {
     fn parse_joins_spaced_digest_and_canonicalizes_hex_case() {
         let parsed = DsRecordValue::parse("34217 13 2 4b9b 6b07 3edd").unwrap();
         assert_eq!(parsed.canonical(), "34217 13 2 4B9B6B073EDD");
+    }
+
+    /// Verify that `parse` reads an algorithm mnemonic as its number (RFC
+    /// 4034, Section 5.3) and renders the number.
+    #[test]
+    fn parse_accepts_algorithm_mnemonics() {
+        for (mnemonic, number) in [("ECDSAP256SHA256", 13), ("rsasha256", 8), ("Ed25519", 15)] {
+            let parsed = DsRecordValue::parse(&format!("34217 {mnemonic} 2 4B9B")).unwrap();
+            assert_eq!(parsed.canonical(), format!("34217 {number} 2 4B9B"));
+        }
+        assert!(DsRecordValue::parse("34217 SHA256 2 4B9B").is_err());
     }
 
     /// Verify that `validate` pins the digest length per type.

@@ -115,15 +115,18 @@ pub(crate) async fn exchange_over_udp(
     request: &[u8],
     what: &'static str,
 ) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
-    exchange_over_udp_checked(server_addr, timeout, request, what, |_| true).await
+    exchange_over_udp_checked(server_addr, timeout, request, what, 1, |_| true).await
 }
 
-/// Ignore untrusted datagrams under the original deadline, without resending.
+/// Send `request` and wait `timeout` for an acceptable reply, resending the same
+/// datagram from the same socket up to `attempts` times (RFC 1996, Section 3.6);
+/// untrusted datagrams are ignored, an ICMP error ends the exchange (Section 4.8).
 pub(crate) async fn exchange_over_udp_checked(
     server_addr: SocketAddr,
     timeout: Duration,
     request: &[u8],
     what: &'static str,
+    attempts: u32,
     is_response_acceptable: impl Fn(&[u8]) -> bool,
 ) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
     let bind_addr = if server_addr.is_ipv4() {
@@ -135,38 +138,52 @@ pub(crate) async fn exchange_over_udp_checked(
     let socket = UdpSocket::bind(bind_addr).await?;
     socket.connect(server_addr).await?;
 
-    let sent = tokio::time::timeout(timeout, socket.send(request))
-        .await
-        .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
-    if sent != request.len() {
-        return Err(ExchangeMessageError::IncompleteSend {
-            what,
-            server: server_addr,
-            sent,
-            len: request.len(),
-        });
-    }
-
     let mut response = [0u8; UDP_RESPONSE_BUF];
-    // A stray or malformed datagram does not end the request or renew its deadline.
-    let receive = async {
-        loop {
-            let received = socket.recv(&mut response).await?;
-            if matches_response_to_request(request, &response[..received])
-                && is_response_acceptable(&response[..received])
-            {
-                return Ok::<_, std::io::Error>(received);
+    let mut attempt = 1;
+    loop {
+        let sent = tokio::time::timeout(timeout, socket.send(request))
+            .await
+            .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
+        if sent != request.len() {
+            return Err(ExchangeMessageError::IncompleteSend {
+                what,
+                server: server_addr,
+                sent,
+                len: request.len(),
+            });
+        }
+
+        let receive = async {
+            loop {
+                let received = socket.recv(&mut response).await?;
+                if matches_response_to_request(request, &response[..received])
+                    && is_response_acceptable(&response[..received])
+                {
+                    return Ok::<_, std::io::Error>(received);
+                }
+            }
+        };
+        match tokio::time::timeout(timeout, receive).await {
+            Ok(received) => return Ok((received?, response)),
+            Err(_) if attempt < attempts => {
+                attempt += 1;
+                log::info!(
+                    "Retransmitting {} to {} ({}/{}) after {:?} of silence",
+                    what,
+                    server_addr,
+                    attempt,
+                    attempts,
+                    timeout
+                );
+            }
+            Err(_) => {
+                return Err(ExchangeMessageError::ResponseTimedOut {
+                    what,
+                    server: server_addr,
+                });
             }
         }
-    };
-    let received = tokio::time::timeout(timeout, receive).await.map_err(|_| {
-        ExchangeMessageError::ResponseTimedOut {
-            what,
-            server: server_addr,
-        }
-    })??;
-
-    Ok((received, response))
+    }
 }
 
 /// Resolve a comma-separated `host[:port]` list into per-entry results: the

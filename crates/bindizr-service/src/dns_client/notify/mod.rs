@@ -177,56 +177,13 @@ async fn send_notify(
     Ok(reports)
 }
 
-/// Send NOTIFY with bounded retries and optional TSIG authentication.
+/// Send one NOTIFY, retransmitting it `retries` times on silence (RFC 1996,
+/// Section 3.6) and authenticating the response before reading its RCODE.
 async fn send_notify_to_server(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
-    tsig_key: Option<&TsigSigningKey>,
-) -> Result<(), SendNotifyError> {
-    let attempts = retries.saturating_add(1);
-    let mut attempt = 1;
-
-    loop {
-        match send_notify_to_server_once(qname, server_addr, timeout, tsig_key).await {
-            Ok(()) => return Ok(()),
-            Err(e) if attempt < attempts && is_retryable(&e) => {
-                attempt += 1;
-                log::info!(
-                    "Retrying NOTIFY to {} ({}/{}) after error: {}",
-                    server_addr,
-                    attempt,
-                    attempts,
-                    e
-                );
-            }
-            Err(e) => return Err(e),
-        }
-    }
-}
-
-/// Whether a failed attempt left the transaction open: RFC 1996, Sections 3.6
-/// and 4.8 end it on any matching response or ICMP port unreachable.
-fn is_retryable(error: &SendNotifyError) -> bool {
-    match error {
-        SendNotifyError::Exchange(ExchangeMessageError::Io(error)) => {
-            error.kind() != std::io::ErrorKind::ConnectionRefused
-        }
-        SendNotifyError::Exchange(ExchangeMessageError::Encode(_)) => false,
-        SendNotifyError::Exchange(_) => true,
-        SendNotifyError::Sign(_)
-        | SendNotifyError::Verify(_)
-        | SendNotifyError::Response(_)
-        | SendNotifyError::TaskFailed(_) => false,
-    }
-}
-
-/// Send one NOTIFY attempt, authenticating the response before its RCODE.
-async fn send_notify_to_server_once(
-    qname: &Name<Vec<u8>>,
-    server_addr: SocketAddr,
-    timeout: Duration,
     tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     let (query_id, mut builder) =
@@ -242,13 +199,23 @@ async fn send_notify_to_server_once(
         timeout,
         &notify_message,
         "NOTIFY",
-        |response| {
-            signer
-                .as_ref()
-                .is_none_or(|signer| match verify_response(signer, response) {
-                    Ok(()) => true,
-                    Err(error) => error.is_authenticated(),
-                })
+        retries.saturating_add(1),
+        |response| match signer.as_ref() {
+            None => true,
+            Some(signer) => match verify_response(signer, response) {
+                Ok(()) => true,
+                Err(error) if error.is_authenticated() => true,
+                // RFC 8945, Section 5.4: an unsigned or unverifiable answer is
+                // logged and ignored while the request waits for a signed one.
+                Err(error) => {
+                    log::warn!(
+                        "Ignoring an unauthenticated NOTIFY response from {}: {}",
+                        server_addr,
+                        error
+                    );
+                    false
+                }
+            },
         },
     )
     .await?;

@@ -316,7 +316,7 @@ impl DnsMessageBuilder {
     }
 
     /// Build the response within `max_len`: over it, the answers are dropped
-    /// and TC set (RFC 6891, Section 6.2.5 keeps the header, question, and OPT).
+    /// and TC set (RFC 6891, Section 7 keeps the header, question, and OPT).
     pub fn build(mut self, max_len: usize) -> Result<Vec<u8>, EncodeMessageError> {
         let signer = self.signer.clone();
         let response = self.build_message()?;

@@ -11,7 +11,7 @@ use bindizr_service::{
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
+use crate::api::middleware::body_parser::{DEFAULT_BODY_BYTES, MAX_UPLOAD_BODY_BYTES};
 
 /// The HTTP status each error code answers with. Every code is spelled out,
 /// so a new one has to choose its status here.
@@ -76,12 +76,19 @@ impl IntoResponse for ApiError {
     /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
         let status = http_status(self.0.code());
+        let code = self.0.code();
         let mut response = (status, Json(ErrorResponse::from(&self.0))).into_response();
-        // RFC 9110, Section 15.5.2: every 401 carries an applicable challenge.
+        // RFC 9110, Section 15.5.2 wants a challenge on every 401; RFC 6750, Section 3
+        // spells it with a realm and, for a refused token, `error="invalid_token"`.
         if status == StatusCode::UNAUTHORIZED {
+            let challenge = if code == ErrorCode::InvalidToken {
+                "Bearer realm=\"bindizr\", error=\"invalid_token\""
+            } else {
+                "Bearer realm=\"bindizr\""
+            };
             response
                 .headers_mut()
-                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static(challenge));
         }
         response
     }
@@ -104,11 +111,13 @@ impl From<JsonRejection> for ApiError {
             ),
             // A body over DefaultBodyLimit arrives as a BytesRejection; it is a
             // client size error, so keep axum's status instead of reporting 500.
+            // The rejection does not say which limit the route carries.
             JsonRejection::BytesRejection(_)
                 if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
             {
                 ServiceError::PayloadTooLarge(format!(
-                    "request body exceeds the {} MiB limit",
+                    "request body exceeds the {} MiB limit ({} MiB for zone imports, bulk record writes and ExternalDNS changes)",
+                    DEFAULT_BODY_BYTES / (1024 * 1024),
                     MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
                 ))
             }

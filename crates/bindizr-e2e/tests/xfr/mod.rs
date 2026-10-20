@@ -46,6 +46,35 @@ async fn transfer_app() -> TestApp {
     app
 }
 
+/// An upper-case TSIG algorithm name names the same key (RFC 1035, Section
+/// 2.3.3); the digest takes the canonical form, so the MAC verifies.
+#[tokio::test]
+#[serial]
+async fn tsig_algorithm_names_match_regardless_of_case() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "upper-case-algorithm-key", KeyRole::Admin).await;
+    let mut query = build_edns_query(zone_name, Rtype::SOA, &[]);
+    sign(&mut query, &key).unwrap();
+    let mut request = query.finish();
+    let label = b"hmac-sha256";
+    let index = request
+        .windows(label.len())
+        .rposition(|window| window == label)
+        .expect("the TSIG names its algorithm");
+    request[index..index + label.len()].make_ascii_uppercase();
+    for bytes in [
+        exchange_udp(app.dns_port(), &request).unwrap(),
+        exchange_tcp(app.dns_port(), &request).unwrap(),
+    ] {
+        let response = Message::from_octets(bytes).unwrap();
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        assert!(is_signed(&response).unwrap());
+        verify_response_mac(&request, &response, &key).unwrap();
+    }
+}
+
 /// SHA1 authenticates queries and updates (RFC 8945, Section 6).
 #[tokio::test]
 #[serial]
@@ -836,12 +865,13 @@ async fn multi_question_queries_receive_formerr() {
     }
 }
 
-/// Return FORMERR even when a multi-question header has no readable question.
+/// Return a header-only FORMERR for a QUERY whose question cannot be read:
+/// none (RFC 9619, Section 4), an unreadable one, or more than one.
 #[tokio::test]
 #[serial]
-async fn multi_question_headers_receive_formerr_without_readable_questions() {
+async fn queries_without_a_readable_question_receive_formerr() {
     let app = TestApp::start_local().await;
-    for count in [2u16, u16::MAX] {
+    for count in [0u16, 1, 2, u16::MAX] {
         let mut query = MessageBuilder::new_vec();
         query.header_mut().set_id(9619);
         query.header_mut().set_rd(true);

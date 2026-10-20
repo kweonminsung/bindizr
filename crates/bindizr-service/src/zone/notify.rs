@@ -1,5 +1,7 @@
 //! Manual NOTIFY orchestration; delivery goes through the registered sender.
 
+use std::sync::Arc;
+
 use bindizr_core::model::role_grant::Action;
 
 use crate::{
@@ -7,9 +9,9 @@ use crate::{
 };
 
 /// Send a manual NOTIFY for one zone or all zones, bumping the serial
-/// first when `serial` says to.
+/// first when `serial` says to; an all-zones round runs the zones concurrently.
 pub async fn notify(
-    cx: &Context,
+    cx: &Arc<Context>,
     caller: &Caller,
     target: NotifyTarget<'_>,
     serial: NotifySerial,

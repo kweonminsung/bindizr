@@ -17,10 +17,13 @@ use bindizr_core::{
     model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
-use decode::{decode_prerequisites, decode_updates};
+use decode::{decode_prerequisite, decode_updates};
 use operation::apply_record_operation_tx;
 use plan::UpdateOperation;
-use prerequisite::{Prerequisite, evaluate_prerequisites_tx};
+use prerequisite::{
+    Prerequisite, RecordSets, evaluate_prerequisite, evaluate_record_set_prerequisites,
+    served_record_sets_tx,
+};
 use thiserror::Error;
 
 use crate::{
@@ -70,6 +73,10 @@ pub enum NsupdateError {
     NotAuth(String),
     #[error("{0}")]
     NotZone(String),
+    /// A policy refusal (RFC 2136, Section 3.3): an unsigned request where a
+    /// signature is required.
+    #[error("{0}")]
+    Refused(String),
     #[error("{0}")]
     Service(#[from] ServiceError),
 }
@@ -94,6 +101,7 @@ impl NsupdateError {
             Self::NxDomain(_) => Rcode::NXDOMAIN,
             Self::NxRrset(_) => Rcode::NXRRSET,
             Self::NotAuth(_) => Rcode::NOTAUTH,
+            Self::Refused(_) => Rcode::REFUSED,
             Self::Service(err) if err.code().is_internal() => Rcode::SERVFAIL,
             Self::Service(_) => Rcode::REFUSED,
         }
@@ -145,13 +153,26 @@ pub async fn apply(
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        // RFC 2136, Section 3 order: prerequisites, permissions, prescan, changes.
-        let prerequisites = decode_prerequisites(update.prerequisites, &zone.name, update.message)?;
+        // RFC 2136, Section 3 order: authority (NOTAUTH, above) precedes the policy
+        // on unsigned requests, which is refused before anything is read.
+        if caller.is_unsigned_dns() && cx.config().dns.nsupdate.tsig_required {
+            return Err(NsupdateError::Refused(
+                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+            ));
+        }
 
-        // A prerequisite reads what it names, so its read grant precedes its
-        // evaluation (Section 3.3.1 leaves the permission test implementation dependent).
-        for prerequisite in &prerequisites {
-            // SOA and DNSSEC need a read grant without a type restriction.
+        // Prerequisites are decoded and evaluated in wire order (Section 3.2.5);
+        // value-dependent sets are compared whole after the section (Section 3.2.3).
+        let served = if update.prerequisites.is_empty() {
+            RecordSets::new()
+        } else {
+            served_record_sets_tx(&mut tx, &zone).await?
+        };
+        let mut wanted = RecordSets::new();
+        for record in update.prerequisites {
+            let prerequisite = decode_prerequisite(record, &zone.name, update.message)?;
+            // A prerequisite reads what it names, so its read grant precedes its
+            // evaluation (Section 3.3.1); SOA and DNSSEC need one without a type restriction.
             let record_type = prerequisite
                 .record_type()
                 .and_then(|rtype| RecordType::try_from(rtype).ok());
@@ -163,8 +184,9 @@ pub async fn apply(
                     record_type: record_type.as_ref(),
                 }],
             )?;
+            evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;
         }
-        evaluate_prerequisites_tx(&mut tx, &zone, &prerequisites).await?;
+        evaluate_record_set_prerequisites(&served, &wanted)?;
 
         // The prescan parses the owners the update grants are checked on.
         let updates = decode_updates(update.updates, &zone.name, update.message)?;

@@ -62,6 +62,15 @@ pub enum ConfigError {
     },
     #[error("{section}.listen_port must not be 0")]
     PortZero { section: &'static str },
+    /// RFC 7858, Section 3.1 keeps 853 for TLS and 53 for cleartext.
+    #[error(
+        "{section}.listen_port must not be {port}: it carries {reserved_for} (RFC 7858, Section 3.1)"
+    )]
+    PortReserved {
+        section: &'static str,
+        port: u16,
+        reserved_for: &'static str,
+    },
     #[error("{present} needs {missing}")]
     TlsHalfPair {
         present: &'static str,
@@ -981,6 +990,14 @@ impl DnsTlsConfig {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns.tls" });
         }
+        // RFC 7858, Section 3.1: DNS over TLS "MUST NOT be port 53".
+        if self.listen_port == 53 {
+            return Err(ConfigError::PortReserved {
+                section: "dns.tls",
+                port: 53,
+                reserved_for: "cleartext DNS",
+            });
+        }
         // Half a pair would leave the listener off on a port the operator
         // means to serve, which no later error would reveal.
         match (self.cert_file.as_deref(), self.key_file.as_deref()) {
@@ -1012,6 +1029,15 @@ impl DnsConfig {
     fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
+        }
+        // RFC 7858, Section 3.1: servers "MUST NOT use port 853 to transport
+        // cleartext DNS messages".
+        if self.listen_port == 853 {
+            return Err(ConfigError::PortReserved {
+                section: "dns",
+                port: 853,
+                reserved_for: "DNS over TLS",
+            });
         }
         // The idle timeout must fit the keepalive option's 16-bit deciseconds.
         if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.tcp_idle_timeout_secs) {

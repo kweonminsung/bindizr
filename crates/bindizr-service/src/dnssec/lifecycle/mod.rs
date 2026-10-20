@@ -29,7 +29,8 @@ use crate::{
 
 /// Check whether `target` preserves signing: layout changes require disabling it first.
 /// Algorithms use rollover; denial chains change atomically under one serial because
-/// all supported signing algorithms support NSEC3 (RFC 5155, Section 2).
+/// every supported algorithm signs NSEC3 zones (RFC 5702, Section 2; RFC 6605,
+/// Section 2; RFC 8080, Section 2).
 fn validate_policy_move(
     zone: &Zone,
     current: &DnssecPolicy,

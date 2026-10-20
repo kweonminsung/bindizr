@@ -15,18 +15,6 @@ use super::{
     NsupdateError, Prerequisite, UpdateOperation, operation::RecordOperation, parse_update_owner,
 };
 
-/// Decode every prerequisite against the request's zone before it is evaluated.
-pub(crate) fn decode_prerequisites(
-    records: &[UpdateRecord],
-    zone_name: &ZoneName,
-    message: &[u8],
-) -> Result<Vec<Prerequisite>, NsupdateError> {
-    records
-        .iter()
-        .map(|record| decode_prerequisite(record, zone_name, message))
-        .collect()
-}
-
 /// Prescan the entire update section before selecting any operations
 /// (RFC 2136, Section 3.4.1), retaining checked owners through execution.
 pub(crate) fn decode_updates(
@@ -63,7 +51,7 @@ fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
 }
 
 /// Check and decode a prerequisite (RFC 2136, Section 3.2).
-fn decode_prerequisite(
+pub(crate) fn decode_prerequisite(
     record: &UpdateRecord,
     zone_name: &ZoneName,
     query_data: &[u8],

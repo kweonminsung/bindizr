@@ -2,8 +2,11 @@
 
 pub mod queue;
 
+use std::sync::Arc;
+
 use bindizr_core::dns::name::ZoneName;
 use thiserror::Error;
+use tokio::task::JoinSet;
 
 use crate::{Context, dns_client::notify::NotifyZoneError, error::ServiceError};
 
@@ -43,17 +46,42 @@ impl From<NotifyError> for ServiceError {
     }
 }
 
+/// Zones an all-zones round notifies at once: concurrency keeps one silent
+/// secondary from delaying later zones (RFC 1996, Section 4.3), bounded for sockets.
+const CONCURRENT_ZONE_NOTIFIES: usize = 16;
+
 /// Send a DNS NOTIFY for one zone, or for all zones, aggregating per-zone
 /// failures. Enumerating the zones is this layer's call, not the client's.
-pub(crate) async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), NotifyError> {
+pub(crate) async fn send_notify(
+    cx: &Arc<Context>,
+    target: NotifyTarget<'_>,
+) -> Result<(), NotifyError> {
     let NotifyTarget::Zone(zone_name) = target else {
         let zones = crate::zone::list(cx).await?;
         let mut failures = Vec::new();
-        for zone in zones {
-            if let Err(e) = crate::dns_client::notify::send_zone_notify(cx, &zone.name).await {
-                log::warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
-                failures.push((zone.name.to_string(), e));
+        let mut tasks = JoinSet::new();
+        let mut collect = |result: Result<_, tokio::task::JoinError>| match result {
+            Ok((zone_name, Err(e))) => {
+                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+                failures.push((zone_name, e));
             }
+            Ok((_, Ok(()))) => {}
+            Err(e) => log::warn!("NOTIFY task failed: {}", e),
+        };
+        for zone in zones {
+            if tasks.len() >= CONCURRENT_ZONE_NOTIFIES
+                && let Some(result) = tasks.join_next().await
+            {
+                collect(result);
+            }
+            let cx = cx.clone();
+            tasks.spawn(async move {
+                let result = crate::dns_client::notify::send_zone_notify(&cx, &zone.name).await;
+                (zone.name.to_string(), result)
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            collect(result);
         }
         return if failures.is_empty() {
             Ok(())
@@ -71,7 +99,7 @@ pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
         return;
     }
 
-    if let Err(e) = send_notify(cx, NotifyTarget::Zone(zone_name)).await {
+    if let Err(e) = crate::dns_client::notify::send_zone_notify(cx, zone_name).await {
         log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
     }
 }

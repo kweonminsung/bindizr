@@ -28,8 +28,6 @@ pub(crate) enum UpdateError {
     #[error("{0}")]
     NotSupported(String),
     #[error("{0}")]
-    Refused(String),
-    #[error("{0}")]
     NotAuth(String),
     #[error("'{name}' is not a zone name: {source}")]
     ZoneName {
@@ -78,16 +76,12 @@ pub(crate) async fn apply_update(
             ));
         }
 
-        // Like unauthenticated API access, unsigned UPDATE admits every reachable client.
+        // Unsigned UPDATE admits every reachable client; the service refuses it
+        // under `tsig_required` after the authority check (RFC 2136, Section 3.1.1).
         let caller = match tsig_key {
             Some(tsig_key) => Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
                 .await
                 .map_err(NsupdateError::from)?,
-            None if dns_cx.daemon().config().dns.nsupdate.tsig_required => {
-                return Err(UpdateError::Refused(
-                    "unsigned NSUPDATE refused: no TSIG record present".to_string(),
-                ));
-            }
             None => Caller::unsigned_dns(),
         };
 

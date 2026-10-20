@@ -48,7 +48,10 @@ EOF
 ## Unsigned requests
 
 With `dns.nsupdate.tsig_required = true`, the default, an unsigned update is
-refused for all zones.
+refused for all zones. The refusal follows the zone's authority check
+(RFC 2136, Section 3.1.1): an unsigned update for a zone Bindizr does not
+serve is answered `NOTAUTH`, one for a served zone `REFUSED`, as BIND and
+Knot answer.
 
 !!! warning "Unsigned updates are for testing only"
 
@@ -112,7 +115,10 @@ The accepted serial is used for all changes in that request; automatic
 incrementing applies only when records change without an SOA advance
 (RFC 2136, Sections 3.4.2.2 and 3.6).
 
-SOA replacements accept serials 0–4294967295, with wraparound comparison and
+Prerequisites are decoded and evaluated one by one in wire order (RFC 2136,
+Section 3.2.5), so the first one that fails names the response code; the
+value-dependent ones (Section 3.2.3) are compared whole once the section has
+been read. SOA replacements accept serials 0–4294967295, with wraparound comparison and
 automatic incrementing under RFC 1982. The zone-write policy requires SOA TTL 60–604800 seconds, refresh/retry/expire from 1–2147483647 seconds, minimum TTL from
 1–4294967295 seconds, a supported MNAME and an email-convertible RNAME. A newer SOA
 outside that policy refuses the whole request with `REFUSED`.

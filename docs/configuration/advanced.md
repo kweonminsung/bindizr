@@ -26,7 +26,13 @@ Any matching response ends a NOTIFY transaction, whatever its code (RFC 1996,
 Sections 3.6 and 4.8): a validated `NOTIMP` completes it and is logged as an
 unsupported capability (Section 3.12); another error code is reported without
 retransmission. Only silence retains the configured retries, and an ICMP port
-unreachable error ends the transaction as well.
+unreachable error ends the transaction as well. A retransmission repeats the
+same message from the same socket, so an acknowledgement that arrives after
+`timeout_secs` still counts. A signed NOTIFY ignores an unsigned reply or one
+that fails verification, logging it at `warn` while it keeps waiting (RFC
+8945, Section 5.4); the key name, secret or algorithm the secondary holds is
+then what to check. `zone notify` for all zones and `POST /notify` send the
+zones concurrently, sixteen at a time.
 
 ## Sizing the transfer cache
 

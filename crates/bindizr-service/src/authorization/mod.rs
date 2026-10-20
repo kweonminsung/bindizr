@@ -162,6 +162,12 @@ impl Caller {
         }
     }
 
+    /// Whether this is the unsigned DNS caller: a request no TSIG key named,
+    /// which the policy on unsigned requests may still refuse.
+    pub fn is_unsigned_dns(&self) -> bool {
+        self.attribution.source == ChangeSource::Nsupdate && self.attribution.actor.is_none()
+    }
+
     /// Build an API caller from an authenticated token and its role's loaded grants.
     pub(crate) fn from_token(token: &ApiToken, grants: Vec<RoleGrant>) -> Self {
         Self {

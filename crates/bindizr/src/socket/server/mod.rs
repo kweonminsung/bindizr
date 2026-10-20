@@ -110,7 +110,7 @@ impl SocketContext {
     }
 
     /// The daemon's context.
-    pub(crate) fn daemon(&self) -> &Context {
+    pub(crate) fn daemon(&self) -> &Arc<Context> {
         &self.daemon
     }
 

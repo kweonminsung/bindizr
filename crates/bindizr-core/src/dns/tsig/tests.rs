@@ -294,6 +294,32 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     }
 }
 
+/// Accept an upper-case algorithm name: the digest takes the canonical form
+/// (RFC 8945, Section 4.3.3), so only the match has to fold (RFC 1035, Section 2.3.3).
+#[test]
+fn verify_tsig_accepts_mixed_case_algorithm_names() {
+    for algorithm in [
+        TsigAlgorithm::HmacSha1,
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        let label = algorithm.as_str().as_bytes();
+        let mut query = signed_update(algorithm, now_secs());
+        let index = query
+            .windows(label.len())
+            .rposition(|window| window == label)
+            .unwrap();
+        query[index..index + label.len()].make_ascii_uppercase();
+        assert!(matches!(
+            request_signature(&query),
+            RequestSignature::Key { .. }
+        ));
+        let key = test_key(algorithm).to_signing_key().unwrap();
+        verify_tsig(&query, Some(key)).unwrap();
+    }
+}
+
 /// Reject a bad MAC before considering the request's timestamp.
 #[test]
 fn verify_tsig_rejects_tampered_mac_with_badsig() {

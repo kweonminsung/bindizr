@@ -151,10 +151,7 @@ async fn handle_nsupdate_request(
             log::info!("NSUPDATE refused from {}: {}", client_addr, msg);
             (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
-        Err(
-            err @ (update::UpdateError::Refused(_)
-            | update::UpdateError::Tsig(TsigError::Malformed(_))),
-        ) => {
+        Err(err @ update::UpdateError::Tsig(TsigError::Malformed(_))) => {
             log::warn!("NSUPDATE refused from {}: {}", client_addr, err);
             (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }

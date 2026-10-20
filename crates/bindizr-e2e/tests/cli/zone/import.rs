@@ -30,7 +30,8 @@ async fn zone_import_accepts_the_full_serial_range() {
         Some(&content),
     )
     .await;
-    assert_eq!(app.read_zone_serial(&zone_name).await, 0);
+    // The import advances the file's maximum serial past zero (RFC 2136, Section 7.11).
+    assert_eq!(app.read_zone_serial(&zone_name).await, 1);
 }
 
 /// Verify that a rejected import applies nothing and exits non-zero.

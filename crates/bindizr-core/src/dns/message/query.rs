@@ -164,32 +164,32 @@ pub enum ParseQueryError {
 }
 
 impl ParseQueryError {
-    /// Build a header-only reply for an unreadable multi-question QUERY.
+    /// Build a header-only FORMERR for a message with no readable question:
+    /// none, an unparsable one, or more than one for QUERY (RFC 9619, Section 4).
     pub fn to_response(&self) -> Option<Vec<u8>> {
         let Self::NoQuestion {
             query_id,
             opcode,
             rd,
-            question_count,
+            ..
         } = self
         else {
             return None;
         };
-        let rcode = question_count_error(*opcode, *question_count)?;
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(*query_id);
         header.set_qr(true);
         header.set_opcode(*opcode);
         header.set_rd(*rd);
-        header.set_rcode(rcode.rcode());
+        header.set_rcode(Rcode::FORMERR);
         Some(builder.question().finish())
     }
 }
 
-/// Reject QUERY question counts above one (RFC 9619, Section 4).
+/// Reject QUERY question counts other than one (RFC 9619, Section 4).
 fn question_count_error(opcode: Opcode, count: u16) -> Option<OptRcode> {
-    (opcode == Opcode::QUERY && count > 1).then_some(OptRcode::FORMERR)
+    (opcode == Opcode::QUERY && count != 1).then_some(OptRcode::FORMERR)
 }
 
 /// Whether the message is itself a response (QR=1). Answering one lets a
@@ -397,7 +397,9 @@ impl ParsedQuery {
         header.set_opcode(self.opcode);
         header.set_rd(self.rd);
         header.set_rcode(rcode.rcode());
-        header.set_aa(truncated);
+        // RFC 5936, Section 2.2.1: AA stays set on an error about a held zone and
+        // "if in doubt"; NOTAUTH, FORMERR and NOTIMP deny authority, so it clears.
+        header.set_aa(truncated || matches!(rcode, OptRcode::REFUSED | OptRcode::SERVFAIL));
         header.set_tc(truncated);
 
         let mut question = builder.question();

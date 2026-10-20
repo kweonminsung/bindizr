@@ -148,10 +148,12 @@ Choose an import mode explicitly when replacing existing data:
 | `replace` | Make the zone's records match the input, removing records absent from it |
 
 `--from-server` imports over AXFR instead of reading a file. With `--create`,
-a missing zone is created from the source SOA, preserving its timers and
-using its serial as the starting value across the full unsigned 32-bit range.
-Applying record changes advances it once modulo 2^32. `[dns.import]` bounds the
-pull, 30 seconds and 200,000 records by default. See
+a missing zone is created from the source SOA, preserving its timers, zero
+values included, and using its serial as the starting value across the full
+unsigned 32-bit range. Applying record changes advances it once modulo 2^32,
+passing over zero (RFC 2136, Section 7.11). `[dns.import]` bounds the pull,
+30 seconds and 200,000 records by default; a bulk import reuses one TCP
+connection for every zone it pulls (RFC 9103, Section 6.3.1). See
 [Migrating an Existing Primary](../deployment/migrating.md).
 
 ```bash
@@ -161,6 +163,13 @@ bindizr zone import example.com --from-server 192.0.2.1:53 --mode replace --crea
 Validation errors and unsupported record types reject the whole import;
 no records or serial changes are applied. Zone-file TTLs must be decimal seconds. Convert BIND time units such
 as `1h` with `named-compilezone -o zone.txt example.com source.zone` first.
+A `$TTL` directive governs the records after it (RFC 2308, Section 4); in a
+file without one, every record that omits its TTL takes the zone's default
+TTL, where BIND would repeat the last explicit TTL (RFC 1035, Section 5.1).
+`$INCLUDE` is refused, since the file arrives over HTTP with nothing to
+include. A known type spelled as generic `\#` RDATA (RFC 3597, Section 5) is
+read as that type. A DS algorithm is written as a number or a mnemonic such
+as `ECDSAP256SHA256` through the API; a zone file must spell the number.
 
 Over HTTP, `POST /zones/{name}/import` accepts either `content` (zone-file text)
 or `from_server`, with the same `mode` and `dry_run` options.

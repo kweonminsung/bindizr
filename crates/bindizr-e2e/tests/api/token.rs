@@ -240,10 +240,42 @@ async fn tokens_self_describes_the_bearer() {
     }
 }
 
-/// Verify that tokens self needs a token even with authentication off.
+/// Verify that a browser on another origin may send its token: the preflight
+/// names `Authorization`, which the Fetch standard never lets `*` stand for.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tokens_self_requires_token_when_authentication_is_disabled() {
+async fn cors_preflight_allows_the_authorization_header() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let response = reqwest::Client::new()
+        .request(Method::OPTIONS, format!("{}/zones", app.base_url()))
+        .header("origin", "https://ui.example")
+        .header("access-control-request-method", "GET")
+        .header(
+            "access-control-request-headers",
+            "authorization, content-type",
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["access-control-allow-origin"], "*");
+    let allowed = response.headers()["access-control-allow-headers"]
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase();
+    assert!(allowed.contains("authorization"), "{allowed}");
+    assert!(allowed.contains("content-type"), "{allowed}");
+}
+
+/// Verify that tokens self has no token to describe with authentication off:
+/// 404 rather than a 401 no challenge could satisfy (RFC 9110, Section 15.5.2).
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tokens_self_has_no_token_when_authentication_is_disabled() {
     let app = TestApp::start_with_options(TestAppOptions {
         authentication_required: false,
         ..Default::default()
@@ -256,8 +288,13 @@ async fn tokens_self_requires_token_when_authentication_is_disabled() {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
-        assert_eq!(response.headers()["www-authenticate"], "Bearer", "{path}");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert!(
+            !response.headers().contains_key("www-authenticate"),
+            "{path}"
+        );
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["code"], "TOKEN_NOT_FOUND", "{body}");
     }
 }
 
@@ -297,14 +334,20 @@ async fn bearer_authentication_obeys_http_grammar_and_challenges_failures() {
         }
         let response = request.send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(response.headers()["www-authenticate"], "Bearer");
+        // RFC 6750, Section 3: the challenge names a realm, and the error
+        // code only once a token was presented and refused.
+        let challenge = response.headers()["www-authenticate"]
+            .to_str()
+            .unwrap()
+            .to_string();
         let body: serde_json::Value = response.json().await.unwrap();
-        assert!(
-            matches!(
-                body["code"].as_str(),
-                Some("UNAUTHORIZED" | "INVALID_TOKEN")
+        match body["code"].as_str() {
+            Some("UNAUTHORIZED") => assert_eq!(challenge, "Bearer realm=\"bindizr\"", "{body}"),
+            Some("INVALID_TOKEN") => assert_eq!(
+                challenge, "Bearer realm=\"bindizr\", error=\"invalid_token\"",
+                "{body}"
             ),
-            "{body}"
-        );
+            other => panic!("unexpected code {other:?}: {body}"),
+        }
     }
 }

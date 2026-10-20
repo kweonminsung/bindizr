@@ -7,6 +7,48 @@ mod history;
 mod import;
 mod status;
 
+/// Verify that SOA timers and the minimum TTL accept zero (RFC 1035, Section
+/// 3.3.13 sets no floor) and refuse a negative value.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_accepts_zero_soa_timers() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("zero-timers.example");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "refresh": 0,
+                "retry": 0,
+                "expire": 0,
+                "minimum_ttl": 0
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    for field in ["refresh", "retry", "expire", "minimum_ttl"] {
+        assert_eq!(body["zone"][field], 0, "{field}: {body}");
+    }
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": app.zone_name("negative-timer.example"),
+                "mname": "ns1.example.com",
+                "rname": "admin@example.com",
+                "retry": -1
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
 /// Verify zone creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

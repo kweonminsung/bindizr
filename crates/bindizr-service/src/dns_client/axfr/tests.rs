@@ -20,14 +20,18 @@ async fn fetch_transfer(
         let query = crate::dns_client::read_tcp_message(&mut stream)
             .await
             .unwrap();
+        // The query carries an OPT; the reply copies its question alone:
+        // the header, the name, then QTYPE and QCLASS.
+        let question_end = 12 + encode_name("example.com.").unwrap().len() + 4;
         for (index, rdata) in [opening, closing].iter().enumerate() {
             let mut response = if index == 0 {
-                query.clone()
+                query[..question_end].to_vec()
             } else {
                 let mut header = query[..12].to_vec();
                 header[4..6].copy_from_slice(&0u16.to_be_bytes());
                 header
             };
+            response[10..12].copy_from_slice(&0u16.to_be_bytes());
             response[2..4].copy_from_slice(&0x8400u16.to_be_bytes());
             response[6..8].copy_from_slice(&1u16.to_be_bytes());
             response.extend_from_slice(&encode_name("example.com.").unwrap());
@@ -44,9 +48,10 @@ async fn fetch_transfer(
         }
     });
     let qname = "example.com.".parse().unwrap();
+    let mut stream = TcpStream::connect(addr).await.unwrap();
     let result = tokio::time::timeout(
         Duration::from_secs(5),
-        fetch_zone_from_address(addr, &qname, 2),
+        fetch_zone_on_stream(&mut stream, &qname, 2),
     )
     .await
     .expect("AXFR did not complete");

@@ -133,7 +133,7 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
         });
         let result = tokio::time::timeout(
             Duration::from_millis(500),
-            send_notify_to_server_once(&zone(), address, Duration::from_secs(1), Some(&key)),
+            send_notify_to_server(&zone(), address, Duration::from_secs(1), 0, Some(&key)),
         )
         .await
         .unwrap();
@@ -288,7 +288,7 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
     });
     let result = tokio::time::timeout(
         Duration::from_secs(1),
-        send_notify_to_server_once(&zone(), address, Duration::from_millis(80), Some(&key)),
+        send_notify_to_server(&zone(), address, Duration::from_millis(80), 0, Some(&key)),
     )
     .await
     .unwrap();

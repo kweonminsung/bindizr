@@ -23,6 +23,44 @@ fn txt_preserves_non_utf8_octets() {
     );
 }
 
+/// Read a known type spelled generically as that type (RFC 3597, Section 5),
+/// and refuse octets that do not encode it.
+#[test]
+fn parse_reads_generic_rdata_of_known_types() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let parsed = ParsedZoneFile::parse(
+        "www IN A \\# 4 c0000201\nmail IN MX \\# 20 000a 046d61696c 076578616d706c65 03636f6d 00\n",
+        &zone,
+        Ttl::try_from(3600).unwrap(),
+    );
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert_eq!(
+        parsed.records[0].value,
+        ZoneFileValue::Rdata("192.0.2.1".into())
+    );
+    assert_eq!(parsed.records[0].record_type, RecordType::A);
+    assert_eq!(parsed.records[1].record_type, RecordType::Mx);
+    assert_eq!(
+        parsed.records[1].value,
+        ZoneFileValue::Rdata("mail.example.com.".into())
+    );
+    assert_eq!(parsed.records[1].priority, Some(10));
+
+    let parsed = ParsedZoneFile::parse(
+        "www IN A \\# 3 c00002\n",
+        &zone,
+        Ttl::try_from(3600).unwrap(),
+    );
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|e| e.contains("does not encode a A record")),
+        "{:?}",
+        parsed.errors
+    );
+}
+
 /// Verify that parse error names the line of the submitted text.
 #[test]
 fn parse_error_names_the_line_of_the_submitted_text() {

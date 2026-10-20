@@ -24,6 +24,7 @@ use super::validation::{normalize_record_owner_name, validate_record_constraints
 use crate::{
     Context,
     authorization::Caller,
+    dns_client::axfr::AxfrClient,
     dnssec,
     error::ServiceError,
     model::{
@@ -134,18 +135,9 @@ pub async fn import_zone(
                     "from_server must name one server as host[:port]",
                 ));
             }
-            // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
-            if !request.create {
-                let zone = zone::lookup_by_name(cx, zone_name).await?;
-                authorize_import(caller, mode, &zone)?;
-            }
-            let records =
-                crate::dns_client::axfr::fetch_zone(server, zone_name, &cx.config().dns.import)
-                    .await
-                    .map_err(|e| {
-                        ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
-                    })?;
-            ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name))
+            let mut client = AxfrClient::new(server);
+            return import_transfer(cx, caller, zone_name, &mut client, server, request, mode)
+                .await;
         }
         (Some(_), Some(_)) => {
             return Err(ServiceError::invalid_input(
@@ -159,8 +151,33 @@ pub async fn import_zone(
     reconcile(cx, caller, zone_name, source, request, mode).await
 }
 
-/// Import named zones or catalog members from one server in separate transactions.
-/// Report each outcome without stopping on a rejected or failed zone.
+/// Import one zone over `client`'s connection; `create` was authorized by the
+/// caller, the zone is checked here and again in the transaction.
+async fn import_transfer(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    client: &mut AxfrClient,
+    server: &str,
+    request: &ImportZoneRequest,
+    mode: ImportMode,
+) -> Result<ImportZoneResponse, ServiceError> {
+    // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
+    if !request.create {
+        let zone = zone::lookup_by_name(cx, zone_name).await?;
+        authorize_import(caller, mode, &zone)?;
+    }
+    let config = cx.config();
+    let records = client
+        .fetch_zone(zone_name, &config.dns.import)
+        .await
+        .map_err(|e| ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e)))?;
+    let source = ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name));
+    reconcile(cx, caller, zone_name, source, request, mode).await
+}
+
+/// Import named zones or catalog members from one server over one connection
+/// (RFC 9103, Section 6.3.1), each in its own transaction, reporting every outcome.
 pub async fn import_zones(
     cx: &Context,
     caller: &Caller,
@@ -180,6 +197,8 @@ pub async fn import_zones(
     if request.create {
         authorize_new_zone_import(caller, mode)?;
     }
+    let config = cx.config();
+    let mut client = AxfrClient::new(server);
     let zone_names = match (&request.zone_names, &request.from_catalog) {
         (Some(names), None) => normalize_zone_names(names)?,
         (None, Some(catalog)) => {
@@ -189,15 +208,15 @@ pub async fn import_zones(
                 caller.authorize_all_whole_zones(*action)?;
             }
             let catalog = zone::normalize_name(catalog)?;
-            let records =
-                crate::dns_client::axfr::fetch_zone(server, &catalog, &cx.config().dns.import)
-                    .await
-                    .map_err(|e| {
-                        ServiceError::invalid_input(format!(
-                            "AXFR of catalog {} from {} failed: {}",
-                            catalog, server, e
-                        ))
-                    })?;
+            let records = client
+                .fetch_zone(&catalog, &config.dns.import)
+                .await
+                .map_err(|e| {
+                    ServiceError::invalid_input(format!(
+                        "AXFR of catalog {} from {} failed: {}",
+                        catalog, server, e
+                    ))
+                })?;
             extract_member_zones(&records, &catalog).map_err(|e| {
                 ServiceError::invalid_input(format!(
                     "catalog {} from {} cannot be read: {}",
@@ -232,7 +251,17 @@ pub async fn import_zones(
     };
     let mut zones = Vec::with_capacity(zone_names.len());
     for zone_name in &zone_names {
-        let (result, import, error) = match import_zone(cx, caller, zone_name, &single).await {
+        let (result, import, error) = match import_transfer(
+            cx,
+            caller,
+            zone_name,
+            &mut client,
+            server,
+            &single,
+            mode,
+        )
+        .await
+        {
             Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
             Ok(import) => (ImportResult::Ok, Some(import), None),
             Err(e) => (ImportResult::Failed, None, Some(ErrorResponse::from(&e))),

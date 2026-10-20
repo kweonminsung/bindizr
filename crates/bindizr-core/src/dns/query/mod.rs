@@ -5,6 +5,7 @@ use domain::{
         Message, MessageBuilder, Name, ToName,
         iana::{Class, Opcode, OptRcode, Rtype},
         message_builder::AdditionalBuilder,
+        opt::keepalive::TcpKeepalive,
         rdata::ComposeRecordData,
     },
     rdata::{Ds, Soa},
@@ -103,6 +104,20 @@ pub fn build_question(
     }
 
     (query_id, additional)
+}
+
+/// Build an AXFR query whose OPT asks the primary to keep the connection for
+/// the transfers that follow (RFC 7828, Section 3.2.1; RFC 9103, Section 6).
+pub fn build_axfr_query(qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
+    let (query_id, mut builder) =
+        build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR, None);
+    builder
+        .opt(|opt| {
+            opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
+            opt.push(&TcpKeepalive::new(None))
+        })
+        .expect("one OPT record fits an unlimited message");
+    (query_id, builder.finish())
 }
 
 /// Read TC to decide whether UDP needs a TCP retry (RFC 1035, Section 4.2.1).
@@ -444,8 +459,9 @@ pub fn extract_ds_record_set(
     Ok(Some(DsRecordSet { records, ttl }))
 }
 
-/// Require a strict ancestor's SOA for negative DS answers: stricter than RFC
-/// 2308, Section 2.2, since without it the child's own NODATA would pass.
+/// Require a strict ancestor's SOA for negative DS answers, NXDOMAIN and NODATA
+/// alike: stricter than RFC 2308, Sections 2.1 and 2.2, so the child's own
+/// NODATA cannot pass.
 fn validate_parent_soa(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,

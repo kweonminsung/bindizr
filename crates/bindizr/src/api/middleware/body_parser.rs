@@ -6,8 +6,12 @@ use serde::de::DeserializeOwned;
 
 use crate::api::error::ApiError;
 
+/// Body cap for every route that does not raise it: axum's 2 MiB default,
+/// set explicitly so the 413 message can name it.
+pub(crate) const DEFAULT_BODY_BYTES: usize = 2 * 1024 * 1024;
+
 /// Body cap for whole-zone-file / bulk uploads (import, bulk create) — above
-/// axum's 2 MiB default, but bounded to limit per-request memory.
+/// the default, but bounded to limit per-request memory.
 pub(crate) const MAX_UPLOAD_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 /// JSON body extractor whose rejections render as a JSON [`ApiError`] response

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     Extension, Json, Router,
+    extract::DefaultBodyLimit,
     http::{StatusCode, header::CONTENT_TYPE},
     response::IntoResponse,
     routing,
@@ -9,12 +10,13 @@ use axum::{
 use bindizr_service::{
     Context, authorization::Caller, error::ServiceError, types::MessageResponse,
 };
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::OpenApi;
 
 use super::{
-    audit, dnssec, dnssec_policy, error::ApiError, external_dns, notify, openapi::ApiDoc,
-    permission, record, role, secondary, token, tsig_key, zone,
+    audit, dnssec, dnssec_policy, error::ApiError, external_dns,
+    middleware::body_parser::DEFAULT_BODY_BYTES, notify, openapi::ApiDoc, permission, record, role,
+    secondary, token, tsig_key, zone,
 };
 
 /// Build the full axum router with auth, CORS, and the optional route groups,
@@ -87,7 +89,17 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         ));
     }
 
-    router = router.layer(CorsLayer::permissive());
+    // Preflights must name `Authorization` itself: the Fetch standard never lets
+    // `*` stand for it, and any origin may call with a token.
+    router = router.layer(
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(AllowHeaders::mirror_request())
+            .expose_headers(Any),
+    );
+    // The routes that take uploads raise their own limit above this one.
+    router = router.layer(DefaultBodyLimit::max(DEFAULT_BODY_BYTES));
 
     router.with_state(cx)
 }

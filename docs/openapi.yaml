@@ -2078,7 +2078,7 @@ paths:
       tags:
       - Token
       summary: Describe the API token making the request
-      description: The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.
+      description: The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 404.
       operationId: get_self_token
       responses:
         '200':
@@ -2088,7 +2088,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/SingleTokenResponse'
         '401':
-          description: Unauthorized, or no token presented
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'No token presented: authentication is disabled'
           content:
             application/json:
               schema:
@@ -2104,7 +2110,7 @@ paths:
       tags:
       - Token
       summary: List the grants of the calling API token's role
-      description: The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 401.
+      description: The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 404.
       operationId: list_self_token_grants
       parameters:
       - name: limit
@@ -2135,7 +2141,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedResponse_RoleGrantResponse'
         '401':
-          description: Unauthorized, or no token presented
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'No token presented: authentication is disabled'
           content:
             application/json:
               schema:

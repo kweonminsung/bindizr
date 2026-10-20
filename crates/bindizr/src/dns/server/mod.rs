@@ -44,7 +44,7 @@ impl DnsContext {
     }
 
     /// The daemon's context.
-    pub(crate) fn daemon(&self) -> &Context {
+    pub(crate) fn daemon(&self) -> &Arc<Context> {
         &self.daemon
     }
 }
@@ -83,7 +83,8 @@ pub(crate) fn query_refusal(
         return Some((OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED)));
     }
     if query.qclass != Class::IN {
-        // RFC 5936, Section 2.2.2: only IN is served; echo the requested class.
+        // Only IN is served; the question, class included, is copied into the
+        // response (RFC 5936, Section 2.2.2).
         log::info!(
             "Refusing DNS {} class {} from {}",
             transport,
@@ -173,7 +174,7 @@ pub(crate) async fn handle_tcp_xfr(
                 )
                 .await;
             }
-            // RFC 5936, Section 2.2.1: send an RCODE instead of dropping the connection.
+            // RFC 5936, Section 4.1.2: send an RCODE instead of dropping the connection.
             let response = refusal.into_response(query)?;
             writer.write_message(&response).await?;
             return Ok(());
@@ -256,7 +257,7 @@ pub(crate) async fn handle_tcp_xfr(
             if matches!(err, DnsError::PeerClosed) {
                 return Err(err);
             }
-            // End this transfer on error, retaining the connection (RFC 5936, Section 2.2).
+            // End this transfer on error, retaining the connection (RFC 5936, Section 4.1.2).
             // Sign the error under the authenticated key (RFC 8945, Section 5.3.1).
             let ended = async {
                 let response = query.build_signed_error_response(

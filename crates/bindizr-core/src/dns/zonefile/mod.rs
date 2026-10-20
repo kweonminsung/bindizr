@@ -85,7 +85,8 @@ impl ParsedZoneFile {
         let origin_fqdn = zone_name.to_fqdn();
 
         // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
-        // TTLs. PRELUDE_LINES counts them.
+        // TTLs. PRELUDE_LINES counts them. Without a `$TTL` of its own, every omitted
+        // TTL is the zone's default (RFC 2308, Section 4), not the last explicit one.
         let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
         buffer.push_str(&content);
         if !buffer.ends_with('\n') {
@@ -203,6 +204,23 @@ impl ParsedZoneFile {
         ttl_secs: u32,
         data: &ZoneRecordData<Octs, N>,
     ) {
+        // RFC 3597, Section 5: generic `\#` RDATA of a known type is that type, so
+        // decode the octets `domain` kept; WKS, which `domain` never types, reads them below.
+        if let ZoneRecordData::Unknown(unknown) = data
+            && rtype != Rtype::WKS
+            && (rtype == Rtype::SOA || RecordType::try_from(rtype).is_ok())
+        {
+            let mut parser = Parser::from_ref(unknown.data().as_ref());
+            return match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(rtype, &mut parser) {
+                Ok(Some(typed)) if parser.remaining() == 0 => {
+                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed)
+                }
+                _ => self.errors.push(format!(
+                    "generic RDATA for '{}' does not encode a {} record",
+                    owner, rtype
+                )),
+            };
+        }
         let record_type = match rtype {
             // Only the apex SOA supplies this zone's serial and timers.
             Rtype::SOA => {

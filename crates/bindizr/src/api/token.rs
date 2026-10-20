@@ -96,10 +96,11 @@ pub(crate) async fn create_token(
         path = "/tokens/self",
         tag = "Token",
         summary = "Describe the API token making the request",
-        description = "The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.",
+        description = "The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 404.",
         responses(
             (status = 200, description = "The calling token", body = SingleTokenResponse),
-            (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "No token presented: authentication is disabled", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -120,10 +121,11 @@ pub(crate) async fn get_self_token(
         tag = "Token",
         summary = "List the grants of the calling API token's role",
         params(PageRequest),
-        description = "The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 401.",
+        description = "The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 404.",
         responses(
             (status = 200, description = "The calling token's grants", body = PaginatedResponse<RoleGrantResponse>),
-            (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "No token presented: authentication is disabled", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]

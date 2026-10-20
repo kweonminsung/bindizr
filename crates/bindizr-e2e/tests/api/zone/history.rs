@@ -512,7 +512,8 @@ async fn zone_versions_reject_serials_outside_wire_range() {
     assert_eq!(body["code"], "INVALID_INPUT", "{body}");
 }
 
-/// Versions, reverse replay and new serials remain ordered when MAX advances to zero.
+/// Versions, reverse replay and new serials remain ordered when MAX advances
+/// past zero, which the increment skips (RFC 2136, Section 7.11).
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn history_and_rollback_cross_the_serial_wrap() {
@@ -530,7 +531,7 @@ async fn history_and_rollback_cross_the_serial_wrap() {
             .await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
-    assert_eq!(app.read_zone_serial(&name).await, 1);
+    assert_eq!(app.read_zone_serial(&name).await, 2);
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{name}/versions"), None)
         .await;
@@ -541,7 +542,7 @@ async fn history_and_rollback_cross_the_serial_wrap() {
         .iter()
         .map(|v| v["serial"].as_u64().unwrap())
         .collect();
-    assert_eq!(serials, [1, 0, u64::from(u32::MAX)]);
+    assert_eq!(serials, [2, 1, u64::from(u32::MAX)]);
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -550,7 +551,7 @@ async fn history_and_rollback_cross_the_serial_wrap() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(app.read_zone_serial(&name).await, 2);
+    assert_eq!(app.read_zone_serial(&name).await, 3);
     let records = app.list_records(&name).await;
     assert_eq!(
         records.len(),

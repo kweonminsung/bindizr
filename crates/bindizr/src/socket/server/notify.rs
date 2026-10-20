@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -11,7 +13,7 @@ use crate::socket::types::DaemonResponse;
 
 /// Request NOTIFY delivery for one zone.
 pub(crate) async fn notify_zone(
-    cx: &Context,
+    cx: &Arc<Context>,
     zone_name: &str,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
@@ -21,7 +23,7 @@ pub(crate) async fn notify_zone(
 
 /// Request NOTIFY delivery for all zones.
 pub(crate) async fn notify_all_zones(
-    cx: &Context,
+    cx: &Arc<Context>,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     notify(cx, NotifyTarget::All, serial).await
@@ -29,7 +31,7 @@ pub(crate) async fn notify_all_zones(
 
 /// Request NOTIFY delivery for the zones `target` names.
 async fn notify(
-    cx: &Context,
+    cx: &Arc<Context>,
     target: NotifyTarget<'_>,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {

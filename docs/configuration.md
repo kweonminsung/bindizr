@@ -77,7 +77,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [dns]
 # listen_addr = "0.0.0.0"
-# listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
+# listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host, 853 to TLS (RFC 7858)
 # catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
 # tcp_idle_timeout_secs = 30             # TCP/TLS idle seconds; advertised via edns-tcp-keepalive (RFC 7828)
@@ -92,7 +92,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
-# listen_port = 853           # On dns.listen_addr
+# listen_port = 853           # On dns.listen_addr; never 53 (RFC 7858, Section 3.1)
 # cert_file = "/etc/bindizr/tls/xot.crt"
 # key_file = "/etc/bindizr/tls/xot.key"
 

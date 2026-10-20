@@ -177,16 +177,18 @@ async fn history_ranges_and_catalog_serials_wrap() {
             .unwrap(),
         from
     );
+    // A changed digest past the maximum wraps to one, never zero (RFC 2136,
+    // Section 7.11); the same digest keeps it.
     assert_eq!(
         crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
             .await
             .unwrap(),
-        Serial::from(0)
+        Serial::from(1)
     );
     assert_eq!(
         crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
             .await
             .unwrap(),
-        Serial::from(0)
+        Serial::from(1)
     );
 }
