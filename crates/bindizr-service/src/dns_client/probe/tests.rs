@@ -1,6 +1,9 @@
 use std::str::FromStr;
 
-use bindizr_core::dns::{message::Name, query::ParseResponseError};
+use bindizr_core::dns::{
+    message::{Name, OptRcode},
+    query::ParseResponseError,
+};
 
 use super::*;
 use crate::dns_client::ds::tests::encode_name;
@@ -119,7 +122,7 @@ fn extract_soa_serial_rejects_error_rcode() {
     let response = build_soa_response(42, 0x8405, "example.com", true, 2026);
     assert!(matches!(
         extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        ParseResponseError::Rcode(5)
+        ParseResponseError::Rcode(OptRcode::REFUSED)
     ));
 }
 
@@ -171,7 +174,7 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
     ));
 }
 
-/// Serial comparisons retain their direction across wraparound and leave half-range unordered.
+/// Serial ordering survives wraparound; half-range differences remain unordered.
 #[test]
 fn secondary_status_uses_rfc1982_order() {
     for (expected, visible, status) in [

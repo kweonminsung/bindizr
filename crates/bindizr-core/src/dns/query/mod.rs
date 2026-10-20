@@ -3,7 +3,7 @@
 use domain::{
     base::{
         Message, MessageBuilder, Name, ToName,
-        iana::{Class, Opcode, Rcode, Rtype},
+        iana::{Class, Opcode, OptRcode, Rtype},
         message_builder::AdditionalBuilder,
         rdata::ComposeRecordData,
     },
@@ -14,6 +14,7 @@ use thiserror::Error;
 use crate::dns::{
     LibraryError,
     dnssec::KeyTag,
+    message::Edns,
     record::{EncodeRdataError, Rdata},
 };
 
@@ -36,13 +37,15 @@ pub enum ParseResponseError {
     OtherQuestion,
     #[error("response is not authoritative")]
     NotAuthoritative,
-    #[error("RCODE {0}")]
-    Rcode(u8),
+    #[error("RCODE {}", .0.to_int())]
+    Rcode(OptRcode),
+    #[error("malformed response OPT record")]
+    MalformedEdns,
     #[error("malformed answer section: {0}")]
     MalformedAnswer(#[source] LibraryError),
     #[error("malformed answer record: {0}")]
     MalformedAnswerRecord(#[source] LibraryError),
-    #[error("transfer carries a class {class} record for {owner}")]
+    #[error("response carries a class {class} record for {owner}")]
     ForeignClass { class: Class, owner: String },
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
@@ -51,8 +54,8 @@ pub enum ParseResponseError {
     Notify(#[source] Box<ParseResponseError>),
     #[error("NOTIFY response opcode mismatch: expected {}, got {got}", Opcode::NOTIFY.to_int())]
     NotifyOpcode { got: u8 },
-    #[error("NOTIFY response returned RCODE {0}")]
-    NotifyRcode(u8),
+    #[error("NOTIFY response returned RCODE {}", .0.to_int())]
+    NotifyRcode(OptRcode),
     #[error("no SOA record in answer")]
     NoSoa,
     #[error("malformed authority section: {0}")]
@@ -63,12 +66,10 @@ pub enum ParseResponseError {
     NoParentSoa,
 }
 
-/// EDNS0 payload size advertised where the answer may outgrow 512 bytes (a
-/// TLD's NS record set): the DNS flag day 2020 value.
+/// Default outbound EDNS UDP payload size (DNS Flag Day 2020).
 pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
 
-/// Build a question with a random ID and optional EDNS, leaving the
-/// additional section open for signing before the caller finishes it.
+/// Build a random-ID question with optional EDNS; leave additional open for signing.
 pub fn build_question(
     opcode: Opcode,
     aa: bool,
@@ -104,8 +105,7 @@ pub fn build_question(
     (query_id, additional)
 }
 
-/// Whether a response carries the TC flag: the answer did not fit the UDP
-/// payload and is to be asked again over TCP (RFC 1035, Section 4.2.1).
+/// Read TC to decide whether UDP needs a TCP retry (RFC 1035, Section 4.2.1).
 pub fn is_truncated(response: &[u8]) -> bool {
     Message::from_octets(response).is_ok_and(|message| message.header().tc())
 }
@@ -127,9 +127,12 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
     {
         return false;
     }
+    let Ok(rcode) = response_rcode(&response) else {
+        return false;
+    };
     // Some NOTIFY refusals omit the question; retain the server's error.
     let empty_notify_error = response.header().opcode() == Opcode::NOTIFY
-        && response.header().rcode() != Rcode::NOERROR
+        && rcode != OptRcode::NOERROR
         && response.header_counts().qdcount() == 0;
     if !empty_notify_error {
         let (Ok(wanted), Ok(answered)) = (request.sole_question(), response.sole_question()) else {
@@ -160,8 +163,7 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
     true
 }
 
-/// `parse_response`, plus the echoed question must be ours (`qname`, `rtype`,
-/// class IN).
+/// Parse a response with the expected IN question.
 fn parse_question_response<'a>(
     query_id: u16,
     opcode: Opcode,
@@ -206,8 +208,7 @@ fn parse_authoritative_response<'a>(
     Ok(message)
 }
 
-/// Check a response answers our question: our id, QR set, not truncated.
-/// The RCODE is the caller's, since NXDOMAIN answers some questions.
+/// Check ID, QR, and TC; leave RCODE policy to the caller.
 fn parse_response(
     query_id: u16,
     opcode: Opcode,
@@ -248,6 +249,15 @@ fn parse_response_header(
     Ok(message)
 }
 
+/// Read all twelve RCODE bits after checking OPT placement and structure.
+fn response_rcode(message: &Message<&[u8]>) -> Result<OptRcode, ParseResponseError> {
+    if Edns::from_message(message) == Edns::Malformed {
+        return Err(ParseResponseError::MalformedEdns);
+    }
+    // RFC 6891, Section 6.1.3: response VERSION advertises capability, so allow newer versions.
+    Ok(message.opt_rcode())
+}
+
 /// One answer record with uncompressed RDATA preserving received case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferRecord {
@@ -272,8 +282,9 @@ pub fn extract_transfer_records(
     if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {
         validate_question(&message, qname, Rtype::AXFR)?;
     }
-    if message.header().rcode() != Rcode::NOERROR {
-        return Err(ParseResponseError::Rcode(message.header().rcode().to_int()));
+    let rcode = response_rcode(&message)?;
+    if rcode != OptRcode::NOERROR {
+        return Err(ParseResponseError::Rcode(rcode));
     }
 
     let answer = message
@@ -282,8 +293,7 @@ pub fn extract_transfer_records(
     let mut records = Vec::new();
     for record in answer.limit_to::<AllRecordData<_, _>>() {
         let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
-        // A zone transfer is single-class; rendering would rewrite any other
-        // class as IN.
+        // Reject foreign classes before the import parser renders them as IN.
         if record.class() != Class::IN {
             return Err(ParseResponseError::ForeignClass {
                 class: record.class(),
@@ -293,8 +303,7 @@ pub fn extract_transfer_records(
         let mut rdata = Vec::new();
         let Ok(()) = record.data().compose_rdata(&mut rdata);
         records.push(TransferRecord {
-            // Display omits the root dot; the absolute form keeps the
-            // import parser from re-qualifying the name.
+            // Keep the root dot so import cannot re-qualify this absolute name.
             name: format!("{}.", record.owner()),
             rtype: record.rtype(),
             ttl: record.ttl().as_secs(),
@@ -318,10 +327,10 @@ pub fn validate_notify_response(
             got: header.opcode().to_int(),
         });
     }
-    // A refusal may omit the question (NSD 4.6's NOTAUTH does), so its RCODE
-    // is read first.
-    if header.rcode() != Rcode::NOERROR {
-        return Err(ParseResponseError::NotifyRcode(header.rcode().to_int()));
+    // Read RCODE first: refusals may omit the question (NSD 4.6 NOTAUTH).
+    let rcode = response_rcode(&message)?;
+    if rcode != OptRcode::NOERROR {
+        return Err(ParseResponseError::NotifyRcode(rcode));
     }
     // The acknowledgement copies the request's question (RFC 1996, Section 3.7).
     parse_question_response(query_id, Opcode::NOTIFY, qname, Rtype::SOA, response)
@@ -329,36 +338,42 @@ pub fn validate_notify_response(
     Ok(())
 }
 
-/// Read an authoritative SOA answer's serial: the serial a secondary itself
-/// serves for `qname`, which a cache's answer would not be.
+/// Read the serial served authoritatively for `qname`.
 pub fn extract_soa_serial(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<u32, ParseResponseError> {
     let message = parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
-    if message.header().rcode() != Rcode::NOERROR {
-        return Err(ParseResponseError::Rcode(message.header().rcode().to_int()));
+    let rcode = response_rcode(&message)?;
+    if rcode != OptRcode::NOERROR {
+        return Err(ParseResponseError::Rcode(rcode));
     }
 
     let answer = message
         .answer()
         .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
-    answer
-        .limit_to::<Soa<_>>()
-        .filter_map(|record| record.ok())
-        .find(|record| record.owner().name_eq(qname))
-        .map(|record| record.data().serial().into_int())
-        .ok_or(ParseResponseError::NoSoa)
+    for record in answer.limit_to::<Soa<_>>() {
+        let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
+        if record.owner().name_eq(qname) {
+            if record.class() != Class::IN {
+                return Err(ParseResponseError::ForeignClass {
+                    class: record.class(),
+                    owner: record.owner().to_string(),
+                });
+            }
+            return Ok(record.data().serial().into_int());
+        }
+    }
+    Err(ParseResponseError::NoSoa)
 }
 
 /// The DS record set a parent-zone server holds for a child.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DsRecordSet {
-    /// The DS records at the child's name, ordered by key tag then RDATA and
-    /// deduplicated.
+    /// Child DS records, deduplicated and sorted by key tag then RDATA.
     pub records: Vec<DsRecord>,
-    /// The record set's TTL: how long a cache may keep serving these DS records.
+    /// Cache TTL of the parent's DS records.
     pub ttl: u32,
 }
 
@@ -376,23 +391,22 @@ impl DsRecordSet {
 pub struct DsRecord {
     pub key_tag: KeyTag,
     pub digest_type: u8,
-    /// The RDATA of RFC 4034, Section 5.1; matched whole, since keys can
-    /// share a 16-bit tag.
+    /// Complete DS RDATA (RFC 4034, Section 5.1); key tags alone are ambiguous.
     pub rdata: Vec<u8>,
 }
 
 /// Read an authoritative DS answer, or `None` for NODATA/NXDOMAIN.
-/// Reject non-authoritative answers because cached parent data may be stale.
+/// Require AA to avoid stale cached parent data.
 pub fn extract_ds_record_set(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
     let message = parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
-    match message.header().rcode() {
-        Rcode::NOERROR => {}
-        Rcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
-        rcode => return Err(ParseResponseError::Rcode(rcode.to_int())),
+    match response_rcode(&message)? {
+        OptRcode::NOERROR => {}
+        OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
+        rcode => return Err(ParseResponseError::Rcode(rcode)),
     }
 
     let answer = message
@@ -405,6 +419,13 @@ pub fn extract_ds_record_set(
         // Only DS records at the child's own name are its delegation.
         if !record.owner().name_eq(qname) {
             continue;
+        }
+        // RFC 2181, Section 5: another class is a different record set.
+        if record.class() != Class::IN {
+            return Err(ParseResponseError::ForeignClass {
+                class: record.class(),
+                owner: record.owner().to_string(),
+            });
         }
         let mut rdata = Vec::new();
         let Ok(()) = record.data().compose_rdata(&mut rdata);
@@ -423,8 +444,8 @@ pub fn extract_ds_record_set(
     Ok(Some(DsRecordSet { records, ttl }))
 }
 
-/// Require a strict ancestor's SOA for negative DS answers (RFC 2308, Section 2);
-/// the child's own authoritative NODATA does not prove the parent has no DS.
+/// Require a strict ancestor's SOA for negative DS answers (RFC 2308, Section 2).
+/// The child's own NODATA does not prove parent DS absence.
 fn validate_parent_soa(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,
@@ -436,6 +457,12 @@ fn validate_parent_soa(
         let record =
             record.map_err(|e| ParseResponseError::MalformedAuthorityRecord(Box::new(e)))?;
         if qname.ends_with(record.owner()) && !qname.name_eq(record.owner()) {
+            if record.class() != Class::IN {
+                return Err(ParseResponseError::ForeignClass {
+                    class: record.class(),
+                    owner: record.owner().to_string(),
+                });
+            }
             return Ok(());
         }
     }

@@ -40,8 +40,7 @@ async fn xot_app() -> TestApp {
     .await
 }
 
-/// A client trusting the run's certificate, speaking `versions` and offering
-/// `alpn`.
+/// Build a TLS client with the run's certificate, versions, and ALPN.
 fn xot_client(
     cert: &CertificateDer<'static>,
     versions: &[&'static SupportedProtocolVersion],
@@ -56,7 +55,7 @@ fn xot_client(
     client
 }
 
-/// The client a BIND, Knot, or NSD secondary is: TLS 1.3 offering "dot".
+/// Build a TLS 1.3 client offering "dot".
 fn dot_client(app: &TestApp) -> ClientConfig {
     xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
 }
@@ -362,8 +361,7 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
     }
 }
 
-/// Verify that over TLS a transfer needs its key and a registered address
-/// together, while the plain listener keeps admitting either alone.
+/// TLS requires both key and address authorization; plain accepts either.
 #[tokio::test]
 #[serial]
 async fn tls_transfer_requires_key_and_registered_address() {
@@ -372,8 +370,7 @@ async fn tls_transfer_requires_key_and_registered_address() {
     let zone_name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "xot-key", KeyRole::Admin).await;
 
-    // RFC 9103, Section 7.5: the key alone is refused here, though the plain
-    // listener takes it.
+    // RFC 9103, Section 7.5: TLS requires both key and address authorization.
     let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).expect("XoT");
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
     let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
@@ -639,8 +636,7 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
     assert_eq!(response.header_counts().ancount(), 0);
 }
 
-/// Verify `require_tls` refuses plain TCP/UDP transfers while allowing SOA and TLS
-/// (RFC 9103, Section 11).
+/// `require_tls` refuses plain transfers, allowing SOA and TLS (RFC 9103, Section 11).
 #[tokio::test]
 #[serial]
 async fn require_tls_refuses_a_transfer_over_plain_tcp() {
@@ -669,8 +665,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     assert_eq!(response.header().rcode(), Rcode::REFUSED);
     assert!(probe_zone_soa(app.dns_port(), zone_name));
 
-    // The refusal is logged against the secondary with its reason; the log
-    // keeps one row per zone, so it is read before the transfer that works.
+    // Read the refusal before the next transfer replaces the zone's log row.
     let (status, body) = app
         .send_request(Method::GET, "/secondaries/loopback/transfers", None)
         .await;
@@ -687,8 +682,7 @@ async fn require_tls_refuses_a_transfer_over_plain_tcp() {
     assert!(outcome.records() >= 3);
 }
 
-/// Verify that `config reload` re-reads the certificate pair, so a renewed
-/// certificate serves without a restart.
+/// `config reload` serves renewed certificates without a restart.
 #[tokio::test]
 #[serial]
 async fn config_reload_replaces_dns_tls_certificate() {
@@ -707,13 +701,11 @@ async fn config_reload_replaces_dns_tls_certificate() {
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
     let outcome = xot(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
     assert!(outcome.records() >= 3);
-    // The certificate the run started with is no longer presented: the new
-    // one carries the same name, so the stale root fails on the signature.
+    // The renewed certificate has the same name; the old root must fail signature validation.
     let error = xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app)).unwrap_err();
     assert!(error.contains("invalid peer certificate"), "{error}");
 
-    // A pair that does not load refuses the whole reload and leaves the
-    // renewed certificate serving.
+    // A bad certificate pair rejects reload and preserves the serving pair.
     app.corrupt_test_certificate();
     let output = app.run_cli(&["config", "reload"], None).await;
     assert_cli_failure_contains(&["config", "reload"], &output, "nothing was reloaded");
@@ -722,8 +714,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
     assert!(outcome.records() >= 3);
 }
 
-/// Verify that the handshake refuses TLS 1.2 and an ALPN without "dot", and
-/// that a client naming no ALPN is closed without a transfer.
+/// Reject TLS 1.2 and ALPN without "dot", including missing ALPN.
 #[tokio::test]
 #[serial]
 async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
@@ -737,14 +728,12 @@ async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
     let error = xot(port, zone_name, None, client).unwrap_err();
     assert!(error.contains("ProtocolVersion"), "{error}");
 
-    // RFC 9103, Section 7.1: the handshake selects "dot"; a client offering
-    // only another token is left without a protocol.
+    // RFC 9103, Section 7.1: negotiate only "dot" ALPN.
     let client = xot_client(cert, &[&version::TLS13], &[b"h2"]);
     let error = xot(port, zone_name, None, client).unwrap_err();
     assert!(error.contains("NoApplicationProtocol"), "{error}");
 
-    // A client naming no ALPN completes the handshake, so the server closes
-    // the session instead of answering.
+    // Missing ALPN permits the handshake but closes the session before any answer.
     let client = xot_client(cert, &[&version::TLS13], &[]);
     let error = xot(port, zone_name, None, client).unwrap_err();
     assert!(
@@ -753,8 +742,7 @@ async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
     );
 }
 
-/// Verify that a query the TLS listener does not serve is REFUSED with
-/// extended DNS error 21, Not Supported (RFC 9103, Section 7.8).
+/// Unsupported TLS types receive REFUSED/EDE21 (RFC 9103, Section 7.8).
 #[tokio::test]
 #[serial]
 async fn tls_query_returns_not_supported_for_unserved_type() {
@@ -762,32 +750,41 @@ async fn tls_query_returns_not_supported_for_unserved_type() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(93);
-    let mut question = builder.question();
-    question
-        .push((&parse_name(&format!("www.{zone_name}")).unwrap(), Rtype::A))
-        .unwrap();
-    let mut additional = question.additional();
-    additional
-        .opt(|opt| {
-            opt.set_udp_payload_size(1232);
-            Ok(())
-        })
-        .unwrap();
-
-    let frame =
-        exchange_xot(app.dns_tls_port(), &additional.finish(), dot_client(&app)).expect("XoT");
-
-    let response = Message::from_octets(frame.as_slice()).unwrap();
-    assert_eq!(response.header().rcode(), Rcode::REFUSED);
-    assert_eq!(
-        extended_error_code(&frame),
-        ExtendedErrorCode::NOT_SUPPORTED
-    );
+    let key = create_tsig_key(&app, "type-refusal-key", KeyRole::Admin).await;
+    for key in [None, Some(&key)] {
+        for class in [Class::IN, Class::CH] {
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(93);
+            let mut question = builder.question();
+            question
+                .push((
+                    &parse_name(&format!("www.{zone_name}")).unwrap(),
+                    Rtype::A,
+                    class,
+                ))
+                .unwrap();
+            let mut request = question.additional();
+            request
+                .opt(|opt| {
+                    opt.set_udp_payload_size(1232);
+                    Ok(())
+                })
+                .unwrap();
+            let response = exchange_request(request, key, |wire| {
+                exchange_xot(app.dns_tls_port(), wire, dot_client(&app))
+            })
+            .unwrap();
+            assert_eq!(response.header().rcode(), Rcode::REFUSED, "{class}");
+            assert_eq!(
+                extended_error_code(response.as_slice()),
+                ExtendedErrorCode::NOT_SUPPORTED
+            );
+            assert_eq!(is_signed(&response).unwrap(), key.is_some());
+        }
+    }
 }
 
-/// Unsupported NOTIFY is REFUSED on TLS and NOTIMP on plain transports.
+/// TLS NOTIFY refusal precedes class checks; plain retains its class policy.
 #[tokio::test]
 #[serial]
 async fn tls_notify_returns_refused_with_not_supported() {
@@ -798,50 +795,101 @@ async fn tls_notify_returns_refused_with_not_supported() {
     let zone_name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "notify-refusal-key", KeyRole::Admin).await;
     for key in [None, Some(&key)] {
-        let mut builder = MessageBuilder::new_vec();
-        builder.header_mut().set_id(9103);
-        builder.header_mut().set_opcode(Opcode::NOTIFY);
-        builder.header_mut().set_aa(true);
-        let mut question = builder.question();
-        question
-            .push((&parse_name(zone_name).unwrap(), Rtype::SOA))
-            .unwrap();
-        let mut request = question.additional();
-        request
-            .opt(|opt| {
-                opt.set_udp_payload_size(1232);
-                Ok(())
+        for class in [Class::IN, Class::CH] {
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(9103);
+            builder.header_mut().set_opcode(Opcode::NOTIFY);
+            builder.header_mut().set_aa(true);
+            let mut question = builder.question();
+            question
+                .push((&parse_name(zone_name).unwrap(), Rtype::SOA, class))
+                .unwrap();
+            let mut request = question.additional();
+            request
+                .opt(|opt| {
+                    opt.set_udp_payload_size(1232);
+                    Ok(())
+                })
+                .unwrap();
+            let response = exchange_request(request, key, |request| {
+                for bytes in [
+                    exchange_udp(app.dns_port(), request)?,
+                    exchange_tcp(app.dns_port(), request)?,
+                ] {
+                    let message = Message::from_octets(bytes).unwrap();
+                    assert_eq!(
+                        message.header().rcode(),
+                        if class == Class::IN {
+                            Rcode::NOTIMP
+                        } else {
+                            Rcode::NOTAUTH
+                        }
+                    );
+                    assert_eq!(
+                        extended_error_code(message.as_slice()),
+                        if class == Class::IN {
+                            ExtendedErrorCode::NOT_SUPPORTED
+                        } else {
+                            ExtendedErrorCode::NOT_AUTHORITATIVE
+                        }
+                    );
+                    if let Some(key) = key {
+                        verify_response_mac(request, &message, key).unwrap();
+                    }
+                }
+                exchange_xot(app.dns_tls_port(), request, dot_client(&app))
             })
             .unwrap();
-        let response = exchange_request(request, key, |request| {
-            for bytes in [
-                exchange_udp(app.dns_port(), request)?,
-                exchange_tcp(app.dns_port(), request)?,
-            ] {
-                let message = Message::from_octets(bytes).unwrap();
-                assert_eq!(message.header().rcode(), Rcode::NOTIMP);
-                assert_eq!(
-                    extended_error_code(message.as_slice()),
-                    ExtendedErrorCode::NOT_SUPPORTED
-                );
-                if let Some(key) = key {
-                    verify_response_mac(request, &message, key).unwrap();
-                }
-            }
-            exchange_xot(app.dns_tls_port(), request, dot_client(&app))
-        })
-        .unwrap();
-        assert_eq!(response.header().rcode(), Rcode::REFUSED);
-        assert_eq!(
-            extended_error_code(response.as_slice()),
-            ExtendedErrorCode::NOT_SUPPORTED
-        );
-        assert_eq!(is_signed(&response).unwrap(), key.is_some());
+            assert_eq!(response.header().rcode(), Rcode::REFUSED);
+            assert_eq!(
+                extended_error_code(response.as_slice()),
+                ExtendedErrorCode::NOT_SUPPORTED
+            );
+            assert_eq!(is_signed(&response).unwrap(), key.is_some());
+        }
     }
 }
 
-/// Verify the transfer-only TLS listener refuses UPDATE (RFC 9103, Section 7.8),
-/// signing the refusal when a key is present (RFC 8945, Section 5.3).
+/// TLS class refusals retain NOTAUTH/EDE20 and TSIG signatures.
+#[tokio::test]
+#[serial]
+async fn tls_supported_queries_reject_foreign_classes() {
+    let app = xot_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "class-refusal-key", KeyRole::Admin).await;
+    for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
+        for key in [None, Some(&key)] {
+            let mut builder = MessageBuilder::new_vec();
+            builder.header_mut().set_id(5936);
+            let mut question = builder.question();
+            question
+                .push((&parse_name(zone_name).unwrap(), qtype, Class::CH))
+                .unwrap();
+            let mut request = question.additional();
+            request
+                .opt(|opt| {
+                    opt.set_udp_payload_size(1232);
+                    Ok(())
+                })
+                .unwrap();
+            let response = exchange_request(request, key, |wire| {
+                exchange_xot(app.dns_tls_port(), wire, dot_client(&app))
+            })
+            .unwrap();
+            assert_eq!(response.header().rcode(), Rcode::NOTAUTH, "{qtype}");
+            assert_eq!(
+                extended_error_code(response.as_slice()),
+                ExtendedErrorCode::NOT_AUTHORITATIVE
+            );
+            assert_eq!(response.sole_question().unwrap().qclass(), Class::CH);
+            assert_eq!(is_signed(&response).unwrap(), key.is_some());
+        }
+    }
+}
+
+/// Refuse TLS UPDATE and sign authenticated replies (RFC 9103, Section 7.8;
+/// RFC 8945, Section 5.3).
 #[tokio::test]
 #[serial]
 async fn tls_update_returns_not_supported() {

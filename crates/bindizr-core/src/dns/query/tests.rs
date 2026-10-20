@@ -3,7 +3,7 @@ use std::str::FromStr;
 use domain::{
     base::{
         Serial, Ttl,
-        iana::{DigestAlgorithm, SecurityAlgorithm},
+        iana::{DigestAlgorithm, Rcode, SecurityAlgorithm},
         opt::AllOptData,
     },
     rdata::A,
@@ -25,8 +25,8 @@ fn build_ds_response(
     tc: bool,
     rcode: Rcode,
     qname: &Name<Vec<u8>>,
-    records: &[(&str, u32, u16)],
-    authority_soa: Option<&str>,
+    records: &[(&str, Class, u32, u16)],
+    authority_soa: Option<(&str, Class)>,
 ) -> Vec<u8> {
     let mut builder = MessageBuilder::new_vec();
     let header = builder.header_mut();
@@ -38,11 +38,11 @@ fn build_ds_response(
     let mut question = builder.question();
     question.push((qname, Rtype::DS)).unwrap();
     let mut answer = question.answer();
-    for (owner, ttl, key_tag) in records {
+    for (owner, class, ttl, key_tag) in records {
         answer
             .push((
                 &name(owner),
-                Class::IN,
+                *class,
                 Ttl::from_secs(*ttl),
                 Ds::new(
                     *key_tag,
@@ -55,11 +55,11 @@ fn build_ds_response(
             .unwrap();
     }
     let mut authority = answer.authority();
-    if let Some(owner) = authority_soa {
+    if let Some((owner, class)) = authority_soa {
         authority
             .push((
                 &name(owner),
-                Class::IN,
+                class,
                 Ttl::from_secs(3600),
                 Soa::new(
                     name("ns.parent.example"),
@@ -76,6 +76,45 @@ fn build_ds_response(
     authority.finish()
 }
 
+/// Append OPT response metadata with explicit RCODE and VERSION.
+fn append_opt(response: &mut Vec<u8>, rcode: OptRcode, version: u8) {
+    let count = u16::from_be_bytes([response[10], response[11]]) + 1;
+    response[10..12].copy_from_slice(&count.to_be_bytes());
+    response[3] = (response[3] & 0xf0) | (rcode.to_int() as u8 & 0x0f);
+    response.extend_from_slice(&[0, 0, 41, 4, 208]);
+    let flags = (u32::from(rcode.to_int() >> 4) << 24) | (u32::from(version) << 16);
+    response.extend_from_slice(&flags.to_be_bytes());
+    response.extend_from_slice(&0u16.to_be_bytes());
+}
+
+/// Build an authoritative SOA answer with an explicit record class.
+fn build_soa_response(query_id: u16, qname: &Name<Vec<u8>>, class: Class) -> Vec<u8> {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(query_id);
+    builder.header_mut().set_qr(true);
+    builder.header_mut().set_aa(true);
+    let mut question = builder.question();
+    question.push((qname, Rtype::SOA)).unwrap();
+    let mut answer = question.answer();
+    answer
+        .push((
+            qname,
+            class,
+            Ttl::from_secs(300),
+            Soa::new(
+                name("ns.example.com"),
+                name("admin.example.com"),
+                Serial(2026),
+                Ttl::from_secs(300),
+                Ttl::from_secs(60),
+                Ttl::from_secs(86400),
+                Ttl::from_secs(300),
+            ),
+        ))
+        .unwrap();
+    answer.finish()
+}
+
 /// The record `build_ds_response` serves for `key_tag`, as parsed.
 fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
@@ -88,8 +127,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
     }
 }
 
-/// One AXFR response message with or without the echoed `question` and the
-/// `aa` flag, answering one IN A record for `apex`.
+/// Build an IN A transfer response with configurable question and AA flag.
 fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: bool) -> Vec<u8> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(id);
@@ -208,12 +246,11 @@ fn build_question_advertises_edns_payload_size() {
     assert_eq!(opt.opt().iter::<AllOptData<_, _>>().count(), 0);
 }
 
-/// Verify that `extract_ds_record_set` reads the records and the record set's TTL.
+/// DS parsing normalizes record order, duplicates, and TTL.
 #[test]
 fn extract_ds_record_set_reads_the_records_and_the_record_set_ttl() {
     let child = name("example.com");
-    // The record set TTL is the lowest member TTL (RFC 2181, Section 5.2), and
-    // key tags come back ordered and without duplicates.
+    // RFC 2181, Section 5.2: use the lowest member TTL.
     let response = build_ds_response(
         42,
         true,
@@ -222,9 +259,9 @@ fn extract_ds_record_set_reads_the_records_and_the_record_set_ttl() {
         Rcode::NOERROR,
         &child,
         &[
-            ("example.com", 86400, 34217),
-            ("example.com", 3600, 2371),
-            ("example.com", 86400, 34217),
+            ("example.com", Class::IN, 86400, 34217),
+            ("example.com", Class::IN, 3600, 2371),
+            ("example.com", Class::IN, 86400, 34217),
         ],
         None,
     );
@@ -250,7 +287,7 @@ fn extract_ds_record_set_reads_nodata_as_no_ds() {
         Rcode::NOERROR,
         &child,
         &[],
-        Some("com"),
+        Some(("com", Class::IN)),
     );
     assert_eq!(extract_ds_record_set(42, &child, &response).unwrap(), None);
 }
@@ -267,7 +304,7 @@ fn extract_ds_record_set_reads_nxdomain_as_no_ds() {
         Rcode::NXDOMAIN,
         &child,
         &[],
-        Some("com"),
+        Some(("com", Class::IN)),
     );
     assert_eq!(extract_ds_record_set(42, &child, &response).unwrap(), None);
 }
@@ -286,7 +323,7 @@ fn extract_ds_record_set_rejects_a_negative_answer_without_a_parent_soa() {
             Rcode::NOERROR,
             &child,
             &[],
-            authority_soa,
+            authority_soa.map(|owner| (owner, Class::IN)),
         );
         assert!(
             matches!(
@@ -312,7 +349,7 @@ fn extract_ds_record_set_rejects_an_answer_to_another_question() {
         Rcode::NOERROR,
         &name("other.com"),
         &[],
-        Some("com"),
+        Some(("com", Class::IN)),
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
@@ -331,8 +368,8 @@ fn extract_ds_record_set_ignores_records_for_another_owner() {
         false,
         Rcode::NOERROR,
         &child,
-        &[("other.com", 3600, 1)],
-        Some("com"),
+        &[("other.com", Class::IN, 3600, 1)],
+        Some(("com", Class::IN)),
     );
     assert_eq!(extract_ds_record_set(42, &child, &response).unwrap(), None);
 }
@@ -348,7 +385,7 @@ fn extract_ds_record_set_rejects_a_non_authoritative_answer() {
         false,
         Rcode::NOERROR,
         &child,
-        &[("example.com", 3600, 1)],
+        &[("example.com", Class::IN, 3600, 1)],
         None,
     );
     assert!(matches!(
@@ -369,7 +406,7 @@ fn extract_ds_record_set_rejects_a_truncated_answer() {
         Rcode::NOERROR,
         &child,
         &[],
-        Some("com"),
+        Some(("com", Class::IN)),
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
@@ -389,11 +426,11 @@ fn extract_ds_record_set_rejects_an_error_rcode() {
         Rcode::REFUSED,
         &child,
         &[],
-        Some("com"),
+        Some(("com", Class::IN)),
     );
     assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ParseResponseError::Rcode(5)
+        ParseResponseError::Rcode(OptRcode::REFUSED)
     ));
 }
 
@@ -409,7 +446,7 @@ fn extract_ds_record_set_rejects_id_mismatch() {
         Rcode::NOERROR,
         &child,
         &[],
-        Some("com"),
+        Some(("com", Class::IN)),
     );
     assert!(
         extract_ds_record_set(7, &child, &response)
@@ -417,4 +454,169 @@ fn extract_ds_record_set_rejects_id_mismatch() {
             .to_string()
             .contains("ID mismatch")
     );
+}
+
+/// Extended errors cannot become successful DS, SOA, AXFR, or NOTIFY responses.
+#[test]
+fn responses_reject_extended_rcodes() {
+    let child = name("example.com");
+    for code in [16, 20, 4095] {
+        let rcode = OptRcode::masked_from_int(code);
+        let mut ds = build_ds_response(
+            42,
+            true,
+            true,
+            false,
+            Rcode::NOERROR,
+            &child,
+            &[],
+            Some(("com", Class::IN)),
+        );
+        append_opt(&mut ds, rcode, 0);
+        assert!(
+            matches!(extract_ds_record_set(42, &child, &ds), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            "DS did not preserve {code}"
+        );
+
+        let mut soa = build_soa_response(42, &child, Class::IN);
+        append_opt(&mut soa, rcode, 0);
+        assert!(
+            matches!(extract_soa_serial(42, &child, &soa), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            "SOA did not preserve {code}"
+        );
+
+        let mut transfer = build_transfer_message(42, &child, true, true);
+        append_opt(&mut transfer, rcode, 0);
+        assert!(
+            matches!(extract_transfer_records(42, &child, TransferMessagePosition::First, &transfer), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            "AXFR did not preserve {code}"
+        );
+
+        let (id, builder) = build_question(Opcode::NOTIFY, true, false, &child, Rtype::SOA, None);
+        let mut notify = builder.finish();
+        notify[2] |= 0x80;
+        append_opt(&mut notify, rcode, 0);
+        let error = validate_notify_response(id, &child, &notify).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("NOTIFY response returned RCODE {code}")
+        );
+    }
+}
+
+/// Responses may advertise a newer EDNS version.
+#[test]
+fn responses_accept_advertised_edns_versions() {
+    let child = name("example.com");
+    for version in [0, 1, 255] {
+        let mut response = build_soa_response(42, &child, Class::IN);
+        append_opt(&mut response, OptRcode::NOERROR, version);
+        assert_eq!(extract_soa_serial(42, &child, &response).unwrap(), 2026);
+    }
+}
+
+/// Malformed OPT cannot justify an answer or TCP retry.
+#[test]
+fn responses_reject_malformed_opt_records() {
+    let child = name("example.com");
+    let (id, builder) = build_question(Opcode::QUERY, false, false, &child, Rtype::DS, Some(1232));
+    let request = builder.finish();
+    let mut response = build_ds_response(
+        id,
+        true,
+        true,
+        false,
+        Rcode::NOERROR,
+        &child,
+        &[],
+        Some(("com", Class::IN)),
+    );
+    append_opt(&mut response, OptRcode::NOERROR, 0);
+    let mut duplicate = response.clone();
+    append_opt(&mut duplicate, OptRcode::NOERROR, 0);
+    let mut nonroot = response.clone();
+    let opt_start = nonroot.len() - 11;
+    nonroot.splice(opt_start..opt_start, [1, b'x']);
+    let mut short_option = response;
+    let rdlen = short_option.len() - 2;
+    short_option[rdlen..].copy_from_slice(&3u16.to_be_bytes());
+    short_option.extend_from_slice(&[0, 15, 0]);
+
+    let mut misplaced = Vec::new();
+    for count_offset in [6, 8] {
+        let mut wire = build_ds_response(id, true, true, false, Rcode::NOERROR, &child, &[], None);
+        append_opt(&mut wire, OptRcode::NOERROR, 0);
+        wire[10..12].copy_from_slice(&0u16.to_be_bytes());
+        wire[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
+        misplaced.push(wire);
+    }
+    for mut wire in [duplicate, nonroot, short_option]
+        .into_iter()
+        .chain(misplaced)
+    {
+        assert!(matches!(
+            extract_ds_record_set(id, &child, &wire),
+            Err(ParseResponseError::MalformedEdns)
+        ));
+        assert!(!matches_response_to_request(&request, &wire));
+        wire[2] |= 0x02;
+        assert!(!matches_response_to_request(&request, &wire));
+    }
+}
+
+/// Foreign-class DS is rejected even beside an IN parent SOA.
+#[test]
+fn extract_ds_record_set_rejects_foreign_classes() {
+    let child = name("example.com");
+    for class in [Class::CH, Class::HS] {
+        let response = build_ds_response(
+            42,
+            true,
+            true,
+            false,
+            Rcode::NOERROR,
+            &child,
+            &[("example.com", class, 300, 1)],
+            Some(("com", Class::IN)),
+        );
+        assert!(
+            extract_ds_record_set(42, &child, &response).is_err(),
+            "accepted {class}"
+        );
+    }
+}
+
+/// Foreign-class SOA cannot prove IN DS absence.
+#[test]
+fn extract_ds_record_set_rejects_foreign_parent_soa_classes() {
+    let child = name("example.com");
+    for rcode in [Rcode::NOERROR, Rcode::NXDOMAIN] {
+        let response = build_ds_response(
+            42,
+            true,
+            true,
+            false,
+            rcode,
+            &child,
+            &[],
+            Some(("com", Class::CH)),
+        );
+        assert!(
+            extract_ds_record_set(42, &child, &response).is_err(),
+            "accepted {rcode}"
+        );
+    }
+}
+
+/// SOA polling uses only the queried class's serial.
+#[test]
+fn extract_soa_serial_rejects_foreign_classes() {
+    let apex = name("example.com");
+    for class in [Class::CH, Class::HS] {
+        let response = build_soa_response(42, &apex, class);
+        assert!(
+            extract_soa_serial(42, &apex, &response).is_err(),
+            "accepted {class}"
+        );
+    }
 }

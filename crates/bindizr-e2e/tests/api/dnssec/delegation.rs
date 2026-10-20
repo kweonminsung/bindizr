@@ -1,8 +1,8 @@
-//! The parent side of DNSSEC over the API: the DS its nameservers serve
-//! gates disabling and the ds-seen promotion.
+//! Parent DS checks gate DNSSEC disable and key promotion.
 
 use std::net::UdpSocket;
 
+use domain::base::iana::{Class, OptRcode};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
@@ -17,14 +17,84 @@ fn closed_parent_addr() -> String {
         .to_string()
 }
 
-/// Verify that DNSSEC DS seen checks the parent even when the holddown is skipped.
+/// Invalid parent response codes or classes cannot remove DNSSEC state.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let parent = FakeParent::start();
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": [parent.addr()] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, before) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    let (_, versions_before) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    let serial = app.read_zone_serial(zone_name).await;
+
+    for (rcode, class) in [
+        (OptRcode::BADVERS, Class::IN),
+        (OptRcode::NOERROR, Class::CH),
+    ] {
+        parent.set_response(rcode, class);
+        for method in [Method::POST, Method::DELETE] {
+            let path = if method == Method::POST {
+                format!("/zones/{zone_name}/dnssec/check-ds")
+            } else {
+                format!("/zones/{zone_name}/dnssec")
+            };
+            let (status, body) = app.send_request(method, &path, None).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{rcode}/{class}: {body}");
+            assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
+        }
+        let (_, after) = app
+            .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
+            .await;
+        assert_eq!(after, before);
+        assert_eq!(app.read_zone_serial(zone_name).await, serial);
+        let (_, versions_after) = app
+            .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+            .await;
+        assert_eq!(versions_after, versions_before);
+    }
+
+    // A matching digest still belongs to its record class.
+    let key_tag = before["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    parent.set_ds(vec![DsRecord::from_status(&before, key_tag, 300)]);
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED");
+
+    parent.set_ds(Vec::new());
+    parent.set_response(OptRcode::NOERROR, Class::IN);
+    let (status, _) = app
+        .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// Skipping holddown still requires a parent DS check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     let app = TestApp::start_local().await;
     let parent = FakeParent::start();
-    // A short zone TTL is the whole publish wait, so the rollover reaches
-    // promotion inside the test.
+    // A short TTL lets the test reach rollover promotion.
     let zone_name = app.zone_name("ds-seen.example");
     let (status, _) = app
         .send_request(
@@ -160,8 +230,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     let key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     parent.set_ds(vec![DsRecord::from_status(&body, key_tag, 3600)]);
 
-    // The parent still delegates trust: dropping the signatures now would
-    // make the zone bogus.
+    // Removing signatures while the parent has DS would make the zone bogus.
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
@@ -329,7 +398,7 @@ async fn dnssec_disable_rejects_unreachable_parent() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Verify that DNSSEC DS seen requires the exact DS on every parent server.
+/// Every parent must serve the exact DS before key promotion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
@@ -441,7 +510,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     );
 }
 
-/// Verify that DNSSEC DS seen accepts the sha1 DS a parent computed itself.
+/// Accept SHA-1 DS records computed by a parent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
@@ -491,8 +560,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
         .expect("rollover start pre-publishes the replacement key")["key_tag"]
         .as_u64()
         .unwrap() as u16;
-    // Only a SHA-1 DS, as a parent digesting the DNSKEY itself may
-    // register; status never renders one.
+    // Serve a parent-computed SHA-1 DS, which status never renders.
     let new_ds = DsRecord::sha1_from_status(&body, zone_name, new_key_tag, 60);
     parent.set_ds(vec![old_ds, new_ds]);
 
@@ -533,7 +601,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
     );
 }
 
-/// Verify that DNSSEC DS seen separates an unverifiable digest type from a missing DS.
+/// Unsupported parent digests remain distinct from missing DS.
 #[tokio::test]
 async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds() {
     let app = TestApp::start_local().await;
@@ -582,8 +650,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .expect("rollover start pre-publishes the replacement key")["key_tag"]
         .as_u64()
         .unwrap() as u16;
-    // Digest type 3 is GOST R 34.11-94, which bindizr does not compute, so
-    // it cannot tell whether this DS matches the key.
+    // Digest type 3 is GOST R 34.11-94; bindizr cannot verify a match.
     let new_ds = DsRecord::from_status(&body, new_key_tag, 60).with_digest_type(3);
     parent.set_ds(vec![old_ds, new_ds]);
 
@@ -616,7 +683,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
 }
 
-/// Verify that DNSSEC check DS reports an unverifiable digest at any one parent server.
+/// One unverifiable parent digest makes the DS check fail.
 #[tokio::test]
 async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server() {
     let app = TestApp::start_local().await;
@@ -649,8 +716,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
     assert_eq!(status, StatusCode::CREATED);
     let key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     let ds = DsRecord::from_status(&body, key_tag, 60);
-    // One server answers in a digest type bindizr computes, the other only in
-    // one it cannot; flattening the two would hide the second.
+    // Keep each parent's result so a verifiable digest cannot mask an unsupported one.
     first_parent.set_ds(vec![ds.clone()]);
     second_parent.set_ds(vec![ds.with_digest_type(3)]);
 

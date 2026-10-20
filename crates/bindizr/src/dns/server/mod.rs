@@ -54,7 +54,7 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 
-/// Classify unsupported queries, checking format before class, opcode, and type.
+/// Classify malformed queries and transport-specific refusals before dispatch.
 pub(crate) fn query_refusal(
     query: &message::ParsedQuery,
     transport: TransferTransport,
@@ -68,6 +68,19 @@ pub(crate) fn query_refusal(
             rcode
         );
         return Some((rcode, None));
+    }
+    // RFC 9103, Section 7.8: refuse non-XoT traffic regardless of its class.
+    if transport == TransferTransport::Tls
+        && (query.opcode != Opcode::QUERY
+            || (query.qtype != Rtype::SOA && !is_xfr_query_type(query.qtype)))
+    {
+        log::info!(
+            "Refusing unsupported TLS query from {} (opcode={:?}, qtype={:?})",
+            client_addr,
+            query.opcode,
+            query.qtype
+        );
+        return Some((OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED)));
     }
     if query.qclass != Class::IN {
         // RFC 5936, Section 2.2.2: only IN is served; echo the requested class.
@@ -89,13 +102,7 @@ pub(crate) fn query_refusal(
             query.opcode,
             client_addr
         );
-        // RFC 9103, Section 7.8: TLS refusals use REFUSED and EDE 21.
-        let rcode = if transport == TransferTransport::Tls {
-            OptRcode::REFUSED
-        } else {
-            OptRcode::NOTIMP
-        };
-        return Some((rcode, Some(ExtendedErrorCode::NOT_SUPPORTED)));
+        return Some((OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED)));
     }
     if query.qtype != Rtype::SOA && !is_xfr_query_type(query.qtype) {
         log::info!(
@@ -123,8 +130,7 @@ pub(crate) async fn handle_tcp_xfr(
     let transport = writer.transport();
     let track_result = |result| cx.metrics().track_xfr(query.qtype, transport, result);
 
-    // The key or the address, then the transport the policy allows; the
-    // zone's grant is decided beside its row inside the transfer.
+    // Zone grants are checked with the zone row; check key/address and transport here.
     let identity = tokio::select! {
         biased;
         () = writer.failed() => return Err(DnsError::PeerClosed),
@@ -145,8 +151,7 @@ pub(crate) async fn handle_tcp_xfr(
                 client_ip,
                 refusal.reason
             );
-            // Saved against the client too, so `secondary transfers` can say why
-            // a secondary got nothing.
+            // Save the refusal so `secondary transfers` can explain it.
             if refusal.is_failure() {
                 transfer::save_failed(
                     cx,
@@ -168,8 +173,7 @@ pub(crate) async fn handle_tcp_xfr(
                 )
                 .await;
             }
-            // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped
-            // connection.
+            // RFC 5936, Section 2.2.1: send an RCODE instead of dropping the connection.
             let response = refusal.into_response(query)?;
             writer.write_message(&response).await?;
             return Ok(());

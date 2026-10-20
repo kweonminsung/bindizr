@@ -2,7 +2,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     dns::{
-        message::{Name, Opcode, Rcode, Rtype},
+        message::{Name, Opcode, OptRcode, Rtype},
         name::ZoneName,
         query::{ParseResponseError, build_question, validate_notify_response},
         tsig::{TsigSigningKey, sign_request, verify_response},
@@ -249,7 +249,7 @@ async fn send_notify_to_server_once(
     }
     match validate_notify_response(query_id, qname, &response[..received]) {
         // RFC 1996, Section 3.12: a validated NOTIMP completes the transaction.
-        Err(ParseResponseError::NotifyRcode(code)) if code == Rcode::NOTIMP.to_int() => {
+        Err(ParseResponseError::NotifyRcode(OptRcode::NOTIMP)) => {
             log::warn!(
                 "Server {} does not support NOTIFY; transaction complete",
                 server_addr
