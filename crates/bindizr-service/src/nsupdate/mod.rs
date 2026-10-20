@@ -78,10 +78,11 @@ impl NsupdateError {
     /// Classify an UPDATE failure without consuming its original cause.
     pub fn rcode(&self) -> Rcode {
         match self {
-            Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) => Rcode::FORMERR,
-            Self::RecordValue { .. } | Self::UnsupportedType(_) | Self::ManagedType(_) => {
-                Rcode::REFUSED
+            // RFC 2136, Section 3.4.1.2: an unrecognized type is a prescan failure.
+            Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) | Self::UnsupportedType(_) => {
+                Rcode::FORMERR
             }
+            Self::RecordValue { .. } | Self::ManagedType(_) => Rcode::REFUSED,
             Self::Owner {
                 source: ParseNameError::OutsideZone,
                 ..
@@ -144,13 +145,11 @@ pub async fn apply(
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        // Keep the wire sections through the zone lookup. Every owner and
-        // shape is checked before decoding can omit an ineffective delete.
+        // RFC 2136, Section 3 order: prerequisites, permissions, prescan, changes.
         let prerequisites = decode_prerequisites(update.prerequisites, &zone.name, update.message)?;
-        let updates = decode_updates(update.updates, &zone.name, update.message)?;
 
-        // A prerequisite reads what it names, so its grant is checked with
-        // the updates', ahead of where RFC 2136, Section 3.3 puts permissions.
+        // A prerequisite reads what it names, so its read grant precedes its
+        // evaluation (Section 3.3.1 leaves the permission test implementation dependent).
         for prerequisite in &prerequisites {
             // SOA and DNSSEC need a read grant without a type restriction.
             let record_type = prerequisite
@@ -165,6 +164,10 @@ pub async fn apply(
                 }],
             )?;
         }
+        evaluate_prerequisites_tx(&mut tx, &zone, &prerequisites).await?;
+
+        // The prescan parses the owners the update grants are checked on.
+        let updates = decode_updates(update.updates, &zone.name, update.message)?;
         let mut accesses = Vec::new();
         for op in &updates {
             match op {
@@ -179,7 +182,6 @@ pub async fn apply(
             }
         }
         caller.authorize_record_access(&zone, &accesses)?;
-        evaluate_prerequisites_tx(&mut tx, &zone, &prerequisites).await?;
 
         let plan = plan::prepare(&zone, updates)?;
         let new_serial = plan.zone.serial;

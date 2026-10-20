@@ -890,7 +890,7 @@ async fn nsupdate_prescans_ignored_deletes() {
                         if rtype == Rtype::SOA {
                             Rcode::NOERROR
                         } else {
-                            Rcode::REFUSED
+                            Rcode::FORMERR
                         }
                     } else {
                         Rcode::NOTZONE
@@ -2157,7 +2157,8 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     assert_eq!(rcode, Rcode::NOERROR);
     for (rtype, rdata, expected) in [
         (Rtype::DNSKEY, vec![1, 1, 3], Rcode::FORMERR),
-        (Rtype::from_int(65280), vec![], Rcode::REFUSED),
+        // RFC 2136, Section 3.2 restricts no type; an unstored one is absent.
+        (Rtype::from_int(65280), vec![], Rcode::NXRRSET),
     ] {
         let prerequisite = PrerequisiteRecord::RecordEquals {
             name: apex.clone(),
@@ -2859,8 +2860,8 @@ async fn nsupdate_rejects_unsupported_types_and_invalid_wks_atomically() {
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
     for (rtype, rdata, expected) in [
-        (Rtype::HINFO, vec![0, 0], Rcode::REFUSED),
-        (Rtype::from_int(65280), vec![0, 0], Rcode::REFUSED),
+        (Rtype::HINFO, vec![0, 0], Rcode::FORMERR),
+        (Rtype::from_int(65280), vec![0, 0], Rcode::FORMERR),
         (Rtype::WKS, vec![192, 0, 2, 1, 6, 0x80, 0], Rcode::FORMERR),
     ] {
         let updates = [

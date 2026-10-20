@@ -39,21 +39,18 @@ pub(crate) fn decode_updates(
         .map(|record| {
             let owner = parse_update_owner(&record.name, zone_name)?;
             record.validate_update_shape()?;
+            validate_supported_type(record.record_type)?;
             Ok((record, owner))
         })
         .collect::<Result<Vec<_>, NsupdateError>>()?;
 
     checked
         .into_iter()
-        .filter_map(|(record, owner)| {
-            validate_supported_type(record.record_type)
-                .and_then(|()| decode_update(record, owner, message))
-                .transpose()
-        })
+        .filter_map(|(record, owner)| decode_update(record, owner, message).transpose())
         .collect()
 }
 
-/// Reject unsupported types while allowing SOA, ANY, and managed DNSSEC.
+/// The prescan's type check: unrecognized types are FORMERR (RFC 2136, Section 3.4.1.2).
 fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
     if matches!(record_type, Rtype::SOA | Rtype::ANY)
         || RecordType::try_from(record_type).is_ok()
@@ -77,8 +74,8 @@ fn decode_prerequisite(
         ));
     }
 
+    // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
     let name = parse_update_owner(&record.name, zone_name)?;
-    validate_supported_type(record.record_type)?;
     match record.class {
         Class::ANY | Class::NONE => {
             let is_any_class = record.class == Class::ANY;

@@ -512,7 +512,9 @@ ordinary types are rejected across API, CLI, imports, and DNS UPDATE; there is
 no opaque fallback or option to skip unsupported import records. Rejecting
 unknown types is an explicit product exception to RFC 3597, Section 3's
 transparent-handling requirement. A failed import leaves the zone unchanged. Numeric TYPE aliases
-resolve only to implemented types. SOA and signer-managed DNSSEC data retain
+resolve only to implemented types. An UPDATE record of such a type is FORMERR
+(RFC 2136, Section 3.4.1.2); a prerequisite may name any type and is evaluated
+against the served zone. SOA and signer-managed DNSSEC data retain
 their separate contracts.
 
 Explicit UPDATE additions and deletions naming signer-managed DNSSEC types are
@@ -555,6 +557,11 @@ recommended to match (RFC 4035, Section 2.4), but independently edited or
 imported sets retain the operator's explicit per-type TTLs. Each RRset still
 has one TTL.
 
+A NOTIFY transaction ends on any matching response, whatever its RCODE, or on
+an ICMP port-unreachable error (RFC 1996, Sections 3.6 and 4.8); only silence
+is retransmitted, `dns.notify.retries` times at `dns.notify.timeout_secs`
+intervals, the operational parameters Section 3.6 leaves to the operator.
+
 Generated DS/CDS use SHA-256, recommended by the IANA DS registry under
 RFC 9904. Storing a user-supplied DS is not digest generation; do not apply
 the signer's algorithm policy to raw DS input or parent-DS matching.
@@ -596,9 +603,12 @@ An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority
 over the name and class. A class other than IN is NOTAUTH, even when its name
 matches a stored zone (RFC 2136, Section 3.1.1). After locating the authoritative
-zone, the service checks every update record's owner and wire shape before
-selecting operations (RFC 2136, Section 3.4.1). Even a
-delete that will be ignored must pass that prescan. Checked owners remain
+zone, the service keeps RFC 2136, Section 3's order: the prerequisites are
+evaluated first (Section 3.2, once the read grant each needs is checked), then
+every update record's owner, wire shape and type are checked before the grants
+on it and before any operation is selected (Sections 3.3 and 3.4.1). Even a
+delete that will be ignored must pass that prescan. An unsupported EDNS version
+is BADVERS ahead of every policy refusal (RFC 6891, Section 6.1.3). Checked owners remain
 `OwnerName` values through authorization and execution, without re-parsing.
 Prerequisites compare with the complete served zone at that transaction's
 serial: the SOA, ordinary records, and signer-generated DNSSEC records.

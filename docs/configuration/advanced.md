@@ -22,9 +22,11 @@ measured from enqueue time. The generated catalog uses a 3600-second REFRESH.
 Later writes can shorten a pending window but cannot extend it; jobs delayed
 by an earlier send do not start a new window. Shutdown flushes queued changes.
 
-A secondary's validated `NOTIMP` response completes its NOTIFY transaction
-without retries (RFC 1996, Section 3.12). Bindizr logs the unsupported capability;
-timeouts and other errors retain the configured retries.
+Any matching response ends a NOTIFY transaction, whatever its code (RFC 1996,
+Sections 3.6 and 4.8): a validated `NOTIMP` completes it and is logged as an
+unsupported capability (Section 3.12); another error code is reported without
+retransmission. Only silence retains the configured retries, and an ICMP port
+unreachable error ends the transaction as well.
 
 ## Sizing the transfer cache
 

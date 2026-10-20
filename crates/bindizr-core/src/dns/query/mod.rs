@@ -444,8 +444,8 @@ pub fn extract_ds_record_set(
     Ok(Some(DsRecordSet { records, ttl }))
 }
 
-/// Require a strict ancestor's SOA for negative DS answers (RFC 2308, Section 2).
-/// The child's own NODATA does not prove parent DS absence.
+/// Require a strict ancestor's SOA for negative DS answers: stricter than RFC
+/// 2308, Section 2.2, since without it the child's own NODATA would pass.
 fn validate_parent_soa(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,

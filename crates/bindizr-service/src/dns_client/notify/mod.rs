@@ -191,7 +191,7 @@ async fn send_notify_to_server(
     loop {
         match send_notify_to_server_once(qname, server_addr, timeout, tsig_key).await {
             Ok(()) => return Ok(()),
-            Err(e) if attempt < attempts => {
+            Err(e) if attempt < attempts && is_retryable(&e) => {
                 attempt += 1;
                 log::info!(
                     "Retrying NOTIFY to {} ({}/{}) after error: {}",
@@ -203,6 +203,22 @@ async fn send_notify_to_server(
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+/// Whether a failed attempt left the transaction open: RFC 1996, Sections 3.6
+/// and 4.8 end it on any matching response or ICMP port unreachable.
+fn is_retryable(error: &SendNotifyError) -> bool {
+    match error {
+        SendNotifyError::Exchange(ExchangeMessageError::Io(error)) => {
+            error.kind() != std::io::ErrorKind::ConnectionRefused
+        }
+        SendNotifyError::Exchange(ExchangeMessageError::Encode(_)) => false,
+        SendNotifyError::Exchange(_) => true,
+        SendNotifyError::Sign(_)
+        | SendNotifyError::Verify(_)
+        | SendNotifyError::Response(_)
+        | SendNotifyError::TaskFailed(_) => false,
     }
 }
 

@@ -66,6 +66,11 @@ pub(crate) async fn apply_update(
             None => None,
         };
 
+        // RFC 6891, Section 6.1.3: BADVERS precedes every policy refusal.
+        if let Some(rcode) = request.edns.format_error() {
+            return Err(UpdateError::Edns(rcode));
+        }
+
         // RFC 9103, Section 7.8: the TLS listener serves transfers alone.
         if transport == TransferTransport::Tls {
             return Err(UpdateError::NotSupported(
@@ -85,11 +90,6 @@ pub(crate) async fn apply_update(
             }
             None => Caller::unsigned_dns(),
         };
-
-        // An OPT the server cannot take is answered before the update is read.
-        if let Some(rcode) = request.edns.format_error() {
-            return Err(UpdateError::Edns(rcode));
-        }
 
         // Parse absolute labels; unrepresentable zone names are not served (RFC 2136, Section 3.1.2).
         if request.zone_name == "." {

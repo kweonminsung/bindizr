@@ -96,7 +96,8 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
             if rtype == Rtype::SOA {
                 assert!(result.unwrap().is_empty());
             } else {
-                assert_eq!(result.unwrap_err().rcode(), Rcode::REFUSED);
+                // RFC 2136, Section 3.4.1.2: an unrecognized type fails the prescan.
+                assert_eq!(result.unwrap_err().rcode(), Rcode::FORMERR);
             }
             for name in ["elsewhere.example.net.", r"outside\.example.com.", "."] {
                 let mut outside = valid.clone();

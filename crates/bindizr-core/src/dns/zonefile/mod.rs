@@ -215,7 +215,14 @@ impl ParsedZoneFile {
                     self.errors
                         .push(format!("zone '{}' carries more than one SOA", origin_fqdn));
                 } else {
-                    self.soa = to_zone_file_soa(data);
+                    match to_zone_file_soa(data) {
+                        Some(soa) => self.soa = Some(soa),
+                        None => self.errors.push(format!(
+                            "SOA for '{}' has a refresh, retry or expire past {} seconds",
+                            owner,
+                            SoaInterval::MAX
+                        )),
+                    }
                 }
                 return;
             }

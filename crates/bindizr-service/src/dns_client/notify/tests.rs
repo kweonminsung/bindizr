@@ -148,9 +148,10 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
     }
 }
 
-/// NOTIMP completes once, while SERVFAIL and timeouts retain the configured retries.
+/// Any matching reply ends the transaction after one attempt (RFC 1996,
+/// Sections 3.6 and 4.8); only silence retains the configured retries.
 #[tokio::test]
-async fn notify_completes_notimp_and_retries_transient_failures() {
+async fn notify_completes_on_any_reply_and_retries_silence() {
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -158,7 +159,12 @@ async fn notify_completes_notimp_and_retries_transient_failures() {
 
     use tokio::net::UdpSocket;
 
-    for (rcode, expected) in [(Some(0), 1), (Some(4), 1), (Some(2), 3), (None, 3)] {
+    for (rcode, attempts, ok) in [
+        (Some(0), 1, true),
+        (Some(4), 1, true),
+        (Some(2), 1, false),
+        (None, 3, false),
+    ] {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let address = socket.local_addr().unwrap();
         let count = Arc::new(AtomicUsize::new(0));
@@ -183,8 +189,8 @@ async fn notify_completes_notimp_and_retries_transient_failures() {
         let result =
             send_notify_to_server(&zone(), address, Duration::from_millis(50), 2, None).await;
         server.abort();
-        assert_eq!(count.load(Ordering::SeqCst), expected, "{rcode:?}");
-        assert_eq!(result.is_ok(), expected == 1, "{rcode:?}: {result:?}");
+        assert_eq!(count.load(Ordering::SeqCst), attempts, "{rcode:?}");
+        assert_eq!(result.is_ok(), ok, "{rcode:?}: {result:?}");
     }
 }
 

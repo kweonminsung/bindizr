@@ -312,7 +312,7 @@ impl ParsedQuery {
     }
 
     /// An empty authoritative answer with TC set, so a transfer client asks
-    /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.1.1).
+    /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.2 defines no UDP AXFR).
     pub fn build_truncated_response(&self) -> Vec<u8> {
         self.build_response(OptRcode::NOERROR, true, None)
             .finish()

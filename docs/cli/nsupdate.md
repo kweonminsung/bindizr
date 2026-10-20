@@ -4,9 +4,11 @@ Bindizr serves nsupdate, the RFC 2136 UPDATE message, through the DNS listener,
 authenticated with TSIG. The key named in the request's TSIG record says who
 is calling; the key's [role](access-control.md) says what it may change.
 
-Only the [implemented user record types](zones.md) are accepted. Unsupported
-ordinary types receive `REFUSED` in prerequisites and updates, including deletes;
-the entire request leaves records and the serial unchanged.
+Only the [implemented user record types](zones.md) are accepted. An update
+record of another ordinary type, a delete included, is `FORMERR` (RFC 2136,
+Section 3.4.1.2), and the entire request leaves records and the serial
+unchanged. A prerequisite may name any type; it is evaluated against the
+served zone, where no record of an unsupported type can exist.
 
 A WKS addition replaces the WKS at the same name, IPv4 address, and protocol.
 Different addresses or protocols can coexist.
@@ -67,18 +69,23 @@ The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone or class
 Bindizr does not serve: only IN is served, even when another class names an
 existing zone (Section 3.1.1). `NOTZONE` names an owner outside the zone,
 `FORMERR` a malformed section (a prerequisite with a TTL, an ANY-class delete carrying
-rdata, malformed wire RDATA, or a query/meta type no update may carry), and
+rdata, malformed wire RDATA, or a query/meta or unsupported type no update may carry), and
 `REFUSED` a policy decision: an unsigned request where a signature is
-required, a key whose role does not reach what the update touches, an
-unsupported ordinary type, a direct addition or deletion of signer-managed
+required, a key whose role does not reach what the update touches, a direct
+addition or deletion of signer-managed
 DNSSEC records, or an update sent to the TLS listener, which serves transfers alone (RFC 9103,
-Section 7.8). A
+Section 7.8). An unsupported EDNS version is `BADVERS` ahead of every policy
+refusal (RFC 6891, Section 6.1.3). A
 request whose key verifies is answered under that key whatever the code; a
 TSIG record outside Additional, doubled, not last, unreadable, or carrying a MAC of a size
 its algorithm cannot produce is a `FORMERR` signed by no one (RFC 8945,
 Section 5.2). The
 prerequisite codes (`NXDOMAIN`, `YXDOMAIN`, `NXRRSET`, `YXRRSET`) report the
-first prerequisite that failed. Prerequisites read the whole served zone:
+first prerequisite that failed. Prerequisites are evaluated before the update
+section is prescanned and before the key's grants on it are checked, in the
+order RFC 2136, Section 3 gives; only the read grant a prerequisite itself
+needs comes first, so a failed prerequisite reveals nothing the key may not
+read. Prerequisites read the whole served zone:
 ordinary records, the SOA (serial included), and generated DNSSEC records.
 A name holding only DNSSEC records is in use. Value-dependent prerequisites
 must match the entire RRset; order, duplicates, and TTL do not affect equality
