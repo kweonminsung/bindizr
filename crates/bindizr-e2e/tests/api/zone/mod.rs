@@ -5,6 +5,7 @@ use crate::common::{TestApp, probe_zone_soa};
 
 mod history;
 mod import;
+mod mailbox;
 mod status;
 
 /// Verify that SOA timers and the minimum TTL accept zero (RFC 1035, Section

@@ -136,7 +136,11 @@ certificate bundles of RDS and Cloud SQL are. The URL's own parameters
 needs its verifying `mode` beside it rather than in the URL.
 
 Use distinct catalog names for independent Bindizr deployments feeding the
-same secondary. Configure [TLS](http-api/index.md#tls) before exposing the API
+same secondary. A catalog name must fit within 216 wire octets, including the
+root label: the generated 32-character member ID and `zones` labels need the
+remaining 39 octets of DNS's 255-octet name limit. Startup checks the effective
+name after environment overrides; presentation escapes do not add wire octets.
+Configure [TLS](http-api/index.md#tls) before exposing the API
 off-host. Signing settings are managed per zone through [DNSSEC](dnssec/index.md).
 
 ## Environment variables

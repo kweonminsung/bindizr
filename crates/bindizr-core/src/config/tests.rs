@@ -733,6 +733,88 @@ fn is_catalog_zone_matches_the_configured_name_ignoring_case() {
     assert!(!parsed.dns.is_catalog_zone("catalog.prod.example"));
 }
 
+/// Match equivalent DNS escapes without confusing in-label dots with boundaries.
+#[test]
+fn is_catalog_zone_compares_decoded_labels() {
+    for (configured, question, other) in [
+        (
+            r"cat\046alog.example",
+            r"CAT\.ALOG.EXAMPLE",
+            "cat.alog.example",
+        ),
+        (
+            r"cat\092alog.example",
+            r"cat\\alog.example",
+            "catalog.example",
+        ),
+        (
+            r"cat\255alog.example",
+            r"CAT\255ALOG.EXAMPLE",
+            r"cat\254alog.example",
+        ),
+    ] {
+        let dns = DnsConfig {
+            catalog_zone_name: ZoneName::parse(configured).unwrap(),
+            ..Default::default()
+        };
+        assert!(dns.is_catalog_zone(question), "{configured} != {question}");
+        assert!(!dns.is_catalog_zone(other), "{configured} == {other}");
+        assert!(!dns.is_catalog_zone("."));
+        assert!(!dns.is_catalog_zone(r"bad\"));
+    }
+}
+
+/// Reject catalog names whose generated member owners exceed the DNS wire limit.
+#[test]
+fn from_toml_checks_catalog_member_owner_lengths_after_overrides() {
+    for last_len in [22, 23, 53, 54, 61] {
+        let catalog = format!(
+            "{}.{}.{}.{}",
+            "a".repeat(63),
+            "b".repeat(63),
+            "c".repeat(63),
+            "d".repeat(last_len)
+        );
+        assert_eq!(
+            ZoneName::parse(&catalog).unwrap().to_wire().unwrap().len(),
+            194 + last_len
+        );
+        let text = format!(
+            "{}\n[dns]\ncatalog_zone_name = '{catalog}'\n",
+            "[database]\ntype = 'sqlite'\n[database.sqlite]\nfile_path = ':memory:'"
+        );
+        let file = Config::from_toml(&text, |_| None);
+        let overridden = Config::from_toml(&TestConfigToml::default().render(), |name| {
+            (name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| catalog.clone())
+        });
+        for result in [file, overridden] {
+            assert_eq!(
+                result.is_ok(),
+                last_len == 22,
+                "wire length {}: {result:?}",
+                194 + last_len
+            );
+            if let Err(error) = result {
+                assert!(error.to_string().contains("dns.catalog_zone_name"));
+            }
+        }
+    }
+    let escaped = format!(
+        "{}.{}.{}.{}",
+        r"\255".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(22)
+    );
+    assert!(escaped.len() > 255);
+    assert!(
+        Config::from_toml(&TestConfigToml::default().render(), |name| {
+            (name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| escaped.clone())
+        })
+        .is_ok()
+    );
+}
+
 /// Verify that the catalog zone name is stored canonically, so an FQDN or a
 /// padded spelling still matches a query name.
 #[test]

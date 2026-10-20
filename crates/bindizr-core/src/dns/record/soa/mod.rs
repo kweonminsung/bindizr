@@ -18,7 +18,7 @@ pub enum ParseMailboxError {
     AtCount,
     #[error(transparent)]
     Name(#[from] FromStrError),
-    #[error("SOA mailbox is not UTF-8: {0}")]
+    #[error("SOA mailbox local part is not UTF-8: {0}")]
     Utf8(#[from] Utf8Error),
     #[error("SOA mailbox is not a valid encoded email")]
     NotEncodedEmail,
@@ -84,20 +84,20 @@ impl SoaMailbox {
         Self(mailbox.into())
     }
 
-    /// Decode mailbox labels, including decimal escapes (RFC 1035, Section 5.1).
+    /// Decode the local part as text and escape domain octets (RFC 1035, Section 5.1).
     pub fn to_email(&self) -> Result<String, ParseMailboxError> {
         let name = Name::<Vec<u8>>::from_str(&self.0)?;
         let labels = name
             .iter()
             .filter(|label| !label.is_root())
-            .map(|label| std::str::from_utf8(label.as_slice()).map(str::to_owned))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|label| label.as_slice())
+            .collect::<Vec<_>>();
         if labels.len() < 2 {
             return Err(ParseMailboxError::NotEncodedEmail);
         }
         Ok(format!(
             "{}@{}",
-            labels[0],
+            std::str::from_utf8(labels[0])?,
             labels_to_presentation(&labels[1..])
         ))
     }
@@ -135,99 +135,4 @@ fn escape_local_part(local: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dns::name::encode_name;
-
-    /// Verify that `from_email` escapes local part.
-    #[test]
-    fn from_email_escapes_local_part() {
-        assert_eq!(
-            SoaMailbox::from_email(r"host.master\ops@example.com")
-                .unwrap()
-                .as_str(),
-            r"host\.master\\ops.example.com."
-        );
-        assert!(SoaMailbox::from_email("hostmaster.example.com").is_err());
-        assert!(SoaMailbox::from_email("host@@example.com").is_err());
-    }
-
-    /// Verify that `to_email` round-trips.
-    #[test]
-    fn to_email_round_trips() {
-        for email in [
-            "admin@example.com",
-            "first.last@example.com",
-            "a.b.c@sub.example.com",
-            "back\\slash@example.com",
-        ] {
-            let mailbox = SoaMailbox::from_email(email).expect("email should convert to mailbox");
-            assert_eq!(
-                mailbox.to_email().expect("mailbox should convert back"),
-                email,
-                "round trip failed for mailbox '{mailbox}'"
-            );
-        }
-    }
-
-    /// Verify that to email handles plain stored mailbox.
-    #[test]
-    fn to_email_handles_plain_stored_mailbox() {
-        assert_eq!(
-            SoaMailbox::from_encoded("hostmaster.example.com.")
-                .to_email()
-                .unwrap(),
-            "hostmaster@example.com"
-        );
-        assert_eq!(
-            SoaMailbox::from_encoded("hostmaster.example.com")
-                .to_email()
-                .unwrap(),
-            "hostmaster@example.com"
-        );
-        assert_eq!(
-            SoaMailbox::from_encoded(r"Host\046Master.example.com.")
-                .to_email()
-                .unwrap(),
-            "Host.Master@example.com"
-        );
-    }
-
-    /// Verify that `to_email` rejects invalid input.
-    #[test]
-    fn to_email_rejects_invalid_input() {
-        assert!(SoaMailbox::from_encoded("no-separator").to_email().is_err());
-        assert!(SoaMailbox::from_encoded(".example.com").to_email().is_err());
-        assert!(SoaMailbox::from_encoded("dangling\\").to_email().is_err());
-        for mailbox in [
-            r"bad\99.example.com.",
-            r"bad\999.example.com.",
-            r"bad\255.example.com.",
-        ] {
-            assert!(SoaMailbox::from_encoded(mailbox).to_email().is_err());
-        }
-    }
-
-    /// Verify that SOA RDATA encodes two names followed by five counters (RFC 1035, Section
-    /// 3.3.13).
-    #[test]
-    fn encode_soa_rdata_returns_names_and_five_counters() {
-        let rdata = SoaRecordValue {
-            mname: "ns1.example.com",
-            rname: "admin.example.com",
-            serial: 42,
-            refresh: 2,
-            retry: 3,
-            expire: 4,
-            minimum: 5,
-        }
-        .to_rdata()
-        .unwrap();
-        let mut expected = encode_name("ns1.example.com").unwrap();
-        expected.extend(encode_name("admin.example.com").unwrap());
-        for field in [42u32, 2, 3, 4, 5] {
-            expected.extend(field.to_be_bytes());
-        }
-        assert_eq!(rdata.as_bytes(), expected);
-    }
-}
+mod tests;

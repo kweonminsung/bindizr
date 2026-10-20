@@ -88,6 +88,10 @@ pub enum ConfigError {
     Zero { key: &'static str },
     #[error("dns.catalog_zone_name is not a zone name: {0}")]
     CatalogZoneName(#[source] crate::dns::name::ParseNameError),
+    #[error(
+        "dns.catalog_zone_name must fit within {max_wire_len} wire octets, including the root, to leave room for generated catalog owners"
+    )]
+    CatalogZoneTooLong { max_wire_len: usize },
     /// A zero would stop secondaries refreshing, so a zone must not inherit it.
     #[error("dns.zone_defaults.{field} must be a positive number of seconds")]
     ZoneDefaultZero { field: &'static str },
@@ -1015,9 +1019,9 @@ impl DnsTlsConfig {
 }
 
 impl DnsConfig {
-    /// Match this instance's RFC 9432 catalog zone, ignoring case (RFC 4343).
+    /// Match a DNS question's decoded labels to this instance's catalog (RFC 4343).
     pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
-        zone_name.eq_ignore_ascii_case(self.catalog_zone_name.as_str())
+        ZoneName::parse(zone_name).is_ok_and(|name| name == self.catalog_zone_name)
     }
 
     /// How long a TCP or TLS connection may sit idle between queries.
@@ -1027,6 +1031,15 @@ impl DnsConfig {
 
     /// Validate the DNS configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
+        let catalog_wire = self
+            .catalog_zone_name
+            .to_wire()
+            .map_err(ConfigError::CatalogZoneName)?;
+        if catalog_wire.len() > crate::dns::MAX_CATALOG_ZONE_WIRE_LEN {
+            return Err(ConfigError::CatalogZoneTooLong {
+                max_wire_len: crate::dns::MAX_CATALOG_ZONE_WIRE_LEN,
+            });
+        }
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
         }

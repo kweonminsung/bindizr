@@ -12,8 +12,8 @@ pub mod tsig;
 mod ttl;
 pub mod zonefile;
 
-pub(crate) use catalog_zone::zone_name_to_member_id;
 pub use catalog_zone::{ExtractMemberZonesError, extract_member_zones};
+pub(crate) use catalog_zone::{MAX_CATALOG_ZONE_WIRE_LEN, catalog_member_owner_name};
 pub use serial::{ConvertSerialError, Serial};
 pub use soa_interval::{ConvertSoaIntervalError, SoaInterval};
 pub use ttl::{ConvertTtlError, Ttl};

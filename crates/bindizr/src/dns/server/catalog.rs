@@ -40,7 +40,7 @@ pub(crate) async fn generate_catalog_zone(
     let member_zones: Vec<String> = all_zones
         .iter()
         .map(|z| z.name.clone())
-        .filter(|name| !config.dns.is_catalog_zone(name.as_str()))
+        .filter(|name| name != catalog_zone_name)
         .map(|name| name.to_string())
         .collect();
 

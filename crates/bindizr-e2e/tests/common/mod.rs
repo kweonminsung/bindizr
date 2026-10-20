@@ -55,7 +55,7 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TestAppOptions {
     pub(crate) notify_batch_ms: u64,
     pub(crate) notify_timeout_secs: u64,
@@ -64,6 +64,7 @@ pub(crate) struct TestAppOptions {
     /// `false` accepts unsigned nsupdate requests.
     pub(crate) nsupdate_tsig_required: bool,
     pub(crate) openapi_enabled: bool,
+    pub(crate) catalog_zone_name: String,
     /// Serve the API over HTTPS with a certificate generated for this run.
     pub(crate) tls: bool,
     /// Serve zone transfers over TLS on a second port with that same certificate.
@@ -83,6 +84,7 @@ impl Default for TestAppOptions {
             external_dns_enabled: false,
             nsupdate_tsig_required: true,
             openapi_enabled: false,
+            catalog_zone_name: "catalog.bindizr".to_string(),
             tls: false,
             dns_tls: false,
             dns_transfer_require_tls: false,

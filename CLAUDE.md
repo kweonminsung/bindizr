@@ -498,6 +498,9 @@ db layer, which binds a `ZoneName` as it binds an `OwnerName` — takes
 `save_refused` and `save_failed` alone take the question's text, because a
 refusal may come before any parse: a name no zone can carry leaves no row.
 
+The effective catalog configuration must also leave wire space for generated
+member owners; validate that bound after environment overrides.
+
 Record values own their encoding: the SOA RNAME uses `SoaMailbox`, TXT uses
 `TxtRecordValue`, and CAA uses `CaaRecordValue`. CAA property values are octets,
 including empty and non-UTF-8 values; storage and export render them with

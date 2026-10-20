@@ -1,6 +1,64 @@
 use reqwest::{Method, StatusCode};
+use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
+
+/// Keep SOA minimum bounds aligned across the live schema and zone writes.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn minimum_ttl_schema_matches_zone_write_boundaries() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        openapi_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let (status, document) = app.send_request(Method::GET, "/openapi.json", None).await;
+    assert_eq!(status, StatusCode::OK);
+    for schema in ["CreateZoneRequest", "UpdateZoneRequest"] {
+        let minimum = &document["components"]["schemas"][schema]["properties"]["minimum_ttl"];
+        assert_eq!(minimum["minimum"], 0, "{schema}");
+        assert_eq!(minimum["maximum"], u32::MAX, "{schema}");
+    }
+    let zone = app.create_test_zone().await;
+    for ttl in [-1, 0, i64::from(u32::MAX), i64::from(u32::MAX) + 1] {
+        let name = app.zone_name(&format!("minimum-{}.example", ttl + 1));
+        let accepted = (0..=i64::from(u32::MAX)).contains(&ttl);
+        let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({
+            "name": name, "mname": "ns.example.com", "rname": "admin@example.com", "minimum_ttl": ttl
+        }))).await;
+        assert_eq!(
+            status,
+            if accepted {
+                StatusCode::CREATED
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            "{ttl}: {body}"
+        );
+        if accepted {
+            assert_eq!(body["zone"]["minimum_ttl"], ttl);
+        }
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &format!("/zones/{}", zone["name"].as_str().unwrap()),
+                Some(json!({"minimum_ttl": ttl})),
+            )
+            .await;
+        assert_eq!(
+            status,
+            if accepted {
+                StatusCode::OK
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            "{ttl}: {body}"
+        );
+        if accepted {
+            assert_eq!(body["zone"]["minimum_ttl"], ttl);
+        }
+    }
+}
 
 /// Verify that the unauthenticated API description is disabled by default.
 #[tokio::test]
@@ -94,7 +152,7 @@ async fn openapi_serves_documents_without_token_when_enabled() {
     }
     for name in ["CreateZoneRequest", "UpdateZoneRequest"] {
         let minimum = &body["components"]["schemas"][name]["properties"]["minimum_ttl"];
-        assert_eq!(minimum["minimum"], 1, "{name}");
+        assert_eq!(minimum["minimum"], 0, "{name}");
         assert_eq!(minimum["maximum"], u32::MAX, "{name}");
     }
     let record_type = &body["components"]["schemas"]["RecordType"];

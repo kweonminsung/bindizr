@@ -4524,7 +4524,7 @@ components:
           examples:
           - 3600
           maximum: 4294967295
-          minimum: 1
+          minimum: 0
         mname:
           type: string
           example: ns1.example.com
@@ -6957,7 +6957,7 @@ components:
           examples:
           - 3600
           maximum: 4294967295
-          minimum: 1
+          minimum: 0
         mname:
           type:
           - string

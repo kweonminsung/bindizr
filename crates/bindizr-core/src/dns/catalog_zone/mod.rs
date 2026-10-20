@@ -7,15 +7,33 @@ use thiserror::Error;
 
 use crate::dns::{
     message::{Name, Rtype},
-    name::{OwnerName, ParseNameError, ZoneName},
+    name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName},
     query::TransferRecord,
 };
+
+/// Digest octets retained in stable catalog member IDs.
+const MEMBER_ID_DIGEST_LEN: usize = 16;
+
+/// Schema-2 subtree containing member PTR owners (RFC 9432, Section 4.1).
+const MEMBER_SUBTREE: &str = "zones";
+
+/// Wire space added before the catalog by one member ID and its subtree label.
+const MEMBER_PREFIX_WIRE_LEN: usize = 1 + MEMBER_ID_DIGEST_LEN * 2 + 1 + MEMBER_SUBTREE.len();
+
+/// Longest catalog name allowing every generated owner; the member prefix exceeds "version.".
+pub(crate) const MAX_CATALOG_ZONE_WIRE_LEN: usize = MAX_WIRE_NAME_LEN - MEMBER_PREFIX_WIRE_LEN;
+
+/// Build a schema-2 member PTR owner using the same prefix startup validates.
+pub(crate) fn catalog_member_owner_name(catalog: &ZoneName, member_zone: &str) -> String {
+    let member_id = zone_name_to_member_id(member_zone);
+    format!("{member_id}.{MEMBER_SUBTREE}.{catalog}.")
+}
 
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).
 pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
     // Case-insensitive per RFC 4343, matching the catalog digest.
     let digest = digest(&SHA256, zone_name.to_ascii_lowercase().as_bytes());
-    hex::encode(&digest.as_ref()[..16])
+    hex::encode(&digest.as_ref()[..MEMBER_ID_DIGEST_LEN])
 }
 
 /// Why a transferred catalog zone could not be read as one.

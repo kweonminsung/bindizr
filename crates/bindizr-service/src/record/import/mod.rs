@@ -51,7 +51,7 @@ fn prepare_zone(
     default_ttl: Ttl,
 ) -> Result<Zone, ServiceError> {
     zone::validation::reject_catalog_zone_name(cx, zone_name)?;
-    let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))
+    let rname = SoaMailbox::from_encoded(&soa.rname)
         .to_email()
         .map_err(|e| {
             ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))

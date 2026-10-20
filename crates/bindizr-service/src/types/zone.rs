@@ -141,14 +141,14 @@ pub struct CreateZoneRequest {
     pub dry_run: bool,
 }
 
-/// Describe the nullable positive SOA minimum accepted by zone writes.
+/// Describe the nullable nonnegative SOA minimum accepted by zone writes.
 fn build_minimum_ttl_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
     use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, SchemaType, Type};
 
     ObjectBuilder::new()
         .schema_type(SchemaType::from_iter([Type::Integer, Type::Null]))
         .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
-        .minimum(Some(1_u64))
+        .minimum(Some(0_u64))
         .maximum(Some(u64::from(Ttl::MAX.as_secs())))
         .examples([3600])
         .into()

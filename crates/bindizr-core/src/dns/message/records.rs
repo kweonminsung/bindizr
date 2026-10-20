@@ -163,8 +163,7 @@ impl DnsMessageBuilder {
         zone: &Zone,
         member_zone: &str,
     ) -> Result<(), EncodeMessageError> {
-        let member_id = crate::dns::zone_name_to_member_id(member_zone);
-        let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
+        let ptr_name = crate::dns::catalog_member_owner_name(&zone.name, member_zone);
         let ptr_target = to_fqdn(member_zone);
         self.add_text_rdata(
             &ptr_name,

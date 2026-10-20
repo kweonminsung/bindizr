@@ -3053,3 +3053,67 @@ async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
     ids.sort();
     assert_eq!(ids, [81, 82]);
 }
+
+/// Accept an advancing SOA carrying an already accepted non-UTF-8 mailbox domain.
+#[tokio::test]
+#[serial]
+async fn soa_replacement_preserves_mailbox_domain_octets() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        nsupdate_tsig_required: false,
+        ..Default::default()
+    })
+    .await;
+    let name = app.zone_name("octet-soa.example");
+    let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({
+        "name": name, "mname": "ns.example.com", "rname": r"admin@\255.example.com", "serial": 1
+    }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let signing_key = create_tsig_key(&app, "octet-soa-key", KeyRole::Admin).await;
+    let mut serial = 1;
+    for key in [None, Some(&signing_key)] {
+        serial += 1;
+        let soa = Soa::new(
+            parse_name("ns.example.com").unwrap(),
+            parse_name(r"admin.\255.example.com").unwrap(),
+            serial.into(),
+            Ttl::from_secs(300),
+            Ttl::from_secs(60),
+            Ttl::from_secs(86400),
+            Ttl::ZERO,
+        );
+        let updates = [UpdateRecord::AddSoa {
+            name: name.clone(),
+            ttl: 300,
+            soa,
+        }];
+        assert_eq!(
+            send_update_udp(app.dns_port(), &name, &[], &updates, key).unwrap(),
+            Rcode::NOERROR
+        );
+        serial += 1;
+        let soa = Soa::new(
+            parse_name("ns.example.com").unwrap(),
+            parse_name(r"admin.\255.example.com").unwrap(),
+            serial.into(),
+            Ttl::from_secs(300),
+            Ttl::from_secs(60),
+            Ttl::from_secs(86400),
+            Ttl::ZERO,
+        );
+        let updates = [UpdateRecord::AddSoa {
+            name: name.clone(),
+            ttl: 300,
+            soa,
+        }];
+        assert_eq!(
+            send_update_tcp(app.dns_port(), &name, &[], &updates, key).unwrap(),
+            Rcode::NOERROR
+        );
+        assert_eq!(app.read_zone_serial(&name).await, i64::from(serial));
+    }
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"]["rname"], r"admin@\255.example.com");
+}

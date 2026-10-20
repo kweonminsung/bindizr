@@ -166,6 +166,7 @@ url = ""
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
+catalog_zone_name = {catalog_zone_name}
 {dns_tls}
 {dns_transfer}
 
@@ -187,6 +188,7 @@ level = "error"
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,
+        catalog_zone_name = serde_json::to_string(&options.catalog_zone_name).unwrap(),
         tls = match options.tls {
             true => {
                 format!(
