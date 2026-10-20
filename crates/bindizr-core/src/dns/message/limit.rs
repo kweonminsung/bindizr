@@ -40,7 +40,7 @@ impl ResponseLimit {
     }
 
     /// Reject a completed message that cannot be sent within this budget.
-    pub fn check_len(self, len: usize) -> Result<(), EncodeMessageError> {
+    pub fn validate_len(self, len: usize) -> Result<(), EncodeMessageError> {
         if len > self.max_len() {
             return Err(EncodeMessageError::TooLarge {
                 len,

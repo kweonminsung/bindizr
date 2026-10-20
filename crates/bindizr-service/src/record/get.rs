@@ -1,5 +1,7 @@
 use bindizr_core::{
-    dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation},
+    dns::name::{
+        OwnerName, ZoneName, decode_name_labels, labels_to_presentation, trim_presentation_name,
+    },
     model::record::RecordId,
 };
 use bindizr_db::dnssec_record::DnssecRecordFilter;
@@ -222,7 +224,7 @@ pub async fn get(
 /// Normalize a name filter for stored-owner and FQDN comparisons.
 fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
     name.and_then(|name| {
-        let trimmed = name.trim();
+        let trimmed = trim_presentation_name(&name);
         // An empty value is no filter. Left to fall through it would spell the
         // apex, which rows hold as the empty string, and match every apex row.
         if trimmed.is_empty() {

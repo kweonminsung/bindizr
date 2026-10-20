@@ -765,9 +765,9 @@ fn response_limits_follow_transport_and_edns() {
         let limit = ResponseLimit::udp(advertised);
         assert!(limit.is_udp());
         assert_eq!(limit.max_len(), expected);
-        assert!(limit.check_len(expected).is_ok());
+        assert!(limit.validate_len(expected).is_ok());
         assert!(
-            matches!(limit.check_len(expected + 1), Err(EncodeMessageError::TooLarge { len, max_len }) if len == expected + 1 && max_len == expected)
+            matches!(limit.validate_len(expected + 1), Err(EncodeMessageError::TooLarge { len, max_len }) if len == expected + 1 && max_len == expected)
         );
         let (_, wire) = crate::dns::query::build_question(
             Opcode::QUERY,
@@ -783,8 +783,8 @@ fn response_limits_follow_transport_and_edns() {
         assert_eq!(udp.response_limit(), limit);
         assert_eq!(stream.response_limit(), ResponseLimit::STREAM);
     }
-    assert!(ResponseLimit::STREAM.check_len(65535).is_ok());
-    assert!(ResponseLimit::STREAM.check_len(65536).is_err());
+    assert!(ResponseLimit::STREAM.validate_len(65535).is_ok());
+    assert!(ResponseLimit::STREAM.validate_len(65536).is_err());
 }
 
 /// A failed final size check must not consume the next MAC in a response chain.

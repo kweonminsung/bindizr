@@ -5,7 +5,10 @@ use regexp::validate_naptr_regexp;
 
 use super::{
     EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
-    value::{parse_char_string, parse_u16_record_field, validate_domain_record_value},
+    value::{
+        parse_char_string, parse_u16_record_field, split_record_fields,
+        validate_domain_record_value,
+    },
 };
 use crate::dns::name::{encode_name, to_fqdn};
 
@@ -31,12 +34,15 @@ impl<'a> NaptrRecordValue<'a> {
         let (services, rest) = parse_char_string("NAPTR services", rest)?;
         let (regexp, rest) = parse_char_string("NAPTR regexp", rest)?;
 
-        let replacement = rest.trim();
-        if replacement.is_empty() || replacement.split_whitespace().count() != 1 {
-            return Err(ParseRecordValueError::NaptrShape {
-                value: value.to_string(),
-            });
-        }
+        let mut fields = split_record_fields(rest);
+        let replacement = match (fields.next(), fields.next()) {
+            (Some(replacement), None) => replacement,
+            _ => {
+                return Err(ParseRecordValueError::NaptrShape {
+                    value: value.to_string(),
+                });
+            }
+        };
 
         Ok(Self {
             order: parse_u16_record_field("NAPTR order", order)?,

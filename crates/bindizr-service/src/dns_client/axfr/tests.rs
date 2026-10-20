@@ -131,6 +131,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
     }
 }
 
+/// Fetch a test transfer with independently chosen opening and closing SOAs.
 async fn fetch_transfer(
     opening: Rdata,
     closing: Rdata,
@@ -181,6 +182,7 @@ async fn fetch_transfer(
     result.map(|(records, _)| records)
 }
 
+/// Accept equivalent closing SOA names while preserving received RDATA case.
 #[tokio::test]
 async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
     let opening = SoaRecordValue {
@@ -214,6 +216,7 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
     }
 }
 
+/// Reject a closing SOA whose data differs from the opening SOA.
 #[tokio::test]
 async fn fetch_zone_rejects_changed_closing_soa() {
     let opening = SoaRecordValue {

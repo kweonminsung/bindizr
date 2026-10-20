@@ -61,7 +61,7 @@ pub fn build_response(
                 .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
         }
         let response = additional.finish().into_target();
-        match limit.check_len(response.len()) {
+        match limit.validate_len(response.len()) {
             Ok(()) => return Ok(response),
             Err(error) if minimal || !limit.is_udp() => return Err(error.into()),
             Err(_) => {}

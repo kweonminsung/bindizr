@@ -6,7 +6,7 @@ use domain::{
     rdata::tsig::Tsig,
 };
 
-use super::{parser::tests::minimal_update_with_ztype, *};
+use super::{parser::tests::build_minimal_update_with_ztype, *};
 use crate::{
     dns::tsig::{
         self,
@@ -18,7 +18,7 @@ use crate::{
 /// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
-    let query = minimal_update_with_ztype(6);
+    let query = build_minimal_update_with_ztype(6);
 
     let response = build_response(
         &query,
@@ -44,7 +44,7 @@ fn build_response_echoes_request_header_and_question() {
 /// carrying the extended rcode (RFC 6891, Section 6.1.1).
 #[test]
 fn build_response_echoes_an_opt_with_the_extended_rcode() {
-    let mut query = minimal_update_with_ztype(6);
+    let mut query = build_minimal_update_with_ztype(6);
     query[10..12].copy_from_slice(&1u16.to_be_bytes());
     query.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

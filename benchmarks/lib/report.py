@@ -105,7 +105,7 @@ def _aggregate(rows: list[dict]) -> list[dict]:
     return out
 
 
-def _pm(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
+def _display_metric(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
     """Render a metric as `mean ± std` (std omitted when 0 / single run)."""
     mean = row.get(key)
     if not isinstance(mean, (int, float)) or isinstance(mean, bool):
@@ -116,7 +116,7 @@ def _pm(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
     return f"{mean:.{prec}f}"
 
 
-def _bulk_linearity_note(rows: list[dict]) -> str:
+def _render_bulk_linearity_note(rows: list[dict]) -> str:
     """Per-series 10k→100k scaling: import time should grow ~10x for 10x records."""
     by_sys: dict[str, dict[int, float]] = {}
     for r in rows:
@@ -152,7 +152,7 @@ QUERY_BASELINES = {
 }
 
 
-def _b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
+def _display_b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
     """Render QPS change against a measured positive baseline, `baseline` for it, or `-` if absent."""
     standalone = comparable.get(QUERY_BASELINES.get(row["system"], ""))
     if standalone and row["system"] in comparable:
@@ -162,7 +162,7 @@ def _b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
     return "-"
 
 
-def _b08_conclusion(comparable: dict[str, dict]) -> str:
+def _render_b08_conclusion(comparable: dict[str, dict]) -> str:
     """State per-pairing overhead conclusions only for positive QPS on both sides.
     Compare each gap with the run-to-run noise tolerance."""
     within: list[str] = []
@@ -205,8 +205,8 @@ def _render_b07(rows: list[dict]) -> str:
                                            r.get("backend", "")))
         crud_rows = [[
             r.get("system", "-"),
-            r.get("backend", "-"), _pm(r, "create_tps"), _pm(r, "read_tps"),
-            _pm(r, "create_p95_ms", 2), _pm(r, "read_p95_ms", 2),
+            r.get("backend", "-"), _display_metric(r, "create_tps"), _display_metric(r, "read_tps"),
+            _display_metric(r, "create_p95_ms", 2), _display_metric(r, "read_p95_ms", 2),
             f'{r.get("error_rate", 0) * 100:.2f}%', r.get("peak_mem_mb", "-"),
             r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
@@ -228,7 +228,7 @@ def _render_b07(rows: list[dict]) -> str:
                                            r.get("size", 0)))
         bulk_rows = [[
             r.get("system", "-"), r.get("backend", "-"), r.get("size", "-"),
-            _pm(r, "import_secs", 3), _pm(r, "records_per_sec"),
+            _display_metric(r, "import_secs", 3), _display_metric(r, "records_per_sec"),
             r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
             r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
@@ -238,7 +238,7 @@ def _render_b07(rows: list[dict]) -> str:
              "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
             bulk_rows))
         # One series per pairing and backend, so the note keys on both.
-        out.append(_bulk_linearity_note(
+        out.append(_render_bulk_linearity_note(
             [{**r, "system": f'{r.get("system", "-")} / {r.get("backend", "-")}'}
              for r in bulk]))
 
@@ -292,9 +292,9 @@ def _render_markdown(env: dict, data: dict) -> str:
         rows = []
         for r in _rows(data, "b01_crud_tps"):
             rows.append([
-                r["system"], _pm(r, "create_tps"), _pm(r, "update_tps"),
-                _pm(r, "delete_tps"), _pm(r, "read_tps"),
-                _pm(r, "read_p95_ms", 2), f'{r.get("error_rate", 0) * 100:.2f}%',
+                r["system"], _display_metric(r, "create_tps"), _display_metric(r, "update_tps"),
+                _display_metric(r, "delete_tps"), _display_metric(r, "read_tps"),
+                _display_metric(r, "read_p95_ms", 2), f'{r.get("error_rate", 0) * 100:.2f}%',
                 r.get("runs", 1),
             ])
         out.append(_render_markdown_table(
@@ -310,14 +310,14 @@ def _render_markdown(env: dict, data: dict) -> str:
         for r in results:
             rows.append([
                 r["system"], r.get("size", "-"),
-                _pm(r, "import_secs", 3), _pm(r, "records_per_sec"),
+                _display_metric(r, "import_secs", 3), _display_metric(r, "records_per_sec"),
                 r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
                 r.get("runs", 1),
             ])
         out.append(_render_markdown_table(
             ["System", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Runs"], rows))
-        out.append(_bulk_linearity_note(results))
+        out.append(_render_bulk_linearity_note(results))
 
     # Generic dump for the remaining benchmarks.
     titles = {
@@ -343,12 +343,12 @@ def _render_markdown(env: dict, data: dict) -> str:
     if "b08_query_perf" in data:
         results = _rows(data, "b08_query_perf")
 
-        def _ok(r):
+        def _has_reportable_qps(r):
             """Select non-failed runs with QPS; failures are reported outside numeric comparisons."""
             return r.get("status") != "FAILED" and r.get("qps") is not None
 
-        failed = [r for r in results if not _ok(r)]
-        ok = [r for r in results if _ok(r)]
+        failed = [r for r in results if not _has_reportable_qps(r)]
+        ok = [r for r in results if _has_reportable_qps(r)]
         # A run whose every timed query failed reports qps 0.0 without being
         # FAILED; it is listed, but cannot anchor or receive a comparison.
         comparable = {r["system"]: r for r in ok if r["qps"] > 0}
@@ -357,7 +357,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         for r in ok:
             rows.append([r["system"], r.get("qps", "-"), r.get("avg_latency_ms", "-"),
                          r.get("p95_ms", "-"), r.get("p99_ms", "-"),
-                         _b08_query_delta(r, comparable)])
+                         _display_b08_query_delta(r, comparable)])
         out.append(_render_markdown_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
              "QPS vs. same server standalone"], rows))
@@ -365,7 +365,7 @@ def _render_markdown(env: dict, data: dict) -> str:
             out.append("\n> ⚠️ Failed runs: " +
                        ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
                                  for r in failed) + "\n")
-        out.append(_b08_conclusion(comparable))
+        out.append(_render_b08_conclusion(comparable))
 
     if "b09_resource_usage" in data:
         results = _rows(data, "b09_resource_usage")

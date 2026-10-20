@@ -175,7 +175,7 @@ pub(crate) async fn authenticate_transfer(
         }
         // An address is no credential the content transaction re-reads:
         // removing a secondary refuses later transfers, not one admitted.
-        return match acl::is_client_allowed(dns_cx, client_ip).await {
+        return match acl::evaluate_client_access(dns_cx, client_ip).await {
             Ok(true) => Ok(TransferIdentity {
                 caller: Caller::unsigned_dns(),
                 signer: None,
@@ -193,7 +193,7 @@ pub(crate) async fn authenticate_transfer(
 
     // The key answers for the address check, so the refusal is signed too.
     if over_tls {
-        match acl::is_client_allowed(dns_cx, client_ip).await {
+        match acl::evaluate_client_access(dns_cx, client_ip).await {
             Ok(true) => {}
             Ok(false) => {
                 return Err(TransferRefusal::refused(

@@ -7,7 +7,7 @@ use crate::{
 /// Decode compressed SOA names and unsigned fields without crossing RDLENGTH.
 #[test]
 fn soa_update_decodes_compression_and_checks_rdata_length() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     let start = message.len();
     message.extend_from_slice(&[3, b'n', b's', b'1', 0xc0, 12]);
     message.extend_from_slice(&[
@@ -44,7 +44,7 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
 }
 
 /// Build a minimal UPDATE message with the requested zone type.
-pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
+pub(crate) fn build_minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     let mut message = Vec::new();
     message.extend_from_slice(&[
         0x12, 0x34, // ID
@@ -114,7 +114,7 @@ fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
     for count_offset in [6, 8] {
         for owner in [&b"\xc0\x0c"[..], &b"\x03key\x00"[..]] {
             for additional_tsig in [false, true] {
-                let mut message = minimal_update_with_ztype(6);
+                let mut message = build_minimal_update_with_ztype(6);
                 message[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
                 append_tsig_record_with_owner(&mut message, owner);
                 if additional_tsig {
@@ -134,7 +134,7 @@ fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
     for class in [Class::IN, Class::CH, Class::HS, Class::from_int(65280)] {
-        let mut message = minimal_update_with_ztype(1);
+        let mut message = build_minimal_update_with_ztype(1);
         let class_start = message.len() - 2;
         message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
         let err = UpdateRequest::parse(&message).unwrap_err();
@@ -155,7 +155,7 @@ fn parse_update_request_preserves_zone_class() {
         Class::from_int(65280),
         Class::from_int(u16::MAX),
     ] {
-        let mut message = minimal_update_with_ztype(6);
+        let mut message = build_minimal_update_with_ztype(6);
         let class_start = message.len() - 2;
         message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
         let request = UpdateRequest::parse(&message).unwrap();
@@ -174,7 +174,7 @@ fn parse_update_request_preserves_zone_class() {
 /// A missing class field is malformed, not an unsupported zone class.
 #[test]
 fn parse_update_request_rejects_truncated_zone_class() {
-    let message = minimal_update_with_ztype(6);
+    let message = build_minimal_update_with_ztype(6);
     for missing in [1, 2] {
         assert!(matches!(
             UpdateRequest::parse(&message[..message.len() - missing]),
@@ -186,7 +186,7 @@ fn parse_update_request_rejects_truncated_zone_class() {
 /// Verify that `UpdateRequest::parse` accepts opt additional without TSIG.
 #[test]
 fn parse_update_request_accepts_opt_additional_without_tsig() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_opt_record(&mut message);
 
@@ -197,7 +197,7 @@ fn parse_update_request_accepts_opt_additional_without_tsig() {
 /// Verify that `UpdateRequest::parse` accepts opt before TSIG.
 #[test]
 fn parse_update_request_accepts_opt_before_tsig() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
     append_opt_record(&mut message);
     append_tsig_record(&mut message);
@@ -212,7 +212,7 @@ fn parse_update_request_accepts_opt_before_tsig() {
 /// the same spelling, which decodes to different labels.
 #[test]
 fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_tsig_record_with_owner(
         &mut message,
@@ -251,7 +251,7 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
 /// Verify that `UpdateRequest::parse` rejects TSIG before other additional records.
 #[test]
 fn parse_update_request_rejects_tsig_before_other_additional_records() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
     append_tsig_record(&mut message);
     append_opt_record(&mut message);
@@ -498,7 +498,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
 /// are malformed, and a version above 0 is unsupported.
 #[test]
 fn parse_update_request_reads_the_opt_record() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_opt_record(&mut message);
     assert_eq!(
@@ -510,7 +510,7 @@ fn parse_update_request_reads_the_opt_record() {
         }
     );
 
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
     append_opt_record(&mut message);
     append_opt_record(&mut message);
@@ -519,7 +519,7 @@ fn parse_update_request_reads_the_opt_record() {
         Edns::Malformed
     );
 
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     // The TTL's second octet is the EDNS version.
     message.extend_from_slice(&[

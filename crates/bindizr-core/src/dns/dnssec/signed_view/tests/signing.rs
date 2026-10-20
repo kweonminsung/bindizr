@@ -137,6 +137,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     assert!(rrsigs.iter().all(|row| row.record_set_digest.is_some()));
 }
 
+/// Verify signatures while serving the original case of name-bearing RDATA.
 #[test]
 fn signatures_validate_case_preserving_rdata() {
     let zone = test_zone();

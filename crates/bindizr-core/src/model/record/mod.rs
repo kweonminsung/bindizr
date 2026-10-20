@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::{
     dns::{
         Ttl,
-        name::{OwnerName, ZoneName},
+        name::{OwnerName, ZoneName, trim_presentation_name},
         record::{
             ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
             DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
@@ -453,8 +453,9 @@ impl RecordType {
         value: &str,
         priority: Option<i32>,
     ) -> Result<String, ParseRecordValueError> {
-        // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
+        // Names retain escaped whitespace; other grammars trim or parse their own fields.
         let trimmed = value.trim();
+        let name = trim_presentation_name(value);
         match self {
             RecordType::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
@@ -464,31 +465,31 @@ impl RecordType {
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::Cname => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::Dname => DnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Cname => CnameRecordValue::parse(name).map(|parsed| parsed.canonical()),
+            RecordType::Dname => DnameRecordValue::parse(name).map(|parsed| parsed.canonical()),
             RecordType::Ds => {
                 let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
             RecordType::Mx => {
-                let parsed = MxRecordValue::parse(trimmed, priority)?;
+                let parsed = MxRecordValue::parse(value, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
             RecordType::Naptr => {
-                let parsed = NaptrRecordValue::parse(trimmed)?;
+                let parsed = NaptrRecordValue::parse(value)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
             RecordType::Txt => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
-            RecordType::Ns => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Ns => NsRecordValue::parse(name).map(|parsed| parsed.canonical()),
             RecordType::Srv => {
-                let parsed = SrvRecordValue::parse(trimmed, priority)?;
+                let parsed = SrvRecordValue::parse(value, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            RecordType::Ptr => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Ptr => PtrRecordValue::parse(name).map(|parsed| parsed.canonical()),
             RecordType::Sshfp => {
                 let parsed = SshfpRecordValue::parse(trimmed)?;
                 parsed.validate()?;

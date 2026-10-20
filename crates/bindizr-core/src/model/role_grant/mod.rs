@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{
     dns::name::OwnerName,
     model::{
-        grant_pattern::{MATCH_ANY, matches_name, matches_types, pattern_covers},
+        grant_pattern::{MATCH_ANY, has_pattern_coverage, matches_name, matches_types},
         record::RecordType,
         role::RoleId,
         zone::ZoneId,
@@ -332,7 +332,7 @@ impl RoleGrant {
 
     /// Whether this grant covers every name `pattern` matches, for `record_type`.
     fn covers_pattern(&self, pattern: &str, record_type: &RecordType) -> bool {
-        pattern_covers(&self.record_name_pattern, pattern)
+        has_pattern_coverage(&self.record_name_pattern, pattern)
             && matches_types(&self.record_types, Some(record_type))
     }
 

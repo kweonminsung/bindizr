@@ -706,6 +706,7 @@ mod tests {
 
     use super::*;
 
+    /// Display serial lag using wraparound-aware secondary status.
     #[test]
     fn secondary_status_row_displays_serial_lag_across_wraparound() {
         use SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};

@@ -4,6 +4,50 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 
 mod bulk;
 
+/// Preserve name escapes in CLI arguments across the daemon socket and record listing.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn escaped_record_targets_round_trip_via_cli() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    for (kind, prefix) in [
+        ("CNAME", ""),
+        ("DNAME", ""),
+        ("NS", ""),
+        ("PTR", ""),
+        ("MX", ""),
+        ("SRV", "0 443 "),
+        ("NAPTR", "10 10 \"S\" \"SIP+D2U\" \"\" "),
+    ] {
+        let input = format!("{prefix}tail\\ ");
+        let expected = format!(r"{prefix}tail\032.");
+        let owner = kind.to_ascii_lowercase();
+        let output = app
+            .run_cli_success(
+                &[
+                    "record", "create", name, &owner, "--type", kind, "--value", &input,
+                    "--output", "json",
+                ],
+                None,
+            )
+            .await;
+        let output: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(output["record"]["value"], expected);
+        let listed = app
+            .run_cli_success(&["record", "list", name, "--output", "json"], None)
+            .await;
+        let listed: Value = serde_json::from_str(&listed).unwrap();
+        let record = listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["type"] == kind && r["name"] == format!("{owner}.{name}."))
+            .unwrap();
+        assert_eq!(record["value"], expected);
+    }
+}
+
 /// Verify record creation, retrieval, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

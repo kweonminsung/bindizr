@@ -179,7 +179,7 @@ fn authorize_rejects_when_any_single_write_is_denied() {
 }
 
 /// Check whether the test caller may read the requested record.
-fn visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> bool {
+fn is_record_visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> bool {
     caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
 }
 
@@ -218,7 +218,11 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
         "_acme-challenge",
         &RecordType::A
     ));
-    assert!(!visible(&caller, "_acme-challenge", Some(&RecordType::Txt)));
+    assert!(!is_record_visible(
+        &caller,
+        "_acme-challenge",
+        Some(&RecordType::Txt)
+    ));
 }
 
 /// Verify that `sees_record` needs `record:read` and narrows like writes.
@@ -226,18 +230,22 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
 fn sees_record_requires_matching_record_read_grant() {
     let caller = token(vec![grant(&[Action::RecordRead], "*.dyn", "A,TXT")]);
 
-    assert!(visible(&caller, "host.dyn", Some(&RecordType::A)));
-    assert!(!visible(&caller, "www", Some(&RecordType::A)));
-    assert!(!visible(&caller, "host.dyn", Some(&RecordType::Cname)));
+    assert!(is_record_visible(&caller, "host.dyn", Some(&RecordType::A)));
+    assert!(!is_record_visible(&caller, "www", Some(&RecordType::A)));
+    assert!(!is_record_visible(
+        &caller,
+        "host.dyn",
+        Some(&RecordType::Cname)
+    ));
 
     // The derived DNSSEC plane carries no type of the grant's vocabulary, so
     // it reaches only a grant restricting neither name nor type.
-    assert!(!visible(&caller, "host.dyn", None));
+    assert!(!is_record_visible(&caller, "host.dyn", None));
     let whole = token(vec![grant(&[Action::RecordRead], "*", "*")]);
-    assert!(visible(&whole, "host.dyn", None));
+    assert!(is_record_visible(&whole, "host.dyn", None));
 
     let write_only = token(vec![grant(&[Action::RecordCreate], "*", "*")]);
-    assert!(!visible(&write_only, "app", Some(&RecordType::A)));
+    assert!(!is_record_visible(&write_only, "app", Some(&RecordType::A)));
 }
 
 /// Verify that `authorize_whole_zone` rejects a constrained grant.

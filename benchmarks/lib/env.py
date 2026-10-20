@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from lib.dockerutil import arm_overrides_enabled
+from lib.dockerutil import is_arm_override_enabled
 
 SYSTEMS_DIR = Path(__file__).resolve().parent.parent / "systems"
 
@@ -30,7 +30,7 @@ def _load_compose_images() -> dict[str, str]:
     for compose in sorted(SYSTEMS_DIR.glob("*/compose.yml")):
         files = [compose]
         override = compose.with_name("compose.arm.yml")
-        if arm_overrides_enabled() and override.exists():
+        if is_arm_override_enabled() and override.exists():
             files.append(override)
         for file in files:
             try:

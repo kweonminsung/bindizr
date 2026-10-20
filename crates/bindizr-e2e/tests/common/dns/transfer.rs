@@ -12,7 +12,7 @@ use rustls::ClientConfig;
 use super::{
     parse_name,
     transport::{connect_tcp, connect_tls, read_frame, write_frame},
-    tsig::{SigningKey, is_signed},
+    tsig::{SigningKey, parse_tsig_presence},
 };
 
 /// Transferred record count or refusal details.
@@ -108,7 +108,7 @@ fn transfer<S: Read + Write>(
         if message.header().rcode() != Rcode::NOERROR {
             return Ok(TransferResult::Refused {
                 rcode: message.header().rcode(),
-                signed: is_signed(&message)?,
+                signed: parse_tsig_presence(&message)?,
             });
         }
         if let Some(client) = client.as_mut() {

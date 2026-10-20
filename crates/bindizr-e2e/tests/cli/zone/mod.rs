@@ -7,6 +7,51 @@ mod history;
 mod import;
 mod status;
 
+/// Preserve escaped trailing spaces through CLI/socket writes and reject escaped wildcard zones.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn escaped_zone_names_follow_the_same_policy_via_cli() {
+    let app = TestApp::start_local().await;
+    let base = app.zone_name("cli-escaped");
+    let simple = format!("{base}\\ ");
+    let canonical = format!(r"{base}\032");
+    let created = app
+        .run_cli_success(
+            &[
+                "zone",
+                "create",
+                &simple,
+                "--mname",
+                "ns.example",
+                "--rname",
+                "admin@example",
+                "--output",
+                "json",
+            ],
+            None,
+        )
+        .await;
+    let created: Value = serde_json::from_str(&created).unwrap();
+    assert_eq!(created["zone"]["name"], canonical);
+    let read = app
+        .run_cli_success(&["zone", "get", &canonical, "--output", "json"], None)
+        .await;
+    let read: Value = serde_json::from_str(&read).unwrap();
+    assert_eq!(read["zone"]["name"], canonical);
+    let wildcard = format!(r"\042.{base}");
+    let args = [
+        "zone",
+        "create",
+        &wildcard,
+        "--mname",
+        "ns.example",
+        "--rname",
+        "admin@example",
+    ];
+    let output = app.run_cli(&args, None).await;
+    assert_cli_failure_contains(&args, &output, "wildcard");
+}
+
 /// Verify that zone create takes SOA timers.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

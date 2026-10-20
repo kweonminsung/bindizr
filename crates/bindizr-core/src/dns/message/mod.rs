@@ -314,7 +314,7 @@ impl DnsMessageBuilder {
     fn build_tcp_frame(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let signer = self.signer.clone();
         let frame = self.build_message().and_then(|message| {
-            self.limit.check_len(message.len())?;
+            self.limit.validate_len(message.len())?;
             encode_tcp_message(&message)
         });
         if frame.is_err() {
@@ -328,7 +328,7 @@ impl DnsMessageBuilder {
     pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let signer = self.signer.clone();
         let response = self.build_message()?;
-        if let Err(error) = self.limit.check_len(response.len()) {
+        if let Err(error) = self.limit.validate_len(response.len()) {
             if !self.limit.is_udp() {
                 return Err(error);
             }
@@ -337,7 +337,7 @@ impl DnsMessageBuilder {
             self.clear_answers();
             self.truncated = true;
             let response = self.build_message()?;
-            self.limit.check_len(response.len())?;
+            self.limit.validate_len(response.len())?;
             return Ok(response);
         }
         Ok(response)
@@ -346,7 +346,7 @@ impl DnsMessageBuilder {
 
 /// Prefix a DNS message with its two-byte TCP frame length.
 pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError> {
-    ResponseLimit::STREAM.check_len(message.len())?;
+    ResponseLimit::STREAM.validate_len(message.len())?;
 
     let len = message.len() as u16;
     let mut result = Vec::with_capacity(2 + message.len());

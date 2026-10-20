@@ -54,7 +54,7 @@ pub(crate) fn classify_domain_label(label: &str) -> Result<(), ParseNameError> {
 }
 
 /// Trim surrounding input whitespace without eating a final escaped label octet.
-pub(crate) fn trim_presentation_name(value: &str) -> &str {
+pub fn trim_presentation_name(value: &str) -> &str {
     let mut value = value.trim_start();
     while let Some(last) = value.chars().next_back().filter(|c| c.is_whitespace()) {
         let prefix = &value[..value.len() - last.len_utf8()];

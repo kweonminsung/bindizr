@@ -107,7 +107,7 @@ fn install_crypto_provider() {
 impl TestApp {
     /// Start the configured end-to-end test application.
     pub(crate) async fn start() -> Self {
-        if env_flag(DNS_VERIFICATION_ENV) {
+        if read_env_flag(DNS_VERIFICATION_ENV) {
             Self::start_compose().await
         } else {
             Self::start_with_options(TestAppOptions::default()).await
@@ -469,7 +469,7 @@ fn test_namespace() -> String {
 }
 
 /// Read a boolean test setting from the environment.
-fn env_flag(name: &str) -> bool {
+fn read_env_flag(name: &str) -> bool {
     match env::var(name) {
         Err(env::VarError::NotPresent) => false,
         Err(error) => panic!("failed to read {name}: {error}"),

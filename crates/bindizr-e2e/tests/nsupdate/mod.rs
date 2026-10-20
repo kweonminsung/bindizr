@@ -91,7 +91,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
                             Rcode::FORMERR,
                             "tsig_required={tsig_required}, prerequisite={prerequisite}, owner={owner}"
                         );
-                        assert!(!crate::common::dns::tsig::is_signed(&response).unwrap());
+                        assert!(!crate::common::dns::tsig::parse_tsig_presence(&response).unwrap());
                     }
                 }
             }

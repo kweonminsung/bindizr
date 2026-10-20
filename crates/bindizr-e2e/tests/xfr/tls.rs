@@ -26,7 +26,7 @@ use crate::common::{
         exchange_request, exchange_udp,
         nsupdate::{UpdateRecord, build_update},
         parse_name, probe_zone_soa,
-        tsig::{KeyRole, create_tsig_key, is_signed, sign, verify_response_mac},
+        tsig::{KeyRole, create_tsig_key, parse_tsig_presence, sign, verify_response_mac},
     },
     exchange_xot, xot,
 };
@@ -779,7 +779,7 @@ async fn tls_query_returns_not_supported_for_unserved_type() {
                 extended_error_code(response.as_slice()),
                 ExtendedErrorCode::NOT_SUPPORTED
             );
-            assert_eq!(is_signed(&response).unwrap(), key.is_some());
+            assert_eq!(parse_tsig_presence(&response).unwrap(), key.is_some());
         }
     }
 }
@@ -834,7 +834,7 @@ async fn tls_notify_returns_refused_with_not_supported() {
                 extended_error_code(response.as_slice()),
                 ExtendedErrorCode::NOT_SUPPORTED
             );
-            assert_eq!(is_signed(&response).unwrap(), key.is_some());
+            assert_eq!(parse_tsig_presence(&response).unwrap(), key.is_some());
         }
     }
 }
@@ -872,7 +872,7 @@ async fn tls_supported_queries_reject_foreign_classes() {
                 ExtendedErrorCode::NOT_AUTHORITATIVE
             );
             assert_eq!(response.sole_question().unwrap().qclass(), Class::CH);
-            assert_eq!(is_signed(&response).unwrap(), key.is_some());
+            assert_eq!(parse_tsig_presence(&response).unwrap(), key.is_some());
         }
     }
 }
@@ -920,7 +920,7 @@ async fn tls_update_returns_not_supported() {
             ExtendedErrorCode::NOT_SUPPORTED
         );
         let response = Message::from_octets(frame).unwrap();
-        assert_eq!(is_signed(&response).unwrap(), key.is_some());
+        assert_eq!(parse_tsig_presence(&response).unwrap(), key.is_some());
     }
 }
 

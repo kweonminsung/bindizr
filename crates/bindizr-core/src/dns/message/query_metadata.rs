@@ -34,6 +34,7 @@ impl QueryMetadata {
         Ok(Self::from_message(&message, keepalive))
     }
 
+    /// Retain response metadata from sections with readable DNS framing.
     pub(crate) fn from_message(message: &Message<&[u8]>, keepalive: Keepalive) -> Self {
         let readable = has_readable_sections(message.as_slice());
         Self {
@@ -80,6 +81,7 @@ impl QueryMetadata {
         self.build_signed_response(rcode, false, ede, signer)
     }
 
+    /// Build a bounded TC response with the request's optional signature.
     pub(crate) fn build_signed_truncated_response(
         &self,
         signer: Option<&mut TransferSigner>,
@@ -109,7 +111,7 @@ impl QueryMetadata {
                     .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
             }
             let response = additional.finish().into_target();
-            match limit.check_len(response.len()) {
+            match limit.validate_len(response.len()) {
                 Ok(()) => {
                     if let (Some(signer), Some(candidate)) =
                         (signer.as_deref_mut(), candidate_signer)
@@ -163,6 +165,7 @@ impl QueryMetadata {
 }
 
 impl From<&ParsedQuery> for QueryMetadata {
+    /// Copy the parsed query's response metadata without its record sections.
     fn from(query: &ParsedQuery) -> Self {
         Self {
             query_id: query.query_id,

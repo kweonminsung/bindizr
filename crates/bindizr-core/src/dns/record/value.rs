@@ -28,6 +28,35 @@ pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
     - OPT_RECORD_LEN
     - KEEPALIVE_OPTION_LEN;
 
+/// Split bare fields on unescaped whitespace, preserving DNS presentation escapes.
+pub(super) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
+    let mut rest = value;
+    std::iter::from_fn(move || {
+        rest = rest.trim_start();
+        if rest.is_empty() {
+            return None;
+        }
+        let mut escaped = false;
+        let end = rest
+            .char_indices()
+            .find_map(|(index, ch)| {
+                if escaped {
+                    escaped = false;
+                    None
+                } else if ch == '\\' {
+                    escaped = true;
+                    None
+                } else {
+                    ch.is_whitespace().then_some(index)
+                }
+            })
+            .unwrap_or(rest.len());
+        let (field, remaining) = rest.split_at(end);
+        rest = remaining;
+        Some(field)
+    })
+}
+
 /// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(
     field: &'static str,

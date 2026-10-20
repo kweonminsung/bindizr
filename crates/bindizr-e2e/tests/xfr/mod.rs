@@ -36,7 +36,9 @@ use crate::common::{
         exchange_request, exchange_udp,
         nsupdate::{UpdateRecord, send_update_udp},
         parse_name,
-        tsig::{KeyRole, SigningKey, create_tsig_key, is_signed, sign, verify_response_mac},
+        tsig::{
+            KeyRole, SigningKey, create_tsig_key, parse_tsig_presence, sign, verify_response_mac,
+        },
         write_frame,
     },
     exchange_dns_query, exchange_tcp, read_frame, wait_for_any_dns_record,
@@ -227,7 +229,7 @@ async fn tsig_algorithm_names_match_regardless_of_case() {
     ] {
         let response = Message::from_octets(bytes).unwrap();
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
-        assert!(is_signed(&response).unwrap());
+        assert!(parse_tsig_presence(&response).unwrap());
         verify_response_mac(&request, &response, &key).unwrap();
     }
 }
@@ -1514,5 +1516,5 @@ async fn query_returns_notauth_for_unsupported_class() {
     let response = exchange_tcp(app.dns_port(), &additional.finish()).expect("CH query");
     let response = Message::from_octets(response).unwrap();
     assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
-    assert!(is_signed(&response).unwrap());
+    assert!(parse_tsig_presence(&response).unwrap());
 }

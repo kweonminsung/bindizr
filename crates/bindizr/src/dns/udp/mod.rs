@@ -139,7 +139,7 @@ impl UdpSocket {
         target: ReplyTarget,
         limit: ResponseLimit,
     ) -> Result<usize, DnsError> {
-        limit.check_len(response.len())?;
+        limit.validate_len(response.len())?;
         let peer = SockaddrStorage::from(target.client_addr);
         Ok(self
             .socket

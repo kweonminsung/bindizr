@@ -55,21 +55,20 @@ pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<
 /// Parse a zone name as a request spells it, refusing the root and a
 /// wildcard. Every front end parses here before it calls the service.
 pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
-    let trimmed = value.trim();
-
-    if trimmed == "." {
+    if value.trim() == "." {
         return Err(ServiceError::invalid_zone_field(
             "zone name must not be the root zone".to_string(),
         ));
     }
 
-    if trimmed.starts_with("*.") || trimmed == "*" {
+    let name = normalize_domain_name(value, "zone name")?;
+    if name.labels().first().is_some_and(|label| label == b"*") {
         return Err(ServiceError::invalid_zone_field(
             "wildcard zone names are not allowed".to_string(),
         ));
     }
 
-    normalize_domain_name(trimmed, "zone name")
+    Ok(name)
 }
 
 /// Parse a domain name, phrasing any rejection against `field`. The rules
@@ -300,4 +299,51 @@ pub(crate) async fn validate_record_changes_tx(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use bindizr_core::dns::name::ZoneName;
+
+    use super::normalize_name;
+
+    /// Preserve escaped trailing whitespace while tolerating ordinary surrounding padding.
+    #[test]
+    fn zone_name_preserves_escaped_whitespace() {
+        for byte in [9u8, 10, 11, 12, 13, 32] {
+            let input = format!(" tail\\{} \t", char::from(byte));
+            let expected = ZoneName::parse(&format!("tail\\{byte:03}")).unwrap();
+            assert_eq!(normalize_name(&input).unwrap(), expected);
+        }
+        assert_eq!(
+            normalize_name(" example.com \t").unwrap().as_str(),
+            "example.com"
+        );
+        assert!(
+            normalize_name(" . ")
+                .unwrap_err()
+                .to_string()
+                .contains("root zone")
+        );
+    }
+
+    /// Apply the wildcard-zone policy to decoded labels for every equivalent spelling.
+    #[test]
+    fn zone_name_rejects_equivalent_wildcards() {
+        for label in ["*", r"\*", r"\042"] {
+            for suffix in ["", ".", ".example.com"] {
+                let input = format!("{label}{suffix}");
+                assert!(
+                    normalize_name(&input)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("wildcard"),
+                    "{input:?}"
+                );
+            }
+        }
+        for input in ["a*.example", "a.*.example", r"\042\046example"] {
+            assert!(normalize_name(input).is_ok(), "{input:?}");
+        }
+    }
 }

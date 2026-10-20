@@ -8,6 +8,95 @@ mod import;
 mod mailbox;
 mod status;
 
+/// Encode one zone name as a URL path segment without changing its spelling.
+fn zone_path(name: &str) -> String {
+    format!(
+        "/zones/{}",
+        name.bytes()
+            .map(|byte| format!("%{byte:02X}"))
+            .collect::<String>()
+    )
+}
+
+/// Preserve equivalent escaped names across creation, lookup, duplicate detection and rename.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn escaped_zone_names_round_trip_through_management() {
+    let app = TestApp::start_local().await;
+    for byte in [9u8, 10, 11, 12, 13, 32] {
+        let base = app.zone_name(&format!("escaped-{byte}"));
+        let simple = format!("{base}\\{}", char::from(byte));
+        let canonical = format!("{base}\\{byte:03}");
+        let request = json!({"name": simple, "mname": "ns.example", "rname": "admin@example"});
+        let (status, body) = app
+            .send_request(Method::POST, "/zones", Some(request))
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{simple:?}: {body}");
+        assert_eq!(body["zone"]["name"], canonical);
+        for name in [&simple, &canonical] {
+            let (status, body) = app.send_request(Method::GET, &zone_path(name), None).await;
+            assert_eq!(status, StatusCode::OK, "{name:?}: {body}");
+            assert_eq!(body["zone"]["name"], canonical);
+        }
+        let request = json!({"name": canonical, "mname": "ns.example", "rname": "admin@example"});
+        let (status, body) = app
+            .send_request(Method::POST, "/zones", Some(request))
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+        let renamed = format!("renamed-{simple}");
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &zone_path(&simple),
+                Some(json!({"name": renamed})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let renamed_canonical = body["zone"]["name"].as_str().unwrap();
+        assert_eq!(renamed_canonical, format!("renamed-{canonical}"));
+        let (status, body) = app
+            .send_request(Method::GET, &zone_path(renamed_canonical), None)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+}
+
+/// Reject wildcard spellings in both creation and rename without changing a stored zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn escaped_wildcard_zones_are_rejected_atomically() {
+    let app = TestApp::start_local().await;
+    let original = app.create_test_zone().await;
+    let name = original["name"].as_str().unwrap();
+    for label in ["*", r"\*", r"\042"] {
+        let wildcard = format!("{label}.{name}");
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/zones",
+                Some(json!({
+                    "name": wildcard, "mname": "ns.example", "rname": "admin@example"
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "INVALID_ZONE_FIELD");
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &zone_path(name),
+                Some(json!({"name": wildcard})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "INVALID_ZONE_FIELD");
+    }
+    let (status, body) = app.send_request(Method::GET, &zone_path(name), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"], original);
+}
+
 /// Verify that SOA timers and the minimum TTL accept zero (RFC 1035, Section
 /// 3.3.13 sets no floor) and refuse a negative value.
 #[tokio::test]

@@ -37,7 +37,7 @@ impl SigningKey {
 }
 
 /// Whether the response carries a TSIG record.
-pub(crate) fn is_signed(response: &Message<Vec<u8>>) -> Result<bool, String> {
+pub(crate) fn parse_tsig_presence(response: &Message<Vec<u8>>) -> Result<bool, String> {
     Ok(response
         .additional()
         .map_err(|e| e.to_string())?

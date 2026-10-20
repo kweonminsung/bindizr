@@ -6,6 +6,117 @@ use crate::common::{TestApp, dns::fetch_exported_record_sets};
 
 mod bulk;
 
+/// Preserve escaped targets through CRUD, independent export parsing, import and value deletion.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn escaped_record_targets_round_trip_through_management() {
+    use std::str::FromStr;
+
+    use domain::base::Name;
+
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let mut expected_records = Vec::new();
+    for (index, suffix) in ["", "get.example"].into_iter().enumerate() {
+        let simple = format!("tar\\ {suffix}");
+        let decimal = format!(r"tar\032{suffix}.");
+        let target = Name::<Vec<u8>>::from_str(&decimal).unwrap();
+        for (kind, rtype, prefix, wire_prefix) in [
+            ("CNAME", Rtype::CNAME, "", &[][..]),
+            ("DNAME", Rtype::DNAME, "", &[][..]),
+            ("NS", Rtype::NS, "", &[][..]),
+            ("PTR", Rtype::PTR, "", &[][..]),
+            ("MX", Rtype::MX, "", &[0, 10][..]),
+            ("SRV", Rtype::SRV, "0 443 ", &[0, 10, 0, 0, 1, 187][..]),
+            (
+                "NAPTR",
+                Rtype::NAPTR,
+                "10 10 \"S\" \"SIP+D2U\" \"\" ",
+                &[
+                    0, 10, 0, 10, 1, b'S', 7, b'S', b'I', b'P', b'+', b'D', b'2', b'U', 0,
+                ][..],
+            ),
+        ] {
+            let owner = format!("{}-{index}", kind.to_ascii_lowercase());
+            let input = format!("{prefix}{simple}");
+            let expected_value = format!("{prefix}{decimal}");
+            let priority = matches!(kind, "MX" | "SRV").then_some(10);
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    "/records",
+                    Some(json!({
+                        "zone_name": name, "name": owner, "type": kind,
+                        "value": input, "priority": priority
+                    })),
+                )
+                .await;
+            assert_eq!(status, StatusCode::CREATED, "{kind} {input:?}: {body}");
+            assert_eq!(body["record"]["value"], expected_value);
+            let id = body["record"]["id"].as_i64().unwrap();
+            let (status, body) = app
+                .send_request(Method::GET, &format!("/records/{id}"), None)
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["record"]["value"], expected_value);
+            let (status, body) = app
+                .send_request(
+                    Method::PUT,
+                    &format!("/records/{id}"),
+                    Some(json!({"value": input})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["record"]["value"], expected_value);
+            let mut rdata = wire_prefix.to_vec();
+            rdata.extend_from_slice(target.as_slice());
+            expected_records.push((owner, rtype, kind, input, priority, rdata));
+        }
+    }
+    let exported = fetch_exported_record_sets(&app, name).await;
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let imported_name = app.zone_name("escaped-target-import.example");
+    let content = body
+        .as_str()
+        .unwrap()
+        .replace(&format!("{name}."), &format!("{imported_name}."));
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{imported_name}/import"),
+            Some(json!({
+                "content": content, "create": true
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let imported = fetch_exported_record_sets(&app, &imported_name).await;
+    for (owner, rtype, kind, input, priority, rdata) in expected_records {
+        assert_eq!(
+            exported[&(format!("{owner}.{name}."), rtype)].as_slice(),
+            std::slice::from_ref(&rdata)
+        );
+        assert_eq!(
+            imported[&(format!("{owner}.{imported_name}."), rtype)],
+            [rdata]
+        );
+        let mut path = format!(
+            "/records?zone_name={name}&name={owner}&type={kind}&value={}",
+            encode(&input)
+        );
+        if let Some(priority) = priority {
+            path.push_str(&format!("&priority={priority}"));
+        }
+        let (status, body) = app.send_request(Method::DELETE, &path, None).await;
+        assert_eq!(status, StatusCode::OK, "{kind} {input:?}: {body}");
+        assert_eq!(body["deleted"], 1);
+    }
+}
+
 /// Preserve CAA empty and binary values through record writes and reads.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -608,7 +719,7 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    for name in ["www", "foo;bar"] {
+    for name in ["www", "foo;bar", "tail\\ "] {
         let (status, _) = app
             .send_request(
                 Method::POST,
@@ -631,6 +742,10 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
         &format!("www.{zone_name}."),
         "foo;bar",
         r"foo\;bar",
+        "tail\\ ",
+        r"tail\032",
+        "  tail\\ \t",
+        &format!(r"tail\032.{zone_name}."),
     ] {
         let (status, body) = app
             .send_request(
@@ -660,10 +775,12 @@ async fn record_name_filter_matches_owner_spellings_across_zones() {
     let suffix = app.namespace();
     let semicolon_owner = format!("foo;bar-{suffix}");
     let dot_owner = format!(r"a\.b-{suffix}");
+    let whitespace_owner = format!("space-{suffix}\\ ");
 
     for (name, record_type, value) in [
         (semicolon_owner.as_str(), "A", "192.0.2.1"),
         (dot_owner.as_str(), "A", "192.0.2.2"),
+        (whitespace_owner.as_str(), "A", "192.0.2.3"),
         ("note", "TXT", "caf\u{e9}"),
     ] {
         let (status, body) = app
@@ -690,6 +807,9 @@ async fn record_name_filter_matches_owner_spellings_across_zones() {
         dot_owner.clone(),
         format!(r"a\046b-{suffix}"),
         format!("{dot_owner}.{zone_name}."),
+        whitespace_owner.clone(),
+        format!(r"space-{suffix}\032"),
+        format!("{whitespace_owner}.{zone_name}."),
     ] {
         let (status, body) = app
             .send_request(

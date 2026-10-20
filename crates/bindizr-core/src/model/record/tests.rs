@@ -10,6 +10,51 @@ use crate::{
     model::{record::RecordId, zone::ZoneId},
 };
 
+/// Preserve equivalent escaped whitespace through every name-bearing value encoder.
+#[test]
+fn encoded_name_values_preserve_escaped_whitespace() {
+    for byte in [9u8, 10, 11, 12, 13, 32] {
+        for suffix in ["", ".Example.COM"] {
+            let simple = format!("Tar\\{}{suffix}", char::from(byte));
+            let decimal = format!("Tar\\{byte:03}{suffix}");
+            for (kind, prefix) in [
+                (RecordType::Cname, ""),
+                (RecordType::Dname, ""),
+                (RecordType::Ns, ""),
+                (RecordType::Ptr, ""),
+                (RecordType::Mx, ""),
+                (RecordType::Srv, "0 443 "),
+                (RecordType::Naptr, "10 10 \"S\" \"SIP D2U\" \"\" "),
+            ] {
+                let priority = matches!(kind, RecordType::Mx | RecordType::Srv).then_some(10);
+                let input = format!(" {prefix}{simple} \t");
+                let expected = kind
+                    .encoded_value(&format!("{prefix}{decimal}"), priority)
+                    .unwrap();
+                let stored = kind
+                    .encoded_value(&input, priority)
+                    .unwrap_or_else(|e| panic!("{kind} {input:?}: {e}"));
+                assert_eq!(stored, expected, "{kind} {input:?}");
+                kind.validate_value(&stored, priority).unwrap();
+            }
+        }
+    }
+}
+
+/// Distinguish an escaped final space from padding after a literal backslash.
+#[test]
+fn encoded_name_values_keep_backslashes_before_whitespace() {
+    for (input, expected) in [
+        ("tail\\\\ ", r"tail\\."),
+        ("tail\\\\\\ ", r"tail\\\032."),
+        ("tail\\ \t", r"tail\032."),
+    ] {
+        for kind in [RecordType::Cname, RecordType::Mx] {
+            assert_eq!(kind.encoded_value(input, None).unwrap(), expected);
+        }
+    }
+}
+
 /// The stored model admits exactly the implemented wire types and canonicalizes numeric aliases.
 #[test]
 fn record_type_rejects_unimplemented_wire_types() {

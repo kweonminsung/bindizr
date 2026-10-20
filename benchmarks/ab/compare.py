@@ -39,7 +39,7 @@ def _mean(rows: list[dict], k: str):
     return statistics.fmean(vals) if vals else None
 
 
-def _lower_better(metric: str) -> bool:
+def _is_lower_better(metric: str) -> bool:
     """Check whether a smaller metric value indicates improvement."""
     return any(tok in metric for tok in LOWER_IS_BETTER)
 
@@ -76,7 +76,7 @@ def main() -> None:
             else:
                 pct = (mb - ma) / ma * 100.0
                 delta = f"{pct:+.1f}%"
-                improved = (pct < 0) if _lower_better(k) else (pct > 0)
+                improved = (pct < 0) if _is_lower_better(k) else (pct > 0)
                 better = "yes" if abs(pct) >= 1 and improved else ("no" if abs(pct) >= 1 else "~")
             print(f"{k:<20} {ma:>14.3f} {mb:>14.3f} {delta:>12}  {better}")
 

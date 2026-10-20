@@ -18,7 +18,7 @@ def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.
     )
 
 
-def arm_overrides_enabled() -> bool:
+def is_arm_override_enabled() -> bool:
     """Whether BENCH_ARM asks for each system's `compose.arm.yml`."""
     return os.environ.get("BENCH_ARM", "").lower() in ("1", "true", "yes")
 
@@ -33,10 +33,10 @@ class Compose:
         self.env = env or {}
         self.files = [self.file]
         arm_override = self.file.with_name("compose.arm.yml")
-        if arm_overrides_enabled() and arm_override.exists():
+        if is_arm_override_enabled() and arm_override.exists():
             self.files.append(arm_override)
 
-    def _base(self) -> list[str]:
+    def _build_command_prefix(self) -> list[str]:
         """Build the Docker Compose command prefix for this project."""
         cmd = ["docker", "compose"]
         for file in self.files:
@@ -47,7 +47,7 @@ class Compose:
         """Start the requested Compose services and optionally wait for readiness."""
         # --build so a system built from this repository is measured as it
         # stands now rather than from a stale image.
-        cmd = self._base() + ["up", "-d", "--build"]
+        cmd = self._build_command_prefix() + ["up", "-d", "--build"]
         if wait:
             cmd.append("--wait")
         cmd += list(services)
@@ -63,19 +63,19 @@ class Compose:
         profiles = ["mysql", "postgres", *self.env.get("COMPOSE_PROFILES", "").split(",")]
         env["COMPOSE_PROFILES"] = ",".join(dict.fromkeys(p for p in profiles if p))
         subprocess.run(
-            self._base() + ["down", "-v", "--remove-orphans"],
+            self._build_command_prefix() + ["down", "-v", "--remove-orphans"],
             check=False, text=True, env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 
     def read_logs(self, service: str, tail: int = 50) -> str:
         """Collect recent output from a Compose service."""
-        p = run(self._base() + ["logs", "--tail", str(tail), service], check=False)
+        p = run(self._build_command_prefix() + ["logs", "--tail", str(tail), service], check=False)
         return (p.stdout or "") + (p.stderr or "")
 
     def resolve_container_id(self, service: str) -> str | None:
         """Resolve a Compose service name to its running container ID."""
-        p = run(self._base() + ["ps", "-q", service], check=False)
+        p = run(self._build_command_prefix() + ["ps", "-q", service], check=False)
         out = (p.stdout or "").strip()
         return out or None
 

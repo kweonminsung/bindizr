@@ -10,7 +10,7 @@ use std::{
 
 use reqwest::{Client, StatusCode};
 
-use super::{TestApp, TestRuntime, env_flag, test_namespace};
+use super::{TestApp, TestRuntime, read_env_flag, test_namespace};
 
 const COMPOSE_FILE: &str = "docker-compose.yml";
 const ARM_COMPOSE_FILE: &str = "docker-compose.arm.yml";
@@ -54,7 +54,7 @@ const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 /// signs with; the stack is reused across tests, so what exists is left alone.
 async fn register_compose_secondaries(client: &Client) {
     for name in COMPOSE_SECONDARY_SERVICES {
-        if exists(client, &format!("/secondaries/{name}")).await {
+        if probe_api_resource(client, &format!("/secondaries/{name}")).await {
             continue;
         }
         post(
@@ -68,7 +68,7 @@ async fn register_compose_secondaries(client: &Client) {
 
     // RFC 9103, Section 7.5: over TLS the key is required beside the
     // address, in a role that may transfer all zones.
-    if exists(client, &format!("/tsig-keys/{COMPOSE_XOT_KEY}")).await {
+    if probe_api_resource(client, &format!("/tsig-keys/{COMPOSE_XOT_KEY}")).await {
         return;
     }
     post(
@@ -99,7 +99,7 @@ async fn register_compose_secondaries(client: &Client) {
 }
 
 /// Whether the compose API serves `path`.
-async fn exists(client: &Client, path: &str) -> bool {
+async fn probe_api_resource(client: &Client, path: &str) -> bool {
     client
         .get(format!("{COMPOSE_API_BASE_URL}{path}"))
         .send()
@@ -231,7 +231,7 @@ fn is_compose_stack_reachable() -> bool {
 
 /// The ARM override swaps the amd64-only ISC bind9 image for a multi-arch one.
 fn compose_files() -> Vec<&'static str> {
-    if env_flag(ARM_STACK_ENV) {
+    if read_env_flag(ARM_STACK_ENV) {
         vec![COMPOSE_FILE, ARM_COMPOSE_FILE]
     } else {
         vec![COMPOSE_FILE]

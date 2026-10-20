@@ -1460,7 +1460,7 @@ never bare `pub`):
 1. **Default**: a private `fn` inside the test file that uses it.
 2. **Same crate, across modules**: export from the owning module's
    `#[cfg(test)]` tests module with at most `pub(crate)` (e.g.
-   `nsupdate/parser/tests.rs::minimal_update_with_ztype`). No crate-wide
+   `nsupdate/parser/tests.rs::build_minimal_update_with_ztype`). No crate-wide
    `test_util` grab-bag modules.
 3. **e2e suite**: `e2e.rs` is the one harness binary — a `tests/*.rs` sibling
    would be built as a second one — and it declares a flat group per surface a

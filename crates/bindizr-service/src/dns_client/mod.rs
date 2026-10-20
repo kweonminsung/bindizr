@@ -156,7 +156,7 @@ pub(crate) async fn exchange_over_udp_checked(
         let receive = async {
             loop {
                 let received = socket.recv(&mut response[..=limit.max_len()]).await?;
-                if limit.check_len(received).is_ok()
+                if limit.validate_len(received).is_ok()
                     && matches_response_to_request(request, &response[..received])
                     && is_response_acceptable(&response[..received])
                 {

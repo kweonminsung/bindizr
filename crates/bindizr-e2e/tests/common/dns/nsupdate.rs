@@ -13,7 +13,7 @@ use domain::{
 
 use super::{
     exchange_request, exchange_tcp, exchange_udp, parse_name,
-    tsig::{SigningKey, is_signed},
+    tsig::{SigningKey, parse_tsig_presence},
 };
 
 /// One record of an update section, in the class that gives it its meaning
@@ -143,7 +143,7 @@ pub(crate) fn send_signed_update_with_two_zones(
     let response = exchange_request(question.additional(), Some(key), |message| {
         exchange_udp(port, message)
     })?;
-    Ok((response.header().rcode(), is_signed(&response)?))
+    Ok((response.header().rcode(), parse_tsig_presence(&response)?))
 }
 
 /// Send a signed UPDATE with the specified EDNS version.
@@ -170,7 +170,7 @@ pub(crate) fn send_signed_update_with_edns_version(
         .map_or(OptRcode::from(response.header().rcode()), |opt| {
             opt.rcode(response.header())
         });
-    Ok((rcode, is_signed(&response)?))
+    Ok((rcode, parse_tsig_presence(&response)?))
 }
 
 /// Build zone, prerequisite, and update sections (RFC 2136, Section 2.1).

@@ -262,7 +262,7 @@ async fn serve(
                 if response.len() < 2 { continue; }
                 let id = u16::from_be_bytes([response[0], response[1]]);
                 let Some(request) = requests.get(&id) else { continue; };
-                if request.limit.check_len(received).is_err() || !request.sent || !matches_response_to_request(&request.request, response) { continue; }
+                if request.limit.validate_len(received).is_err() || !request.sent || !matches_response_to_request(&request.request, response) { continue; }
                 let verified = request.verifier.as_ref().map(|verifier| verify_response(verifier, response)).transpose();
                 if let Err(error) = &verified
                     && !error.is_authenticated()

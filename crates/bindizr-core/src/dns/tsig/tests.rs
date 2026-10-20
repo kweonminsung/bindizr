@@ -15,7 +15,7 @@ use ring::hmac;
 
 use super::*;
 use crate::{
-    dns::nsupdate::parser::tests::minimal_update_with_ztype,
+    dns::nsupdate::parser::tests::build_minimal_update_with_ztype,
     model::{role::RoleId, tsig_key::TsigKeyId},
 };
 
@@ -533,7 +533,7 @@ fn build_signed_update_with_tsig_fields(
     error: TsigRcode,
     other: &[u8],
 ) -> Vec<u8> {
-    let base = minimal_update_with_ztype(6);
+    let base = build_minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(algorithm.as_str());
     let mut digest = base.clone();
@@ -1112,7 +1112,7 @@ fn tsig_parser_rejects_unparseable_signature() {
     ));
 
     // Malformed TSIG must not fall through to address-based authorization.
-    let mut empty_rdata = minimal_update_with_ztype(6);
+    let mut empty_rdata = build_minimal_update_with_ztype(6);
     empty_rdata[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     empty_rdata.extend_from_slice(&encode_name("update-key"));
     empty_rdata.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
@@ -1134,19 +1134,19 @@ fn tsig_parser_rejects_unparseable_signature() {
     ));
 
     assert!(matches!(
-        request_signature(&minimal_update_with_ztype(6)),
+        request_signature(&build_minimal_update_with_ztype(6)),
         RequestSignature::Absent
     ));
 }
 
 /// The signed update with its TSIG MAC replaced by `mac_len` zero octets; the
 /// digest does not verify, which the structure checks never reach.
-fn update_with_mac_of(mac_len: usize) -> Vec<u8> {
+fn build_update_with_mac_len(mac_len: usize) -> Vec<u8> {
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(TsigAlgorithm::HmacSha256.as_str());
     let mac = vec![0u8; mac_len];
 
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     message.extend_from_slice(&key_name);
     message.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
@@ -1186,7 +1186,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     ));
 
     // The TSIG record twice over.
-    let base_len = minimal_update_with_ztype(6).len();
+    let base_len = build_minimal_update_with_ztype(6).len();
     let mut doubled = signed;
     doubled[10..12].copy_from_slice(&2u16.to_be_bytes());
     doubled.extend_from_within(base_len..);
@@ -1198,7 +1198,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     // SHA-256 allows 16..=32 bytes structurally; key validation may still
     // reject 16-byte truncation with BADTRUNC.
     for (mac_len, malformed) in [(4, true), (40, true), (16, false), (32, false)] {
-        let signature = request_signature(&update_with_mac_of(mac_len));
+        let signature = request_signature(&build_update_with_mac_len(mac_len));
         assert_eq!(
             matches!(signature, RequestSignature::Malformed),
             malformed,
@@ -1211,7 +1211,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
 #[test]
 fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
     let wire = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    let start = minimal_update_with_ztype(6).len();
+    let start = build_minimal_update_with_ztype(6).len();
     let class = start + encode_name("update-key").len() + 2;
     for offset in [class + 1, class + 5] {
         let mut malformed = wire.clone();

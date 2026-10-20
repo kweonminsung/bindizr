@@ -78,7 +78,7 @@ fn build_response(
 
 /// The SOA of the queried name's parent zone, as a negative response's
 /// authority section carries it.
-fn parent_soa_record(query: &[u8]) -> Vec<u8> {
+fn build_parent_soa_record(query: &[u8]) -> Vec<u8> {
     let (qname, _) = decode_question(query);
     let parent = qname.split_once('.').map_or("", |(_, rest)| rest);
     let mut record = Vec::new();
@@ -109,14 +109,14 @@ fn build_record(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
 }
 
 /// Encode a DS record fixture with the requested key tag and TTL.
-fn ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
+fn build_ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     build_record(RTYPE_DS, ttl, &rdata)
 }
 
-/// The record `ds_record` serves for `key_tag`, as the probe parses it.
+/// The record `build_ds_record` serves for `key_tag`, as the probe parses it.
 fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
@@ -130,7 +130,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
 
 /// Build the complete response selected by the fake server behavior.
 fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8>> {
-    let authority = [parent_soa_record(query)];
+    let authority = [build_parent_soa_record(query)];
     match behavior {
         ServerBehavior::Silence => None,
         ServerBehavior::Nxdomain => Some(build_response(
@@ -143,7 +143,7 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
         ServerBehavior::Ds { aa, records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
-                .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
+                .map(|(key_tag, ttl)| build_ds_record(*key_tag, *ttl))
                 .collect();
             Some(build_response(
                 query,
@@ -156,7 +156,7 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
         ServerBehavior::DsTruncatedOverUdp { records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
-                .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
+                .map(|(key_tag, ttl)| build_ds_record(*key_tag, *ttl))
                 .collect();
             Some(build_response(query, FLAG_AA, 0, &answers, &authority))
         }

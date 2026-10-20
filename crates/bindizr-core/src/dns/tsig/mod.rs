@@ -378,7 +378,7 @@ fn tsig_error(
             _ => build_unsigned_error_response(message, error, include_question),
         };
         if let Some(response) = response
-            && limit.check_len(response.len()).is_ok()
+            && limit.validate_len(response.len()).is_ok()
         {
             return TsigError::Rejected {
                 rcode: error,
@@ -390,7 +390,7 @@ fn tsig_error(
 }
 
 /// Echo the question when it fits; a compact UDP error retains the request header.
-fn error_response(
+fn build_error_response(
     msg: &Message<&[u8]>,
     include_question: bool,
 ) -> Option<AdditionalBuilder<TreeCompressor<Vec<u8>>>> {
@@ -429,7 +429,7 @@ fn build_signed_error_response(
         .last()?
         .ok()?;
     let request = request_tsig.data();
-    let mut builder = error_response(msg, include_question)?;
+    let mut builder = build_error_response(msg, include_question)?;
     Edns::from_message(msg).push_response_opt(&mut builder, OptRcode::NOTAUTH, None, None);
 
     // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
@@ -493,7 +493,7 @@ fn build_unsigned_error_response(
         .last()?
         .ok()?;
 
-    let mut builder = error_response(msg, include_question)?;
+    let mut builder = build_error_response(msg, include_question)?;
     Edns::from_message(msg).push_response_opt(&mut builder, OptRcode::NOTAUTH, None, None);
     builder
         .push((

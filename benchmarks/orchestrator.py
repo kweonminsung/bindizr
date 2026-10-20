@@ -40,7 +40,7 @@ RUNNERS = {
 NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import"}
 
 
-def bindizr_notify_for(bench: str) -> bool:
+def is_bindizr_notify_enabled(bench: str) -> bool:
     """Choose whether this workload needs bindizr NOTIFY delivery."""
     override = os.environ.get("BENCH_BINDIZR_NOTIFY")
     if override is not None:
@@ -77,7 +77,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
 
     kwargs = {}
     if registry.is_bindizr(system):
-        kwargs["notify_after_update"] = bindizr_notify_for(bench)
+        kwargs["notify_after_update"] = is_bindizr_notify_enabled(bench)
     try:
         adapter = registry.build_adapter(system, cfg, proj, **kwargs)
     except Exception as e:
