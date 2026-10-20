@@ -52,20 +52,34 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
     let (stop_tx, mut stop) = watch::channel(false);
 
     let task = tokio::spawn(async move {
+        let mut deliveries = JoinSet::new();
         loop {
             if *stop.borrow() {
                 break;
             }
-            let first = tokio::select! {
-                biased;
-                _ = stop.changed() => break,
-                job = rx.recv() => match job {
-                    Some(job) => job,
-                    None => break,
-                },
+            let collect = async {
+                let first = tokio::select! {
+                    biased;
+                    _ = stop.changed() => return None,
+                    job = rx.recv() => job?,
+                };
+                Some(collect_batch(&cx, &mut rx, &mut stop, first).await)
             };
-            let batch = collect_batch(&cx, &mut rx, &mut stop, first).await;
-            send_batch(&cx, batch).await;
+            tokio::pin!(collect);
+            let batch = loop {
+                tokio::select! {
+                    batch = &mut collect => break batch,
+                    result = deliveries.join_next(), if !deliveries.is_empty() => {
+                        if let Some(Err(error)) = result {
+                            log::warn!("queued notify: task failed: {}", error);
+                        }
+                    }
+                }
+            };
+            let Some(batch) = batch else {
+                break;
+            };
+            start_batch(&cx, batch, &mut deliveries).await;
         }
 
         // Reject new jobs before draining so racing callers fall back to inline NOTIFY.
@@ -76,7 +90,12 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
         while let Some(job) = rx.recv().await {
             last.add(job);
         }
-        send_batch(&cx, last).await;
+        start_batch(&cx, last, &mut deliveries).await;
+        while let Some(result) = deliveries.join_next().await {
+            if let Err(error) = result {
+                log::warn!("queued notify: task failed: {}", error);
+            }
+        }
     });
 
     NotifyWorker {
@@ -85,7 +104,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
     }
 }
 
-/// Pending zones; an all-zones job supersedes individual entries.
+/// Pending zones; an all-zones job expands into the same deduplicated set.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct NotifyBatch {
     all_zones: bool,
@@ -175,30 +194,21 @@ async fn collect_batch(
     batch
 }
 
-/// Send one NOTIFY per pending zone, concurrently.
-async fn send_batch(cx: &Arc<Context>, batch: NotifyBatch) {
-    if !batch.all_zones && batch.zones.is_empty() {
-        return;
-    }
+/// Start a batch without holding collection behind an earlier ACK/retry wait.
+async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, deliveries: &mut JoinSet<()>) {
     if batch.all_zones {
-        if let Err(e) = send_notify(cx, NotifyTarget::All).await {
-            log::warn!("queued notify: NOTIFY failed for zone <all>: {}", e);
+        match crate::zone::list(cx).await {
+            Ok(zones) => batch.zones.extend(zones.into_iter().map(|zone| zone.name)),
+            Err(error) => log::warn!("queued notify: failed to list zones: {}", error),
         }
-        return;
     }
-    let mut tasks = JoinSet::new();
     for zone in batch.zones {
         let cx = cx.clone();
-        tasks.spawn(async move {
-            if let Err(e) = send_notify(&cx, NotifyTarget::Zone(&zone)).await {
-                log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, e);
+        deliveries.spawn(async move {
+            if let Err(error) = send_notify(&cx, NotifyTarget::Zone(&zone)).await {
+                log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, error);
             }
         });
-    }
-    while let Some(result) = tasks.join_next().await {
-        if let Err(error) = result {
-            log::warn!("queued notify: task failed: {}", error);
-        }
     }
 }
 

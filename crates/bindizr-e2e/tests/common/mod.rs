@@ -58,6 +58,7 @@ pub(crate) struct TestApp {
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct TestAppOptions {
     pub(crate) notify_batch_ms: u64,
+    pub(crate) notify_timeout_secs: u64,
     pub(crate) authentication_required: bool,
     pub(crate) external_dns_enabled: bool,
     /// `false` accepts unsigned nsupdate requests.
@@ -77,6 +78,7 @@ impl Default for TestAppOptions {
     fn default() -> Self {
         Self {
             notify_batch_ms: 0,
+            notify_timeout_secs: 1,
             authentication_required: false,
             external_dns_enabled: false,
             nsupdate_tsig_required: true,

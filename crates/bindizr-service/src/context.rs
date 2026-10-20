@@ -12,6 +12,7 @@ use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedSender, watch};
 
 use crate::{
+    dns_client::notify::NotifyClient,
     error::ServiceError,
     notify::{NotifyTarget, queue::NotifyJob},
 };
@@ -46,6 +47,7 @@ pub struct Context {
     db: Db,
     metrics: Metrics,
     notify_jobs: UnboundedSender<NotifyJob>,
+    notify_client: NotifyClient,
     /// The scheduler's period, so a reload reaches it without waiting the
     /// old one out; zero stands the scheduler down.
     scheduler_period: watch::Sender<u64>,
@@ -69,6 +71,7 @@ impl Context {
             db,
             metrics,
             notify_jobs,
+            notify_client: NotifyClient::default(),
             scheduler_period,
             started_at: OnceLock::new(),
         }
@@ -113,6 +116,11 @@ impl Context {
     /// The database every query runs on.
     pub(crate) fn db(&self) -> &Db {
         &self.db
+    }
+
+    /// Shared NOTIFY sockets and the bound on concurrent preparation work.
+    pub(crate) fn notify_client(&self) -> &NotifyClient {
+        &self.notify_client
     }
 
     /// The daemon's metrics registry.

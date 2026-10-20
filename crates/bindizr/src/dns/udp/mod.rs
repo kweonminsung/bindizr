@@ -13,7 +13,7 @@ use std::{
 };
 
 use bindizr_core::{
-    dns::message::{self, Keepalive, Rtype},
+    dns::message::{self, Keepalive, ResponseLimit, Rtype},
     model::transfer::TransferTransport,
 };
 use nix::{
@@ -26,7 +26,10 @@ use nix::{
 use thiserror::Error;
 use tokio::{io::Interest, sync::Semaphore};
 
-use super::server::{self, DnsContext};
+use super::{
+    error::DnsError,
+    server::{self, DnsContext},
+};
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;
@@ -130,9 +133,16 @@ impl UdpSocket {
     }
 
     /// Reply from the query's destination IP and the listener's bound port.
-    pub(crate) async fn send_to(&self, response: &[u8], target: ReplyTarget) -> io::Result<usize> {
+    pub(crate) async fn send_to(
+        &self,
+        response: &[u8],
+        target: ReplyTarget,
+        limit: ResponseLimit,
+    ) -> Result<usize, DnsError> {
+        limit.check_len(response.len())?;
         let peer = SockaddrStorage::from(target.client_addr);
-        self.socket
+        Ok(self
+            .socket
             .async_io(Interest::WRITABLE, || {
                 let ipv4;
                 let ipv6;
@@ -168,7 +178,7 @@ impl UdpSocket {
                 )
                 .map_err(io::Error::from)
             })
-            .await
+            .await?)
     }
 }
 
@@ -246,7 +256,7 @@ async fn handle_udp_query(
         Ok(query) => query,
         Err(error) => {
             if let Some(response) = error.to_response() {
-                send_udp_response(socket, target, &response).await;
+                send_udp_response(socket, target, &response, ResponseLimit::UDP).await;
             }
             return;
         }
@@ -254,7 +264,9 @@ async fn handle_udp_query(
 
     if let Some((rcode, ede)) = server::query_refusal(&query, TransferTransport::Udp, client_addr) {
         match server::refuse_query(dns_cx, &query, query_data, rcode, ede).await {
-            Ok(response) => send_udp_response(socket, target, &response).await,
+            Ok(response) => {
+                send_udp_response(socket, target, &response, query.response_limit()).await
+            }
             Err(e) => log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e),
         }
         return;
@@ -294,12 +306,17 @@ async fn handle_udp_query(
             return;
         }
     };
-    send_udp_response(socket, target, &response).await;
+    send_udp_response(socket, target, &response, query.response_limit()).await;
 }
 
 /// Send a DNS response datagram to the requesting peer.
-async fn send_udp_response(socket: &UdpSocket, target: ReplyTarget, response: &[u8]) {
-    if let Err(e) = socket.send_to(response, target).await {
+async fn send_udp_response(
+    socket: &UdpSocket,
+    target: ReplyTarget,
+    response: &[u8],
+    limit: ResponseLimit,
+) {
+    if let Err(e) = socket.send_to(response, target, limit).await {
         log::warn!(
             "Failed to answer DNS UDP query from {}: {}",
             target.client_addr,

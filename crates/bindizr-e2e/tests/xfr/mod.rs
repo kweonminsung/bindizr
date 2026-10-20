@@ -46,6 +46,160 @@ async fn transfer_app() -> TestApp {
     app
 }
 
+/// UDP errors fit without losing their signed error; streams retain the question.
+#[tokio::test]
+#[serial]
+async fn oversized_tsig_errors_preserve_error_and_authentication_across_transports() {
+    use domain::tsig::Algorithm;
+
+    use crate::common::dns::{exchange_xot, tsig::SigningKey};
+
+    let app = TestApp::start_with_options(crate::common::TestAppOptions {
+        dns_tls: true,
+        ..Default::default()
+    })
+    .await;
+    for algorithm in [
+        Algorithm::Sha1,
+        Algorithm::Sha256,
+        Algorithm::Sha384,
+        Algorithm::Sha512,
+    ] {
+        let name = format!(
+            "{}.{}.{}.{}",
+            "k".repeat(63),
+            "l".repeat(63),
+            "m".repeat(63),
+            "n".repeat(
+                1 + 64 - algorithm.native_len() + usize::from(algorithm == Algorithm::Sha1) * 2
+            )
+        );
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/tsig-keys",
+                Some(
+                    json!({"name": name, "role_name": "admin", "algorithm": algorithm.to_string()}),
+                ),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let key = SigningKey {
+            name,
+            secret: body["secret"].as_str().unwrap().to_string(),
+            algorithm,
+        };
+        for truncated in [false, true] {
+            for stale in [false, true] {
+                if !truncated && !stale {
+                    continue;
+                }
+                for edns in [None, Some(512), Some(1232)] {
+                    for (opcode, qtype) in [
+                        (Opcode::QUERY, Rtype::SOA),
+                        (Opcode::QUERY, Rtype::AXFR),
+                        (Opcode::UPDATE, Rtype::SOA),
+                    ] {
+                        let zone = format!(
+                            "{}.{}.{}.{}",
+                            "a".repeat(63),
+                            "b".repeat(63),
+                            "c".repeat(if edns.is_some() { 52 } else { 63 }),
+                            "d".repeat(if truncated {
+                                1 + algorithm.native_len() / 2
+                            } else {
+                                1
+                            })
+                        );
+                        let mut builder = MessageBuilder::new_vec();
+                        builder.header_mut().set_id(8945);
+                        builder.header_mut().set_opcode(opcode);
+                        builder.header_mut().set_rd(true);
+                        let mut question = builder.question();
+                        question.push((parse_name(&zone).unwrap(), qtype)).unwrap();
+                        let mut query = question.additional();
+                        if let Some(size) = edns {
+                            query
+                                .opt(|opt| {
+                                    opt.set_udp_payload_size(size);
+                                    opt.set_dnssec_ok(true);
+                                    Ok(())
+                                })
+                                .unwrap();
+                        }
+                        let time = Time48::from_u64(
+                            u64::from(Time48::now()) - if stale { 3600 } else { 0 },
+                        );
+                        let mac_len = if truncated {
+                            algorithm.native_len() / 2
+                        } else {
+                            algorithm.native_len()
+                        };
+                        ClientTransaction::request_with_fudge(
+                            key.to_tsig_key_with_mac_len(mac_len).unwrap(),
+                            &mut query,
+                            time,
+                            17,
+                        )
+                        .unwrap();
+                        let query = query.finish();
+                        assert_eq!(query.len(), 509);
+                        for transport in ["udp", "tcp", "tls"] {
+                            let bytes = match transport {
+                                "udp" => exchange_udp(app.dns_port(), &query),
+                                "tcp" => exchange_tcp(app.dns_port(), &query),
+                                _ => {
+                                    exchange_xot(app.dns_tls_port(), &query, tls::dot_client(&app))
+                                }
+                            }
+                            .unwrap();
+                            let response = Message::from_octets(bytes).unwrap();
+                            let limit = usize::from(edns.unwrap_or(512));
+                            if transport == "udp" {
+                                assert!(response.as_slice().len() <= limit);
+                            }
+                            assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
+                            assert_eq!(response.header().opcode(), opcode);
+                            assert!(response.header().rd());
+                            assert!(!response.header().tc());
+                            assert_eq!(
+                                response.header_counts().qdcount(),
+                                u16::from(transport != "udp" || limit > 512)
+                            );
+                            let tsig = response
+                                .additional()
+                                .unwrap()
+                                .limit_to::<Tsig<_, _>>()
+                                .last()
+                                .unwrap()
+                                .unwrap();
+                            assert_eq!(
+                                tsig.data().error(),
+                                if stale {
+                                    TsigRcode::BADTIME
+                                } else {
+                                    TsigRcode::BADTRUNC
+                                }
+                            );
+                            assert_eq!(tsig.data().mac().len(), algorithm.native_len());
+                            assert_eq!(tsig.data().fudge(), 17);
+                            if stale {
+                                assert_eq!(tsig.data().time_signed(), time);
+                            }
+                            assert_eq!(tsig.data().other().len(), if stale { 6 } else { 0 });
+                            assert_eq!(
+                                response.opt().map(|opt| opt.dnssec_ok()),
+                                edns.map(|_| true)
+                            );
+                            verify_response_mac(&query, &response, &key).unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// An upper-case TSIG algorithm name names the same key (RFC 1035, Section
 /// 2.3.3); the digest takes the canonical form, so the MAC verifies.
 #[tokio::test]
@@ -461,6 +615,7 @@ async fn signed_transfer_rejects_unknown_key_without_address_fallback() {
     // hold must not be a way around the check.
     let stranger = SigningKey {
         name: "stranger-key".to_string(),
+        algorithm: domain::tsig::Algorithm::Sha256,
         secret: "c3RyYW5nZXItc2VjcmV0LW1hdGVyaWFsLWZvci10ZXN0cw==".to_string(),
     };
     let outcome = axfr(app.dns_port(), zone_name, Some(&stranger));

@@ -37,7 +37,12 @@ fn verify_response_rejects_invalid_class_and_ttl() {
     let mut query = question.additional();
     let verifier = sign_request(&mut query, key.clone()).unwrap();
     let query = query.finish();
-    let server = verify_tsig(&query, Some(key)).unwrap();
+    let server = verify_tsig(
+        &query,
+        Some(key),
+        crate::dns::message::ResponseLimit::STREAM,
+    )
+    .unwrap();
     let query = Message::from_octets(query).unwrap();
     let mut response = MessageBuilder::new_vec()
         .start_answer(&query, Rcode::NOERROR)
@@ -98,7 +103,11 @@ fn request_tsig_rejects_nonzero_error() {
                 Err(crate::dns::nsupdate::parser::ParseUpdateError::InvalidTsig)
             ));
             assert!(matches!(
-                verify_tsig(&message, Some(key.clone())),
+                verify_tsig(
+                    &message,
+                    Some(key.clone()),
+                    crate::dns::message::ResponseLimit::STREAM
+                ),
                 Err(TsigError::Malformed(_))
             ));
         }
@@ -122,7 +131,12 @@ fn verify_tsig_authenticates_original_other_data() {
                 TsigRcode::NOERROR,
                 other,
             );
-            let signer = verify_tsig(&query, Some(key.clone())).unwrap();
+            let signer = verify_tsig(
+                &query,
+                Some(key.clone()),
+                crate::dns::message::ResponseLimit::STREAM,
+            )
+            .unwrap();
             let message = Message::from_octets(query.as_slice()).unwrap();
             let mut response = MessageBuilder::new_vec()
                 .start_answer(&message, Rcode::NOERROR)
@@ -132,7 +146,12 @@ fn verify_tsig_authenticates_original_other_data() {
             assert_response_mac(&query, &response.finish(), algorithm);
             let mut tampered = query;
             *tampered.last_mut().unwrap() ^= 1;
-            let error = verify_tsig(&tampered, Some(key.clone())).unwrap_err();
+            let error = verify_tsig(
+                &tampered,
+                Some(key.clone()),
+                crate::dns::message::ResponseLimit::STREAM,
+            )
+            .unwrap_err();
             assert_eq!(
                 extract_response_tsig(&extract_failed_response(error)).1,
                 TsigRcode::BADSIG
@@ -149,7 +168,12 @@ fn verify_tsig_authenticates_original_other_data() {
         let end = appended.len();
         appended[end - 2..].copy_from_slice(&1u16.to_be_bytes());
         appended.push(0x7f);
-        let error = verify_tsig(&appended, Some(key)).unwrap_err();
+        let error = verify_tsig(
+            &appended,
+            Some(key),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap_err();
         assert_eq!(
             extract_response_tsig(&extract_failed_response(error)).1,
             TsigRcode::BADSIG
@@ -190,7 +214,14 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     let mut additional = question.additional();
     ClientTransaction::request(truncated_key, &mut additional, Time48::now()).unwrap();
     let query = additional.finish().into_target();
-    let response = extract_failed_response(verify_tsig(&query, Some(key.clone())).unwrap_err());
+    let response = extract_failed_response(
+        verify_tsig(
+            &query,
+            Some(key.clone()),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap_err(),
+    );
     assert!(response.len() <= 512);
     assert_eq!(extract_response_tsig(&response).1, TsigRcode::BADTRUNC);
     assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
@@ -216,7 +247,9 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             key: key.clone(),
             request_mac: request_tsig.data().mac().to_vec(),
         };
-        let unknown = extract_failed_response(verify_tsig(&query, None).unwrap_err());
+        let unknown = extract_failed_response(
+            verify_tsig(&query, None, crate::dns::message::ResponseLimit::STREAM).unwrap_err(),
+        );
         assert!(unknown.len() <= 512);
         assert!(
             !verify_response(&verifier, &unknown)
@@ -224,8 +257,14 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
                 .is_authenticated()
         );
         if stale {
-            let response =
-                extract_failed_response(verify_tsig(&query, Some(key.clone())).unwrap_err());
+            let response = extract_failed_response(
+                verify_tsig(
+                    &query,
+                    Some(key.clone()),
+                    crate::dns::message::ResponseLimit::STREAM,
+                )
+                .unwrap_err(),
+            );
             assert!(response.len() <= 512);
             assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
             assert!(matches!(
@@ -243,8 +282,14 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
         } else {
             let mut forged = query;
             forged[2] ^= 1;
-            let response =
-                extract_failed_response(verify_tsig(&forged, Some(key.clone())).unwrap_err());
+            let response = extract_failed_response(
+                verify_tsig(
+                    &forged,
+                    Some(key.clone()),
+                    crate::dns::message::ResponseLimit::STREAM,
+                )
+                .unwrap_err(),
+            );
             assert!(response.len() <= 512);
             assert_eq!(extract_response_tsig(&response).1, TsigRcode::BADSIG);
             assert!(
@@ -252,6 +297,179 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
                     .unwrap_err()
                     .is_authenticated()
             );
+        }
+    }
+}
+
+/// Size bounds never erase the TSIG error, its time fields, or its full MAC.
+#[test]
+fn tsig_errors_with_distinct_long_names_fit_udp() {
+    for algorithm in [
+        TsigAlgorithm::HmacSha1,
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        let native = test_key(algorithm)
+            .to_signing_key()
+            .unwrap()
+            .as_ref()
+            .native_len();
+        for truncated in [false, true] {
+            let mac_len = if truncated { native / 2 } else { native };
+            let key = TsigKey {
+                name: format!(
+                    "{}.{}.{}.{}",
+                    "k".repeat(63),
+                    "l".repeat(63),
+                    "m".repeat(63),
+                    "n".repeat(
+                        1 + 64 - mac_len + usize::from(algorithm == TsigAlgorithm::HmacSha1) * 2
+                    )
+                ),
+                ..test_key(algorithm)
+            }
+            .to_signing_key()
+            .unwrap();
+            let client = Arc::new(
+                Key::new(
+                    key.as_ref().algorithm(),
+                    SECRET,
+                    key.as_ref().name().clone(),
+                    None,
+                    Some(mac_len),
+                )
+                .unwrap(),
+            );
+            for stale in [false, true] {
+                if !stale && !truncated {
+                    continue;
+                }
+                for edns in [None, Some(512), Some(1232)] {
+                    for (opcode, qtype) in [
+                        (Opcode::QUERY, Rtype::SOA),
+                        (Opcode::QUERY, Rtype::AXFR),
+                        (Opcode::UPDATE, Rtype::SOA),
+                    ] {
+                        for request_len in [506, 507, 509] {
+                            let qname = format!(
+                                "{}.{}.{}.d",
+                                "a".repeat(63 - (509 - request_len)),
+                                "b".repeat(63),
+                                "c".repeat(if edns.is_some() { 52 } else { 63 })
+                            );
+                            let mut builder = MessageBuilder::new_vec();
+                            builder.header_mut().set_id(8945);
+                            builder.header_mut().set_opcode(opcode);
+                            builder.header_mut().set_rd(true);
+                            let mut question = builder.question();
+                            question
+                                .push((Name::<Vec<u8>>::from_str(&qname).unwrap(), qtype))
+                                .unwrap();
+                            let mut query = question.additional();
+                            if let Some(size) = edns {
+                                query
+                                    .opt(|opt| {
+                                        opt.set_udp_payload_size(size);
+                                        opt.set_dnssec_ok(true);
+                                        Ok(())
+                                    })
+                                    .unwrap();
+                            }
+                            let time = Time48::from_u64(now_secs() - if stale { 3600 } else { 0 });
+                            ClientTransaction::request_with_fudge(
+                                client.clone(),
+                                &mut query,
+                                time,
+                                17,
+                            )
+                            .unwrap();
+                            let query = query.finish();
+                            assert_eq!(query.len(), request_len);
+                            let full = extract_failed_response(
+                                verify_tsig(
+                                    &query,
+                                    Some(key.clone()),
+                                    crate::dns::message::ResponseLimit::STREAM,
+                                )
+                                .unwrap_err(),
+                            );
+                            assert_eq!(
+                                Message::from_octets(full.as_slice())
+                                    .unwrap()
+                                    .header_counts()
+                                    .qdcount(),
+                                1
+                            );
+                            let limit = usize::from(edns.unwrap_or(512));
+                            let response = extract_failed_response(
+                                verify_tsig(
+                                    &query,
+                                    Some(key.clone()),
+                                    crate::dns::message::ResponseLimit::udp(edns.unwrap_or(512)),
+                                )
+                                .unwrap_err(),
+                            );
+                            assert!(
+                                response.len() <= limit,
+                                "{algorithm:?}: {} > {limit}",
+                                response.len()
+                            );
+                            let message = Message::from_octets(response.as_slice()).unwrap();
+                            assert_eq!(message.header().id(), 8945);
+                            assert_eq!(message.header().opcode(), opcode);
+                            assert!(message.header().qr() && message.header().rd());
+                            assert!(!message.header().tc());
+                            assert_eq!(
+                                message.header_counts().qdcount(),
+                                u16::from(full.len() <= limit)
+                            );
+                            assert_eq!(
+                                message.opt().map(|opt| opt.dnssec_ok()),
+                                edns.map(|_| true)
+                            );
+                            let (rcode, error, signed_at, mac, other) =
+                                extract_response_tsig(&response);
+                            assert_eq!(rcode, Rcode::NOTAUTH);
+                            assert_eq!(
+                                error,
+                                if stale {
+                                    TsigRcode::BADTIME
+                                } else {
+                                    TsigRcode::BADTRUNC
+                                }
+                            );
+                            assert_eq!(mac.len(), native);
+                            if stale {
+                                assert_eq!(signed_at, u64::from(time));
+                            }
+                            assert_eq!(other.len(), if stale { 6 } else { 0 });
+                            assert_response_mac(&query, &response, algorithm);
+                            let tsig =
+                                ParsedTsig::parse(&Message::from_octets(query.as_slice()).unwrap())
+                                    .unwrap()
+                                    .unwrap();
+                            let verifier = ResponseVerifier {
+                                key: key.clone(),
+                                request_mac: tsig.record.data().mac().to_vec(),
+                            };
+                            assert!(
+                                verify_response(&verifier, &response)
+                                    .unwrap_err()
+                                    .is_authenticated()
+                            );
+                            let mut forged = response;
+                            let index = forged.len() - if stale { 13 } else { 7 };
+                            forged[index] ^= 1;
+                            assert!(
+                                !verify_response(&verifier, &forged)
+                                    .unwrap_err()
+                                    .is_authenticated()
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -440,7 +658,12 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     ] {
         let query = build_signed_update(algorithm, now_secs());
         let key = test_key(algorithm).to_signing_key().unwrap();
-        verify_tsig(&query, Some(key)).unwrap();
+        verify_tsig(
+            &query,
+            Some(key),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap();
     }
 }
 
@@ -466,7 +689,12 @@ fn verify_tsig_accepts_mixed_case_algorithm_names() {
             RequestSignature::Key { .. }
         ));
         let key = test_key(algorithm).to_signing_key().unwrap();
-        verify_tsig(&query, Some(key)).unwrap();
+        verify_tsig(
+            &query,
+            Some(key),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap();
     }
 }
 
@@ -484,7 +712,12 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
         // The MAC ends before original ID, error, and other-len (six bytes).
         let mac_end = query.len() - 7;
         query[mac_end] ^= 0xFF;
-        let err = verify_tsig(&query, Some(key.clone())).unwrap_err();
+        let err = verify_tsig(
+            &query,
+            Some(key.clone()),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap_err();
         // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
         let (rcode, error, _, mac, other) = extract_response_tsig(&extract_failed_response(err));
         assert_eq!(rcode, Rcode::NOTAUTH);
@@ -506,7 +739,12 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let err = verify_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(
+        &query,
+        Some(key),
+        crate::dns::message::ResponseLimit::STREAM,
+    )
+    .unwrap_err();
 
     let (rcode, error, _, _, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -521,7 +759,12 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     let key = test_key(TsigAlgorithm::HmacSha512)
         .to_signing_key()
         .unwrap();
-    let err = verify_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(
+        &query,
+        Some(key),
+        crate::dns::message::ResponseLimit::STREAM,
+    )
+    .unwrap_err();
 
     let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -534,7 +777,7 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
 fn verify_tsig_rejects_unknown_key_with_badkey() {
     let query = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
-    let err = verify_tsig(&query, None).unwrap_err();
+    let err = verify_tsig(&query, None, crate::dns::message::ResponseLimit::STREAM).unwrap_err();
 
     let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -551,7 +794,12 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let err = verify_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(
+        &query,
+        Some(key),
+        crate::dns::message::ResponseLimit::STREAM,
+    )
+    .unwrap_err();
 
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
@@ -614,7 +862,12 @@ fn badtime_response_preserves_edns() {
                     .unwrap();
                     let query = additional.finish();
                     let before = Time48::now();
-                    let err = verify_tsig(&query, Some(key.clone())).unwrap_err();
+                    let err = verify_tsig(
+                        &query,
+                        Some(key.clone()),
+                        crate::dns::message::ResponseLimit::STREAM,
+                    )
+                    .unwrap_err();
                     let response = extract_failed_response(err);
                     let message = Message::from_octets(response.as_slice()).unwrap();
                     assert_eq!(message.header().id(), 8945);
@@ -717,7 +970,11 @@ fn truncated_requests_follow_validation_order() {
                         TsigRcode::NOERROR
                     };
                     let before = now_secs();
-                    let result = verify_tsig(&query, Some(key.clone()));
+                    let result = verify_tsig(
+                        &query,
+                        Some(key.clone()),
+                        crate::dns::message::ResponseLimit::STREAM,
+                    );
                     if expected == TsigRcode::NOERROR {
                         result.unwrap();
                     } else {
@@ -755,8 +1012,10 @@ fn truncated_requests_follow_validation_order() {
                             }
                         }
                     }
-                    let unknown_key =
-                        extract_failed_response(verify_tsig(&query, None).unwrap_err());
+                    let unknown_key = extract_failed_response(
+                        verify_tsig(&query, None, crate::dns::message::ResponseLimit::STREAM)
+                            .unwrap_err(),
+                    );
                     let (_, error, _, mac, _) = extract_response_tsig(&unknown_key);
                     assert_eq!(error, TsigRcode::BADKEY);
                     assert!(mac.is_empty());

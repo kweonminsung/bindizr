@@ -70,12 +70,6 @@ impl TransferRefusal {
     /// Convert the refusal into a DNS response.
     pub(crate) fn into_response(mut self, query: &ParsedQuery) -> Result<Vec<u8>, DnsError> {
         if let Some(response) = self.response {
-            if response.len() > query.response_limit() {
-                return Err(bindizr_core::dns::message::EncodeMessageError::TooLarge {
-                    len: response.len(),
-                }
-                .into());
-            }
             return Ok(response);
         }
         Ok(query.build_signed_error_response(self.rcode, self.ede, self.signer.as_deref_mut())?)
@@ -111,6 +105,7 @@ pub(crate) struct TransferIdentity {
 pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     query_data: &[u8],
+    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<Option<TransferIdentity>, TransferRefusal> {
     let key_name = match request_signature(query_data) {
         RequestSignature::Key { name, .. } => name,
@@ -130,14 +125,15 @@ pub(crate) async fn authenticate_tsig_key(
     let Some(tsig_key) = tsig_key else {
         // An unknown key still runs validation: the empty key store makes it
         // produce the BADKEY error response.
-        verify_tsig(query_data, None).map_err(TransferRefusal::from)?;
+        verify_tsig(query_data, None, limit).map_err(TransferRefusal::from)?;
         return Err(TransferRefusal::refused(
             "TSIG verification passed without a key".to_string(),
             None,
         ));
     };
     let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
-    let signer = verify_tsig(query_data, Some(signing_key)).map_err(TransferRefusal::from)?;
+    let signer =
+        verify_tsig(query_data, Some(signing_key), limit).map_err(TransferRefusal::from)?;
     let caller = match Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key).await {
         Ok(caller) => caller,
         Err(e) => {
@@ -160,9 +156,10 @@ pub(crate) async fn authenticate_transfer(
     query_data: &[u8],
     client_ip: IpAddr,
     transport: TransferTransport,
+    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<TransferIdentity, TransferRefusal> {
     let over_tls = matches!(transport, TransferTransport::Tls);
-    let Some(identity) = authenticate_tsig_key(dns_cx, query_data).await? else {
+    let Some(identity) = authenticate_tsig_key(dns_cx, query_data, limit).await? else {
         if over_tls {
             return Err(TransferRefusal::refused(
                 "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
@@ -221,7 +218,7 @@ pub(crate) async fn refuse_query(
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
 ) -> Result<Vec<u8>, DnsError> {
-    match authenticate_tsig_key(dns_cx, query_data).await {
+    match authenticate_tsig_key(dns_cx, query_data, query.response_limit()).await {
         Ok(identity) => {
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(query.build_signed_error_response(rcode, ede, signer.as_mut())?)

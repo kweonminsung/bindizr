@@ -570,7 +570,12 @@ retransmission repeats the same message on the same socket, so a late reply
 to an earlier copy still ends it. An unsigned or unverifiable reply to a
 signed NOTIFY is logged and ignored while the request waits (RFC 8945,
 Section 5.4). An all-zones round notifies zones concurrently, so one silent
-secondary cannot push later zones past their REFRESH (Section 4.3).
+secondary cannot hold later zones behind its ACK/retry wait (Section 4.3).
+The queue continues collecting writes during outstanding transactions;
+intentional batching, measured from enqueue, is bounded by SOA REFRESH. The
+16-zone preparation limit excludes ACK waits, and active transactions share
+a connected UDP socket per target with no ID reuse on that socket. These
+scheduling rules do not promise real-time delivery under OS or resolver failure.
 Signed NOTIFY requests whose final size exceeds 512 octets include EDNS.
 An import's AXFR client honors the server's keepalive timeout: zero closes
 after the outstanding transfer, and a positive value bounds idle reuse
@@ -618,11 +623,25 @@ These defaults also apply when their sections are absent. The selected database
 still needs its location. Parse the file and fill defaults, then apply environment
 overrides before validation; explicit invalid values remain errors.
 
+DNS response budgets use `ResponseLimit`: choose UDP/EDNS or stream once at
+request ingress and pass that value through authentication and encoding. A
+builder holding `ParsedQuery` uses that query's budget instead of accepting a
+second size override. Final encoders check compressed bytes after OPT and TSIG;
+UDP send checks the same budget before I/O. UDP may rebuild a TC response or
+compact TSIG validation error; stream overflow is an error. Commit a TSIG chain
+only when its completed message fits. Outbound UDP clients discard responses
+larger than their advertisement within the original deadline. Fixed name,
+RDATA, and TCP frame widths remain checked by their owning types; signing and
+field composition primitives do not take transport budgets.
+
 EDNS parsing and response encoding are shared by QUERY, UPDATE, and TSIG errors.
 A readable OPT retains its version and DO bit even when rejected with BADVERS;
 response OPTs copy DO and clear reserved flags (RFC 3225, Section 3).
 BADTIME responses sign the complete response, including OPT, and the six-byte
-server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3).
+server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3). If a TSIG
+validation error exceeds the UDP limit, omit its question and re-sign the
+same error, retaining its time fields, OPT and full MAC. Stream errors keep
+their question (RFC 5936, Section 2.2.2).
 Every TSIG MAC includes the original Other Len and Other Data octets. Requests
 require Error zero; requests and responses both require the final Additional
 TSIG to carry CLASS ANY and TTL zero (RFC 8945, Sections 4.2 and 5.2).

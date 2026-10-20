@@ -17,12 +17,13 @@ use crate::common::TestApp;
 pub(crate) struct SigningKey {
     pub(crate) name: String,
     pub(crate) secret: String,
+    pub(crate) algorithm: Algorithm,
 }
 
 impl SigningKey {
     /// Convert into the TSIG key `domain` signs and verifies with.
     pub(crate) fn to_tsig_key(&self) -> Result<Key, String> {
-        self.to_tsig_key_with_mac_len(Algorithm::Sha256.native_len())
+        self.to_tsig_key_with_mac_len(self.algorithm.native_len())
     }
 
     /// Construct a client key that emits the requested MAC length.
@@ -31,8 +32,7 @@ impl SigningKey {
             .decode(&self.secret)
             .map_err(|e| format!("TSIG secret is not base64: {e}"))?;
         let key_name = KeyName::from_str(&self.name).map_err(|e| e.to_string())?;
-        Key::new(Algorithm::Sha256, &secret, key_name, None, Some(mac_len))
-            .map_err(|e| e.to_string())
+        Key::new(self.algorithm, &secret, key_name, None, Some(mac_len)).map_err(|e| e.to_string())
     }
 }
 
@@ -125,7 +125,13 @@ pub(crate) fn verify_response_mac(
     let secret = base64::engine::general_purpose::STANDARD
         .decode(&key.secret)
         .map_err(|e| e.to_string())?;
-    let key = hmac::Key::new(hmac::HMAC_SHA256, &secret);
+    let algorithm = match key.algorithm {
+        Algorithm::Sha1 => hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
+        Algorithm::Sha256 => hmac::HMAC_SHA256,
+        Algorithm::Sha384 => hmac::HMAC_SHA384,
+        Algorithm::Sha512 => hmac::HMAC_SHA512,
+    };
+    let key = hmac::Key::new(algorithm, &secret);
     hmac::verify(&key, &digest, data.mac()).map_err(|_| "response MAC did not verify".to_string())
 }
 
@@ -156,6 +162,7 @@ pub(crate) async fn create_tsig_key(app: &TestApp, name: &str, role: KeyRole) ->
         serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
     SigningKey {
         name: name.to_string(),
+        algorithm: Algorithm::Sha256,
         secret: fetched["secret"]
             .as_str()
             .expect("tsig-key get prints the secret")

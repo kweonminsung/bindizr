@@ -56,7 +56,7 @@ fn xot_client(
 }
 
 /// Build a TLS 1.3 client offering "dot".
-fn dot_client(app: &TestApp) -> ClientConfig {
+pub(super) fn dot_client(app: &TestApp) -> ClientConfig {
     xot_client(app.tls_cert(), &[&version::TLS13], &[b"dot"])
 }
 

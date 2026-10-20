@@ -42,7 +42,16 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     let mut replies = JoinSet::new();
     for (target, data) in received.into_iter().rev() {
         let server = server.clone();
-        replies.spawn(async move { server.send_to(&data, target).await.unwrap() });
+        replies.spawn(async move {
+            server
+                .send_to(
+                    &data,
+                    target,
+                    bindizr_core::dns::message::ResponseLimit::UDP,
+                )
+                .await
+                .unwrap()
+        });
     }
     while let Some(result) = replies.join_next().await {
         assert_eq!(result.unwrap(), 1);
@@ -132,4 +141,43 @@ async fn recv_from_rejects_missing_destination() {
         .await
         .unwrap();
     assert!(matches!(result, Err(UdpError::MissingDestination)));
+}
+
+/// The final UDP guard rejects overflow before I/O and allows the exact boundary.
+#[tokio::test]
+async fn udp_send_enforces_the_response_budget() {
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let server = UdpSocket::new(socket).unwrap();
+    let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client
+        .connect(server.socket.local_addr().unwrap())
+        .await
+        .unwrap();
+    client.send(&[0]).await.unwrap();
+    let (_, target) = server.recv_from(&mut [0; 1]).await.unwrap();
+    assert!(matches!(
+        server.send_to(&[0; 513], target, ResponseLimit::UDP).await,
+        Err(DnsError::Protocol(message::EncodeMessageError::TooLarge {
+            len: 513,
+            max_len: 512
+        }))
+    ));
+    assert!(
+        matches!(client.try_recv(&mut [0; 1024]), Err(e) if e.kind() == io::ErrorKind::WouldBlock)
+    );
+    assert_eq!(
+        server
+            .send_to(&[1; 512], target, ResponseLimit::UDP)
+            .await
+            .unwrap(),
+        512
+    );
+    let mut response = [0; 1024];
+    assert_eq!(
+        timeout(Duration::from_secs(1), client.recv(&mut response))
+            .await
+            .unwrap()
+            .unwrap(),
+        512
+    );
 }

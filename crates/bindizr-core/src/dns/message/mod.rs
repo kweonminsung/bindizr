@@ -16,7 +16,7 @@ use domain::{
 use thiserror::Error;
 
 use crate::dns::{
-    ConvertSerialError, DNS_TCP_MAX_SIZE, LibraryError,
+    ConvertSerialError, LibraryError,
     dnssec::EncodeWireNameError,
     name::EncodeNameError,
     record::{EncodeRdataError, Rdata},
@@ -59,8 +59,8 @@ pub enum EncodeMessageError {
     NoAnswers,
     #[error("single DNS answer is too large: {len} bytes")]
     AnswerTooLarge { len: usize },
-    #[error("message too large: {len} bytes")]
-    TooLarge { len: usize },
+    #[error("message too large: {len} bytes (limit {max_len})")]
+    TooLarge { len: usize, max_len: usize },
     #[error("failed to compose the question: {0}")]
     ComposeQuestion(#[source] LibraryError),
     #[error("failed to compose an answer: {0}")]
@@ -106,6 +106,7 @@ impl ComposeRecord for ComposedRecord<'_> {
 
 #[derive(Debug, Clone)]
 pub struct DnsMessageBuilder {
+    limit: ResponseLimit,
     query_id: u16,
     qname: Name<Vec<u8>>,
     qtype: u16,
@@ -131,6 +132,7 @@ impl DnsMessageBuilder {
     /// IXFR falling back to AXFR keeps as asked.
     pub fn new(query: &ParsedQuery, qtype: Rtype) -> Self {
         Self {
+            limit: query.response_limit(),
             query_id: query.query_id,
             qname: query.qname.clone(),
             qtype: qtype.to_int(),
@@ -230,7 +232,7 @@ impl DnsMessageBuilder {
     {
         add_answer(self).map_err(AddAnswerError::without_frame)?;
 
-        if self.message_len() <= DNS_TCP_MAX_SIZE {
+        if self.message_len() <= self.limit.max_len() {
             return Ok(None);
         }
 
@@ -247,7 +249,7 @@ impl DnsMessageBuilder {
         let frame = self.take_frame().map_err(AddAnswerError::without_frame)?;
 
         self.push_answer(last_answer);
-        if self.message_len() > DNS_TCP_MAX_SIZE {
+        if self.message_len() > self.limit.max_len() {
             return Err(AddAnswerError {
                 frame,
                 source: self.answer_too_large(),
@@ -311,26 +313,32 @@ impl DnsMessageBuilder {
 
     /// Serializes into a length-prefixed TCP frame.
     fn build_tcp_frame(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
-        let message = self.build_message()?;
-        encode_tcp_message(&message)
+        let signer = self.signer.clone();
+        let frame = self.build_message().and_then(|message| {
+            self.limit.check_len(message.len())?;
+            encode_tcp_message(&message)
+        });
+        if frame.is_err() {
+            self.signer = signer;
+        }
+        frame
     }
 
-    /// Build the response within `max_len`: over it, the answers are dropped
+    /// Build within the query's response budget: UDP overflow drops answers
     /// and TC set (RFC 6891, Section 7 keeps the header, question, and OPT).
-    pub fn build(mut self, max_len: usize) -> Result<Vec<u8>, EncodeMessageError> {
+    pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let signer = self.signer.clone();
         let response = self.build_message()?;
-        if response.len() > max_len {
+        if let Err(error) = self.limit.check_len(response.len()) {
+            if !self.limit.is_udp() {
+                return Err(error);
+            }
             // Rebuild from the original MAC chain (RFC 8945, Section 5.3).
             self.signer = signer;
             self.clear_answers();
             self.truncated = true;
             let response = self.build_message()?;
-            if response.len() > max_len {
-                return Err(EncodeMessageError::TooLarge {
-                    len: response.len(),
-                });
-            }
+            self.limit.check_len(response.len())?;
             return Ok(response);
         }
         Ok(response)
@@ -339,9 +347,7 @@ impl DnsMessageBuilder {
 
 /// Prefix a DNS message with its two-byte TCP frame length.
 pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError> {
-    if message.len() > DNS_TCP_MAX_SIZE {
-        return Err(EncodeMessageError::TooLarge { len: message.len() });
-    }
+    ResponseLimit::STREAM.check_len(message.len())?;
 
     let len = message.len() as u16;
     let mut result = Vec::with_capacity(2 + message.len());
@@ -350,9 +356,11 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
     Ok(result)
 }
 
+mod limit;
 pub(crate) mod query;
 mod records;
 
+pub use limit::ResponseLimit;
 pub use query::{
     Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
     UDP_PAYLOAD_SIZE_WITHOUT_EDNS, is_response,

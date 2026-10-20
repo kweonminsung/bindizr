@@ -1,9 +1,29 @@
-use std::str::FromStr;
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use bindizr_core::dns::message::Name;
+use bindizr_core::dns::{
+    message::{Name, OptRcode},
+    query::validate_notify_response,
+    tsig::TsigSigningKey,
+};
 
 use super::*;
 use crate::dns_client::ds::tests::encode_name;
+
+/// Drive the production transaction lifecycle with an isolated client.
+async fn send_notify_to_server(
+    client: &NotifyClient,
+    qname: &Name<Vec<u8>>,
+    server_addr: SocketAddr,
+    timeout: Duration,
+    retries: u32,
+    tsig_key: Option<&TsigSigningKey>,
+) -> Result<(), SendNotifyError> {
+    client
+        .start(qname, server_addr, timeout, retries, tsig_key)
+        .await?
+        .wait()
+        .await
+}
 
 /// Only oversized signed queries need EDNS; their signature includes the OPT.
 #[tokio::test]
@@ -62,17 +82,29 @@ async fn signed_notify_advertises_edns_for_long_names() {
                 let mut buf = [0; 4096];
                 let (len, peer) = socket.recv_from(&mut buf).await.unwrap();
                 let query = ParsedQuery::parse(&buf[..len], Keepalive::None).unwrap();
-                let mut signer: TransferSigner =
-                    verify_tsig(&buf[..len], Some(server_key)).unwrap().into();
+                let mut signer: TransferSigner = verify_tsig(
+                    &buf[..len],
+                    Some(server_key),
+                    bindizr_core::dns::message::ResponseLimit::STREAM,
+                )
+                .unwrap()
+                .into();
                 let response = query
                     .build_signed_error_response(OptRcode::NOERROR, None, Some(&mut signer))
                     .unwrap();
                 socket.send_to(&response, peer).await.unwrap();
                 (len, query.edns)
             });
-            send_notify_to_server(&qname, addr, Duration::from_secs(1), 0, Some(&key))
-                .await
-                .unwrap();
+            send_notify_to_server(
+                &NotifyClient::default(),
+                &qname,
+                addr,
+                Duration::from_secs(1),
+                0,
+                Some(&key),
+            )
+            .await
+            .unwrap();
             let (len, edns) = capture.await.unwrap();
             assert_eq!(edns != Edns::Absent, long);
             assert!(len <= if long { 1232 } else { 512 });
@@ -101,6 +133,135 @@ fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
 /// Return the test zone's wire name.
 fn zone() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
+}
+
+/// Many silent zones share a socket; wrong or old ACKs cannot finish a different request.
+#[tokio::test]
+async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies() {
+    use std::collections::HashSet;
+
+    let client = NotifyClient::default();
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let address = socket.local_addr().unwrap();
+    let mut deliveries = Vec::new();
+    for index in 0..64 {
+        let name = Name::from_str(&format!("zone-{index}.example")).unwrap();
+        deliveries.push(
+            client
+                .start(&name, address, Duration::from_secs(3), 0, None)
+                .await
+                .unwrap(),
+        );
+    }
+    let mut ids = HashSet::new();
+    let mut peers = HashSet::new();
+    let mut requests = Vec::new();
+    let mut buffer = [0; 4096];
+    for _ in 0..64 {
+        let (len, peer) =
+            tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(ids.insert(u16::from_be_bytes([buffer[0], buffer[1]])));
+        peers.insert(peer);
+        requests.push((buffer[..len].to_vec(), peer));
+    }
+    assert_eq!(peers.len(), 1, "zones must reuse one active target socket");
+    // A matching ID with the wrong question must not complete the transaction.
+    for (request, peer) in &requests {
+        let id = u16::from_be_bytes([request[0], request[1]]);
+        socket
+            .send_to(&build_notify_response(id, 0xa000, "wrong.example"), peer)
+            .await
+            .unwrap();
+    }
+    for (request, peer) in requests.iter().rev() {
+        let query = bindizr_core::dns::message::ParsedQuery::parse(
+            request,
+            bindizr_core::dns::message::Keepalive::None,
+        )
+        .unwrap();
+        let response = query
+            .build_signed_error_response(
+                bindizr_core::dns::message::Rcode::NOERROR.into(),
+                None,
+                None,
+            )
+            .unwrap();
+        socket.send_to(&response, peer).await.unwrap();
+        socket.send_to(&response, peer).await.unwrap();
+    }
+    for delivery in deliveries {
+        delivery.wait().await.unwrap();
+    }
+}
+
+/// Retries retain the bytes and socket while a later zone completes independently.
+#[tokio::test]
+async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() {
+    let client = NotifyClient::default();
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let address = socket.local_addr().unwrap();
+    let first = client
+        .start(&zone(), address, Duration::from_millis(80), 1, None)
+        .await
+        .unwrap();
+    let mut buffer = [0; 4096];
+    let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+    let request = buffer[..len].to_vec();
+    let other = Name::from_str("other.example").unwrap();
+    let second = client
+        .start(&other, address, Duration::from_secs(1), 0, None)
+        .await
+        .unwrap();
+    let (len, second_peer) = socket.recv_from(&mut buffer).await.unwrap();
+    assert_eq!(peer, second_peer);
+    let query = bindizr_core::dns::message::ParsedQuery::parse(
+        &buffer[..len],
+        bindizr_core::dns::message::Keepalive::None,
+    )
+    .unwrap();
+    socket
+        .send_to(
+            &query
+                .build_signed_error_response(
+                    bindizr_core::dns::message::Rcode::NOERROR.into(),
+                    None,
+                    None,
+                )
+                .unwrap(),
+            peer,
+        )
+        .await
+        .unwrap();
+    second.wait().await.unwrap();
+    let (len, retry_peer) =
+        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(&buffer[..len], &request);
+    assert_eq!(peer, retry_peer);
+    let query = bindizr_core::dns::message::ParsedQuery::parse(
+        &request,
+        bindizr_core::dns::message::Keepalive::None,
+    )
+    .unwrap();
+    socket
+        .send_to(
+            &query
+                .build_signed_error_response(
+                    bindizr_core::dns::message::Rcode::NOERROR.into(),
+                    None,
+                    None,
+                )
+                .unwrap(),
+            peer,
+        )
+        .await
+        .unwrap();
+    first.wait().await.unwrap();
 }
 
 /// Encode an independent HMAC-SHA256 acknowledgement.
@@ -211,7 +372,14 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
         });
         let result = tokio::time::timeout(
             Duration::from_millis(500),
-            send_notify_to_server(&zone(), address, Duration::from_secs(1), 0, Some(&key)),
+            send_notify_to_server(
+                &NotifyClient::default(),
+                &zone(),
+                address,
+                Duration::from_secs(1),
+                0,
+                Some(&key),
+            ),
         )
         .await
         .unwrap();
@@ -264,8 +432,15 @@ async fn notify_completes_on_any_reply_and_retries_silence() {
                 }
             }
         });
-        let result =
-            send_notify_to_server(&zone(), address, Duration::from_millis(50), 2, None).await;
+        let result = send_notify_to_server(
+            &NotifyClient::default(),
+            &zone(),
+            address,
+            Duration::from_millis(50),
+            2,
+            None,
+        )
+        .await;
         server.abort();
         assert_eq!(count.load(Ordering::SeqCst), attempts, "{rcode:?}");
         assert_eq!(result.is_ok(), ok, "{rcode:?}: {result:?}");
@@ -323,8 +498,15 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
                 socket.send_to(&response, peer).await.unwrap();
             }
         });
-        let result =
-            send_notify_to_server(&zone(), address, Duration::from_millis(50), 2, Some(&key)).await;
+        let result = send_notify_to_server(
+            &NotifyClient::default(),
+            &zone(),
+            address,
+            Duration::from_millis(50),
+            2,
+            Some(&key),
+        )
+        .await;
         server.abort();
         assert_eq!(count.load(Ordering::SeqCst), expected, "{mode}");
         assert_eq!(result.is_ok(), mode == "valid", "{mode}: {result:?}");
@@ -366,7 +548,14 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
     });
     let result = tokio::time::timeout(
         Duration::from_secs(1),
-        send_notify_to_server(&zone(), address, Duration::from_millis(80), 0, Some(&key)),
+        send_notify_to_server(
+            &NotifyClient::default(),
+            &zone(),
+            address,
+            Duration::from_millis(80),
+            0,
+            Some(&key),
+        ),
     )
     .await
     .unwrap();

@@ -20,7 +20,7 @@ use domain::{
 };
 use thiserror::Error;
 
-use super::{EncodeMessageError, RECORD_FIELDS_LEN};
+use super::{EncodeMessageError, RECORD_FIELDS_LEN, ResponseLimit};
 use crate::dns::{LibraryError, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
@@ -284,22 +284,16 @@ impl ParsedQuery {
         Some(TcpKeepalive::new(Some(timeout)))
     }
 
-    /// Cap the advertised UDP size at the server limit; use 512 without EDNS.
-    pub fn udp_payload_limit(&self) -> usize {
-        let size = match self.edns {
-            Edns::Present {
-                udp_payload_size, ..
-            } => udp_payload_size.min(EDNS_UDP_PAYLOAD_SIZE),
-            _ => UDP_PAYLOAD_SIZE_WITHOUT_EDNS,
-        };
-        usize::from(size)
-    }
-
-    /// Bound UDP replies; streams are identified by their idle timeout.
-    pub fn response_limit(&self) -> usize {
+    /// Use the request's transport and EDNS advertisement for every response encoder.
+    pub fn response_limit(&self) -> ResponseLimit {
         match self.keepalive {
-            Keepalive::None => self.udp_payload_limit(),
-            Keepalive::IdleTimeout(_) => crate::dns::DNS_TCP_MAX_SIZE,
+            Keepalive::IdleTimeout(_) => ResponseLimit::STREAM,
+            Keepalive::None => match self.edns {
+                Edns::Present {
+                    udp_payload_size, ..
+                } => ResponseLimit::udp(udp_payload_size),
+                _ => ResponseLimit::UDP,
+            },
         }
     }
 
@@ -309,22 +303,6 @@ impl ParsedQuery {
             return Some(rcode);
         }
         self.edns.format_error()
-    }
-
-    /// An empty authoritative answer with TC set, so a transfer client asks
-    /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.2 defines no UDP AXFR).
-    pub fn build_truncated_response(&self) -> Vec<u8> {
-        self.build_response(OptRcode::NOERROR, true, None)
-            .finish()
-            .into_target()
-    }
-
-    /// A response echoing this query with only `rcode` set, and the extended
-    /// error beside it when the query spoke EDNS (RFC 8914).
-    pub fn build_error_response(&self, rcode: Rcode, ede: Option<ExtendedErrorCode>) -> Vec<u8> {
-        self.build_response(OptRcode::from(rcode), false, ede)
-            .finish()
-            .into_target()
     }
 
     /// The truncated answer, signed when the question was.
@@ -354,29 +332,31 @@ impl ParsedQuery {
         ede: Option<ExtendedErrorCode>,
         mut signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
-        let original = signer.as_deref().cloned();
+        let limit = self.response_limit();
         for minimal in [false, true] {
+            let mut candidate_signer = signer.as_deref().cloned();
             let mut additional = self.build_response(
                 if minimal { OptRcode::NOERROR } else { rcode },
                 truncated || minimal,
                 if minimal { None } else { ede },
             );
-            if let Some(signer) = signer.as_deref_mut() {
-                if let Some(original) = &original {
-                    *signer = original.clone();
-                }
-                signer
+            if let Some(candidate) = &mut candidate_signer {
+                candidate
                     .sign_response(&mut additional, Time48::now())
                     .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
             }
             let response = additional.finish().into_target();
-            if response.len() <= self.response_limit() {
-                return Ok(response);
-            }
-            if minimal {
-                return Err(EncodeMessageError::TooLarge {
-                    len: response.len(),
-                });
+            match limit.check_len(response.len()) {
+                Ok(()) => {
+                    if let (Some(signer), Some(candidate)) =
+                        (signer.as_deref_mut(), candidate_signer)
+                    {
+                        *signer = candidate;
+                    }
+                    return Ok(response);
+                }
+                Err(error) if minimal || !limit.is_udp() => return Err(error),
+                Err(_) => {}
             }
         }
         unreachable!()

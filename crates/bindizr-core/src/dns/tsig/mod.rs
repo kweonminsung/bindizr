@@ -10,7 +10,7 @@ use domain::{
     base::{
         Message, ToName,
         iana::{Class, OptRcode, Rcode, TsigRcode},
-        message_builder::AdditionalBuilder,
+        message_builder::{AdditionalBuilder, TreeCompressor},
     },
     rdata::tsig::{Time48, Tsig},
     tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError},
@@ -23,7 +23,7 @@ use thiserror::Error;
 use crate::{
     dns::{
         LibraryError,
-        message::{Edns, RECORD_FIELDS_LEN},
+        message::{Edns, RECORD_FIELDS_LEN, ResponseLimit},
         name::MAX_WIRE_NAME_LEN,
     },
     model::tsig_key::{TsigAlgorithm, TsigKey},
@@ -236,9 +236,11 @@ impl TsigKey {
 
 /// Verify MAC and Time Signed/Fudge, returning a response signer or BADKEY for an unknown key.
 /// Omit the latest-time cache to accept reordered requests (RFC 8945, Section 5.2.3 SHOULD exception).
+/// Validation errors obey the response budget; only UDP may omit an oversized question.
 pub fn verify_tsig(
     query_data: &[u8],
     key: Option<TsigSigningKey>,
+    limit: ResponseLimit,
 ) -> Result<ResponseSigner, TsigError> {
     let message =
         Message::from_octets(query_data).map_err(|e| TsigError::Malformed(Box::new(e)))?;
@@ -252,17 +254,29 @@ pub fn verify_tsig(
     }
     let now = Time48::now();
     let Some(key) = key.filter(|key| tsig.matches_key(key)) else {
-        return Err(tsig_error(&message, None, TsigRcode::BADKEY, now));
+        return Err(tsig_error(&message, None, TsigRcode::BADKEY, now, limit));
     };
     // RFC 8945, Section 5.2: key, MAC, time, then local truncation policy.
     if tsig.verify_mac(&key, &message, None).is_err() {
-        return Err(tsig_error(&message, None, TsigRcode::BADSIG, now));
+        return Err(tsig_error(&message, None, TsigRcode::BADSIG, now, limit));
     }
     if !data.is_valid_at(now) {
-        return Err(tsig_error(&message, Some(&key), TsigRcode::BADTIME, now));
+        return Err(tsig_error(
+            &message,
+            Some(&key),
+            TsigRcode::BADTIME,
+            now,
+            limit,
+        ));
     }
     if data.mac().len() < key.domain.native_len() {
-        return Err(tsig_error(&message, Some(&key), TsigRcode::BADTRUNC, now));
+        return Err(tsig_error(
+            &message,
+            Some(&key),
+            TsigRcode::BADTRUNC,
+            now,
+            limit,
+        ));
     }
     Ok(ResponseSigner {
         key,
@@ -339,23 +353,60 @@ fn tsig_error(
     key: Option<&TsigSigningKey>,
     error: TsigRcode,
     now: Time48,
+    limit: ResponseLimit,
 ) -> TsigError {
-    let response = match (error, key) {
-        (TsigRcode::BADTIME, Some(key)) => {
-            build_signed_error_response(message, key, AuthenticatedError::BadTime, now)
+    for include_question in [true, false] {
+        // Keep stream questions (RFC 5936, Section 2.2.2). For an oversized
+        // UDP error, omit only the question and re-sign the same TSIG error;
+        // BADTIME must retain its error and client time (RFC 8945, Section 5.2.3).
+        if !include_question && !limit.is_udp() {
+            break;
         }
-        (TsigRcode::BADTRUNC, Some(key)) => {
-            build_signed_error_response(message, key, AuthenticatedError::BadTrunc, now)
+        let response = match (error, key) {
+            (TsigRcode::BADTIME, Some(key)) => build_signed_error_response(
+                message,
+                key,
+                AuthenticatedError::BadTime,
+                now,
+                include_question,
+            ),
+            (TsigRcode::BADTRUNC, Some(key)) => build_signed_error_response(
+                message,
+                key,
+                AuthenticatedError::BadTrunc,
+                now,
+                include_question,
+            ),
+            _ => build_unsigned_error_response(message, error, include_question),
+        };
+        if let Some(response) = response
+            && limit.check_len(response.len()).is_ok()
+        {
+            return TsigError::Rejected {
+                rcode: error,
+                response,
+            };
         }
-        _ => build_unsigned_error_response(message, error),
-    };
-    match response {
-        Some(response) => TsigError::Rejected {
-            rcode: error,
-            response,
-        },
-        None => TsigError::BuildResponse { rcode: error },
     }
+    TsigError::BuildResponse { rcode: error }
+}
+
+/// Echo the question when it fits; a compact UDP error retains the request header.
+fn error_response(
+    msg: &Message<&[u8]>,
+    include_question: bool,
+) -> Option<AdditionalBuilder<TreeCompressor<Vec<u8>>>> {
+    let mut builder = crate::dns::message::build_response();
+    if include_question {
+        return Some(builder.start_answer(msg, Rcode::NOTAUTH).ok()?.additional());
+    }
+    let header = builder.header_mut();
+    header.set_id(msg.header().id());
+    header.set_opcode(msg.header().opcode());
+    header.set_rd(msg.header().rd());
+    header.set_qr(true);
+    header.set_rcode(Rcode::NOTAUTH);
+    Some(builder.additional())
 }
 
 /// TSIG failures that follow successful MAC validation.
@@ -371,6 +422,7 @@ fn build_signed_error_response(
     key: &TsigSigningKey,
     error: AuthenticatedError,
     now: Time48,
+    include_question: bool,
 ) -> Option<Vec<u8>> {
     let request_tsig = msg
         .additional()
@@ -379,10 +431,7 @@ fn build_signed_error_response(
         .last()?
         .ok()?;
     let request = request_tsig.data();
-    let mut builder = crate::dns::message::build_response()
-        .start_answer(msg, Rcode::NOTAUTH)
-        .ok()?
-        .additional();
+    let mut builder = error_response(msg, include_question)?;
     Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
 
     // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
@@ -434,7 +483,11 @@ fn build_signed_error_response(
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that
 /// echoes the request TSIG with an empty MAC (RFC 8945, Section 5.3.2).
-fn build_unsigned_error_response(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
+fn build_unsigned_error_response(
+    msg: &Message<&[u8]>,
+    error: TsigRcode,
+    include_question: bool,
+) -> Option<Vec<u8>> {
     let tsig_record = msg
         .additional()
         .ok()?
@@ -442,10 +495,7 @@ fn build_unsigned_error_response(msg: &Message<&[u8]>, error: TsigRcode) -> Opti
         .last()?
         .ok()?;
 
-    let builder = crate::dns::message::build_response()
-        .start_answer(msg, Rcode::NOTAUTH)
-        .ok()?;
-    let mut builder = builder.additional();
+    let mut builder = error_response(msg, include_question)?;
     Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
     builder
         .push((

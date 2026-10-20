@@ -135,7 +135,7 @@ pub(crate) async fn handle_tcp_xfr(
     let identity = tokio::select! {
         biased;
         () = writer.failed() => return Err(DnsError::PeerClosed),
-        result = authenticate_transfer(dns_cx, query_data, client_ip, transport) => result,
+        result = authenticate_transfer(dns_cx, query_data, client_ip, transport, query.response_limit()) => result,
     }
     .and_then(|identity| authorize_transport(dns_cx, transport, identity));
     let mut identity = match identity {
@@ -285,10 +285,15 @@ pub(crate) async fn handle_udp_xfr(
     query_data: &[u8],
 ) -> Result<Vec<u8>, DnsError> {
     let cx = dns_cx.daemon();
-    let identity =
-        authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
-            .await
-            .and_then(|identity| authorize_transport(dns_cx, TransferTransport::Udp, identity));
+    let identity = authenticate_transfer(
+        dns_cx,
+        query_data,
+        client_addr.ip(),
+        TransferTransport::Udp,
+        query.response_limit(),
+    )
+    .await
+    .and_then(|identity| authorize_transport(dns_cx, TransferTransport::Udp, identity));
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {

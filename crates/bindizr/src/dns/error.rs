@@ -51,6 +51,6 @@ pub(crate) enum DnsError {
     #[error("invalid query: {0}")]
     InvalidQuery(String),
 
-    #[error("failed to build NSUPDATE response")]
-    BuildNsupdateResponse,
+    #[error("failed to build NSUPDATE response: {0}")]
+    BuildNsupdateResponse(#[from] bindizr_core::dns::nsupdate::BuildResponseError),
 }

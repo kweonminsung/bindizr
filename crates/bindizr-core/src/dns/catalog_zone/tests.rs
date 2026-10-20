@@ -1,6 +1,38 @@
 use super::*;
 use crate::dns::{name::encode_name, record::Rdata};
 
+/// A catalog needs an apex NS; unrelated NS records cannot supply it.
+#[test]
+fn extract_member_zones_requires_apex_ns() {
+    let catalog = ZoneName::parse("catalog.example").unwrap();
+    let version = version_record("catalog.example", b"2");
+    for extra in [
+        None,
+        Some(name_record("child.catalog.example.", Rtype::NS, "invalid.")),
+    ] {
+        let mut records = vec![version.clone()];
+        records.extend(extra);
+        assert!(matches!(
+            extract_member_zones(&records, &catalog),
+            Err(ExtractMemberZonesError::MissingApexNs)
+        ));
+    }
+    for owner in [
+        "catalog.example.",
+        "CATALOG.EXAMPLE.",
+        r"c\097talog.example.",
+    ] {
+        let ns = name_record(owner, Rtype::NS, "invalid.");
+        let records = [
+            version.clone(),
+            ns.clone(),
+            ns,
+            name_record("catalog.example.", Rtype::NS, "ns.example."),
+        ];
+        assert!(extract_member_zones(&records, &catalog).unwrap().is_empty());
+    }
+}
+
 /// A transfer record with the wire form of one presentation name as RDATA.
 /// Build a transfer record containing a DNS name.
 fn name_record(owner: &str, rtype: Rtype, target: &str) -> TransferRecord {
@@ -100,6 +132,7 @@ fn extract_member_zones_ignores_repeated_transfer_records() {
     repeated_version.ttl = 120;
     repeated_version.name = "VERSION.CATALOG.example.".to_string();
     let records = [
+        name_record("catalog.example.", Rtype::NS, "invalid."),
         version_record("catalog.example", b"2"),
         name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example."),
         repeated_version,

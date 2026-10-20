@@ -20,7 +20,9 @@ a window in milliseconds
 The batching delay is capped at the zone's SOA REFRESH (RFC 1996, Section 4.3),
 measured from enqueue time. The generated catalog uses a 3600-second REFRESH.
 Later writes can shorten a pending window but cannot extend it; jobs delayed
-by an earlier send do not start a new window. Shutdown flushes queued changes.
+by an earlier send do not start a new window. Collecting the next batch does
+not wait for earlier acknowledgements. Shutdown flushes queued changes and
+waits for outstanding transactions.
 
 Any matching response ends a NOTIFY transaction, whatever its code (RFC 1996,
 Sections 3.6 and 4.8): a validated `NOTIMP` completes it and is logged as an
@@ -32,7 +34,9 @@ same message from the same socket, so an acknowledgement that arrives after
 that fails verification, logging it at `warn` while it keeps waiting (RFC
 8945, Section 5.4); the key name, secret or algorithm the secondary holds is
 then what to check. `zone notify` for all zones and `POST /notify` send the
-zones concurrently, sixteen at a time.
+zones concurrently. Sixteen zones may prepare keys and addresses at a time;
+acknowledgement waits do not hold those slots. Active transactions to the
+same address share a UDP socket, with distinct IDs assigned before signing.
 
 ## Sizing the transfer cache
 

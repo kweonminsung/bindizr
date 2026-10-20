@@ -21,6 +21,8 @@ pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
 /// Why a transferred catalog zone could not be read as one.
 #[derive(Debug, Error)]
 pub enum ExtractMemberZonesError {
+    #[error("the catalog carries no apex NS record (RFC 9432, Section 4)")]
+    MissingApexNs,
     #[error("the catalog carries no version record (RFC 9432, Section 4.2.1)")]
     MissingVersion,
     #[error("the catalog carries more than one version record (RFC 9432, Section 4.2.1)")]
@@ -54,6 +56,7 @@ pub fn extract_member_zones(
     catalog: &ZoneName,
 ) -> Result<Vec<ZoneName>, ExtractMemberZonesError> {
     let mut version = None;
+    let mut apex_ns = false;
     let mut member_nodes: HashMap<Vec<u8>, ZoneName> = HashMap::new();
     let mut listed: HashSet<&ZoneName> = HashSet::new();
     for record in records {
@@ -65,6 +68,7 @@ pub fn extract_member_zones(
         })?;
         let labels = owner.labels();
         match record.rtype {
+            Rtype::NS if owner.is_apex() => apex_ns = true,
             Rtype::TXT if labels == [b"version".to_vec()] => {
                 if version
                     .as_deref()
@@ -124,6 +128,11 @@ pub fn extract_member_zones(
                 name: member.to_string(),
             });
         }
+    }
+    // The AXFR client checks the SOA envelope; the catalog schema also needs
+    // an apex NS (RFC 9432, Section 4), before any member is imported.
+    if !apex_ns {
+        return Err(ExtractMemberZonesError::MissingApexNs);
     }
     members.sort();
     Ok(members)

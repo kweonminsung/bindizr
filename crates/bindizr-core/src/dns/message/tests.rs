@@ -8,7 +8,10 @@ use domain::{
 
 use super::*;
 use crate::{
-    dns::tsig::{TsigSigningKey, verify_tsig},
+    dns::{
+        DNS_TCP_MAX_SIZE,
+        tsig::{TsigSigningKey, verify_tsig},
+    },
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
@@ -50,7 +53,13 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         let request = additional.finish().into_target();
         assert!(request.len() < 512);
         let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
-        let signer: TransferSigner = verify_tsig(&request, Some(key.clone())).unwrap().into();
+        let signer: TransferSigner = verify_tsig(
+            &request,
+            Some(key.clone()),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap()
+        .into();
         for rcode in [
             OptRcode::REFUSED,
             OptRcode::SERVFAIL,
@@ -64,7 +73,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                     Some(&mut signer.clone()),
                 )
                 .unwrap();
-            assert!(response.len() <= query.udp_payload_limit());
+            assert!(response.len() <= query.response_limit().max_len());
             assert_eq!(
                 Message::from_octets(response.as_slice())
                     .unwrap()
@@ -83,7 +92,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         let response = query
             .build_signed_truncated_response(Some(&mut signer.clone()))
             .unwrap();
-        assert!(response.len() <= query.udp_payload_limit());
+        assert!(response.len() <= query.response_limit().max_len());
         assert!(
             Message::from_octets(response.as_slice())
                 .unwrap()
@@ -101,11 +110,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 Rdata::new(vec![0; 1400]).unwrap(),
             )
             .unwrap();
-        let response = builder.build(query.udp_payload_limit()).unwrap();
+        let response = builder.build().unwrap();
         let message = Message::from_octets(response.clone()).unwrap();
         assert!(message.header().tc());
         assert_eq!(message.header_counts().ancount(), 0);
-        assert!(response.len() <= query.udp_payload_limit());
+        assert!(response.len() <= query.response_limit().max_len());
         client.answer(&mut message.clone(), Time48::now()).unwrap();
         assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
     }
@@ -134,7 +143,11 @@ fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
 
 /// The parsed form of a plain AXFR question.
 fn axfr_query() -> ParsedQuery {
-    ParsedQuery::parse(&build_question(Rtype::AXFR, &[]), Keepalive::None).unwrap()
+    ParsedQuery::parse(
+        &build_question(Rtype::AXFR, &[]),
+        Keepalive::IdleTimeout(std::time::Duration::ZERO),
+    )
+    .unwrap()
 }
 
 /// Verify that `encode_tcp_message` rejects oversized payload.
@@ -202,7 +215,7 @@ fn truncated_response_echoes_the_question_with_tc_set() {
         .unwrap();
     let query = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
 
-    let response = query.build_truncated_response();
+    let response = query.build_signed_truncated_response(None).unwrap();
     assert_eq!(&response[0..2], &4242u16.to_be_bytes());
     // QR, AA, and TC set; RCODE NOERROR; one question, no answers.
     assert_eq!(response[2], 0x86);
@@ -218,7 +231,9 @@ fn is_response_separates_a_reply_from_a_query() {
     assert!(!is_response(&query));
 
     let parsed = ParsedQuery::parse(&query, Keepalive::None).expect("a question-only query parses");
-    let reply = parsed.build_error_response(super::Rcode::REFUSED, None);
+    let reply = parsed
+        .build_signed_error_response(super::Rcode::REFUSED.into(), None, None)
+        .unwrap();
     assert!(is_response(&reply));
 }
 
@@ -328,10 +343,17 @@ fn signed_transfer_authenticates_every_envelope() {
         .to_signing_key()
         .unwrap();
     let (query, mut client) = build_signed_axfr_query(key.clone(), Some(true));
-    let parsed = ParsedQuery::parse(&query, Keepalive::None).unwrap();
+    let parsed = ParsedQuery::parse(&query, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
-    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR)
-        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
+    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR).sign_with(
+        verify_tsig(
+            &query,
+            Some(key),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap()
+        .into(),
+    );
 
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
@@ -373,8 +395,15 @@ fn signed_message_reserves_space_for_tsig() {
         .unwrap();
     let (query, _) = build_signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
-    let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
-        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
+    let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR).sign_with(
+        verify_tsig(
+            &query,
+            Some(key),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap()
+        .into(),
+    );
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.
@@ -454,8 +483,15 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
         let request = additional.finish();
         let query =
             ParsedQuery::parse(&request, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
-        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
-            .sign_with(verify_tsig(&request, Some(key.clone())).unwrap().into());
+        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(
+            verify_tsig(
+                &request,
+                Some(key.clone()),
+                crate::dns::message::ResponseLimit::STREAM,
+            )
+            .unwrap()
+            .into(),
+        );
         let mut frames = Vec::new();
         for _ in 0..2 {
             if let Some(frame) = builder
@@ -506,9 +542,15 @@ fn edns_query_returns_opt() {
             dnssec_ok: false,
         }
     );
-    assert_eq!(parsed.udp_payload_limit(), 1232);
+    assert_eq!(parsed.response_limit().max_len(), 1232);
     assert!(parsed.format_error().is_none());
-    let reply = parsed.build_error_response(Rcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED));
+    let reply = parsed
+        .build_signed_error_response(
+            Rcode::REFUSED.into(),
+            Some(ExtendedErrorCode::PROHIBITED),
+            None,
+        )
+        .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().expect("an EDNS query is answered with an OPT");
     assert_eq!(opt.version(), 0);
@@ -549,7 +591,13 @@ fn edns_query_returns_opt() {
     assert_eq!(opt.version(), 0);
 
     // Without EDNS the limit is RFC 1035's.
-    assert_eq!(axfr_query().udp_payload_limit(), 512);
+    assert_eq!(
+        ParsedQuery::parse(&build_question(Rtype::AXFR, &[]), Keepalive::None)
+            .unwrap()
+            .response_limit()
+            .max_len(),
+        512
+    );
 }
 
 /// Echo DO while clearing reserved EDNS flags in error and truncated responses.
@@ -566,7 +614,7 @@ fn response_encoding_preserves_edns_dnssec_ok() {
                 parsed
                     .build_signed_error_response(rcode, Some(ExtendedErrorCode::PROHIBITED), None)
                     .unwrap(),
-                parsed.build_truncated_response(),
+                parsed.build_signed_truncated_response(None).unwrap(),
             ];
             for response in responses {
                 let response = Message::from_octets(response).unwrap();
@@ -589,7 +637,7 @@ fn udp_response_truncates_answers_above_limit() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
     let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&parsed, Rtype::SOA);
-    for _ in 0..40 {
+    for _ in 0..100 {
         builder
             .add_raw_rdata(
                 qname.clone(),
@@ -600,7 +648,7 @@ fn udp_response_truncates_answers_above_limit() {
             .unwrap();
     }
 
-    let response = builder.build(512).unwrap();
+    let response = builder.build().unwrap();
     let response = Message::from_octets(response.as_slice()).unwrap();
 
     assert!(response.header().tc());
@@ -619,7 +667,9 @@ fn response_encoding_preserves_question_class() {
     let parsed = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
     assert_eq!(parsed.qclass, Class::CH);
 
-    let reply = parsed.build_error_response(Rcode::NOTAUTH, None);
+    let reply = parsed
+        .build_signed_error_response(Rcode::NOTAUTH.into(), None, None)
+        .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     assert_eq!(reply.first_question().unwrap().qclass(), Class::CH);
 }
@@ -633,7 +683,9 @@ fn tcp_response_advertises_idle_timeout() {
         Keepalive::IdleTimeout(Duration::from_secs(30)),
     )
     .unwrap();
-    let response = tcp.build_error_response(Rcode::REFUSED, None);
+    let response = tcp
+        .build_signed_error_response(Rcode::REFUSED.into(), None, None)
+        .unwrap();
     let message = Message::from_octets(response.as_slice()).unwrap();
     let keepalive = message
         .opt()
@@ -644,7 +696,9 @@ fn tcp_response_advertises_idle_timeout() {
     assert_eq!(keepalive.timeout().map(u16::from), Some(300));
 
     let udp = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
-    let response = udp.build_error_response(Rcode::REFUSED, None);
+    let response = udp
+        .build_signed_error_response(Rcode::REFUSED.into(), None, None)
+        .unwrap();
     let message = Message::from_octets(response.as_slice()).unwrap();
     assert!(message.opt().unwrap().opt().tcp_keepalive().is_none());
 }
@@ -682,4 +736,136 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
             Some(OptRcode::FORMERR)
         );
     }
+}
+
+/// EDNS cannot lower the UDP floor or raise the server ceiling; streams ignore it.
+#[test]
+fn response_limits_follow_transport_and_edns() {
+    for (advertised, expected) in [
+        (0, 512),
+        (511, 512),
+        (512, 512),
+        (1232, 1232),
+        (65535, 1232),
+    ] {
+        let limit = ResponseLimit::udp(advertised);
+        assert!(limit.is_udp());
+        assert_eq!(limit.max_len(), expected);
+        assert!(limit.check_len(expected).is_ok());
+        assert!(
+            matches!(limit.check_len(expected + 1), Err(EncodeMessageError::TooLarge { len, max_len }) if len == expected + 1 && max_len == expected)
+        );
+        let (_, wire) = crate::dns::query::build_question(
+            Opcode::QUERY,
+            false,
+            false,
+            &Name::from_str("example.com").unwrap(),
+            Rtype::SOA,
+            Some(advertised),
+        );
+        let wire = wire.finish();
+        let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+        let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+        assert_eq!(udp.response_limit(), limit);
+        assert_eq!(stream.response_limit(), ResponseLimit::STREAM);
+    }
+    assert!(ResponseLimit::STREAM.check_len(65535).is_ok());
+    assert!(ResponseLimit::STREAM.check_len(65536).is_err());
+}
+
+/// A failed final size check must not consume the next MAC in a response chain.
+#[test]
+fn oversized_response_does_not_advance_the_signer() {
+    use domain::tsig::ClientTransaction;
+
+    use crate::dns::tsig::tests::test_key;
+
+    let qname = Name::<Vec<u8>>::from_str(&format!(
+        "{}.{}.{}.q",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63)
+    ))
+    .unwrap();
+    let key = crate::model::tsig_key::TsigKey {
+        name: format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63)),
+        ..test_key(TsigAlgorithm::HmacSha512)
+    }
+    .to_signing_key()
+    .unwrap();
+    let (_, mut additional) = crate::dns::query::build_question(
+        Opcode::QUERY,
+        false,
+        false,
+        &qname,
+        Rtype::SOA,
+        Some(512),
+    );
+    let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
+    let wire = additional.finish();
+    let mut signer: TransferSigner = verify_tsig(&wire, Some(key), ResponseLimit::UDP)
+        .unwrap()
+        .into();
+    let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+    assert!(matches!(
+        udp.build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer)),
+        Err(EncodeMessageError::TooLarge {
+            len: 520,
+            max_len: 512
+        })
+    ));
+    let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let response = stream
+        .build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer))
+        .unwrap();
+    client
+        .answer(&mut Message::from_octets(response).unwrap(), Time48::now())
+        .unwrap();
+}
+
+/// A rejected TCP frame leaves the signer usable for the following error response.
+#[test]
+fn oversized_frame_does_not_advance_the_signer() {
+    use domain::tsig::ClientTransaction;
+
+    use crate::dns::tsig::tests::test_key;
+
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
+    let query = axfr_query();
+    let (_, mut additional) = crate::dns::query::build_question(
+        Opcode::QUERY,
+        false,
+        false,
+        &query.qname,
+        Rtype::AXFR,
+        None,
+    );
+    let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
+    let wire = additional.finish();
+    let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let signer = verify_tsig(&wire, Some(key), ResponseLimit::STREAM).unwrap();
+    let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
+    // Bypass the chunking helper to exercise the final frame guard itself.
+    for _ in 0..70 {
+        builder
+            .add_raw_rdata(
+                query.qname.clone(),
+                Rtype::TXT.to_int(),
+                300,
+                Rdata::new(vec![0; 1000]).unwrap(),
+            )
+            .unwrap();
+    }
+    assert!(matches!(
+        builder.take_frame(),
+        Err(EncodeMessageError::TooLarge { max_len: 65535, .. })
+    ));
+    let response = query
+        .build_signed_error_response(OptRcode::SERVFAIL, None, builder.take_signer().as_mut())
+        .unwrap();
+    client
+        .answer(&mut Message::from_octets(response).unwrap(), Time48::now())
+        .unwrap();
 }

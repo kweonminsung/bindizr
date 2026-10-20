@@ -1285,7 +1285,11 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
 }
 
 /// Serve a catalog with repeated version/PTR records, then its single member's AXFR.
-fn serve_repeated_catalog(member: String, split: bool) -> (String, std::thread::JoinHandle<()>) {
+fn serve_catalog(
+    member: String,
+    split: bool,
+    apex_ns: bool,
+) -> (String, std::thread::JoinHandle<Vec<String>>) {
     use domain::{
         base::{Message, MessageBuilder, Serial, Ttl},
         rdata::{A, Ns, Ptr, Soa, Txt},
@@ -1296,13 +1300,15 @@ fn serve_repeated_catalog(member: String, split: bool) -> (String, std::thread::
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let server = std::thread::spawn(move || {
-        for catalog in [true, false] {
+        let mut queries = Vec::new();
+        for catalog in [true, false].into_iter().take(if apex_ns { 2 } else { 1 }) {
             let (mut stream, _) = listener.accept().unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                 .unwrap();
             let query = read_frame(&mut stream).unwrap().unwrap();
             let message = Message::from_octets(query.as_slice()).unwrap();
+            queries.push(message.sole_question().unwrap().qname().to_string());
             let zone = if catalog { "catalog.example" } else { &member };
             let owner = parse_name(zone).unwrap();
             let primary = parse_name(&format!("ns1.{zone}.")).unwrap();
@@ -1324,9 +1330,11 @@ fn serve_repeated_catalog(member: String, split: bool) -> (String, std::thread::
             answer
                 .push((&owner, Ttl::from_secs(300), soa.clone()))
                 .unwrap();
-            answer
-                .push((&owner, Ttl::from_secs(300), Ns::new(primary)))
-                .unwrap();
+            if !catalog || apex_ns {
+                answer
+                    .push((&owner, Ttl::from_secs(300), Ns::new(primary)))
+                    .unwrap();
+            }
             if catalog {
                 answer
                     .push((
@@ -1375,6 +1383,36 @@ fn serve_repeated_catalog(member: String, split: bool) -> (String, std::thread::
             answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
             write_frame(&mut stream, &answer.finish()).unwrap();
         }
+        if !apex_ns {
+            // Keep listening after the invalid catalog: no member AXFR may follow.
+            listener.set_nonblocking(true).unwrap();
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(150);
+            while std::time::Instant::now() < until {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                            .unwrap();
+                        if let Some(query) = read_frame(&mut stream).unwrap() {
+                            queries.push(
+                                Message::from_octets(query.as_slice())
+                                    .unwrap()
+                                    .sole_question()
+                                    .unwrap()
+                                    .qname()
+                                    .to_string(),
+                            );
+                        }
+                        break;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(5))
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            }
+        }
+        queries
     });
     (address, server)
 }
@@ -1388,7 +1426,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
         for split in [false, true] {
             let member = app.zone_name(&format!("member-{cli}-{split}.example"));
             app.create_zone_cli(&member, "3600").await;
-            let (address, server) = serve_repeated_catalog(member.clone(), split);
+            let (address, server) = serve_catalog(member.clone(), split, true);
             let body = if cli {
                 let output = app
                     .run_cli_success(
@@ -1491,4 +1529,64 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
     server.join().unwrap();
     assert_eq!(app.list_records(zone_name).await, before);
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
+}
+
+/// Invalid catalog structure fails before member reads or changes, including previews.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn catalog_import_requires_apex_ns_before_fetching_members() {
+    let app = TestApp::start_local().await;
+    for cli in [false, true] {
+        for dry_run in [false, true] {
+            for existing in [false, true] {
+                let member = app.zone_name(&format!("member-{cli}-{dry_run}-{existing}.example"));
+                if existing {
+                    app.create_zone_cli(&member, "3600").await;
+                }
+                let before = app
+                    .send_request(Method::GET, &format!("/zones/{member}"), None)
+                    .await;
+                let before_records = if existing {
+                    app.list_records(&member).await
+                } else {
+                    Vec::new()
+                };
+                let (address, server) = serve_catalog(member.clone(), false, false);
+                if cli {
+                    let mut args = vec![
+                        "zone",
+                        "import",
+                        "--from-server",
+                        &address,
+                        "--from-catalog",
+                        "catalog.example",
+                        "--create",
+                        "--output",
+                        "json",
+                    ];
+                    if dry_run {
+                        args.push("--dry-run");
+                    }
+                    let output = app.run_cli(&args, None).await;
+                    crate::common::assert_cli_failure_contains(&args, &output, "no apex NS");
+                } else {
+                    let (status, body) = app.send_request(Method::POST, "/import", Some(json!({"from_server": address, "from_catalog": "catalog.example", "create": true, "dry_run": dry_run}))).await;
+                    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+                    assert_eq!(body["code"], "INVALID_INPUT", "{body}");
+                    assert!(
+                        body["error"].as_str().unwrap().contains("no apex NS"),
+                        "{body}"
+                    );
+                }
+                assert_eq!(server.join().unwrap(), ["catalog.example"]);
+                let after = app
+                    .send_request(Method::GET, &format!("/zones/{member}"), None)
+                    .await;
+                assert_eq!(after, before);
+                if existing {
+                    assert_eq!(app.list_records(&member).await, before_records);
+                }
+            }
+        }
+    }
 }

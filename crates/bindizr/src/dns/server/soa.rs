@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::{
     dns::{
-        DNS_TCP_MAX_SIZE, message,
+        message,
         message::{ExtendedErrorCode, OptRcode, Rtype},
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
@@ -44,7 +44,6 @@ pub(crate) async fn handle_tcp_soa(
         client_addr.ip(),
         query_data,
         writer.transport(),
-        DNS_TCP_MAX_SIZE,
     )
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
@@ -71,12 +70,11 @@ pub(crate) async fn handle_udp_soa(
         target.client_addr.ip(),
         query_data,
         TransferTransport::Udp,
-        query.udp_payload_limit(),
     )
     .await
     .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     socket
-        .send_to(&response, target)
+        .send_to(&response, target, query.response_limit())
         .await
         .inspect_err(|_| cx.metrics().track_soa(SoaResult::Failed))?;
     cx.metrics().track_soa(outcome);
@@ -99,17 +97,19 @@ pub(crate) async fn handle_udp_ixfr(
         target.client_addr.ip(),
         query_data,
         TransferTransport::Udp,
-        query.udp_payload_limit(),
     )
     .await
     .inspect_err(|_| {
         cx.metrics()
             .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
     })?;
-    socket.send_to(&response, target).await.inspect_err(|_| {
-        cx.metrics()
-            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
-    })?;
+    socket
+        .send_to(&response, target, query.response_limit())
+        .await
+        .inspect_err(|_| {
+            cx.metrics()
+                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+        })?;
     let result = match outcome {
         SoaResult::Ok => XfrResult::Truncated,
         SoaResult::Refused => XfrResult::Refused,
@@ -129,28 +129,33 @@ fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
 }
 
 /// Build an SOA response under the transfer gate for polling secondaries.
-/// Truncate responses exceeding `max_len` for UDP.
+/// The query carries the response budget, including its transport.
 async fn handle_soa_request(
     dns_cx: &DnsContext,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     query_data: &[u8],
     transport: TransferTransport,
-    max_len: usize,
 ) -> Result<(Vec<u8>, SoaResult), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
     // A UDP IXFR is a transfer; a SOA query is not.
-    let identity = authenticate_soa(dns_cx, client_ip, query_data, transport)
-        .await
-        .and_then(|identity| {
-            if query.qtype == Rtype::IXFR {
-                authorize_transport(dns_cx, transport, identity)
-            } else {
-                Ok(identity)
-            }
-        });
+    let identity = authenticate_soa(
+        dns_cx,
+        client_ip,
+        query_data,
+        transport,
+        query.response_limit(),
+    )
+    .await
+    .and_then(|identity| {
+        if query.qtype == Rtype::IXFR {
+            authorize_transport(dns_cx, transport, identity)
+        } else {
+            Ok(identity)
+        }
+    });
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
@@ -235,7 +240,7 @@ async fn handle_soa_request(
         };
         let mut builder = build(identity.signer);
         builder.add_catalog_soa(&catalog_zone, catalog_zone.serial)?;
-        return Ok((builder.build(max_len)?, SoaResult::Ok));
+        return Ok((builder.build()?, SoaResult::Ok));
     }
 
     // A name the zone type refuses is answered NOTAUTH like a missing zone.
@@ -299,7 +304,7 @@ async fn handle_soa_request(
         )?;
     }
 
-    Ok((builder.build(max_len)?, SoaResult::Ok))
+    Ok((builder.build()?, SoaResult::Ok))
 }
 
 /// `bindizr doctor`'s own probe carries no key and is not a secondary, so it
@@ -309,6 +314,7 @@ async fn authenticate_soa(
     client_ip: IpAddr,
     query_data: &[u8],
     transport: TransferTransport,
+    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<TransferIdentity, TransferRefusal> {
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.
@@ -320,5 +326,5 @@ async fn authenticate_soa(
             signer: None,
         });
     }
-    authenticate_transfer(dns_cx, query_data, client_ip, transport).await
+    authenticate_transfer(dns_cx, query_data, client_ip, transport, limit).await
 }

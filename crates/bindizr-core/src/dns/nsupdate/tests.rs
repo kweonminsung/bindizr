@@ -20,7 +20,15 @@ use crate::{
 fn build_response_echoes_request_header_and_question() {
     let query = minimal_update_with_ztype(6);
 
-    let response = build_response(&query, OptRcode::REFUSED, None, None, 300, 512).unwrap();
+    let response = build_response(
+        &query,
+        OptRcode::REFUSED,
+        None,
+        None,
+        300,
+        crate::dns::message::ResponseLimit::udp(512),
+    )
+    .unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     let header = msg.header();
@@ -42,7 +50,15 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ]);
 
-    let response = build_response(&query, OptRcode::BADVERS, None, None, 300, 1232).unwrap();
+    let response = build_response(
+        &query,
+        OptRcode::BADVERS,
+        None,
+        None,
+        300,
+        crate::dns::message::ResponseLimit::udp(1232),
+    )
+    .unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     let opt = msg.opt().expect("the OPT is echoed");
@@ -57,9 +73,22 @@ fn build_response_signs_with_request_mac_chain() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(
+        &query,
+        Some(key),
+        crate::dns::message::ResponseLimit::STREAM,
+    )
+    .unwrap();
 
-    let response = build_response(&query, OptRcode::NOERROR, None, Some(signer), 300, 512).unwrap();
+    let response = build_response(
+        &query,
+        OptRcode::NOERROR,
+        None,
+        Some(signer),
+        300,
+        crate::dns::message::ResponseLimit::udp(512),
+    )
+    .unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     assert_eq!(msg.header().rcode(), Rcode::NOERROR);
@@ -79,7 +108,15 @@ fn build_response_signs_with_request_mac_chain() {
     let request_mac = query[query.len() - 6 - 32..query.len() - 6].to_vec();
 
     // The unsigned build supplies the response before TSIG, including ARCOUNT.
-    let unsigned = build_response(&query, OptRcode::NOERROR, None, None, 300, 512).unwrap();
+    let unsigned = build_response(
+        &query,
+        OptRcode::NOERROR,
+        None,
+        None,
+        300,
+        crate::dns::message::ResponseLimit::udp(512),
+    )
+    .unwrap();
 
     // RFC 8945, Section 4.3.3: request MAC, unsigned response, TSIG variables.
     let mut digest = Vec::new();
@@ -150,7 +187,12 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let request = additional.finish().into_target();
-        let signer = verify_tsig(&request, Some(key.clone())).unwrap();
+        let signer = verify_tsig(
+            &request,
+            Some(key.clone()),
+            crate::dns::message::ResponseLimit::STREAM,
+        )
+        .unwrap();
         for rcode in [
             OptRcode::NOERROR,
             OptRcode::REFUSED,
@@ -163,7 +205,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                 None,
                 Some(signer.clone()),
                 300,
-                size.unwrap_or(512) as usize,
+                crate::dns::message::ResponseLimit::udp(size.unwrap_or(512)),
             )
             .unwrap();
             assert!(response.len() <= size.unwrap_or(512) as usize);

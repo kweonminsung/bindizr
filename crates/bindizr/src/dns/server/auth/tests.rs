@@ -70,7 +70,11 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
     let request = request.finish();
     let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
     let dns_cx = DnsContext::new(cx);
-    assert!(authenticate_tsig_key(&dns_cx, &request).await.is_ok());
+    assert!(
+        authenticate_tsig_key(&dns_cx, &request, query.response_limit())
+            .await
+            .is_ok()
+    );
     let mut connection = sqlx::SqliteConnection::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
@@ -78,7 +82,9 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         .execute(&mut connection)
         .await
         .unwrap();
-    let failure = authenticate_tsig_key(&dns_cx, &request).await.unwrap_err();
+    let failure = authenticate_tsig_key(&dns_cx, &request, query.response_limit())
+        .await
+        .unwrap_err();
     assert!(failure.is_failure());
     let response = failure.into_response(&query).unwrap();
     assert_eq!(response[3] & 15, 2);

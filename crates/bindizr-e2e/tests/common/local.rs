@@ -172,7 +172,7 @@ listen_port = {dns_port}
 [dns.notify]
 batch_ms = {notify_batch_ms}
 retries = 0
-timeout_secs = 1
+timeout_secs = {notify_timeout_secs}
 
 [dns.nsupdate]
 tsig_required = {nsupdate_tsig_required}
@@ -182,6 +182,7 @@ level = "error"
 "#,
         db_path.display(),
         notify_batch_ms = options.notify_batch_ms,
+        notify_timeout_secs = options.notify_timeout_secs,
         authentication_required = options.authentication_required,
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
