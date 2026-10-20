@@ -46,6 +46,16 @@ impl TsigAlgorithm {
         }
     }
 
+    /// HMAC output length in bytes, the least a secret should hold (RFC 8945, Section 8).
+    pub fn digest_len(&self) -> usize {
+        match self {
+            TsigAlgorithm::HmacSha1 => 20,
+            TsigAlgorithm::HmacSha256 => 32,
+            TsigAlgorithm::HmacSha384 => 48,
+            TsigAlgorithm::HmacSha512 => 64,
+        }
+    }
+
     /// All supported algorithm names, for error messages.
     fn supported_names() -> &'static [&'static str] {
         &["hmac-sha1", "hmac-sha256", "hmac-sha384", "hmac-sha512"]

@@ -25,7 +25,8 @@ pub fn is_nsupdate(message: &[u8]) -> bool {
 
 /// Build the response: request ID/opcode/question echoed, RCODE set, an OPT
 /// when the request carried one (RFC 6891, Section 6.1.1), and a TSIG once
-/// the request's was validated (RFC 8945, Section 5.3).
+/// the request's was validated (RFC 8945, Section 5.3). The zone section alone
+/// is echoed, an explicit exception to RFC 2136, Section 3.8 shared with BIND.
 pub fn build_response(
     query_data: &[u8],
     rcode: OptRcode,

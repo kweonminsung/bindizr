@@ -53,8 +53,8 @@ pub async fn create(
         Some(raw) => raw
             .parse::<DnssecDenial>()
             .map_err(ServiceError::invalid_input)?,
-        // NSEC leaves the zone walkable, so a policy that did not
-        // choose is not opted into it.
+        // RFC 9276, Section 3.1 prefers NSEC, but NSEC leaves the zone
+        // walkable; a policy that did not choose is not opted into that.
         None => DnssecDenial::Nsec3,
     };
     let signature_validity_days = request.signature_validity_days.unwrap_or(14);

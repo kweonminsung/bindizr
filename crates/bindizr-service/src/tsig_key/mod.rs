@@ -30,10 +30,6 @@ use crate::{
     },
 };
 
-/// Byte length of generated secrets; matches `tsig-keygen`'s default for
-/// HMAC-SHA256 and is sufficient entropy for the larger algorithms too.
-const GENERATED_SECRET_LEN: usize = 32;
-
 /// Create a TSIG key in the request's role. An omitted `secret` is generated;
 /// a given one must be valid, non-empty base64 (an imported key).
 pub async fn create(
@@ -54,7 +50,7 @@ pub async fn create(
         .unwrap_or_default();
     let secret = match request.secret.as_deref() {
         Some(secret) => normalize_secret(secret)?,
-        None => generate_secret(),
+        None => generate_secret(&algorithm),
     };
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
@@ -279,10 +275,10 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     Ok(trimmed.to_string())
 }
 
-/// Generate a base64-encoded random TSIG secret.
-fn generate_secret() -> String {
-    let bytes: [u8; GENERATED_SECRET_LEN] = rand::rng().random();
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+/// Generate a base64 secret as long as the HMAC output (RFC 8945, Section 8).
+fn generate_secret(algorithm: &TsigAlgorithm) -> String {
+    let bytes: [u8; 64] = rand::rng().random();
+    base64::engine::general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
 }
 
 #[cfg(test)]

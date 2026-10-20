@@ -15,8 +15,8 @@ Different addresses or protocols can coexist.
 
 The role needs `record:read` for prerequisites, `record:create` for ordinary additions,
 and `record:delete` for deletions. An addition that replaces a CNAME, DNAME, or matching WKS record
-needs `record:delete` as well, and one whose TTL differs from the record set's
-needs `record:update`, since it moves the whole set. An SOA addition needs
+needs `record:delete` as well, and one whose TTL differs from its name and type's
+needs `record:update`, since it moves every record there. An SOA addition needs
 `zone:update`, since it changes the zone's metadata. If any record falls
 outside its grants, the entire update is refused.
 
@@ -88,7 +88,7 @@ needs comes first, so a failed prerequisite reveals nothing the key may not
 read. Prerequisites read the whole served zone:
 ordinary records, the SOA (serial included), and generated DNSSEC records.
 A name holding only DNSSEC records is in use. Value-dependent prerequisites
-must match the entire RRset; order, duplicates, and TTL do not affect equality
+must match every record of that name and type; order, duplicates, and TTL do not affect equality
 (RFC 2136, Section 3.2). All checks use the same locked zone state as the update.
 
 Some records in an update are passed over rather than refused, as the RFC

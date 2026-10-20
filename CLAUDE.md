@@ -608,7 +608,9 @@ evaluated first (Section 3.2, once the read grant each needs is checked), then
 every update record's owner, wire shape and type are checked before the grants
 on it and before any operation is selected (Sections 3.3 and 3.4.1). Even a
 delete that will be ignored must pass that prescan. An unsupported EDNS version
-is BADVERS ahead of every policy refusal (RFC 6891, Section 6.1.3). Checked owners remain
+is BADVERS ahead of every policy refusal (RFC 6891, Section 6.1.3). The response
+echoes the zone section alone, as BIND, Knot and PowerDNS do: an explicit
+exception to RFC 2136, Section 3.8. Checked owners remain
 `OwnerName` values through authorization and execution, without re-parsing.
 Prerequisites compare with the complete served zone at that transaction's
 serial: the SOA, ordinary records, and signer-generated DNSSEC records.

@@ -55,7 +55,7 @@ pub(crate) fn parse_record_fields(
 }
 
 /// Validate newly authored values while leaving imported opaque flags intact.
-pub(super) fn validate_management_value(
+pub(crate) fn validate_management_value(
     record_type: RecordType,
     value: &str,
 ) -> Result<(), ServiceError> {
