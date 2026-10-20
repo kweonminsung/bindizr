@@ -17,7 +17,7 @@ use crate::{
         message::{DNS_HEADER_LEN, Edns},
         name::labels_to_presentation,
         record::{ParseRdataError, ParseRecordValueError},
-        tsig::is_mac_size_in_bounds,
+        tsig::is_request_tsig_valid,
     },
     model::record::ParseRecordTypeError,
 };
@@ -257,7 +257,7 @@ fn parse_tsig_record(
         .parse_parser(rdlen)
         .map_err(|_| ParseUpdateError::InvalidTsig)?;
     let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseUpdateError::InvalidTsig)?;
-    if rdata.remaining() != 0 || !is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().len()) {
+    if rdata.remaining() != 0 || !is_request_tsig_valid(&tsig) {
         return Err(ParseUpdateError::InvalidTsig);
     }
 

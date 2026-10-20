@@ -17,6 +17,44 @@ fn name(value: &str) -> Name<Vec<u8>> {
     Name::from_str(value).unwrap()
 }
 
+/// Keepalive responses carry one two-octet timeout; zero is a valid close request.
+#[test]
+fn extract_tcp_keepalive_checks_timeout_units_and_option_shape() {
+    for (data, expected) in [
+        (vec![0, 11, 0, 2, 0, 0], Some(Duration::ZERO)),
+        (vec![0, 11, 0, 2, 0, 1], Some(Duration::from_millis(100))),
+        (
+            vec![0, 11, 0, 2, 255, 255],
+            Some(Duration::from_millis(6_553_500)),
+        ),
+        (vec![], None),
+    ] {
+        let mut response = build_soa_response(1, &name("example.com"), Class::IN);
+        assert_eq!(extract_tcp_keepalive_timeout(&response).unwrap(), None);
+        append_opt(&mut response, OptRcode::NOERROR, 0);
+        let end = response.len();
+        response[end - 2..].copy_from_slice(&(data.len() as u16).to_be_bytes());
+        response.extend_from_slice(&data);
+        assert_eq!(extract_tcp_keepalive_timeout(&response).unwrap(), expected);
+    }
+    for data in [
+        vec![0, 11, 0, 0],
+        vec![0, 11, 0, 1, 0],
+        vec![0, 11, 0, 3, 0, 0, 0],
+        vec![0, 11, 0, 2, 0, 0, 0, 11, 0, 2, 0, 1],
+    ] {
+        let mut response = build_soa_response(1, &name("example.com"), Class::IN);
+        append_opt(&mut response, OptRcode::NOERROR, 0);
+        let end = response.len();
+        response[end - 2..].copy_from_slice(&(data.len() as u16).to_be_bytes());
+        response.extend_from_slice(&data);
+        assert!(matches!(
+            extract_tcp_keepalive_timeout(&response),
+            Err(ParseResponseError::MalformedEdns)
+        ));
+    }
+}
+
 /// Build a DNS response with DS answers and an optional authority SOA.
 fn build_ds_response(
     query_id: u16,

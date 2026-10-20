@@ -1,7 +1,7 @@
 //! Client-side AXFR: pull a whole zone from another server, the fetch half
 //! of `zone import --from-server`.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     config::ImportConfig,
@@ -10,12 +10,13 @@ use bindizr_core::{
         message::{Name, Rtype, encode_tcp_message},
         name::{ZoneName, decode_name_labels, to_fqdn},
         query::{
-            TransferMessagePosition, TransferRecord, build_axfr_query, extract_transfer_records,
+            TransferMessagePosition, TransferRecord, build_axfr_query,
+            extract_tcp_keepalive_timeout, extract_transfer_records,
         },
     },
 };
 use thiserror::Error;
-use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio::{io::AsyncWriteExt, net::TcpStream, sync::oneshot};
 
 use super::{ReadTcpMessageError, ResolveAddressError};
 
@@ -81,7 +82,52 @@ pub(crate) struct AxfrClient {
     server: String,
     /// The address the first transfer connected to; later ones return to it.
     addr: Option<SocketAddr>,
-    stream: Option<TcpStream>,
+    connection: Option<Connection>,
+}
+
+/// A reusable stream, with an idle timer only when the primary advertised one.
+#[derive(Debug)]
+enum Connection {
+    Open(TcpStream),
+    Idle {
+        resume: oneshot::Sender<()>,
+        stream: oneshot::Receiver<TcpStream>,
+    },
+}
+
+impl Connection {
+    /// Close at the advertised deadline even while the importer is applying the previous zone.
+    fn spawn(stream: TcpStream, timeout: Duration) -> Self {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let (resume, requested) = oneshot::channel();
+        let (returned, receive) = oneshot::channel();
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                () = tokio::time::sleep_until(deadline) => {},
+                result = requested => {
+                    if result.is_ok() {
+                        let _ = returned.send(stream);
+                    }
+                }
+            }
+        });
+        Self::Idle {
+            resume,
+            stream: receive,
+        }
+    }
+
+    /// Recover an unexpired stream; an expired or dropped timer leaves none.
+    async fn take(self) -> Option<TcpStream> {
+        match self {
+            Self::Open(stream) => Some(stream),
+            Self::Idle { resume, stream } => {
+                let _ = resume.send(());
+                stream.await.ok()
+            }
+        }
+    }
 }
 
 impl AxfrClient {
@@ -90,7 +136,7 @@ impl AxfrClient {
         AxfrClient {
             server: server.to_string(),
             addr: None,
-            stream: None,
+            connection: None,
         }
     }
 
@@ -103,9 +149,13 @@ impl AxfrClient {
     ) -> Result<Vec<TransferRecord>, FetchZoneError> {
         let qname = zone_name.to_wire_name()?;
         let deadline = tokio::time::Instant::now() + import.timeout();
-        let reused = self.stream.is_some();
         let transfer = async {
-            let (addr, stream) = match (self.addr, self.stream.take()) {
+            let previous = match self.connection.take() {
+                Some(connection) => connection.take().await,
+                None => None,
+            };
+            let reused = previous.is_some();
+            let (addr, mut stream) = match (self.addr, previous) {
                 (Some(addr), Some(stream)) => (addr, stream),
                 (Some(addr), None) => (
                     addr,
@@ -116,40 +166,42 @@ impl AxfrClient {
                 (None, _) => connect_to_server(&self.server, import).await?,
             };
             self.addr = Some(addr);
-            let stream = self.stream.insert(stream);
-            match fetch_zone_on_stream(stream, &qname, import.max_records).await {
+            let result = match fetch_zone_on_stream(&mut stream, &qname, import.max_records).await {
                 // Nothing came back on a reused connection: the primary let it
                 // go, as RFC 7766, Section 6.2.1 allows, so start a fresh one.
                 Err(FetchZoneError::Send(_) | FetchZoneError::Read(_)) if reused => {
-                    let stream = self.stream.insert(
-                        TcpStream::connect(addr)
-                            .await
-                            .map_err(FetchZoneError::Connect)?,
-                    );
-                    fetch_zone_on_stream(stream, &qname, import.max_records).await
+                    stream = TcpStream::connect(addr)
+                        .await
+                        .map_err(FetchZoneError::Connect)?;
+                    fetch_zone_on_stream(&mut stream, &qname, import.max_records).await
                 }
                 result => result.map_err(|source| FetchZoneError::Server {
                     addr,
                     source: Box::new(source),
                 }),
-            }
+            };
+            result.map(|(records, timeout)| (records, timeout, stream))
         };
         match tokio::time::timeout_at(deadline, transfer).await {
-            Ok(Ok(records)) => Ok(records),
+            Ok(Ok((records, idle_timeout, stream))) => {
+                // A zero timeout closes after the outstanding transfer completes (RFC 7828, Section 3.2.2).
+                self.connection = match idle_timeout {
+                    Some(timeout) if timeout.is_zero() => None,
+                    Some(timeout) => Some(Connection::spawn(stream, timeout)),
+                    None => Some(Connection::Open(stream)),
+                };
+                Ok(records)
+            }
             Ok(Err(e)) => {
                 // A failed transfer leaves the connection in an unknown state.
-                self.stream = None;
                 Err(e)
             }
-            Err(_) => {
-                self.stream = None;
-                Err(match self.addr {
-                    Some(addr) => FetchZoneError::TimedOut { addr },
-                    None => FetchZoneError::ResolutionTimedOut {
-                        server: self.server.clone(),
-                    },
-                })
-            }
+            Err(_) => Err(match self.addr {
+                Some(addr) => FetchZoneError::TimedOut { addr },
+                None => FetchZoneError::ResolutionTimedOut {
+                    server: self.server.clone(),
+                },
+            }),
         }
     }
 }
@@ -185,7 +237,7 @@ async fn fetch_zone_on_stream(
     stream: &mut TcpStream,
     qname: &Name<Vec<u8>>,
     max_records: usize,
-) -> Result<Vec<TransferRecord>, FetchZoneError> {
+) -> Result<(Vec<TransferRecord>, Option<Duration>), FetchZoneError> {
     let (query_id, query) = build_axfr_query(qname);
     stream
         .write_all(&encode_tcp_message(&query)?)
@@ -195,6 +247,7 @@ async fn fetch_zone_on_stream(
     let expected_owner = to_fqdn(&qname.to_string());
     let expected_labels = owner_labels(&expected_owner)?;
     let mut records: Vec<TransferRecord> = Vec::new();
+    let mut idle_timeout = None;
     loop {
         let response = super::read_tcp_message(stream)
             .await
@@ -206,6 +259,11 @@ async fn fetch_zone_on_stream(
             TransferMessagePosition::Following
         };
         let batch = extract_transfer_records(query_id, qname, position, &response)?;
+        if let Some(timeout) = extract_tcp_keepalive_timeout(&response)?
+            && idle_timeout != Some(Duration::ZERO)
+        {
+            idle_timeout = Some(timeout);
+        }
         let batch_len = batch.len();
         for (index, record) in batch.into_iter().enumerate() {
             if records.is_empty() {
@@ -232,7 +290,7 @@ async fn fetch_zone_on_stream(
                     return Err(FetchZoneError::RecordsAfterClosingSoa);
                 }
                 records.push(record);
-                return Ok(records);
+                return Ok((records, idle_timeout));
             }
             records.push(record);
             if records.len() > max_records {

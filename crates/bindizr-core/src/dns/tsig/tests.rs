@@ -2,9 +2,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use chrono::Utc;
-use domain::base::{
-    MessageBuilder, Name,
-    iana::{Class, Opcode, Rtype},
+use domain::{
+    base::{
+        MessageBuilder, Name,
+        iana::{Class, Opcode, Rtype},
+        name::ParsedName,
+    },
+    dep::octseq::parse::Parser,
+    tsig::ServerTransaction,
 };
 use ring::hmac;
 
@@ -15,6 +20,138 @@ use crate::{
 };
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
+
+/// Fixed TSIG fields are checked even when altering them leaves the MAC unchanged.
+#[test]
+fn verify_response_rejects_invalid_class_and_ttl() {
+    let key = test_key(TsigAlgorithm::HmacSha256)
+        .to_signing_key()
+        .unwrap();
+    let mut question = MessageBuilder::new_vec().question();
+    question
+        .push((
+            Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+            Rtype::SOA,
+        ))
+        .unwrap();
+    let mut query = question.additional();
+    let client = sign_request(&mut query, key.clone()).unwrap();
+    let query = query.finish();
+    let server = verify_tsig(&query, Some(key)).unwrap();
+    let query = Message::from_octets(query).unwrap();
+    let mut response = MessageBuilder::new_vec()
+        .start_answer(&query, Rcode::NOERROR)
+        .unwrap()
+        .additional();
+    server.answer(&mut response, Time48::now()).unwrap();
+    let response = response.finish();
+    verify_response(&client, &response).unwrap();
+    let start = Message::from_octets(response.as_slice())
+        .unwrap()
+        .additional()
+        .unwrap()
+        .pos();
+    let mut parser = Parser::from_ref(response.as_slice());
+    parser.seek(start).unwrap();
+    ParsedName::skip(&mut parser).unwrap();
+    let fields = parser.pos();
+    for (offset, bytes) in [(fields + 2, vec![0, 1]), (fields + 4, vec![0, 0, 0, 1])] {
+        let mut modified = response.clone();
+        modified[offset..offset + bytes.len()].copy_from_slice(&bytes);
+        let error = verify_response(&client, &modified).unwrap_err();
+        assert!(!error.is_authenticated());
+    }
+    let mut other = response;
+    let end = other.len();
+    let rdlen_offset = fields + 8;
+    let rdlen = u16::from_be_bytes([other[rdlen_offset], other[rdlen_offset + 1]]);
+    other[rdlen_offset..rdlen_offset + 2].copy_from_slice(&(rdlen + 1).to_be_bytes());
+    other[end - 2..].copy_from_slice(&1u16.to_be_bytes());
+    other.push(0x7f);
+    assert!(
+        !verify_response(&client, &other)
+            .unwrap_err()
+            .is_authenticated()
+    );
+}
+
+/// A request cannot carry a TSIG response error, even under a valid MAC.
+#[test]
+fn request_tsig_rejects_nonzero_error() {
+    for algorithm in [
+        TsigAlgorithm::HmacSha1,
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        let key = test_key(algorithm).to_signing_key().unwrap();
+        for error in [
+            TsigRcode::BADSIG,
+            TsigRcode::BADKEY,
+            TsigRcode::BADTIME,
+            TsigRcode::BADTRUNC,
+        ] {
+            let message = signed_update_with_tsig_fields(algorithm, now_secs(), error, &[]);
+            assert_eq!(request_signature(&message), RequestSignature::Malformed);
+            assert!(matches!(
+                crate::dns::nsupdate::parser::UpdateRequest::parse(&message),
+                Err(crate::dns::nsupdate::parser::ParseUpdateError::InvalidTsig)
+            ));
+            assert!(matches!(
+                verify_tsig(&message, Some(key.clone())),
+                Err(TsigError::Malformed(_))
+            ));
+        }
+    }
+}
+
+/// Other Data is opaque in requests and every octet participates in the MAC.
+#[test]
+fn verify_tsig_authenticates_original_other_data() {
+    for algorithm in [
+        TsigAlgorithm::HmacSha1,
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        let key = test_key(algorithm).to_signing_key().unwrap();
+        for other in [&[0x7f][..], &[0; 6], &[0xff; 8], &[0x42; 32]] {
+            let query =
+                signed_update_with_tsig_fields(algorithm, now_secs(), TsigRcode::NOERROR, other);
+            let signer = verify_tsig(&query, Some(key.clone())).unwrap();
+            let message = Message::from_octets(query.as_slice()).unwrap();
+            let mut response = MessageBuilder::new_vec()
+                .start_answer(&message, Rcode::NOERROR)
+                .unwrap()
+                .additional();
+            signer.answer(&mut response, Time48::now()).unwrap();
+            assert_response_mac(&query, &response.finish(), algorithm);
+            let mut tampered = query;
+            *tampered.last_mut().unwrap() ^= 1;
+            let error = verify_tsig(&tampered, Some(key.clone())).unwrap_err();
+            assert_eq!(
+                extract_response_tsig(&extract_failed_response(error)).1,
+                TsigRcode::BADSIG
+            );
+        }
+        let mut appended = signed_update(algorithm, now_secs());
+        let message = Message::from_octets(appended.as_slice()).unwrap();
+        let mut parser = Parser::from_ref(appended.as_slice());
+        parser.seek(message.additional().unwrap().pos()).unwrap();
+        ParsedName::skip(&mut parser).unwrap();
+        let rdlen_offset = parser.pos() + 8;
+        let rdlen = u16::from_be_bytes([appended[rdlen_offset], appended[rdlen_offset + 1]]);
+        appended[rdlen_offset..rdlen_offset + 2].copy_from_slice(&(rdlen + 1).to_be_bytes());
+        let end = appended.len();
+        appended[end - 2..].copy_from_slice(&1u16.to_be_bytes());
+        appended.push(0x7f);
+        let error = verify_tsig(&appended, Some(key)).unwrap_err();
+        assert_eq!(
+            extract_response_tsig(&extract_failed_response(error)).1,
+            TsigRcode::BADSIG
+        );
+    }
+}
 
 /// TSIG errors fit long queries and distinguish authenticated responses.
 #[test]
@@ -60,7 +197,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             .unwrap();
         let mut additional = question.additional();
         let time = Time48::from_u64(now_secs() - if stale { 3600 } else { 0 });
-        let client =
+        let _client =
             ClientTransaction::request_with_fudge(key.clone(), &mut additional, time, 300).unwrap();
         let query = additional.finish().into_target();
         let request_message = Message::from_octets(query.as_slice()).unwrap();
@@ -72,7 +209,6 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             .unwrap()
             .unwrap();
         let client = RequestSigner {
-            context: client,
             key: key.clone(),
             request_mac: request_tsig.data().mac().to_vec(),
         };
@@ -165,10 +301,19 @@ pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
 
 /// Sign a minimal UPDATE with `update-key` (RFC 8945, Sections 4.3.2 and 4.3.3).
 pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
+    signed_update_with_tsig_fields(algorithm, time_signed, TsigRcode::NOERROR, &[])
+}
+
+/// Independently sign all TSIG variables, retaining arbitrary request Other Data.
+fn signed_update_with_tsig_fields(
+    algorithm: TsigAlgorithm,
+    time_signed: u64,
+    error: TsigRcode,
+    other: &[u8],
+) -> Vec<u8> {
     let base = minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(algorithm.as_str());
-
     let mut digest = base.clone();
     digest.extend_from_slice(&key_name);
     digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
@@ -176,26 +321,27 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
     digest.extend_from_slice(&algorithm_name);
     digest.extend_from_slice(&encode_u48(time_signed));
     digest.extend_from_slice(&300u16.to_be_bytes());
-    digest.extend_from_slice(&0u16.to_be_bytes()); // error
-    digest.extend_from_slice(&0u16.to_be_bytes()); // other len
+    digest.extend_from_slice(&error.to_int().to_be_bytes());
+    digest.extend_from_slice(&(other.len() as u16).to_be_bytes());
+    digest.extend_from_slice(other);
     let mac = hmac_sign(algorithm, &digest);
-
+    let mut rdata = algorithm_name;
+    rdata.extend_from_slice(&encode_u48(time_signed));
+    rdata.extend_from_slice(&300u16.to_be_bytes());
+    rdata.extend_from_slice(&(mac.len() as u16).to_be_bytes());
+    rdata.extend_from_slice(&mac);
+    rdata.extend_from_slice(&base[..2]);
+    rdata.extend_from_slice(&error.to_int().to_be_bytes());
+    rdata.extend_from_slice(&(other.len() as u16).to_be_bytes());
+    rdata.extend_from_slice(other);
     let mut message = base;
-    message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
+    message[10..12].copy_from_slice(&1u16.to_be_bytes());
     message.extend_from_slice(&key_name);
     message.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
     message.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
-    message.extend_from_slice(&0u32.to_be_bytes()); // TTL
-    let rdlen = algorithm_name.len() + 6 + 2 + 2 + mac.len() + 2 + 2 + 2;
-    message.extend_from_slice(&(rdlen as u16).to_be_bytes());
-    message.extend_from_slice(&algorithm_name);
-    message.extend_from_slice(&encode_u48(time_signed));
-    message.extend_from_slice(&300u16.to_be_bytes());
-    message.extend_from_slice(&(mac.len() as u16).to_be_bytes());
-    message.extend_from_slice(&mac);
-    message.extend_from_slice(&[0x12, 0x34]); // original ID (= header ID)
-    message.extend_from_slice(&0u16.to_be_bytes()); // error
-    message.extend_from_slice(&0u16.to_be_bytes()); // other len
+    message.extend_from_slice(&0u32.to_be_bytes());
+    message.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+    message.extend_from_slice(&rdata);
     message
 }
 

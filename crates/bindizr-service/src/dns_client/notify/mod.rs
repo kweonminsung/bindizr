@@ -2,9 +2,9 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     dns::{
-        message::{Name, Opcode, OptRcode, Rtype},
+        message::{Name, OptRcode},
         name::ZoneName,
-        query::{ParseResponseError, build_question, validate_notify_response},
+        query::{ParseResponseError, build_notify_query, validate_notify_response},
         tsig::{TsigSigningKey, sign_request, verify_response},
     },
     metrics::NotifyResult,
@@ -186,8 +186,7 @@ async fn send_notify_to_server(
     retries: u32,
     tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
-    let (query_id, mut builder) =
-        build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+    let (query_id, mut builder) = build_notify_query(qname, tsig_key);
     let signer = match tsig_key {
         Some(tsig_key) => Some(sign_request(&mut builder, tsig_key.clone())?),
         None => None,

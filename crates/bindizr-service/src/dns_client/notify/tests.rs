@@ -5,6 +5,84 @@ use bindizr_core::dns::message::Name;
 use super::*;
 use crate::dns_client::ds::tests::encode_name;
 
+/// Only oversized signed queries need EDNS; their signature includes the OPT.
+#[tokio::test]
+async fn signed_notify_advertises_edns_for_long_names() {
+    use base64::Engine;
+    use bindizr_core::{
+        dns::{
+            message::{Edns, Keepalive, ParsedQuery},
+            tsig::{TransferSigner, verify_tsig},
+        },
+        model::{
+            role::RoleId,
+            tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId},
+        },
+    };
+    let long_name = |c: &str| {
+        format!(
+            "{}.{}.{}.{}",
+            c.repeat(63),
+            c.repeat(63),
+            c.repeat(63),
+            c.repeat(61)
+        )
+    };
+    for algorithm in [
+        TsigAlgorithm::HmacSha1,
+        TsigAlgorithm::HmacSha256,
+        TsigAlgorithm::HmacSha384,
+        TsigAlgorithm::HmacSha512,
+    ] {
+        for long in [false, true] {
+            let qname = Name::<Vec<u8>>::from_str(&if long {
+                long_name("z")
+            } else {
+                "example.com".into()
+            })
+            .unwrap();
+            let key = TsigKey {
+                id: TsigKeyId::from(1),
+                name: if long {
+                    long_name("k")
+                } else {
+                    "notify-key".into()
+                },
+                algorithm,
+                secret: base64::engine::general_purpose::STANDARD.encode([1u8; 64]),
+                role_id: RoleId::from(1),
+                created_at: chrono::Utc::now(),
+            }
+            .to_signing_key()
+            .unwrap();
+            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let addr = socket.local_addr().unwrap();
+            let server_key = key.clone();
+            let capture = tokio::spawn(async move {
+                let mut buf = [0; 4096];
+                let (len, peer) = socket.recv_from(&mut buf).await.unwrap();
+                let query = ParsedQuery::parse(&buf[..len], Keepalive::None).unwrap();
+                let mut signer: TransferSigner =
+                    verify_tsig(&buf[..len], Some(server_key)).unwrap().into();
+                let response = query
+                    .build_signed_error_response(OptRcode::NOERROR, None, Some(&mut signer))
+                    .unwrap();
+                socket.send_to(&response, peer).await.unwrap();
+                (len, query.edns)
+            });
+            send_notify_to_server(&qname, addr, Duration::from_secs(1), 0, Some(&key))
+                .await
+                .unwrap();
+            let (len, edns) = capture.await.unwrap();
+            assert_eq!(edns != Edns::Absent, long);
+            assert!(len <= if long { 1232 } else { 512 });
+            if long {
+                assert!(len > 512);
+            }
+        }
+    }
+}
+
 /// A NOTIFY response with `flags`, echoing a SOA question for `qname`.
 fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     let mut response = Vec::new();

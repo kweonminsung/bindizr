@@ -571,6 +571,10 @@ to an earlier copy still ends it. An unsigned or unverifiable reply to a
 signed NOTIFY is logged and ignored while the request waits (RFC 8945,
 Section 5.4). An all-zones round notifies zones concurrently, so one silent
 secondary cannot push later zones past their REFRESH (Section 4.3).
+Signed NOTIFY requests whose final size exceeds 512 octets include EDNS.
+An import's AXFR client honors the server's keepalive timeout: zero closes
+after the outstanding transfer, and a positive value bounds idle reuse
+(RFC 7828, Section 3.2.2).
 
 Serials wrap past 4294967295 to 1, never 0 (RFC 2136, Section 7.11), on
 every automatic increment, the catalog serial included; a serial a request
@@ -619,6 +623,9 @@ A readable OPT retains its version and DO bit even when rejected with BADVERS;
 response OPTs copy DO and clear reserved flags (RFC 3225, Section 3).
 BADTIME responses sign the complete response, including OPT, and the six-byte
 server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3).
+Every TSIG MAC includes the original Other Len and Other Data octets. Requests
+require Error zero; requests and responses both require the final Additional
+TSIG to carry CLASS ANY and TTL zero (RFC 8945, Sections 4.2 and 5.2).
 Bindizr requires full-length TSIG MACs. Key, MAC, and time validation precede
 this policy; authenticated truncations receive signed BADTRUNC, while invalid MACs
 receive unsigned BADSIG (RFC 8945, Sections 5.2 and 5.3.2).

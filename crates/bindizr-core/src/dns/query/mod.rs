@@ -1,5 +1,7 @@
 //! Build outbound DNS questions and parse NOTIFY, SOA, DS, and transfer responses.
 
+use std::time::Duration;
+
 use domain::{
     base::{
         Message, MessageBuilder, Name, ToName,
@@ -17,6 +19,7 @@ use crate::dns::{
     dnssec::KeyTag,
     message::Edns,
     record::{EncodeRdataError, Rdata},
+    tsig::TsigSigningKey,
 };
 
 /// Why a DNS response could not be parsed or matched to its request.
@@ -118,6 +121,26 @@ pub fn build_axfr_query(qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
         })
         .expect("one OPT record fits an unlimited message");
     (query_id, builder.finish())
+}
+
+/// Add EDNS when the final signed NOTIFY would exceed 512 octets (RFC 1035, Section 4.2.1).
+pub fn build_notify_query(
+    qname: &Name<Vec<u8>>,
+    key: Option<&TsigSigningKey>,
+) -> (u16, AdditionalBuilder<Vec<u8>>) {
+    let (id, mut builder) = build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+    if key.is_some_and(|key| {
+        builder.as_slice().len() + usize::from(key.as_ref().compose_len())
+            > usize::from(crate::dns::message::UDP_PAYLOAD_SIZE_WITHOUT_EDNS)
+    }) {
+        builder
+            .opt(|opt| {
+                opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
+                Ok(())
+            })
+            .expect("one OPT record fits an unlimited message");
+    }
+    (id, builder)
 }
 
 /// Read TC to decide whether UDP needs a TCP retry (RFC 1035, Section 4.2.1).
@@ -493,4 +516,30 @@ mod tests;
 pub enum TransferMessagePosition {
     First,
     Following,
+}
+
+/// Read the server's idle timeout, in 100 ms units (RFC 7828, Sections 3.1 and 3.2.2).
+pub fn extract_tcp_keepalive_timeout(
+    response: &[u8],
+) -> Result<Option<Duration>, ParseResponseError> {
+    let message =
+        Message::from_octets(response).map_err(|e| ParseResponseError::Malformed(Box::new(e)))?;
+    if Edns::from_message(&message) == Edns::Malformed {
+        return Err(ParseResponseError::MalformedEdns);
+    }
+    let Some(opt) = message.opt() else {
+        return Ok(None);
+    };
+    let mut options = opt.opt().iter::<TcpKeepalive>();
+    let Some(keepalive) = options.next() else {
+        return Ok(None);
+    };
+    let timeout = keepalive
+        .map_err(|_| ParseResponseError::MalformedEdns)?
+        .timeout()
+        .ok_or(ParseResponseError::MalformedEdns)?;
+    if options.next().is_some() {
+        return Err(ParseResponseError::MalformedEdns);
+    }
+    Ok(Some(Duration::from(timeout)))
 }
