@@ -27,8 +27,7 @@ class Compose:
     """Wrapper for a single docker compose project."""
 
     def __init__(self, file: Path, project: str, env: dict[str, str] | None = None):
-        """Store the Compose file, project name, and environment overrides. A
-        system's `compose.arm.yml` is layered on top when BENCH_ARM is set."""
+        """Store the Compose project and layer `compose.arm.yml` when BENCH_ARM is enabled."""
         self.file = Path(file)
         self.project = project
         self.env = env or {}

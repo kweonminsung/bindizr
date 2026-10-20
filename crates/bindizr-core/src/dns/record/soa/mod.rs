@@ -61,9 +61,8 @@ impl<N: AsRef<str>> SoaRecordValue<N> {
 pub struct SoaMailbox(String);
 
 impl SoaMailbox {
-    /// Encode an email address into mailbox form. Escaping the local part can
-    /// shift label boundaries past the wire limits, so they are re-checked
-    /// here; the row form ([`Self::from_encoded`]) is trusted.
+    /// Encode an email as a mailbox, rechecking wire limits after escaping shifts label boundaries.
+    /// The row form ([`Self::from_encoded`]) is already validated.
     pub fn from_email(email: &str) -> Result<Self, ParseMailboxError> {
         let (local, domain) = match email.split_once('@') {
             Some(parts) if email.matches('@').count() == 1 => parts,

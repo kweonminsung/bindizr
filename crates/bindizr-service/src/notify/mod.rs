@@ -31,8 +31,7 @@ pub enum NotifyError {
     },
 }
 
-/// A NOTIFY that did not go out is the server's to report: the change has
-/// committed, and the requester can do nothing about the secondaries.
+/// Report post-commit NOTIFY failures as server errors; the requester cannot repair secondaries.
 impl From<NotifyError> for ServiceError {
     /// Report the NOTIFY failure as an internal error, keeping it as source.
     fn from(err: NotifyError) -> Self {
@@ -46,8 +45,7 @@ impl From<NotifyError> for ServiceError {
     }
 }
 
-/// Send a DNS NOTIFY for one zone, or for all zones, aggregating per-zone
-/// failures. Enumerating the zones is this layer's call, not the client's.
+/// Notify one or all zones and aggregate failures; this layer enumerates the zones.
 pub(crate) async fn send_notify(
     cx: &Arc<Context>,
     target: NotifyTarget<'_>,

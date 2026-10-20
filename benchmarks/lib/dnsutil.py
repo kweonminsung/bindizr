@@ -1,7 +1,4 @@
-"""DNS-plane helpers: query latency, AXFR timing/size, propagation polling.
-
-Uses `dig` from the host (dnsutils) so behaviour matches what an operator would
-observe. All queries target a resolver address:port.
+"""Measure query latency, AXFR and propagation with host `dig` against address:port.
 """
 from __future__ import annotations
 
@@ -26,9 +23,8 @@ def dig(name: str, rtype: str, server: str, port: int,
 
 def _transfer(zone: str, server: str, port: int, qtype: str,
               timeout: int) -> tuple[float, int, int]:
-    """Return transfer duration, answer-line count, and bytes.
-
-    The count includes both framing SOAs; an empty zone still has apex records."""
+    """Measure transfer duration, bytes and record count, including both framing SOAs.
+    An empty zone still has apex records."""
     args = ["dig", f"@{server}", "-p", str(port), zone, qtype, "+tcp",
             f"+time={timeout}"]
     t0 = time.monotonic()
@@ -67,9 +63,8 @@ def poll_until_visible(name: str, rtype: str, expected: str, server: str, port: 
 def first_unqueryable(records: list[dict], zone: str, server: str, port: int,
                       interval_ms: int = 50,
                       timeout_secs: int = 30) -> dict | None:
-    """Return the first unavailable record among the first, middle, and last, or None.
-
-    Sample across the zone because a bulk write may still be propagating."""
+    """Return the first unavailable record sampled across the zone, or None.
+    Check first, middle and last because bulk writes may still be propagating."""
     suffix = zone.rstrip(".")
     for idx in sorted({0, len(records) // 2, len(records) - 1}) if records else []:
         rec = records[idx]

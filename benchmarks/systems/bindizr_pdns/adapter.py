@@ -1,7 +1,4 @@
-"""Bindizr with a PowerDNS Authoritative secondary.
-
-Same control plane as `bindizr`; only the server answering queries differs, so
-the pair of runs isolates what the secondary choice costs.
+"""Use Bindizr's control plane with a PowerDNS secondary to isolate secondary-server costs.
 """
 from __future__ import annotations
 

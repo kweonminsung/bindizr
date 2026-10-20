@@ -1,9 +1,6 @@
-"""PowerDNS Authoritative adapter — drives the REST API (RRset-based).
+"""Drive PowerDNS Authoritative's record API with PATCH REPLACE/DELETE per (name, type).
 
-PowerDNS has no per-record id: records are grouped into RRsets keyed by
-(name, type) and mutated with PATCH REPLACE/DELETE. A "handle" here is
-"<fqdn>|<TYPE>". The same server answers DNS queries, so PowerDNS is an
-integrated (control + data plane) system, unlike Bindizr.
+Handles use "<fqdn>|<TYPE>"; the same server manages and answers records.
 """
 from __future__ import annotations
 

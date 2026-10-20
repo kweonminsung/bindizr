@@ -1,13 +1,6 @@
-"""Benchmark 1 — Record CRUD TPS.
+"""Measure record CRUD TPS, p95 latency and error rate with a closed-loop workload.
 
-Identical closed-loop workload across systems:
-  1. prepopulate a pool of records (for READ/UPDATE, non-destructive)
-  2. CREATE phase  — measure create TPS, accumulating handles
-  3. READ phase    — GET random pool handle
-  4. UPDATE phase  — PUT random pool handle
-  5. DELETE phase  — delete exactly the handles created in step 2
-
-Produces one row: Create/Update/Delete/Read TPS + p95 + error rate.
+Reads/updates use a prepopulated pool; deletes target only records created in this run.
 """
 from __future__ import annotations
 

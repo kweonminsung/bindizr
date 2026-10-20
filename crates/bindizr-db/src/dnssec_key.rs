@@ -59,9 +59,8 @@ pub async fn list_by_state_eligible_before(
     }
 }
 
-/// Zone ids holding a key of `role` sitting in `state` longer than the
-/// zone's policy's ZSK lifetime (0 exempts the zone): the
-/// scheduled-rollover work list.
+/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and `role`.
+/// A zero lifetime disables scheduled rollover.
 pub async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     db: &Db,
     role: DnssecKeyRole,

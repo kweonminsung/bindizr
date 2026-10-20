@@ -1,6 +1,4 @@
-//! One management change, kept so who changed what, and when, can be read
-//! back: the trace a zone version leaves for zone data, for everything a
-//! version does not record.
+//! Management-change history: who changed what and when, beyond zone-version history.
 
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;

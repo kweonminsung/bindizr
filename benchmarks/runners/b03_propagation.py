@@ -1,10 +1,6 @@
-"""Benchmark 3 — End-to-End DNS Propagation.
+"""Measure API latency and time until a created record is visible through host `dig`.
 
-For each sample: create a record via the API, then poll the resolver with `dig`
-until the record is visible. Measures API latency and DNS-visible latency
-(create -> answerable). This is where Bindizr's async control-plane model differs
-most from integrated servers: for Bindizr the path is
-API -> serial bump -> NOTIFY -> AXFR/IXFR -> secondary -> dig.
+Bindizr's path is API -> serial bump -> NOTIFY -> AXFR/IXFR -> secondary -> dig.
 """
 from __future__ import annotations
 

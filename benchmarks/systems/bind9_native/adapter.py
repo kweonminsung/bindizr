@@ -1,9 +1,6 @@
-"""Native BIND9 adapter — a plain authoritative primary, the DNS-query baseline.
+"""Provide the standalone BIND9 primary baseline for Benchmark 8 QPS comparisons.
 
-Used by Benchmark 8 to establish the reference QPS that "Bindizr + BIND9" is
-compared against: if Bindizr adds no query-path overhead, the two should match.
-Records are bulk-loaded by writing the zone file and reloading (same mechanism
-as the rndc adapter); per-record CRUD is not the focus here.
+Bulk-load a zone file and reload as in the rndc adapter; per-record CRUD is secondary.
 """
 from __future__ import annotations
 

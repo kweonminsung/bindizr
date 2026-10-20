@@ -19,8 +19,7 @@ use tokio::{
     net::{TcpStream, UdpSocket, lookup_host},
 };
 
-/// Why one exchange with a server produced no response. `what` names the
-/// operation (`"NOTIFY"`, `"SOA probe"`) so the message stands on its own.
+/// A failed DNS exchange; `what` identifies the operation in timeout and send errors.
 #[derive(Debug, Error)]
 pub enum ExchangeMessageError {
     #[error("invalid outbound DNS request: {0}")]
@@ -119,9 +118,8 @@ pub(crate) async fn exchange_over_udp(
     exchange_over_udp_checked(server_addr, timeout, request, what, 1, |_| true).await
 }
 
-/// Send `request` and wait `timeout` for an acceptable reply, resending the same
-/// datagram from the same socket up to `attempts` times (RFC 1996, Section 3.6);
-/// untrusted datagrams are ignored, an ICMP error ends the exchange (Section 4.8).
+/// Retry identical datagrams on the same socket up to `attempts` times on silence (RFC 1996, Section 3.6).
+/// Ignore untrusted replies within each timeout; ICMP ends the exchange (Section 4.8).
 pub(crate) async fn exchange_over_udp_checked(
     server_addr: SocketAddr,
     timeout: Duration,

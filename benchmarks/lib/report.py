@@ -1,9 +1,6 @@
-"""Result persistence + final report generation (md / csv / json / png).
+"""Aggregate `write_result` rows into performance.{json,csv,md} under results_<timestamp>/.
 
-Each runner appends a structured result via `write_result`. `write_report` then
-aggregates everything under results_<timestamp>/ into performance.{json,csv,md}
-and renders graphs/*.png. Graph rendering is best-effort (skipped if matplotlib
-absent).
+Render graphs/*.png when matplotlib is available.
 """
 from __future__ import annotations
 
@@ -166,9 +163,8 @@ def _b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
 
 
 def _b08_conclusion(comparable: dict[str, dict]) -> str:
-    """The no-overhead claim is a measured outcome, not a premise: state it per
-    pairing, only where both sides produced a positive QPS and the gap is
-    inside the tolerance."""
+    """State per-pairing overhead conclusions only for positive QPS on both sides.
+    Compare each gap with the run-to-run noise tolerance."""
     within: list[str] = []
     outside: list[str] = []
     for pairing, standalone in QUERY_BASELINES.items():
@@ -197,8 +193,7 @@ def _b08_conclusion(comparable: dict[str, dict]) -> str:
 
 
 def _render_b07(rows: list[dict]) -> str:
-    """Benchmark 7 emits two row shapes: CRUD-lite (create/read TPS) and bulk
-    import (import_secs per size). Render them as two separate tables."""
+    """Render separate Benchmark 7 tables for CRUD TPS and bulk-import time by size."""
     crud = [r for r in rows if "create_tps" in r]
     bulk = [r for r in rows if "import_secs" in r]
     failed = [r for r in rows if r.get("status") == "FAILED"]

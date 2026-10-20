@@ -1,13 +1,7 @@
-"""Deterministic DNS record dataset generator.
+"""Generate identical DNS records for a fixed seed across all benchmark systems.
 
-Given a fixed seed, produces the *same* records every run so results are
-reproducible across systems and machines. Output is a list of plain dicts that
-each adapter maps onto its own API/format.
-
-Record shape:
-    {"name": "host000123", "type": "A", "value": "10.b.c.d", "ttl": 3600}
-
-Type mix mirrors a realistic zone: mostly A/AAAA, some CNAME/TXT/MX.
+Emit adapter-neutral dictionaries such as {"name": "host000123", "type": "A",
+"value": "10.b.c.d", "ttl": 3600}, mostly A/AAAA with CNAME/TXT/MX.
 """
 from __future__ import annotations
 

@@ -145,9 +145,7 @@ async fn secondary_rejects_a_bad_name_or_address() {
     }
 }
 
-/// Verify that NOTIFY to a secondary registered with a NOTIFY key is signed
-/// with it, that the signed answer is accepted, and that a server holding
-/// another key fails the NOTIFY rather than passing it.
+/// Verify that NOTIFY uses the configured key, accepts its signed reply and rejects another key.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_signs_requests_when_secondary_has_key() {
@@ -248,9 +246,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Verify that a check reports where the address resolves, the catalog
-/// serial against Bindizr's, and the NOTIFY outcome, and that the CLI exits
-/// non-zero for a secondary that fails it.
+/// Verify resolved addresses, catalog serial and NOTIFY reports, including CLI failure exit status.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn secondary_check_reports_resolution_catalog_and_notify() {

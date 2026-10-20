@@ -15,10 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _results_dir() -> Path:
-    """Choose `results_<YYYYmmdd_HHMMSS>/`, or reuse `BENCH_RESULTS_DIR`.
-
-    Reuse the directory for subset reruns so the report includes earlier results.
-    """
+    """Choose `results_<YYYYmmdd_HHMMSS>/`, or reuse `BENCH_RESULTS_DIR` for subset reruns."""
     override = os.environ.get("BENCH_RESULTS_DIR")
     if override:
         p = Path(override)

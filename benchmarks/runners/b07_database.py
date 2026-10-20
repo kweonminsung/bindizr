@@ -1,8 +1,6 @@
-"""Benchmark 7: compare CRUD-lite and bulk imports across Bindizr's three backends.
+"""Compare CRUD TPS, latency, resources and bulk scaling across Bindizr backends.
 
-Measure create/read TPS, latency, resources, and bulk scaling over `db_bulk_sizes`.
-The runner owns adapter setup/teardown (`adapter=None`); CRUD and bulk results
-form separate report tables, keyed by backend and by (backend, size).
+Own adapter setup/teardown (`adapter=None`); report CRUD by backend and bulk by backend/size.
 """
 from __future__ import annotations
 

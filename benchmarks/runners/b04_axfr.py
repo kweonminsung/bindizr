@@ -1,10 +1,6 @@
-"""Benchmark 4 — AXFR Performance.
+"""Measure AXFR duration, wire size and records/sec after loading N records.
 
-Loads an N-record zone, then performs a full zone transfer (AXFR) from the
-system's XFR endpoint, measuring transfer time, wire size, and records/sec.
-
-For Bindizr the transfer is pulled from the secondary (which received the zone
-from Bindizr's XFR server), so we first wait for propagation to complete.
+For Bindizr, wait for propagation and transfer from the secondary.
 """
 from __future__ import annotations
 

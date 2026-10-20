@@ -1,8 +1,6 @@
-"""Minimal async UDP DNS query load generator (no external deps).
+"""Drive query and resource benchmarks with raw DNS packets over per-worker UDP sockets.
 
-Builds raw DNS query packets and drives them over per-worker connected UDP
-sockets to avoid spawning `dig` per request. Used by the query-performance and
-resource-usage benchmarks.
+Uses no external dependencies or per-request `dig` processes.
 """
 from __future__ import annotations
 

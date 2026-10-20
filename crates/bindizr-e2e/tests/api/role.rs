@@ -1727,9 +1727,7 @@ async fn responses_hide_records_outside_read_grants() {
     assert!(!leaks(&body), "a rename named a record: {body}");
 }
 
-/// Verify that an import creating its zone from a server needs the mode's
-/// all-zones record rights before any transfer starts, so `zone:create`
-/// alone cannot make the daemon fetch from an arbitrary host.
+/// Verify all-zone record permissions before fetching a new zone; `zone:create` alone is insufficient.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_checks_record_permissions_before_fetching() {
@@ -1876,9 +1874,7 @@ async fn zone_rename_requires_zone_create() {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// Verify that an import decides on its credential as it stands once its
-/// transaction begins, so revoking the grant or deleting the token during a
-/// slow transfer stops it.
+/// Verify revocation or token deletion during a slow import is enforced when its transaction begins.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_rejects_credential_revoked_during_transfer() {

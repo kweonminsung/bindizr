@@ -1,8 +1,6 @@
-"""Background sampler for container CPU / memory / net / block IO.
+"""Sample Docker CPU, memory, network and block I/O for peak and average usage.
 
-Used by Benchmark 9 and as an inline observer during other benchmarks. Parses
-`docker stats` percentage/byte strings into numeric samples and reports peak +
-average.
+Used by Benchmark 9 and as an observer in other runs.
 """
 from __future__ import annotations
 

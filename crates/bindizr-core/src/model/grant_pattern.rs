@@ -1,6 +1,5 @@
-//! The grammar a grant's name pattern and type list share: `*` for every
-//! name or type, `@` for the apex, `*.sub` for a subtree, an exact relative
-//! name, and types as a comma-separated list.
+//! Grant patterns: `*` for all, `@` for apex, `*.sub` for a subtree, exact names,
+//! and comma-separated record types.
 
 use crate::{dns::name::OwnerName, model::record::RecordType};
 

@@ -1,8 +1,6 @@
-"""Latency/throughput measurement primitives.
+"""Measure successful TPS, total request rate and latency percentiles.
 
-`LatencyRecorder` collects per-request latencies (in seconds) and success/error
-counts, then reports successful TPS, total requests/sec, and latency percentiles.
-Failed requests contribute to error rate, never to latency percentiles.
+Failed requests affect error rate, never latency percentiles; latencies use seconds.
 """
 from __future__ import annotations
 

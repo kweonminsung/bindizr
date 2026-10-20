@@ -255,9 +255,8 @@ impl ServiceError {
     }
 }
 
-/// A database failure the service did not classify is internal; the sites
-/// that read a UNIQUE or FK violation as a conflict do so where they call.
-/// A stored serial that does not convert is corrupt data: a server fault.
+/// Unclassified database errors and invalid stored serials are internal failures.
+/// Call sites map UNIQUE/FK conflicts where their meaning is known.
 impl From<bindizr_core::dns::ConvertSerialError> for ServiceError {
     /// Report the conversion failure as an internal error, keeping it as source.
     fn from(err: bindizr_core::dns::ConvertSerialError) -> Self {

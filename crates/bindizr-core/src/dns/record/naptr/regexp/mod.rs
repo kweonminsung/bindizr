@@ -1,6 +1,5 @@
-//! The NAPTR regexp check BIND applies on receipt (`txt_valid_regex`). One
-//! record BIND refuses fails the whole zone transfer it arrives in, so the
-//! same rule has to hold when the record is stored.
+//! Validate NAPTR regexps with BIND's `txt_valid_regex` rules before storage.
+//! A rejected record would fail the entire zone transfer.
 
 use thiserror::Error;
 

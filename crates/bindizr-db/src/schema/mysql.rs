@@ -1,9 +1,6 @@
-//! MySQL DDL.
-//!
-//! Names compare under `utf8mb4_bin`, and `idx_records_zone_name` takes a
-//! 255-character prefix: a utf8mb4 VARCHAR(1024) exceeds InnoDB's 3,072-byte
-//! key. Record values are MEDIUMTEXT: a TXT rendered with `\DDD` escapes can
-//! quadruple its 65,535-octet RDATA past what TEXT holds.
+//! MySQL DDL: binary name comparison and 255-character index prefixes keep
+//! utf8mb4 VARCHAR(1024) keys below InnoDB's 3,072-byte limit.
+//! MEDIUMTEXT holds TXT values whose `\DDD` escapes can quadruple 65,535-byte RDATA.
 
 /// Return the statements that create the application schema.
 pub(crate) fn table_creation_queries() -> Vec<&'static str> {

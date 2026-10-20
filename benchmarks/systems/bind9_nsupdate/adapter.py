@@ -1,8 +1,4 @@
-"""BIND9 + nsupdate adapter — RFC 2136 dynamic updates via the `nsupdate` CLI.
-
-There is no REST API: writes are `nsupdate` transactions, reads are DNS queries
-(`dig`). This is the closest apples-to-apples comparison to Bindizr since both
-sit in front of BIND9 — but here the update path IS the DNS server.
+"""Write BIND9 records with RFC 2136 `nsupdate` transactions and read them with `dig`.
 """
 from __future__ import annotations
 

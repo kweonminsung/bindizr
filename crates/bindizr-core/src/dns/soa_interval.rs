@@ -1,6 +1,5 @@
-//! An SOA REFRESH, RETRY or EXPIRE interval as one value with two forms: the
-//! unsigned 32-bit field the wire carries (RFC 1035, Section 3.3.13) and the
-//! signed 32-bit column a row stores, so a stored interval stays below 2^31.
+//! SOA REFRESH/RETRY/EXPIRE: unsigned wire fields stored below 2^31 in signed columns
+//! (RFC 1035, Section 3.3.13).
 
 use std::fmt;
 

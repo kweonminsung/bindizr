@@ -1,8 +1,6 @@
-"""CoreDNS adapter: rewrite the zone file and await the `file` plugin's `reload 1s` poll.
+"""Bulk-load CoreDNS zone files and await the `file` plugin's `reload 1s` poll.
 
-There is no management API, RFC 2136 update, or immediate reload signal.
-Benchmark bulk writes only: per-record CRUD and propagation would measure the
-poll interval instead of record throughput.
+No management API or RFC 2136 updates; per-record CRUD would measure polling delay.
 """
 from __future__ import annotations
 

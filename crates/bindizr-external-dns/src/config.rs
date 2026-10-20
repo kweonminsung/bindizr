@@ -1,6 +1,4 @@
-//! Adapter configuration from CLI flags and environment variables. The
-//! adapter runs next to external-dns, away from the bindizr server, so it
-//! deliberately does not read the bindizr configuration file.
+//! Read adapter flags/environment; the adapter runs beside external-dns and does not read bindizr's config.
 
 use std::net::SocketAddr;
 

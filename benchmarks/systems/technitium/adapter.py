@@ -1,9 +1,7 @@
-"""Technitium DNS Server adapter — drives the token-authenticated HTTP API.
+"""Drive Technitium's token-authenticated GET API, which returns {"status":"ok", ...}.
 
-Technitium's API is GET-based with query params and returns JSON
-{"status":"ok", ...}. Records are identified by (domain, type, value); a handle
-here encodes all three so delete/update work without server-side ids. The same
-server answers DNS queries (integrated).
+Handles encode (domain, type, value) because records have no server-side ids.
+The same server manages and answers records.
 """
 from __future__ import annotations
 

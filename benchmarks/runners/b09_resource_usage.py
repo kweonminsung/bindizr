@@ -1,7 +1,4 @@
-"""Benchmark 9 — Resource Usage.
-
-Populates an A-record zone, then applies a steady query load while sampling
-container resources. Reports CPU, memory, and network usage.
+"""Sample CPU, memory and network usage under steady A-record query load.
 """
 from __future__ import annotations
 

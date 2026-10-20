@@ -1,6 +1,5 @@
-//! Environment overrides, applied before validation. A variable is `BINDIZR_`
-//! plus the key's TOML path upper-cased with `_` for `.`; `BINDIZR_DATABASE_URL`
-//! is the one convenience outside that rule.
+//! Apply `BINDIZR_<UPPERCASE_TOML_PATH>` overrides before validation, replacing dots with `_`.
+//! `BINDIZR_DATABASE_URL` is the one convenience outside that mapping.
 
 use super::{Config, ConfigError, DatabaseType};
 use crate::dns::name::ZoneName;

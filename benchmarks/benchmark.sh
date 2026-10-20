@@ -68,7 +68,6 @@ trap cleanup EXIT INT TERM
 [[ -n "$SYSTEMS" ]] && ARGS+=(-s ${SYSTEMS//,/ })
 
 echo ">>> starting benchmark run"
-# ${ARGS[@]+...} because bash 3.2 (macOS) treats an empty array as unset under
-# `set -u`, which made a plain `./benchmark.sh` fail before it ran anything.
+# Guard empty arrays for macOS bash 3.2, which treats them as unset under `set -u`.
 "$PYTHON" orchestrator.py ${ARGS[@]+"${ARGS[@]}"}
 echo ">>> done. Results written under results_<timestamp>/ (exact path printed above)."

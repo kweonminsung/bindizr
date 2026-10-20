@@ -1,8 +1,6 @@
-"""BIND9 + rndc adapter — manage records by rewriting the zone file and running
-`rndc reload`.
+"""Write BIND9 zone files and run `rndc reload`.
 
-This adapter participates in bulk import (B2): writing the whole zone once and
-reloading once avoids a full file rewrite per record.
+Benchmark 2 writes and reloads the whole zone once, avoiding per-record file rewrites.
 """
 from __future__ import annotations
 

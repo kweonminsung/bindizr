@@ -1,7 +1,6 @@
-"""Run `step(seq)` with fixed concurrency, measuring latency after an unmeasured warmup.
+"""Measure `step(seq)` under fixed concurrency after an unmeasured warmup.
 
-A closed loop gives systems with different endpoints and payloads the same
-bounded client load for `duration_secs`.
+A closed loop keeps client load bounded for `duration_secs` across all systems.
 """
 from __future__ import annotations
 

@@ -1,11 +1,6 @@
-"""Benchmark 5 — IXFR Performance.
+"""Measure IXFR from a baseline serial after each change batch has propagated.
 
-Establishes a baseline zone, records its SOA serial, applies each configured
-change batch, then waits for propagation before measuring IXFR from that serial.
-
-A well-behaved incremental server sends only the delta; a server without real
-IXFR falls back to a full AXFR — which this benchmark surfaces as a large
-transfer size, itself a meaningful result.
+Report transfer size so an AXFR fallback remains visible.
 """
 from __future__ import annotations
 

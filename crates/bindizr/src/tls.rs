@@ -129,9 +129,7 @@ impl TlsCertificates {
         })
     }
 
-    /// Re-read the pairs, naming the listeners whose certificate changed.
-    /// Both are read before either is presented, so one that fails leaves
-    /// each listener as it was.
+    /// Reload both certificate pairs before publishing either; a read failure preserves both listeners.
     pub(crate) fn reload(&self, config: &Config) -> Result<Vec<String>, LoadCertificateError> {
         let mut renewed = Vec::new();
         for (section, certificate, files) in [

@@ -1,6 +1,5 @@
-//! Command-line grammar and dispatch. Every subcommand either talks to the
-//! running daemon over its Unix socket or starts one; the daemon runtime
-//! itself lives in [`crate::daemon`].
+//! CLI grammar and dispatch: start the daemon or send it a Unix-socket command.
+//! Runtime implementation lives in [`crate::daemon`].
 
 mod commands;
 pub(crate) mod error;

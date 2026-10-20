@@ -1,8 +1,6 @@
-"""Bindizr adapter — drives the HTTP control-plane API.
+"""Write through Bindizr's HTTP API and query its catalog-configured BIND9 secondary.
 
-Key point for the benchmark story: writes go to Bindizr's API, but DNS queries
-are answered by the BIND9 secondary (`dns_endpoint`), which auto-configures
-zones via the catalog zone. Bindizr is never in the query path.
+Bindizr stays outside the DNS query path.
 """
 from __future__ import annotations
 

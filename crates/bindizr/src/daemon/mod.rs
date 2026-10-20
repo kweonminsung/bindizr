@@ -1,6 +1,4 @@
-//! The daemon runtime: building the `Context` in dependency order, serving
-//! until asked to stop, and re-executing itself on restart. The CLI only
-//! decides when to start it.
+//! Build daemon dependencies, serve until shutdown and re-exec on restart; the CLI starts it.
 
 pub(crate) mod db_probe;
 
@@ -121,9 +119,7 @@ impl From<ReloadError> for ServiceError {
     }
 }
 
-/// Re-read the configuration file and apply what only a running process can:
-/// the settings whose readers captured them at startup, and the certificate
-/// pairs the TLS listeners present.
+/// Reload startup-captured settings and the certificate pairs presented by TLS listeners.
 pub(crate) fn reload_config(
     cx: &Context,
     tls: &TlsCertificates,
@@ -338,9 +334,8 @@ async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_worker: queue::
     }
 }
 
-/// Re-exec the original command line in place. exec keeps the PID, so
-/// systemd/docker supervision and a foreground terminal stay attached.
-/// Returns only when exec itself fails.
+/// Re-exec the original command in place, preserving PID, supervision and terminal attachment.
+/// Return only if exec fails.
 fn reexec(daemon_exe: Option<PathBuf>) -> DaemonError {
     use std::os::unix::process::CommandExt;
 

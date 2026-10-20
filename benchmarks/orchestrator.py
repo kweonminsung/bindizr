@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Bindizr benchmark orchestrator.
-
-Runs selected benchmarks against selected systems, one system at a time (to keep
-the host uncontended), collecting structured results and writing the final
-report. Each system is fully set up, exercised, and torn down in isolation.
+"""Run selected workloads one system at a time, with isolated setup/teardown, then report.
 
 Usage:
     python orchestrator.py                          # all enabled, all benchmarks

@@ -15,9 +15,8 @@ pub(crate) fn concat_fn(parts: &[&str]) -> String {
     format!("CONCAT({})", parts.join(", "))
 }
 
-/// The `LIKE` escape character. A stored name carries backslashes as data
-/// (RFC 1035, Section 5.1), which the default escape would eat — and `#` needs
-/// no escaping in a string literal, so one spelling works on all three.
+/// Use `#` for LIKE escaping so stored backslashes remain data (RFC 1035, Section 5.1).
+/// It needs no SQL-literal escaping on any backend.
 const LIKE_ESCAPE: char = '#';
 
 /// Escape a stored name for use as a `LIKE` pattern: the escape character
@@ -30,10 +29,8 @@ fn like_escaped_sql(expression: &str) -> String {
     escaped
 }
 
-/// Build a grant condition for row `p` and record `alias`: the grant permits
-/// `record:read` and its constraints cover the record; `None` selects the
-/// derived DNSSEC plane. Subtree text matching is safe because stored in-label
-/// dots render as `\046`.
+/// Build `record:read` constraints for grant `p` and record `alias`; `None` selects derived DNSSEC.
+/// Subtree matching is safe because stored in-label dots render as `\046`.
 pub(crate) fn grant_record_match_sql(
     alias: &str,
     record_type_column: Option<&str>,

@@ -114,8 +114,7 @@ pub struct DnsMessageBuilder {
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
-    /// Signs every message this builder produces, carrying one MAC chain
-    /// across the envelopes of a transfer.
+    /// Sign every message, chaining MACs across transfer envelopes.
     signer: Option<TransferSigner>,
     /// The query's RD, copied into every message (RFC 1035, Section 4.1.1).
     rd: bool,

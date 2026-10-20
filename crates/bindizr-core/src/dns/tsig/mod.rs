@@ -234,9 +234,8 @@ impl TsigKey {
     }
 }
 
-/// Verify MAC and Time Signed/Fudge, returning a response signer or BADKEY for an unknown key.
-/// Omit the latest-time cache to accept reordered requests (RFC 8945, Section 5.2.3 SHOULD exception).
-/// Validation errors obey the response budget; only UDP may omit an oversized question.
+/// Verify TSIG and return a signer or a bounded validation error.
+/// Accept reordered requests without a time cache (RFC 8945, Section 5.2.3 SHOULD exception).
 pub fn verify_tsig(
     query_data: &[u8],
     key: Option<TsigSigningKey>,
@@ -287,7 +286,7 @@ pub fn verify_tsig(
 /// How a request presents itself for authorization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestSignature {
-    /// No TSIG record: the address decides, as it did before keys existed.
+    /// No TSIG record.
     Absent,
     /// Duplicate, misplaced, undecodable or impossible-length TSIG: answer FORMERR,
     /// never treat as unsigned (RFC 8945, Section 5.2).
@@ -356,9 +355,8 @@ fn tsig_error(
     limit: ResponseLimit,
 ) -> TsigError {
     for include_question in [true, false] {
-        // Keep stream questions (RFC 5936, Section 2.2.2). For an oversized
-        // UDP error, omit only the question and re-sign the same TSIG error;
-        // BADTIME must retain its error and client time (RFC 8945, Section 5.2.3).
+        // Keep stream questions (RFC 5936, Section 2.2.2); only oversized UDP errors omit them.
+        // Re-sign without changing BADTIME's error or client time (RFC 8945, Section 5.2.3).
         if !include_question && !limit.is_udp() {
             break;
         }

@@ -1,7 +1,6 @@
-"""Benchmark 2: bulk-import time, records/sec, and peak memory per (system, size, path).
+"""Measure bulk-import time, records/sec and peak memory per system, size and path.
 
-Load fresh zones through each adapter's batch API or fixed create-worker pool.
-Bindizr's zone-file import gets a separate `<label> (zone import)` comparison row.
+Use each adapter's batch API or fixed worker pool; report Bindizr zone-file import separately.
 """
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
-//! nsupdate (RFC 2136) on the wire: decoding an UPDATE message, TSIG
-//! authentication, and building the response. Applying the changes is the
-//! service layer's.
+//! Decode, authenticate and answer DNS UPDATEs (RFC 2136); the service applies them.
 
 pub mod parser;
 
@@ -32,10 +30,8 @@ pub enum BuildResponseError {
     Encode(#[from] EncodeMessageError),
 }
 
-/// Build the response: request ID/opcode/question echoed, RCODE set, an OPT
-/// when the request carried one (RFC 6891, Section 6.1.1), and a TSIG once
-/// the request's was validated (RFC 8945, Section 5.3). The zone section alone
-/// is echoed, an explicit exception to RFC 2136, Section 3.8 shared with BIND.
+/// Build an UPDATE response with request OPT (RFC 6891, Section 6.1.1) and validated TSIG (RFC 8945, Section 5.3).
+/// Echo only the zone section, a BIND-compatible exception to RFC 2136, Section 3.8.
 pub fn build_response(
     query_data: &[u8],
     rcode: OptRcode,
