@@ -15,6 +15,73 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Import root targets and reject malformed replacements atomically.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomically() {
+    use domain::base::Rtype;
+
+    use crate::common::dns::fetch_exported_record_sets;
+
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let content = "cname IN CNAME .\nptr IN PTR .\ndname IN DNAME .\n";
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{name}/import"),
+            Some(json!({"content": content})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["added"], 3);
+    let sets = fetch_exported_record_sets(&app, name).await;
+    for (owner, rtype) in [
+        ("cname", Rtype::CNAME),
+        ("ptr", Rtype::PTR),
+        ("dname", Rtype::DNAME),
+    ] {
+        assert_eq!(sets[&(format!("{owner}.{name}."), rtype)], [vec![0]]);
+    }
+    let before = app.list_records(name).await;
+    let serial = app.read_zone_serial(name).await;
+    let (status, versions) = app
+        .send_request(
+            Method::GET,
+            &format!("/zones/{name}/versions?include_signer_serials=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    for kind in ["CNAME", "PTR", "DNAME"] {
+        for dry_run in [true, false] {
+            let content = format!("valid IN A 192.0.2.1\nbad IN {kind} ..\n");
+            let (status, body) = app
+                .send_request(
+                    Method::POST,
+                    &format!("/zones/{name}/import"),
+                    Some(json!({"content": content, "mode": "replace", "dry_run": dry_run})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert_eq!(body["applied"], false);
+            assert!(!body["errors"].as_array().unwrap().is_empty());
+            assert_eq!(app.list_records(name).await, before);
+            assert_eq!(app.read_zone_serial(name).await, serial);
+        }
+    }
+    let (status, after) = app
+        .send_request(
+            Method::GET,
+            &format!("/zones/{name}/versions?include_signer_serials=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(after, versions);
+}
+
 /// Verify that zone-file import previews match the applied changes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -1217,7 +1284,7 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
 fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::JoinHandle<()>) {
     use domain::{
         base::{Message, MessageBuilder, Serial, Ttl},
-        rdata::{A, Ns, Soa},
+        rdata::{A, Cname, Dname, Ns, Ptr, Soa},
     };
 
     use crate::common::dns::{parse_name, read_frame, write_frame};
@@ -1267,6 +1334,28 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
                 &parse_name(&format!("www.{zone}.")).unwrap(),
                 Ttl::from_secs(u32::MAX),
                 A::new("192.0.2.50".parse().unwrap()),
+            ))
+            .unwrap();
+        let root = parse_name(".").unwrap();
+        answer
+            .push((
+                &parse_name(&format!("cname.{zone}.")).unwrap(),
+                Ttl::from_secs(300),
+                Cname::new(root.clone()),
+            ))
+            .unwrap();
+        answer
+            .push((
+                &parse_name(&format!("ptr.{zone}.")).unwrap(),
+                Ttl::from_secs(300),
+                Ptr::new(root.clone()),
+            ))
+            .unwrap();
+        answer
+            .push((
+                &parse_name(&format!("dname.{zone}.")).unwrap(),
+                Ttl::from_secs(300),
+                Dname::new(root),
             ))
             .unwrap();
         answer.push((&owner, Ttl::from_secs(300), closing)).unwrap();
@@ -1476,6 +1565,10 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
+    use domain::base::Rtype;
+
+    use crate::common::dns::fetch_exported_record_sets;
+
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1507,6 +1600,14 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
             assert_eq!(body["errors"], json!([]));
         }
         server.join().unwrap();
+        let sets = fetch_exported_record_sets(&app, zone_name).await;
+        for (owner, rtype) in [
+            ("cname", Rtype::CNAME),
+            ("ptr", Rtype::PTR),
+            ("dname", Rtype::DNAME),
+        ] {
+            assert_eq!(sets[&(format!("{owner}.{zone_name}."), rtype)], [vec![0]]);
+        }
         assert!(
             app.list_records(zone_name)
                 .await

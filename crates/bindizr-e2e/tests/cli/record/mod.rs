@@ -4,6 +4,57 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 
 mod bulk;
 
+/// Round-trip root targets through CLI writes and listing.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn root_record_targets_round_trip_via_cli() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    for kind in ["CNAME", "PTR", "DNAME"] {
+        let owner = kind.to_ascii_lowercase();
+        let output = app
+            .run_cli_success(
+                &[
+                    "record", "create", name, &owner, "--type", kind, "--value", ".", "--output",
+                    "json",
+                ],
+                None,
+            )
+            .await;
+        let output: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(output["record"]["value"], ".");
+        let id = output["record"]["id"].as_i64().unwrap().to_string();
+        app.run_cli_success(
+            &[
+                "record",
+                "update",
+                "--id",
+                &id,
+                "--value",
+                "target.example.net.",
+            ],
+            None,
+        )
+        .await;
+        app.run_cli_success(&["record", "update", "--id", &id, "--value", "."], None)
+            .await;
+    }
+    let output = app
+        .run_cli_success(&["record", "list", name, "--output", "json"], None)
+        .await;
+    let records: Value = serde_json::from_str(&output).unwrap();
+    for kind in ["CNAME", "PTR", "DNAME"] {
+        assert!(
+            records["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|record| record["type"] == kind && record["value"] == ".")
+        );
+    }
+}
+
 /// Preserve name escapes in CLI arguments across the daemon socket and record listing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

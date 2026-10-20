@@ -244,7 +244,9 @@ pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     Ok(name)
 }
 
-/// HMAC security degrades to the key length, so refuse imports under 128 bits.
+/// Imported secrets must contain at least 128 bits.
+// RFC 8945, Section 8 recommends output-sized keys; shorter imports preserve
+// secrets already shared with other servers.
 const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 
 /// Validate and normalize a base64-encoded TSIG secret.

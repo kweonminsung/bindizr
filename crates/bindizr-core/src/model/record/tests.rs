@@ -249,13 +249,18 @@ fn display_value_leaves_wrong_field_count_unchanged() {
     }
 }
 
-/// Reject malformed CNAME, NS and PTR names while permitting non-hostname labels.
+/// Reject malformed targets while preserving each type's root policy.
 #[test]
-fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
-    for record_type in [RecordType::Cname, RecordType::Ns, RecordType::Ptr] {
+fn domain_record_values_reject_malformed_names_and_preserve_root_policy() {
+    for record_type in [
+        RecordType::Cname,
+        RecordType::Ns,
+        RecordType::Ptr,
+        RecordType::Dname,
+    ] {
         for value in [
             "",
-            ".",
+            "..",
             "bad target.example.com",
             " leading.example.com",
             "trailing.example.com ",
@@ -266,6 +271,11 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
                 "{record_type} value {value:?} should be rejected"
             );
         }
+    }
+    assert!(RecordType::Ns.validate_value(".", None).is_err());
+    for record_type in [RecordType::Cname, RecordType::Ptr, RecordType::Dname] {
+        assert_eq!(record_type.encoded_value(".", None).unwrap(), ".");
+        assert_eq!(record_type.canonical_value(".", None), "00");
     }
 }
 

@@ -216,6 +216,34 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     }
 }
 
+/// Preserve root, escaped-dot, and mixed-case targets across import sources.
+#[test]
+fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    for (kind, rtype) in [
+        ("CNAME", Rtype::CNAME),
+        ("PTR", Rtype::PTR),
+        ("DNAME", Rtype::DNAME),
+    ] {
+        for target in [".", r"\046.", "Mixed.Example.NET."] {
+            let text = format!("target.example.com. 300 IN {kind} {target}\n");
+            let parsed = ParsedZoneFile::parse(&text, &zone, Ttl::try_from(300).unwrap());
+            let transferred = ParsedZoneFile::from_transfer(
+                &[transfer_record("target.example.com.", rtype, target)],
+                &zone,
+            );
+            assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+            assert!(transferred.errors.is_empty(), "{:?}", transferred.errors);
+            assert_eq!(parsed.records, transferred.records, "{kind} {target}");
+            assert_eq!(
+                parsed.records[0].value,
+                ZoneFileValue::Rdata(crate::dns::name::to_fqdn(target)),
+                "{kind} {target}",
+            );
+        }
+    }
+}
+
 /// Keep the opening SOA and discard its closing delimiter.
 #[test]
 fn transfer_keeps_one_soa_for_creation() {

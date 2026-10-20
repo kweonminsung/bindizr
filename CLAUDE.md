@@ -509,6 +509,8 @@ arbitrary octets and preserve segment boundaries. CAA tags and the names in
 SRV, DNAME and NAPTR RDATA retain their original case; comparison and DNSSEC
 canonicalization operate on separate wire data. Management creation of CAA
 permits flags 0 or 128; UPDATE and import preserve unknown flag bits.
+The root name `.` is a valid CNAME, PTR, or DNAME target (RFC 2181, Section 11);
+it remains distinct from a literal dot label (`\.`).
 
 User records use a closed list of implemented types, including WKS. Unsupported
 ordinary types are rejected across API, CLI, imports, and DNS UPDATE; there is
@@ -564,6 +566,12 @@ operator's explicit per-type TTLs. Each RRset still has one TTL. Names are
 lowercased when they enter, rather than preserved as RFC 1035, Section 2.3.3
 and RFC 4343, Section 4 prefer, so that one name has one spelling in rows,
 grants and exports; comparison stays case-insensitive either way.
+
+Generated TSIG secrets match the HMAC output length (RFC 8945, Section 8).
+Imported secrets retain a 16-byte minimum regardless of algorithm, preserving
+the secret already shared with an external DNS server. The recommendation to
+choose an output-sized secret applies to new keys; shorter imports are not
+treated as malformed HMAC keys.
 
 A NOTIFY transaction ends on any matching response, whatever its RCODE, or on
 an ICMP port-unreachable error (RFC 1996, Sections 3.6 and 4.8); only silence

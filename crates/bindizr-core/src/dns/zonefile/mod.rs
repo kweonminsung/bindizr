@@ -17,7 +17,7 @@ use domain::{
 use crate::{
     dns::{
         Serial, SoaInterval, Ttl,
-        name::{ZoneName, to_fqdn_lowercase},
+        name::{ZoneName, to_fqdn, to_fqdn_lowercase},
         query::TransferRecord,
         record::{NaptrRecordValue, WksRecordValue},
     },
@@ -270,8 +270,20 @@ impl ParsedZoneFile {
                 }
             }
         } else {
+            // Read name fields because `domain` RDATA Display can render the root as `..`.
             match data {
-                // Use parsed NAPTR fields because `domain` renders a root replacement as `..`.
+                ZoneRecordData::Cname(cname) => (
+                    ZoneFileValue::Rdata(to_fqdn(&cname.cname().to_string())),
+                    None,
+                ),
+                ZoneRecordData::Ptr(ptr) => (
+                    ZoneFileValue::Rdata(to_fqdn(&ptr.ptrdname().to_string())),
+                    None,
+                ),
+                ZoneRecordData::Dname(dname) => (
+                    ZoneFileValue::Rdata(to_fqdn(&dname.dname().to_string())),
+                    None,
+                ),
                 ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
                     naptr.order(),
                     naptr.preference(),
@@ -294,12 +306,12 @@ impl ParsedZoneFile {
                         "{} {} {}",
                         srv.weight(),
                         srv.port(),
-                        crate::dns::name::to_fqdn(&srv.target().to_string())
+                        to_fqdn(&srv.target().to_string())
                     )),
                     Some(i32::from(srv.priority())),
                 ),
                 ZoneRecordData::Mx(mx) => (
-                    ZoneFileValue::Rdata(crate::dns::name::to_fqdn(&mx.exchange().to_string())),
+                    ZoneFileValue::Rdata(to_fqdn(&mx.exchange().to_string())),
                     Some(i32::from(mx.preference())),
                 ),
                 ZoneRecordData::Txt(txt) => {

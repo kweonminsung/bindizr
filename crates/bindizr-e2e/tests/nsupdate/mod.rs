@@ -27,6 +27,141 @@ use crate::common::{
     exchange_tcp,
 };
 
+/// Preserve root targets through signed updates, transfers, and DNSSEC.
+#[tokio::test]
+#[serial]
+async fn nsupdate_root_targets_round_trip_through_signed_zone() {
+    use domain::{
+        base::{MessageBuilder, ToName, UnknownRecordData, rdata::ComposeRecordData},
+        dep::octseq::parse::Parser,
+        rdata::{Dnskey, Rrsig},
+    };
+    use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
+
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let key = create_tsig_key(&app, "root-target-key", KeyRole::Admin).await;
+    let targets = [
+        ("cname", Rtype::CNAME),
+        ("ptr", Rtype::PTR),
+        ("dname", Rtype::DNAME),
+    ];
+    let updates: Vec<_> = targets
+        .iter()
+        .map(|(owner, rtype)| UpdateRecord::AddRecord {
+            name: format!("{owner}.{name}."),
+            rtype: *rtype,
+            ttl: 300,
+            rdata: vec![0],
+        })
+        .collect();
+    assert_eq!(
+        send_update_tcp(app.dns_port(), name, &[], &updates, Some(&key)).unwrap(),
+        Rcode::NOERROR,
+    );
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{name}/dnssec"),
+            Some(json!({"parent_ns_addrs": ["127.0.0.1:9"]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let sets = fetch_exported_record_sets(&app, name).await;
+    let public_keys: Vec<_> = sets[&(format!("{name}."), Rtype::DNSKEY)]
+        .iter()
+        .map(|data| {
+            let key = Dnskey::parse(&mut Parser::from_ref(data)).unwrap();
+            let mut point = vec![4];
+            point.extend_from_slice(key.public_key());
+            point
+        })
+        .collect();
+    for (owner, rtype) in targets {
+        let owner = format!("{owner}.{name}.");
+        assert_eq!(sets[&(owner.clone(), rtype)], [vec![0]]);
+        let signatures: Vec<_> = sets[&(owner.clone(), Rtype::RRSIG)]
+            .iter()
+            .map(|data| Rrsig::parse(&mut Parser::from_ref(data)).unwrap())
+            .filter(|signature| signature.type_covered() == rtype)
+            .collect();
+        assert!(!signatures.is_empty());
+        for signature in signatures {
+            let mut signed_data = Vec::new();
+            signature.compose_canonical_rdata(&mut signed_data).unwrap();
+            signed_data.truncate(signed_data.len() - signature.signature().len());
+            parse_name(&owner)
+                .unwrap()
+                .compose_canonical(&mut signed_data)
+                .unwrap();
+            signed_data.extend_from_slice(&rtype.to_int().to_be_bytes());
+            signed_data.extend_from_slice(&Class::IN.to_int().to_be_bytes());
+            signed_data.extend_from_slice(&signature.original_ttl().as_secs().to_be_bytes());
+            signed_data.extend_from_slice(&[0, 1, 0]);
+            assert!(public_keys.iter().any(|public| {
+                UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, public)
+                    .verify(&signed_data, signature.signature())
+                    .is_ok()
+            }));
+        }
+    }
+    let mut question = MessageBuilder::new_vec().question();
+    question
+        .push((&parse_name(name).unwrap(), Rtype::AXFR))
+        .unwrap();
+    let response = exchange_request(question.additional(), Some(&key), |request| {
+        exchange_tcp(app.dns_port(), request)
+    })
+    .unwrap();
+    assert_eq!(response.header().rcode(), Rcode::NOERROR);
+    for (owner, rtype) in targets {
+        let record = response
+            .answer()
+            .unwrap()
+            .map(Result::unwrap)
+            .find(|record| {
+                record.rtype() == rtype && record.owner().to_string() == format!("{owner}.{name}")
+            })
+            .unwrap();
+        assert_eq!(
+            record
+                .to_record::<UnknownRecordData<_>>()
+                .unwrap()
+                .unwrap()
+                .data()
+                .data(),
+            &[0]
+        );
+    }
+    for (owner, rtype) in targets {
+        let owner = format!("{owner}.{name}.");
+        let prerequisites = [PrerequisiteRecord::RecordEquals {
+            name: owner.clone(),
+            rtype,
+            rdata: vec![0],
+        }];
+        let delete = [UpdateRecord::DeleteRecord {
+            name: owner.clone(),
+            rtype,
+            rdata: vec![0],
+        }];
+        assert_eq!(
+            send_update_udp(app.dns_port(), name, &prerequisites, &delete, Some(&key)).unwrap(),
+            Rcode::NOERROR,
+        );
+        assert!(
+            !fetch_exported_record_sets(&app, name)
+                .await
+                .contains_key(&(owner, rtype))
+        );
+        assert_eq!(
+            send_update_tcp(app.dns_port(), name, &prerequisites, &[], Some(&key)).unwrap(),
+            Rcode::NXRRSET,
+        );
+    }
+}
+
 /// Misplaced TSIG is FORMERR before authority or grants, with no partial write.
 #[tokio::test]
 #[serial]

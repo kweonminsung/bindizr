@@ -6,6 +6,84 @@ use crate::common::{TestApp, dns::fetch_exported_record_sets};
 
 mod bulk;
 
+/// Create and replace root targets; reject malformed names.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn root_record_targets_round_trip_through_management() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    for (kind, rtype) in [
+        ("CNAME", Rtype::CNAME),
+        ("PTR", Rtype::PTR),
+        ("DNAME", Rtype::DNAME),
+    ] {
+        let owner = kind.to_ascii_lowercase();
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": name, "name": owner, "type": kind, "value": "."
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["record"]["value"], ".");
+        let id = body["record"]["id"].as_i64().unwrap();
+        for target in ["Target.Example.NET.", "."] {
+            let (status, body) = app
+                .send_request(
+                    Method::PUT,
+                    &format!("/records/{id}"),
+                    Some(json!({"value": target})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            let expected = if kind == "DNAME" {
+                target.to_string()
+            } else {
+                target.to_ascii_lowercase()
+            };
+            assert_eq!(body["record"]["value"], expected);
+        }
+        let (status, body) = app
+            .send_request(Method::GET, &format!("/records/{id}"), None)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["record"]["value"], ".");
+        let records = fetch_exported_record_sets(&app, name).await;
+        assert_eq!(records[&(format!("{owner}.{name}."), rtype)], [vec![0]]);
+        let serial = app.read_zone_serial(name).await;
+        for invalid in ["", ".."] {
+            let (status, body) = app
+                .send_request(
+                    Method::PUT,
+                    &format!("/records/{id}"),
+                    Some(json!({"value": invalid})),
+                )
+                .await;
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "{kind} {invalid:?}: {body}"
+            );
+            assert_eq!(app.read_zone_serial(name).await, serial);
+        }
+    }
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "zone_name": name, "name": "@", "type": "CNAME", "value": "."
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_RECORD_NAME");
+}
+
 /// Preserve escaped targets through CRUD, independent export parsing, import and value deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
