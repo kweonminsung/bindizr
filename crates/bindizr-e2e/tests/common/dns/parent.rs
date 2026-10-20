@@ -105,7 +105,7 @@ impl DsRecord {
 
 /// The records and response metadata the fake parent serves.
 #[derive(Debug)]
-struct ParentAnswer {
+struct ParentResponse {
     records: Vec<DsRecord>,
     rcode: OptRcode,
     class: Class,
@@ -115,7 +115,7 @@ struct ParentAnswer {
 #[derive(Debug)]
 pub(crate) struct FakeParent {
     addr: SocketAddr,
-    answer: Arc<Mutex<ParentAnswer>>,
+    response: Arc<Mutex<ParentResponse>>,
 }
 
 impl FakeParent {
@@ -125,12 +125,12 @@ impl FakeParent {
         let addr = socket
             .local_addr()
             .expect("failed to read the fake parent's port");
-        let answer = Arc::new(Mutex::new(ParentAnswer {
+        let response = Arc::new(Mutex::new(ParentResponse {
             records: Vec::new(),
             rcode: OptRcode::NOERROR,
             class: Class::IN,
         }));
-        let served = Arc::clone(&answer);
+        let served = Arc::clone(&response);
 
         thread::spawn(move || {
             let mut buf = [0_u8; 4096];
@@ -208,7 +208,7 @@ impl FakeParent {
             }
         });
 
-        Self { addr, answer }
+        Self { addr, response }
     }
 
     /// Return the parent address for zone configuration.
@@ -218,13 +218,13 @@ impl FakeParent {
 
     /// Replace the DS records served.
     pub(crate) fn set_ds(&self, records: Vec<DsRecord>) {
-        self.answer.lock().expect("parent response lock").records = records;
+        self.response.lock().expect("parent response lock").records = records;
     }
 
     /// Set response RCODE and record class, retaining DS records.
     pub(crate) fn set_response(&self, rcode: OptRcode, class: Class) {
-        let mut answer = self.answer.lock().expect("parent response lock");
-        answer.rcode = rcode;
-        answer.class = class;
+        let mut response = self.response.lock().expect("parent response lock");
+        response.rcode = rcode;
+        response.class = class;
     }
 }

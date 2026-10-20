@@ -46,7 +46,7 @@ pub(crate) async fn create_many_tx(
 }
 
 /// Read apex SOA signatures under the caller's zone lock.
-pub(crate) async fn list_soa_signatures_tx(
+pub(crate) async fn list_signatures_covering_apex_soa_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {

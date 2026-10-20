@@ -22,7 +22,7 @@ use operation::apply_record_operation_tx;
 use plan::UpdateOperation;
 use prerequisite::{
     Prerequisite, RecordSets, evaluate_prerequisite, evaluate_record_set_prerequisites,
-    served_record_sets_tx,
+    list_served_record_sets_tx,
 };
 use thiserror::Error;
 
@@ -166,7 +166,7 @@ pub async fn apply(
         let served = if update.prerequisites.is_empty() {
             RecordSets::new()
         } else {
-            served_record_sets_tx(&mut tx, &zone).await?
+            list_served_record_sets_tx(&mut tx, &zone).await?
         };
         let mut wanted = RecordSets::new();
         for record in update.prerequisites {

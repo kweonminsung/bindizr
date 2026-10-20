@@ -10,7 +10,7 @@ use super::{parser::tests::minimal_update_with_ztype, *};
 use crate::{
     dns::tsig::{
         self,
-        tests::{encode_name, encode_u48, hmac_sign, now_secs, signed_update, test_key},
+        tests::{build_signed_update, encode_name, encode_u48, hmac_sign, now_secs, test_key},
     },
     model::tsig_key::TsigAlgorithm,
 };
@@ -53,7 +53,7 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
 /// Verify that `build_response` signs with request mac chain.
 #[test]
 fn build_response_signs_with_request_mac_chain() {
-    let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let query = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
@@ -110,7 +110,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
 
     use crate::{
         dns::{
-            message::response_builder,
+            message,
             tsig::{
                 tests::{assert_response_mac, test_key},
                 verify_tsig,
@@ -132,7 +132,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
     .to_signing_key()
     .unwrap();
     for size in [None, Some(512), Some(1232)] {
-        let mut builder = response_builder();
+        let mut builder = message::build_response();
         builder.header_mut().set_opcode(Opcode::UPDATE);
         let mut question = builder.question();
         question

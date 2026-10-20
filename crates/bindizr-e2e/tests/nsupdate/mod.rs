@@ -16,7 +16,7 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TestAppOptions,
     dns::{
-        exchange_request, exchange_udp, exported_record_sets,
+        exchange_request, exchange_udp, fetch_exported_record_sets,
         nsupdate::{
             PrerequisiteRecord, UpdateRecord, build_update, send_signed_update_with_edns_version,
             send_signed_update_with_two_zones, send_update_tcp, send_update_udp,
@@ -40,7 +40,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
         let zone = app.create_test_zone().await;
         let zone_name = zone["name"].as_str().unwrap();
         let serial = app.read_zone_serial(zone_name).await;
-        let records = exported_record_sets(&app, zone_name).await;
+        let records = fetch_exported_record_sets(&app, zone_name).await;
         for prerequisite in [false, true] {
             for owner in [zone_name, "outside.invalid"] {
                 for additional_tsig in [false, true] {
@@ -97,7 +97,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
             }
         }
         assert_eq!(app.read_zone_serial(zone_name).await, serial);
-        assert_eq!(exported_record_sets(&app, zone_name).await, records);
+        assert_eq!(fetch_exported_record_sets(&app, zone_name).await, records);
     }
 }
 
@@ -266,7 +266,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
             "CAA RDATA {rdata:?}"
         );
     }
-    let sets = exported_record_sets(&app, zone_name).await;
+    let sets = fetch_exported_record_sets(&app, zone_name).await;
     let mut exported = sets.get(&(owner.clone(), Rtype::CAA)).unwrap().clone();
     let mut expected = values.to_vec();
     exported.sort();
@@ -299,7 +299,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
     }
     assert!(
-        !exported_record_sets(&app, zone_name)
+        !fetch_exported_record_sets(&app, zone_name)
             .await
             .contains_key(&(owner, Rtype::CAA))
     );
@@ -354,7 +354,7 @@ async fn nsupdate_naptr_flags_refuse_the_whole_update() {
             assert_eq!(app.read_zone_serial(zone_name).await, serial);
         } else {
             assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
-            let exported = exported_record_sets(&app, zone_name).await;
+            let exported = fetch_exported_record_sets(&app, zone_name).await;
             assert!(exported[&(format!("naptr.{zone_name}."), Rtype::NAPTR)].contains(&rdata));
         }
     }
@@ -2040,7 +2040,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
             )
             .await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
-        let sets = exported_record_sets(&app, zone_name).await;
+        let sets = fetch_exported_record_sets(&app, zone_name).await;
         let apex = format!("{zone_name}.");
         for rtype in [
             Rtype::DNSKEY,
@@ -2110,7 +2110,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         }
         // Read-only checks must not advance the signed view.
         assert_eq!(app.read_zone_serial(zone_name).await, serial);
-        assert_eq!(exported_record_sets(&app, zone_name).await, sets);
+        assert_eq!(fetch_exported_record_sets(&app, zone_name).await, sets);
 
         // Re-signing must make the old RRSIG prerequisite fail.
         let signatures: Vec<_> = sets[&(apex.clone(), Rtype::RRSIG)]
@@ -2136,7 +2136,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         .expect("guarded write");
         assert_eq!(rcode, Rcode::NOERROR);
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
-        let after = exported_record_sets(&app, zone_name).await;
+        let after = fetch_exported_record_sets(&app, zone_name).await;
         assert_ne!(
             after[&(apex.clone(), Rtype::RRSIG)],
             sets[&(apex.clone(), Rtype::RRSIG)]
@@ -2151,7 +2151,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         .expect("stale guard");
         assert_eq!(rcode, Rcode::NXRRSET);
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
-        assert_eq!(exported_record_sets(&app, zone_name).await, after);
+        assert_eq!(fetch_exported_record_sets(&app, zone_name).await, after);
     }
 }
 
@@ -2189,7 +2189,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     )
     .await;
     let apex = format!("{zone_name}.");
-    let sets = exported_record_sets(&app, zone_name).await;
+    let sets = fetch_exported_record_sets(&app, zone_name).await;
     let values = &sets[&(apex.clone(), Rtype::DNSKEY)];
     let prerequisites: Vec<_> = values
         .iter()
@@ -2232,7 +2232,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
             .expect("signed error");
         assert_eq!(rcode, expected);
     }
-    assert_eq!(exported_record_sets(&app, zone_name).await, sets);
+    assert_eq!(fetch_exported_record_sets(&app, zone_name).await, sets);
 }
 
 /// Preserve binary owners, TXT octets, WKS service bitmaps, and RDATA case.
@@ -2276,7 +2276,7 @@ async fn update_preserves_binary_values_and_names() {
             .unwrap(),
             Rcode::NOERROR
         );
-        let exported = exported_record_sets(&app, zone).await;
+        let exported = fetch_exported_record_sets(&app, zone).await;
         assert_eq!(
             exported.get(&(export_owner.clone(), rtype)).unwrap(),
             &vec![rdata.clone()]
@@ -2301,7 +2301,7 @@ async fn update_preserves_binary_values_and_names() {
             Rcode::NOERROR
         );
         assert!(
-            !exported_record_sets(&app, zone)
+            !fetch_exported_record_sets(&app, zone)
                 .await
                 .contains_key(&(export_owner, rtype))
         );
@@ -2701,7 +2701,7 @@ async fn soa_replacement_updates_the_signed_zone() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let before = exported_record_sets(&app, zone_name).await;
+    let before = fetch_exported_record_sets(&app, zone_name).await;
     let soa = replacement(zone_name, 100);
     assert_eq!(
         send_update_udp(
@@ -2718,7 +2718,7 @@ async fn soa_replacement_updates_the_signed_zone() {
         .unwrap(),
         Rcode::NOERROR
     );
-    let after = exported_record_sets(&app, zone_name).await;
+    let after = fetch_exported_record_sets(&app, zone_name).await;
     let key = (format!("{zone_name}."), Rtype::SOA);
     let mut expected = Vec::new();
     soa.compose_rdata(&mut expected).unwrap();
@@ -2770,7 +2770,7 @@ async fn ixfr_replays_soa_replacement() {
         Rcode::NOERROR
     );
     let old_serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
-    let before = exported_record_sets(&app, zone_name).await;
+    let before = fetch_exported_record_sets(&app, zone_name).await;
     let soa = replacement(zone_name, old_serial + 10);
     assert_eq!(
         send_update_udp(
@@ -2998,7 +2998,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
     .unwrap();
     assert_eq!(rcode, Rcode::NOERROR);
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
-    let sets = exported_record_sets(&app, zone_name).await;
+    let sets = fetch_exported_record_sets(&app, zone_name).await;
     let mut actual = sets.get(&(owner, rtype)).unwrap().clone();
     actual.sort();
     let mut expected = vec![replacement, other_address, other_protocol];

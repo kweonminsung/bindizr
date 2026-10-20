@@ -51,7 +51,7 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     pause();
     let name = cx.config().dns.catalog_zone_name.clone();
     let first = NotifyJob::new(NotifyTarget::Zone(&name));
-    let deadline = batch_deadline(&cx, &first).await;
+    let deadline = read_batch_deadline(&cx, &first).await;
     assert_eq!(
         deadline - first.enqueued_at,
         Duration::from_secs(u64::from(CATALOG_SOA_REFRESH.as_secs()))

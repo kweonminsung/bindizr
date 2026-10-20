@@ -104,7 +104,7 @@ fn zone() -> Name<Vec<u8>> {
 }
 
 /// Encode an independent HMAC-SHA256 acknowledgement.
-fn signed_ack(request: &[u8], error: u16, rcode: u16) -> Vec<u8> {
+fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u8> {
     use ring::hmac;
     let id = u16::from_be_bytes([request[0], request[1]]);
     let mut response = build_notify_response(
@@ -181,7 +181,7 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
             let mut request = [0; 4096];
             let (len, peer) = socket.recv_from(&mut request).await.unwrap();
             let request = &request[..len];
-            let response = signed_ack(
+            let response = build_signed_notify_response(
                 request,
                 match noise {
                     "badtime" => 18,
@@ -308,7 +308,7 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
             loop {
                 let (len, peer) = socket.recv_from(&mut request).await.unwrap();
                 received.fetch_add(1, Ordering::SeqCst);
-                let mut response = signed_ack(&request[..len], 0, 4);
+                let mut response = build_signed_notify_response(&request[..len], 0, 4);
                 match mode {
                     "unsigned" => {
                         let id = u16::from_be_bytes([request[0], request[1]]);

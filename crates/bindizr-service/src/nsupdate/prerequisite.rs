@@ -59,7 +59,7 @@ pub(crate) type RecordSets = BTreeMap<(OwnerName, Rtype), BTreeSet<Rdata>>;
 
 /// The complete served zone at this transaction's serial, under the caller's
 /// zone lock: the SOA, ordinary and signer-generated records.
-pub(crate) async fn served_record_sets_tx(
+pub(crate) async fn list_served_record_sets_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
 ) -> Result<RecordSets, NsupdateError> {

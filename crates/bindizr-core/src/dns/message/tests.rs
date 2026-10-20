@@ -32,7 +32,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
     .to_signing_key()
     .unwrap();
     for udp_size in [None, Some(512), Some(1232)] {
-        let mut question = response_builder().question();
+        let mut question = build_response().question();
         question
             .push((Name::<Vec<u8>>::from_str(&long_name).unwrap(), Rtype::SOA))
             .unwrap();

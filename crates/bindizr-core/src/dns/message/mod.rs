@@ -33,7 +33,7 @@ pub(crate) const QUESTION_FIELDS_LEN: usize = 4;
 pub(crate) const RECORD_FIELDS_LEN: usize = 10;
 
 /// Compress response names before signing.
-pub(crate) fn response_builder() -> MessageBuilder<TreeCompressor<Vec<u8>>> {
+pub(crate) fn build_response() -> MessageBuilder<TreeCompressor<Vec<u8>>> {
     MessageBuilder::from_target(TreeCompressor::new(Vec::new()))
         .expect("a Vec holds the DNS header")
 }
@@ -277,7 +277,7 @@ impl DnsMessageBuilder {
 
     /// Compose the buffered answers into an authoritative response, signing when configured.
     fn build_message(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
-        let mut builder = response_builder();
+        let mut builder = build_response();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
@@ -303,7 +303,7 @@ impl DnsMessageBuilder {
             .push_response(&mut additional, OptRcode::NOERROR, None, self.keepalive);
         if let Some(signer) = self.signer.as_mut() {
             signer
-                .answer(&mut additional, Time48::now())
+                .sign_response(&mut additional, Time48::now())
                 .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
         }
         Ok(additional.finish().into_target())

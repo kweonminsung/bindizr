@@ -2,7 +2,7 @@ use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{TestApp, dns::exported_record_sets};
+use crate::common::{TestApp, dns::fetch_exported_record_sets};
 
 mod bulk;
 
@@ -2227,7 +2227,7 @@ async fn binary_txt_and_wks_round_trip() {
         assert_eq!(status, StatusCode::OK, "{body}");
         let wire_type: Rtype = rtype.parse().unwrap();
         assert_eq!(
-            exported_record_sets(&app, zone)
+            fetch_exported_record_sets(&app, zone)
                 .await
                 .get(&(format!("{name}.{zone}."), wire_type))
                 .unwrap(),
@@ -2243,7 +2243,7 @@ async fn binary_txt_and_wks_round_trip() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        exported_record_sets(&app, zone)
+        fetch_exported_record_sets(&app, zone)
             .await
             .get(&(format!("imported.{zone}."), Rtype::TXT))
             .unwrap(),

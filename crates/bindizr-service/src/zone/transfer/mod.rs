@@ -62,7 +62,8 @@ pub async fn authorize_soa_content_by_name(
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
         let signatures = if include_signatures {
-            bindizr_db::dnssec_record::list_soa_signatures_tx(&mut tx, zone.id).await?
+            bindizr_db::dnssec_record::list_signatures_covering_apex_soa_tx(&mut tx, zone.id)
+                .await?
         } else {
             Vec::new()
         };

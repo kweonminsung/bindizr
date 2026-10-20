@@ -104,7 +104,7 @@ impl AsRef<Key> for TsigSigningKey {
 
 /// The outbound key and request MAC used to authenticate the response.
 #[derive(Clone, Debug)]
-pub struct RequestSigner {
+pub struct ResponseVerifier {
     key: TsigSigningKey,
     request_mac: Vec<u8>,
 }
@@ -114,7 +114,7 @@ pub struct RequestSigner {
 pub fn sign_request(
     builder: &mut AdditionalBuilder<Vec<u8>>,
     key: TsigSigningKey,
-) -> Result<RequestSigner, SignRequestError> {
+) -> Result<ResponseVerifier, SignRequestError> {
     ClientTransaction::request(key.clone(), builder, Time48::now())
         .map_err(|e| SignRequestError(Box::new(e)))?;
     let message =
@@ -126,7 +126,7 @@ pub fn sign_request(
         .last()
         .ok_or_else(|| SignRequestError(Box::new(TsigError::RecordMissing)))?
         .map_err(|e| SignRequestError(Box::new(e)))?;
-    Ok(RequestSigner {
+    Ok(ResponseVerifier {
         key,
         request_mac: tsig.data().mac().to_vec(),
     })
@@ -134,7 +134,10 @@ pub fn sign_request(
 
 /// Check the answer to a signed request against the key that signed it
 /// (RFC 8945, Section 5.4.2).
-pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), VerifyResponseError> {
+pub fn verify_response(
+    verifier: &ResponseVerifier,
+    response: &[u8],
+) -> Result<(), VerifyResponseError> {
     let rejected = |error| VerifyResponseError::Rejected(Box::new(error));
     let message =
         Message::from_octets(response).map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
@@ -150,7 +153,7 @@ pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), Ve
             _ => {}
         }
     }
-    if !tsig.matches_key(&signer.key) {
+    if !tsig.matches_key(&verifier.key) {
         return Err(rejected(ValidationError::BadKey));
     }
     if !is_mac_size_in_bounds(data.algorithm(), data.mac().len())
@@ -159,9 +162,9 @@ pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), Ve
     {
         return Err(rejected(ValidationError::FormErr));
     }
-    tsig.verify_mac(&signer.key, &message, Some(&signer.request_mac))
+    tsig.verify_mac(&verifier.key, &message, Some(&verifier.request_mac))
         .map_err(|e| VerifyResponseError::Rejected(Box::new(e)))?;
-    if data.mac().len() != signer.key.as_ref().native_len() {
+    if data.mac().len() != verifier.key.as_ref().native_len() {
         return Err(VerifyResponseError::TruncatedMac);
     }
     if message.header().rcode() == Rcode::NOTAUTH && data.error() == TsigRcode::BADTIME {
@@ -376,7 +379,7 @@ fn build_signed_error_response(
         .last()?
         .ok()?;
     let request = request_tsig.data();
-    let mut builder = crate::dns::message::response_builder()
+    let mut builder = crate::dns::message::build_response()
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?
         .additional();
@@ -439,7 +442,7 @@ fn build_unsigned_error_response(msg: &Message<&[u8]>, error: TsigRcode) -> Opti
         .last()?
         .ok()?;
 
-    let builder = crate::dns::message::response_builder()
+    let builder = crate::dns::message::build_response()
         .start_answer(msg, Rcode::NOTAUTH)
         .ok()?;
     let mut builder = builder.additional();

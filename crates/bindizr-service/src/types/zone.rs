@@ -125,7 +125,7 @@ pub struct CreateZoneRequest {
     pub retry: Option<i32>,
     #[schema(example = 604800)]
     pub expire: Option<i32>,
-    #[schema(schema_with = minimum_ttl_schema)]
+    #[schema(schema_with = build_minimum_ttl_schema)]
     pub minimum_ttl: Option<i64>,
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
@@ -142,7 +142,7 @@ pub struct CreateZoneRequest {
 }
 
 /// Describe the nullable positive SOA minimum accepted by zone writes.
-fn minimum_ttl_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+fn build_minimum_ttl_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
     use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, SchemaType, Type};
 
     ObjectBuilder::new()
@@ -258,7 +258,7 @@ pub struct UpdateZoneRequest {
     #[schema(example = 604800)]
     pub expire: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(schema_with = minimum_ttl_schema)]
+    #[schema(schema_with = build_minimum_ttl_schema)]
     pub minimum_ttl: Option<i64>,
     /// `false` stops the DNS plane serving the zone without deleting it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

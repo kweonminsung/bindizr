@@ -66,7 +66,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         Rtype::SOA,
         None,
     );
-    let client = sign_request(&mut request, key).unwrap();
+    let verifier = sign_request(&mut request, key).unwrap();
     let request = request.finish();
     let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
     let dns_cx = DnsContext::new(cx);
@@ -82,5 +82,5 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
     assert!(failure.is_failure());
     let response = failure.into_response(&query).unwrap();
     assert_eq!(response[3] & 15, 2);
-    verify_response(&client, &response).unwrap();
+    verify_response(&verifier, &response).unwrap();
 }

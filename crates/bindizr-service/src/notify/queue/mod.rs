@@ -106,7 +106,7 @@ impl NotifyBatch {
 
 /// Bound intentional delay by SOA REFRESH, measured from enqueue time
 /// (RFC 1996, Section 4.3). Failed lookups send immediately.
-async fn batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
+async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     let config = cx.config();
     let window = Duration::from_millis(config.dns.notify.batch_ms);
     if window.is_zero() {
@@ -146,7 +146,7 @@ async fn collect_batch(
     first: NotifyJob,
 ) -> NotifyBatch {
     let mut batch = NotifyBatch::default();
-    let mut deadline = batch_deadline(cx, &first).await;
+    let mut deadline = read_batch_deadline(cx, &first).await;
     batch.add(first);
     loop {
         if *stop.borrow() {
@@ -159,7 +159,7 @@ async fn collect_batch(
             job = rx.recv() => match job {
                 Some(job) => {
                     // Later writes may shorten the window, never extend it.
-                    deadline = deadline.min(batch_deadline(cx, &job).await);
+                    deadline = deadline.min(read_batch_deadline(cx, &job).await);
                     batch.add(job);
                 }
                 None => break,

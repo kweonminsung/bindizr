@@ -366,7 +366,7 @@ impl ParsedQuery {
                     *signer = original.clone();
                 }
                 signer
-                    .answer(&mut additional, Time48::now())
+                    .sign_response(&mut additional, Time48::now())
                     .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
             }
             let response = additional.finish().into_target();
@@ -389,7 +389,7 @@ impl ParsedQuery {
         truncated: bool,
         ede: Option<ExtendedErrorCode>,
     ) -> AdditionalBuilder<TreeCompressor<Vec<u8>>> {
-        let mut builder = super::response_builder();
+        let mut builder = super::build_response();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);

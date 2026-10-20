@@ -439,7 +439,7 @@ fn to_quoted_string(bytes: &[u8]) -> String {
 }
 
 /// Read published RRsets with an independent zone-file parser.
-pub(crate) async fn exported_record_sets(
+pub(crate) async fn fetch_exported_record_sets(
     app: &TestApp,
     zone_name: &str,
 ) -> std::collections::BTreeMap<(String, Rtype), Vec<Vec<u8>>> {

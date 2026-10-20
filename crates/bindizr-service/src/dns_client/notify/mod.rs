@@ -187,7 +187,7 @@ async fn send_notify_to_server(
     tsig_key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     let (query_id, mut builder) = build_notify_query(qname, tsig_key);
-    let signer = match tsig_key {
+    let verifier = match tsig_key {
         Some(tsig_key) => Some(sign_request(&mut builder, tsig_key.clone())?),
         None => None,
     };
@@ -199,9 +199,9 @@ async fn send_notify_to_server(
         &notify_message,
         "NOTIFY",
         retries.saturating_add(1),
-        |response| match signer.as_ref() {
+        |response| match verifier.as_ref() {
             None => true,
-            Some(signer) => match verify_response(signer, response) {
+            Some(verifier) => match verify_response(verifier, response) {
                 Ok(()) => true,
                 Err(error) if error.is_authenticated() => true,
                 // RFC 8945, Section 5.4: an unsigned or unverifiable answer is
@@ -223,11 +223,11 @@ async fn send_notify_to_server(
         "NOTIFY message sent to {} ({} bytes, signed={})",
         server_addr,
         notify_message.len(),
-        signer.is_some()
+        verifier.is_some()
     );
 
-    if let Some(signer) = &signer {
-        verify_response(signer, &response[..received])?;
+    if let Some(verifier) = &verifier {
+        verify_response(verifier, &response[..received])?;
     }
     match validate_notify_response(query_id, qname, &response[..received]) {
         // RFC 1996, Section 3.12: a validated NOTIMP completes the transaction.

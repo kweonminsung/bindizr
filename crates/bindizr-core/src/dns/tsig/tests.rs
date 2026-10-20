@@ -35,7 +35,7 @@ fn verify_response_rejects_invalid_class_and_ttl() {
         ))
         .unwrap();
     let mut query = question.additional();
-    let client = sign_request(&mut query, key.clone()).unwrap();
+    let verifier = sign_request(&mut query, key.clone()).unwrap();
     let query = query.finish();
     let server = verify_tsig(&query, Some(key)).unwrap();
     let query = Message::from_octets(query).unwrap();
@@ -43,9 +43,9 @@ fn verify_response_rejects_invalid_class_and_ttl() {
         .start_answer(&query, Rcode::NOERROR)
         .unwrap()
         .additional();
-    server.answer(&mut response, Time48::now()).unwrap();
+    server.sign_response(&mut response, Time48::now()).unwrap();
     let response = response.finish();
-    verify_response(&client, &response).unwrap();
+    verify_response(&verifier, &response).unwrap();
     let start = Message::from_octets(response.as_slice())
         .unwrap()
         .additional()
@@ -58,7 +58,7 @@ fn verify_response_rejects_invalid_class_and_ttl() {
     for (offset, bytes) in [(fields + 2, vec![0, 1]), (fields + 4, vec![0, 0, 0, 1])] {
         let mut modified = response.clone();
         modified[offset..offset + bytes.len()].copy_from_slice(&bytes);
-        let error = verify_response(&client, &modified).unwrap_err();
+        let error = verify_response(&verifier, &modified).unwrap_err();
         assert!(!error.is_authenticated());
     }
     let mut other = response;
@@ -69,7 +69,7 @@ fn verify_response_rejects_invalid_class_and_ttl() {
     other[end - 2..].copy_from_slice(&1u16.to_be_bytes());
     other.push(0x7f);
     assert!(
-        !verify_response(&client, &other)
+        !verify_response(&verifier, &other)
             .unwrap_err()
             .is_authenticated()
     );
@@ -91,7 +91,7 @@ fn request_tsig_rejects_nonzero_error() {
             TsigRcode::BADTIME,
             TsigRcode::BADTRUNC,
         ] {
-            let message = signed_update_with_tsig_fields(algorithm, now_secs(), error, &[]);
+            let message = build_signed_update_with_tsig_fields(algorithm, now_secs(), error, &[]);
             assert_eq!(request_signature(&message), RequestSignature::Malformed);
             assert!(matches!(
                 crate::dns::nsupdate::parser::UpdateRequest::parse(&message),
@@ -116,15 +116,19 @@ fn verify_tsig_authenticates_original_other_data() {
     ] {
         let key = test_key(algorithm).to_signing_key().unwrap();
         for other in [&[0x7f][..], &[0; 6], &[0xff; 8], &[0x42; 32]] {
-            let query =
-                signed_update_with_tsig_fields(algorithm, now_secs(), TsigRcode::NOERROR, other);
+            let query = build_signed_update_with_tsig_fields(
+                algorithm,
+                now_secs(),
+                TsigRcode::NOERROR,
+                other,
+            );
             let signer = verify_tsig(&query, Some(key.clone())).unwrap();
             let message = Message::from_octets(query.as_slice()).unwrap();
             let mut response = MessageBuilder::new_vec()
                 .start_answer(&message, Rcode::NOERROR)
                 .unwrap()
                 .additional();
-            signer.answer(&mut response, Time48::now()).unwrap();
+            signer.sign_response(&mut response, Time48::now()).unwrap();
             assert_response_mac(&query, &response.finish(), algorithm);
             let mut tampered = query;
             *tampered.last_mut().unwrap() ^= 1;
@@ -134,7 +138,7 @@ fn verify_tsig_authenticates_original_other_data() {
                 TsigRcode::BADSIG
             );
         }
-        let mut appended = signed_update(algorithm, now_secs());
+        let mut appended = build_signed_update(algorithm, now_secs());
         let message = Message::from_octets(appended.as_slice()).unwrap();
         let mut parser = Parser::from_ref(appended.as_slice());
         parser.seek(message.additional().unwrap().pos()).unwrap();
@@ -179,7 +183,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
         )
         .unwrap(),
     );
-    let mut question = crate::dns::message::response_builder().question();
+    let mut question = crate::dns::message::build_response().question();
     question
         .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
         .unwrap();
@@ -191,7 +195,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     assert_eq!(extract_response_tsig(&response).1, TsigRcode::BADTRUNC);
     assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
     for stale in [false, true] {
-        let mut question = crate::dns::message::response_builder().question();
+        let mut question = crate::dns::message::build_response().question();
         question
             .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
@@ -208,14 +212,14 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             .last()
             .unwrap()
             .unwrap();
-        let client = RequestSigner {
+        let verifier = ResponseVerifier {
             key: key.clone(),
             request_mac: request_tsig.data().mac().to_vec(),
         };
         let unknown = extract_failed_response(verify_tsig(&query, None).unwrap_err());
         assert!(unknown.len() <= 512);
         assert!(
-            !verify_response(&client, &unknown)
+            !verify_response(&verifier, &unknown)
                 .unwrap_err()
                 .is_authenticated()
         );
@@ -225,14 +229,14 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             assert!(response.len() <= 512);
             assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
             assert!(matches!(
-                verify_response(&client, &response),
+                verify_response(&verifier, &response),
                 Err(VerifyResponseError::ServerBadTime(_))
             ));
             let mut forged = response;
             let index = forged.len() - 13;
             forged[index] ^= 1;
             assert!(
-                !verify_response(&client, &forged)
+                !verify_response(&verifier, &forged)
                     .unwrap_err()
                     .is_authenticated()
             );
@@ -244,7 +248,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             assert!(response.len() <= 512);
             assert_eq!(extract_response_tsig(&response).1, TsigRcode::BADSIG);
             assert!(
-                !verify_response(&client, &response)
+                !verify_response(&verifier, &response)
                     .unwrap_err()
                     .is_authenticated()
             );
@@ -300,12 +304,12 @@ pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
 }
 
 /// Sign a minimal UPDATE with `update-key` (RFC 8945, Sections 4.3.2 and 4.3.3).
-pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
-    signed_update_with_tsig_fields(algorithm, time_signed, TsigRcode::NOERROR, &[])
+pub(crate) fn build_signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
+    build_signed_update_with_tsig_fields(algorithm, time_signed, TsigRcode::NOERROR, &[])
 }
 
 /// Independently sign all TSIG variables, retaining arbitrary request Other Data.
-fn signed_update_with_tsig_fields(
+fn build_signed_update_with_tsig_fields(
     algorithm: TsigAlgorithm,
     time_signed: u64,
     error: TsigRcode,
@@ -434,7 +438,7 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
         TsigAlgorithm::HmacSha384,
         TsigAlgorithm::HmacSha512,
     ] {
-        let query = signed_update(algorithm, now_secs());
+        let query = build_signed_update(algorithm, now_secs());
         let key = test_key(algorithm).to_signing_key().unwrap();
         verify_tsig(&query, Some(key)).unwrap();
     }
@@ -451,7 +455,7 @@ fn verify_tsig_accepts_mixed_case_algorithm_names() {
         TsigAlgorithm::HmacSha512,
     ] {
         let label = algorithm.as_str().as_bytes();
-        let mut query = signed_update(algorithm, now_secs());
+        let mut query = build_signed_update(algorithm, now_secs());
         let index = query
             .windows(label.len())
             .rposition(|window| window == label)
@@ -473,7 +477,7 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
         .to_signing_key()
         .unwrap();
     for offset in [-3600i64, 0, 3600] {
-        let mut query = signed_update(
+        let mut query = build_signed_update(
             TsigAlgorithm::HmacSha256,
             now_secs().checked_add_signed(offset).unwrap(),
         );
@@ -493,7 +497,7 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
 /// Verify that `verify_tsig` rejects original id mismatch with badsig.
 #[test]
 fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
-    let mut query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let mut query = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
     // Flip the original ID (first two of the trailing six rdata bytes): the
     // MAC is computed over the original ID, so verification must fail.
     let original_id = query.len() - 6;
@@ -512,7 +516,7 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
 /// Verify that `verify_tsig` rejects algorithm mismatch with badkey.
 #[test]
 fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
-    let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let query = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
     let key = test_key(TsigAlgorithm::HmacSha512)
         .to_signing_key()
@@ -528,7 +532,7 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
 /// Verify that `verify_tsig` rejects unknown key with badkey.
 #[test]
 fn verify_tsig_rejects_unknown_key_with_badkey() {
-    let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let query = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
     let err = verify_tsig(&query, None).unwrap_err();
 
@@ -542,7 +546,7 @@ fn verify_tsig_rejects_unknown_key_with_badkey() {
 #[test]
 fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let stale = now_secs() - 3600;
-    let query = signed_update(TsigAlgorithm::HmacSha256, stale);
+    let query = build_signed_update(TsigAlgorithm::HmacSha256, stale);
 
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
@@ -787,7 +791,7 @@ fn outbound_responses_require_full_length_macs() {
             ))
             .unwrap();
         let mut query = question.additional();
-        let client = sign_request(&mut query, key.clone()).unwrap();
+        let verifier = sign_request(&mut query, key.clone()).unwrap();
         let mut query = Message::from_octets(query.finish()).unwrap();
         let server = ServerTransaction::request(&server_key, &mut query, Time48::now())
             .unwrap()
@@ -798,7 +802,7 @@ fn outbound_responses_require_full_length_macs() {
             .additional();
         server.answer(&mut response, Time48::now()).unwrap();
         let mut response = response.finish();
-        let result = verify_response(&client, &response);
+        let result = verify_response(&verifier, &response);
         if mac_len == 32 {
             result.unwrap();
         } else {
@@ -807,7 +811,7 @@ fn outbound_responses_require_full_length_macs() {
         let mac_end = response.len() - 7;
         response[mac_end] ^= 1;
         assert!(matches!(
-            verify_response(&client, &response),
+            verify_response(&verifier, &response),
             Err(VerifyResponseError::Rejected(_))
         ));
     }
@@ -842,7 +846,7 @@ fn reserved_tsig_size_covers_maximum_key_name() {
 /// Keep malformed TSIG requests from being treated as unsigned.
 #[test]
 fn tsig_parser_rejects_unparseable_signature() {
-    let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let signed = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
     assert!(matches!(
         request_signature(&signed),
         RequestSignature::Key { name, fudge: 300 } if name == "update-key"
@@ -906,7 +910,7 @@ fn update_with_mac_of(mac_len: usize) -> Vec<u8> {
 /// (RFC 8945, Sections 5.2 and 5.2.2.1).
 #[test]
 fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
-    let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let signed = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
     // An A record after the TSIG: the TSIG is no longer the last record.
     let mut not_last = signed.clone();
@@ -947,7 +951,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
 /// TSIG belongs only in Additional, with CLASS ANY and TTL zero (RFC 8945, Section 4.2).
 #[test]
 fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
-    let wire = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    let wire = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
     let start = minimal_update_with_ztype(6).len();
     let class = start + encode_name("update-key").len() + 2;
     for offset in [class + 1, class + 5] {

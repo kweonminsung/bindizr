@@ -38,7 +38,7 @@ pub fn build_response(
     let msg = Message::from_octets(query_data).ok()?;
     for minimal in [false, true] {
         let rcode = if minimal { OptRcode::NOERROR } else { rcode };
-        let mut answer = crate::dns::message::response_builder()
+        let mut answer = crate::dns::message::build_response()
             .start_answer(&msg, rcode.rcode())
             .ok()?;
         answer.header_mut().set_tc(minimal);
@@ -51,7 +51,7 @@ pub fn build_response(
         );
         if let Some(signer) = signer.clone() {
             signer
-                .answer_with_fudge(&mut additional, Time48::now(), fudge)
+                .sign_response_with_fudge(&mut additional, Time48::now(), fudge)
                 .ok()?;
         }
         let response = additional.finish().into_target();
