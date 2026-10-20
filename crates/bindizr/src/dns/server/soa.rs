@@ -172,7 +172,7 @@ async fn handle_soa_request(
                 refusal.reason
             );
             return refusal
-                .into_response(query)
+                .into_response(&message::QueryMetadata::from(query))
                 .map(|response| (response, outcome));
         }
     };
@@ -203,7 +203,7 @@ async fn handle_soa_request(
             Ok(access) => access,
             Err(error) => {
                 return TransferRefusal::failed(error.to_string(), identity.signer)
-                    .into_response(query)
+                    .into_response(&message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Failed));
             }
         };
@@ -226,7 +226,7 @@ async fn handle_soa_request(
                     reason
                 );
                 return TransferRefusal::refused(reason, identity.signer)
-                    .into_response(query)
+                    .into_response(&message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Refused));
             }
         };
@@ -234,7 +234,7 @@ async fn handle_soa_request(
             Ok(content) => content,
             Err(error) => {
                 return TransferRefusal::failed(error.to_string(), identity.signer)
-                    .into_response(query)
+                    .into_response(&message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Failed));
             }
         };
@@ -257,7 +257,7 @@ async fn handle_soa_request(
             Ok(access) => access,
             Err(e) => {
                 return TransferRefusal::failed(e.to_string(), identity.signer)
-                    .into_response(query)
+                    .into_response(&message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Failed));
             }
         },
@@ -282,7 +282,7 @@ async fn handle_soa_request(
                 reason
             );
             return TransferRefusal::refused(reason, identity.signer)
-                .into_response(query)
+                .into_response(&message::QueryMetadata::from(query))
                 .map(|response| (response, SoaResult::Refused));
         }
     };

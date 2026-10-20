@@ -784,7 +784,7 @@ async fn tls_query_returns_not_supported_for_unserved_type() {
     }
 }
 
-/// TLS NOTIFY refusal precedes class checks; plain retains its class policy.
+/// Unsupported NOTIFY is refused before class checks on every transport.
 #[tokio::test]
 #[serial]
 async fn tls_notify_returns_refused_with_not_supported() {
@@ -817,21 +817,10 @@ async fn tls_notify_returns_refused_with_not_supported() {
                     exchange_tcp(app.dns_port(), request)?,
                 ] {
                     let message = Message::from_octets(bytes).unwrap();
-                    assert_eq!(
-                        message.header().rcode(),
-                        if class == Class::IN {
-                            Rcode::NOTIMP
-                        } else {
-                            Rcode::NOTAUTH
-                        }
-                    );
+                    assert_eq!(message.header().rcode(), Rcode::NOTIMP);
                     assert_eq!(
                         extended_error_code(message.as_slice()),
-                        if class == Class::IN {
-                            ExtendedErrorCode::NOT_SUPPORTED
-                        } else {
-                            ExtendedErrorCode::NOT_AUTHORITATIVE
-                        }
+                        ExtendedErrorCode::NOT_SUPPORTED
                     );
                     if let Some(key) = key {
                         verify_response_mac(request, &message, key).unwrap();

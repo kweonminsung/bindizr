@@ -270,7 +270,14 @@ fn multi_question_headers_receive_formerr_only_for_query() {
             let mut unreadable = wire[..12].to_vec();
             unreadable.extend_from_slice(body);
             let error = ParsedQuery::parse(&unreadable, Keepalive::None).unwrap_err();
-            let response = Message::from_octets(error.to_response().unwrap()).unwrap();
+            let response = Message::from_octets(
+                error
+                    .query_metadata()
+                    .unwrap()
+                    .build_signed_error_response(OptRcode::FORMERR, None, None)
+                    .unwrap(),
+            )
+            .unwrap();
             assert_eq!(response.header().id(), 1234);
             assert_eq!(response.header().opcode(), opcode);
             assert_eq!(response.header().rcode(), Rcode::FORMERR);
@@ -287,7 +294,14 @@ fn question_less_queries_receive_formerr() {
     let mut wire = build_question(Rtype::SOA, &[])[..12].to_vec();
     wire[4..6].copy_from_slice(&0u16.to_be_bytes());
     let error = ParsedQuery::parse(&wire, Keepalive::None).unwrap_err();
-    let response = Message::from_octets(error.to_response().unwrap()).unwrap();
+    let response = Message::from_octets(
+        error
+            .query_metadata()
+            .unwrap()
+            .build_signed_error_response(OptRcode::FORMERR, None, None)
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(response.header().id(), 1234);
     assert!(response.header().qr());
     assert_eq!(response.header().rcode(), Rcode::FORMERR);
@@ -296,7 +310,7 @@ fn question_less_queries_receive_formerr() {
     assert!(
         ParsedQuery::parse(&wire[..11], Keepalive::None)
             .unwrap_err()
-            .to_response()
+            .query_metadata()
             .is_none()
     );
 }

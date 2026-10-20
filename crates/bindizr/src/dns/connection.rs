@@ -128,8 +128,32 @@ async fn dispatch_query(
         return;
     }
 
-    let query = match message::ParsedQuery::parse(query_data, Keepalive::IdleTimeout(idle_timeout))
-    {
+    let keepalive = Keepalive::IdleTimeout(idle_timeout);
+    match server::refuse_unsupported_opcode(dns_cx, query_data, keepalive, transport).await {
+        Ok(Some((response, _))) => {
+            if let Err(error) = writer.write_message(&response).await {
+                log::error!(
+                    "Failed to refuse DNS {} opcode from {}: {}",
+                    transport,
+                    client_addr,
+                    error
+                );
+            }
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log::error!(
+                "Failed to refuse DNS {} opcode from {}: {}",
+                transport,
+                client_addr,
+                error
+            );
+            return;
+        }
+    }
+
+    let query = match message::ParsedQuery::parse(query_data, keepalive) {
         Ok(query) => query,
         Err(e) => {
             log::warn!(
@@ -138,15 +162,24 @@ async fn dispatch_query(
                 client_addr,
                 e
             );
-            if let Some(response) = e.to_response()
-                && let Err(error) = writer.write_message(&response).await
-            {
-                log::error!(
-                    "Failed to answer malformed DNS {} query from {}: {}",
-                    transport,
-                    client_addr,
-                    error
-                );
+            if let Some(metadata) = e.query_metadata() {
+                let result = async {
+                    let rcode = metadata
+                        .format_error()
+                        .unwrap_or(message::OptRcode::FORMERR);
+                    let response =
+                        server::refuse_query(dns_cx, metadata, query_data, rcode, None).await?;
+                    writer.write_message(&response).await
+                }
+                .await;
+                if let Err(error) = result {
+                    log::error!(
+                        "Failed to answer malformed DNS {} query from {}: {}",
+                        transport,
+                        client_addr,
+                        error
+                    );
+                }
             }
             return;
         }
@@ -154,7 +187,14 @@ async fn dispatch_query(
 
     let result = async {
         if let Some((rcode, ede)) = server::query_refusal(&query, transport, client_addr) {
-            let response = server::refuse_query(dns_cx, &query, query_data, rcode, ede).await?;
+            let response = server::refuse_query(
+                dns_cx,
+                &message::QueryMetadata::from(&query),
+                query_data,
+                rcode,
+                ede,
+            )
+            .await?;
             writer.write_message(&response).await
         } else if query.qtype == Rtype::SOA {
             server::soa::handle_tcp_soa(dns_cx, writer, client_addr, &query, query_data).await

@@ -54,6 +54,33 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 
+/// Classify unsupported opcodes from the header, including opaque request bodies.
+pub(crate) async fn refuse_unsupported_opcode(
+    dns_cx: &DnsContext,
+    query_data: &[u8],
+    keepalive: message::Keepalive,
+    transport: TransferTransport,
+) -> Result<Option<(Vec<u8>, message::ResponseLimit)>, DnsError> {
+    let Some(opcode) = message::extract_opcode(query_data) else {
+        return Ok(None);
+    };
+    if opcode == Opcode::QUERY || opcode == Opcode::UPDATE {
+        return Ok(None);
+    }
+    let Ok(metadata) = message::QueryMetadata::parse(query_data, keepalive) else {
+        return Ok(None);
+    };
+    let (rcode, ede) = if let Some(rcode) = metadata.format_error() {
+        (rcode, None)
+    } else if transport == TransferTransport::Tls {
+        (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
+    } else {
+        (OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED))
+    };
+    let response = refuse_query(dns_cx, &metadata, query_data, rcode, ede).await?;
+    Ok(Some((response, metadata.response_limit())))
+}
+
 /// Classify malformed queries and transport-specific refusals before dispatch.
 pub(crate) fn query_refusal(
     query: &message::ParsedQuery,
@@ -71,8 +98,8 @@ pub(crate) fn query_refusal(
     }
     // RFC 9103, Section 7.8: refuse non-XoT traffic regardless of its class.
     if transport == TransferTransport::Tls
-        && (query.opcode != Opcode::QUERY
-            || (query.qtype != Rtype::SOA && !is_xfr_query_type(query.qtype)))
+        && query.qtype != Rtype::SOA
+        && !is_xfr_query_type(query.qtype)
     {
         log::info!(
             "Refusing unsupported TLS query from {} (opcode={:?}, qtype={:?})",
@@ -95,15 +122,6 @@ pub(crate) fn query_refusal(
             OptRcode::NOTAUTH,
             Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
         ));
-    }
-    if query.opcode != Opcode::QUERY {
-        log::info!(
-            "Refusing DNS {} opcode {:?} from {}",
-            transport,
-            query.opcode,
-            client_addr
-        );
-        return Some((OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED)));
     }
     if query.qtype != Rtype::SOA && !is_xfr_query_type(query.qtype) {
         log::info!(
@@ -175,7 +193,7 @@ pub(crate) async fn handle_tcp_xfr(
                 .await;
             }
             // RFC 5936, Section 4.1.2: send an RCODE instead of dropping the connection.
-            let response = refusal.into_response(query)?;
+            let response = refusal.into_response(&message::QueryMetadata::from(query))?;
             writer.write_message(&response).await?;
             return Ok(());
         }
@@ -238,8 +256,8 @@ pub(crate) async fn handle_tcp_xfr(
                 reason.clone(),
             )
             .await;
-            let response =
-                TransferRefusal::refused(reason, identity.signer.take()).into_response(query)?;
+            let response = TransferRefusal::refused(reason, identity.signer.take())
+                .into_response(&message::QueryMetadata::from(query))?;
             writer.write_message(&response).await?;
             Ok(())
         }
@@ -311,7 +329,7 @@ pub(crate) async fn handle_udp_xfr(
                 client_addr.ip(),
                 refusal.reason
             );
-            return refusal.into_response(query);
+            return refusal.into_response(&message::QueryMetadata::from(query));
         }
     };
     // The transfer itself counts when the client returns over TCP.

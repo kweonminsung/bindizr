@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 use bindizr_core::{
     config::Config,
     dns::{
-        message::{Keepalive, Name, Opcode, Rtype},
+        message::{Keepalive, Name, Opcode, ParsedQuery, Rtype},
         query::build_question,
         tsig::{sign_request, verify_response},
     },
@@ -86,7 +86,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         .await
         .unwrap_err();
     assert!(failure.is_failure());
-    let response = failure.into_response(&query).unwrap();
+    let response = failure.into_response(&QueryMetadata::from(&query)).unwrap();
     assert_eq!(response[3] & 15, 2);
     verify_response(&verifier, &response).unwrap();
 }

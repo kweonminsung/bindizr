@@ -49,7 +49,7 @@ pub fn build_response(
             .map_err(|e| BuildResponseError::Malformed(Box::new(e)))?;
         answer.header_mut().set_tc(minimal);
         let mut additional = answer.additional();
-        Edns::from_message(&msg).push_response(
+        Edns::from_message(&msg).push_response_opt(
             &mut additional,
             rcode,
             if minimal { None } else { ede },

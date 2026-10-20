@@ -598,15 +598,25 @@ DNSSEC signs DS at an authoritative delegation, never data below an earlier cut.
 
 Stored RDATA must fit a signed EDNS transfer message with worst-case question,
 owner and key names, including OPT and TCP keepalive overhead. TLS requests
-with an unsupported opcode receive REFUSED and EDE 21 (RFC 9103, Section 7.8);
-plain TCP/UDP retain NOTIMP.
+with an unsupported opcode receive REFUSED and, when EDNS was requested, EDE 21
+(RFC 9103, Section 7.8); plain TCP/UDP return NOTIMP (RFC 8906, Section 8.1.4).
+Classify these opcodes from the header without requiring a QUERY-shaped body.
+
+Ordinary zone data is IN-only. An otherwise valid IN QUERY carrying an ordinary
+RR of another class in Answer, Authority, or Additional receives FORMERR before
+handler dispatch, including foreign-class IXFR SOAs (RFC 1995, Section 3).
+OPT and TSIG retain their own CLASS semantics; UPDATE's ANY/NONE controls remain
+in the UPDATE handler. Question-class refusals, EDNS version errors, and TSIG
+validation retain their existing response codes and authentication behavior.
 
 QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
-(RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
-readable queries; a message with no readable question, QDCOUNT 0 included,
-receives a header-only FORMERR rather than silence. A transfer error about a
-zone this server holds (REFUSED, SERVFAIL) keeps AA set, as RFC 5936,
-Section 2.2.1 recommends when in doubt; NOTAUTH, FORMERR and NOTIMP clear it.
+(RFC 9619, Section 4). QDCOUNT 0 is not itself prohibited by that RFC; unsupported
+empty QUERY requests default to FORMERR. Preserve readable EDNS and authenticate
+TSIG before any such refusal: EDNS version errors receive BADVERS and TSIG
+failures retain their specific errors. A message with an unreadable body receives
+a header-only response; a header shorter than twelve octets receives no reply.
+A transfer error about a zone this server holds (REFUSED, SERVFAIL) keeps AA set,
+as RFC 5936, Section 2.2.1 recommends when in doubt; NOTAUTH, FORMERR and NOTIMP clear it.
 The TSIG algorithm name is matched case-insensitively (RFC 1035, Section
 2.3.3): the digest takes its canonical form (RFC 8945, Section 4.3.3), so
 `HMAC-SHA256.` on the wire names the same key.

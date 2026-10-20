@@ -430,7 +430,7 @@ fn build_signed_error_response(
         .ok()?;
     let request = request_tsig.data();
     let mut builder = error_response(msg, include_question)?;
-    Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
+    Edns::from_message(msg).push_response_opt(&mut builder, OptRcode::NOTAUTH, None, None);
 
     // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
     // Section 4.3 requires the six carried on the wire.
@@ -494,7 +494,7 @@ fn build_unsigned_error_response(
         .ok()?;
 
     let mut builder = error_response(msg, include_question)?;
-    Edns::from_message(msg).push_response(&mut builder, OptRcode::NOTAUTH, None, None);
+    Edns::from_message(msg).push_response_opt(&mut builder, OptRcode::NOTAUTH, None, None);
     builder
         .push((
             tsig_record.owner(),

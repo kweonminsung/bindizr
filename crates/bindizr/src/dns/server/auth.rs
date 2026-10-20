@@ -5,7 +5,10 @@ use std::net::IpAddr;
 
 use bindizr_core::{
     dns::{
-        message::{ExtendedErrorCode, OptRcode, ParsedQuery},
+        message::{
+            ExtendedErrorCode, Opcode, OptRcode, QueryMetadata, extract_opcode,
+            has_readable_sections,
+        },
         tsig::{RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig},
     },
     model::transfer::TransferTransport,
@@ -68,11 +71,15 @@ impl TransferRefusal {
     }
 
     /// Convert the refusal into a DNS response.
-    pub(crate) fn into_response(mut self, query: &ParsedQuery) -> Result<Vec<u8>, DnsError> {
+    pub(crate) fn into_response(mut self, metadata: &QueryMetadata) -> Result<Vec<u8>, DnsError> {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        Ok(query.build_signed_error_response(self.rcode, self.ede, self.signer.as_deref_mut())?)
+        Ok(metadata.build_signed_error_response(
+            self.rcode,
+            self.ede,
+            self.signer.as_deref_mut(),
+        )?)
     }
 }
 
@@ -213,17 +220,23 @@ pub(crate) async fn authenticate_transfer(
 /// (RFC 8945, Section 5.3), or with the TSIG error a bad key earns instead.
 pub(crate) async fn refuse_query(
     dns_cx: &DnsContext,
-    query: &ParsedQuery,
+    metadata: &QueryMetadata,
     query_data: &[u8],
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
 ) -> Result<Vec<u8>, DnsError> {
-    match authenticate_tsig_key(dns_cx, query_data, query.response_limit()).await {
+    // Unknown opcodes may carry an opaque body; do not interpret it as TSIG.
+    if extract_opcode(query_data).is_some_and(|opcode| opcode != Opcode::QUERY)
+        && !has_readable_sections(query_data)
+    {
+        return Ok(metadata.build_signed_error_response(rcode, ede, None)?);
+    }
+    match authenticate_tsig_key(dns_cx, query_data, metadata.response_limit()).await {
         Ok(identity) => {
             let mut signer = identity.and_then(|identity| identity.signer);
-            Ok(query.build_signed_error_response(rcode, ede, signer.as_mut())?)
+            Ok(metadata.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
-        Err(refusal) => refusal.into_response(query),
+        Err(refusal) => refusal.into_response(metadata),
     }
 }
 

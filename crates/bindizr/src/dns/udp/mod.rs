@@ -252,18 +252,62 @@ async fn handle_udp_query(
         return;
     }
 
+    match server::refuse_unsupported_opcode(
+        dns_cx,
+        query_data,
+        Keepalive::None,
+        TransferTransport::Udp,
+    )
+    .await
+    {
+        Ok(Some((response, limit))) => {
+            send_udp_response(socket, target, &response, limit).await;
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log::warn!(
+                "Failed to refuse DNS UDP opcode from {}: {}",
+                client_addr,
+                error
+            );
+            return;
+        }
+    }
+
     let query = match message::ParsedQuery::parse(query_data, Keepalive::None) {
         Ok(query) => query,
         Err(error) => {
-            if let Some(response) = error.to_response() {
-                send_udp_response(socket, target, &response, ResponseLimit::UDP).await;
+            if let Some(metadata) = error.query_metadata() {
+                let rcode = metadata
+                    .format_error()
+                    .unwrap_or(message::OptRcode::FORMERR);
+                match server::refuse_query(dns_cx, metadata, query_data, rcode, None).await {
+                    Ok(response) => {
+                        send_udp_response(socket, target, &response, metadata.response_limit())
+                            .await
+                    }
+                    Err(error) => log::warn!(
+                        "Failed to answer malformed DNS UDP query from {}: {}",
+                        client_addr,
+                        error
+                    ),
+                }
             }
             return;
         }
     };
 
     if let Some((rcode, ede)) = server::query_refusal(&query, TransferTransport::Udp, client_addr) {
-        match server::refuse_query(dns_cx, &query, query_data, rcode, ede).await {
+        match server::refuse_query(
+            dns_cx,
+            &message::QueryMetadata::from(&query),
+            query_data,
+            rcode,
+            ede,
+        )
+        .await
+        {
             Ok(response) => {
                 send_udp_response(socket, target, &response, query.response_limit()).await
             }

@@ -301,7 +301,7 @@ impl DnsMessageBuilder {
         // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
         self.edns
-            .push_response(&mut additional, OptRcode::NOERROR, None, self.keepalive);
+            .push_response_opt(&mut additional, OptRcode::NOERROR, None, self.keepalive);
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .sign_response(&mut additional, Time48::now())
@@ -357,14 +357,16 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
 
 mod limit;
 pub(crate) mod query;
+mod query_metadata;
 mod records;
 
 pub use limit::ResponseLimit;
 pub use query::{
     Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
-    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, is_response,
+    UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
 };
 use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
+pub use query_metadata::{QueryMetadata, has_readable_sections};
 
 #[cfg(test)]
 mod tests;

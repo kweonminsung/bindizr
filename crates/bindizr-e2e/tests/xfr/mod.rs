@@ -1,7 +1,9 @@
 //! Zone transfers as a secondary runs them: unsigned under the address ACL,
 //! and signed under a TSIG key the way `primaries { addr key k; }` does.
 
+mod class;
 mod common;
+mod rejection;
 mod tls;
 
 use std::{
