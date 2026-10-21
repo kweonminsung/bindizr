@@ -138,7 +138,7 @@ services:
     restart: unless-stopped
 
   pdns:
-    image: powerdns/pdns-auth-49:4.9.17
+    image: powerdns/pdns-auth-49:4.9.18
     profiles: ["pdns"]
     entrypoint: ["/pdns-entrypoint.sh"]
     depends_on:
