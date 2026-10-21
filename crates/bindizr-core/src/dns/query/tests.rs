@@ -1,12 +1,12 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use domain::{
     base::{
-        Serial, Ttl,
-        iana::{DigestAlgorithm, Rcode, SecurityAlgorithm},
+        Message, MessageBuilder, Name, Serial, Ttl,
+        iana::{Class, DigestAlgorithm, Opcode, OptRcode, Rcode, Rtype, SecurityAlgorithm},
         opt::AllOptData,
     },
-    rdata::A,
+    rdata::{A, Ds, Soa},
 };
 
 use super::*;
@@ -247,7 +247,7 @@ fn transfer_requires_question_and_ignores_aa_and_tc() {
             1
         );
         assert!(matches!(
-            parse_response(7, Opcode::QUERY, &response),
+            extract_soa_serial(7, &apex, &response),
             Err(ParseResponseError::Truncated)
         ));
     }

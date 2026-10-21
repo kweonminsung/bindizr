@@ -25,11 +25,6 @@ use bindizr_service::{
 
 use super::DnsContext;
 
-/// Read the configured cache record budget, which counts records rather than bytes.
-fn max_records(cx: &Context) -> usize {
-    cx.config().dns.transfer.cache_max_records as usize
-}
-
 /// Everything a full transfer serves for one zone: the user records and the
 /// derived DNSSEC plane (empty for an unsigned zone).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,7 +125,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     let cx = dns_cx.daemon();
-    let max_records = max_records(cx);
+    let max_records = cx.config().dns.transfer.cache_max_records as usize;
     if max_records == 0 {
         return fetch_transfer_content(cx, caller, zone_name).await;
     }

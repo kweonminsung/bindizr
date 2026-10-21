@@ -56,11 +56,7 @@ pub(crate) async fn start(
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
 
     // The catalog zone must exist before a secondary asks for it.
-    let catalog = match bindizr_service::zone::list(&cx).await {
-        Ok(zones) => server::catalog::generate_catalog_zone(&dns_cx, zones).await,
-        Err(e) => Err(e.into()),
-    };
-    match catalog {
+    match bindizr_service::zone::refresh_catalog(&cx).await {
         Ok((catalog, _)) => {
             log::info!(
                 "Catalog zone '{}' is ready (serial: {})",

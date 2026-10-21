@@ -205,7 +205,7 @@ pub async fn apply(
         }
         caller.authorize_record_access(&zone, &accesses)?;
 
-        let plan = plan::prepare(&zone, updates)?;
+        let plan = plan::UpdatePlan::compute(&zone, updates)?;
         let new_serial = plan.zone.serial;
         let mut changed = plan.soa_changed;
 

@@ -35,22 +35,21 @@ pub(crate) async fn handle_axfr(
         let access = tokio::select! {
             biased;
             () = writer.failed() => return Err(DnsError::PeerClosed),
-            access = zone::authorize_catalog_content(cx, &identity.caller) => access?,
+            access = zone::refresh_catalog_content(cx, &identity.caller) => access?,
         };
-        let zones = match access {
-            TransferAccess::Granted(zones) => zones,
+        let content = match access {
+            TransferAccess::Granted(content) => content,
             TransferAccess::NotAuth => {
                 return Err(DnsError::NotAuth(zone_name_str.to_string()));
             }
             TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
         };
-        return catalog::handle_catalog_transfer(
-            dns_cx,
+        return catalog::send_catalog_response(
             writer,
             query,
             response_qtype,
             &mut identity.signer,
-            zones,
+            content,
         )
         .await;
     }

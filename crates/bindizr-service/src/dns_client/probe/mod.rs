@@ -27,8 +27,6 @@ pub enum ProbeSoaError {
     Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ParseResponseError),
-    #[error("probe task failed: {0}")]
-    TaskFailed(#[source] tokio::task::JoinError),
 }
 
 /// An SOA result and the resolved IPs used to look up transfer history.

@@ -10,6 +10,7 @@ pub mod dnssec_policy;
 pub mod error;
 pub mod external_dns;
 pub(crate) mod grant_pattern;
+pub mod metrics;
 pub mod notify;
 pub mod nsupdate;
 mod pagination;

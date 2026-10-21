@@ -88,11 +88,13 @@ pub async fn probe_secondaries(
                 probes.push(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
             }
             Ok(Err(e)) => return Err(e.into()),
-            Err(e) => probes.push(build_secondary_status(
+            Err(error) => probes.push(SecondaryStatusResponse {
                 address,
-                expected_serial,
-                Err(ProbeSoaError::TaskFailed(e)),
-            )),
+                status: SecondaryStatus::Unreachable,
+                visible_serial: None,
+                error: Some(format!("probe task failed: {error}")),
+                last_transfer: None,
+            }),
         }
     }
 

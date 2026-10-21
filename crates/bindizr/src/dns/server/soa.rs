@@ -22,7 +22,6 @@ use crate::dns::{
     server::{
         DnsContext,
         auth::{TransferIdentity, TransferRefusal, authenticate_transfer, authorize_transport},
-        catalog,
     },
     stream::ResponseWriter,
     udp::{ReplyTarget, UdpSocket},
@@ -199,7 +198,7 @@ async fn handle_soa_request(
             query.qtype,
             cx.config().dns.catalog_zone_name
         );
-        let access = match zone::authorize_catalog_content(cx, &identity.caller).await {
+        let access = match zone::refresh_catalog_content(cx, &identity.caller).await {
             Ok(access) => access,
             Err(error) => {
                 return TransferRefusal::failed(
@@ -211,7 +210,7 @@ async fn handle_soa_request(
                 .map(|response| (response, SoaResult::Failed));
             }
         };
-        let zones = match access {
+        let (catalog_zone, _) = match access {
             TransferAccess::Granted(zones) => zones,
             TransferAccess::NotAuth => {
                 return Ok(query.build_signed_error_response(
@@ -232,18 +231,6 @@ async fn handle_soa_request(
                 return TransferRefusal::refused(reason, identity.signer)
                     .into_response(query_data, &message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Refused));
-            }
-        };
-        let (catalog_zone, _) = match catalog::generate_catalog_zone(dns_cx, zones).await {
-            Ok(content) => content,
-            Err(error) => {
-                return TransferRefusal::failed(
-                    "failed to generate catalog",
-                    error,
-                    identity.signer,
-                )
-                .into_response(query_data, &message::QueryMetadata::from(query))
-                .map(|response| (response, SoaResult::Failed));
             }
         };
         let mut builder = build(identity.signer);

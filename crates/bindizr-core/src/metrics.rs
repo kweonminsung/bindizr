@@ -543,7 +543,7 @@ impl Metrics {
     }
 
     /// The pool's occupancy at scrape time.
-    pub fn track_db_pool(&self, connections: u32, idle: u32, max: u32) {
+    pub fn set_db_pool_gauges(&self, connections: u32, idle: u32, max: u32) {
         self.db_connections
             .with_label_values(&["idle"])
             .set(i64::from(idle));

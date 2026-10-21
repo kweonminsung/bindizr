@@ -1,6 +1,7 @@
 //! Business logic for creating, updating, and querying DNS records.
 
 mod bulk;
+mod changes;
 mod create;
 mod delete;
 mod get;
@@ -9,7 +10,7 @@ mod update;
 mod validation;
 
 pub use bulk::create_bulk;
-pub(crate) use bulk::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
+pub(crate) use changes::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
 pub use create::create;
 pub use delete::{delete, delete_matching};
 pub use get::{count_all, get, list_by_filter_with_zone};

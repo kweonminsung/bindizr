@@ -34,38 +34,42 @@ pub(crate) struct UpdatePlan {
     pub(crate) soa_changed: bool,
 }
 
-/// Resolve SOAs in wire order, retaining the relative order of record operations.
-pub(crate) fn prepare(
-    zone: &Zone,
-    updates: Vec<UpdateOperation>,
-) -> Result<UpdatePlan, NsupdateError> {
-    let mut plan = UpdatePlan {
-        zone: zone.clone(),
-        records: Vec::new(),
-        soa_changed: false,
-    };
-    for update in updates {
-        match update {
-            UpdateOperation::Record(record) => plan.records.push(record),
-            UpdateOperation::ReplaceSoa { name, ttl, value } => {
-                // RFC 2136, Section 3.4.2.2: SOA exists only at the apex;
-                // equal, older, and RFC 1982-undefined serials cannot replace it.
-                if !name.is_apex() || !Serial::from(value.serial).is_newer_than(plan.zone.serial) {
-                    continue;
+impl UpdatePlan {
+    /// Resolve SOAs in wire order, retaining the relative order of record operations.
+    pub(crate) fn compute(
+        zone: &Zone,
+        updates: Vec<UpdateOperation>,
+    ) -> Result<Self, NsupdateError> {
+        let mut plan = Self {
+            zone: zone.clone(),
+            records: Vec::new(),
+            soa_changed: false,
+        };
+        for update in updates {
+            match update {
+                UpdateOperation::Record(record) => plan.records.push(record),
+                UpdateOperation::ReplaceSoa { name, ttl, value } => {
+                    // RFC 2136, Section 3.4.2.2: SOA exists only at the apex;
+                    // equal, older, and RFC 1982-undefined serials cannot replace it.
+                    if !name.is_apex()
+                        || !Serial::from(value.serial).is_newer_than(plan.zone.serial)
+                    {
+                        continue;
+                    }
+                    plan.zone = replace_soa(&plan.zone, ttl, value)?;
+                    plan.soa_changed = true;
                 }
-                plan.zone = replace_soa(&plan.zone, ttl, value)?;
-                plan.soa_changed = true;
             }
         }
+        // RFC 2136, Section 3.6: only an update without an explicit SOA advance
+        // needs an automatically generated serial.
+        if (plan.soa_changed && plan.zone.serial == zone.serial)
+            || (!plan.soa_changed && !plan.records.is_empty())
+        {
+            plan.zone.serial = generate_serial(Some(zone.serial));
+        }
+        Ok(plan)
     }
-    // RFC 2136, Section 3.6: only an update without an explicit SOA advance
-    // needs an automatically generated serial.
-    if (plan.soa_changed && plan.zone.serial == zone.serial)
-        || (!plan.soa_changed && !plan.records.is_empty())
-    {
-        plan.zone.serial = generate_serial(Some(zone.serial));
-    }
-    Ok(plan)
 }
 
 /// Apply the existing zone-write policy to an advancing wire SOA.

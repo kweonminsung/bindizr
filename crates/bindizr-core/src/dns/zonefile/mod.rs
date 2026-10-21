@@ -72,13 +72,13 @@ impl ParsedZoneFile {
     /// Parse a BIND zone file using its origin and `default_ttl` for omitted TTLs.
     /// Keep the SOA separately: the zone stores its fields, not an SOA record.
     pub fn parse(content: &str, zone_name: &ZoneName, default_ttl: Ttl) -> Self {
-        let content = match wks::normalize_records(content) {
+        let content = match wks::rewrite_native_records(content) {
             Ok(content) => content,
             Err(error) => {
                 return Self {
                     records: Vec::new(),
                     soa: None,
-                    errors: vec![error],
+                    errors: vec![error.to_string()],
                 };
             }
         };

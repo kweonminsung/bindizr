@@ -15,7 +15,8 @@ mod update;
 pub(crate) mod validation;
 pub(crate) mod version;
 
-pub use catalog_zone::{advance_catalog_serial, validate_catalog_zone_name};
+pub(crate) use catalog_zone::refresh_catalog_from_zones;
+pub use catalog_zone::{refresh_catalog, validate_catalog_zone_name};
 pub use create::create;
 pub(crate) use create::create_tx;
 pub use delete::delete;
@@ -27,9 +28,9 @@ pub use history::{diff_versions, get_version, list_versions, rollback};
 pub use notify::notify;
 pub use status::get_status;
 pub use transfer::{
-    IxfrPlan, TransferAccess, TransferContent, authorize_catalog_content,
-    authorize_ixfr_plan_by_name, authorize_soa_content_by_name, authorize_transfer_by_name,
-    authorize_transfer_content_by_name,
+    IxfrPlan, TransferAccess, TransferContent, authorize_ixfr_plan_by_name,
+    authorize_soa_content_by_name, authorize_transfer_by_name, authorize_transfer_content_by_name,
+    refresh_catalog_content,
 };
 pub(crate) use update::soa_replacement_changes;
 pub use update::update;

@@ -3,11 +3,33 @@
 use std::ops::Range;
 
 use domain::base::iana::Rtype;
+use thiserror::Error;
 
-use crate::dns::record::WksRecordValue;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, WksRecordValue};
 
-/// Normalize native WKS syntax while preserving other records and source lines.
-pub(crate) fn normalize_records(content: &str) -> Result<String, String> {
+/// Why native WKS text could not be prepared for the zone-file parser.
+#[derive(Debug, Error)]
+pub(crate) enum RewriteNativeRecordsError {
+    #[error("unexpected ')' in zone file")]
+    UnexpectedClosingParenthesis,
+    #[error("unterminated parentheses, quote, or escape in zone file")]
+    UnterminatedEntry,
+    #[error("{line}: WKS: {source}")]
+    Value {
+        line: usize,
+        #[source]
+        source: ParseRecordValueError,
+    },
+    #[error("{line}: WKS: {source}")]
+    Rdata {
+        line: usize,
+        #[source]
+        source: EncodeRdataError,
+    },
+}
+
+/// Rewrite native WKS records in generic wire syntax, preserving other records and source lines.
+pub(crate) fn rewrite_native_records(content: &str) -> Result<String, RewriteNativeRecordsError> {
     let mut output = String::with_capacity(content.len());
     let mut fields = Vec::new();
     let mut entry_start = 0;
@@ -50,7 +72,11 @@ pub(crate) fn normalize_records(content: &str) -> Result<String, String> {
             }
             match byte {
                 b'(' => depth += 1,
-                b')' => depth = depth.checked_sub(1).ok_or("unexpected ')' in zone file")?,
+                b')' => {
+                    depth = depth
+                        .checked_sub(1)
+                        .ok_or(RewriteNativeRecordsError::UnexpectedClosingParenthesis)?;
+                }
                 _ => {}
             }
             if byte == b'\n' && depth == 0 {
@@ -63,7 +89,7 @@ pub(crate) fn normalize_records(content: &str) -> Result<String, String> {
         }
     }
     if depth != 0 || quoted || escaped {
-        return Err("unterminated parentheses, quote, or escape in zone file".into());
+        return Err(RewriteNativeRecordsError::UnterminatedEntry);
     }
     if let Some(start) = token_start {
         fields.push(start..content.len());
@@ -78,7 +104,7 @@ fn append_entry(
     content: &str,
     entry: Range<usize>,
     fields: &[Range<usize>],
-) -> Result<(), String> {
+) -> Result<(), RewriteNativeRecordsError> {
     let original = &content[entry.clone()];
     let owner_fields = usize::from(!original.starts_with(char::is_whitespace));
     let is_directive = fields
@@ -112,18 +138,24 @@ fn append_entry(
         .map(|field| &content[field.clone()])
         .collect::<Vec<_>>()
         .join(" ");
-    let invalid = |error: String| {
-        let line = content[..entry.start]
+    let line = || {
+        content[..entry.start]
             .bytes()
             .filter(|byte| *byte == b'\n')
             .count()
-            + 1;
-        format!("{line}: WKS: {error}")
+            + 1
     };
-    let parsed = WksRecordValue::parse(&value).map_err(|error| invalid(error.to_string()))?;
+    let parsed =
+        WksRecordValue::parse(&value).map_err(|source| RewriteNativeRecordsError::Value {
+            line: line(),
+            source,
+        })?;
     let rdata = parsed
         .to_rdata()
-        .map_err(|error| invalid(error.to_string()))?;
+        .map_err(|source| RewriteNativeRecordsError::Rdata {
+            line: line(),
+            source,
+        })?;
     let data_start = fields[type_index].end;
     output.push_str(&content[entry.start..data_start]);
     output.push_str(&format!(
@@ -143,13 +175,31 @@ fn append_entry(
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use super::*;
+
+    /// Preserve the WKS parse cause until the zone-file result renders its diagnostic.
+    #[test]
+    fn rewrite_native_records_preserves_value_error_and_source_line() {
+        let content = "@ IN NS ns.example.com.\nhost IN WKS 192.0.2.1 256 80\n";
+        let error = rewrite_native_records(content).unwrap_err();
+        let source = error.source().unwrap();
+        assert!(source.downcast_ref::<ParseRecordValueError>().is_some());
+        assert_eq!(error.to_string(), format!("2: WKS: {source}"));
+        let parsed = crate::dns::zonefile::ParsedZoneFile::parse(
+            content,
+            &crate::dns::name::ZoneName::parse("example.com").unwrap(),
+            crate::dns::Ttl::from_secs(300),
+        );
+        assert_eq!(parsed.errors, vec![error.to_string()]);
+    }
 
     /// Preserve other records, inherited owners, and line numbers around multiline WKS.
     #[test]
-    fn normalize_records_preserves_other_records_and_multiline_wks() {
+    fn rewrite_native_records_preserves_other_records_and_multiline_wks() {
         let content = "$ORIGIN example.com.\n@ IN NS ns.example.com.\nhost IN WKS 192.0.2.1 TCP ( 0 ; services\n 7 8 )\n 300 WKS 192.0.2.2 UDP 53\ntext IN TXT \"WKS\" \"192.0.2.1 6 80\"\nWKS IN A 192.0.2.8\n";
-        let normalized = normalize_records(content).unwrap();
+        let normalized = rewrite_native_records(content).unwrap();
         assert_eq!(normalized.lines().count(), content.lines().count());
         assert!(normalized.contains(r"host IN WKS \# 7 C0000201068180"));
         assert!(
@@ -171,20 +221,20 @@ mod tests {
 
     /// Generic WKS data and escaped or quoted type-like text remain untouched.
     #[test]
-    fn normalize_records_preserves_generic_wks_and_escaped_tokens() {
+    fn rewrite_native_records_preserves_generic_wks_and_escaped_tokens() {
         for content in [
             r"host IN WKS \# 6 C00002010680",
             r#"host IN TXT "a\" WKS 192.0.2.1 TCP 80""#,
             r"WKS\.host IN A 192.0.2.1",
         ] {
-            assert_eq!(normalize_records(content).unwrap(), content);
+            assert_eq!(rewrite_native_records(content).unwrap(), content);
         }
         for content in [
             "host IN WKS 192.0.2.1 256 80",
             "host IN WKS ( 192.0.2.1 TCP 80",
             "host IN WKS 192.0.2.1 TCP 80 )",
         ] {
-            assert!(normalize_records(content).is_err());
+            assert!(rewrite_native_records(content).is_err());
         }
     }
 }

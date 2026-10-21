@@ -1,5 +1,8 @@
 use super::*;
-use crate::error::ErrorCode;
+use crate::{
+    error::ErrorCode,
+    types::{ImportZoneRequest, ImportZonesRequest},
+};
 
 /// A failed external import keeps its network cause without creating a zone.
 #[tokio::test]
