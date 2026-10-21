@@ -1,6 +1,7 @@
 //! Zone serial history: version listing, rewinding the records to a serial,
 //! and serial-based rollback.
 
+mod retention;
 mod rewind;
 
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,7 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
+pub(crate) use retention::prune_by_zone_id;
 use rewind::{list_records_at_serial_tx, rewind_records_to_serial_tx};
 
 use super::{diff::build_record_diff, update::soa_replacement_changes};
@@ -368,13 +370,7 @@ pub async fn rollback(
         // The restored user plane gets fresh signatures; old RRSIGs are
         // never restored (derived journal rows are skipped on rewind).
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
-        super::save_version_tx(
-            &mut tx,
-            &restored_zone,
-            new_serial,
-            caller.change_attribution(),
-        )
-        .await?;
+        super::save_version_tx(&mut tx, &restored_zone, new_serial, caller.change_origin()).await?;
 
         Ok((
             RollbackZoneResponse {

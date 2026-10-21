@@ -50,26 +50,25 @@ async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
 
     # The resource window includes create-data preparation and both warmups.
     sampler = sampler_for(adapter, config)
-    sampler.start()
+    with sampler:
+        create_records = generate(200_000, config["seed"] + 3)
 
-    create_records = generate(200_000, config["seed"] + 3)
+        async def create_step(seq):
+            """Create one uniquely named record for the measured workload."""
+            record = dict(create_records[seq % len(create_records)])
+            record["name"] = f"crt{seq:08d}"
+            await adapter.create_record(zone, record)
+            return True
 
-    async def create_step(seq):
-        """Create one uniquely named record for the measured workload."""
-        record = dict(create_records[seq % len(create_records)])
-        record["name"] = f"crt{seq:08d}"
-        await adapter.create_record(zone, record)
-        return True
+        async def read_step(seq):
+            """Read one existing record for the measured workload."""
+            return await adapter.get_record(zone, handles[seq % len(handles)])
 
-    async def read_step(seq):
-        """Read one existing record for the measured workload."""
-        return await adapter.get_record(zone, handles[seq % len(handles)])
+        # Measure create and read separately, each with its own unrecorded warmup.
+        create_run = await loadgen.run_closed_loop(create_step, conc, dur, warm)
+        read_run = await loadgen.run_closed_loop(read_step, conc, dur, warm)
+    resource_usage = sampler.summary()
 
-    # Measure create and read separately, each with its own unrecorded warmup.
-    create_run = await loadgen.run_closed_loop(create_step, conc, dur, warm)
-    read_run = await loadgen.run_closed_loop(read_step, conc, dur, warm)
-
-    resource_usage = sampler.stop()
     cs, rs = create_run.summary(), read_run.summary()
     bindizr_mem, db_mem = _mem_split(resource_usage)
 
@@ -99,13 +98,13 @@ async def _bulk_backend(adapter, config, zone, backend, size, pairing) -> dict:
     records = generate(size, config["seed"], zone)
 
     sampler = sampler_for(adapter, config)
-    sampler.start()
-    t0 = time.monotonic()
+    with sampler:
+        t0 = time.monotonic()
 
-    await adapter.import_records(zone, records)
+        await adapter.import_records(zone, records)
 
-    elapsed = time.monotonic() - t0
-    resource_usage = sampler.stop()
+        elapsed = time.monotonic() - t0
+    resource_usage = sampler.summary()
 
     # Adapters count failures instead of raising, so rate off what landed —
     # a fast total failure would otherwise top the chart.

@@ -127,7 +127,7 @@ pub(crate) async fn apply_import(
         let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        let created = existing.is_none();
+        let zone_missing = existing.is_none();
         let default_ttl = if let Some(zone) = &existing {
             authorize_import(caller, mode, zone)?;
             zone.default_ttl
@@ -226,7 +226,7 @@ pub(crate) async fn apply_import(
         // Append checks only matching owners; replace/upsert need all rows to find deletions.
         let t = Instant::now();
 
-        let existing_records = if created {
+        let existing_records = if zone_missing {
             Ok(Vec::new())
         } else {
             match mode {
@@ -351,12 +351,12 @@ pub(crate) async fn apply_import(
             zone.serial
         };
 
-        if will_apply && created {
+        if will_apply && zone_missing {
             zone = zone::create_tx(&mut tx, zone).await?;
             for record in &mut to_insert {
                 record.zone_id = zone.id;
             }
-            zone::save_version_tx(&mut tx, &zone, zone.serial, caller.change_attribution()).await?;
+            zone::save_version_tx(&mut tx, &zone, zone.serial, caller.change_origin()).await?;
         }
 
         if will_apply && has_changes {
@@ -370,7 +370,7 @@ pub(crate) async fn apply_import(
             let t = Instant::now();
 
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
-            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
+            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
             timings.serial_ms = elapsed_ms(t);
         }
@@ -387,7 +387,7 @@ pub(crate) async fn apply_import(
             response,
             zone_name: zone.name,
             changed: will_apply && has_changes,
-            created: will_apply && created,
+            created: will_apply && zone_missing,
         })
     }
     .await;

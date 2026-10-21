@@ -97,7 +97,7 @@ pub async fn start_rollover(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -222,7 +222,7 @@ pub async fn advance_rollover(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);

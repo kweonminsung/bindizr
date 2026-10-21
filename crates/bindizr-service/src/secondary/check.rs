@@ -1,17 +1,20 @@
-//! Diagnose one registered secondary, including disabled ones.
+//! Diagnose a named secondary, including disabled ones, or the enabled secondary group.
 
 use std::net::SocketAddr;
 
-use bindizr_core::{dns::address::loopback_if_unspecified, model::role_grant::Action};
+use bindizr_core::{
+    dns::{Serial, address::loopback_if_unspecified, name::ZoneName},
+    model::role_grant::Action,
+};
 
 use super::{load_response, lookup_by_name, summarize_transfers};
 use crate::{
     Context,
     authorization::Caller,
-    dns_client::{probe as soa_client, resolve_address_entry},
+    dns_client::{self, resolve_address_entry},
     error::ServiceError,
     notify, probe,
-    types::CheckSecondaryResponse,
+    types::{CheckSecondariesResponse, CheckSecondaryResponse, SecondaryTransferSummaryResponse},
 };
 
 /// Check one secondary, enabled or not: resolve it, compare its catalog serial
@@ -37,7 +40,7 @@ pub async fn check(
     );
 
     let (catalog_serial, listener_error) =
-        match soa_client::probe_server(dns_addr, &catalog_zone, timeout).await {
+        match dns_client::probe::probe_server(dns_addr, &catalog_zone, timeout).await {
             Ok(serial) => (Some(serial), None),
             Err(error) => (None, Some(format!("{}: {}", dns_addr, error))),
         };
@@ -59,6 +62,35 @@ pub async fn check(
         catalog_serial,
         listener_error,
         catalog,
+        notifies,
+        transfers,
+    })
+}
+
+/// Diagnose enabled secondaries against the listener's observed catalog serial.
+/// Capture SOA status before NOTIFY can trigger a catalog transfer.
+pub async fn check_enabled(
+    cx: &Context,
+    caller: &Caller,
+    catalog_zone: &ZoneName,
+    catalog_serial: Option<Serial>,
+) -> Result<CheckSecondariesResponse, ServiceError> {
+    caller.authorize_action(Action::SecondaryManage)?;
+
+    let secondaries = probe::probe_secondaries(cx, catalog_zone, catalog_serial).await?;
+    let notifies = notify::send_notify_to_secondaries(cx, catalog_zone).await?;
+    let mut transfers = Vec::new();
+
+    for secondary in super::list_enabled(cx).await? {
+        transfers.push(SecondaryTransferSummaryResponse {
+            summary: summarize_transfers(cx, &secondary).await?,
+            secondary_name: secondary.name,
+            address: secondary.address.to_string(),
+        });
+    }
+
+    Ok(CheckSecondariesResponse {
+        secondaries,
         notifies,
         transfers,
     })

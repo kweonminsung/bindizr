@@ -97,6 +97,14 @@ dirs are git-ignored.
 | `bindizr-external-dns` | ExternalDNS webhook adapter forwarding to `/external-dns` over HTTP; no DNS logic or independent state. |
 | `bindizr-e2e` | API/CLI/DNS end-to-end tests. Its binary targets let `env!("CARGO_BIN_EXE_…")` resolve inside the test package. |
 
+Within the service, `zone` owns single-zone and bulk imports, while `record`
+owns record validation and journaled row mutations. Common change provenance
+lives in core's `model::change` and service's `change`, shared by callers,
+audit logs, and zone versions. The service-root `scheduler` owns periodic work
+and its lifecycle; zone history owns retention transactions, and DNSSEC owns
+signing and key-maintenance transactions. Keep the existing scheduler settings
+and metrics names independent of these internal module paths.
+
 ### Modules and backend dispatch
 
 Name modules for the responsibility they own (`sqlite::path`, benchmark `dig`
@@ -188,6 +196,11 @@ code, including core and db, propagates errors to its caller.
 - **A use case has one home.** When two front ends answer the same question,
   the assembly lives in one place both reach (`zone::get_status`,
   shared by the HTTP API and the daemon socket), not once per transport.
+  Manual NOTIFY returns its completed `MessageResponse`; a front end does not
+  infer which serials advanced from the requested option. Daemon installation
+  checks own local listener diagnostics; `secondary::check_enabled` owns the
+  enabled secondaries' SOA, NOTIFY, and transfer-summary report. It remains
+  distinct from the named-secondary check, which also accepts disabled targets.
 - **A body is the service's to read.** The front end parses only what
   reaches it outside a body — a path or query parameter, a flag, the peer it
   authenticates into a `Caller` — and hands a body over whole, as its
@@ -240,8 +253,8 @@ than returning anything.
   API without authentication (`Caller::unauthenticated_api()`), and an
   unsigned DNS request the ACL or the configuration admits
   (`Caller::unsigned_dns()`) are the only global callers. A key that only signs outbound NOTIFY still names a role,
-  an empty one when it needs nothing. Change attribution stays the
-  credential (`ChangeActor::Token`/`TsigKey`), never the role.
+  an empty one when it needs nothing. `ChangeActor` identifies the
+  credential (`Token`/`TsigKey`), never the role.
 - **A grant is a zone scope, a set of actions, and record constraints.**
   `RoleZoneScope` is `All` (row `zone_id` NULL, covering zones created later)
   or `Zone(ZoneId)`. `Action` is a closed enum spelled `<resource>:<action>`:
@@ -321,16 +334,16 @@ than returning anything.
   A TSIG-signed transfer needs `zone:transfer` (the
   catalog zone an `All` grant); an unsigned one is the ACL's alone.
 
-### Change attribution
+### Change origin
 
 Keep the request path, actor, and access scope separate. `ChangeSource` names
 `Api`, `Socket`, `Nsupdate`, or `System`, never an authentication method or a
 permission level. `changed_by` is an optional `ChangeActor` carrying a credential
 kind and its name (`Token` or `TsigKey`), snapshotted without a foreign key.
 Socket commands, unauthenticated API requests, unsigned updates, and background
-work have no named token/key actor. The trusted entry point supplies attribution;
+work have no named token/key actor. The trusted entry point supplies the origin;
 request payloads cannot choose it. `CallerScope` decides permissions independently
-of the `ChangeAttribution` stored with a version. Persist an actor in the scalar
+of the `ChangeOrigin` stored with a version. Persist an actor in the scalar
 columns `changed_by_kind` and `changed_by_name`; both are populated or both null.
 Decode them into `Option<ChangeActor>` at the row boundary. The API's object shape
 does not dictate a JSON database column.

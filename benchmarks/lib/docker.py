@@ -7,7 +7,8 @@ import subprocess
 from pathlib import Path
 
 
-def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
+def run(cmd: list[str], check: bool = True, capture: bool = True,
+        timeout: float | None = None) -> subprocess.CompletedProcess:
     """Run a command with optional output capture and exit-status checking."""
     return subprocess.run(
         cmd,
@@ -15,6 +16,7 @@ def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.
         text=True,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
+        timeout=timeout,
     )
 
 
@@ -83,14 +85,18 @@ class Compose:
         return out or None
 
 
+STATS_TIMEOUT_SECS = 3.0
+
+
 def read_stats(container_ids: list[str]) -> list[dict]:
-    """One-shot `docker stats` snapshot for the given containers."""
+    """One-shot snapshot; a stalled Docker CLI cannot hold the sampler indefinitely."""
     if not container_ids:
         return []
 
     p = run(
         ["docker", "stats", "--no-stream", "--format", "{{json .}}", *container_ids],
         check=False,
+        timeout=STATS_TIMEOUT_SECS,
     )
     rows = []
 

@@ -217,7 +217,7 @@ pub async fn create_bulk(
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
         // Advance the serial once so IXFR consumers detect the batch.
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
         timings.serial_ms = elapsed_ms(t);
 

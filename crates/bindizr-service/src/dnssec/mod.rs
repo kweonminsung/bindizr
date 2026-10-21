@@ -5,9 +5,9 @@
 mod delegation;
 mod keys;
 mod lifecycle;
+pub(crate) mod maintenance;
 mod parent_ns_addrs;
 mod rollover;
-pub mod scheduler;
 mod status;
 mod withdraw;
 
@@ -38,6 +38,7 @@ pub use withdraw::{cancel_withdrawal, withdraw};
 use crate::{
     Transaction,
     authorization::Caller,
+    change::ChangeOrigin,
     error::ServiceError,
     model::{
         dnssec_key::DnssecKey,
@@ -45,7 +46,7 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    zone::{self, version::ChangeAttribution},
+    zone,
 };
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
@@ -86,7 +87,7 @@ async fn resign_zone_tx(
     tx: &mut Transaction<'_>,
     signed: &SignedZone,
     pass: SigningPass,
-    attribution: &ChangeAttribution,
+    origin: &ChangeOrigin,
 ) -> Result<Option<Serial>, ServiceError> {
     let new_serial = crate::serial::generate_serial(Some(signed.zone.serial));
 
@@ -103,7 +104,7 @@ async fn resign_zone_tx(
         return Ok(None);
     }
 
-    zone::advance_serial_tx(tx, &signed.zone, new_serial, attribution).await?;
+    zone::advance_serial_tx(tx, &signed.zone, new_serial, origin).await?;
 
     Ok(Some(new_serial))
 }

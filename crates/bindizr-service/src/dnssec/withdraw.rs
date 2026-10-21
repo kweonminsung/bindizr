@@ -45,7 +45,7 @@ pub async fn withdraw(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -109,7 +109,7 @@ pub async fn cancel_withdrawal(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);

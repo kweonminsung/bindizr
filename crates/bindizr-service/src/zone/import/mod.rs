@@ -12,8 +12,8 @@ use bindizr_core::{
     dns::{name::ZoneName, zonefile::ParsedZoneFile},
     model::role_grant::Action,
 };
-pub use multiple::import_zones;
-pub use single::import_zone;
+pub use multiple::import_many;
+pub use single::import;
 
 use crate::{
     Context,

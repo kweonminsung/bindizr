@@ -8,11 +8,12 @@ use bindizr_core::{
     metrics::Metrics,
     model::{
         audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation},
+        change::ChangeSource,
         dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordType},
         record::{Record, RecordId, RecordType},
         role::{Role, RoleId},
         zone::Zone,
-        zone_version::{ChangeSource, VersionFilter, ZoneVersion, ZoneVersionId},
+        zone_version::{VersionFilter, ZoneVersion, ZoneVersionId},
     },
 };
 use bindizr_db::Db;

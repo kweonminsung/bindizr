@@ -118,7 +118,7 @@ pub async fn create(
                 policy.signature_refresh_days,
                 policy.zsk_lifetime_days
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 
@@ -235,7 +235,7 @@ pub async fn update(
             &policy.name,
             AuditOperation::Update,
             detail,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 
@@ -298,7 +298,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             &policy.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }

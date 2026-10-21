@@ -31,7 +31,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             &secondary.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }

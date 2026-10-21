@@ -107,7 +107,7 @@ pub async fn create(
                     .expires_at
                     .map_or("never".to_string(), |at| at.format("%Y-%m-%d").to_string())
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 
@@ -192,7 +192,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             &token.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }

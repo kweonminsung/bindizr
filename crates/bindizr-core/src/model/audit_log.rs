@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::model::zone_version::{ChangeActor, ChangeActorColumns, ChangeSource};
+use crate::model::change::{ChangeActor, ChangeActorColumns, ChangeSource};
 
 id_newtype!(
     /// The id of an audit log row.
@@ -154,7 +154,7 @@ impl TryFrom<String> for AuditOperation {
 }
 
 /// One management change: what was changed, how, by whom, and when. The
-/// attribution columns are the ones a zone version carries.
+/// origin columns are the ones a zone version carries.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct AuditLog {
     pub id: AuditLogId,

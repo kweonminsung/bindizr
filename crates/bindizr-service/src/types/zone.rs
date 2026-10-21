@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::{model::zone::Zone, notify::NotifyTarget};
+use crate::model::zone::Zone;
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
@@ -272,20 +272,6 @@ pub struct UpdateZoneRequest {
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
-}
-
-/// The success message every front end serves for a manual NOTIFY.
-pub fn build_notify_message(target: NotifyTarget<'_>, serial: NotifySerial) -> String {
-    let scope = match target {
-        NotifyTarget::Zone(zone_name) => format!("zone: {}", zone_name),
-        NotifyTarget::All => "all zones".to_string(),
-    };
-    let suffix = match serial {
-        NotifySerial::Bump => " (serial bumped)",
-        NotifySerial::Keep => "",
-    };
-
-    format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 
 /// What deleting a zone takes with it. A dry run reports the counts and

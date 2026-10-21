@@ -62,7 +62,7 @@ pub async fn list_transfers(
 }
 
 /// How Bindizr served `secondary`, for the check and doctor.
-pub async fn summarize_transfers(
+pub(crate) async fn summarize_transfers(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<TransferSummaryResponse, ServiceError> {

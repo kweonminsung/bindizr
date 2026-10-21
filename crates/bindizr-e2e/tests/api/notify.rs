@@ -222,11 +222,19 @@ async fn scoped_token_rejects_catalog_zone_notify() {
 
     app.set_auth_token(admin_token);
 
-    let (status, _) = app
-        .send_request(Method::POST, "/zones/catalog.bindizr/notify", None)
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones/catalog.bindizr/notify?bump_serial=true",
+            None,
+        )
         .await;
 
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["message"],
+        "NOTIFY sent successfully for zone: catalog.bindizr"
+    );
 }
 
 /// A one-second REFRESH bounds a ten-second batch; shutdown flushes the next batch.

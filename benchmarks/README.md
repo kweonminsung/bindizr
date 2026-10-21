@@ -10,6 +10,7 @@ pip install -r requirements.txt      # aiohttp, PyYAML, matplotlib (use --user/-
 ./benchmark.sh --ci                  # quick run (small sizes)
 ./benchmark.sh                       # full run
 BENCH_ARM=true ./benchmark.sh        # on an ARM host (e.g. Apple Silicon)
+python3 -m unittest discover -s tests -v  # resource lifecycle regressions; no Docker required
 ```
 
 `BENCH_ARM=true` layers `compose.arm.yml` onto every BIND9-based system

@@ -36,7 +36,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     let name = ZoneName::parse("example.com").unwrap();
     let caller = Caller::socket();
 
-    let single = import_zone(
+    let single = import(
         &cx,
         &caller,
         &name,
@@ -50,7 +50,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     )
     .await
     .unwrap_err();
-    let catalog = import_zones(
+    let catalog = import_many(
         &cx,
         &caller,
         &ImportZonesRequest {

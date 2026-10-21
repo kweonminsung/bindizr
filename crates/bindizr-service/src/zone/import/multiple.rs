@@ -20,7 +20,7 @@ use crate::{
 
 /// Import named zones or catalog members from one server over one connection
 /// (RFC 9103, Section 6.3.1), each in its own transaction, reporting every outcome.
-pub async fn import_zones(
+pub async fn import_many(
     cx: &Context,
     caller: &Caller,
     request: &ImportZonesRequest,

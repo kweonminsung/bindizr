@@ -231,8 +231,7 @@ pub async fn apply(
 
             let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
             dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
-            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_attribution())
-                .await?;
+            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_origin()).await?;
         }
 
         Ok((changed, zone, new_serial))

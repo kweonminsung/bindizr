@@ -9,8 +9,9 @@ use super::record::{RecordValue, build_display_value};
 use crate::{
     error::ServiceError,
     model::{
+        change::{ChangeActor, ChangeSource},
         record::{RecordData, RecordType},
-        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
+        zone_version::ZoneVersion,
     },
 };
 

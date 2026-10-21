@@ -128,7 +128,7 @@ pub async fn update(
             &secondary.name,
             AuditOperation::Update,
             detail,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 

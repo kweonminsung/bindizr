@@ -137,7 +137,7 @@ pub async fn enable(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -251,7 +251,7 @@ pub async fn update_settings(
                 &mut tx,
                 &signed,
                 SigningPass::Refresh,
-                caller.change_attribution(),
+                caller.change_origin(),
             )
             .await?
             .unwrap_or(candidate.serial);
@@ -350,13 +350,7 @@ pub async fn disable(
         bindizr_db::dnssec_key::delete_by_zone_id_tx(&mut tx, signed.zone.id).await?;
         bindizr_db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
         bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, signed.zone.id, None).await?;
-        zone::advance_serial_tx(
-            &mut tx,
-            &signed.zone,
-            new_serial,
-            caller.change_attribution(),
-        )
-        .await?;
+        zone::advance_serial_tx(&mut tx, &signed.zone, new_serial, caller.change_origin()).await?;
 
         Ok(signed.zone.name.clone())
     }
@@ -389,14 +383,10 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
             LockLevel::Exclusive,
         )
         .await?;
-        let changed = super::resign_zone_tx(
-            &mut tx,
-            &signed,
-            SigningPass::Full,
-            caller.change_attribution(),
-        )
-        .await?
-        .is_some();
+        let changed =
+            super::resign_zone_tx(&mut tx, &signed, SigningPass::Full, caller.change_origin())
+                .await?
+                .is_some();
 
         Ok((signed.zone.name.clone(), changed))
     }

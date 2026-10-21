@@ -241,6 +241,14 @@ pub struct SecondaryTransferSummaryResponse {
     pub summary: TransferSummaryResponse,
 }
 
+/// Catalog diagnostics for the enabled secondaries, before and after NOTIFY.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+pub struct CheckSecondariesResponse {
+    pub secondaries: Vec<SecondaryStatusResponse>,
+    pub notifies: Vec<CheckNotifyResponse>,
+    pub transfers: Vec<SecondaryTransferSummaryResponse>,
+}
+
 /// Query parameters of a secondary's transfer listing.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]

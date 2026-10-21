@@ -6,7 +6,7 @@ use crate::{
     error::DatabaseError,
     model::{
         audit_log::{AuditEntity, AuditLog},
-        zone_version::ChangeActor,
+        change::ChangeActor,
     },
 };
 

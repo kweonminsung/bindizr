@@ -284,8 +284,8 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
 
 /// Equally privileged socket and API callers retain distinct request origins.
 #[test]
-fn change_attribution_preserves_credential_across_access_scopes() {
-    use crate::model::zone_version::{ChangeActor, ChangeSource};
+fn change_origin_preserves_credential_across_access_scopes() {
+    use crate::model::change::{ChangeActor, ChangeSource};
 
     let socket = Caller::socket();
     let api = Caller::unauthenticated_api();
@@ -295,17 +295,17 @@ fn change_attribution_preserves_credential_across_access_scopes() {
         assert_eq!(caller.scope_role_id(), None);
     }
 
-    assert_eq!(socket.change_attribution().source, ChangeSource::Socket);
-    assert_eq!(api.change_attribution().source, ChangeSource::Api);
-    assert_eq!(socket.change_attribution().actor, None);
-    assert_eq!(api.change_attribution().actor, None);
+    assert_eq!(socket.change_origin().source, ChangeSource::Socket);
+    assert_eq!(api.change_origin().source, ChangeSource::Api);
+    assert_eq!(socket.change_origin().actor, None);
+    assert_eq!(api.change_origin().actor, None);
 
     let admin = token(vec![all_zones(&Action::ALL)]);
     let scoped = token(vec![]);
 
-    assert_eq!(admin.change_attribution(), scoped.change_attribution());
+    assert_eq!(admin.change_origin(), scoped.change_origin());
     assert_eq!(
-        admin.change_attribution().actor,
+        admin.change_origin().actor,
         Some(ChangeActor::Token {
             name: "deploy".to_string()
         })

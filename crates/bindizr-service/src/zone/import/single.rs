@@ -16,7 +16,7 @@ use crate::{
 
 /// Import zone-file or AXFR records by mode; any validation failure rejects the whole import.
 /// Applying advances the serial once and sends one NOTIFY.
-pub async fn import_zone(
+pub async fn import(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,

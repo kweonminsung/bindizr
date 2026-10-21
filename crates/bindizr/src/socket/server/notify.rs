@@ -5,7 +5,7 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     notify::NotifyTarget,
-    types::{MessageResponse, NotifySerial, build_notify_message},
+    types::{MessageResponse, NotifySerial},
     zone,
 };
 
@@ -35,10 +35,9 @@ async fn notify(
     target: NotifyTarget<'_>,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    zone::notify(cx, &Caller::socket(), target, serial).await?;
-    let message = build_notify_message(target, serial);
+    let response = zone::notify(cx, &Caller::socket(), target, serial).await?;
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }

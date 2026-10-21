@@ -24,7 +24,10 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{ChangeActor, VersionFilter, ZoneVersion},
+    model::{
+        change::ChangeActor,
+        zone_version::{VersionFilter, ZoneVersion},
+    },
 };
 
 /// Insert or update a zone version in the current transaction.

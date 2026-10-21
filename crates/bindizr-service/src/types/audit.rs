@@ -2,7 +2,7 @@
 
 use bindizr_core::model::{
     audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation},
-    zone_version::{ChangeActor, ChangeSource},
+    change::{ChangeActor, ChangeSource},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

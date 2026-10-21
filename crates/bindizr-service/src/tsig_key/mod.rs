@@ -101,7 +101,7 @@ pub async fn create(
                 "role_name {}, algorithm {}",
                 role.name, tsig_key.algorithm
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 
@@ -231,7 +231,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             &tsig_key.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }

@@ -39,13 +39,7 @@ pub(crate) async fn force_increment_serial(
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(
-            &mut tx,
-            &updated_zone,
-            new_serial,
-            caller.change_attribution(),
-        )
-        .await?;
+        super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
 
         Ok::<Zone, ServiceError>(updated_zone)
     }

@@ -116,7 +116,7 @@ pub async fn create(
                 &grant,
                 zone.as_ref().map(|zone| zone.name.as_str()),
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 
@@ -205,7 +205,7 @@ pub async fn revoke(
             &role.name,
             AuditOperation::Delete,
             Some(describe_grant(&grant, zone_name.as_deref())),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }

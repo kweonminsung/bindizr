@@ -12,10 +12,10 @@ use chrono::Utc;
 use crate::{
     Context, Transaction,
     authorization::Caller,
+    change::ChangeOrigin,
     error::ServiceError,
     pagination::{build_paginated_response, parse_setting, validate_page_limit},
     types::{AuditLogFilter, AuditLogResponse, PaginatedResponse},
-    zone::version::ChangeAttribution,
 };
 
 /// Audit a management write before commit; `detail` describes changes without secrets.
@@ -25,7 +25,7 @@ pub(crate) async fn save_tx(
     entity_name: &str,
     operation: AuditOperation,
     detail: Option<String>,
-    attribution: &ChangeAttribution,
+    origin: &ChangeOrigin,
 ) -> Result<(), ServiceError> {
     Ok(bindizr_db::audit_log::create_tx(
         tx,
@@ -35,8 +35,8 @@ pub(crate) async fn save_tx(
             entity_name: entity_name.to_string(),
             operation,
             detail,
-            change_source: attribution.source,
-            changed_by: attribution.actor.clone(),
+            change_source: origin.source,
+            changed_by: origin.actor.clone(),
             created_at: Utc::now(),
         },
     )

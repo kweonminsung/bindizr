@@ -48,13 +48,12 @@ async def run(adapter, config, context) -> dict:
 
     # Resource samples include query warmup; throughput and latency samples exclude it.
     sampler = sampler_for(adapter, config)
-    sampler.start()
+    with sampler:
+        recorder = await dnsquery.query_load(
+            endpoint.host, endpoint.port, names, dnsquery.QTYPE["A"], config["query"]["concurrency"],
+            config["query"]["duration_secs"], warmup_secs=1.0)
+    resource_usage = sampler.summary()
 
-    recorder = await dnsquery.query_load(
-        endpoint.host, endpoint.port, names, dnsquery.QTYPE["A"], config["query"]["concurrency"],
-        config["query"]["duration_secs"], warmup_secs=1.0)
-
-    resource_usage = sampler.stop()
     summary = recorder.summary()
 
     def _service(name: str) -> str:

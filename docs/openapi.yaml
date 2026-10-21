@@ -4095,7 +4095,7 @@ components:
       description: The named credential behind a change, copied so deleting it preserves the history.
     ChangeSource:
       type: string
-      description: The request path or background process that produced a zone version.
+      description: The request path or background process that produced a managed change.
       enum:
       - api
       - socket

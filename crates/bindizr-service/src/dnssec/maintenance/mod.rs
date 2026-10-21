@@ -1,4 +1,4 @@
-//! Per-zone scheduler transactions for signing, rollover, and history retention.
+//! Per-zone DNSSEC maintenance transactions for signing and rollover.
 
 use bindizr_core::{
     dns::{dnssec::SigningPass, name::ZoneName},
@@ -12,55 +12,12 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     Context,
+    change::ChangeOrigin,
     dnssec::{self, rollover::promotable_sep_key_ids},
     error::ServiceError,
     transaction,
     types::Holddown,
-    zone::version::ChangeAttribution,
 };
-
-/// Rows one prune removed from a zone's history.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PruneSummary {
-    pub(crate) journal_rows: u64,
-    pub(crate) version_rows: u64,
-}
-
-/// Prune a zone's journal and versions before `cutoff` in one transaction under the zone lock.
-/// The shared reader lock preserves serial consistency; pruning both tables avoids IXFR gaps.
-pub(crate) async fn prune_zone_history_by_zone_id(
-    cx: &Context,
-    zone_id: ZoneId,
-    cutoff: DateTime<Utc>,
-) -> Result<PruneSummary, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "failed to prune zone history").await?;
-    let result: Result<_, ServiceError> = async {
-        if bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
-            .await?
-            .is_none()
-        {
-            return Ok(PruneSummary {
-                journal_rows: 0,
-                version_rows: 0,
-            });
-        }
-
-        let journal_rows =
-            bindizr_db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
-                .await?;
-        let version_rows =
-            bindizr_db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
-                .await?;
-
-        Ok::<_, ServiceError>(PruneSummary {
-            journal_rows,
-            version_rows,
-        })
-    }
-    .await;
-
-    transaction::finish_tx(tx, result, "failed to prune zone history").await
-}
 
 /// Re-sign a zone transactionally, advancing its serial only for changed signatures.
 /// Return `None` if the zone is gone, unsigned, or needs no new signatures.
@@ -80,7 +37,7 @@ pub(crate) async fn resign_zone_by_zone_id(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            &ChangeAttribution::system(),
+            &ChangeOrigin::system(),
         )
         .await?
         .is_none()
@@ -145,7 +102,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            &ChangeAttribution::system(),
+            &ChangeOrigin::system(),
         )
         .await?;
 
@@ -200,7 +157,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            &ChangeAttribution::system(),
+            &ChangeOrigin::system(),
         )
         .await?;
 
@@ -278,7 +235,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            &ChangeAttribution::system(),
+            &ChangeOrigin::system(),
         )
         .await?;
 
@@ -357,7 +314,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            &ChangeAttribution::system(),
+            &ChangeOrigin::system(),
         )
         .await?;
 

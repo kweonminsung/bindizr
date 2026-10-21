@@ -3,29 +3,10 @@ use chrono::Utc;
 
 use crate::{
     Transaction,
+    change::ChangeOrigin,
     error::ServiceError,
-    model::{
-        zone::Zone,
-        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
-    },
+    model::{zone::Zone, zone_version::ZoneVersion},
 };
-
-/// The origin of a version and the named credential behind it, independent of permissions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChangeAttribution {
-    pub(crate) source: ChangeSource,
-    pub(crate) actor: Option<ChangeActor>,
-}
-
-impl ChangeAttribution {
-    /// The scheduler, acting on nobody's request.
-    pub(crate) fn system() -> Self {
-        ChangeAttribution {
-            source: ChangeSource::System,
-            actor: None,
-        }
-    }
-}
 
 /// Advance the zone serial so IXFR consumers detect the change, and
 /// version it in the same transaction.
@@ -33,7 +14,7 @@ pub(crate) async fn advance_serial_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     new_serial: Serial,
-    attribution: &ChangeAttribution,
+    origin: &ChangeOrigin,
 ) -> Result<(), ServiceError> {
     bindizr_db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
@@ -42,7 +23,7 @@ pub(crate) async fn advance_serial_tx(
             ServiceError::internal_with_source("failed to update zone serial", error)
         })?;
 
-    save_version_tx(tx, zone, new_serial, attribution).await
+    save_version_tx(tx, zone, new_serial, origin).await
 }
 
 /// Save a version of the zone's SOA data for historical tracking.
@@ -50,7 +31,7 @@ pub(crate) async fn save_version_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     serial: Serial,
-    attribution: &ChangeAttribution,
+    origin: &ChangeOrigin,
 ) -> Result<(), ServiceError> {
     // Retire ambiguous history before serial values can be reused after wrapping.
     bindizr_db::zone_change::prune_outside_serial_window_tx(tx, zone.id, serial).await?;
@@ -71,8 +52,8 @@ pub(crate) async fn save_version_tx(
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
-            change_source: attribution.source,
-            changed_by: attribution.actor.clone(),
+            change_source: origin.source,
+            changed_by: origin.actor.clone(),
             created_at: Utc::now(),
         },
     )

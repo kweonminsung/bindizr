@@ -3,6 +3,7 @@
 
 pub mod audit;
 pub mod authorization;
+mod change;
 pub mod context;
 pub mod dns_client;
 pub mod dnssec;
@@ -18,6 +19,7 @@ pub mod permission;
 pub mod probe;
 pub mod record;
 pub mod role;
+pub mod scheduler;
 pub mod secondary;
 pub(crate) mod serial;
 pub(crate) mod text;

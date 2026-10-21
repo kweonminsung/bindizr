@@ -11,8 +11,7 @@ use bindizr_core::{
 };
 use bindizr_db::{Db, error::DatabaseError};
 use bindizr_service::{
-    Context, context::ReloadConfigError, dnssec::scheduler, error::ServiceError, notify::queue,
-    token, zone,
+    Context, context::ReloadConfigError, error::ServiceError, notify::queue, scheduler, token, zone,
 };
 use chrono::Utc;
 use thiserror::Error;

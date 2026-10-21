@@ -15,23 +15,23 @@ use chrono::{Duration, Utc};
 
 use crate::{
     Context, Transaction,
+    change::ChangeOrigin,
     error::ServiceError,
     model::{
         api_token::ApiToken,
+        change::{ChangeActor, ChangeSource},
         record::{Record, RecordData, RecordType},
         tsig_key::{TsigKey, TsigKeyId},
         zone::Zone,
-        zone_version::{ChangeActor, ChangeSource},
     },
     token::hash_token,
-    zone::version::ChangeAttribution,
 };
 
-/// A request's access rights and change attribution, kept as independent facts.
+/// A request's access rights and change origin, kept as independent facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
     scope: CallerScope,
-    attribution: ChangeAttribution,
+    origin: ChangeOrigin,
 }
 
 /// Which resources the caller may access; transport and credential names do not decide it.
@@ -132,7 +132,7 @@ impl Caller {
     pub fn socket() -> Self {
         Self {
             scope: CallerScope::Global,
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Socket,
                 actor: None,
             },
@@ -143,7 +143,7 @@ impl Caller {
     pub fn unauthenticated_api() -> Self {
         Self {
             scope: CallerScope::Global,
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Api,
                 actor: None,
             },
@@ -155,7 +155,7 @@ impl Caller {
     pub fn unsigned_dns() -> Self {
         Self {
             scope: CallerScope::Global,
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Nsupdate,
                 actor: None,
             },
@@ -165,7 +165,7 @@ impl Caller {
     /// Whether this is the unsigned DNS caller: a request no TSIG key named,
     /// which the policy on unsigned requests may still refuse.
     pub fn is_unsigned_dns(&self) -> bool {
-        self.attribution.source == ChangeSource::Nsupdate && self.attribution.actor.is_none()
+        self.origin.source == ChangeSource::Nsupdate && self.origin.actor.is_none()
     }
 
     /// Build an API caller from an authenticated token and its role's loaded grants.
@@ -176,7 +176,7 @@ impl Caller {
                 credential: Credential::Token(token.id),
                 grants: grants.into(),
             },
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Api,
                 actor: Some(ChangeActor::Token {
                     name: token.name.clone(),
@@ -186,12 +186,12 @@ impl Caller {
     }
 
     /// Return the request origin and credential snapshot recorded with a mutation.
-    pub(crate) fn change_attribution(&self) -> &ChangeAttribution {
-        &self.attribution
+    pub(crate) fn change_origin(&self) -> &ChangeOrigin {
+        &self.origin
     }
 
     /// Build the DNS plane's caller from a verified key and its role's loaded
-    /// grants; a key's writes are nsupdates, so that is its attribution.
+    /// grants; its change origin preserves the nsupdate path and key name.
     pub(crate) fn from_tsig_key(tsig_key: &TsigKey, grants: Vec<RoleGrant>) -> Self {
         Self {
             scope: CallerScope::Role {
@@ -199,7 +199,7 @@ impl Caller {
                 credential: Credential::TsigKey(tsig_key.id),
                 grants: grants.into(),
             },
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Nsupdate,
                 actor: Some(ChangeActor::TsigKey {
                     name: tsig_key.name.clone(),
@@ -387,7 +387,7 @@ impl Caller {
                 credential,
                 grants: grants.into(),
             },
-            attribution: self.attribution.clone(),
+            origin: self.origin.clone(),
         })
     }
 

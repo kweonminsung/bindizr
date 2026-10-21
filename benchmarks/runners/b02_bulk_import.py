@@ -23,13 +23,13 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
     await adapter.create_zone(zone)
 
     sampler = sampler_for(adapter, adapter.config)
-    sampler.start()
-    t0 = time.monotonic()
+    with sampler:
+        t0 = time.monotonic()
 
-    await load()
+        await load()
 
-    elapsed = time.monotonic() - t0
-    resource_usage = sampler.stop()
+        elapsed = time.monotonic() - t0
+    resource_usage = sampler.summary()
 
     # Adapters count failures instead of raising, so rate off what landed —
     # a fast total failure would otherwise top the chart.

@@ -30,4 +30,23 @@ async fn notify_supports_all_zones_and_one_zone_via_cli() {
         )),
         "{one}"
     );
+
+    let catalog = app
+        .run_cli_success(
+            &[
+                "zone",
+                "notify",
+                "catalog.bindizr",
+                "--bump-serial",
+                "-o",
+                "json",
+            ],
+            None,
+        )
+        .await;
+    let response: serde_json::Value = serde_json::from_str(&catalog).unwrap();
+    assert_eq!(
+        response["message"],
+        "NOTIFY sent successfully for zone: catalog.bindizr"
+    );
 }

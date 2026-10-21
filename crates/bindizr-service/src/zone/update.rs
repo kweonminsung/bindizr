@@ -222,13 +222,7 @@ pub async fn update(
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(
-            &mut tx,
-            &updated_zone,
-            new_serial,
-            caller.change_attribution(),
-        )
-        .await?;
+        super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
 
         Ok(UpdateZoneResult {
             catalog_changed: existing_zone.name != updated_zone.name

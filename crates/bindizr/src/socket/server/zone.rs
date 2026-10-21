@@ -3,7 +3,6 @@ use bindizr_service::{
     Context,
     authorization::Caller,
     error::ServiceError,
-    record,
     types::{
         CreateZoneRequest, DeleteZoneResponse, DiffZoneVersionsResponse, ExportZoneFileResponse,
         GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse, ImportZonesRequest,
@@ -90,7 +89,7 @@ pub(crate) async fn import_zone(
     zone_name: &str,
     request: &ImportZoneRequest,
 ) -> Result<DaemonResponse<ImportZoneResponse>, ServiceError> {
-    let response = record::import_zone(
+    let response = zone::import(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -119,7 +118,7 @@ pub(crate) async fn import_zones(
     cx: &Context,
     request: &ImportZonesRequest,
 ) -> Result<DaemonResponse<ImportZonesResponse>, ServiceError> {
-    let response = record::import_zones(cx, &Caller::socket(), request).await?;
+    let response = zone::import_many(cx, &Caller::socket(), request).await?;
     let summary = &response.summary;
     let message = format!(
         "{} of {} zone(s) {}; {} rejected, {} failed",

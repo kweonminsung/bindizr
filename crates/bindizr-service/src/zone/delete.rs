@@ -72,7 +72,7 @@ pub async fn delete(
             Some(format!(
                 "records_deleted {records}, versions_deleted {versions}"
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
 

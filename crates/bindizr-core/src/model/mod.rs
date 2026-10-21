@@ -59,6 +59,7 @@ macro_rules! id_newtype {
 
 pub mod api_token;
 pub mod audit_log;
+pub mod change;
 pub mod dnssec_key;
 pub mod dnssec_policy;
 pub mod dnssec_record;

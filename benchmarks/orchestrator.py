@@ -136,7 +136,10 @@ async def run_one(bench: str, system: str, config: dict) -> dict | None:
     finally:
         # Workload failures must still stop observation and remove the test stack.
         if sampler:
-            sampler.stop()
+            try:
+                sampler.stop()
+            except Exception as error:
+                print(f"  sampler error during cleanup: {error}")
         print("  teardown...", flush=True)
         try:
             await adapter.teardown()

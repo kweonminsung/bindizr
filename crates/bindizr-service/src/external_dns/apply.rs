@@ -122,8 +122,7 @@ pub async fn apply_changes(
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
             // Advance the serial once so IXFR consumers detect the change
-            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution())
-                .await?;
+            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
             deleted += change_set.deletes.len() as u64;
             added += change_set.creates.len() as u64;
