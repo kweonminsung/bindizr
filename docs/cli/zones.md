@@ -17,6 +17,8 @@ bindizr zone get example.com
 `--serial` is given, and includes an apex `NS` record naming `--mname`. Serials
 accept 0–4294967295 and advance modulo 2^32. Zone and record names accept DNS
 octets with RFC 1035 escapes, including `\DDD` for arbitrary bytes.
+The SOA primary name (`--mname`) accepts the root name `.`; the managed zone
+name must still be a non-root name.
 Use `--no-apex-ns` to create a disabled preparation zone. Add an apex NS record,
 then explicitly enable it with `bindizr zone update example.com --enabled true`.
 An enabled zone must retain at least one apex NS record; deletion, replace
@@ -74,6 +76,11 @@ flags `0` or `128`; imports and DNS UPDATE preserve unknown flag bits
 Supported user types are A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, TXT,
 NS, SRV, PTR, SSHFP, TLSA, and WKS. Other types are rejected, including numeric
 `TYPE<number>` values that do not resolve to a supported type.
+
+NS, CNAME, PTR and DNAME targets accept the root name `.`; a literal dot label
+uses a DNS escape. NS, MX, PTR and SRV targets cannot name a CNAME or a name
+below an authoritative DNAME in the same zone. A DNAME's own name is allowed;
+stored DNAME data below a delegation does not apply to the parent zone.
 
 Supplied DS records store the child's digest; Bindizr does not generate it or
 restrict its algorithm to the local signing policy. DS/CDS generated from

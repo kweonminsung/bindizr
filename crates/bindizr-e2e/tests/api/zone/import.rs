@@ -26,7 +26,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
-    let content = "cname IN CNAME .\nptr IN PTR .\ndname IN DNAME .\n";
+    let content = "ns IN NS .\ncname IN CNAME .\nptr IN PTR .\ndname IN DNAME .\n";
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -35,9 +35,10 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["summary"]["added"], 3);
+    assert_eq!(body["summary"]["added"], 4);
     let sets = fetch_exported_record_sets(&app, name).await;
     for (owner, rtype) in [
+        ("ns", Rtype::NS),
         ("cname", Rtype::CNAME),
         ("ptr", Rtype::PTR),
         ("dname", Rtype::DNAME),
@@ -54,7 +55,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    for kind in ["CNAME", "PTR", "DNAME"] {
+    for kind in ["NS", "CNAME", "PTR", "DNAME"] {
         for dry_run in [true, false] {
             let content = format!("valid IN A 192.0.2.1\nbad IN {kind} ..\n");
             let (status, body) = app
@@ -1339,6 +1340,13 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
         let root = parse_name(".").unwrap();
         answer
             .push((
+                &parse_name(&format!("rootns.{zone}.")).unwrap(),
+                Ttl::from_secs(300),
+                Ns::new(root.clone()),
+            ))
+            .unwrap();
+        answer
+            .push((
                 &parse_name(&format!("cname.{zone}.")).unwrap(),
                 Ttl::from_secs(300),
                 Cname::new(root.clone()),
@@ -1602,6 +1610,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
         server.join().unwrap();
         let sets = fetch_exported_record_sets(&app, zone_name).await;
         for (owner, rtype) in [
+            ("rootns", Rtype::NS),
             ("cname", Rtype::CNAME),
             ("ptr", Rtype::PTR),
             ("dname", Rtype::DNAME),

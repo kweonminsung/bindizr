@@ -6,6 +6,7 @@ use crate::common::{TestApp, probe_zone_soa};
 mod history;
 mod import;
 mod mailbox;
+mod primary_name;
 mod status;
 
 /// Encode one zone name as a URL path segment without changing its spelling.

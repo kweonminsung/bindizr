@@ -11,7 +11,7 @@ async fn root_record_targets_round_trip_via_cli() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
-    for kind in ["CNAME", "PTR", "DNAME"] {
+    for kind in ["NS", "CNAME", "PTR", "DNAME"] {
         let owner = kind.to_ascii_lowercase();
         let output = app
             .run_cli_success(
@@ -44,7 +44,7 @@ async fn root_record_targets_round_trip_via_cli() {
         .run_cli_success(&["record", "list", name, "--output", "json"], None)
         .await;
     let records: Value = serde_json::from_str(&output).unwrap();
-    for kind in ["CNAME", "PTR", "DNAME"] {
+    for kind in ["NS", "CNAME", "PTR", "DNAME"] {
         assert!(
             records["items"]
                 .as_array()

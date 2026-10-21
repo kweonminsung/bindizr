@@ -5,6 +5,7 @@ use serde_json::json;
 use crate::common::{TestApp, dns::fetch_exported_record_sets};
 
 mod bulk;
+mod dname_targets;
 
 /// Create and replace root targets; reject malformed names.
 #[tokio::test]
@@ -14,6 +15,7 @@ async fn root_record_targets_round_trip_through_management() {
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
     for (kind, rtype) in [
+        ("NS", Rtype::NS),
         ("CNAME", Rtype::CNAME),
         ("PTR", Rtype::PTR),
         ("DNAME", Rtype::DNAME),
@@ -2066,9 +2068,17 @@ async fn record_enforces_dname_and_alias_target_rules() {
     }
 
     // A DNAME at the apex is allowed beside the zone's own SOA and NS, and
-    // then nothing else may exist in the zone.
+    // then nothing else may exist in the zone. Its NS target must be outside it.
     let apex_zone_name = app.zone_name("apex-dname.example");
     app.create_zone_cli(&apex_zone_name, "3600").await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{apex_zone_name}/import"),
+            Some(json!({"content": "@ IN NS ns.example.net.\n", "mode": "replace"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
     for (name, record_type, expected) in [
         ("@", "DNAME", StatusCode::CREATED),
         ("host", "A", StatusCode::CONFLICT),

@@ -20,7 +20,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     role,
     text::MAX_COLUMN_TEXT_LEN,
     transaction,
@@ -117,6 +117,7 @@ pub async fn list(
     filter: &TsigKeyFilter,
 ) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
+    validate_page_limit(filter.limit)?;
 
     let keys = match &filter.role_name {
         Some(role_name) => {
@@ -130,7 +131,7 @@ pub async fn list(
         .into_iter()
         .map(|role| (role.id, role.name))
         .collect();
-    build_page(
+    Ok(build_page(
         keys.iter()
             .map(|tsig_key| {
                 let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
@@ -139,7 +140,7 @@ pub async fn list(
             .collect(),
         filter.limit,
         filter.offset,
-    )
+    ))
 }
 
 /// Fetch one TSIG key by name, including its secret.

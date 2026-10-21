@@ -106,7 +106,7 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<MySql>,
     zone_id: ZoneId,
     filter: VersionFilter,
-    limit: u32,
+    limit: Option<u32>,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     let predicate = match filter {
@@ -127,7 +127,7 @@ pub(crate) async fn list_by_filter(
         query = query.bind(zone_id);
     }
     query
-        .bind(i64::from(limit))
+        .bind(limit.map(i64::from).unwrap_or(i64::MAX))
         .bind(i64::try_from(offset).unwrap_or(i64::MAX))
         .fetch_all(pool)
         .await

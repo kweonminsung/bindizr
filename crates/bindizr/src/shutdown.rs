@@ -28,7 +28,7 @@ impl Shutdown {
 
     /// Signal all listeners to begin shutdown.
     pub(crate) fn trigger(&self) {
-        let _ = self.tx.send(true);
+        self.tx.send_replace(true);
     }
 
     /// Resolves once [`Shutdown::trigger`] has been called, before or after.
@@ -41,5 +41,29 @@ impl Shutdown {
             }
             let _ = rx.changed().await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    /// A trigger remains visible even when the first subscriber arrives afterward.
+    #[tokio::test]
+    async fn waiter_observes_triggers_before_and_after_subscription() {
+        let late = Shutdown::new();
+        late.trigger();
+        tokio::time::timeout(Duration::from_secs(1), late.waiter())
+            .await
+            .unwrap();
+
+        let early = Shutdown::new();
+        let waiter = early.waiter();
+        early.trigger();
+        tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .unwrap();
     }
 }

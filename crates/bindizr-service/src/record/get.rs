@@ -12,7 +12,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     model::{dnssec_record::DnssecRecordType, record::RecordType},
-    pagination::{build_paginated_response, normalize_page_limit, parse_setting},
+    pagination::{build_paginated_response, parse_setting, validate_page_limit},
     types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView},
     zone::{self, validation::normalize_name},
 };
@@ -72,7 +72,8 @@ pub async fn list_by_filter_with_zone(
         .as_deref()
         .map(normalize_name)
         .transpose()?;
-    let limit = Some(normalize_page_limit(filter.limit)?);
+    validate_page_limit(filter.limit)?;
+    let limit = filter.limit;
     let offset = filter.offset;
     let view = ZoneView::from_signed(filter.signed.unwrap_or(false));
 

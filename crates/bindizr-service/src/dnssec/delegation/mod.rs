@@ -10,6 +10,7 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
+use thiserror::Error;
 
 use super::status::load_status_tx;
 use crate::{
@@ -25,6 +26,13 @@ use crate::{
     transaction,
     types::{DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState},
 };
+
+/// Why the zone's configuration prevents a delegation check.
+#[derive(Debug, Error)]
+enum ProbeDelegationError {
+    #[error("the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'")]
+    NoParentNameservers,
+}
 
 /// Ask the zone's parent whether it serves the zone's DS, reporting the
 /// answer with the zone's status.
@@ -68,7 +76,14 @@ pub(crate) async fn probe_delegation(
     cx: &Context,
     signed: &SignedZone,
 ) -> Result<DnssecDelegationResponse, ServiceError> {
-    let parent = probe_parent_ds(cx, &signed.zone)
+    let parent_ns_addrs = signed.zone.parent_ns_addrs.as_deref().ok_or_else(|| {
+        ServiceError::dnssec_ds_unverified(
+            signed.zone.name.as_str(),
+            ProbeDelegationError::NoParentNameservers,
+        )
+    })?;
+    let timeout = cx.config().dns.notify.timeout();
+    let parent = probe_parent_ds(&signed.zone.name, parent_ns_addrs, timeout)
         .await
         .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
 

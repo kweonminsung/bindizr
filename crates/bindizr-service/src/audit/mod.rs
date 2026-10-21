@@ -13,7 +13,7 @@ use crate::{
     Context, Transaction,
     authorization::Caller,
     error::ServiceError,
-    pagination::{build_paginated_response, normalize_page_limit, parse_setting},
+    pagination::{build_paginated_response, parse_setting, validate_page_limit},
     types::{AuditLogFilter, AuditLogResponse, PaginatedResponse},
     zone::version::ChangeAttribution,
 };
@@ -103,6 +103,7 @@ fn normalize_filter(
         None => SortOrder::Desc,
         Some(order) => order.parse().map_err(ServiceError::invalid_input)?,
     };
+    validate_page_limit(filter.limit)?;
     Ok(bindizr_db::audit_log::AuditLogFilter {
         entity,
         entity_name,
@@ -110,7 +111,7 @@ fn normalize_filter(
         until: filter.until,
         sort: parse_setting::<AuditLogSortField>(filter.sort.as_deref())?,
         order,
-        limit: Some(normalize_page_limit(filter.limit)?),
+        limit: filter.limit,
         offset: filter.offset,
     })
 }
@@ -165,7 +166,7 @@ mod tests {
         }
     }
 
-    /// Verify that `normalize_filter` reads blank selectors as absent and defaults the page.
+    /// Blank selectors normalize to absent without supplying a page limit.
     #[test]
     fn normalize_filter_reads_blank_selectors_as_absent() {
         let filter = normalize_filter(AuditLogFilter {
@@ -177,7 +178,7 @@ mod tests {
 
         assert_eq!(filter.entity, None);
         assert_eq!(filter.entity_name, None);
-        assert_eq!(filter.limit, Some(1000));
+        assert_eq!(filter.limit, None);
     }
 
     /// Verify that `normalize_filter` rejects an unknown entity and an empty time window.

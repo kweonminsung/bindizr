@@ -21,7 +21,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     transaction,
     types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse},
     zone,
@@ -135,6 +135,7 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
+    validate_page_limit(page.limit)?;
 
     let role = super::lookup_by_name(cx, role_name).await?;
     list_by_role(cx, &role, page).await
@@ -146,6 +147,7 @@ pub async fn list_self(
     token: &ApiToken,
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
+    validate_page_limit(page.limit)?;
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
@@ -226,7 +228,7 @@ async fn list_by_role(
         .map(|zone| (zone.id, zone.name))
         .collect();
 
-    build_page(
+    Ok(build_page(
         grants
             .iter()
             .map(|grant| {
@@ -239,5 +241,5 @@ async fn list_by_role(
             .collect(),
         page.limit,
         page.offset,
-    )
+    ))
 }

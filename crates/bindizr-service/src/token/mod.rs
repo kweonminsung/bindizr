@@ -17,7 +17,7 @@ use crate::{
     Context, audit,
     authorization::Caller,
     model::api_token::ApiToken,
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     role,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     transaction,
@@ -123,6 +123,7 @@ pub async fn list(
     filter: &TokenFilter,
 ) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
+    validate_page_limit(filter.limit)?;
 
     let tokens = match &filter.role_name {
         Some(role_name) => {
@@ -136,7 +137,7 @@ pub async fn list(
         .into_iter()
         .map(|role| (role.id, role.name))
         .collect();
-    build_page(
+    Ok(build_page(
         tokens
             .iter()
             .map(|token| {
@@ -146,7 +147,7 @@ pub async fn list(
             .collect(),
         filter.limit,
         filter.offset,
-    )
+    ))
 }
 
 /// Describe `token` with its role's name; any token may read itself.

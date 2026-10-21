@@ -272,6 +272,10 @@ impl ParsedZoneFile {
         } else {
             // Read name fields because `domain` RDATA Display can render the root as `..`.
             match data {
+                ZoneRecordData::Ns(ns) => (
+                    ZoneFileValue::Rdata(to_fqdn(&ns.nsdname().to_string())),
+                    None,
+                ),
                 ZoneRecordData::Cname(cname) => (
                     ZoneFileValue::Rdata(to_fqdn(&cname.cname().to_string())),
                     None,

@@ -197,7 +197,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         }
     }
 
-    scheduler::spawn(cx.clone(), period_rx);
+    let scheduler_worker = scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
     let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
@@ -281,7 +281,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         }
     };
 
-    drain(&shutdown, servers, notify_worker).await;
+    drain(&shutdown, servers, scheduler_worker, notify_worker).await;
     socket::server::remove_socket_file(&socket_path).await;
 
     match outcome {
@@ -312,16 +312,24 @@ impl RunResult {
     }
 }
 
-/// Stop accepting work and drain requests and queued NOTIFYs within the shutdown timeout.
-/// Detached zone transfers are not awaited; secondaries discard and retry interrupted transfers.
-async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_worker: queue::NotifyWorker) {
+/// Drain requests and scheduler work, then flush NOTIFY within the shutdown timeout.
+/// Zone transfers may be interrupted for secondaries to retry.
+async fn drain(
+    shutdown: &Shutdown,
+    mut servers: Servers,
+    scheduler_worker: scheduler::SchedulerWorker,
+    notify_worker: queue::NotifyWorker,
+) {
     shutdown.trigger();
 
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
 
-        // The worker outlives the front ends: an in-flight write still enqueues.
-        // Not a front end: its exit never ends the daemon.
+        // The scheduler is a write producer too; its last pass may enqueue NOTIFY.
+        if let Err(error) = scheduler_worker.stop().await {
+            log::warn!("DNSSEC scheduler did not stop cleanly: {}", error);
+        }
+        // Flush only after every NOTIFY producer has stopped.
         let _ = notify_worker.stop().await;
     })
     .await;

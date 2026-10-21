@@ -18,7 +18,7 @@ use crate::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     text::normalize_identifier,
     transaction,
     types::{
@@ -134,13 +134,14 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<DnssecPolicyResponse>, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
+    validate_page_limit(page.limit)?;
 
     let policies = bindizr_db::dnssec_policy::list_all(cx.db()).await?;
-    build_page(
+    Ok(build_page(
         policies.iter().map(DnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
-    )
+    ))
 }
 
 /// Load a named DNSSEC policy for an authorized caller.

@@ -13,7 +13,7 @@ use crate::{
     Context, audit,
     authorization::Caller,
     error::ServiceError,
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     transaction,
     types::{CreateRoleRequest, PageRequest, PaginatedResponse, RoleResponse},
@@ -98,6 +98,7 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
+    validate_page_limit(page.limit)?;
 
     let roles = bindizr_db::role::list_all(cx.db()).await?;
     // Management collections are small, so each is read once and counted
@@ -114,7 +115,7 @@ pub async fn list(
     for tsig_key in bindizr_db::tsig_key::list_all(cx.db()).await? {
         *keys.entry(tsig_key.role_id).or_default() += 1;
     }
-    build_page(
+    Ok(build_page(
         roles
             .into_iter()
             .map(|role| RoleResponse {
@@ -130,7 +131,7 @@ pub async fn list(
             .collect(),
         page.limit,
         page.offset,
-    )
+    ))
 }
 
 /// Fetch one role by name, with how many grants, tokens, and keys it has.

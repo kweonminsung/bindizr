@@ -272,8 +272,13 @@ fn domain_record_values_reject_malformed_names_and_preserve_root_policy() {
             );
         }
     }
-    assert!(RecordType::Ns.validate_value(".", None).is_err());
-    for record_type in [RecordType::Cname, RecordType::Ptr, RecordType::Dname] {
+    for record_type in [
+        RecordType::Ns,
+        RecordType::Cname,
+        RecordType::Ptr,
+        RecordType::Dname,
+    ] {
+        assert!(record_type.validate_value(".", None).is_ok());
         assert_eq!(record_type.encoded_value(".", None).unwrap(), ".");
         assert_eq!(record_type.canonical_value(".", None), "00");
     }

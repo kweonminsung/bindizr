@@ -9,7 +9,7 @@ use bindizr_core::{
 use bindizr_db::{Db, PoolStats};
 use chrono::{DateTime, Utc};
 use thiserror::Error;
-use tokio::sync::{mpsc::UnboundedSender, watch};
+use tokio::sync::{Semaphore, mpsc::UnboundedSender, watch};
 
 use crate::{
     dns_client::notify::NotifyClient,
@@ -48,6 +48,7 @@ pub struct Context {
     metrics: Metrics,
     notify_jobs: UnboundedSender<NotifyJob>,
     notify_client: NotifyClient,
+    notify_preparations: Semaphore,
     /// The scheduler's period, so a reload reaches it without waiting the
     /// old one out; zero stands the scheduler down.
     scheduler_period: watch::Sender<u64>,
@@ -72,6 +73,7 @@ impl Context {
             metrics,
             notify_jobs,
             notify_client: NotifyClient::default(),
+            notify_preparations: Semaphore::new(crate::notify::CONCURRENT_PREPARATIONS),
             scheduler_period,
             started_at: OnceLock::new(),
         }
@@ -118,7 +120,12 @@ impl Context {
         &self.db
     }
 
-    /// Shared NOTIFY sockets and the bound on concurrent preparation work.
+    /// The service's bounded key/address preparation queue.
+    pub(crate) fn notify_preparations(&self) -> &Semaphore {
+        &self.notify_preparations
+    }
+
+    /// Shared NOTIFY sockets and their active exchanges.
     pub(crate) fn notify_client(&self) -> &NotifyClient {
         &self.notify_client
     }

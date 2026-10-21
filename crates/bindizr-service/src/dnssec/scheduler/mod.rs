@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use bindizr_core::{metrics::SchedulerResult, model::zone::ZoneId};
 use chrono::{Duration, Utc};
-use tokio::sync::watch;
+use tokio::{sync::watch, task::JoinHandle};
 
 use self::steps::{
     promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_retired_keys_by_zone_id,
@@ -18,19 +18,43 @@ use crate::{
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
 };
 
+/// A scheduler task whose current pass finishes before shutdown returns.
+#[derive(Debug)]
+pub struct SchedulerWorker {
+    task: JoinHandle<()>,
+    stop: watch::Sender<bool>,
+}
+
+impl SchedulerWorker {
+    /// Stop starting passes and return the current pass's task to await.
+    pub fn stop(self) -> JoinHandle<()> {
+        let _ = self.stop.send(true);
+        self.task
+    }
+}
+
 /// Start the periodic scheduler on its own task. A zero period leaves the
 /// worker idle until a reload names one.
-pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) {
+pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> SchedulerWorker {
     let mut period = *period_rx.borrow();
     if period == 0 {
         log::info!("Scheduler disabled by dns.scheduler_interval_secs = 0");
     }
-    tokio::spawn(async move {
+    let (stop_tx, mut stop) = watch::channel(false);
+    let task = tokio::spawn(async move {
         let mut interval = scheduler_interval(period);
         loop {
+            if *stop.borrow() {
+                break;
+            }
             tokio::select! {
+                biased;
+                _ = stop.changed() => break,
                 _ = interval.tick(), if period != 0 => {}
-                Ok(()) = period_rx.changed() => {
+                changed = period_rx.changed() => {
+                    if changed.is_err() {
+                        break;
+                    }
                     // Rebuild here rather than after the old period elapses,
                     // which a shortened interval would otherwise wait out.
                     let reloaded = *period_rx.borrow_and_update();
@@ -50,6 +74,10 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) {
             }
         }
     });
+    SchedulerWorker {
+        task,
+        stop: stop_tx,
+    }
 }
 
 /// Create the scheduler timer; a zero period never ticks, and `spawn` guards
@@ -283,3 +311,6 @@ async fn run_scheduler_pass(cx: &Context) {
         SchedulerResult::Ok
     });
 }
+
+#[cfg(test)]
+mod tests;

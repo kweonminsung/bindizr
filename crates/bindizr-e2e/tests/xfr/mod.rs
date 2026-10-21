@@ -487,6 +487,44 @@ async fn ixfr_soa_only_replies_require_transfer_permission() {
     }
 }
 
+/// Local SOA diagnostics do not exempt UDP IXFR from the transfer address ACL.
+#[tokio::test]
+#[serial]
+async fn unsigned_local_ixfr_requires_a_registered_secondary() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let name = zone["name"].as_str().unwrap();
+    let serial = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
+    for registered in [false, true] {
+        if registered {
+            app.create_secondary("loopback", "127.0.0.1").await;
+        }
+        for qtype in [Rtype::SOA, Rtype::IXFR, Rtype::AXFR] {
+            let wire = if qtype == Rtype::IXFR {
+                build_ixfr_query(name, serial).finish()
+            } else {
+                build_edns_query(name, qtype, &[]).finish()
+            };
+            for response in [
+                exchange_udp(app.dns_port(), &wire).unwrap(),
+                exchange_tcp(app.dns_port(), &wire).unwrap(),
+            ] {
+                let response = Message::from_octets(response).unwrap();
+                let expected = if registered || qtype == Rtype::SOA {
+                    Rcode::NOERROR
+                } else {
+                    Rcode::REFUSED
+                };
+                assert_eq!(
+                    response.header().rcode(),
+                    expected,
+                    "{qtype}, registered={registered}"
+                );
+            }
+        }
+    }
+}
+
 /// Verify that an unsigned transfer still runs under the address acl.
 #[tokio::test]
 #[serial]

@@ -6,7 +6,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     model::zone::Zone,
-    pagination::{build_paginated_response, normalize_page_limit, parse_setting},
+    pagination::{build_paginated_response, parse_setting, validate_page_limit},
     types::{PaginatedResponse, ZoneFilter, ZoneResponse},
 };
 
@@ -82,7 +82,8 @@ pub async fn list_by_filter(
         crate::ttl::validate_record_ttl(ttl)?;
     }
     let scope_role_id = caller.scope_role_id();
-    let limit = Some(normalize_page_limit(filter.limit)?);
+    validate_page_limit(filter.limit)?;
+    let limit = filter.limit;
     let offset = filter.offset;
     let serial = filter.serial;
     let min_serial = filter.min_serial;

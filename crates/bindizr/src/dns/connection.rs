@@ -1,6 +1,6 @@
 //! Framed queries on an established TCP or TLS connection.
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use bindizr_core::dns::message::{self, Keepalive, Rtype};
 use tokio::{task::JoinSet, time::timeout};
@@ -21,6 +21,7 @@ pub(crate) async fn serve_connection(
     dns_cx: Arc<DnsContext>,
     stream: DnsStream,
     client_addr: SocketAddr,
+    stop: impl Future<Output = ()>,
 ) -> Result<(), DnsError> {
     let transport = stream.transport();
     let (mut reader, writer) = stream.into_split();
@@ -28,11 +29,14 @@ pub(crate) async fn serve_connection(
     let idle_timeout = dns_cx.daemon().config().dns.tcp_idle_timeout();
     let mut pending = Vec::new();
     let mut in_flight = JoinSet::new();
+    let mut transfers = JoinSet::new();
+    let mut stopping = false;
+    tokio::pin!(stop);
 
     let outcome = loop {
         // A connection with a query in flight is not idle (RFC 7766, Section
         // 6.2.3); the cancel-safe read may be interrupted by a query finishing.
-        let busy = !in_flight.is_empty();
+        let busy = !in_flight.is_empty() || !transfers.is_empty();
         let read = async {
             let read = wire::read_tcp_message(&mut reader, &mut pending);
             if busy {
@@ -54,8 +58,13 @@ pub(crate) async fn serve_connection(
         };
         let result = tokio::select! {
             biased;
+            () = &mut stop => {
+                stopping = true;
+                break Ok(());
+            }
             () = writer.failed() => break Err(DnsError::PeerClosed),
-            Some(_) = in_flight.join_next(), if busy => continue,
+            Some(_) = in_flight.join_next(), if !in_flight.is_empty() => continue,
+            Some(_) = transfers.join_next(), if !transfers.is_empty() => continue,
             result = read => result,
         };
         let query_data = match result {
@@ -67,23 +76,46 @@ pub(crate) async fn serve_connection(
             }
         };
 
-        if in_flight.len() >= MAX_QUERIES_IN_FLIGHT {
+        if in_flight.len() + transfers.len() >= MAX_QUERIES_IN_FLIGHT {
             tokio::select! {
                 biased;
+                () = &mut stop => {
+                    stopping = true;
+                    break Ok(());
+                }
                 () = writer.failed() => break Err(DnsError::PeerClosed),
-                _ = in_flight.join_next() => {},
+                Some(_) = in_flight.join_next(), if !in_flight.is_empty() => {},
+                Some(_) = transfers.join_next(), if !transfers.is_empty() => {},
             }
         }
+        // Separate retryable transfers from requests that must finish during shutdown.
+        let transfer =
+            message::ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(idle_timeout))
+                .is_ok_and(|query| {
+                    query.opcode == message::Opcode::QUERY
+                        && matches!(query.qtype, Rtype::AXFR | Rtype::IXFR)
+                });
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
-        in_flight.spawn(async move {
+        let answer = async move {
             dispatch_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
-        });
+        };
+        if transfer {
+            transfers.spawn(answer);
+        } else {
+            in_flight.spawn(answer);
+        }
     };
 
     // Clean FIN keeps replies open (RFC 9293, Section 3.6.1); failures cancel transfers.
     // Finish UPDATE and NOTIFY without replies after failure (RFC 7766, Section 6.2.4).
+    if stopping && !transfers.is_empty() {
+        // Fail the writer before cancellation can leave a partial frame.
+        writer.fail();
+        transfers.abort_all();
+    }
     while in_flight.join_next().await.is_some() {}
+    while transfers.join_next().await.is_some() {}
 
     // A TLS peer is owed close_notify ahead of the FIN; a plain socket closes.
     if outcome.is_ok()
@@ -215,3 +247,6 @@ async fn dispatch_query(
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -24,7 +24,7 @@ use nix::{
     },
 };
 use thiserror::Error;
-use tokio::{io::Interest, sync::Semaphore};
+use tokio::{io::Interest, task::JoinSet};
 
 use super::{
     error::DnsError,
@@ -189,18 +189,25 @@ pub(crate) async fn run_udp_server(
     stop: impl Future<Output = ()>,
 ) {
     let socket = Arc::new(socket);
-    let in_flight = Arc::new(Semaphore::new(MAX_UDP_IN_FLIGHT));
+    let mut in_flight = JoinSet::new();
     // The extra byte distinguishes an oversized/truncated datagram from a full DNS message.
     let mut buf = vec![0u8; usize::from(u16::MAX) + 1];
     tokio::pin!(stop);
 
     loop {
         let received = tokio::select! {
-            received = socket.recv_from(&mut buf) => received,
+            biased;
             () = &mut stop => {
                 log::info!("DNS UDP server stopping");
-                return;
+                break;
             }
+            Some(result) = in_flight.join_next(), if !in_flight.is_empty() => {
+                if let Err(error) = result {
+                    log::warn!("DNS UDP query task failed: {}", error);
+                }
+                continue;
+            }
+            received = socket.recv_from(&mut buf) => received,
         };
 
         let (len, target) = match received {
@@ -216,17 +223,21 @@ pub(crate) async fn run_udp_server(
             log::warn!("Dropping oversized DNS UDP query from {}", client_addr);
             continue;
         }
-        let Ok(permit) = in_flight.clone().try_acquire_owned() else {
+        if in_flight.len() >= MAX_UDP_IN_FLIGHT {
             log::warn!("Dropping excess DNS UDP query from {}", client_addr);
             continue;
-        };
+        }
         let query_data = buf[..len].to_vec();
         let socket = socket.clone();
         let dns_cx = dns_cx.clone();
-        tokio::spawn(async move {
+        in_flight.spawn(async move {
             handle_udp_query(&dns_cx, &socket, target, &query_data).await;
-            drop(permit);
         });
+    }
+    while let Some(result) = in_flight.join_next().await {
+        if let Err(error) = result {
+            log::warn!("DNS UDP query task failed: {}", error);
+        }
     }
 }
 
@@ -339,18 +350,13 @@ async fn handle_udp_query(
         return;
     }
 
-    let response = match server::handle_udp_xfr(dns_cx, client_addr, &query, query_data).await {
-        Ok(response) => response,
-        Err(error) => {
-            log::warn!(
-                "Failed to answer DNS UDP transfer from {}: {}",
-                client_addr,
-                error
-            );
-            return;
-        }
-    };
-    send_udp_response(socket, target, &response, query.response_limit()).await;
+    if let Err(error) = server::handle_udp_xfr(dns_cx, socket, target, &query, query_data).await {
+        log::warn!(
+            "Failed to answer DNS UDP transfer from {}: {}",
+            client_addr,
+            error
+        );
+    }
 }
 
 /// Send a DNS response datagram to the requesting peer.

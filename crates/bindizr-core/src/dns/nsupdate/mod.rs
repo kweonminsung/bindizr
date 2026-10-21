@@ -10,7 +10,9 @@ use domain::{
     rdata::tsig::Time48,
 };
 
-use crate::dns::message::{Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit};
+use crate::dns::message::{
+    Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit, has_readable_sections,
+};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945, Section 10 suggested default).
@@ -42,19 +44,33 @@ pub fn build_response(
 ) -> Result<Vec<u8>, BuildResponseError> {
     let msg =
         Message::from_octets(query_data).map_err(|e| BuildResponseError::Malformed(Box::new(e)))?;
+    let readable = has_readable_sections(query_data);
     for minimal in [false, true] {
         let rcode = if minimal { OptRcode::NOERROR } else { rcode };
-        let mut answer = crate::dns::message::build_response()
-            .start_answer(&msg, rcode.rcode())
-            .map_err(|e| BuildResponseError::Malformed(Box::new(e)))?;
+        let mut builder = crate::dns::message::build_response();
+        let mut answer = if readable {
+            builder
+                .start_answer(&msg, rcode.rcode())
+                .map_err(|e| BuildResponseError::Malformed(Box::new(e)))?
+        } else {
+            let header = builder.header_mut();
+            header.set_id(msg.header().id());
+            header.set_qr(true);
+            header.set_opcode(msg.header().opcode());
+            header.set_rd(msg.header().rd());
+            header.set_rcode(rcode.rcode());
+            builder.answer()
+        };
         answer.header_mut().set_tc(minimal);
         let mut additional = answer.additional();
-        Edns::from_message(&msg).push_response_opt(
-            &mut additional,
-            rcode,
-            if minimal { None } else { ede },
-            None,
-        );
+        if readable {
+            Edns::from_message(&msg).push_response_opt(
+                &mut additional,
+                rcode,
+                if minimal { None } else { ede },
+                None,
+            );
+        }
         if let Some(signer) = signer.clone() {
             signer
                 .sign_response_with_fudge(&mut additional, Time48::now(), fudge)

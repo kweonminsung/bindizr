@@ -1,5 +1,4 @@
-//! Reading an inbound query: what the listener parses once and hands to every
-//! handler, and the short replies it answers without touching the zone.
+//! DNS query parsing, response metadata, and short error or truncated replies.
 
 use std::time::Duration;
 
@@ -33,8 +32,7 @@ pub(crate) const OPT_RECORD_LEN: usize = 1 + RECORD_FIELDS_LEN;
 /// The wire size of the edns-tcp-keepalive option with its timeout.
 pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
 
-/// What the query said through its OPT record (RFC 6891), or what it got
-/// wrong; a query that carried one is answered with one.
+/// Request EDNS metadata or its format error; requests with OPT receive OPT (RFC 6891).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edns {
     Absent,
@@ -141,8 +139,7 @@ impl Edns {
     }
 }
 
-/// What the listener advertises about the connection: nothing for a
-/// datagram, the idle timeout for a connection (RFC 7828, Section 3.3.2).
+/// Keepalive policy: none for UDP, idle timeout for streams (RFC 7828, Section 3.3.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keepalive {
     None,
@@ -182,6 +179,8 @@ pub enum ParseQueryError {
     Malformed(#[source] LibraryError),
     #[error("no question in DNS query")]
     NoQuestion(Box<QueryMetadata>),
+    #[error("unreadable DNS message sections")]
+    UnreadableSections(Box<QueryMetadata>),
     #[error("non-IN class {class} in DNS QUERY record")]
     ForeignRecordClass {
         class: Class,
@@ -193,9 +192,9 @@ impl ParseQueryError {
     /// Preserve readable metadata so the listener can authenticate before replying.
     pub fn query_metadata(&self) -> Option<&QueryMetadata> {
         match self {
-            Self::NoQuestion(query_metadata) | Self::ForeignRecordClass { query_metadata, .. } => {
-                Some(query_metadata)
-            }
+            Self::NoQuestion(query_metadata)
+            | Self::UnreadableSections(query_metadata)
+            | Self::ForeignRecordClass { query_metadata, .. } => Some(query_metadata),
             Self::Malformed(_) => None,
         }
     }
@@ -213,13 +212,12 @@ pub fn extract_opcode(message: &[u8]) -> Option<Opcode> {
         .map(|message| message.header().opcode())
 }
 
-/// Whether the message is itself a response (QR=1). Answering one lets a
-/// spoofed source aim the reply at a third party.
+/// Detect QR=1 replies, which must not trigger another reply to a spoofed source.
 pub fn is_response(message: &[u8]) -> bool {
     Message::from_octets(message).is_ok_and(|message| message.header().qr())
 }
 
-/// A DNS query parsed once at the listener and handed to every handler.
+/// A query's question, EDNS metadata, and transfer parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedQuery {
     pub qname: Name<Vec<u8>>,
@@ -244,6 +242,11 @@ impl ParsedQuery {
     pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<ParsedQuery, ParseQueryError> {
         let message =
             Message::from_octets(data).map_err(|e| ParseQueryError::Malformed(Box::new(e)))?;
+        if !super::has_readable_sections(data) {
+            return Err(ParseQueryError::UnreadableSections(Box::new(
+                QueryMetadata::from_message(&message, keepalive),
+            )));
+        }
 
         let query_id = message.header().id();
         let opcode = message.header().opcode();
@@ -328,8 +331,7 @@ impl ParsedQuery {
         QueryMetadata::from(self).build_signed_truncated_response(signer)
     }
 
-    /// The error response, signed when a key was accepted: an accepted key
-    /// answers under itself, error or not (RFC 8945, Section 5.3).
+    /// Sign an error with the accepted key (RFC 8945, Section 5.3).
     pub fn build_signed_error_response(
         &self,
         rcode: OptRcode,

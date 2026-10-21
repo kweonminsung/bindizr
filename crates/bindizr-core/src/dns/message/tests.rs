@@ -53,13 +53,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         let request = additional.finish().into_target();
         assert!(request.len() < 512);
         let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
-        let signer: TransferSigner = verify_tsig(
-            &request,
-            Some(key.clone()),
-            crate::dns::message::ResponseLimit::STREAM,
-        )
-        .unwrap()
-        .into();
+        let signer: TransferSigner = verify_tsig(&request, Some(key.clone())).unwrap().into();
         for rcode in [
             OptRcode::REFUSED,
             OptRcode::SERVFAIL,
@@ -150,6 +144,30 @@ fn axfr_query() -> ParsedQuery {
     .unwrap()
 }
 
+/// Unreadable section boundaries cannot establish an OPT or a usable question.
+#[test]
+fn unreadable_query_bodies_receive_header_only_formerr() {
+    for section in [4, 6, 8, 10] {
+        let mut wire = build_question(Rtype::SOA, &[]);
+        wire[section..section + 2].copy_from_slice(&2u16.to_be_bytes());
+        for keepalive in [Keepalive::None, Keepalive::IdleTimeout(Duration::ZERO)] {
+            let error = ParsedQuery::parse(&wire, keepalive).unwrap_err();
+            let response = error
+                .query_metadata()
+                .unwrap()
+                .build_signed_error_response(OptRcode::FORMERR, None, None)
+                .unwrap();
+            let message = Message::from_octets(response.as_slice()).unwrap();
+            assert_eq!(message.header().id(), 1234);
+            assert!(message.header().qr());
+            assert_eq!(message.header().rcode(), Rcode::FORMERR);
+            assert_eq!(response.len(), 12);
+            assert_eq!(message.header_counts().qdcount(), 0);
+            assert_eq!(message.header_counts().arcount(), 0);
+        }
+    }
+}
+
 /// Verify that `encode_tcp_message` rejects oversized payload.
 #[test]
 fn encode_tcp_message_rejects_oversized_payload() {
@@ -237,21 +255,19 @@ fn is_response_separates_a_reply_from_a_query() {
     assert!(is_response(&reply));
 }
 
-/// Enforce QUERY's question limit from QDCOUNT, even when the body is incomplete;
-/// a header whose question cannot be read is answered FORMERR for every opcode.
+/// Enforce QUERY's question limit; an unreadable body receives a header-only error.
 #[test]
 fn multi_question_headers_receive_formerr_only_for_query() {
     for (opcode, count, expected) in [
         (Opcode::QUERY, 1u16, None),
         (Opcode::QUERY, 2, Some(OptRcode::FORMERR)),
-        (Opcode::QUERY, u16::MAX, Some(OptRcode::FORMERR)),
         (Opcode::STATUS, 2, None),
     ] {
         let mut query = Message::from_octets(build_question(Rtype::SOA, &[])).unwrap();
         query.header_mut().set_opcode(opcode);
         let mut wire = query.into_octets();
         wire[4..6].copy_from_slice(&count.to_be_bytes());
-        if opcode == Opcode::STATUS {
+        if count == 2 {
             wire.extend_from_within(12..);
         }
         let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
@@ -359,15 +375,8 @@ fn signed_transfer_authenticates_every_envelope() {
     let (query, mut client) = build_signed_axfr_query(key.clone(), Some(true));
     let parsed = ParsedQuery::parse(&query, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
-    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR).sign_with(
-        verify_tsig(
-            &query,
-            Some(key),
-            crate::dns::message::ResponseLimit::STREAM,
-        )
-        .unwrap()
-        .into(),
-    );
+    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR)
+        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
 
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
@@ -409,15 +418,8 @@ fn signed_message_reserves_space_for_tsig() {
         .unwrap();
     let (query, _) = build_signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
-    let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR).sign_with(
-        verify_tsig(
-            &query,
-            Some(key),
-            crate::dns::message::ResponseLimit::STREAM,
-        )
-        .unwrap()
-        .into(),
-    );
+    let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
+        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.
@@ -497,15 +499,8 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
         let request = additional.finish();
         let query =
             ParsedQuery::parse(&request, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
-        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(
-            verify_tsig(
-                &request,
-                Some(key.clone()),
-                crate::dns::message::ResponseLimit::STREAM,
-            )
-            .unwrap()
-            .into(),
-        );
+        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
+            .sign_with(verify_tsig(&request, Some(key.clone())).unwrap().into());
         let mut frames = Vec::new();
         for _ in 0..2 {
             if let Some(frame) = builder
@@ -817,9 +812,7 @@ fn oversized_response_does_not_advance_the_signer() {
     );
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let wire = additional.finish();
-    let mut signer: TransferSigner = verify_tsig(&wire, Some(key), ResponseLimit::UDP)
-        .unwrap()
-        .into();
+    let mut signer: TransferSigner = verify_tsig(&wire, Some(key)).unwrap().into();
     let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
     assert!(matches!(
         udp.build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer)),
@@ -859,7 +852,7 @@ fn oversized_frame_does_not_advance_the_signer() {
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let wire = additional.finish();
     let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
-    let signer = verify_tsig(&wire, Some(key), ResponseLimit::STREAM).unwrap();
+    let signer = verify_tsig(&wire, Some(key)).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
     // Bypass the chunking helper to exercise the final frame guard itself.
     for _ in 0..70 {

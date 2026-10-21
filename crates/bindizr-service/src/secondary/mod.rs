@@ -24,10 +24,12 @@ use chrono::Utc;
 use crate::{
     Context, audit,
     authorization::Caller,
-    dns_client::{notify, probe, resolve_address_entry},
+    dns_client::{probe as soa_client, resolve_address_entry},
     error::ServiceError,
     model::{secondary::Secondary, tsig_key::TsigKey},
-    pagination::{build_page, normalize_page_limit},
+    notify,
+    pagination::{build_page, validate_page_limit},
+    probe,
     text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
     transaction, transfer, tsig_key,
     types::{
@@ -135,6 +137,7 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<SecondaryResponse>, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
+    validate_page_limit(page.limit)?;
 
     let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
     // One statement names every key rather than one per secondary.
@@ -143,7 +146,7 @@ pub async fn list(
         .into_iter()
         .map(|tsig_key| (tsig_key.id, tsig_key.name))
         .collect();
-    build_page(
+    Ok(build_page(
         secondaries
             .iter()
             .map(|secondary| {
@@ -158,7 +161,7 @@ pub async fn list(
             .collect(),
         page.limit,
         page.offset,
-    )
+    ))
 }
 
 /// Fetch one secondary by name.
@@ -308,7 +311,7 @@ pub async fn check(
         config.dns.listen_port,
     );
     let (catalog_serial, listener_error) =
-        match probe::probe_server(dns_addr, &catalog_zone, timeout).await {
+        match soa_client::probe_server(dns_addr, &catalog_zone, timeout).await {
             Ok(serial) => (Some(serial), None),
             Err(e) => (None, Some(format!("{}: {}", dns_addr, e))),
         };
@@ -344,8 +347,9 @@ pub async fn list_transfers(
     filter: SecondaryTransferFilter,
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
+    let limit = filter.limit.unwrap_or(1000);
+    validate_page_limit(Some(limit))?;
     let secondary = lookup_by_name(cx, name).await?;
-    let limit = normalize_page_limit(filter.limit)? as usize;
     let zone_filter = filter
         .zone_name
         .as_deref()
@@ -361,7 +365,7 @@ pub async fn list_transfers(
                 .as_ref()
                 .is_none_or(|zone| transfer.zone_name == *zone)
         })
-        .take(limit)
+        .take(limit as usize)
         .map(TransferResponse::from)
         .collect();
     Ok(SecondaryTransfersResponse {

@@ -4,6 +4,65 @@ use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode};
 
 use super::*;
 
+/// Every affected exchange retains the same socket error, including OS codes and custom causes.
+#[tokio::test]
+async fn shared_socket_failure_preserves_original_io_error() {
+    use std::error::Error;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("socket operation failed")]
+    struct SocketCause;
+
+    for original in [
+        std::io::Error::from_raw_os_error(54),
+        std::io::Error::other(SocketCause),
+    ] {
+        let code = original.raw_os_error();
+        let message = original.to_string();
+        let name = Name::from_str("example.com").unwrap();
+        let mut requests = HashMap::new();
+        let mut replies = Vec::new();
+        for id in 0..2 {
+            let (reply, response) = oneshot::channel();
+            let (_, builder) = build_notify_query(&name, None);
+            requests.insert(
+                id,
+                PendingNotify {
+                    request: builder.finish(),
+                    limit: ResponseLimit::UDP,
+                    verifier: None,
+                    timeout: Duration::from_secs(1),
+                    retries_left: 0,
+                    deadline: Instant::now(),
+                    waiting: true,
+                    sent: true,
+                    qname: name.clone(),
+                    reply,
+                },
+            );
+            replies.push(response);
+        }
+
+        fail_requests(&mut requests, original);
+        assert!(requests.is_empty());
+        let mut shared = Vec::new();
+        for reply in replies {
+            let error = reply.await.unwrap().unwrap_err();
+            assert_eq!(error.to_string(), message);
+            assert!(error.source().is_some());
+            let SendNotifyError::Io(source) = error else {
+                panic!("socket failure changed classification");
+            };
+            assert_eq!(source.raw_os_error(), code);
+            if code.is_none() {
+                assert!(source.get_ref().unwrap().is::<SocketCause>());
+            }
+            shared.push(source);
+        }
+        assert!(Arc::ptr_eq(&shared[0], &shared[1]));
+    }
+}
+
 /// Exhausting an ID space rotates the socket instead of reusing a live or retired ID.
 #[tokio::test]
 async fn id_exhaustion_rotates_the_socket() {

@@ -14,6 +14,7 @@ pub mod notify;
 pub mod nsupdate;
 mod pagination;
 pub mod permission;
+pub mod probe;
 pub mod record;
 pub mod role;
 pub mod secondary;

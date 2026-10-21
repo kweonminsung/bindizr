@@ -49,7 +49,6 @@ pub(crate) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
     transport: TransferTransport,
-    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = async {
@@ -58,7 +57,7 @@ pub(crate) async fn apply_update(
         let tsig_key = match &request.tsig {
             Some(tsig) => {
                 let (tsig_key, verified) =
-                    authenticate_tsig_key(dns_cx, &tsig.name, query_data, limit).await?;
+                    authenticate_tsig_key(dns_cx, &tsig.name, query_data).await?;
                 signer = Some(verified);
                 tsig_key
             }
@@ -119,16 +118,14 @@ pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     key_name: &str,
     query_data: &[u8],
-    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
     let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
         .map_err(UpdateError::LoadTsigKey)?;
 
-    // An unknown key still runs validation: the empty key store makes it
-    // produce the BADKEY error response.
+    // Verify unknown keys too, so the response encoder receives BADKEY.
     let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
-    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key, limit)?;
+    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key)?;
     Ok((tsig_key, signer))
 }
 

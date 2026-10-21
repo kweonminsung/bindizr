@@ -12,7 +12,10 @@ pub(crate) mod nsupdate;
 pub(crate) mod soa;
 pub(crate) mod transfer_cache;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 pub(crate) use auth::refuse_query;
 use auth::{TransferRefusal, authenticate_transfer, authorize_transport};
@@ -23,7 +26,11 @@ use bindizr_core::{
 };
 use bindizr_service::{Context, transfer};
 
-use crate::dns::{error::DnsError, stream::ResponseWriter};
+use crate::dns::{
+    error::DnsError,
+    stream::ResponseWriter,
+    udp::{ReplyTarget, UdpSocket},
+};
 
 /// DNS-specific caches and daemon context; handlers take `dns_cx` and derive `cx`.
 #[derive(Debug)]
@@ -153,49 +160,13 @@ pub(crate) async fn handle_tcp_xfr(
     let identity = tokio::select! {
         biased;
         () = writer.failed() => return Err(DnsError::PeerClosed),
-        result = authenticate_transfer(dns_cx, query_data, client_ip, transport, query.response_limit()) => result,
+        result = authenticate_transfer(dns_cx, query_data, client_ip, transport) => result,
     }
     .and_then(|identity| authorize_transport(dns_cx, transport, identity));
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
-            track_result(if refusal.is_failure() {
-                XfrResult::Failed
-            } else {
-                XfrResult::Refused
-            });
-            log::warn!(
-                "Refused XFR {} query from {}: {}",
-                transport,
-                client_ip,
-                refusal.reason
-            );
-            // Save the refusal so `secondary transfers` can explain it.
-            if refusal.is_failure() {
-                transfer::save_failed(
-                    cx,
-                    client_ip,
-                    &query.zone_name,
-                    TransferKind::from_qtype(query.qtype),
-                    transport,
-                    refusal.reason.clone(),
-                )
-                .await;
-            } else {
-                transfer::save_refused(
-                    cx,
-                    client_ip,
-                    &query.zone_name,
-                    TransferKind::from_qtype(query.qtype),
-                    transport,
-                    refusal.reason.clone(),
-                )
-                .await;
-            }
-            // RFC 5936, Section 4.1.2: send an RCODE instead of dropping the connection.
-            let response = refusal.into_response(&message::QueryMetadata::from(query))?;
-            writer.write_message(&response).await?;
-            return Ok(());
+            return refuse_tcp_xfr(dns_cx, writer, client_ip, query, query_data, refusal).await;
         }
     };
 
@@ -229,37 +200,27 @@ pub(crate) async fn handle_tcp_xfr(
             track_result(XfrResult::Ok);
             Ok(())
         }
-        Err(DnsError::NotAuth(_)) => {
-            track_result(XfrResult::NotAuth);
-            let response = query.build_signed_error_response(
-                OptRcode::NOTAUTH,
-                Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                identity.signer.as_mut(),
-            )?;
-            writer.write_message(&response).await?;
-            Ok(())
+        Err(DnsError::NotAuth(reason)) => {
+            refuse_tcp_xfr(
+                dns_cx,
+                writer,
+                client_ip,
+                query,
+                query_data,
+                TransferRefusal::not_auth(reason, identity.signer.take()),
+            )
+            .await
         }
         Err(DnsError::Refused(reason)) => {
-            track_result(XfrResult::Refused);
-            log::warn!(
-                "Refused XFR {} query from {}: {}",
-                transport,
+            refuse_tcp_xfr(
+                dns_cx,
+                writer,
                 client_ip,
-                reason
-            );
-            transfer::save_refused(
-                cx,
-                client_ip,
-                &query.zone_name,
-                TransferKind::from_qtype(query.qtype),
-                transport,
-                reason.clone(),
+                query,
+                query_data,
+                TransferRefusal::refused(reason, identity.signer.take()),
             )
-            .await;
-            let response = TransferRefusal::refused(reason, identity.signer.take())
-                .into_response(&message::QueryMetadata::from(query))?;
-            writer.write_message(&response).await?;
-            Ok(())
+            .await
         }
         Err(err) => {
             track_result(XfrResult::Failed);
@@ -294,46 +255,139 @@ pub(crate) async fn handle_tcp_xfr(
     }
 }
 
+/// Send a stream refusal, then record its final outcome and diagnostic reason.
+async fn refuse_tcp_xfr(
+    dns_cx: &DnsContext,
+    writer: &ResponseWriter,
+    client_ip: IpAddr,
+    query: &message::ParsedQuery,
+    query_data: &[u8],
+    refusal: TransferRefusal,
+) -> Result<(), DnsError> {
+    let cx = dns_cx.daemon();
+    let transport = writer.transport();
+    let mut outcome = match &refusal {
+        TransferRefusal::Dns { rcode, .. } if *rcode == OptRcode::NOTAUTH => XfrResult::NotAuth,
+        _ if refusal.is_failure() => XfrResult::Failed,
+        _ => XfrResult::Refused,
+    };
+    let mut reason = refusal.to_string();
+    let response = match refusal.into_response(query_data, &message::QueryMetadata::from(query)) {
+        Err(DnsError::Tsig(error)) => {
+            outcome = XfrResult::Failed;
+            reason = error.to_string();
+            query
+                .build_signed_error_response(OptRcode::SERVFAIL, None, None)
+                .map_err(DnsError::from)
+        }
+        response => response,
+    };
+    // RFC 5936, Section 4.1.2: send an RCODE instead of dropping the connection.
+    let sent = match response {
+        Ok(response) => writer.write_message(&response).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = &sent {
+        outcome = XfrResult::Failed;
+        reason = error.to_string();
+    }
+    cx.metrics().track_xfr(query.qtype, transport, outcome);
+    log::warn!(
+        "Refused XFR {} query from {}: {}",
+        transport,
+        client_ip,
+        reason
+    );
+    if outcome == XfrResult::Failed {
+        transfer::save_failed(
+            cx,
+            client_ip,
+            &query.zone_name,
+            TransferKind::from_qtype(query.qtype),
+            transport,
+            reason,
+        )
+        .await;
+    } else if outcome == XfrResult::Refused {
+        transfer::save_refused(
+            cx,
+            client_ip,
+            &query.zone_name,
+            TransferKind::from_qtype(query.qtype),
+            transport,
+            reason,
+        )
+        .await;
+    }
+    sent
+}
+
 /// Answer a caller-checked UDP AXFR with TC; defer zone grants to the TCP retry.
 /// Sign even truncated replies under the request's key (RFC 8945, Section 5.3).
 pub(crate) async fn handle_udp_xfr(
     dns_cx: &DnsContext,
-    client_addr: SocketAddr,
+    socket: &UdpSocket,
+    target: ReplyTarget,
     query: &message::ParsedQuery,
     query_data: &[u8],
-) -> Result<Vec<u8>, DnsError> {
+) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
-    let identity = authenticate_transfer(
-        dns_cx,
-        query_data,
-        client_addr.ip(),
-        TransferTransport::Udp,
-        query.response_limit(),
-    )
-    .await
-    .and_then(|identity| authorize_transport(dns_cx, TransferTransport::Udp, identity));
-    let mut identity = match identity {
-        Ok(identity) => identity,
+    let client_addr = target.client_addr;
+    let identity =
+        authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
+            .await
+            .and_then(|identity| authorize_transport(dns_cx, TransferTransport::Udp, identity));
+    let (response, outcome) = match identity {
+        Ok(mut identity) => (
+            query
+                .build_signed_truncated_response(identity.signer.as_mut())
+                .map_err(DnsError::from),
+            XfrResult::Truncated,
+        ),
         Err(refusal) => {
-            cx.metrics().track_xfr(
-                query.qtype,
-                TransferTransport::Udp,
-                if refusal.is_failure() {
+            let mut failed = refusal.is_failure();
+            log::warn!(
+                "Refused XFR UDP query from {}: {}",
+                client_addr.ip(),
+                refusal
+            );
+            let response =
+                match refusal.into_response(query_data, &message::QueryMetadata::from(query)) {
+                    Err(DnsError::Tsig(error)) => {
+                        failed = true;
+                        log::warn!("Failed to encode XFR UDP TSIG refusal: {}", error);
+                        query
+                            .build_signed_error_response(OptRcode::SERVFAIL, None, None)
+                            .map_err(DnsError::from)
+                    }
+                    response => response,
+                };
+            (
+                response,
+                if failed {
                     XfrResult::Failed
                 } else {
                     XfrResult::Refused
                 },
-            );
-            log::warn!(
-                "Refused XFR UDP query from {}: {}",
-                client_addr.ip(),
-                refusal.reason
-            );
-            return refusal.into_response(&message::QueryMetadata::from(query));
+            )
         }
     };
-    // The transfer itself counts when the client returns over TCP.
-    cx.metrics()
-        .track_xfr(query.qtype, TransferTransport::Udp, XfrResult::Truncated);
-    Ok(query.build_signed_truncated_response(identity.signer.as_mut())?)
+    let sent = match response {
+        Ok(response) => socket
+            .send_to(&response, target, query.response_limit())
+            .await
+            .map(|_| ()),
+        Err(error) => Err(error),
+    };
+    // The transfer itself follows over TCP; count this response only after sending it.
+    cx.metrics().track_xfr(
+        query.qtype,
+        TransferTransport::Udp,
+        if sent.is_err() {
+            XfrResult::Failed
+        } else {
+            outcome
+        },
+    );
+    sent
 }

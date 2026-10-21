@@ -82,13 +82,8 @@ async fn signed_notify_advertises_edns_for_long_names() {
                 let mut buf = [0; 4096];
                 let (len, peer) = socket.recv_from(&mut buf).await.unwrap();
                 let query = ParsedQuery::parse(&buf[..len], Keepalive::None).unwrap();
-                let mut signer: TransferSigner = verify_tsig(
-                    &buf[..len],
-                    Some(server_key),
-                    bindizr_core::dns::message::ResponseLimit::STREAM,
-                )
-                .unwrap()
-                .into();
+                let mut signer: TransferSigner =
+                    verify_tsig(&buf[..len], Some(server_key)).unwrap().into();
                 let response = query
                     .build_signed_error_response(OptRcode::NOERROR, None, Some(&mut signer))
                     .unwrap();

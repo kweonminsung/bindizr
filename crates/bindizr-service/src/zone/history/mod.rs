@@ -27,7 +27,7 @@ use crate::{
         record::{Record, RecordData, RecordKey},
         zone::Zone,
     },
-    pagination::{build_paginated_response, normalize_page_limit},
+    pagination::{build_paginated_response, validate_page_limit},
     record::{self, validate_record_constraints, validate_record_name_in_zone},
     serial::generate_serial,
     transaction,
@@ -61,16 +61,15 @@ pub async fn list_versions(
     offset: Option<u64>,
     filter: VersionFilter,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
+    validate_page_limit(limit)?;
     let zone = super::get_by_name(cx, caller, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
-
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
-    let effective_limit = normalize_page_limit(limit)?;
     let versions = bindizr_db::zone_version::list_by_filter(
         cx.db(),
         zone.id,
         filter,
-        effective_limit,
+        limit,
         offset.unwrap_or(0),
     )
     .await?;
@@ -79,12 +78,7 @@ pub async fn list_versions(
         .map(ZoneVersionResponse::try_from)
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(build_paginated_response(
-        items,
-        Some(effective_limit),
-        offset,
-        total,
-    ))
+    Ok(build_paginated_response(items, limit, offset, total))
 }
 
 /// Fetch the version at `serial` together with the records rewound to it.

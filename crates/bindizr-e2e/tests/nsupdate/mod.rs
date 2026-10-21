@@ -43,6 +43,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
     let name = zone["name"].as_str().unwrap();
     let key = create_tsig_key(&app, "root-target-key", KeyRole::Admin).await;
     let targets = [
+        ("ns", Rtype::NS),
         ("cname", Rtype::CNAME),
         ("ptr", Rtype::PTR),
         ("dname", Rtype::DNAME),
@@ -81,6 +82,11 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
     for (owner, rtype) in targets {
         let owner = format!("{owner}.{name}.");
         assert_eq!(sets[&(owner.clone(), rtype)], [vec![0]]);
+        // Delegation NS data remains unsigned (RFC 4035, Section 2.2).
+        if rtype == Rtype::NS {
+            assert!(!sets.contains_key(&(owner, Rtype::RRSIG)));
+            continue;
+        }
         let signatures: Vec<_> = sets[&(owner.clone(), Rtype::RRSIG)]
             .iter()
             .map(|data| Rrsig::parse(&mut Parser::from_ref(data)).unwrap())

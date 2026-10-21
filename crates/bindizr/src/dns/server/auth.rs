@@ -14,72 +14,122 @@ use bindizr_core::{
     model::transfer::TransferTransport,
 };
 use bindizr_service::{authorization::Caller, tsig_key};
+use thiserror::Error;
 
 use super::acl;
 use crate::dns::{error::DnsError, server::DnsContext};
 
-/// A rejected transfer's response and any authenticated signer.
-/// TSIG failures retain their RFC 8945, Section 5.2 response.
-#[derive(Debug, Clone)]
-pub(crate) struct TransferRefusal {
-    pub(crate) reason: String,
-    rcode: OptRcode,
-    /// The reason an EDNS query hears beside the RCODE (RFC 8914).
-    ede: Option<ExtendedErrorCode>,
-    response: Option<Vec<u8>>,
-    /// Boxed so a refusal travels as a small `Err`.
-    signer: Option<Box<TransferSigner>>,
+/// A rejected transfer's cause; encoding and response limits belong to the handler.
+#[derive(Debug, Error)]
+pub(crate) enum TransferRefusal {
+    #[error("{reason}")]
+    Dns {
+        reason: String,
+        rcode: OptRcode,
+        /// The reason an EDNS query hears beside the RCODE (RFC 8914).
+        ede: Option<ExtendedErrorCode>,
+        /// Boxed to keep refusals small.
+        signer: Option<Box<TransferSigner>>,
+    },
+    #[error("{context}: {source}")]
+    Failed {
+        context: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+        signer: Option<Box<TransferSigner>>,
+    },
+    #[error(transparent)]
+    Tsig(#[from] TsigError),
 }
 
 impl TransferRefusal {
     /// Return SERVFAIL under the verified key, if any.
-    pub(crate) fn failed(reason: String, signer: Option<TransferSigner>) -> Self {
-        Self {
-            reason,
-            rcode: OptRcode::SERVFAIL,
-            ede: None,
-            response: None,
+    pub(crate) fn failed(
+        context: &'static str,
+        source: impl std::error::Error + Send + Sync + 'static,
+        signer: Option<TransferSigner>,
+    ) -> Self {
+        Self::Failed {
+            context,
+            source: Box::new(source),
             signer: signer.map(Box::new),
         }
     }
 
-    /// Identify SERVFAIL for transfer metrics.
+    /// Identify authentication or backend processing failures for transfer metrics.
     pub(crate) fn is_failure(&self) -> bool {
-        self.rcode == OptRcode::SERVFAIL
+        match self {
+            Self::Dns { rcode, .. } => *rcode == OptRcode::SERVFAIL,
+            Self::Failed { .. } => true,
+            Self::Tsig(TsigError::Rejected { .. } | TsigError::Malformed(_)) => false,
+            Self::Tsig(_) => true,
+        }
     }
 
     /// A refusal by policy: REFUSED, prohibited.
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
-        TransferRefusal {
+        Self::Dns {
             reason,
             rcode: OptRcode::REFUSED,
             ede: Some(ExtendedErrorCode::PROHIBITED),
-            response: None,
+            signer: signer.map(Box::new),
+        }
+    }
+
+    /// Refuse an unserved zone with NOTAUTH.
+    pub(crate) fn not_auth(reason: String, signer: Option<TransferSigner>) -> Self {
+        Self::Dns {
+            reason,
+            rcode: OptRcode::NOTAUTH,
+            ede: Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
             signer: signer.map(Box::new),
         }
     }
 
     /// A request whose TSIG breaks RFC 8945, Section 5.2: FORMERR, unsigned.
     fn malformed(reason: String) -> Self {
-        TransferRefusal {
+        Self::Dns {
             reason,
             rcode: OptRcode::FORMERR,
             ede: None,
-            response: None,
             signer: None,
         }
     }
 
-    /// Convert the refusal into a DNS response.
-    pub(crate) fn into_response(mut self, metadata: &QueryMetadata) -> Result<Vec<u8>, DnsError> {
-        if let Some(response) = self.response {
-            return Ok(response);
+    /// Encode a refusal under the request's response budget, after authentication.
+    pub(crate) fn into_response(
+        self,
+        query_data: &[u8],
+        metadata: &QueryMetadata,
+    ) -> Result<Vec<u8>, DnsError> {
+        match self {
+            Self::Dns {
+                rcode,
+                ede,
+                mut signer,
+                ..
+            } => Ok(metadata.build_signed_error_response(rcode, ede, signer.as_deref_mut())?),
+            Self::Failed { mut signer, .. } => Ok(metadata.build_signed_error_response(
+                OptRcode::SERVFAIL,
+                None,
+                signer.as_deref_mut(),
+            )?),
+            Self::Tsig(TsigError::Rejected { rcode, key, time }) => {
+                Ok(bindizr_core::dns::tsig::build_error_response(
+                    query_data,
+                    key.as_deref(),
+                    rcode,
+                    time,
+                    metadata.response_limit(),
+                )?)
+            }
+            Self::Tsig(TsigError::Malformed(_)) => {
+                Ok(metadata.build_signed_error_response(OptRcode::FORMERR, None, None)?)
+            }
+            Self::Tsig(_) => {
+                Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
+            }
         }
-        Ok(metadata.build_signed_error_response(
-            self.rcode,
-            self.ede,
-            self.signer.as_deref_mut(),
-        )?)
     }
 }
 
@@ -112,7 +162,6 @@ pub(crate) struct TransferIdentity {
 pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     query_data: &[u8],
-    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<Option<TransferIdentity>, TransferRefusal> {
     let key_name = match request_signature(query_data) {
         RequestSignature::Key { name, .. } => name,
@@ -128,24 +177,23 @@ pub(crate) async fn authenticate_tsig_key(
 
     let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
         .await
-        .map_err(|e| TransferRefusal::failed(format!("failed to load TSIG key: {}", e), None))?;
+        .map_err(|e| TransferRefusal::failed("failed to load TSIG key", e, None))?;
     let Some(tsig_key) = tsig_key else {
-        // An unknown key still runs validation: the empty key store makes it
-        // produce the BADKEY error response.
-        verify_tsig(query_data, None, limit).map_err(TransferRefusal::from)?;
+        // Verify unknown keys too, so the response encoder receives BADKEY.
+        verify_tsig(query_data, None)?;
         return Err(TransferRefusal::refused(
             "TSIG verification passed without a key".to_string(),
             None,
         ));
     };
     let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
-    let signer =
-        verify_tsig(query_data, Some(signing_key), limit).map_err(TransferRefusal::from)?;
+    let signer = verify_tsig(query_data, Some(signing_key))?;
     let caller = match Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key).await {
         Ok(caller) => caller,
         Err(e) => {
             return Err(TransferRefusal::failed(
-                format!("failed to load the key's grants: {}", e),
+                "failed to load the key's grants",
+                e,
                 Some(signer.into()),
             ));
         }
@@ -163,10 +211,9 @@ pub(crate) async fn authenticate_transfer(
     query_data: &[u8],
     client_ip: IpAddr,
     transport: TransferTransport,
-    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<TransferIdentity, TransferRefusal> {
     let over_tls = matches!(transport, TransferTransport::Tls);
-    let Some(identity) = authenticate_tsig_key(dns_cx, query_data, limit).await? else {
+    let Some(identity) = authenticate_tsig_key(dns_cx, query_data).await? else {
         if over_tls {
             return Err(TransferRefusal::refused(
                 "an XoT request must be TSIG-signed (RFC 9103, Section 7.5)".to_string(),
@@ -185,7 +232,8 @@ pub(crate) async fn authenticate_transfer(
                 None,
             )),
             Err(e) => Err(TransferRefusal::failed(
-                format!("failed to load secondaries: {}", e),
+                "failed to load secondaries",
+                e,
                 None,
             )),
         };
@@ -206,7 +254,8 @@ pub(crate) async fn authenticate_transfer(
             }
             Err(e) => {
                 return Err(TransferRefusal::failed(
-                    format!("failed to load secondaries: {}", e),
+                    "failed to load secondaries",
+                    e,
                     identity.signer,
                 ));
             }
@@ -231,29 +280,18 @@ pub(crate) async fn refuse_query(
     {
         return Ok(metadata.build_signed_error_response(rcode, ede, None)?);
     }
-    match authenticate_tsig_key(dns_cx, query_data, metadata.response_limit()).await {
+    match authenticate_tsig_key(dns_cx, query_data).await {
         Ok(identity) => {
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(metadata.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
-        Err(refusal) => refusal.into_response(metadata),
-    }
-}
-
-impl From<TsigError> for TransferRefusal {
-    /// Translate a TSIG error into a transfer refusal with its required response.
-    fn from(error: TsigError) -> Self {
-        match error {
-            TsigError::Rejected { rcode, response } => TransferRefusal {
-                reason: format!("TSIG validation failed: {}", rcode),
-                rcode: OptRcode::NOTAUTH,
-                ede: None,
-                response: Some(response),
-                signer: None,
-            },
-            TsigError::Malformed(error) => TransferRefusal::malformed(error.to_string()),
-            other => TransferRefusal::failed(other.to_string(), None),
-        }
+        Err(refusal) => match refusal.into_response(query_data, metadata) {
+            Err(DnsError::Tsig(error)) => {
+                log::warn!("Failed to encode TSIG refusal: {}", error);
+                Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
+            }
+            response => response,
+        },
     }
 }
 

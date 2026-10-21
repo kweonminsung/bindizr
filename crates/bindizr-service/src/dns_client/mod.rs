@@ -10,7 +10,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::dns::{
     address::{AddressTarget, DEFAULT_DNS_PORT},
-    message::{Keepalive, ParsedQuery, encode_tcp_message},
+    message::{Keepalive, QueryMetadata, encode_tcp_message},
     query::{is_truncated, matches_response_to_request},
 };
 use thiserror::Error;
@@ -128,7 +128,7 @@ pub(crate) async fn exchange_over_udp_checked(
     attempts: u32,
     is_response_acceptable: impl Fn(&[u8]) -> bool,
 ) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
-    let limit = ParsedQuery::parse(request, Keepalive::None)?.response_limit();
+    let limit = QueryMetadata::parse(request, Keepalive::None)?.response_limit();
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
     } else {
@@ -254,7 +254,7 @@ mod tests {
     use std::str::FromStr;
 
     use bindizr_core::dns::{
-        message::{Name, Opcode, OptRcode, Rtype},
+        message::{Name, Opcode, OptRcode, ParsedQuery, Rtype},
         query::build_question,
     };
 

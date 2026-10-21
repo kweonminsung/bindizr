@@ -15,6 +15,32 @@ use crate::{
     model::tsig_key::TsigAlgorithm,
 };
 
+/// A truncated zone or later section receives only a header, without an invented OPT.
+#[test]
+fn unreadable_update_bodies_receive_header_only_formerr() {
+    let valid = build_minimal_update_with_ztype(6);
+    let mut unreadable_zone = valid[..12].to_vec();
+    unreadable_zone.extend_from_slice(&[5, b'x']);
+    let mut unreadable_update = valid.clone();
+    unreadable_update[8..10].copy_from_slice(&1u16.to_be_bytes());
+    let mut trailing_data = valid;
+    trailing_data.push(0);
+    for wire in [unreadable_zone, unreadable_update, trailing_data] {
+        for limit in [ResponseLimit::UDP, ResponseLimit::STREAM] {
+            let response =
+                build_response(&wire, OptRcode::FORMERR, None, None, 300, limit).unwrap();
+            let message = Message::from_octets(response.as_slice()).unwrap();
+            assert_eq!(message.header().id(), 0x1234);
+            assert_eq!(message.header().opcode(), Opcode::UPDATE);
+            assert!(message.header().qr());
+            assert_eq!(message.header().rcode(), Rcode::FORMERR);
+            assert_eq!(response.len(), 12);
+            assert_eq!(message.header_counts().qdcount(), 0);
+            assert_eq!(message.header_counts().arcount(), 0);
+        }
+    }
+}
+
 /// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
@@ -73,12 +99,7 @@ fn build_response_signs_with_request_mac_chain() {
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let signer = tsig::verify_tsig(
-        &query,
-        Some(key),
-        crate::dns::message::ResponseLimit::STREAM,
-    )
-    .unwrap();
+    let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
 
     let response = build_response(
         &query,
@@ -187,12 +208,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let request = additional.finish().into_target();
-        let signer = verify_tsig(
-            &request,
-            Some(key.clone()),
-            crate::dns::message::ResponseLimit::STREAM,
-        )
-        .unwrap();
+        let signer = verify_tsig(&request, Some(key.clone())).unwrap();
         for rcode in [
             OptRcode::NOERROR,
             OptRcode::REFUSED,

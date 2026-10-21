@@ -2,13 +2,8 @@ use std::net::SocketAddr;
 
 use bindizr_core::dns::address::loopback_if_unspecified;
 use bindizr_service::{
-    Context,
-    authorization::Caller,
-    dns_client::{notify, probe},
-    error::ServiceError,
-    secondary,
-    types::SecondaryTransferSummaryResponse,
-    zone,
+    Context, authorization::Caller, dns_client::probe as soa_client, error::ServiceError, notify,
+    probe, secondary, types::SecondaryTransferSummaryResponse, zone,
 };
 use tokio::net::TcpStream;
 
@@ -56,7 +51,7 @@ pub(crate) async fn check_installation(
     let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
-        match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
+        match soa_client::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
             Ok(serial) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Ok,

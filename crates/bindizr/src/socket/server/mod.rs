@@ -15,6 +15,7 @@ mod tsig_key;
 mod zone;
 
 use std::{
+    future::Future,
     io,
     os::unix::fs::{FileTypeExt, MetadataExt},
     path::Path,
@@ -29,7 +30,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
     sync::mpsc,
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 
 use crate::{
@@ -126,11 +127,21 @@ impl SocketContext {
 }
 
 /// Dispatch a control request and send its JSON response.
-async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
+async fn handle_client(
+    socket_cx: &SocketContext,
+    stream: UnixStream,
+    stop: impl Future<Output = ()>,
+) {
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
-    if reader.read_line(&mut line).await.is_ok() {
+    tokio::pin!(stop);
+    let read = tokio::select! {
+        biased;
+        () = &mut stop => return,
+        read = reader.read_line(&mut line) => read,
+    };
+    if read.is_ok() {
         // A connect-and-close is another `bindizr start` probing whether this
         // daemon is alive (`prepare_socket_path`), not a command.
         if line.is_empty() {
@@ -163,13 +174,22 @@ pub(crate) fn serve(
 ) -> Result<JoinHandle<()>, ServeSocketError> {
     let own_uid = read_own_uid().map_err(ServeSocketError::ReadUid)?;
     let stop = shutdown.waiter();
+    let client_shutdown = shutdown.clone();
     Ok(tokio::spawn(async move {
         tokio::pin!(stop);
+        let mut clients = JoinSet::new();
 
         loop {
             let accepted = tokio::select! {
-                accepted = listener.accept() => accepted,
+                biased;
                 () = &mut stop => break,
+                Some(result) = clients.join_next(), if !clients.is_empty() => {
+                    if let Err(error) = result {
+                        log::warn!("Daemon socket client task failed: {}", error);
+                    }
+                    continue;
+                }
+                accepted = listener.accept() => accepted,
             };
 
             match accepted {
@@ -177,8 +197,9 @@ pub(crate) fn serve(
                 Ok((stream, _)) => match stream.peer_cred() {
                     Ok(peer) if is_trusted_peer(peer.uid(), own_uid) => {
                         let socket_cx = socket_cx.clone();
-                        tokio::spawn(async move {
-                            handle_client(&socket_cx, stream).await;
+                        let stop = client_shutdown.waiter();
+                        clients.spawn(async move {
+                            handle_client(&socket_cx, stream, stop).await;
                         });
                     }
                     Ok(peer) => {
@@ -201,6 +222,11 @@ pub(crate) fn serve(
         }
 
         drop(listener);
+        while let Some(result) = clients.join_next().await {
+            if let Err(error) = result {
+                log::warn!("Daemon socket client task failed: {}", error);
+            }
+        }
         log::info!("Daemon socket server stopped");
     }))
 }

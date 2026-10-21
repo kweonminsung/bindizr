@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bindizr_core::dns::{
     Ttl,
-    name::{OwnerName, ZoneName, has_whitespace_or_control},
+    name::{OwnerName, ZoneName, has_whitespace_or_control, trim_presentation_name},
     record::{SoaMailbox, SrvRecordValue},
 };
 use bindizr_db::{LockLevel, Transaction};
@@ -79,6 +79,9 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceEr
 
 /// Normalize the SOA primary server name.
 pub(crate) fn normalize_mname(value: &str) -> Result<String, ServiceError> {
+    if trim_presentation_name(value) == "." {
+        return Ok(".".to_string());
+    }
     Ok(normalize_domain_name(value, "mname")?.to_string())
 }
 
@@ -277,7 +280,17 @@ pub(crate) async fn validate_record_changes_tx(
     }
 
     let cnames = owners_of(RecordType::Cname);
-    if !cnames.is_empty() {
+    // RFC 5936, Section 3.5: data below an earlier delegation is occluded.
+    let authoritative_dnames: Vec<_> = dnames
+        .iter()
+        .copied()
+        .filter(|name| {
+            !delegations
+                .iter()
+                .any(|cut| !cut.is_apex() && name.is_same_or_under(cut))
+        })
+        .collect();
+    if !cnames.is_empty() || !authoritative_dnames.is_empty() {
         for record in &records {
             let target = match record.record_type {
                 RecordType::Srv => SrvRecordValue::parse(&record.value, record.priority)
@@ -296,6 +309,14 @@ pub(crate) async fn validate_record_changes_tx(
                     "an NS, MX, PTR, or SRV record cannot name a CNAME record of this zone as its target (RFC 2181, Sections 10.2–10.3; RFC 2782)",
                 ));
             }
+            if authoritative_dnames
+                .iter()
+                .any(|name| &owner != *name && owner.is_same_or_under(name))
+            {
+                return Err(ServiceError::record_conflict(
+                    "an NS, MX, PTR, or SRV record cannot name a descendant of a DNAME record of this zone as its target (RFC 6672, Section 5.1)",
+                ));
+            }
         }
     }
     Ok(())
@@ -305,7 +326,19 @@ pub(crate) async fn validate_record_changes_tx(
 mod tests {
     use bindizr_core::dns::name::ZoneName;
 
-    use super::normalize_name;
+    use super::{normalize_mname, normalize_name};
+
+    /// Root MNAME is valid without loosening zone-name or label parsing.
+    #[test]
+    fn primary_name_preserves_root_and_literal_dot() {
+        assert_eq!(normalize_mname(" . ").unwrap(), ".");
+        assert_eq!(normalize_mname(r"\.").unwrap(), r"\046");
+        assert_eq!(normalize_mname(" NS.Example. ").unwrap(), "ns.example");
+        for invalid in ["", "..", "host..example"] {
+            assert!(normalize_mname(invalid).is_err(), "{invalid:?}");
+        }
+        assert!(normalize_name(".").is_err());
+    }
 
     /// Preserve escaped trailing whitespace while tolerating ordinary surrounding padding.
     #[test]

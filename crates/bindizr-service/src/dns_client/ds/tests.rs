@@ -234,9 +234,9 @@ fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
         .collect()
 }
 
-/// Verify that `query_ds` reports each server apart.
+/// Verify that the explicit targets retain their order and separate DS answers.
 #[tokio::test]
-async fn query_ds_reports_each_server_apart() {
+async fn probe_parent_ds_reports_each_server_apart() {
     let a = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(34217, 3600)],
@@ -248,11 +248,12 @@ async fn query_ds_reports_each_server_apart() {
     })
     .await;
 
-    let answers = query_ds(&zone_name("example.com"), &servers(&[a, b]), TIMEOUT)
+    let parent = probe_parent_ds(&zone_name("example.com"), &format!("{a}, {b}"), TIMEOUT)
         .await
         .unwrap();
+    assert_eq!(parent.ns_addrs, vec![a.to_string(), b.to_string()]);
     assert_eq!(
-        answers,
+        parent.answers,
         vec![
             Some(DsRecordSet {
                 records: vec![parsed_ds_record(34217)],
@@ -264,6 +265,15 @@ async fn query_ds_reports_each_server_apart() {
             }),
         ]
     );
+}
+
+/// An empty target list cannot establish that the parent serves no DS.
+#[tokio::test]
+async fn probe_parent_ds_rejects_an_empty_target_list() {
+    let error = probe_parent_ds(&zone_name("example.com"), " , ", TIMEOUT)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProbeParentDsError::NoServers));
 }
 
 /// Verify that query DS retries a truncated response over TCP.

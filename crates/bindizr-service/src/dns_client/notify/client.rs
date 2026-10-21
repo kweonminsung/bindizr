@@ -9,7 +9,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
-    message::{Keepalive, Name, OptRcode, ParsedQuery, ResponseLimit},
+    message::{Keepalive, Name, OptRcode, QueryMetadata, ResponseLimit},
     query::{
         ParseResponseError, build_notify_query, matches_response_to_request,
         validate_notify_response,
@@ -18,28 +18,23 @@ use bindizr_core::dns::{
 };
 use tokio::{
     net::UdpSocket,
-    sync::{Mutex, Semaphore, mpsc, oneshot},
+    sync::{Mutex, mpsc, oneshot},
     time::{Instant, sleep_until},
 };
 
 use super::{ExchangeMessageError, SendNotifyError};
 
-/// Bound database/key/address preparation, never the time spent waiting for ACKs.
-const CONCURRENT_PREPARATIONS: usize = 16;
-
 /// A daemon's active NOTIFY target sockets; idle sockets have no strong owner.
 #[derive(Debug)]
 pub(crate) struct NotifyClient {
     targets: Mutex<HashMap<SocketAddr, Weak<TargetSocket>>>,
-    pub(super) preparations: Semaphore,
 }
 
 impl Default for NotifyClient {
-    /// Create an empty target pool with bounded preparation concurrency.
+    /// Create an empty target socket pool.
     fn default() -> Self {
         Self {
             targets: Mutex::new(HashMap::new()),
-            preparations: Semaphore::new(CONCURRENT_PREPARATIONS),
         }
     }
 }
@@ -118,7 +113,7 @@ impl NotifyClient {
     }
 
     /// Send and authenticate a NOTIFY, retrying the same bytes/socket only on silence.
-    pub(super) async fn start(
+    pub(crate) async fn start(
         &self,
         qname: &Name<Vec<u8>>,
         address: SocketAddr,
@@ -133,7 +128,7 @@ impl NotifyClient {
             .map(|key| sign_request(&mut builder, key.clone()))
             .transpose()?;
         let wire = builder.finish();
-        let limit = ParsedQuery::parse(&wire, Keepalive::None)
+        let limit = QueryMetadata::parse(&wire, Keepalive::None)
             .map_err(ExchangeMessageError::from)?
             .response_limit();
         let (reply, response) = oneshot::channel();
@@ -159,14 +154,14 @@ impl NotifyClient {
 
 /// A transaction keeps its shared socket alive until its caller finishes or cancels.
 #[derive(Debug)]
-pub(super) struct NotifyExchange {
+pub(crate) struct NotifyExchange {
     target: Arc<TargetSocket>,
     response: oneshot::Receiver<Result<(), SendNotifyError>>,
 }
 
 impl NotifyExchange {
     /// Wait for the matching authenticated reply or the final transport error.
-    pub(super) async fn wait(self) -> Result<(), SendNotifyError> {
+    pub(crate) async fn wait(self) -> Result<(), SendNotifyError> {
         let result = self
             .response
             .await
@@ -290,11 +285,9 @@ async fn serve(
 
 /// A connected-socket ICMP/I/O error ends every outstanding exchange to that peer.
 fn fail_requests(requests: &mut HashMap<u16, PendingNotify>, error: std::io::Error) {
+    let error = Arc::new(error);
     for (_, request) in requests.drain() {
-        let error = std::io::Error::new(error.kind(), error.to_string());
-        let _ = request
-            .reply
-            .send(Err(ExchangeMessageError::Io(error).into()));
+        let _ = request.reply.send(Err(SendNotifyError::Io(error.clone())));
     }
 }
 

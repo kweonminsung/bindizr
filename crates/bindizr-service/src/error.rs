@@ -115,8 +115,12 @@ impl ErrorCode {
 /// Each transport maps the code to its own HTTP status, RCODE, or exit code.
 #[derive(Debug, Error)]
 pub enum ServiceError {
-    #[error("{0}")]
-    InvalidInput(String),
+    #[error("{message}")]
+    InvalidInput {
+        message: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    },
     #[error("{0}")]
     InvalidZoneField(String),
     #[error("{0}")]
@@ -173,8 +177,12 @@ pub enum ServiceError {
     DnssecDsPublished(String),
     #[error("{0}")]
     DnssecDsNotPublished(String),
-    #[error("{0}")]
-    DnssecDsUnverified(String),
+    #[error("{message}")]
+    DnssecDsUnverified {
+        message: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    },
     #[error("{0}")]
     DnssecPolicyNotFound(String),
     #[error("{0}")]
@@ -211,7 +219,7 @@ impl ServiceError {
     /// The machine-readable code of this error, the wire's classification.
     pub fn code(&self) -> ErrorCode {
         match self {
-            ServiceError::InvalidInput(_) => ErrorCode::InvalidInput,
+            ServiceError::InvalidInput { .. } => ErrorCode::InvalidInput,
             ServiceError::InvalidZoneField(_) => ErrorCode::InvalidZoneField,
             ServiceError::InvalidRecordName(_) => ErrorCode::InvalidRecordName,
             ServiceError::InvalidRecordValue(_) => ErrorCode::InvalidRecordValue,
@@ -240,7 +248,7 @@ impl ServiceError {
             ServiceError::DnssecNoRolloverInProgress(_) => ErrorCode::DnssecNoRolloverInProgress,
             ServiceError::DnssecDsPublished(_) => ErrorCode::DnssecDsPublished,
             ServiceError::DnssecDsNotPublished(_) => ErrorCode::DnssecDsNotPublished,
-            ServiceError::DnssecDsUnverified(_) => ErrorCode::DnssecDsUnverified,
+            ServiceError::DnssecDsUnverified { .. } => ErrorCode::DnssecDsUnverified,
             ServiceError::DnssecPolicyNotFound(_) => ErrorCode::DnssecPolicyNotFound,
             ServiceError::DnssecPolicyConflict(_) => ErrorCode::DnssecPolicyConflict,
             ServiceError::DnssecPolicyInUse(_) => ErrorCode::DnssecPolicyInUse,
@@ -291,7 +299,21 @@ impl From<bindizr_db::error::DatabaseError> for ServiceError {
 impl ServiceError {
     /// Build an error for invalid request input.
     pub fn invalid_input(message: impl fmt::Display) -> Self {
-        ServiceError::InvalidInput(message.to_string())
+        ServiceError::InvalidInput {
+            message: message.to_string(),
+            source: None,
+        }
+    }
+
+    /// Keep the cause when an external input could not be retrieved or interpreted.
+    pub fn invalid_input_with_source(
+        message: impl fmt::Display,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        ServiceError::InvalidInput {
+            message: message.to_string(),
+            source: Some(Box::new(source)),
+        }
     }
 
     /// Build an error for an invalid zone field.
@@ -380,7 +402,7 @@ impl ServiceError {
         name: impl std::fmt::Display,
         matched: usize,
     ) -> Self {
-        ServiceError::InvalidInput(format!(
+        ServiceError::invalid_input(format!(
             "{} records are named '{}' in zone '{}'; address one by its id",
             matched, name, zone_name
         ))
@@ -525,27 +547,36 @@ impl ServiceError {
 
     /// Build an error for parent DS digests that cannot be verified.
     pub fn dnssec_ds_digest_unsupported(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
-        ServiceError::DnssecDsUnverified(format!(
-            "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \
+        ServiceError::DnssecDsUnverified {
+            message: format!(
+                "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \
                  types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
                  to publish SHA-256, or skip the DS check",
-            if key_tags.len() == 1 { "" } else { "s" },
-            key_tags
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-            zone_name
-        ))
+                if key_tags.len() == 1 { "" } else { "s" },
+                key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                zone_name
+            ),
+            source: None,
+        }
     }
 
     /// Build an error explaining why the parent DS check could not finish.
-    pub fn dnssec_ds_unverified(zone_name: impl fmt::Display, reason: impl fmt::Display) -> Self {
-        ServiceError::DnssecDsUnverified(format!(
-            "could not verify that the parent zone serves no DS for zone '{}': {}; set the \
+    pub fn dnssec_ds_unverified(
+        zone_name: impl fmt::Display,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        ServiceError::DnssecDsUnverified {
+            message: format!(
+                "could not verify that the parent zone serves no DS for zone '{}': {}; set the \
                  zone's parent nameserver addresses, or skip the DS check",
-            zone_name, reason
-        ))
+                zone_name, source
+            ),
+            source: Some(Box::new(source)),
+        }
     }
 
     /// Build an error naming the missing DNSSEC policy.
@@ -581,95 +612,4 @@ impl ServiceError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verify that a signing failure is not an internal error.
-    #[test]
-    fn signing_failure_preserves_dnssec_error_class() {
-        let err = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
-        assert_eq!(err.code(), ErrorCode::DnssecSigningFailed);
-        assert!(err.code().is_internal());
-    }
-
-    /// Preserve the concrete source when an internal failure gains context.
-    #[test]
-    fn internal_context_preserves_the_source() {
-        use std::error::Error;
-        let error = ServiceError::internal_with_source(
-            "failed to load records",
-            std::io::Error::new(std::io::ErrorKind::ConnectionReset, "database disconnected"),
-        );
-        assert_eq!(error.code(), ErrorCode::Internal);
-        assert_eq!(error.to_string(), "failed to load records");
-        let source = error
-            .source()
-            .unwrap()
-            .downcast_ref::<std::io::Error>()
-            .unwrap();
-        assert_eq!(source.kind(), std::io::ErrorKind::ConnectionReset);
-    }
-
-    /// Verify every serialized error code against its established wire spelling.
-    #[test]
-    fn error_code_spells_itself_once() {
-        for (value, expected) in [
-            (ErrorCode::InvalidInput, "INVALID_INPUT"),
-            (ErrorCode::InvalidZoneField, "INVALID_ZONE_FIELD"),
-            (ErrorCode::InvalidRecordName, "INVALID_RECORD_NAME"),
-            (ErrorCode::InvalidRecordValue, "INVALID_RECORD_VALUE"),
-            (ErrorCode::InvalidJsonBody, "INVALID_JSON_BODY"),
-            (ErrorCode::ZoneConflict, "ZONE_CONFLICT"),
-            (ErrorCode::RecordConflict, "RECORD_CONFLICT"),
-            (ErrorCode::TokenConflict, "TOKEN_CONFLICT"),
-            (ErrorCode::EndpointNotFound, "ENDPOINT_NOT_FOUND"),
-            (ErrorCode::MethodNotAllowed, "METHOD_NOT_ALLOWED"),
-            (ErrorCode::ZoneNotFound, "ZONE_NOT_FOUND"),
-            (ErrorCode::RecordNotFound, "RECORD_NOT_FOUND"),
-            (ErrorCode::TokenNotFound, "TOKEN_NOT_FOUND"),
-            (ErrorCode::VersionNotFound, "VERSION_NOT_FOUND"),
-            (ErrorCode::SecondaryNotFound, "SECONDARY_NOT_FOUND"),
-            (ErrorCode::SecondaryConflict, "SECONDARY_CONFLICT"),
-            (ErrorCode::TsigKeyNotFound, "TSIG_KEY_NOT_FOUND"),
-            (ErrorCode::TsigKeyConflict, "TSIG_KEY_CONFLICT"),
-            (ErrorCode::TsigKeyInUse, "TSIG_KEY_IN_USE"),
-            (ErrorCode::RoleNotFound, "ROLE_NOT_FOUND"),
-            (ErrorCode::RoleConflict, "ROLE_CONFLICT"),
-            (ErrorCode::RoleInUse, "ROLE_IN_USE"),
-            (ErrorCode::RoleGrantNotFound, "ROLE_GRANT_NOT_FOUND"),
-            (ErrorCode::DnssecAlreadyEnabled, "DNSSEC_ALREADY_ENABLED"),
-            (ErrorCode::DnssecNotEnabled, "DNSSEC_NOT_ENABLED"),
-            (
-                ErrorCode::DnssecRolloverInProgress,
-                "DNSSEC_ROLLOVER_IN_PROGRESS",
-            ),
-            (
-                ErrorCode::DnssecNoRolloverInProgress,
-                "DNSSEC_NO_ROLLOVER_IN_PROGRESS",
-            ),
-            (ErrorCode::DnssecDsPublished, "DNSSEC_DS_PUBLISHED"),
-            (ErrorCode::DnssecDsNotPublished, "DNSSEC_DS_NOT_PUBLISHED"),
-            (ErrorCode::DnssecDsUnverified, "DNSSEC_DS_UNVERIFIED"),
-            (ErrorCode::DnssecPolicyNotFound, "DNSSEC_POLICY_NOT_FOUND"),
-            (ErrorCode::DnssecPolicyConflict, "DNSSEC_POLICY_CONFLICT"),
-            (ErrorCode::DnssecPolicyInUse, "DNSSEC_POLICY_IN_USE"),
-            (ErrorCode::DnssecSigningFailed, "DNSSEC_SIGNING_FAILED"),
-            (ErrorCode::Unauthorized, "UNAUTHORIZED"),
-            (ErrorCode::InvalidToken, "INVALID_TOKEN"),
-            (ErrorCode::Forbidden, "FORBIDDEN"),
-            (ErrorCode::PayloadTooLarge, "PAYLOAD_TOO_LARGE"),
-            (ErrorCode::UnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE"),
-            (ErrorCode::Internal, "INTERNAL"),
-        ] {
-            assert_eq!(value.as_str(), expected);
-            assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<ErrorCode>(serde_json::json!(expected)).unwrap(),
-                value
-            );
-        }
-    }
-}
+mod tests;

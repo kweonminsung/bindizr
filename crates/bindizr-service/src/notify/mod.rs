@@ -1,14 +1,20 @@
 //! Propagate committed changes by NOTIFY, inline or batched by `queue` per `dns.notify.batch_ms`.
 
+mod delivery;
 pub mod queue;
-
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
+pub use delivery::{
+    NotifyDeliveryError, NotifyZoneError, send_notify_to_secondaries, send_notify_to_secondary,
+};
 use thiserror::Error;
 use tokio::task::JoinSet;
 
-use crate::{Context, dns_client::notify::NotifyZoneError, error::ServiceError};
+use crate::{Context, error::ServiceError};
+
+/// Bound key/address preparation without occupying slots while waiting for ACKs.
+pub(crate) const CONCURRENT_PREPARATIONS: usize = 16;
 
 /// Which zones a NOTIFY round covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +63,7 @@ pub(crate) async fn send_notify(
         for zone in zones {
             let cx = cx.clone();
             tasks.spawn(async move {
-                let result = crate::dns_client::notify::send_zone_notify(&cx, &zone.name).await;
+                let result = delivery::send_zone_notify(&cx, &zone.name).await;
                 (zone.name.to_string(), result)
             });
         }
@@ -75,7 +81,7 @@ pub(crate) async fn send_notify(
             Err(NotifyError::Zones { failures })
         };
     };
-    Ok(crate::dns_client::notify::send_zone_notify(cx, zone_name).await?)
+    Ok(delivery::send_zone_notify(cx, zone_name).await?)
 }
 
 /// NOTIFY after commit, queued when batching is enabled and inline otherwise.
@@ -85,7 +91,7 @@ pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
         return;
     }
 
-    if let Err(e) = crate::dns_client::notify::send_zone_notify(cx, zone_name).await {
+    if let Err(e) = delivery::send_zone_notify(cx, zone_name).await {
         log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
     }
 }

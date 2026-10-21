@@ -171,7 +171,12 @@ async fn import_transfer(
     let records = client
         .fetch_zone(zone_name, &config.dns.import)
         .await
-        .map_err(|e| ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e)))?;
+        .map_err(|e| {
+            ServiceError::invalid_input_with_source(
+                format!("AXFR from {} failed: {}", server, e),
+                e,
+            )
+        })?;
     let source = ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name));
     reconcile(cx, caller, zone_name, source, request, mode).await
 }
@@ -212,16 +217,16 @@ pub async fn import_zones(
                 .fetch_zone(&catalog, &config.dns.import)
                 .await
                 .map_err(|e| {
-                    ServiceError::invalid_input(format!(
-                        "AXFR of catalog {} from {} failed: {}",
-                        catalog, server, e
-                    ))
+                    ServiceError::invalid_input_with_source(
+                        format!("AXFR of catalog {} from {} failed: {}", catalog, server, e),
+                        e,
+                    )
                 })?;
             extract_member_zones(&records, &catalog).map_err(|e| {
-                ServiceError::invalid_input(format!(
-                    "catalog {} from {} cannot be read: {}",
-                    catalog, server, e
-                ))
+                ServiceError::invalid_input_with_source(
+                    format!("catalog {} from {} cannot be read: {}", catalog, server, e),
+                    e,
+                )
             })?
         }
         (Some(_), Some(_)) => {
@@ -667,34 +672,4 @@ async fn reconcile(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::ErrorCode;
-
-    /// Verify that `normalize_zone_names` canonicalizes and drops repeats in request order.
-    #[test]
-    fn normalize_zone_names_canonicalizes_and_drops_repeats() {
-        let names =
-            ["Example.COM.", "example.net", " example.com", "example.net"].map(str::to_string);
-
-        let zones = normalize_zone_names(&names).unwrap();
-
-        assert_eq!(
-            zones,
-            vec![
-                ZoneName::parse("example.com").unwrap(),
-                ZoneName::parse("example.net").unwrap(),
-            ]
-        );
-    }
-
-    /// Verify that `normalize_zone_names` rejects an empty list and a name no zone can carry.
-    #[test]
-    fn normalize_zone_names_rejects_empty_list_and_bad_name() {
-        let empty = normalize_zone_names(&[]).unwrap_err();
-        assert_eq!(empty.code(), ErrorCode::InvalidInput);
-
-        let root = normalize_zone_names(&["example.com".to_string(), ".".to_string()]).unwrap_err();
-        assert_eq!(root.code(), ErrorCode::InvalidZoneField);
-    }
-}
+mod tests;

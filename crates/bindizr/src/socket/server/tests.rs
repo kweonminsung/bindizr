@@ -150,3 +150,104 @@ async fn prepare_socket_path_rejects_non_socket_file() {
     assert!(matches!(err, BindSocketPathError::NotASocket { .. }));
     assert!(Path::new(socket_path).exists());
 }
+
+/// Shutdown waits for committed commands and closes clients still waiting for input.
+#[tokio::test]
+async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
+    use std::{sync::Arc, time::Duration};
+
+    use bindizr_core::{
+        config::Config,
+        dns::message::{Keepalive, OptRcode, ParsedQuery},
+        metrics::Metrics,
+    };
+    use bindizr_service::{Context, authorization::Caller, secondary};
+    use tokio::{net::UdpSocket, sync::watch, time::timeout};
+
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.dns.notify.batch_ms = 0;
+    config.dns.notify.timeout_secs = 3;
+    config.dns.notify.retries = 0;
+    let tls = TlsCertificates::load(&config).unwrap();
+    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let cx = Arc::new(Context::new(
+        config,
+        String::new(),
+        db,
+        Metrics::new().unwrap(),
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
+    ));
+    let secondary_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let secondary_request = serde_json::from_value(json!({
+        "name": "ack-gate",
+        "address": secondary_socket.local_addr().unwrap().to_string(),
+    }))
+    .unwrap();
+    secondary::create(&cx, &Caller::socket(), &secondary_request)
+        .await
+        .unwrap();
+    let (control_tx, _control_rx) = control::channel();
+    let socket_cx = Arc::new(SocketContext::new(cx, control_tx, tls));
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("drain.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let shutdown = Shutdown::new();
+    let mut server = serve(socket_cx.clone(), listener, &shutdown).unwrap();
+    let mut client = UnixStream::connect(&path).await.unwrap();
+    let mut idle_client = UnixStream::connect(&path).await.unwrap();
+    let request = serde_json::from_value(json!({
+        "name": "example.com",
+        "mname": "ns1.example.com",
+        "rname": "admin@example.com",
+    }))
+    .unwrap();
+    let command = serde_json::to_string(&DaemonCommand::CreateZone(request)).unwrap();
+    client
+        .write_all(format!("{command}\n").as_bytes())
+        .await
+        .unwrap();
+    let mut notify = [0; 4096];
+    let (len, peer) = timeout(
+        Duration::from_secs(2),
+        secondary_socket.recv_from(&mut notify),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    timeout(Duration::from_secs(2), async {
+        while Arc::strong_count(&socket_cx) < 4 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    shutdown.trigger();
+    assert!(
+        timeout(Duration::from_millis(50), &mut server)
+            .await
+            .is_err()
+    );
+    let response = ParsedQuery::parse(&notify[..len], Keepalive::None)
+        .unwrap()
+        .build_signed_error_response(OptRcode::NOERROR, None, None)
+        .unwrap();
+    secondary_socket.send_to(&response, peer).await.unwrap();
+    let mut response = String::new();
+    timeout(
+        Duration::from_secs(2),
+        BufReader::new(client).read_line(&mut response),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(response["data"]["zone"]["name"], "example.com");
+    timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut byte = [0];
+    assert_eq!(idle_client.read(&mut byte).await.unwrap(), 0);
+}

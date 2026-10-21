@@ -174,27 +174,6 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
     ));
 }
 
-/// Serial ordering survives wraparound; half-range differences remain unordered.
-#[test]
-fn secondary_status_uses_rfc1982_order() {
-    for (expected, visible, status) in [
-        (0, u32::MAX, SecondaryStatus::Lagging),
-        (u32::MAX, 0, SecondaryStatus::Ahead),
-        (0, 0, SecondaryStatus::InSync),
-        (0, 0x8000_0000, SecondaryStatus::Reachable),
-    ] {
-        assert_eq!(
-            build_secondary_status(
-                "server".into(),
-                Some(Serial::from(expected)),
-                Ok(Serial::from(visible))
-            )
-            .status,
-            status
-        );
-    }
-}
-
 /// A malformed, unrelated or wrong-opcode datagram cannot end a live UDP probe.
 #[tokio::test]
 async fn udp_probe_discards_invalid_datagrams_without_resending() {

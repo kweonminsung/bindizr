@@ -221,6 +221,7 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
 fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     let zone = ZoneName::parse("example.com").unwrap();
     for (kind, rtype) in [
+        ("NS", Rtype::NS),
         ("CNAME", Rtype::CNAME),
         ("PTR", Rtype::PTR),
         ("DNAME", Rtype::DNAME),

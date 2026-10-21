@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
 use bindizr_core::{
     dns::{
-        message::{ExtendedErrorCode, Keepalive, OptRcode, ParsedQuery, Rcode, ResponseLimit},
+        message::{ExtendedErrorCode, Keepalive, OptRcode, QueryMetadata, Rcode, ResponseLimit},
         nsupdate::{DEFAULT_FUDGE, build_response},
         tsig::{RequestSignature, TsigError, request_signature},
     },
@@ -56,8 +56,8 @@ pub(crate) async fn handle_udp_nsupdate(
     let client_addr = target.client_addr;
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
-    let limit = ParsedQuery::parse(query_data, Keepalive::None)
-        .map_or(ResponseLimit::UDP, |query| query.response_limit());
+    let limit = QueryMetadata::parse(query_data, Keepalive::None)
+        .map_or(ResponseLimit::UDP, |metadata| metadata.response_limit());
     let response = handle_nsupdate_request(
         dns_cx,
         query_data,
@@ -84,19 +84,56 @@ async fn handle_nsupdate_request(
         Ok(req) => req,
         Err(e) => {
             log::warn!("NSUPDATE parse error from {}: {}", client_addr, e);
+            let mut response_rcode = OptRcode::FORMERR;
             // RFC 8945, Section 5.2: a request whose key verifies is answered
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match request_signature(query_data) {
                 RequestSignature::Key { name, fudge } => {
-                    match update::authenticate_tsig_key(dns_cx, &name, query_data, limit).await {
+                    match update::authenticate_tsig_key(dns_cx, &name, query_data).await {
                         Ok((_, signer)) => (Some(signer), fudge),
-                        Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, response })) => {
-                            log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
-                            cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
-                            return Ok(response);
+                        Err(update::UpdateError::Tsig(TsigError::Rejected {
+                            rcode,
+                            key,
+                            time,
+                        })) => {
+                            match bindizr_core::dns::tsig::build_error_response(
+                                query_data,
+                                key.as_deref(),
+                                rcode,
+                                time,
+                                limit,
+                            ) {
+                                Ok(response) => {
+                                    log::warn!(
+                                        "NSUPDATE TSIG rejected from {}: {}",
+                                        client_addr,
+                                        rcode
+                                    );
+                                    cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
+                                    return Ok(response);
+                                }
+                                Err(error) => {
+                                    log::warn!(
+                                        "NSUPDATE TSIG error encoding failed from {}: {}",
+                                        client_addr,
+                                        error
+                                    );
+                                    response_rcode = OptRcode::SERVFAIL;
+                                    (None, DEFAULT_FUDGE)
+                                }
+                            }
                         }
                         Err(err) => {
                             log::warn!("NSUPDATE key check failed from {}: {}", client_addr, err);
+                            if matches!(&err, update::UpdateError::LoadTsigKey(_))
+                                || matches!(
+                                    &err,
+                                    update::UpdateError::Tsig(error)
+                                        if !matches!(error, TsigError::Malformed(_))
+                                )
+                            {
+                                response_rcode = OptRcode::SERVFAIL;
+                            }
                             (None, DEFAULT_FUDGE)
                         }
                     }
@@ -104,10 +141,10 @@ async fn handle_nsupdate_request(
                 RequestSignature::Absent | RequestSignature::Malformed => (None, DEFAULT_FUDGE),
             };
             cx.metrics()
-                .track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
+                .track_nsupdate(NsupdateResult::Rcode(response_rcode.rcode()));
             return Ok(build_response(
                 query_data,
-                OptRcode::FORMERR,
+                response_rcode,
                 None,
                 signer,
                 fudge,
@@ -122,7 +159,7 @@ async fn handle_nsupdate_request(
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
 
-    let (result, signer) = update::apply_update(dns_cx, parsed, query_data, transport, limit).await;
+    let (result, signer) = update::apply_update(dns_cx, parsed, query_data, transport).await;
 
     let (rcode, ede) = match result {
         Ok(changed) => {
@@ -133,12 +170,29 @@ async fn handle_nsupdate_request(
             );
             (OptRcode::NOERROR, None)
         }
-        // TSIG failures carry their own complete response, built against the
-        // request's TSIG record (RFC 8945, Sections 5.2–5.3).
-        Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, response })) => {
-            log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
-            cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
-            return Ok(response);
+        // The handler composes TSIG rejections against the request (RFC 8945, Sections 5.2–5.3).
+        Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, key, time })) => {
+            match bindizr_core::dns::tsig::build_error_response(
+                query_data,
+                key.as_deref(),
+                rcode,
+                time,
+                limit,
+            ) {
+                Ok(response) => {
+                    log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
+                    cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
+                    return Ok(response);
+                }
+                Err(error) => {
+                    log::warn!(
+                        "NSUPDATE TSIG error encoding failed from {}: {}",
+                        client_addr,
+                        error
+                    );
+                    (OptRcode::SERVFAIL, None)
+                }
+            }
         }
         Err(update::UpdateError::Edns(rcode)) => {
             log::info!("Refusing the EDNS of an NSUPDATE from {}", client_addr);
@@ -181,3 +235,6 @@ async fn handle_nsupdate_request(
         query_data, rcode, ede, signer, fudge, limit,
     )?)
 }
+
+#[cfg(test)]
+mod tests;

@@ -141,21 +141,13 @@ async fn handle_soa_request(
     let zone_name_str = query.zone_name.as_str();
 
     // A UDP IXFR is a transfer; a SOA query is not.
-    let identity = authenticate_soa(
-        dns_cx,
-        client_ip,
-        query_data,
-        transport,
-        query.response_limit(),
-    )
-    .await
-    .and_then(|identity| {
-        if query.qtype == Rtype::IXFR {
-            authorize_transport(dns_cx, transport, identity)
-        } else {
-            Ok(identity)
-        }
-    });
+    let identity = if query.qtype == Rtype::IXFR {
+        authenticate_transfer(dns_cx, query_data, client_ip, transport)
+            .await
+            .and_then(|identity| authorize_transport(dns_cx, transport, identity))
+    } else {
+        authenticate_soa(dns_cx, client_ip, query_data, transport).await
+    };
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
@@ -169,11 +161,19 @@ async fn handle_soa_request(
                 query.qtype,
                 zone_name_str,
                 client_ip,
-                refusal.reason
+                refusal
             );
-            return refusal
-                .into_response(&message::QueryMetadata::from(query))
-                .map(|response| (response, outcome));
+            return match refusal.into_response(query_data, &message::QueryMetadata::from(query)) {
+                Ok(response) => Ok((response, outcome)),
+                Err(DnsError::Tsig(error)) => {
+                    log::warn!("Failed to encode {} TSIG refusal: {}", query.qtype, error);
+                    Ok((
+                        query.build_signed_error_response(OptRcode::SERVFAIL, None, None)?,
+                        SoaResult::Failed,
+                    ))
+                }
+                Err(error) => Err(error),
+            };
         }
     };
 
@@ -202,9 +202,13 @@ async fn handle_soa_request(
         let access = match zone::authorize_catalog_content(cx, &identity.caller).await {
             Ok(access) => access,
             Err(error) => {
-                return TransferRefusal::failed(error.to_string(), identity.signer)
-                    .into_response(&message::QueryMetadata::from(query))
-                    .map(|response| (response, SoaResult::Failed));
+                return TransferRefusal::failed(
+                    "failed to load catalog content",
+                    error,
+                    identity.signer,
+                )
+                .into_response(query_data, &message::QueryMetadata::from(query))
+                .map(|response| (response, SoaResult::Failed));
             }
         };
         let zones = match access {
@@ -226,16 +230,20 @@ async fn handle_soa_request(
                     reason
                 );
                 return TransferRefusal::refused(reason, identity.signer)
-                    .into_response(&message::QueryMetadata::from(query))
+                    .into_response(query_data, &message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Refused));
             }
         };
         let (catalog_zone, _) = match catalog::generate_catalog_zone(dns_cx, zones).await {
             Ok(content) => content,
             Err(error) => {
-                return TransferRefusal::failed(error.to_string(), identity.signer)
-                    .into_response(&message::QueryMetadata::from(query))
-                    .map(|response| (response, SoaResult::Failed));
+                return TransferRefusal::failed(
+                    "failed to generate catalog",
+                    error,
+                    identity.signer,
+                )
+                .into_response(query_data, &message::QueryMetadata::from(query))
+                .map(|response| (response, SoaResult::Failed));
             }
         };
         let mut builder = build(identity.signer);
@@ -256,8 +264,8 @@ async fn handle_soa_request(
         {
             Ok(access) => access,
             Err(e) => {
-                return TransferRefusal::failed(e.to_string(), identity.signer)
-                    .into_response(&message::QueryMetadata::from(query))
+                return TransferRefusal::failed("failed to load SOA content", e, identity.signer)
+                    .into_response(query_data, &message::QueryMetadata::from(query))
                     .map(|response| (response, SoaResult::Failed));
             }
         },
@@ -282,7 +290,7 @@ async fn handle_soa_request(
                 reason
             );
             return TransferRefusal::refused(reason, identity.signer)
-                .into_response(&message::QueryMetadata::from(query))
+                .into_response(query_data, &message::QueryMetadata::from(query))
                 .map(|response| (response, SoaResult::Refused));
         }
     };
@@ -314,7 +322,6 @@ async fn authenticate_soa(
     client_ip: IpAddr,
     query_data: &[u8],
     transport: TransferTransport,
-    limit: bindizr_core::dns::message::ResponseLimit,
 ) -> Result<TransferIdentity, TransferRefusal> {
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.
@@ -326,5 +333,5 @@ async fn authenticate_soa(
             signer: None,
         });
     }
-    authenticate_transfer(dns_cx, query_data, client_ip, transport, limit).await
+    authenticate_transfer(dns_cx, query_data, client_ip, transport).await
 }

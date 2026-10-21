@@ -10,6 +10,30 @@ use bindizr_core::{
 use super::*;
 use crate::types::DsState;
 
+/// Missing parent configuration keeps its service-owned cause and established message.
+#[test]
+fn missing_parent_nameservers_remains_a_typed_service_error() {
+    use std::error::Error;
+    let error = ServiceError::dnssec_ds_unverified(
+        "example.com",
+        ProbeDelegationError::NoParentNameservers,
+    );
+    assert_eq!(error.code(), crate::error::ErrorCode::DnssecDsUnverified);
+    assert_eq!(
+        error.to_string(),
+        "could not verify that the parent zone serves no DS for zone 'example.com': \
+         the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'; \
+         set the zone's parent nameserver addresses, or skip the DS check",
+    );
+    assert!(matches!(
+        error
+            .source()
+            .unwrap()
+            .downcast_ref::<ProbeDelegationError>(),
+        Some(ProbeDelegationError::NoParentNameservers),
+    ));
+}
+
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {

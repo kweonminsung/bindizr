@@ -136,6 +136,12 @@ from constructors, with `stop` where draining is needed, never `initialize` into
 globals. Bind the daemon socket before building other state to reject a second
 daemon early, then `serve` it.
 
+Listeners own their accepted requests and connections. Shutdown stops new reads
+and waits for accepted mutations, then stops and joins the scheduler before
+flushing NOTIFY. A transfer may be interrupted for the secondary to retry;
+canceling it must not leave a partially written frame usable by another reply.
+The daemon's overall drain timeout bounds this wait.
+
 Only two production process globals remain: the `log` facade (`Logger::init`,
 `set_level`, its level/format atomics) and stdout/stderr write state behind
 `outln!`. A pure environment fact such as color detection may memoize in a
@@ -405,9 +411,12 @@ locked state, validate the proposed state, apply, commit, then notify and report
 success. Management operations re-authenticate before locking their own rows, as
 [Transactions and locking](#transactions-and-locking) specifies. Reads keep their own transaction contract.
 
-- Parse each supplied value once and carry the result forward. State-dependent
-  defaults and cross-field checks use the locked rows. Preserve authorization and
-  error precedence: an input parse may keep its `Result` until authorization permits
+- Normalize supplied fields once at their owning boundary and carry the result
+  forward. Independent validation, canonical comparison, and wire encoding may
+  read that normalized representation; this does not require another cached
+  request type. State-dependent defaults and cross-field checks use the locked
+  rows. Preserve authorization and error precedence: an input parse may keep its
+  `Result` until authorization permits
   reporting it. Never fill missing update fields from an unlocked pre-read.
 - Build the actual candidate or change set. Do not repack an update as a creation
   request or add dummy fields to reuse validation. Share field validators and real
@@ -441,6 +450,29 @@ stage. Keep orchestration explicit; do not introduce a callback-based execution
 framework. Input sources and protocols retain their distinct entry contracts.
 
 ## DNS contracts
+
+Use existing wire and parsed types across DNS functions. Reading the same message
+for a different protocol responsibility is allowed; `Message::from_octets` only
+checks the header length. Add cached or intermediate representations only when
+measured cost or a concrete invariant justifies their maintenance. TSIG request
+verification returns authentication results; a separate encoder composes errors.
+Service `notify` and `probe` flows select secondaries, load keys/history and
+assemble reports; `dns_client` owns network exchanges and response validation.
+Service flows choose configured targets and timeouts, including parent DS probes;
+network clients receive those inputs explicitly. SOA/XFR response metrics and
+transfer history reflect the final encoding/transmission outcome; handlers do
+not count a refusal or success before work that could turn it into a failure.
+Encoding failures remain typed outcomes until the handler
+chooses its fallback response. UPDATE metrics describe request processing and
+the committed mutation outcome: a failed response write cannot undo a commit.
+Its TSIG error fallback is selected before that processing outcome is counted.
+
+Listing services validate an explicit page limit before querying. An omitted
+limit remains unbounded; HTTP supplies its default of 50, while the daemon
+socket supplies none. An explicit limit is 1 through 1000. Collection paging and
+response metadata only apply the validated window; they do not validate input or
+choose another default. A documented use-case default, such as the secondary
+transfer log's 1000, is resolved by that service entry point.
 
 ### Names and record values
 
@@ -509,8 +541,15 @@ arbitrary octets and preserve segment boundaries. CAA tags and the names in
 SRV, DNAME and NAPTR RDATA retain their original case; comparison and DNSSEC
 canonicalization operate on separate wire data. Management creation of CAA
 permits flags 0 or 128; UPDATE and import preserve unknown flag bits.
-The root name `.` is a valid CNAME, PTR, or DNAME target (RFC 2181, Section 11);
+The root name `.` is a valid NS, CNAME, PTR, or DNAME target and SOA MNAME
+(RFC 2181, Section 11);
 it remains distinct from a literal dot label (`\.`).
+
+The managed zone name still cannot be the root. NS, MX, PTR and SRV targets
+cannot require CNAME or DNAME redirection within the zone (RFC 6672, Section 5.1).
+A DNAME redirects only proper descendants; one stored below a non-apex NS
+delegation is occluded and does not govern the parent zone's target validation
+(RFC 5936, Section 3.5).
 
 User records use a closed list of implemented types, including WKS. Unsupported
 ordinary types are rejected across API, CLI, imports, and DNS UPDATE; there is
@@ -620,10 +659,12 @@ OPT and TSIG retain their own CLASS semantics; UPDATE's ANY/NONE controls remain
 in the UPDATE handler. Question-class refusals, EDNS version errors, and TSIG
 validation retain their existing response codes and authentication behavior.
 
-QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
-(RFC 9619, Section 4). QDCOUNT 0 is not itself prohibited by that RFC; unsupported
-empty QUERY requests default to FORMERR. Preserve readable EDNS and authenticate
-TSIG before any such refusal: EDNS version errors receive BADVERS and TSIG
+QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch,
+including requests with an unsupported EDNS version (RFC 9619, Section 4).
+QDCOUNT 0 is not itself prohibited by that RFC; unsupported empty QUERY requests
+default to FORMERR, while a readable unsupported EDNS version receives BADVERS.
+Single-question requests also receive BADVERS for an unsupported EDNS version.
+Preserve readable EDNS and authenticate TSIG before these refusals; TSIG
 failures retain their specific errors. A message with an unreadable body receives
 a header-only response; a header shorter than twelve octets receives no reply.
 A transfer error about a zone this server holds (REFUSED, SERVFAIL) keeps AA set,
@@ -644,16 +685,22 @@ These defaults also apply when their sections are absent. The selected database
 still needs its location. Parse the file and fill defaults, then apply environment
 overrides before validation; explicit invalid values remain errors.
 
-DNS response budgets use `ResponseLimit`: choose UDP/EDNS or stream once at
-request ingress and pass that value through authentication and encoding. A
-builder holding `ParsedQuery` uses that query's budget instead of accepting a
-second size override. Final encoders check compressed bytes after OPT and TSIG;
-UDP send checks the same budget before I/O. UDP may rebuild a TC response or
-compact TSIG validation error; stream overflow is an error. Commit a TSIG chain
-only when its completed message fits. Outbound UDP clients discard responses
-larger than their advertisement within the original deadline. Fixed name,
-RDATA, and TCP frame widths remain checked by their owning types; signing and
-field composition primitives do not take transport budgets.
+DNS response budgets use `ResponseLimit`. Ingress reads EDNS from `ParsedQuery`
+or `QueryMetadata` and chooses UDP/EDNS or stream; UPDATE and outbound UDP
+clients use `QueryMetadata` when they need only response metadata, not QUERY
+validation. Authentication and service operations return outcomes without
+encoding packets or taking response budgets. Response encoders use the request's
+budget, from their existing parsed input or an explicit `ResponseLimit` when
+they receive raw bytes. A builder holding `ParsedQuery` accepts no second size
+override. Final encoders check compressed bytes after OPT and TSIG; UDP send
+checks the same budget before I/O. Transfer builders may estimate size while
+splitting stream messages, but that estimate never replaces the final check.
+UDP may rebuild a TC response or compact TSIG validation error; stream overflow
+is an error. Commit a TSIG chain only when its completed message fits. Outbound
+UDP clients discard responses larger than their advertisement within the
+original deadline. Fixed name, RDATA, and TCP frame widths remain checked by
+their owning types; signing and field composition primitives do not take
+transport budgets.
 
 EDNS parsing and response encoding are shared by QUERY, UPDATE, and TSIG errors.
 A readable OPT retains its version and DO bit even when rejected with BADVERS;
@@ -834,7 +881,7 @@ configuration, or transaction state; assembly of equal-standing inputs into a
 payload/standard type/map; and operations whose receiver would be a slice,
 `Option`, or foreign type. A payload's methods only reshape representations, not
 apply service policy. Page limits/metadata live in `pagination`, probe classification
-in `dns_client::probe::build_secondary_status`, and imported SOA preparation in
+in `probe::build_secondary_status`, and imported SOA preparation in
 `prepare_zone` beside the import flow. Methods use their module's error;
 `ServiceError` appears on methods only in service-owned structs and the caller gate.
 
@@ -911,8 +958,11 @@ variant, not `io::Error::new`.
   context absent from the cause (UNIQUE to `zone_conflict`, `internal_with_source`);
   never flatten a source into a formatted message.
 - `ServiceError` variants match `ErrorCode`s and carry the wire message.
-  `Internal` and `DnssecSigningFailed` retain their cause as a source. `code()`
-  and `Display` supply the payload; front ends map codes to HTTP status, CLI exit
+  `Internal`, `DnssecSigningFailed`, and `DnssecDsUnverified` retain their cause as
+  a source. Operational failures mapped to `InvalidInput`, such as an inbound
+  AXFR failure, retain theirs too; plain input or policy classifications need
+  no artificial cause. `code()` and `Display` supply the payload; front ends map
+  codes to HTTP status, CLI exit
   code, or DNS RCODE. The service knows no HTTP. Other layers use their own errors
   (`DaemonError`, `DnsError`, `CliError`) with `From` conversions.
 - Box `domain` errors in `dns::LibraryError`; their types vary and callers do

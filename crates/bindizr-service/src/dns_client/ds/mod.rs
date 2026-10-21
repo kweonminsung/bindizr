@@ -1,27 +1,20 @@
-//! Asking a zone's parent whether it still delegates trust to the zone: the
-//! DS record set the zone's `parent_ns_addrs` serve for the child.
+//! Querying the supplied parent servers for a child zone's DS records.
 
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::{
-    dns::{
-        dnssec::EncodeWireNameError,
-        message::{Name, Opcode, Rtype},
-        name::ZoneName,
-        query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
-    },
-    model::zone::Zone,
+use bindizr_core::dns::{
+    dnssec::EncodeWireNameError,
+    message::{Name, Opcode, Rtype},
+    name::ZoneName,
+    query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
 };
 use thiserror::Error;
 
 use super::{ExchangeMessageError, ResolveAddressError};
-use crate::Context;
 
 /// Why the parent could not be asked, or what it failed to answer.
 #[derive(Debug, Error)]
 pub(crate) enum ProbeParentDsError {
-    #[error("the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'")]
-    NoParentNameservers,
     #[error("parent server '{entry}' did not resolve: {source}")]
     Unresolved {
         entry: String,
@@ -63,20 +56,15 @@ pub(crate) struct ParentDs {
     pub(crate) answers: Vec<Option<DsRecordSet>>,
 }
 
-/// Query every parent for DS; missing configuration or unanswered servers are errors, not absence.
+/// Query every supplied parent for DS; unanswered servers are errors, not absence.
 pub(crate) async fn probe_parent_ds(
-    cx: &Context,
-    zone: &Zone,
+    zone_name: &ZoneName,
+    parent_ns_addrs: &str,
+    timeout: Duration,
 ) -> Result<ParentDs, ProbeParentDsError> {
-    let dns_config = &cx.config().dns;
-    let timeout = dns_config.notify.timeout();
-    let raw = zone
-        .parent_ns_addrs
-        .as_deref()
-        .ok_or(ProbeParentDsError::NoParentNameservers)?;
-    let servers = resolve_parent_ns_addrs(raw, timeout).await?;
+    let servers = resolve_parent_ns_addrs(parent_ns_addrs, timeout).await?;
 
-    let answers = query_ds(&zone.name, &servers, timeout).await?;
+    let answers = query_ds(zone_name, &servers, timeout).await?;
     Ok(ParentDs {
         ns_addrs: servers.into_iter().map(|(entry, _)| entry).collect(),
         answers,
