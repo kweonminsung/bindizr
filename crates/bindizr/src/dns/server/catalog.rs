@@ -23,9 +23,11 @@ pub(crate) async fn send_catalog_response(
     );
 
     let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
+
     if let Some(signer) = signer.take() {
         builder = builder.sign_with(signer);
     }
+
     let streamed = async {
         let mut messages_sent = 0usize;
 
@@ -74,9 +76,11 @@ pub(crate) async fn send_catalog_response(
             })
             .await?;
         messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+
         Ok::<usize, DnsError>(messages_sent)
     }
     .await;
+
     // Handed back so a failure's SERVFAIL is signed too.
     *signer = builder.take_signer();
     let messages_sent = streamed?;

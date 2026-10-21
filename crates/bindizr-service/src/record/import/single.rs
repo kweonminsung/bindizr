@@ -46,12 +46,15 @@ pub async fn import_zone(
         (Some(content), None) => ImportSource::Text(content),
         (None, Some(server)) => {
             let server = server.trim();
+
             if !is_address_target(server) {
                 return Err(ServiceError::invalid_input(
                     "from_server must name one server as host[:port]",
                 ));
             }
+
             let mut client = AxfrClient::new(server);
+
             return import_transfer(cx, caller, zone_name, &mut client, server, options).await;
         }
         (Some(_), Some(_)) => {
@@ -63,5 +66,6 @@ pub async fn import_zone(
             return Err(ServiceError::invalid_input("give content or from_server"));
         }
     };
+
     apply_import(cx, caller, zone_name, source, options).await
 }

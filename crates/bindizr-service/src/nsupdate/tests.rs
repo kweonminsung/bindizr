@@ -16,6 +16,7 @@ fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
             .unwrap()
             .is_apex()
     );
+
     // A dotted wire label is one label, so it is data rather than a boundary.
     assert_eq!(
         parse_update_owner(
@@ -39,8 +40,8 @@ fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
         // One label spelling the zone is not inside it.
         r"evil\.example.com.",
     ] {
-        let err = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
-        assert_eq!(err.rcode(), Rcode::NOTZONE, "{owner:?}");
+        let error = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
+        assert_eq!(error.rcode(), Rcode::NOTZONE, "{owner:?}");
     }
 }
 
@@ -48,10 +49,12 @@ fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
 #[test]
 fn parser_errors_retain_their_sources() {
     let shape = ValidateUpdateShapeError::NonzeroTtl;
-    let err = NsupdateError::from(shape);
-    assert_eq!(err.rcode(), Rcode::FORMERR);
+    let error = NsupdateError::from(shape);
+
+    assert_eq!(error.rcode(), Rcode::FORMERR);
     assert_eq!(
-        err.source()
+        error
+            .source()
             .unwrap()
             .downcast_ref::<ValidateUpdateShapeError>(),
         Some(&shape)
@@ -60,10 +63,11 @@ fn parser_errors_retain_their_sources() {
     let parse = ParseUpdateError::Rdata {
         record_type: "A".to_string(),
     };
-    let err = NsupdateError::from(parse.clone());
-    assert_eq!(err.rcode(), Rcode::FORMERR);
+    let error = NsupdateError::from(parse.clone());
+
+    assert_eq!(error.rcode(), Rcode::FORMERR);
     assert_eq!(
-        err.source().unwrap().downcast_ref::<ParseUpdateError>(),
+        error.source().unwrap().downcast_ref::<ParseUpdateError>(),
         Some(&parse)
     );
 }
@@ -90,14 +94,16 @@ fn service_errors_retain_their_sources_and_classification() {
         ),
     ] {
         let message = source.to_string();
-        let err = NsupdateError::from(source);
-        assert_eq!(err.rcode(), rcode);
-        assert_eq!(err.to_string(), message);
-        let service = err
+        let error = NsupdateError::from(source);
+
+        assert_eq!(error.rcode(), rcode);
+        assert_eq!(error.to_string(), message);
+        let service = error
             .source()
             .unwrap()
             .downcast_ref::<ServiceError>()
             .unwrap();
+
         if rcode == Rcode::SERVFAIL {
             assert!(service.source().unwrap().is::<std::io::Error>());
         }
@@ -108,6 +114,7 @@ fn service_errors_retain_their_sources_and_classification() {
 #[test]
 fn owner_errors_retain_their_sources_and_classification() {
     let zone = ZoneName::parse("example.com").unwrap();
+
     for (name, source, rcode) in [
         (
             "outside.example.net.",
@@ -120,10 +127,10 @@ fn owner_errors_retain_their_sources_and_classification() {
             Rcode::REFUSED,
         ),
     ] {
-        let err = parse_update_owner(name, &zone).unwrap_err();
-        assert_eq!(err.rcode(), rcode);
+        let error = parse_update_owner(name, &zone).unwrap_err();
+        assert_eq!(error.rcode(), rcode);
         assert_eq!(
-            err.source().unwrap().downcast_ref::<ParseNameError>(),
+            error.source().unwrap().downcast_ref::<ParseNameError>(),
             Some(&source)
         );
     }

@@ -43,7 +43,7 @@ impl DnssecKey {
             SecurityAlgorithm::from_int(self.algorithm.as_i32() as u8),
             public_key,
         )
-        .map_err(|e| EncodeKeyRdataError::InvalidPublicKey(Box::new(e)))
+        .map_err(|error| EncodeKeyRdataError::InvalidPublicKey(Box::new(error)))
     }
 
     /// The key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
@@ -69,6 +69,7 @@ impl DnssecKey {
         rdata.push(self.algorithm.as_i32() as u8);
         rdata.push(digest_type);
         rdata.extend_from_slice(digest.as_ref());
+
         Ok(Rdata::new(rdata)?)
     }
 }

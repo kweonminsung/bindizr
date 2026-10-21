@@ -35,6 +35,7 @@ mod tests {
             let value = DnameRecordValue::parse(input).unwrap();
             assert_eq!(encode_name(&value.canonical()).unwrap(), expected);
         }
+
         for invalid in ["", ".."] {
             assert!(DnameRecordValue::parse(invalid).is_err(), "{invalid:?}");
         }

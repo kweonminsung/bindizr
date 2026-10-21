@@ -77,6 +77,7 @@ pub fn extract_member_zones(
     let mut apex_ns = false;
     let mut member_nodes: HashMap<Vec<u8>, ZoneName> = HashMap::new();
     let mut listed: HashSet<&ZoneName> = HashSet::new();
+
     for record in records {
         let owner = OwnerName::parse_absolute_in_zone(&record.name, catalog).map_err(|source| {
             ExtractMemberZonesError::OwnerName {
@@ -85,6 +86,7 @@ pub fn extract_member_zones(
             }
         })?;
         let labels = owner.labels();
+
         match record.rtype {
             Rtype::NS if owner.is_apex() => apex_ns = true,
             Rtype::TXT if labels == [b"version".to_vec()] => {
@@ -94,6 +96,7 @@ pub fn extract_member_zones(
                 {
                     return Err(ExtractMemberZonesError::VersionNotSingular);
                 }
+
                 version = Some(record.rdata.as_bytes().to_vec());
             }
             Rtype::PTR if labels.len() == 2 && labels[1] == b"zones" => {
@@ -108,6 +111,7 @@ pub fn extract_member_zones(
                         source,
                     }
                 })?;
+
                 match member_nodes.entry(labels[0].clone()) {
                     std::collections::hash_map::Entry::Occupied(entry)
                         if entry.get() != &member =>
@@ -125,6 +129,7 @@ pub fn extract_member_zones(
             _ => {}
         }
     }
+
     match version {
         None => return Err(ExtractMemberZonesError::MissingVersion),
         // One character-string, "2": the rdata is its length byte and the digit.
@@ -139,7 +144,10 @@ pub fn extract_member_zones(
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });
         }
     }
+
+    // Different member IDs must not provision the same zone twice.
     let mut members: Vec<ZoneName> = member_nodes.into_values().collect();
+
     for member in &members {
         if !listed.insert(member) {
             return Err(ExtractMemberZonesError::MemberRepeated {
@@ -147,12 +155,15 @@ pub fn extract_member_zones(
             });
         }
     }
+
     // The AXFR client checks the SOA envelope; the catalog schema also needs
     // an apex NS (RFC 9432, Section 4), before any member is imported.
     if !apex_ns {
         return Err(ExtractMemberZonesError::MissingApexNs);
     }
+
     members.sort();
+
     Ok(members)
 }
 

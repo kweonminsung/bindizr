@@ -29,6 +29,7 @@ impl TestApp {
         super::install_crypto_provider();
         let compose_stack = COMPOSE_STACK.get_or_init(ComposeStack::start);
         let client = Client::new();
+
         wait_for_compose_api(&client).await;
         register_compose_secondaries(&client).await;
 
@@ -57,6 +58,7 @@ async fn register_compose_secondaries(client: &Client) {
         if probe_api_resource(client, &format!("/secondaries/{name}")).await {
             continue;
         }
+
         post(
             client,
             "/secondaries",
@@ -71,6 +73,7 @@ async fn register_compose_secondaries(client: &Client) {
     if probe_api_resource(client, &format!("/tsig-keys/{COMPOSE_XOT_KEY}")).await {
         return;
     }
+
     post(
         client,
         "/roles",
@@ -104,7 +107,7 @@ async fn probe_api_resource(client: &Client, path: &str) -> bool {
         .get(format!("{COMPOSE_API_BASE_URL}{path}"))
         .send()
         .await
-        .unwrap_or_else(|e| panic!("GET {path}: {e}"))
+        .unwrap_or_else(|error| panic!("GET {path}: {error}"))
         .status()
         == StatusCode::OK
 }
@@ -116,7 +119,8 @@ async fn post(client: &Client, path: &str, body: serde_json::Value, allowed: &[S
         .json(&body)
         .send()
         .await
-        .unwrap_or_else(|e| panic!("POST {path}: {e}"));
+        .unwrap_or_else(|error| panic!("POST {path}: {error}"));
+
     assert!(
         allowed.contains(&response.status()),
         "POST {path} answered {}",
@@ -162,10 +166,13 @@ impl ComposeStack {
     fn compose_command(&self) -> Command {
         let mut command = Command::new("docker");
         command.arg("compose").arg("-p").arg(&self.project_name);
+
         for file in compose_files() {
             command.arg("-f").arg(file);
         }
+
         command.current_dir(&self.compose_dir);
+
         command
     }
 
@@ -241,6 +248,7 @@ fn compose_files() -> Vec<&'static str> {
 /// Wait until the Compose API is ready for requests.
 async fn wait_for_compose_api(client: &Client) {
     eprintln!("Waiting for bindizr API at {COMPOSE_API_BASE_URL}...");
+
     for attempt in 1..=120 {
         if let Ok(response) = client.get(COMPOSE_API_BASE_URL).send().await
             && response.status() == StatusCode::OK

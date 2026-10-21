@@ -10,7 +10,7 @@ use super::ExchangeMessageError;
 /// Why one NOTIFY to one address was not acknowledged.
 #[derive(Debug, Error)]
 pub enum SendNotifyError {
-    /// A socket failure shared by its pending exchanges.
+    /// A socket failure shared by its pending requests.
     #[error("{0}")]
     Io(#[source] Arc<std::io::Error>),
     #[error(transparent)]
@@ -21,8 +21,8 @@ pub enum SendNotifyError {
     Verify(#[from] bindizr_core::dns::tsig::VerifyResponseError),
     #[error(transparent)]
     Response(#[from] bindizr_core::dns::query::ParseResponseError),
-    #[error("NOTIFY socket dispatcher closed")]
-    DispatcherClosed,
+    #[error("NOTIFY socket worker stopped")]
+    WorkerStopped,
 }
 
 #[cfg(test)]

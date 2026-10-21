@@ -45,6 +45,7 @@ impl UpdatePlan {
             records: Vec::new(),
             soa_changed: false,
         };
+
         for update in updates {
             match update {
                 UpdateOperation::Record(record) => plan.records.push(record),
@@ -56,11 +57,13 @@ impl UpdatePlan {
                     {
                         continue;
                     }
+
                     plan.zone = replace_soa(&plan.zone, ttl, value)?;
                     plan.soa_changed = true;
                 }
             }
         }
+
         // RFC 2136, Section 3.6: only an update without an explicit SOA advance
         // needs an automatically generated serial.
         if (plan.soa_changed && plan.zone.serial == zone.serial)
@@ -68,6 +71,7 @@ impl UpdatePlan {
         {
             plan.zone.serial = generate_serial(Some(zone.serial));
         }
+
         Ok(plan)
     }
 }
@@ -80,6 +84,7 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
         .to_email()
         .map_err(ServiceError::invalid_zone_field)?;
     let normalized = normalize_soa(&value.mname, &rname, i64::from(ttl))?;
+
     Ok(Zone {
         serial,
         mname: normalized.mname,

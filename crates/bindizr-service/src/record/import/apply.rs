@@ -54,10 +54,11 @@ fn prepare_zone(
     zone::validation::reject_catalog_zone_name(cx, zone_name)?;
     let rname = SoaMailbox::from_encoded(&soa.rname)
         .to_email()
-        .map_err(|e| {
-            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
+        .map_err(|error| {
+            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", error))
         })?;
     let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
+
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
         name: zone_name.clone(),
@@ -122,8 +123,10 @@ pub(crate) async fn apply_import(
 
     let apply_result: Result<ApplyImportResult, ServiceError> = async {
         let t = Instant::now();
+
         let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
         let created = existing.is_none();
         let default_ttl = if let Some(zone) = &existing {
             authorize_import(caller, mode, zone)?;
@@ -159,6 +162,7 @@ pub(crate) async fn apply_import(
         let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
         let mut desired_by_key: HashMap<RecordKey, usize> =
             HashMap::with_capacity(parsed.records.len());
+
         for record in parsed.records {
             let requested = match record.value {
                 ZoneFileValue::Rdata(rdata) if record.record_type == RecordType::Txt => {
@@ -169,15 +173,15 @@ pub(crate) async fn apply_import(
             };
             let value = match requested.to_encoded_value(&record.record_type, record.priority) {
                 Ok(value) => value,
-                Err(e) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, e));
+                Err(error) => {
+                    errors.push(format!("{}: {}", record.owner_fqdn, error));
                     continue;
                 }
             };
             let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
                 Ok(stored_name) => stored_name,
-                Err(e) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, e));
+                Err(error) => {
+                    errors.push(format!("{}: {}", record.owner_fqdn, error));
                     continue;
                 }
             };
@@ -190,9 +194,11 @@ pub(crate) async fn apply_import(
                 ttl: record.ttl,
             };
             let key = data.match_key();
+
             if let Some(&kept) = desired_by_key.get(&key) {
                 let kept_ttl = desired[kept].data.ttl;
                 let this_ttl = record.ttl;
+
                 // The same record at two TTLs is a mixed-TTL record set (RFC 2181,
                 // Section 5.2); deduplication must not swallow the conflict.
                 if kept_ttl != this_ttl {
@@ -203,6 +209,7 @@ pub(crate) async fn apply_import(
                 } else {
                     skipped += 1;
                 }
+
                 continue;
             }
 
@@ -218,15 +225,17 @@ pub(crate) async fn apply_import(
 
         // Append checks only matching owners; replace/upsert need all rows to find deletions.
         let t = Instant::now();
+
         let existing_records = if created {
             Ok(Vec::new())
         } else {
             match mode {
                 ImportMode::Append => {
                     let mut names: Vec<OwnerName> =
-                        desired.iter().map(|d| d.data.name.clone()).collect();
+                        desired.iter().map(|desired_record| desired_record.data.name.clone()).collect();
                     names.sort();
                     names.dedup();
+
                     bindizr_db::record::list_by_names_tx(
                         &mut tx,
                         zone.id,
@@ -240,10 +249,11 @@ pub(crate) async fn apply_import(
                 }
             }
         }
-        .map_err(|e| {
-            log::error!("Failed to load zone records: {}", e);
-            ServiceError::internal_with_source("failed to import zone file", e)
+        .map_err(|error| {
+            log::error!("Failed to load zone records: {}", error);
+            ServiceError::internal_with_source("failed to import zone file", error)
         })?;
+
         timings.load_existing_ms = elapsed_ms(t);
 
         let t = Instant::now();
@@ -272,6 +282,7 @@ pub(crate) async fn apply_import(
         let del_ids: HashSet<RecordId> = all_dels.iter().map(|record| record.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
             HashMap::with_capacity(existing_records.len());
+
         for record in &existing_records {
             if !del_ids.contains(&record.id) {
                 simulated_by_name
@@ -280,10 +291,12 @@ pub(crate) async fn apply_import(
                     .push(record.clone());
             }
         }
+
         for (add, candidate) in plan.adds.iter().zip(&to_insert) {
             let records_at_name = simulated_by_name
                 .entry(add.data.name.clone())
                 .or_default();
+
             match validate_record_constraints(
                 records_at_name,
                 &add.data.name,
@@ -294,9 +307,10 @@ pub(crate) async fn apply_import(
                 None,
             ) {
                 Ok(()) => records_at_name.push(candidate.clone()),
-                Err(e) => errors.push(format!("{}: {}", add.source_name, e)),
+                Err(error) => errors.push(format!("{}: {}", add.source_name, error)),
             }
         }
+
         if errors.is_empty()
             && let Err(error) =
                 zone::validate_record_changes_tx(&mut tx, &zone, &all_dels, &to_insert).await
@@ -306,6 +320,7 @@ pub(crate) async fn apply_import(
             }
             errors.push(error.to_string());
         }
+
         timings.validate_ms = elapsed_ms(t);
 
         let summary = ImportZoneSummaryResponse {
@@ -335,6 +350,7 @@ pub(crate) async fn apply_import(
         } else {
             zone.serial
         };
+
         if will_apply && created {
             zone = zone::create_tx(&mut tx, zone).await?;
             for record in &mut to_insert {
@@ -342,15 +358,20 @@ pub(crate) async fn apply_import(
             }
             zone::save_version_tx(&mut tx, &zone, zone.serial, caller.change_attribution()).await?;
         }
+
         if will_apply && has_changes {
             let t = Instant::now();
+
             delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
             create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+
             timings.db_write_ms = elapsed_ms(t);
 
             let t = Instant::now();
+
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
+
             timings.serial_ms = elapsed_ms(t);
         }
 
@@ -392,18 +413,22 @@ pub(crate) async fn apply_import(
     );
 
     let t = Instant::now();
+
     // The catalog goes first: a secondary that has not seen the new member
     // there cannot act on the zone's own NOTIFY below.
     cx.metrics()
         .track_serial_bumps(u64::from(created) + u64::from(changed));
     let config = cx.config();
+
     if created {
         crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
+
     // Notify after commit only when the import changed the served zone.
     if changed {
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
+
     let notify_ms = elapsed_ms(t);
 
     // Per-stage breakdown for profiling; debug-gated so it stays out of

@@ -8,7 +8,7 @@ fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> En
         dns_name: dns_name.to_string(),
         record_type: record_type.to_string(),
         record_ttl: ttl,
-        targets: targets.iter().map(|t| t.to_string()).collect(),
+        targets: targets.iter().map(ToString::to_string).collect(),
         ..Endpoint::default()
     }
 }
@@ -57,6 +57,7 @@ fn endpoint_serializes_with_omitempty_semantics() {
     // TTL 0 means "not configured" and is omitted, like Go's omitempty.
     let serialized =
         serde_json::to_value(endpoint("app.example.com", "A", 0, &["192.0.2.10"])).unwrap();
+
     assert!(serialized.get("recordTTL").is_none());
 }
 
@@ -89,6 +90,7 @@ fn endpoint_validation_rejects_unsupported_shapes() {
 
     let mut with_set_id = endpoint("a.example.com", "A", 0, &["192.0.2.1"]);
     with_set_id.set_identifier = "weighted".to_string();
+
     assert!(with_set_id.validate().is_err());
 
     assert!(
@@ -125,6 +127,7 @@ fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
     assert_eq!(bindizr.creates.len(), 1);
     assert_eq!(bindizr.creates[0].ttl, Some(300));
     assert_eq!(bindizr.updates.len(), 1);
+
     // TTL 0 (unset) maps to None so the server applies the zone TTL.
     assert_eq!(bindizr.updates[0].old.ttl, None);
     assert_eq!(bindizr.updates[0].new.values, vec!["192.0.2.3"]);
@@ -151,6 +154,7 @@ fn endpoint_ttl_preserves_unsigned_boundaries() {
         let request = changes.to_apply_changes_request().unwrap();
         assert_eq!(request.creates[0].ttl, (ttl > 0).then_some(ttl));
     }
+
     for ttl in [-1i64, i64::from(u32::MAX) + 1] {
         assert!(
             endpoint("ttl.example.com", "A", ttl, &["192.0.2.1"])

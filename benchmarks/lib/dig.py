@@ -6,12 +6,13 @@ import subprocess
 import time
 
 
-def dig(name: str, rtype: str, server: str, port: int,
-        timeout: int = 5) -> tuple[bool, float, str]:
+def query(name: str, rtype: str, server: str, port: int,
+          timeout: int = 5) -> tuple[bool, float, str]:
     """Return (answered, latency_secs, raw_output)."""
     args = ["dig", f"@{server}", "-p", str(port), name, rtype, "+tries=1",
             f"+time={timeout}", "+short"]
     t0 = time.monotonic()
+
     try:
         p = subprocess.run(args, text=True, capture_output=True, timeout=timeout + 2)
         dt = time.monotonic() - t0
@@ -23,7 +24,7 @@ def dig(name: str, rtype: str, server: str, port: int,
 
 def _transfer(zone: str, server: str, port: int, qtype: str,
               timeout: int) -> tuple[float, int, int]:
-    """Measure transfer duration, bytes and record count, including both framing SOAs.
+    """Measure transfer duration, record count and output size, including both framing SOAs.
     An empty zone still has apex records."""
     args = ["dig", f"@{server}", "-p", str(port), zone, qtype, "+tcp",
             f"+time={timeout}"]
@@ -31,6 +32,7 @@ def _transfer(zone: str, server: str, port: int, qtype: str,
     p = subprocess.run(args, text=True, capture_output=True, timeout=timeout + 10)
     dt = time.monotonic() - t0
     lines = [ln for ln in p.stdout.splitlines() if ln and not ln.startswith(";")]
+
     return (dt, len(lines), len(p.stdout.encode()))
 
 
@@ -50,13 +52,15 @@ def poll_until_visible(name: str, rtype: str, expected: str, server: str, port: 
     """Poll until `name`/`rtype` resolves to `expected`. Return seconds, or None."""
     deadline = time.monotonic() + timeout_secs
     t0 = time.monotonic()
+
     while time.monotonic() < deadline:
-        ok, _, out = dig(name, rtype, server, port)
+        ok, _, out = query(name, rtype, server, port)
         # Whole-line match: `in out` would accept 10.0.0.1 for an answer of
         # 10.0.0.10 and report propagation that never happened.
         if ok and expected in out.splitlines():
             return time.monotonic() - t0
         time.sleep(interval_ms / 1000.0)
+
     return None
 
 
@@ -66,9 +70,11 @@ def first_unqueryable(records: list[dict], zone: str, server: str, port: int,
     """Return the first unavailable record sampled across the zone, or None.
     Check first, middle and last because bulk writes may still be propagating."""
     suffix = zone.rstrip(".")
+
     for idx in sorted({0, len(records) // 2, len(records) - 1}) if records else []:
-        rec = records[idx]
-        if poll_until_visible(f'{rec["name"]}.{suffix}', rec["type"], rec["value"],
+        record = records[idx]
+        if poll_until_visible(f'{record["name"]}.{suffix}', record["type"], record["value"],
                               server, port, interval_ms, timeout_secs) is None:
-            return rec
+            return record
+
     return None

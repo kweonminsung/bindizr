@@ -99,6 +99,9 @@ dirs are git-ignored.
 
 ### Modules and backend dispatch
 
+Name modules for the responsibility they own (`sqlite::path`, benchmark `dig`
+and `docker`), not `utils` or `helpers`.
+
 Use modules as namespaces, not unit structs with associated functions
 (`zone::create`, not `ZoneService::create`; `api::zone::routes`, not `ZoneApi`).
 A struct represents a value or invariant (`C-METHOD`). Entity modules split by
@@ -627,7 +630,7 @@ The queue continues collecting writes during outstanding transactions;
 intentional batching, measured from enqueue, is bounded by SOA REFRESH. The
 16-zone preparation limit excludes ACK waits, and active transactions share
 a connected UDP socket per target with no ID reuse on that socket. These
-scheduling rules do not promise real-time delivery under OS or resolver failure.
+scheduling rules do not promise real-time NOTIFY sends under OS or resolver failure.
 Signed NOTIFY requests whose final size exceeds 512 octets include EDNS.
 An import's AXFR client honors the server's keepalive timeout: zero closes
 after the outstanding transfer, and a positive value bounds idle reuse
@@ -1291,6 +1294,59 @@ Foreign-trait names and serde `default_<field>` providers follow their contracts
 Use one name per concept across crates. Do not wrap a function just to rename or
 reorder its arguments. A short entry point with an independent contract follows
 [Function boundaries](#function-boundaries).
+
+### Local variables and parameters
+
+Use the same vocabulary for parameters, local bindings, loop items, and closure
+arguments. Name the value's role, omitting an operation or entity already clear
+from the function and module: `request`, not `create_zone_request` inside
+`zone::create`. HTTP extractors retain their transport roles: `JsonBody(body)`,
+`Query(query)` for query options, `Query(filter)` for a domain filter, and
+`Query(page)` for pagination alone.
+
+Use `request`, `response`, `message`, `config`, `connection`, `buffer`, and `error`,
+not `req`, `res`, `resp`, `msg`, `cfg`, `conn`, `buf`, `e`, or `err`.
+When several values coexist, qualify their roles (`parse_error`, `rollback_error`,
+`request_bytes`, `response_message`) rather than numbering them. `source` remains
+appropriate for a cause being attached to an error. A loop or closure over records
+uses `record`; one over changes uses `change`. Short conventional indices (`i`,
+`j`) and protocol names (`id`, `ip`, `ttl`, `rcode`, `rdata`) are meaningful.
+The state names `cx`, `dns_cx`, `socket_cx`, and `task_cx` keep their explicit
+contracts. SQL aliases and serialized fields retain their own spelling.
+Clippy's `disallowed-names` configuration rejects the abbreviated bindings above.
+Python benchmarks use `config` and `context`; a latency accumulator is `recorder`,
+one DNS item is `record`, and a sampled resource report is `resource_usage`.
+For NOTIFY, use `send` for the operation and its errors, `handle` for the returned
+value that waits for the result and keeps the target socket alive, and `task` or
+`worker` for spawned work. Carry concept renames through error variants, tests,
+comments, and documentation.
+
+### Control flow and calls
+
+Within functions, separate changes of responsibility with one blank line:
+input checks and authorization, preparation, I/O or mutation, cleanup, and result
+construction. Keep dependent statements together rather than separating every
+declaration or assertion. Do not add blank lines merely to separate `match` arms;
+keep phase boundaries inside each arm. Expand compressed branches inside macros too. Add a
+short comment where a state transition, lifetime boundary, or protocol decision
+needs a reason; preserve existing RFC rationale.
+
+Use `?` to propagate failures; use `let ... else` to bind a successful pattern
+when every other case returns, breaks, or continues. Use `if let` for one
+conditional action and `if` for a boolean decision. Keep `match` when its arms
+classify outcomes or produce different values. Preserve validation order, lazy
+evaluation, error causes, and ownership when simplifying a branch.
+CLI's table-versus-serialized-output branch uses
+`if output == OutputFormat::Table { ... } else { ... }` throughout; a dispatch
+that handles each format separately keeps `match`.
+
+Pass a function or method directly to an iterator or `Option`/`Result` combinator
+when the closure only forwards its argument (`map(RecordRow::from)`,
+`filter_map(Result::ok)`). Keep closures that capture context, select fields,
+adjust references, or add error context. Keep sequential orchestration and
+ordinary conditions explicit; do not turn them into arrays of steps or callbacks.
+The workspace's `manual_let_else` and `redundant_closure_for_method_calls` Clippy
+lints enforce the mechanical part of these rules.
 
 ### Construction names
 

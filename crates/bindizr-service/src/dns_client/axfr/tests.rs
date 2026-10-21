@@ -22,10 +22,13 @@ async fn fetch_zone_honors_keepalive_timeouts() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (idle_closed, idle_observed) = tokio::sync::oneshot::channel();
+
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
+
             let mut reused = false;
             let mut idle_closed = Some(idle_closed);
+
             for transfer in 0..2 {
                 let query = if transfer == 0 {
                     crate::dns_client::read_tcp_message(&mut stream)
@@ -42,26 +45,37 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                         .is_err()
                     );
                     idle_closed.take().unwrap().send(()).unwrap();
+
                     stream = listener.accept().await.unwrap().0;
+
                     crate::dns_client::read_tcp_message(&mut stream)
                         .await
                         .unwrap()
                 } else {
                     tokio::select! {
                         query = crate::dns_client::read_tcp_message(&mut stream) => match query {
-                            Ok(query) => { reused = true; query },
+                            Ok(query) => {
+                                reused = true;
+                                query
+                            },
                             Err(_) => {
                                 let (next, _) = listener.accept().await.unwrap();
                                 stream = next;
-                                crate::dns_client::read_tcp_message(&mut stream).await.unwrap()
+                                crate::dns_client::read_tcp_message(&mut stream)
+                                    .await
+                                    .unwrap()
                             }
                         },
+
                         accepted = listener.accept() => {
                             stream = accepted.unwrap().0;
-                            crate::dns_client::read_tcp_message(&mut stream).await.unwrap()
+                            crate::dns_client::read_tcp_message(&mut stream)
+                                .await
+                                .unwrap()
                         }
                     }
                 };
+
                 let question_end = 12 + encode_name("example.com.").unwrap().len() + 4;
                 let soa = SoaRecordValue {
                     mname: "ns.example.com.",
@@ -74,6 +88,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                 }
                 .to_rdata()
                 .unwrap();
+
                 for keepalive in [timeout, final_timeout] {
                     let mut response = query[..question_end].to_vec();
                     response[2..4].copy_from_slice(&0x8400u16.to_be_bytes());
@@ -87,20 +102,25 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                     response.extend_from_slice(
                         &(if keepalive.is_some() { 6u16 } else { 0 }).to_be_bytes(),
                     );
+
                     if let Some(timeout) = keepalive {
                         response.extend_from_slice(&[0, 11, 0, 2]);
                         response.extend_from_slice(&timeout.to_be_bytes());
                     }
+
                     stream
                         .write_all(&encode_tcp_message(&response).unwrap())
                         .await
                         .unwrap();
                 }
             }
+
             reused
         });
+
         let mut client = AxfrClient::new(&addr.to_string());
         let zone = ZoneName::parse("example.com").unwrap();
+
         assert_eq!(
             client
                 .fetch_zone(&zone, &ImportConfig::default())
@@ -109,9 +129,11 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                 .len(),
             2
         );
+
         if idle != 0 {
             idle_observed.await.unwrap();
         }
+
         assert_eq!(
             client
                 .fetch_zone(&zone, &ImportConfig::default())
@@ -120,10 +142,12 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                 .len(),
             2
         );
+
         let reused = tokio::time::timeout(Duration::from_secs(5), server)
             .await
             .unwrap()
             .unwrap();
+
         assert_eq!(
             reused, expected_reuse,
             "timeout={timeout:?}, final={final_timeout:?}, idle={idle}"
@@ -138,14 +162,17 @@ async fn fetch_transfer(
 ) -> Result<Vec<TransferRecord>, FetchZoneError> {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let query = crate::dns_client::read_tcp_message(&mut stream)
             .await
             .unwrap();
+
         // The query carries an OPT; the reply copies its question alone:
         // the header, the name, then QTYPE and QCLASS.
         let question_end = 12 + encode_name("example.com.").unwrap().len() + 4;
+
         for (index, rdata) in [opening, closing].iter().enumerate() {
             let mut response = if index == 0 {
                 query[..question_end].to_vec()
@@ -164,13 +191,16 @@ async fn fetch_transfer(
             response
                 .extend_from_slice(&u16::try_from(rdata.as_bytes().len()).unwrap().to_be_bytes());
             response.extend_from_slice(rdata.as_bytes());
+
             stream
                 .write_all(&encode_tcp_message(&response).unwrap())
                 .await
                 .unwrap();
         }
     });
+
     let qname = "example.com.".parse().unwrap();
+
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let result = tokio::time::timeout(
         Duration::from_secs(5),
@@ -179,6 +209,7 @@ async fn fetch_transfer(
     .await
     .expect("AXFR did not complete");
     server.await.unwrap();
+
     result.map(|(records, _)| records)
 }
 
@@ -194,6 +225,7 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
         expire: 604800,
         minimum: 300,
     };
+
     for (mname, rname) in [
         ("ns1.example.com.", opening.rname),
         (opening.mname, "hostmaster.example.com."),
@@ -207,9 +239,11 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
         }
         .to_rdata()
         .unwrap();
+
         let records = fetch_transfer(opening_rdata.clone(), closing_rdata.clone())
             .await
             .unwrap();
+
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].rdata, opening_rdata);
         assert_eq!(records[1].rdata, closing_rdata);
@@ -228,6 +262,7 @@ async fn fetch_zone_rejects_changed_closing_soa() {
         expire: 604800,
         minimum: 300,
     };
+
     for closing in [
         SoaRecordValue {
             mname: "ns2.example.com.",

@@ -43,6 +43,7 @@ impl AdapterMetrics {
             "adjustendpoints",
         ];
         let results = ["ok", "client_error", "upstream_error", "error"];
+
         for endpoint in endpoints {
             for result in results {
                 requests_total.with_label_values(&[endpoint, result]);

@@ -503,9 +503,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 run: Run::from_dry_run(dry_run),
             })
             .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         ZoneCommand::Export { name, signed } => {
@@ -540,6 +542,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         .map(str::to_string)
                         .collect::<Vec<_>>()
                 });
+
             let response = client::send_command::<ImportZonesResponse>(DaemonCommand::ImportZones(
                 ImportZonesRequest {
                     from_server,
@@ -552,22 +555,25 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             ))
             .await?;
             let import = &response.data;
-            match output {
-                OutputFormat::Table => {
-                    outln!("{}", response.message);
-                    // Diagnostics go to stderr, so a pipeline keeps the table clean.
-                    for item in &import.zones {
-                        let Some(zone_import) = &item.import else {
-                            continue;
-                        };
-                        for error in &zone_import.errors {
-                            errln!("  {} - {}", item.zone_name, error);
-                        }
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message);
+
+                // Diagnostics go to stderr, so a pipeline keeps the table clean.
+                for item in &import.zones {
+                    let Some(zone_import) = &item.import else {
+                        continue;
+                    };
+                    for error in &zone_import.errors {
+                        errln!("  {} - {}", item.zone_name, error);
                     }
-                    print_table(import.zones.iter().map(ImportZonesRow::from).collect());
                 }
-                _ => print_payload(import, output)?,
+
+                print_table(import.zones.iter().map(ImportZonesRow::from).collect());
+            } else {
+                print_payload(import, output)?
             }
+
             // A zone left behind must not exit as a success.
             if import.has_rejected_or_failed() {
                 return Err(CliError::request(format!(
@@ -588,6 +594,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             ..
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
+
             let response = client::send_command::<ImportZoneResponse>(DaemonCommand::ImportZone {
                 zone_name: name,
                 request: ImportZoneRequest {
@@ -600,20 +607,24 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             })
             .await?;
             let import = &response.data;
-            match output {
-                OutputFormat::Table => {
-                    outln!("{}", response.message);
-                    // Diagnostics go to stderr, so a pipeline keeps the summary clean.
-                    for error in &import.errors {
-                        errln!("  - {}", error);
-                    }
-                    print_table(vec![ImportSummaryRow::from(import)]);
-                    if dry_run {
-                        out!("{}", render_change_preview(&import.diff));
-                    }
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message);
+
+                // Diagnostics go to stderr, so a pipeline keeps the summary clean.
+                for error in &import.errors {
+                    errln!("  - {}", error);
                 }
-                _ => print_payload(import, output)?,
+
+                print_table(vec![ImportSummaryRow::from(import)]);
+
+                if dry_run {
+                    out!("{}", render_change_preview(&import.diff));
+                }
+            } else {
+                print_payload(import, output)?
             }
+
             // A rejected import applied nothing, so it must not exit as a success.
             if import.was_rejected() {
                 return Err(CliError::request(format!(
@@ -628,15 +639,19 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 client::send_command::<ZoneStatusResponse>(DaemonCommand::GetZoneStatus { name })
                     .await?;
             let status = &response.data;
+
             if output != OutputFormat::Table {
                 print_payload(status, output)?;
                 return Ok(());
             }
+
             outln!("Zone {} (serial {})", status.zone_name, status.serial);
+
             if status.secondaries.is_empty() {
                 outln!("No enabled secondaries.");
                 return Ok(());
             }
+
             print_table(SecondaryStatusRow::rows_from_status(status));
         }
         ZoneCommand::Notify(args) => {
@@ -646,12 +661,16 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 Some(zone_name) => DaemonCommand::NotifyZone { zone_name, serial },
                 None => DaemonCommand::NotifyAllZones { serial },
             };
+
             let response = client::send_command::<MessageResponse>(command).await?;
-            match args.output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, args.output)?,
+
+            if args.output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, args.output)?
             }
         }
     }
+
     Ok(())
 }

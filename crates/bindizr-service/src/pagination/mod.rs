@@ -20,6 +20,7 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
             MAX_PAGE_LIMIT
         )));
     }
+
     Ok(())
 }
 
@@ -32,7 +33,7 @@ where
         None => Ok(T::default()),
         Some(value) => value
             .parse()
-            .map_err(|e: ParseSortError| ServiceError::invalid_input(e.to_string())),
+            .map_err(|error: ParseSortError| ServiceError::invalid_input(error.to_string())),
     }
 }
 
@@ -68,6 +69,7 @@ pub(crate) fn build_page<T>(
         .skip(usize::try_from(start).unwrap_or(usize::MAX))
         .take(take)
         .collect();
+
     build_paginated_response(page, limit, offset, total)
 }
 

@@ -193,6 +193,7 @@ mod tests {
             );
             assert_eq!(value.as_str().parse::<AuditEntity>().unwrap(), value);
         }
+
         assert!("record".parse::<AuditEntity>().is_err());
     }
 
@@ -211,6 +212,7 @@ mod tests {
             );
             assert_eq!(value.as_str().parse::<AuditOperation>().unwrap(), value);
         }
+
         assert!("revoke".parse::<AuditOperation>().is_err());
     }
 }

@@ -1,6 +1,6 @@
 //! Read the transfer history matching a secondary's current addresses.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::model::role_grant::Action;
 
@@ -31,7 +31,9 @@ pub async fn list_transfers(
     caller.authorize_action(Action::SecondaryRead)?;
     let limit = filter.limit.unwrap_or(1000);
     validate_page_limit(Some(limit))?;
+
     let secondary = lookup_by_name(cx, name).await?;
+
     let zone_filter = filter
         .zone_name
         .as_deref()
@@ -50,6 +52,7 @@ pub async fn list_transfers(
         .take(limit as usize)
         .map(TransferResponse::from)
         .collect();
+
     Ok(SecondaryTransfersResponse {
         secondary_name: secondary.name,
         address: secondary.address.to_string(),
@@ -72,7 +75,7 @@ pub async fn summarize_transfers(
 async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
     match resolve_address_entry(&secondary.address, timeout).await {
-        Ok(addrs) => addrs.iter().map(|addr| addr.ip()).collect(),
+        Ok(addrs) => addrs.iter().map(SocketAddr::ip).collect(),
         Err(_) => Vec::new(),
     }
 }

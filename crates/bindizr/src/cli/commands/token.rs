@@ -76,7 +76,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             role,
             output,
         } => {
-            let res = client::send_command::<CreateTokenResponse>(DaemonCommand::CreateToken(
+            let response = client::send_command::<CreateTokenResponse>(DaemonCommand::CreateToken(
                 CreateTokenRequest {
                     name,
                     description,
@@ -85,8 +85,10 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 },
             ))
             .await?;
-            log::debug!("Token creation result: {:?}", res);
-            print_response(&res.data, output, |created| vec![TokenRow::from(created)])?;
+            log::debug!("Token creation result: {:?}", response);
+            print_response(&response.data, output, |created| {
+                vec![TokenRow::from(created)]
+            })?;
         }
         TokenCommand::List {
             role,
@@ -94,7 +96,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<TokenResponse>>(
+            let response = client::send_command::<PaginatedResponse<TokenResponse>>(
                 DaemonCommand::ListTokens(TokenFilter {
                     role_name: role,
                     limit,
@@ -102,18 +104,22 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 }),
             )
             .await?;
-            log::debug!("Token list result: {:?}", res);
-            print_page(&res.data, output, |item| TokenRow::from(item))?;
+            log::debug!("Token list result: {:?}", response);
+            print_page(&response.data, output, |item| TokenRow::from(item))?;
         }
         TokenCommand::Delete { name, output } => {
-            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteToken { name })
-                .await?;
-            log::debug!("Token deletion result: {:?}", res);
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
+            let response =
+                client::send_command::<MessageResponse>(DaemonCommand::DeleteToken { name })
+                    .await?;
+            log::debug!("Token deletion result: {:?}", response);
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
     }
+
     Ok(())
 }

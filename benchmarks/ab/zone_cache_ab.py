@@ -28,11 +28,14 @@ QUERY_TIME = re.compile(r";; Query time: (\d+) msec")
 async def create_transfer_key(adapter) -> str:
     """Create a global TSIG key and return it in dig's `-y` form."""
     body = {"name": "bench-axfr", "global": True}
-    async with adapter.session.post(adapter.base + "/tsig-keys", json=body) as r:
-        if r.status != 201:
-            raise RuntimeError(f"creating the transfer key failed: {r.status} {await r.text()}")
-        created = await r.json()
+
+    async with adapter.session.post(adapter.base + "/tsig-keys", json=body) as response:
+        if response.status != 201:
+            raise RuntimeError(f"creating the transfer key failed: {response.status} {await response.text()}")
+        created = await response.json()
+
     key = created["tsig_key"]
+
     return f"{key['algorithm']}:{key['name']}:{created['secret']}"
 
 
@@ -45,10 +48,13 @@ def axfr_from_bind9(cid: str, transfer_key: str) -> tuple[float | None, int]:
     )
     ms = None
     times = QUERY_TIME.findall(p.stdout)
+
     if times:
         # AXFR may span messages; dig prints one Query time — take the last.
         ms = float(times[-1])
+
     lines = [ln for ln in p.stdout.splitlines() if ln and not ln.startswith(";")]
+
     return ms, len(lines)
 
 
@@ -58,15 +64,20 @@ async def run_variant(transfer_cache: bool) -> dict:
     proj = f"bench-zc-{label}"
     adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}}, proj,
                              notify_after_update=False, transfer_cache=transfer_cache)
+
     try:
         print(f"[transfer_cache={label}] setup...", flush=True)
+
         await adapter.setup()
         transfer_key = await create_transfer_key(adapter)
         await adapter.create_zone(ZONE)
+
         print(f"[transfer_cache={label}] importing {RECORDS} records...", flush=True)
+
         await adapter.import_records(ZONE, generate(RECORDS, 1337, ZONE))
 
         bind9_cid = adapter.compose.resolve_container_id("bind9")
+
         if not bind9_cid:
             raise RuntimeError("bind9 container not found")
 
@@ -74,6 +85,7 @@ async def run_variant(transfer_cache: bool) -> dict:
         # the first request with later requests that can reuse the cache.
         samples: list[float] = []
         counts: list[int] = []
+
         for i in range(AXFRS):
             ms, n = axfr_from_bind9(bind9_cid, transfer_key)
             if ms is None:
@@ -84,6 +96,7 @@ async def run_variant(transfer_cache: bool) -> dict:
 
         # Report the first transfer separately from the subsequent warm samples.
         cold, warm = samples[0], samples[1:]
+
         return {
             "transfer_cache": label,
             "records": counts[0],
@@ -100,15 +113,18 @@ async def run_variant(transfer_cache: bool) -> dict:
 async def main() -> None:
     """Compare the transfer workload with the zone cache enabled and disabled."""
     results = [await run_variant(False), await run_variant(True)]
+
     off, on = results
     print("\n=== transfer_cache A/B (AXFR from bind9 -> bindizr, "
           f"{off['records']} record lines, {AXFRS} transfers) ===")
     print(f"{'metric':<18}{'off':>12}{'on':>12}{'delta':>12}")
     print("-" * 54)
+
     for k in ("cold_ms", "warm_mean_ms", "warm_median_ms", "warm_min_ms"):
         a, b = off[k], on[k]
         delta = f"{(b - a) / a * 100:+.1f}%" if a else "n/a"
         print(f"{k:<18}{a:>12.1f}{b:>12.1f}{delta:>12}")
+
     print(f"\noff samples: {[round(x) for x in off['all_ms']]}")
     print(f"on  samples: {[round(x) for x in on['all_ms']]}")
 

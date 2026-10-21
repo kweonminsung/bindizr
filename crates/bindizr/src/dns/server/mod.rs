@@ -71,9 +71,11 @@ pub(crate) async fn refuse_unsupported_opcode(
     let Some(opcode) = message::extract_opcode(query_data) else {
         return Ok(None);
     };
+
     if opcode == Opcode::QUERY || opcode == Opcode::UPDATE {
         return Ok(None);
     }
+
     let Ok(metadata) = message::QueryMetadata::parse(query_data, keepalive) else {
         return Ok(None);
     };
@@ -84,7 +86,9 @@ pub(crate) async fn refuse_unsupported_opcode(
     } else {
         (OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED))
     };
+
     let response = refuse_query(dns_cx, &metadata, query_data, rcode, ede).await?;
+
     Ok(Some((response, metadata.response_limit())))
 }
 
@@ -103,6 +107,7 @@ pub(crate) fn query_refusal(
         );
         return Some((rcode, None));
     }
+
     // RFC 9103, Section 7.8: refuse non-XoT traffic regardless of its class.
     if transport == TransferTransport::Tls
         && query.qtype != Rtype::SOA
@@ -139,6 +144,7 @@ pub(crate) fn query_refusal(
         );
         return Some((OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED)));
     }
+
     None
 }
 
@@ -160,9 +166,11 @@ pub(crate) async fn handle_tcp_xfr(
     let identity = tokio::select! {
         biased;
         () = writer.failed() => return Err(DnsError::PeerClosed),
+
         result = authenticate_transfer(dns_cx, query_data, client_ip, transport) => result,
     }
     .and_then(|identity| authorize_transport(dns_cx, transport, identity));
+
     let mut identity = match identity {
         Ok(identity) => identity,
         Err(refusal) => {
@@ -222,20 +230,23 @@ pub(crate) async fn handle_tcp_xfr(
             )
             .await
         }
-        Err(err) => {
+        Err(error) => {
             track_result(XfrResult::Failed);
+
             transfer::save_failed(
                 cx,
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
                 transport,
-                err.to_string(),
+                error.to_string(),
             )
             .await;
-            if matches!(err, DnsError::PeerClosed) {
-                return Err(err);
+
+            if matches!(error, DnsError::PeerClosed) {
+                return Err(error);
             }
+
             // End this transfer on error, retaining the connection (RFC 5936, Section 4.1.2).
             // Sign the error under the authenticated key (RFC 8945, Section 5.3.1).
             let ended = async {
@@ -247,10 +258,16 @@ pub(crate) async fn handle_tcp_xfr(
                 writer.write_message(&response).await
             }
             .await;
-            if let Err(e) = ended {
-                log::debug!("Failed to end the XFR session from {}: {}", client_ip, e);
+
+            if let Err(error) = ended {
+                log::debug!(
+                    "Failed to end the XFR session from {}: {}",
+                    client_ip,
+                    error
+                );
             }
-            Err(err)
+
+            Err(error)
         }
     }
 }
@@ -282,15 +299,18 @@ async fn refuse_tcp_xfr(
         }
         response => response,
     };
+
     // RFC 5936, Section 4.1.2: send an RCODE instead of dropping the connection.
     let sent = match response {
         Ok(response) => writer.write_message(&response).await,
         Err(error) => Err(error),
     };
+
     if let Err(error) = &sent {
         outcome = XfrResult::Failed;
         reason = error.to_string();
     }
+
     cx.metrics().track_xfr(query.qtype, transport, outcome);
     log::warn!(
         "Refused XFR {} query from {}: {}",
@@ -298,6 +318,7 @@ async fn refuse_tcp_xfr(
         client_ip,
         reason
     );
+
     if outcome == XfrResult::Failed {
         transfer::save_failed(
             cx,
@@ -319,6 +340,7 @@ async fn refuse_tcp_xfr(
         )
         .await;
     }
+
     sent
 }
 
@@ -333,6 +355,7 @@ pub(crate) async fn handle_udp_xfr(
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let client_addr = target.client_addr;
+
     let identity =
         authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
             .await
@@ -362,6 +385,7 @@ pub(crate) async fn handle_udp_xfr(
                     }
                     response => response,
                 };
+
             (
                 response,
                 if failed {
@@ -372,6 +396,7 @@ pub(crate) async fn handle_udp_xfr(
             )
         }
     };
+
     let sent = match response {
         Ok(response) => socket
             .send_to(&response, target, query.response_limit())
@@ -379,6 +404,7 @@ pub(crate) async fn handle_udp_xfr(
             .map(|_| ()),
         Err(error) => Err(error),
     };
+
     // The transfer itself follows over TCP; count this response only after sending it.
     cx.metrics().track_xfr(
         query.qtype,
@@ -389,5 +415,6 @@ pub(crate) async fn handle_udp_xfr(
             outcome
         },
     );
+
     sent
 }

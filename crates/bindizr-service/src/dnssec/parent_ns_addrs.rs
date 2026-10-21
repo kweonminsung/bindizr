@@ -15,11 +15,13 @@ pub(crate) fn normalize_parent_ns_addrs(entries: &[String]) -> Result<String, Se
         .map(|entry| entry.trim())
         .filter(|entry| !entry.is_empty())
         .collect();
+
     if entries.is_empty() {
         return Err(ServiceError::invalid_input(
             "give at least one parent nameserver as host[:port]",
         ));
     }
+
     for entry in &entries {
         if has_whitespace_or_control(entry) || !is_address_target(entry) {
             return Err(ServiceError::invalid_input(format!(
@@ -28,7 +30,9 @@ pub(crate) fn normalize_parent_ns_addrs(entries: &[String]) -> Result<String, Se
             )));
         }
     }
+
     let joined = entries.join(",");
+
     if joined.len() > MAX_PARENT_NS_ADDRS_LEN {
         return Err(ServiceError::invalid_input(format!(
             "parent nameserver list is {} characters; at most {} are stored",
@@ -36,6 +40,7 @@ pub(crate) fn normalize_parent_ns_addrs(entries: &[String]) -> Result<String, Se
             MAX_PARENT_NS_ADDRS_LEN
         )));
     }
+
     Ok(joined)
 }
 
@@ -51,7 +56,7 @@ mod tests {
 
     /// Turn string literals into the owned entries the normalizer takes.
     fn entries(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| value.to_string()).collect()
+        values.iter().map(ToString::to_string).collect()
     }
 
     /// Verify that `normalize_parent_ns_addrs` trims entries and drops empty ones.
@@ -71,24 +76,24 @@ mod tests {
     /// Verify that `normalize_parent_ns_addrs` rejects an empty list.
     #[test]
     fn normalize_parent_ns_addrs_rejects_an_empty_list() {
-        let err = normalize_parent_ns_addrs(&entries(&[" ", ""])).unwrap_err();
-        assert_eq!(err.code(), ErrorCode::InvalidInput);
+        let error = normalize_parent_ns_addrs(&entries(&[" ", ""])).unwrap_err();
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that `normalize_parent_ns_addrs` rejects an entry that is not an address target.
     #[test]
     fn normalize_parent_ns_addrs_rejects_an_entry_that_is_not_an_address_target() {
-        let err =
+        let error =
             normalize_parent_ns_addrs(&entries(&["ns.parent.example:not-a-port"])).unwrap_err();
-        assert_eq!(err.code(), ErrorCode::InvalidInput);
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that `normalize_parent_ns_addrs` rejects a list wider than the column.
     #[test]
     fn normalize_parent_ns_addrs_rejects_a_list_wider_than_the_column() {
         let entry = format!("{}.parent.example", "n".repeat(60));
-        let err = normalize_parent_ns_addrs(&vec![entry; 20]).unwrap_err();
-        assert_eq!(err.code(), ErrorCode::InvalidInput);
+        let error = normalize_parent_ns_addrs(&vec![entry; 20]).unwrap_err();
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that the stored form splits back into the entries it was built from.

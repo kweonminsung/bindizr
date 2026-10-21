@@ -126,7 +126,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             output,
         } => {
-            let res = client::send_command::<SingleDnssecPolicyResponse>(
+            let response = client::send_command::<SingleDnssecPolicyResponse>(
                 DaemonCommand::CreateDnssecPolicy(CreateDnssecPolicyRequest {
                     name,
                     algorithm,
@@ -138,28 +138,28 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 }),
             )
             .await?;
-            log::debug!("DNSSEC policy creation result: {:?}", res);
-            print_policy(&res.data, output)?;
+            log::debug!("DNSSEC policy creation result: {:?}", response);
+            print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::List {
             limit,
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<DnssecPolicyResponse>>(
+            let response = client::send_command::<PaginatedResponse<DnssecPolicyResponse>>(
                 DaemonCommand::ListDnssecPolicies(PageRequest { limit, offset }),
             )
             .await?;
-            log::debug!("DNSSEC policy list result: {:?}", res);
-            print_page(&res.data, output, |item| DnssecPolicyRow::from(item))?;
+            log::debug!("DNSSEC policy list result: {:?}", response);
+            print_page(&response.data, output, |item| DnssecPolicyRow::from(item))?;
         }
         DnssecPolicyCommand::Get { name, output } => {
-            let res = client::send_command::<SingleDnssecPolicyResponse>(
+            let response = client::send_command::<SingleDnssecPolicyResponse>(
                 DaemonCommand::GetDnssecPolicy { name },
             )
             .await?;
-            log::debug!("DNSSEC policy get result: {:?}", res);
-            print_policy(&res.data, output)?;
+            log::debug!("DNSSEC policy get result: {:?}", response);
+            print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::Update {
             name,
@@ -168,7 +168,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             output,
         } => {
-            let res = client::send_command::<SingleDnssecPolicyResponse>(
+            let response = client::send_command::<SingleDnssecPolicyResponse>(
                 DaemonCommand::UpdateDnssecPolicy {
                     name,
                     request: UpdateDnssecPolicyRequest {
@@ -179,20 +179,23 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 },
             )
             .await?;
-            log::debug!("DNSSEC policy update result: {:?}", res);
-            print_policy(&res.data, output)?;
+            log::debug!("DNSSEC policy update result: {:?}", response);
+            print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::Delete { name, output } => {
-            let res =
+            let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteDnssecPolicy { name })
                     .await?;
-            log::debug!("DNSSEC policy deletion result: {:?}", res);
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
+            log::debug!("DNSSEC policy deletion result: {:?}", response);
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
     }
+
     Ok(())
 }
 

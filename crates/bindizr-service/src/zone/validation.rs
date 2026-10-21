@@ -49,6 +49,7 @@ pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<
             name
         )));
     }
+
     Ok(())
 }
 
@@ -81,7 +82,8 @@ pub(crate) fn validate_name(name: &ZoneName) -> Result<(), ServiceError> {
 /// Parse a domain name, phrasing any rejection against `field`. The rules
 /// live on [`ZoneName`]; this only maps the failure to a zone error.
 fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceError> {
-    ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone_field(format!("{} {}", field, e)))
+    ZoneName::parse(value)
+        .map_err(|error| ServiceError::invalid_zone_field(format!("{} {}", field, error)))
 }
 
 /// Normalize the SOA primary server name.
@@ -113,6 +115,7 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
             "rname must contain exactly one @".to_string(),
         ));
     };
+
     if domain.contains('@') {
         return Err(ServiceError::invalid_zone_field(
             "rname must contain exactly one @".to_string(),
@@ -123,6 +126,7 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
     let domain = normalize_domain_name(domain, "rname domain")?;
 
     let normalized = format!("{}@{}", local, domain);
+
     if normalized.len() > MAX_EMAIL_LEN {
         return Err(ServiceError::invalid_zone_field(
             "rname must be 254 bytes or fewer".to_string(),
@@ -130,7 +134,8 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
     }
 
     SoaMailbox::from_email(&normalized)
-        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))?;
+        .map_err(|error| ServiceError::invalid_zone_field(format!("rname {}", error)))?;
+
     Ok(normalized)
 }
 
@@ -208,6 +213,7 @@ pub(crate) async fn validate_record_changes_tx(
         RecordType::Srv,
         RecordType::Ptr,
     ];
+
     let mut records = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
         Vec::new()
     } else {
@@ -229,11 +235,13 @@ pub(crate) async fn validate_record_changes_tx(
             .collect()
     };
     let delegations = owners_of(RecordType::Ns);
+
     if zone.enabled && !delegations.iter().any(|name| name.is_apex()) {
         return Err(ServiceError::record_conflict(
             "an enabled zone requires at least one apex NS record (RFC 2181, Section 6.1)",
         ));
     }
+
     // RFC 4035, Section 2.4 SHOULD exception: preserve explicit per-type NS/DS TTLs
     // for independent edits/imports; each RRset still requires one TTL.
     if records
@@ -246,6 +254,7 @@ pub(crate) async fn validate_record_changes_tx(
     }
 
     let dnames = owners_of(RecordType::Dname);
+
     if !dnames.is_empty() {
         let mut names: HashSet<_> = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
             HashSet::new()
@@ -255,15 +264,18 @@ pub(crate) async fn validate_record_changes_tx(
                 .into_iter()
                 .collect()
         };
+
         let removed_names: Vec<_> = removed
             .iter()
             .map(|record| record.name.clone())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
+
         for name in &removed_names {
             names.remove(name);
         }
+
         // A removed row may share its owner with rows that survive.
         let remaining =
             bindizr_db::record::list_by_names_tx(tx, zone.id, &removed_names, LockLevel::Unlocked)
@@ -276,6 +288,7 @@ pub(crate) async fn validate_record_changes_tx(
         );
         names.extend(added.iter().map(|record| record.name.clone()));
         let dname_labels: HashSet<_> = dnames.iter().map(|name| name.labels()).collect();
+
         if names.iter().any(|name| {
             let labels = name.labels();
             (1..=labels.len()).any(|depth| dname_labels.contains(&labels[depth..]))
@@ -287,6 +300,7 @@ pub(crate) async fn validate_record_changes_tx(
     }
 
     let cnames = owners_of(RecordType::Cname);
+
     // RFC 5936, Section 3.5: data below an earlier delegation is occluded.
     let authoritative_dnames: Vec<_> = dnames
         .iter()
@@ -297,6 +311,7 @@ pub(crate) async fn validate_record_changes_tx(
                 .any(|cut| !cut.is_apex() && name.is_same_or_under(cut))
         })
         .collect();
+
     if !cnames.is_empty() || !authoritative_dnames.is_empty() {
         for record in &records {
             let target = match record.record_type {
@@ -311,6 +326,7 @@ pub(crate) async fn validate_record_changes_tx(
             else {
                 continue;
             };
+
             if cnames.contains(&owner) {
                 return Err(ServiceError::record_conflict(
                     "an NS, MX, PTR, or SRV record cannot name a CNAME record of this zone as its target (RFC 2181, Sections 10.2–10.3; RFC 2782)",
@@ -326,6 +342,7 @@ pub(crate) async fn validate_record_changes_tx(
             }
         }
     }
+
     Ok(())
 }
 
@@ -341,9 +358,11 @@ mod tests {
         assert_eq!(normalize_mname(" . ").unwrap(), ".");
         assert_eq!(normalize_mname(r"\.").unwrap(), r"\046");
         assert_eq!(normalize_mname(" NS.Example. ").unwrap(), "ns.example");
+
         for invalid in ["", "..", "host..example"] {
             assert!(normalize_mname(invalid).is_err(), "{invalid:?}");
         }
+
         assert!(normalize_name(".").is_err());
     }
 
@@ -355,6 +374,7 @@ mod tests {
             let expected = ZoneName::parse(&format!("tail\\{byte:03}")).unwrap();
             assert_eq!(normalize_name(&input).unwrap(), expected);
         }
+
         assert_eq!(
             normalize_name(" example.com \t").unwrap().as_str(),
             "example.com"
@@ -373,6 +393,7 @@ mod tests {
         for label in ["*", r"\*", r"\042"] {
             for suffix in ["", ".", ".example.com"] {
                 let input = format!("{label}{suffix}");
+
                 assert!(
                     normalize_name(&input)
                         .unwrap_err()
@@ -382,6 +403,7 @@ mod tests {
                 );
             }
         }
+
         for input in ["a*.example", "a.*.example", r"\042\046example"] {
             assert!(normalize_name(input).is_ok(), "{input:?}");
         }

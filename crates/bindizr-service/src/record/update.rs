@@ -52,8 +52,11 @@ fn resolve_update(
         .as_deref()
         .map(parse_record_type)
         .transpose();
+
+    // Omitted fields would read stored values the caller may not be allowed to see.
     if !can_read {
         let mut missing = Vec::new();
+
         if request.name.is_none() {
             missing.push("name");
         }
@@ -66,14 +69,17 @@ fn resolve_update(
         if request.ttl.is_none() {
             missing.push("ttl");
         }
+
         let takes_priority = record_type
             .as_ref()
             .ok()
             .and_then(|record_type| *record_type)
             .is_some_and(|record_type| matches!(record_type, RecordType::Mx | RecordType::Srv));
+
         if takes_priority && request.priority.is_none() {
             missing.push("priority");
         }
+
         if !missing.is_empty() {
             return Err(ServiceError::forbidden(format!(
                 "an update without 'record:read' on the record must give every field; missing: {}",
@@ -81,7 +87,9 @@ fn resolve_update(
             )));
         }
     }
+
     let record_type = record_type?.unwrap_or(existing.record_type);
+
     // Each type has its own stored grammar (TXT uses quoted presentation),
     // so a type change requires a fresh value.
     if record_type != existing.record_type && request.value.is_none() {
@@ -89,6 +97,7 @@ fn resolve_update(
             "value is required when changing a record's type".to_string(),
         ));
     }
+
     // Reject explicit priority outside MX/SRV; changing away from them clears it.
     let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
         record_type.stored_priority(request.priority.or(existing.priority))
@@ -110,15 +119,18 @@ fn resolve_update(
         }
         None => existing.value.clone(),
     };
+
     let ttl = match request.ttl {
         Some(ttl) => validate_record_ttl(ttl)?,
         None => existing.ttl,
     };
+
     // An omitted name keeps the stored owner, which needs no reparse.
     let owner_name = match &request.name {
         Some(name) => normalize_record_owner_name(name, &zone.name)?,
         None => existing.name.clone(),
     };
+
     Ok(Record {
         id: existing.id,
         name: owner_name,
@@ -143,14 +155,15 @@ pub async fn update(
     let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-        Err(e) => {
-            log::error!("Failed to fetch record: {}", e);
+        Err(error) => {
+            log::error!("Failed to fetch record: {}", error);
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
-                e,
+                error,
             ));
         }
     };
+
     update_locked(cx, caller, LockTarget::Id { record_id, zone_id }, request).await
 }
 
@@ -188,11 +201,11 @@ async fn update_locked(
                                 zone_id
                             )));
                         }
-                        Err(e) => {
-                            log::error!("Failed to fetch zone: {}", e);
+                        Err(error) => {
+                            log::error!("Failed to fetch zone: {}", error);
                             return Err(ServiceError::internal_with_source(
                                 "failed to fetch zone",
-                                e,
+                                error,
                             ));
                         }
                     };
@@ -209,11 +222,11 @@ async fn update_locked(
                     Ok(Some(_)) | Ok(None) => {
                         return Err(ServiceError::record_not_found(record_id));
                     }
-                    Err(e) => {
-                        log::error!("Failed to fetch record: {}", e);
+                    Err(error) => {
+                        log::error!("Failed to fetch record: {}", error);
                         return Err(ServiceError::internal_with_source(
                             "failed to fetch record",
-                            e,
+                            error,
                         ));
                     }
                 };
@@ -298,6 +311,7 @@ async fn update_locked(
                 },
             ],
         )?;
+
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
         let records_at_name = match bindizr_db::record::list_by_name_tx(
@@ -309,11 +323,11 @@ async fn update_locked(
         .await
         {
             Ok(records) => records,
-            Err(e) => {
-                log::error!("Failed to load records: {}", e);
+            Err(error) => {
+                log::error!("Failed to load records: {}", error);
                 return Err(ServiceError::internal_with_source(
                     "failed to update record",
-                    e,
+                    error,
                 ));
             }
         };
@@ -331,6 +345,7 @@ async fn update_locked(
         // The owner's rows frame the diff. A move spans two, and the record
         // sits at the one it leaves, so that name's rows come along too.
         let mut framed = records_at_name.clone();
+
         if candidate.name != existing_record.name {
             framed.extend(
                 bindizr_db::record::list_by_name_tx(
@@ -342,6 +357,7 @@ async fn update_locked(
                 .await?,
             );
         }
+
         let before = caller.readable_records(zone.id, framed.iter().cloned().map(RecordData::from));
         let mut after = caller.readable_records(
             zone.id,
@@ -378,6 +394,7 @@ async fn update_locked(
             super::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate).await?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
 
@@ -400,7 +417,7 @@ async fn update_locked(
         updated_record.ttl,
         updated_record
             .priority
-            .map_or("null".to_string(), |v| v.to_string()),
+            .map_or("null".to_string(), |value| value.to_string()),
         updated_record.id,
         request.dry_run
     );

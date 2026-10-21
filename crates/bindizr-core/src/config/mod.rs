@@ -232,8 +232,8 @@ impl std::str::FromStr for DatabaseType {
     type Err = ConfigError;
 
     /// Parse a database type from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "mysql" => Ok(DatabaseType::MySql),
             "sqlite" => Ok(DatabaseType::Sqlite),
             "postgresql" => Ok(DatabaseType::Postgres),
@@ -290,6 +290,7 @@ impl DatabaseTlsConfig {
         {
             return Err(ConfigError::DatabaseTlsCaUnchecked);
         }
+
         Ok(())
     }
 }
@@ -330,8 +331,8 @@ impl std::str::FromStr for DatabaseTlsMode {
     type Err = ConfigError;
 
     /// Parse a TLS mode from its configuration spelling.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "disable" => Ok(Self::Disable),
             "prefer" => Ok(Self::Prefer),
             "require" => Ok(Self::Require),
@@ -537,6 +538,7 @@ impl ImportConfig {
                 key: "dns.import.max_records",
             });
         }
+
         Ok(())
     }
 }
@@ -729,8 +731,8 @@ impl std::str::FromStr for LogFormat {
     type Err = ConfigError;
 
     /// Parse a log format from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "text" => Ok(LogFormat::Text),
             "json" => Ok(LogFormat::Json),
             _ => Err(ConfigError::UnknownValue {
@@ -763,8 +765,8 @@ impl std::str::FromStr for LogLevel {
     type Err = ConfigError;
 
     /// Parse a log level from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "trace" => Ok(LogLevel::Trace),
             "debug" => Ok(LogLevel::Debug),
             "info" => Ok(LogLevel::Info),
@@ -808,6 +810,7 @@ impl Config {
             path: conf_file_path.to_string(),
             source,
         })?;
+
         // A parse or validation failure names no file, and the path may be a
         // default the caller never spelled.
         Config::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
@@ -819,6 +822,7 @@ impl Config {
     /// The settings a reload actually changed, for the line that reports it.
     pub fn changed_settings(&self, next: &Config) -> Vec<String> {
         let mut changed = Vec::new();
+
         if self.dns != next.dns {
             changed.push("dns".to_string());
         }
@@ -828,6 +832,7 @@ impl Config {
         if self.logging != next.logging {
             changed.push("logging".to_string());
         }
+
         changed
     }
 
@@ -835,6 +840,7 @@ impl Config {
     /// HTTP router, the database pool — which a reload cannot rebuild.
     pub fn fixed_settings_changed(&self, next: &Config) -> Vec<String> {
         let mut fixed = Vec::new();
+
         if self.api != next.api {
             fixed.push("api".to_string());
         }
@@ -853,10 +859,12 @@ impl Config {
         if self.dns.tcp_max_connections != next.dns.tcp_max_connections {
             fixed.push("dns.tcp_max_connections".to_string());
         }
+
         // A live rename would strand the catalog row and configured secondaries.
         if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
             fixed.push("dns.catalog_zone_name".to_string());
         }
+
         fixed
     }
 
@@ -888,6 +896,7 @@ impl Config {
             ("dns", dns, "dns.tls", dns_tls, dns_tls_on),
             ("api", api, "dns.tls", dns_tls, dns_tls_on),
         ];
+
         for (first, (first_addr, port), second, (second_addr, second_port), checked) in pairs {
             // An unspecified address covers every other, so the port alone collides.
             if checked
@@ -903,6 +912,7 @@ impl Config {
                 });
             }
         }
+
         Ok(())
     }
 }
@@ -911,6 +921,7 @@ impl DatabaseConfig {
     /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
         self.tls.validate()?;
+
         match self.database_type {
             DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
                 Err(ConfigError::EmptyDatabaseLocation {
@@ -994,6 +1005,7 @@ impl DnsTlsConfig {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns.tls" });
         }
+
         // RFC 7858, Section 3.1: DNS over TLS "MUST NOT be port 53".
         if self.listen_port == 53 {
             return Err(ConfigError::PortReserved {
@@ -1002,6 +1014,7 @@ impl DnsTlsConfig {
                 reserved_for: "cleartext DNS",
             });
         }
+
         // Half a pair would leave the listener off on a port the operator
         // means to serve, which no later error would reveal.
         match (self.cert_file.as_deref(), self.key_file.as_deref()) {
@@ -1035,6 +1048,7 @@ impl DnsConfig {
             .catalog_zone_name
             .to_wire()
             .map_err(ConfigError::CatalogZoneName)?;
+
         if catalog_wire.len() > crate::dns::MAX_CATALOG_ZONE_WIRE_LEN {
             return Err(ConfigError::CatalogZoneTooLong {
                 max_wire_len: crate::dns::MAX_CATALOG_ZONE_WIRE_LEN,
@@ -1043,6 +1057,7 @@ impl DnsConfig {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
         }
+
         // RFC 7858, Section 3.1: servers "MUST NOT use port 853 to transport
         // cleartext DNS messages".
         if self.listen_port == 853 {
@@ -1052,6 +1067,7 @@ impl DnsConfig {
                 reserved_for: "DNS over TLS",
             });
         }
+
         // The idle timeout must fit the keepalive option's 16-bit deciseconds.
         if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.tcp_idle_timeout_secs) {
             return Err(ConfigError::OutOfRange {
@@ -1065,15 +1081,19 @@ impl DnsConfig {
                 key: "dns.tcp_max_connections",
             });
         }
+
         self.tls.validate()?;
         self.import.validate()?;
+
         // Refusing plain transfers with no TLS listener would refuse them all.
         if self.transfer.require_tls && self.tls.tls_files().is_none() {
             return Err(ConfigError::TransferRequiresTlsListener);
         }
+
         // A zone without its own timers inherits these; a zero is refused
         // here as it is in a request.
         let defaults = &self.zone_defaults;
+
         for (field, secs) in [
             ("refresh", defaults.refresh.as_secs()),
             ("retry", defaults.retry.as_secs()),
@@ -1084,6 +1104,7 @@ impl DnsConfig {
                 return Err(ConfigError::ZoneDefaultZero { field });
             }
         }
+
         Ok(())
     }
 }

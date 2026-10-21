@@ -30,7 +30,9 @@ impl AddressTarget {
             return AddressTarget::Socket(SocketAddr::new(ip, default_port));
         }
 
-        if let Some(bracketed) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+        if let Some(bracketed) = value
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
             && let Ok(ip) = bracketed.parse::<IpAddr>()
         {
             return AddressTarget::Socket(SocketAddr::new(ip, default_port));
@@ -41,6 +43,7 @@ impl AddressTarget {
         } else {
             format!("{}:{}", value, default_port)
         };
+
         // A trailing root dot names the same host, so one server has one spelling.
         let host_port = match host_port.rsplit_once(':') {
             Some((host, port)) => format!("{}:{}", host.strip_suffix('.').unwrap_or(host), port),
@@ -86,9 +89,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_string().encode_by_ref(buf)
+        self.to_string().encode_by_ref(buffer)
     }
 }
 
@@ -126,9 +129,13 @@ pub fn is_address_target(value: &str) -> bool {
     if let Ok(addr) = value.parse::<SocketAddr>() {
         return addr.port() != 0;
     }
-    if let Some((ip, rest)) = value.strip_prefix('[').and_then(|v| v.split_once(']')) {
+    if let Some((ip, rest)) = value
+        .strip_prefix('[')
+        .and_then(|value| value.split_once(']'))
+    {
         return ip.parse::<IpAddr>().is_ok() && (rest.is_empty() || has_explicit_port(value));
     }
+
     match value.rsplit_once(':') {
         Some((host, _)) => has_explicit_port(value) && is_hostname(host),
         None => is_hostname(value),
@@ -148,7 +155,10 @@ fn is_hostname(value: &str) -> bool {
 
 /// Check whether an address target includes a valid explicit port.
 fn has_explicit_port(value: &str) -> bool {
-    if let Some((_, rest)) = value.strip_prefix('[').and_then(|v| v.split_once(']')) {
+    if let Some((_, rest)) = value
+        .strip_prefix('[')
+        .and_then(|value| value.split_once(']'))
+    {
         return rest.strip_prefix(':').is_some_and(is_valid_port);
     }
 

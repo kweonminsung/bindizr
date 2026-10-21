@@ -7,9 +7,11 @@ fn caa_encoding_preserves_empty_properties() {
         let text = format!("0 {tag} \"\"");
         let parsed = CaaRecordValue::parse(&text).unwrap();
         parsed.validate().unwrap();
+
         assert_eq!(parsed.canonical(), text);
         let mut expected = vec![0, u8::try_from(tag.len()).unwrap()];
         expected.extend_from_slice(tag.as_bytes());
+
         assert_eq!(parsed.to_rdata().unwrap().as_bytes(), expected);
     }
 }
@@ -52,6 +54,7 @@ fn validate_rejects_a_bad_tag_or_a_missing_value() {
         let text = format!("0 {tag} \"\"");
         assert!(CaaRecordValue::parse(&text).unwrap().validate().is_err());
     }
+
     for text in ["0 issue", "0 issue   ", "0  \"\""] {
         assert!(CaaRecordValue::parse(text).is_err());
     }
@@ -74,12 +77,15 @@ fn caa_parse_splits_fields_at_unquoted_whitespace() {
     for text in ["0 issue a\tb", "0 issue a b", "0 issue a\"b"] {
         assert!(CaaRecordValue::parse(text).is_err());
     }
+
     for text in [r"0 issue a\032b", r"0 issue a\ b", r#"0 issue "a b""#] {
         let parsed = CaaRecordValue::parse(text).unwrap();
         parsed.validate().unwrap();
         assert_eq!(parsed.canonical(), r#"0 issue "a b""#);
     }
+
     let trailing_space = CaaRecordValue::parse("0 issue a\\ ").unwrap();
+
     assert_eq!(trailing_space.canonical(), r#"0 issue "a ""#);
 }
 
@@ -87,6 +93,7 @@ fn caa_parse_splits_fields_at_unquoted_whitespace() {
 #[test]
 fn property_values_preserve_all_octets() {
     let escaped: String = (0..=255u8).map(|byte| format!("\\{byte:03}")).collect();
+
     for text in [
         format!("128 custom {escaped}"),
         format!("128 custom \"{escaped}\""),
@@ -95,11 +102,14 @@ fn property_values_preserve_all_octets() {
         parsed.validate().unwrap();
         let mut expected = b"\x80\x06custom".to_vec();
         expected.extend(0..=255u8);
+
         assert_eq!(parsed.to_rdata().unwrap().as_bytes(), expected);
         let canonical = parsed.canonical();
         let reparsed = CaaRecordValue::parse(&canonical).unwrap();
+
         assert_eq!(reparsed.to_rdata().unwrap().as_bytes(), expected);
     }
+
     for text in [
         r"0 issue \1",
         r"0 issue \12",
@@ -122,10 +132,12 @@ fn caa_validation_enforces_wire_field_lengths() {
         let parsed = CaaRecordValue::parse(&text).unwrap();
         parsed.validate().unwrap();
         let rdata = parsed.to_rdata().unwrap();
+
         assert_eq!(rdata.as_bytes().len(), MAX_RECORD_RDATA);
         assert_eq!(usize::from(rdata.as_bytes()[1]), tag_len);
 
         let oversized = format!("0 {tag} \"{}\"", r"\255".repeat(max + 1));
+
         assert!(matches!(
             CaaRecordValue::parse(&oversized).unwrap().validate(),
             Err(ParseRecordValueError::CaaValueTooLong { .. })

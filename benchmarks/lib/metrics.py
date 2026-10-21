@@ -43,15 +43,18 @@ class LatencyRecorder:
         """Interpolate a latency percentile from successful request samples."""
         if not self.latencies_ms:
             return 0.0
+
         data = sorted(self.latencies_ms)
         k = (len(data) - 1) * (p / 100.0)
         lo = int(k)
         hi = min(lo + 1, len(data) - 1)
+
         return data[lo] + (data[hi] - data[lo]) * (k - lo)
 
     def summary(self) -> dict[str, float]:
         """Summarize throughput, error rate, and successful-request latency."""
         tps = self.count / self.elapsed_secs if self.elapsed_secs else 0.0
+
         return {
             "count": self.count,
             "errors": self.errors,

@@ -39,6 +39,7 @@ pub(crate) async fn rewind_records_to_serial_tx(
 /// Log and skip unexplained changes so inconsistent history cannot block rollback.
 fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData> {
     let mut state: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
+
     for record in records {
         state
             .entry(record.match_key())
@@ -88,6 +89,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
 
     let mut records: Vec<RecordData> = state.into_values().flatten().collect();
     sort_records(&mut records);
+
     records
 }
 
@@ -107,6 +109,7 @@ pub(crate) async fn list_records_at_serial_tx(
                 .map(RecordData::from)
                 .collect();
         sort_records(&mut records);
+
         Ok(records)
     } else {
         rewind_records_to_serial_tx(tx, zone_id, serial, current_serial).await

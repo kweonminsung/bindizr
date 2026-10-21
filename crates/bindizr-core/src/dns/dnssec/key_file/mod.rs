@@ -72,10 +72,13 @@ impl DnssecKey {
         };
 
         let mut file = self.private_key.trim_end().to_string();
+
         for (field, at) in [("Created", self.created_at)].into_iter().chain(timing) {
             file.push_str(&format!("\n{}: {}", field, at.format("%Y%m%d%H%M%S")));
         }
+
         file.push('\n');
+
         file
     }
 }
@@ -131,9 +134,11 @@ fn bind_key_phase(
             at: delete.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         });
     }
+
     // The DNSKEY record set's own TTL bounds how long a resolver can hold an answer
     // that lacks this key, or holds it; a recorded schedule is exact and wins.
     let ttl_wait = Duration::seconds(i64::from(default_ttl.as_secs()));
+
     if let Some(inactive) = passed(inactive) {
         // Its signatures outlive it in caches for the TTL of the record sets it
         // signed, which a zone signed elsewhere never told bindizr.
@@ -157,6 +162,7 @@ fn bind_key_phase(
             eligible_at: activate.unwrap_or(now + ttl_wait),
         });
     }
+
     match publish.or(activate) {
         Some(at) => Err(ImportKeyError::NotYetPublished {
             at: at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
@@ -199,11 +205,13 @@ impl DnssecKey {
         let flags: u16 = flags.parse().map_err(|_| ImportKeyError::Flags {
             value: flags.to_string(),
         })?;
+
         if *protocol != "3" {
             return Err(ImportKeyError::Protocol {
                 value: protocol.to_string(),
             });
         }
+
         let algorithm = algorithm
             .parse::<i32>()
             .ok()
@@ -231,11 +239,11 @@ impl DnssecKey {
             SecurityAlgorithm::from_int(algorithm.as_i32() as u8),
             public_key,
         )
-        .map_err(|e| ImportKeyError::Dnskey(Box::new(e)))?;
+        .map_err(|error| ImportKeyError::Dnskey(Box::new(error)))?;
         let secret = domain::crypto::sign::SecretKeyBytes::parse_from_bind(private_key)
-            .map_err(|e| ImportKeyError::PrivateKey(Box::new(e)))?;
+            .map_err(|error| ImportKeyError::PrivateKey(Box::new(error)))?;
         domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
-            .map_err(|e| ImportKeyError::KeyMismatch(Box::new(e)))?;
+            .map_err(|error| ImportKeyError::KeyMismatch(Box::new(error)))?;
 
         // Preserve the rollover phase encoded by the private file's timing fields.
         let DnssecKeyPhase {

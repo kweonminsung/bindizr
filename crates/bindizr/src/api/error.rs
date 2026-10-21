@@ -78,6 +78,7 @@ impl IntoResponse for ApiError {
         let status = http_status(self.0.code());
         let code = self.0.code();
         let mut response = (status, Json(ErrorResponse::from(&self.0))).into_response();
+
         // RFC 9110, Section 15.5.2 wants a challenge on every 401; RFC 6750, Section 3
         // spells it with a realm and, for a refused token, `error="invalid_token"`.
         if status == StatusCode::UNAUTHORIZED {
@@ -90,6 +91,7 @@ impl IntoResponse for ApiError {
                 .headers_mut()
                 .insert(WWW_AUTHENTICATE, HeaderValue::from_static(challenge));
         }
+
         response
     }
 }
@@ -190,6 +192,7 @@ mod tests {
         else {
             panic!("an unknown query key must be rejected");
         };
+
         assert_eq!(error.0.code(), ErrorCode::InvalidInput);
         assert!(
             error.0.to_string().contains("unknown field `record_type`"),
@@ -212,6 +215,7 @@ mod tests {
         else {
             panic!("the spelled-out filter must parse");
         };
+
         assert_eq!(filter.record_type.as_deref(), Some("A"));
         assert!(filter.dry_run);
     }
@@ -232,6 +236,7 @@ mod tests {
             panic!("an unknown body field must be rejected");
         };
         let error = ApiError::from(rejection);
+
         assert_eq!(error.0.code(), ErrorCode::InvalidJsonBody);
         assert!(
             error.0.to_string().contains("unknown field `tll`"),

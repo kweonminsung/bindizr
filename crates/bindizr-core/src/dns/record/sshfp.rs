@@ -23,6 +23,7 @@ impl SshfpRecordValue {
                 value: value.to_string(),
             });
         };
+
         Ok(Self {
             algorithm: parse_u8_record_field("SSHFP algorithm", algorithm)?,
             fingerprint_type: parse_u8_record_field("SSHFP fingerprint type", fingerprint_type)?,
@@ -38,6 +39,7 @@ impl SshfpRecordValue {
             2 => Some(32),
             _ => None,
         };
+
         if let Some(expected) = expected
             && self.fingerprint.len() != expected
         {
@@ -47,15 +49,18 @@ impl SshfpRecordValue {
                 len: self.fingerprint.len(),
             });
         }
+
         // Bounded so the record fits one transfer message beside its 2 fixed
         // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
         const MAX_FINGERPRINT: usize = MAX_RECORD_RDATA - 2;
+
         if self.fingerprint.len() > MAX_FINGERPRINT {
             return Err(ParseRecordValueError::SshfpFingerprintTooLong {
                 max: MAX_FINGERPRINT,
                 len: self.fingerprint.len(),
             });
         }
+
         Ok(())
     }
 
@@ -97,6 +102,7 @@ mod tests {
         let parsed =
             SshfpRecordValue::parse("4 1 4b9b 6b07 3edd 97fe 1a7b 1987 1ee9 3be2 50e4 9b2d")
                 .unwrap();
+
         assert_eq!(
             parsed.canonical(),
             "4 1 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D"
@@ -107,6 +113,7 @@ mod tests {
     #[test]
     fn validate_pins_the_fingerprint_length_per_type() {
         let short = SshfpRecordValue::parse("4 2 4B9B").unwrap();
+
         assert!(
             short
                 .validate()

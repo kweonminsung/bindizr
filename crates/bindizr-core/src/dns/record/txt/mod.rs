@@ -27,6 +27,7 @@ impl TxtRecordValue {
         }
 
         let segments = parse_quoted_segments(value.trim())?;
+
         Self::from_octet_segments(segments.iter().map(Vec::as_slice))
     }
 
@@ -53,19 +54,24 @@ impl TxtRecordValue {
     ) -> Result<Self, ParseRecordValueError> {
         let mut rdata = Vec::new();
         let mut has_segments = false;
+
         for bytes in segments {
             has_segments = true;
+
             if bytes.len() > MAX_CHARACTER_STRING_LEN {
                 return Err(ParseRecordValueError::CharStringTooLong {
                     field: "TXT character-string",
                 });
             }
+
             rdata.push(bytes.len() as u8);
             rdata.extend_from_slice(bytes);
         }
+
         if !has_segments {
             return Err(ParseRecordValueError::TxtNoCharString);
         }
+
         Ok(Self(rdata))
     }
 
@@ -78,17 +84,20 @@ impl TxtRecordValue {
 
         for (idx, ch) in value.char_indices() {
             let char_len = ch.len_utf8();
+
             if chunk_len + char_len > MAX_CHARACTER_STRING_LEN {
                 rdata.push(chunk_len as u8);
                 rdata.extend_from_slice(&value.as_bytes()[chunk_start..idx]);
                 chunk_start = idx;
                 chunk_len = 0;
             }
+
             chunk_len += char_len;
         }
 
         rdata.push(chunk_len as u8);
         rdata.extend_from_slice(&value.as_bytes()[chunk_start..]);
+
         Self(rdata)
     }
 
@@ -101,6 +110,7 @@ impl TxtRecordValue {
                 len: self.0.len(),
             });
         }
+
         Ok(())
     }
 
@@ -119,6 +129,7 @@ impl TxtRecordValue {
         }
 
         let mut segments = Vec::new();
+
         for chunk in char_strings(&self.0)? {
             segments.push(std::str::from_utf8(chunk).ok()?.to_string());
         }
@@ -159,6 +170,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
 
         // Decode escapes before checking the character-string's wire byte length.
         let mut segment: Vec<u8> = Vec::new();
+
         loop {
             match bytes.next() {
                 Some(b'"') => break,
@@ -174,11 +186,13 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                         let code = u16::from(d - b'0') * 100
                             + u16::from(d2 - b'0') * 10
                             + u16::from(d3 - b'0');
+
                         if code > u16::from(u8::MAX) {
                             return Err(ParseRecordValueError::InvalidEscape {
                                 field: "TXT value",
                             });
                         }
+
                         segment.push(code as u8);
                     }
                     Some(escaped) => segment.push(escaped),
@@ -194,6 +208,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                 field: "TXT character-string",
             });
         }
+
         segments.push(segment);
 
         // Require spaces between quoted strings while preserving each wire segment.
@@ -216,6 +231,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
     if segments.is_empty() {
         return Err(ParseRecordValueError::TxtNoCharString);
     }
+
     Ok(segments)
 }
 
@@ -223,12 +239,14 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
 fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
     let mut segments = Vec::new();
     let mut pos = 0usize;
+
     while pos < rdata.len() {
         let len = usize::from(rdata[pos]);
         pos += 1;
         segments.push(rdata.get(pos..pos + len)?);
         pos += len;
     }
+
     Some(segments)
 }
 
@@ -236,6 +254,7 @@ fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
 /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
 pub fn to_quoted_charstr(bytes: &[u8]) -> String {
     let mut out = String::from("\"");
+
     for &byte in bytes {
         match byte {
             b'"' => out.push_str("\\\""),
@@ -244,7 +263,9 @@ pub fn to_quoted_charstr(bytes: &[u8]) -> String {
             _ => out.push_str(&format!("\\{:03}", byte)),
         }
     }
+
     out.push('"');
+
     out
 }
 

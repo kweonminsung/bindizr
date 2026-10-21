@@ -22,6 +22,7 @@ pub(crate) async fn force_increment_serial(
             .authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
         let new_serial = generate_serial(Some(zone.serial));
+
         let updated_zone = bindizr_db::zone::update_tx(
             &mut tx,
             Zone {
@@ -30,9 +31,9 @@ pub(crate) async fn force_increment_serial(
             },
         )
         .await
-        .map_err(|e| {
-            log::error!("Failed to force increment zone serial: {}", e);
-            ServiceError::internal_with_source("failed to force increment zone serial", e)
+        .map_err(|error| {
+            log::error!("Failed to force increment zone serial: {}", error);
+            ServiceError::internal_with_source("failed to force increment zone serial", error)
         })?;
 
         // The SOA rdata carries the serial, so its signature must follow

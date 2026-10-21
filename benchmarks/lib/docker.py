@@ -1,4 +1,4 @@
-"""Thin helpers around docker / docker compose used by the harness."""
+"""Manage Docker Compose projects and read container resource usage."""
 from __future__ import annotations
 
 import json
@@ -24,7 +24,7 @@ def is_arm_override_enabled() -> bool:
 
 
 class Compose:
-    """Wrapper for a single docker compose project."""
+    """One Docker Compose project and its services."""
 
     def __init__(self, file: Path, project: str, env: dict[str, str] | None = None):
         """Store the Compose project and layer `compose.arm.yml` when BENCH_ARM is enabled."""
@@ -33,6 +33,7 @@ class Compose:
         self.env = env or {}
         self.files = [self.file]
         arm_override = self.file.with_name("compose.arm.yml")
+
         if is_arm_override_enabled() and arm_override.exists():
             self.files.append(arm_override)
 
@@ -48,8 +49,10 @@ class Compose:
         # --build so a system built from this repository is measured as it
         # stands now rather than from a stale image.
         cmd = self._build_command_prefix() + ["up", "-d", "--build"]
+
         if wait:
             cmd.append("--wait")
+
         cmd += list(services)
         subprocess.run(cmd, check=True, text=True, env={**os.environ, **self.env})
 
@@ -84,11 +87,13 @@ def read_stats(container_ids: list[str]) -> list[dict]:
     """One-shot `docker stats` snapshot for the given containers."""
     if not container_ids:
         return []
+
     p = run(
         ["docker", "stats", "--no-stream", "--format", "{{json .}}", *container_ids],
         check=False,
     )
     rows = []
+
     for line in (p.stdout or "").splitlines():
         line = line.strip()
         if line:
@@ -96,4 +101,5 @@ def read_stats(container_ids: list[str]) -> list[dict]:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 pass
+
     return rows

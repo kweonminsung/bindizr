@@ -19,6 +19,7 @@ pub async fn get_status(
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let serial = zone.serial;
+
     let secondaries = probe::probe_secondaries(cx, &zone.name, Some(serial)).await?;
 
     Ok(ZoneStatusResponse {

@@ -114,10 +114,11 @@ pub(crate) async fn apply_record_operation_tx(
             let adding_cname = *record_type == RecordType::Cname;
             let has_cname = records_at_name
                 .iter()
-                .any(|r| r.record_type == RecordType::Cname);
+                .any(|record| record.record_type == RecordType::Cname);
             let has_other = records_at_name
                 .iter()
-                .any(|r| r.record_type != RecordType::Cname);
+                .any(|record| record.record_type != RecordType::Cname);
+
             if (adding_cname && (owner.is_apex() || has_other)) || (!adding_cname && has_cname) {
                 return Ok(false);
             }
@@ -126,10 +127,13 @@ pub(crate) async fn apply_record_operation_tx(
             // CNAME or DNAME replaces the first; WKS replaces its address/protocol match.
             let replaced: Vec<Record> = records_at_name
                 .iter()
-                .filter(|r| r.record_type == *record_type && r.is_replaced_by(&value, *priority))
+                .filter(|record| {
+                    record.record_type == *record_type && record.is_replaced_by(&value, *priority)
+                })
                 .cloned()
                 .collect();
             let mut changed = false;
+
             if !replaced.is_empty() {
                 // Replacing deletes what stood there; the create grant alone
                 // does not reach it.
@@ -141,7 +145,9 @@ pub(crate) async fn apply_record_operation_tx(
                         record_type: Some(record_type),
                     }],
                 )?;
+
                 record::delete_with_changes_tx(tx, zone.id, new_serial, &replaced).await?;
+
                 changed = true;
             }
 
@@ -149,13 +155,14 @@ pub(crate) async fn apply_record_operation_tx(
             // retime the name/type's records through delete/add journal changes.
             let retimed: Vec<Record> = records_at_name
                 .iter()
-                .filter(|r| {
-                    r.record_type == *record_type
-                        && r.ttl != *ttl
-                        && !replaced.iter().any(|gone| gone.id == r.id)
+                .filter(|record| {
+                    record.record_type == *record_type
+                        && record.ttl != *ttl
+                        && !replaced.iter().any(|gone| gone.id == record.id)
                 })
                 .cloned()
                 .collect();
+
             if !retimed.is_empty() {
                 // Retiming rewrites the set that stood there: an update.
                 caller.authorize_record_access(
@@ -166,7 +173,9 @@ pub(crate) async fn apply_record_operation_tx(
                         record_type: Some(record_type),
                     }],
                 )?;
+
                 record::delete_with_changes_tx(tx, zone.id, new_serial, &retimed).await?;
+
                 let renewed: Vec<Record> = retimed
                     .into_iter()
                     .map(|record| Record {
@@ -176,7 +185,9 @@ pub(crate) async fn apply_record_operation_tx(
                         ..record
                     })
                     .collect();
+
                 record::create_with_changes_tx(tx, zone.id, new_serial, &renewed).await?;
+
                 changed = true;
             }
 
@@ -257,11 +268,14 @@ async fn delete_matching_tx(
     if owner.is_apex() {
         let ns_total = owner_records
             .iter()
-            .filter(|r| r.record_type == RecordType::Ns)
+            .filter(|record| record.record_type == RecordType::Ns)
             .count();
+
         match value {
-            None => matched.retain(|r| r.record_type != RecordType::Ns),
-            Some(_) if ns_total <= 1 => matched.retain(|r| r.record_type != RecordType::Ns),
+            None => matched.retain(|record| record.record_type != RecordType::Ns),
+            Some(_) if ns_total <= 1 => {
+                matched.retain(|record| record.record_type != RecordType::Ns)
+            }
             Some(_) => {}
         }
     }

@@ -89,6 +89,7 @@ impl ParsedZoneFile {
         // TTL is the zone's default (RFC 2308, Section 4), not the last explicit one.
         let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
         buffer.push_str(&content);
+
         if !buffer.ends_with('\n') {
             buffer.push('\n');
         }
@@ -129,10 +130,10 @@ impl ParsedZoneFile {
                         .push("$INCLUDE directives are not supported".to_string());
                 }
                 Ok(None) => break,
-                Err(e) => {
+                Err(error) => {
                     parsed.errors.push(format!(
                         "failed to parse zone file: {}",
-                        to_input_line_message(&e)
+                        to_input_line_message(&error)
                     ));
                     // domain documents the scanner as invalid once an entry fails.
                     break;
@@ -151,6 +152,7 @@ impl ParsedZoneFile {
             errors: Vec::new(),
         };
         let origin = zone_name.to_fqdn();
+
         for (index, record) in records.iter().enumerate() {
             if matches!(
                 record.rtype,
@@ -177,7 +179,9 @@ impl ParsedZoneFile {
             {
                 continue;
             }
+
             let mut parser = Parser::from_ref(record.rdata.as_bytes());
+
             match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {
                 Ok(Some(data)) if parser.remaining() == 0 => parsed.push_record(
                     &origin,
@@ -192,6 +196,7 @@ impl ParsedZoneFile {
                 Err(error) => parsed.errors.push(format!("{}: {}", record.name, error)),
             }
         }
+
         parsed
     }
 
@@ -221,6 +226,7 @@ impl ParsedZoneFile {
                 )),
             };
         }
+
         let record_type = match rtype {
             // Only the apex SOA supplies this zone's serial and timers.
             Rtype::SOA => {
@@ -242,6 +248,7 @@ impl ParsedZoneFile {
                         )),
                     }
                 }
+
                 return;
             }
             other => match RecordType::try_from(other) {
@@ -261,6 +268,7 @@ impl ParsedZoneFile {
         let (value, priority) = if record_type == RecordType::Wks {
             let mut bytes = Vec::new();
             let Ok(()) = data.compose_rdata(&mut bytes);
+
             match WksRecordValue::from_rdata(&bytes) {
                 Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
                 Err(error) => {
@@ -299,9 +307,9 @@ impl ParsedZoneFile {
                 .map(|value| value.canonical())
                 {
                     Ok(text) => (ZoneFileValue::Rdata(text), None),
-                    Err(e) => {
+                    Err(error) => {
                         self.errors
-                            .push(format!("NAPTR value for '{}': {}", owner, e));
+                            .push(format!("NAPTR value for '{}': {}", owner, error));
                         return;
                     }
                 },
@@ -365,6 +373,7 @@ fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
         return None;
     };
     let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs()).ok();
+
     Some(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
@@ -383,8 +392,9 @@ const PRELUDE_LINES: usize = 2;
 
 /// Restate a parser error in the submitted text's line numbering. `Error` keeps
 /// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
-fn to_input_line_message(err: &inplace::Error) -> String {
-    let message = err.to_string();
+fn to_input_line_message(error: &inplace::Error) -> String {
+    let message = error.to_string();
+
     match message.split_once(':') {
         Some((line, rest)) => match line.parse::<usize>() {
             Ok(line) if line > PRELUDE_LINES => format!("{}:{}", line - PRELUDE_LINES, rest),

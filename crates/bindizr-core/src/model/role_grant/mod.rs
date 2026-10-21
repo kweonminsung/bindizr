@@ -223,6 +223,7 @@ impl fmt::Display for ActionSet {
             }
             f.write_str(action.as_str())?;
         }
+
         Ok(())
     }
 }
@@ -262,9 +263,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_string().encode_by_ref(buf)
+        self.to_string().encode_by_ref(buffer)
     }
 }
 

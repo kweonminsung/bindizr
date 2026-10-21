@@ -17,29 +17,36 @@ async fn zone_versions_support_list_and_get() {
         "name": "www", "type": "A", "value": "192.0.2.50",
         "ttl": 300, "zone_name": zone_name
     });
+
     let (status, _) = app
         .send_request(Method::POST, "/records", Some(record_a))
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let record_b = json!({
         "name": "mail", "type": "A", "value": "192.0.2.51",
         "ttl": 300, "zone_name": zone_name
     });
+
     let (status, _) = app
         .send_request(Method::POST, "/records", Some(record_b))
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let items = body["items"].as_array().expect("missing version items");
+
     assert!(items.len() >= 2);
     let serials: Vec<i64> = items
         .iter()
         .map(|item| item["serial"].as_i64().unwrap())
         .collect();
+
     assert!(
         serials.windows(2).all(|pair| pair[0] > pair[1]),
         "versions must be newest first: {serials:?}"
@@ -54,6 +61,7 @@ async fn zone_versions_support_list_and_get() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(page["items"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -69,6 +77,7 @@ async fn zone_versions_support_list_and_get() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         detail["version"]["serial"].as_i64().unwrap(),
@@ -81,6 +90,7 @@ async fn zone_versions_support_list_and_get() {
         .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
+
     assert_eq!(a_records, [format!("www.{zone_name}.")]);
 
     let (status, body) = app
@@ -90,10 +100,12 @@ async fn zone_versions_support_list_and_get() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "VERSION_NOT_FOUND");
 
     let missing_zone = app.zone_name("missing.example");
+
     let (status, body) = app
         .send_request(
             Method::GET,
@@ -101,6 +113,7 @@ async fn zone_versions_support_list_and_get() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
@@ -125,6 +138,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
                 })),
             )
             .await;
+
         assert_eq!(status, StatusCode::CREATED);
     }
 
@@ -139,14 +153,17 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         diff["diff"]["summary"],
         json!({ "added": 1, "removed": 0, "changed": 0 })
     );
     let added = &diff["diff"]["entries"][0];
+
     assert_eq!(added["change"], "added");
     assert_eq!(added["name"], format!("www.{zone_name}."));
+
     // The value is structured (display form), not a rendered rdata string.
     assert_eq!(added["to"][0]["value"], "192.0.2.80");
 
@@ -158,6 +175,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(diff["to_serial"].as_i64().unwrap(), base_serial + 2);
     assert_eq!(diff["diff"]["summary"]["added"].as_i64().unwrap(), 2);
@@ -175,9 +193,11 @@ async fn zone_rollback_previews_changes_before_apply() {
         "name": "keep", "type": "A", "value": "192.0.2.60",
         "ttl": 300, "zone_name": zone_name
     });
+
     let (status, _) = app
         .send_request(Method::POST, "/records", Some(keep_record))
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     // Capture the state to roll back to.
@@ -191,9 +211,11 @@ async fn zone_rollback_previews_changes_before_apply() {
         "name": "extra", "type": "A", "value": "192.0.2.61",
         "ttl": 300, "zone_name": zone_name
     });
+
     let (status, _) = app
         .send_request(Method::POST, "/records", Some(extra_record))
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let soa_update = json!({
         "name": zone_name,
@@ -201,6 +223,7 @@ async fn zone_rollback_previews_changes_before_apply() {
         "rname": "changed@example.com",
         "default_ttl": 7200
     });
+
     let (status, _) = app
         .send_request(
             Method::PUT,
@@ -208,6 +231,7 @@ async fn zone_rollback_previews_changes_before_apply() {
             Some(soa_update),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     let (_, current) = app
@@ -223,13 +247,16 @@ async fn zone_rollback_previews_changes_before_apply() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["summary"]["soa_changed"], true);
+
     let (_, after_dry) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
+
     assert_eq!(
         after_dry["zone"]["serial"].as_i64().unwrap(),
         current_serial
@@ -244,6 +271,7 @@ async fn zone_rollback_previews_changes_before_apply() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["target_serial"].as_i64().unwrap(), target_serial);
@@ -252,6 +280,7 @@ async fn zone_rollback_previews_changes_before_apply() {
     let (_, restored) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
+
     assert_eq!(restored["zone"]["name"], zone_name);
     assert_eq!(
         restored["zone"]["serial"].as_i64().unwrap(),
@@ -267,6 +296,7 @@ async fn zone_rollback_previews_changes_before_apply() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = records["items"]
         .as_array()
@@ -274,6 +304,7 @@ async fn zone_rollback_previews_changes_before_apply() {
         .iter()
         .map(|record| record["name"].as_str().unwrap())
         .collect();
+
     assert_eq!(names.len(), 1);
     assert!(names[0].starts_with("keep."));
 }
@@ -316,9 +347,11 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
             )
             .await;
         let id = listing["items"][0]["id"].as_i64().unwrap();
+
         let (status, _) = app
             .send_request(Method::DELETE, &format!("/records/{id}"), None)
             .await;
+
         assert_eq!(status, StatusCode::OK);
     }
 
@@ -330,6 +363,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 2, "{body}");
 
@@ -341,6 +375,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
                 None,
             )
             .await;
+
         assert_eq!(
             listing["items"].as_array().unwrap().len(),
             1,
@@ -382,6 +417,7 @@ async fn zone_rollback_rejects_bad_serials() {
                 None,
             )
             .await;
+
         assert_eq!(status, expected_status, "serial {serial}");
         assert_eq!(body["code"], expected_code, "serial {serial}");
     }
@@ -400,9 +436,11 @@ async fn zone_versions_record_who_made_each_change() {
 
     // The socket authenticates the OS peer, without an API token or TSIG key.
     let zone_name = app.zone_name("audit.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     app.set_auth_token(token);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -413,11 +451,13 @@ async fn zone_versions_record_who_made_each_change() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     let items = body["items"].as_array().unwrap();
 
@@ -429,6 +469,7 @@ async fn zone_versions_record_who_made_each_change() {
     );
 
     let created = items.last().unwrap();
+
     assert_eq!(created["change_source"], "socket", "{body}");
     assert!(created["changed_by"].is_null(), "{body}");
 
@@ -438,13 +479,16 @@ async fn zone_versions_record_who_made_each_change() {
         .run_cli_success(&["zone", "version", "list", &zone_name, "-o", "json"], None)
         .await;
     let history: serde_json::Value = serde_json::from_str(&history).unwrap();
+
     assert_eq!(
         history["items"][0]["changed_by"],
         json!({"kind": "token", "name": token_name})
     );
+
     let table = app
         .run_cli_success(&["zone", "version", "list", &zone_name], None)
         .await;
+
     assert!(table.contains(&format!("token:{token_name}")), "{table}");
 }
 
@@ -455,17 +499,21 @@ async fn zone_versions_distinguish_unauthenticated_api_from_socket() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     app.run_cli_success(&["zone", "update", zone_name, "--refresh", "301"], None)
         .await;
 
     let (status, history) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK, "{history}");
     let items = history["items"].as_array().unwrap();
+
     assert_eq!(items.len(), 2, "{history}");
     assert_eq!(items[0]["change_source"], "socket", "{history}");
     assert_eq!(items[1]["change_source"], "api", "{history}");
+
     for item in items {
         assert!(item.get("changed_by").unwrap().is_null(), "{item}");
     }
@@ -498,6 +546,7 @@ async fn zone_versions_reject_serials_outside_wire_range() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
         assert_eq!(body["code"], "INVALID_INPUT", "{path}: {body}");
     }
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -508,6 +557,7 @@ async fn zone_versions_reject_serials_outside_wire_range() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_INPUT", "{body}");
 }
@@ -519,8 +569,11 @@ async fn zone_versions_reject_serials_outside_wire_range() {
 async fn history_and_rollback_cross_the_serial_wrap() {
     let app = TestApp::start_local().await;
     let name = app.zone_name("serial-wrap.example");
+
     let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({"name": name, "mname": "ns.example.net", "rname": "admin@example.net", "serial": u32::MAX}))).await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
+
     for record in ["first", "second"] {
         let (status, body) = app
             .send_request(
@@ -529,20 +582,26 @@ async fn history_and_rollback_cross_the_serial_wrap() {
                 Some(json!({"zone_name": name, "name": record, "type": "A", "value": "192.0.2.1"})),
             )
             .await;
+
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
+
     assert_eq!(app.read_zone_serial(&name).await, 2);
+
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{name}/versions"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let serials: Vec<_> = body["items"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v["serial"].as_u64().unwrap())
+        .map(|version| version["serial"].as_u64().unwrap())
         .collect();
+
     assert_eq!(serials, [2, 1, u64::from(u32::MAX)]);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -550,9 +609,12 @@ async fn history_and_rollback_cross_the_serial_wrap() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(app.read_zone_serial(&name).await, 3);
+
     let records = app.list_records(&name).await;
+
     assert_eq!(
         records.len(),
         1,
@@ -577,6 +639,7 @@ async fn zone_rollback_enforces_restored_record_wire_length_limit() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     let owner = [
@@ -586,6 +649,7 @@ async fn zone_rollback_enforces_restored_record_wire_length_limit() {
         "d".repeat(50),
     ]
     .join(".");
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -598,8 +662,10 @@ async fn zone_rollback_enforces_restored_record_wire_length_limit() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
+
     let (_, zone_at_target) = app.send_request(Method::GET, "/zones/c.co", None).await;
     let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
 
@@ -607,7 +673,9 @@ async fn zone_rollback_enforces_restored_record_wire_length_limit() {
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
+
     assert!(status.is_success(), "{status}");
+
     let (status, body) = app
         .send_request(
             Method::PUT,
@@ -615,6 +683,7 @@ async fn zone_rollback_enforces_restored_record_wire_length_limit() {
             Some(json!({ "name": "rollback-length.example" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
 
     // Restoring that serial would bring the name back under a zone it no
@@ -626,6 +695,7 @@ async fn zone_rollback_enforces_restored_record_wire_length_limit() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.to_string().contains("bytes or fewer"), "{body}");
 }

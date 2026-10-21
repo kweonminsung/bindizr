@@ -45,6 +45,7 @@ fn decode_preserves_escaped_trailing_dot_as_label_data() {
     assert_eq!(decode_name_labels("www.example.com.").unwrap().0.len(), 3);
 
     let zone = ZoneName::parse("example.com").unwrap();
+
     assert_eq!(
         OwnerName::parse_in_zone(r"a\.", &zone).unwrap().labels(),
         [b"a.".to_vec()]
@@ -146,6 +147,7 @@ fn owner_name_parse_reduces_input_to_the_stored_form() {
             .to_stored(),
         "a1"
     );
+
     // Owner names must admit the `_`-prefixed labels ACME and SRV rely on.
     assert_eq!(
         OwnerName::parse_in_zone("_acme-challenge", &zone)
@@ -175,6 +177,7 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
     let zone = ZoneName::parse("example.com").unwrap();
 
     let owner = OwnerName::parse_in_zone(r"host\.name.example.com.", &zone).unwrap();
+
     assert_eq!(owner.labels(), [b"host.name".to_vec()]);
     assert_eq!(owner.to_stored(), r"host\046name");
     assert_eq!(owner.to_fqdn(&zone), r"host\046name.example.com.");
@@ -205,6 +208,7 @@ fn name_rendering_escapes_dots_inside_labels() {
 #[test]
 fn name_encoding_round_trips_arbitrary_label_octets() {
     let zone = ZoneName::parse("example.com").unwrap();
+
     for (input, expected) in [
         ("café", r"caf\195\169"),
         (r"\255\000\032", r"\255\000\032"),
@@ -217,6 +221,7 @@ fn name_encoding_round_trips_arbitrary_label_octets() {
             owner
         );
     }
+
     for name in [
         "_acme-challenge.example",
         "0/25.2.0.192.in-addr.arpa",
@@ -300,6 +305,7 @@ fn owner_name_equality_and_hashing_fold_case() {
 
     let mut seen = HashSet::new();
     seen.insert(OwnerName::from_row("WWW"));
+
     assert!(seen.contains(&OwnerName::from_row("www")));
 }
 
@@ -327,6 +333,7 @@ fn owner_name_is_same_or_under_compares_labels() {
     assert!(OwnerName::from_row("a.sub").is_same_or_under(&sub));
     assert!(sub.is_same_or_under(&sub));
     assert!(!OwnerName::from_row("xsub").is_same_or_under(&sub));
+
     // `a\.sub` is the single label `a.sub`, so it is not under `sub`.
     assert!(!OwnerName::from_row(r"a\.sub").is_same_or_under(&sub));
 }
@@ -363,6 +370,7 @@ fn zone_name_parse_rejects_malformed_names() {
         ZoneName::parse("bad..example.com").unwrap_err(),
         ParseNameError::EmptyLabel
     );
+
     for name in [
         "_svc.example.com",
         r"evil\.example.com",
@@ -434,10 +442,12 @@ fn owner_name_admits_a_maximum_length_name() {
         "c".repeat(63),
         "d".repeat(49)
     );
+
     assert_eq!(longest.trim_end_matches('.').len(), 253);
 
     assert!(OwnerName::parse_absolute_in_zone(&longest, &zone).is_ok());
     let over = longest.replace(&"d".repeat(49), &"d".repeat(50));
+
     assert_eq!(
         OwnerName::parse_absolute_in_zone(&over, &zone),
         Err(ParseNameError::TooLong)
@@ -494,6 +504,7 @@ fn owner_name_storage_fits_schema_at_maximum_length() {
     // One more byte of name is refused, so nothing longer can reach a row.
     let mut longer = labels.to_vec();
     longer[3].push('$');
+
     assert_eq!(
         OwnerName::parse_in_zone(&longer.join("."), &zone),
         Err(ParseNameError::TooLong)

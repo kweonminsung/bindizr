@@ -105,6 +105,7 @@ impl Connection {
             tokio::select! {
                 biased;
                 () = tokio::time::sleep_until(deadline) => {},
+
                 result = requested => {
                     if result.is_ok() {
                         let _ = returned.send(stream);
@@ -112,6 +113,7 @@ impl Connection {
                 }
             }
         });
+
         Self::Idle {
             resume,
             stream: receive,
@@ -149,12 +151,14 @@ impl AxfrClient {
     ) -> Result<Vec<TransferRecord>, FetchZoneError> {
         let qname = zone_name.to_wire_name()?;
         let deadline = tokio::time::Instant::now() + import.timeout();
+
         let transfer = async {
             let previous = match self.connection.take() {
                 Some(connection) => connection.take().await,
                 None => None,
             };
             let reused = previous.is_some();
+
             let (addr, mut stream) = match (self.addr, previous) {
                 (Some(addr), Some(stream)) => (addr, stream),
                 (Some(addr), None) => (
@@ -166,6 +170,7 @@ impl AxfrClient {
                 (None, _) => connect_to_server(&self.server, import).await?,
             };
             self.addr = Some(addr);
+
             let result = match fetch_zone_on_stream(&mut stream, &qname, import.max_records).await {
                 // Nothing came back on a reused connection: the primary let it
                 // go, as RFC 7766, Section 6.2.1 allows, so start a fresh one.
@@ -180,8 +185,10 @@ impl AxfrClient {
                     source: Box::new(source),
                 }),
             };
+
             result.map(|(records, timeout)| (records, timeout, stream))
         };
+
         match tokio::time::timeout_at(deadline, transfer).await {
             Ok(Ok((records, idle_timeout, stream))) => {
                 // A zero timeout closes after the outstanding transfer completes (RFC 7828, Section 3.2.2).
@@ -192,9 +199,9 @@ impl AxfrClient {
                 };
                 Ok(records)
             }
-            Ok(Err(e)) => {
+            Ok(Err(error)) => {
                 // A failed transfer leaves the connection in an unknown state.
-                Err(e)
+                Err(error)
             }
             Err(_) => Err(match self.addr {
                 Some(addr) => FetchZoneError::TimedOut { addr },
@@ -213,21 +220,25 @@ async fn connect_to_server(
     import: &ImportConfig,
 ) -> Result<(SocketAddr, TcpStream), FetchZoneError> {
     let entries = super::resolve_address_entries(server, import.timeout()).await;
+
     let mut last = None;
+
     for (entry, result) in entries {
         let addrs = result.map_err(|source| FetchZoneError::Unresolved { entry, source })?;
+
         for addr in addrs {
             match TcpStream::connect(addr).await {
                 Ok(stream) => return Ok((addr, stream)),
-                Err(e) => {
+                Err(error) => {
                     last = Some(FetchZoneError::Server {
                         addr,
-                        source: Box::new(FetchZoneError::Connect(e)),
+                        source: Box::new(FetchZoneError::Connect(error)),
                     })
                 }
             }
         }
     }
+
     Err(last.unwrap_or(FetchZoneError::NoAddress))
 }
 
@@ -239,6 +250,7 @@ async fn fetch_zone_on_stream(
     max_records: usize,
 ) -> Result<(Vec<TransferRecord>, Option<Duration>), FetchZoneError> {
     let (query_id, query) = build_axfr_query(qname);
+
     stream
         .write_all(&encode_tcp_message(&query)?)
         .await
@@ -248,6 +260,7 @@ async fn fetch_zone_on_stream(
     let expected_labels = owner_labels(&expected_owner)?;
     let mut records: Vec<TransferRecord> = Vec::new();
     let mut idle_timeout = None;
+
     loop {
         let response = super::read_tcp_message(stream)
             .await
@@ -259,12 +272,15 @@ async fn fetch_zone_on_stream(
             TransferMessagePosition::Following
         };
         let batch = extract_transfer_records(query_id, qname, position, &response)?;
+
         if let Some(timeout) = extract_tcp_keepalive_timeout(&response)?
             && idle_timeout != Some(Duration::ZERO)
         {
             idle_timeout = Some(timeout);
         }
+
         let batch_len = batch.len();
+
         for (index, record) in batch.into_iter().enumerate() {
             if records.is_empty() {
                 if record.rtype != Rtype::SOA {
@@ -280,6 +296,7 @@ async fn fetch_zone_on_stream(
                 // The stream ends by repeating the opening SOA (RFC 5936, Section 2.2).
                 // Compare canonical copies, preserving received case for import.
                 let opening = &records[0];
+
                 if owner_labels(&record.name)? != owner_labels(&opening.name)?
                     || record.rdata.to_canonical(Rtype::SOA)?
                         != opening.rdata.to_canonical(Rtype::SOA)?
@@ -289,10 +306,14 @@ async fn fetch_zone_on_stream(
                 if index + 1 != batch_len {
                     return Err(FetchZoneError::RecordsAfterClosingSoa);
                 }
+
                 records.push(record);
+
                 return Ok((records, idle_timeout));
             }
+
             records.push(record);
+
             if records.len() > max_records {
                 return Err(FetchZoneError::TooManyRecords { limit: max_records });
             }

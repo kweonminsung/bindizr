@@ -11,50 +11,56 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
-from lib import dnsquery, dnsutil  # noqa: E402
+from lib import dnsquery, dig  # noqa: E402
 
 
-async def run(adapter, cfg, ctx) -> dict:
+async def run(adapter, config, context) -> dict:
     """Measure DNS query throughput and latency for the benchmark system."""
-    zone = ctx["zone"]
-    q = cfg["query"]
-    size = q["zone_size"]
+    zone = context["zone"]
+    query_config = config["query"]
+    size = query_config["zone_size"]
 
     await adapter.create_zone(zone)
+
     # Use only A records so every queried name has an answer of a known type.
-    records = [r for r in generate(size * 2, cfg["seed"], zone)
-               if r["type"] == "A"][:size]
+    records = [record for record in generate(size * 2, config["seed"], zone)
+               if record["type"] == "A"][:size]
+
     await adapter.import_records(zone, records)
 
-    names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
-    ep = adapter.dns_endpoint()
+    names = [f'{record["name"]}.{zone.rstrip(".")}' for record in records]
+    endpoint = adapter.dns_endpoint()
 
     # Exclude propagation wait from the query workload's warmup and measurements.
-    p = cfg["propagation"]
+    propagation_config = config["propagation"]
+
     missing = await asyncio.get_event_loop().run_in_executor(
-        None, dnsutil.first_unqueryable, records, zone, ep.host, ep.port,
-        p["poll_interval_ms"], p["timeout_secs"])
+        None, dig.first_unqueryable, records, zone, endpoint.host, endpoint.port,
+        propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
+
     if missing is not None:
         print(f'  [FAIL] b08: zone not queryable within '
-              f'{p["timeout_secs"]}s for {ctx["label"]}')
+              f'{propagation_config["timeout_secs"]}s for {context["label"]}')
         return {
-            "system": ctx["label"],
+            "system": context["label"],
             "zone_records": len(records),
             "status": "FAILED",
             "error": "propagation timeout: imported zone not queryable",
         }
 
     # Warm the query path, then collect throughput and latency samples.
-    rec = await dnsquery.query_load(
-        ep.host, ep.port, names, dnsquery.QTYPE["A"],
-        q["concurrency"], q["duration_secs"], warmup_secs=2.0)
-    s = rec.summary()
+    recorder = await dnsquery.query_load(
+        endpoint.host, endpoint.port, names, dnsquery.QTYPE["A"],
+        query_config["concurrency"], query_config["duration_secs"], warmup_secs=2.0)
+
+    summary = recorder.summary()
+
     return {
-        "system": ctx["label"],
+        "system": context["label"],
         "zone_records": len(records),
-        "qps": s["tps"],
-        "avg_latency_ms": s["mean_ms"],
-        "p95_ms": s["p95_ms"],
-        "p99_ms": s["p99_ms"],
-        "error_rate": s["error_rate"],
+        "qps": summary["tps"],
+        "avg_latency_ms": summary["mean_ms"],
+        "p95_ms": summary["p95_ms"],
+        "p99_ms": summary["p99_ms"],
+        "error_rate": summary["error_rate"],
     }

@@ -65,6 +65,7 @@ pub(crate) async fn probe_parent_ds(
     let servers = resolve_parent_ns_addrs(parent_ns_addrs, timeout).await?;
 
     let answers = query_ds(zone_name, &servers, timeout).await?;
+
     Ok(ParentDs {
         ns_addrs: servers.into_iter().map(|(entry, _)| entry).collect(),
         answers,
@@ -78,15 +79,18 @@ async fn resolve_parent_ns_addrs(
     timeout: Duration,
 ) -> Result<Vec<(String, Vec<SocketAddr>)>, ProbeParentDsError> {
     let mut servers = Vec::new();
+
     for (entry, result) in super::resolve_address_entries(raw, timeout).await {
         match result {
             Ok(addrs) => servers.push((entry, addrs)),
             Err(source) => return Err(ProbeParentDsError::Unresolved { entry, source }),
         }
     }
+
     if servers.is_empty() {
         return Err(ProbeParentDsError::NoServers);
     }
+
     Ok(servers)
 }
 
@@ -99,6 +103,7 @@ async fn query_ds(
     let qname = zone_name.to_wire_name()?;
 
     let mut tasks = Vec::with_capacity(servers.len());
+
     for (entry, addrs) in servers {
         let qname = qname.clone();
         let addrs = addrs.clone();
@@ -110,16 +115,19 @@ async fn query_ds(
 
     let mut failures = Vec::new();
     let mut answers = Vec::with_capacity(tasks.len());
+
     for (entry, task) in tasks {
         match task.await {
             Ok(Ok(answer)) => answers.push(answer),
-            Ok(Err(e)) => failures.push((entry, e)),
-            Err(e) => failures.push((entry, QueryDsError::TaskFailed(e))),
+            Ok(Err(error)) => failures.push((entry, error)),
+            Err(error) => failures.push((entry, QueryDsError::TaskFailed(error))),
         }
     }
+
     if !failures.is_empty() {
         return Err(ProbeParentDsError::Unanswered { failures });
     }
+
     Ok(answers)
 }
 
@@ -131,6 +139,7 @@ async fn query_ds_at(
     timeout: Duration,
 ) -> Result<Option<DsRecordSet>, QueryDsError> {
     let mut last_error = None;
+
     for addr in addrs {
         let (query_id, builder) = build_question(
             Opcode::QUERY,
@@ -141,17 +150,20 @@ async fn query_ds_at(
             Some(EDNS_UDP_PAYLOAD_SIZE),
         );
         let query = builder.finish();
+
         let result = match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
         {
             Ok(response) => extract_ds_record_set(query_id, qname, &response).map_err(Into::into),
-            Err(e) => Err(e.into()),
+            Err(error) => Err(error.into()),
         };
+
         match result {
             Ok(record_set) => return Ok(record_set),
-            Err(e) => last_error = Some(e),
+            Err(error) => last_error = Some(error),
         }
     }
+
     Err(last_error.unwrap_or(QueryDsError::NoAddress))
 }
 

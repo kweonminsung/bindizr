@@ -53,7 +53,7 @@ impl AddressCache {
     fn locked(&self) -> MutexGuard<'_, HashMap<String, CachedAddrs>> {
         self.cache
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -64,6 +64,7 @@ pub(crate) async fn evaluate_client_access(
     client_ip: IpAddr,
 ) -> Result<bool, ServiceError> {
     let secondaries = secondary::list_enabled(dns_cx.daemon()).await?;
+
     Ok(matches_client_address(
         &dns_cx.address_cache,
         secondaries.iter().map(|secondary| &secondary.address),
@@ -89,6 +90,7 @@ async fn matches_client_address<'a>(
         let AddressTarget::HostPort(host_port) = address else {
             continue;
         };
+
         let addrs = match cache.cached_addrs(host_port) {
             Some(addrs) => addrs,
             None => {
@@ -106,13 +108,16 @@ async fn matches_client_address<'a>(
                         expires_at: Instant::now() + ttl,
                     },
                 );
+
                 addrs
             }
         };
+
         if addrs.contains(&client_ip) {
             return true;
         }
     }
+
     false
 }
 
@@ -143,6 +148,7 @@ mod tests {
         for ip in ["192.0.2.10", "2001:db8::10"] {
             assert!(matches_client_address(&cache, addresses.iter(), ip.parse().unwrap()).await);
         }
+
         assert!(cache.locked().is_empty());
     }
 

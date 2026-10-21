@@ -70,6 +70,7 @@ impl UpstreamClient {
         // Err means one is installed already.
         let _ = rustls::crypto::ring::default_provider().install_default();
         let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
+
         // Added to the system roots rather than replacing them, so one private
         // CA does not cut off a publicly issued certificate beside it.
         if let Some(path) = ca_file {
@@ -77,6 +78,7 @@ impl UpstreamClient {
                 path: path.to_string(),
                 source,
             })?;
+
             for certificate in reqwest::Certificate::from_pem_bundle(&pem).map_err(|source| {
                 BuildClientError::InvalidCa {
                     path: path.to_string(),
@@ -86,7 +88,9 @@ impl UpstreamClient {
                 builder = builder.add_root_certificate(certificate);
             }
         }
+
         let http = builder.build().map_err(BuildClientError::Build)?;
+
         Ok(UpstreamClient {
             http,
             base_url,
@@ -145,11 +149,13 @@ impl UpstreamClient {
             .json(&AdjustExternalDnsRecordsRequest {
                 records: records.into(),
             });
+
         let response = self.send(request).await?;
         let body: AdjustExternalDnsRecordsResponse = response
             .json()
             .await
             .map_err(UpstreamError::InvalidResponse)?;
+
         Ok(body.records)
     }
 
@@ -169,6 +175,7 @@ impl UpstreamClient {
         let response = self
             .send(self.build_request(reqwest::Method::GET, path))
             .await?;
+
         response
             .json::<T>()
             .await
@@ -180,9 +187,11 @@ impl UpstreamClient {
         let mut request = self
             .http
             .request(method, format!("{}{}", self.base_url, path));
+
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);
         }
+
         request
     }
 
@@ -194,6 +203,7 @@ impl UpstreamClient {
         let response = request.send().await.map_err(UpstreamError::Unreachable)?;
 
         let status = response.status();
+
         if status.is_success() {
             return Ok(response);
         }

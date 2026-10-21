@@ -23,7 +23,9 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         "database": { "sqlite": { "file_path": path.to_str().unwrap() } },
     }))
     .unwrap();
+
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+
     let (notify_jobs, _jobs) = tokio::sync::mpsc::unbounded_channel();
     let (scheduler, _period) = tokio::sync::watch::channel(0);
     let cx = Arc::new(Context::new(
@@ -34,6 +36,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         notify_jobs,
         scheduler,
     ));
+
     tsig_key::create(
         &cx,
         &Caller::socket(),
@@ -52,6 +55,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         .unwrap()
         .to_signing_key()
         .unwrap();
+
     let (_, request) = build_question(
         Opcode::UPDATE,
         false,
@@ -75,12 +79,14 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     )
     .await
     .unwrap();
+
     assert_eq!(response[3] & 15, Rcode::FORMERR.to_int());
     verify_response(&verifier, &response).unwrap();
 
     let mut connection = sqlx::SqliteConnection::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
+
     for statement in ["UPDATE tsig_keys SET secret = ''", "DROP TABLE tsig_keys"] {
         sqlx::query(statement)
             .execute(&mut connection)
@@ -89,10 +95,12 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         let failure = update::authenticate_tsig_key(&dns_cx, "fault-key", &request)
             .await
             .unwrap_err();
+
         assert!(matches!(
             failure,
             update::UpdateError::Tsig(TsigError::EmptySecret) | update::UpdateError::LoadTsigKey(_),
         ));
+
         let response = handle_nsupdate_request(
             &dns_cx,
             &request,
@@ -102,9 +110,12 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         )
         .await
         .unwrap();
+
         assert_eq!(response[3] & 15, Rcode::SERVFAIL.to_int());
     }
+
     let metrics = cx.metrics().encode();
+
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"formerr\"} 1\n"));
     assert!(metrics.contains("bindizr_nsupdate_requests_total{result=\"servfail\"} 2\n"));
 }

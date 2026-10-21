@@ -165,11 +165,11 @@ pub async fn execute() {
         None => Ok(()),
     });
 
-    if let Err(e) = result {
-        errln!("Error: {}", e.message);
-        if let Some(hint) = e.hint() {
+    if let Err(error) = result {
+        errln!("Error: {}", error.message);
+        if let Some(hint) = error.hint() {
             errln!("Hint: {}", hint);
         }
-        std::process::exit(e.exit_code());
+        std::process::exit(error.exit_code());
     }
 }

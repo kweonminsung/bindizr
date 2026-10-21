@@ -42,9 +42,9 @@ impl<'a> ParsedTsig<'a> {
     /// Require one final TSIG with CLASS ANY and TTL zero (RFC 8945, Sections 4.2 and 5.2).
     pub(super) fn parse(message: &Message<&'a [u8]>) -> Result<Option<Self>, ParseTsigError> {
         for section in [message.answer(), message.authority()] {
-            for record in section.map_err(|e| ParseTsigError::Read(Box::new(e)))? {
+            for record in section.map_err(|error| ParseTsigError::Read(Box::new(error)))? {
                 if record
-                    .map_err(|e| ParseTsigError::Read(Box::new(e)))?
+                    .map_err(|error| ParseTsigError::Read(Box::new(error)))?
                     .rtype()
                     == Rtype::TSIG
                 {
@@ -52,15 +52,18 @@ impl<'a> ParsedTsig<'a> {
                 }
             }
         }
+
         let mut section = message
             .additional()
-            .map_err(|e| ParseTsigError::Read(Box::new(e)))?;
+            .map_err(|error| ParseTsigError::Read(Box::new(error)))?;
+
         loop {
             let start = section.pos();
             let Some(record) = section.next() else {
                 return Ok(None);
             };
-            let record = record.map_err(|e| ParseTsigError::Read(Box::new(e)))?;
+            let record = record.map_err(|error| ParseTsigError::Read(Box::new(error)))?;
+
             if record.rtype() != Rtype::TSIG {
                 continue;
             }
@@ -71,10 +74,12 @@ impl<'a> ParsedTsig<'a> {
             {
                 return Err(ParseTsigError::Shape);
             }
+
             let record = record
                 .into_record::<Tsig<_, _>>()
-                .map_err(|e| ParseTsigError::Read(Box::new(e)))?
+                .map_err(|error| ParseTsigError::Read(Box::new(error)))?
                 .ok_or(ParseTsigError::Shape)?;
+
             return Ok(Some(Self { record, start }));
         }
     }
@@ -98,10 +103,12 @@ impl<'a> ParsedTsig<'a> {
     ) -> Result<(), VerifyMacError> {
         let data = self.record.data();
         let mut digest = hmac::Context::with_key(&key.hmac);
+
         if let Some(mac) = request_mac {
             digest.update(&(mac.len() as u16).to_be_bytes());
             digest.update(mac);
         }
+
         let mut header = message.header_section();
         header.header_mut().set_id(data.original_id());
         header.counts_mut().dec_arcount();
@@ -122,6 +129,7 @@ impl<'a> ParsedTsig<'a> {
         let Some(expected) = expected.as_ref().get(..data.mac().len()) else {
             return Err(VerifyMacError::Length);
         };
+
         if expected.ct_eq(data.mac()).into() {
             Ok(())
         } else {

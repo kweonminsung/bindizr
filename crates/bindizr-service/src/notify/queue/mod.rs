@@ -52,15 +52,19 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
     let (stop_tx, mut stop) = watch::channel(false);
 
     let task = tokio::spawn(async move {
-        let mut deliveries = JoinSet::new();
+        // Remote ACK waits must not block collection of the next write batch.
+        let mut tasks = JoinSet::new();
+
         loop {
             if *stop.borrow() {
                 break;
             }
+
             let collect = async {
                 let first = tokio::select! {
                     biased;
                     _ = stop.changed() => return None,
+
                     job = rx.recv() => job?,
                 };
                 Some(collect_batch(&cx, &mut rx, &mut stop, first).await)
@@ -69,7 +73,8 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
             let batch = loop {
                 tokio::select! {
                     batch = &mut collect => break batch,
-                    result = deliveries.join_next(), if !deliveries.is_empty() => {
+
+                    result = tasks.join_next(), if !tasks.is_empty() => {
                         if let Some(Err(error)) = result {
                             log::warn!("queued notify: task failed: {}", error);
                         }
@@ -79,7 +84,8 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
             let Some(batch) = batch else {
                 break;
             };
-            start_batch(&cx, batch, &mut deliveries).await;
+
+            start_batch(&cx, batch, &mut tasks).await;
         }
 
         // Reject new jobs before draining so racing callers fall back to inline NOTIFY.
@@ -87,11 +93,14 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
 
         // Flush acknowledged writes so secondaries need not wait for their refresh timer.
         let mut last = NotifyBatch::default();
+
         while let Some(job) = rx.recv().await {
             last.add(job);
         }
-        start_batch(&cx, last, &mut deliveries).await;
-        while let Some(result) = deliveries.join_next().await {
+
+        start_batch(&cx, last, &mut tasks).await;
+
+        while let Some(result) = tasks.join_next().await {
             if let Err(error) = result {
                 log::warn!("queued notify: task failed: {}", error);
             }
@@ -128,9 +137,11 @@ impl NotifyBatch {
 async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     let config = cx.config();
     let window = Duration::from_millis(config.dns.notify.batch_ms);
+
     if window.is_zero() {
         return job.enqueued_at;
     }
+
     let refresh = match &job.zone_name {
         Some(name) if name == &config.dns.catalog_zone_name => Ok(CATALOG_SOA_REFRESH),
         Some(name) => crate::zone::lookup_by_name(cx, name)
@@ -154,6 +165,7 @@ async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
             Duration::ZERO
         }
     };
+
     job.enqueued_at + delay
 }
 
@@ -165,16 +177,22 @@ async fn collect_batch(
     first: NotifyJob,
 ) -> NotifyBatch {
     let mut batch = NotifyBatch::default();
+
     let mut deadline = read_batch_deadline(cx, &first).await;
+
     batch.add(first);
+
     loop {
         if *stop.borrow() {
             break;
         }
+
         tokio::select! {
             biased;
             _ = stop.changed() => break,
+
             _ = sleep_until(deadline) => break,
+
             job = rx.recv() => match job {
                 Some(job) => {
                     // Later writes may shorten the window, never extend it.
@@ -185,26 +203,29 @@ async fn collect_batch(
             },
         }
     }
+
     // Drain a fixed backlog so producers cannot postpone a ready batch.
     for _ in 0..rx.len() {
         if let Ok(job) = rx.try_recv() {
             batch.add(job);
         }
     }
+
     batch
 }
 
 /// Start a batch without holding collection behind an earlier ACK/retry wait.
-async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, deliveries: &mut JoinSet<()>) {
+async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut JoinSet<()>) {
     if batch.all_zones {
         match crate::zone::list(cx).await {
             Ok(zones) => batch.zones.extend(zones.into_iter().map(|zone| zone.name)),
             Err(error) => log::warn!("queued notify: failed to list zones: {}", error),
         }
     }
+
     for zone in batch.zones {
         let cx = cx.clone();
-        deliveries.spawn(async move {
+        tasks.spawn(async move {
             if let Err(error) = send_notify(&cx, NotifyTarget::Zone(&zone)).await {
                 log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, error);
             }

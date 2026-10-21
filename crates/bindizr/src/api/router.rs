@@ -98,6 +98,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
             .allow_headers(AllowHeaders::mirror_request())
             .expose_headers(Any),
     );
+
     // The routes that take uploads raise their own limit above this one.
     router = router.layer(DefaultBodyLimit::max(DEFAULT_BODY_BYTES));
 
@@ -128,9 +129,9 @@ async fn openapi_yaml() -> axum::response::Response {
             openapi_yaml,
         )
             .into_response(),
-        Err(err) => ApiError(ServiceError::internal_with_source(
+        Err(error) => ApiError(ServiceError::internal_with_source(
             "failed to generate OpenAPI YAML",
-            err,
+            error,
         ))
         .into_response(),
     }

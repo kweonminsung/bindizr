@@ -44,6 +44,7 @@ pub(crate) async fn probe_addresses(
     timeout: Duration,
 ) -> Result<SoaProbe, ProbeSoaError> {
     let qname = zone_name.to_wire_name()?;
+
     let addrs = match super::resolve_address_entry(target, timeout).await {
         Ok(addrs) => addrs,
         Err(error) => {
@@ -54,12 +55,13 @@ pub(crate) async fn probe_addresses(
             });
         }
     };
-    let clients = addrs.iter().map(|addr| addr.ip()).collect();
+    let clients = addrs.iter().map(SocketAddr::ip).collect();
     let mut probe = SoaProbe {
         address: target.to_string(),
         serial: Err(ProbeSoaError::Resolve(ResolveAddressError::NoAddresses)),
         clients,
     };
+
     for addr in addrs {
         probe.address = addr.to_string();
         probe.serial = probe_address(&qname, addr, timeout).await;
@@ -67,6 +69,7 @@ pub(crate) async fn probe_addresses(
             break;
         }
     }
+
     Ok(probe)
 }
 
@@ -89,8 +92,10 @@ async fn probe_address(
 ) -> Result<Serial, ProbeSoaError> {
     let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA, None);
     let query = builder.finish();
+
     let response =
         super::exchange_with_tcp_fallback(server_addr, timeout, &query, "SOA probe").await?;
+
     Ok(Serial::from(extract_soa_serial(
         query_id, qname, &response,
     )?))

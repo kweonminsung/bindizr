@@ -32,17 +32,20 @@ pub async fn update(
         .as_deref()
         .map(normalize_secondary_address)
         .transpose()?;
+
     if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
         return Err(ServiceError::invalid_input(
             "nothing to update: give an address, enabled, or notify_key_name",
         ));
     }
+
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
         None => None,
         Some("") => Some(None),
         Some(key_name) => Some(Some(tsig_key::lookup_by_name(cx, key_name).await?)),
     };
+
     // Friendly pre-check; the UNIQUE(address) backstop covers the race.
     if let Some(address) = &address
         && let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), address).await?
@@ -68,6 +71,7 @@ pub async fn update(
 
         let address = address.unwrap_or_else(|| secondary.address.clone());
         let enabled = request.enabled.unwrap_or(secondary.enabled);
+
         // The detail names keys, so the replaced one is read by id; gone
         // meanwhile, it reads as the id.
         let notify_key_change = match &notify_tsig_key {
@@ -79,6 +83,7 @@ pub async fn update(
                         .await?
                         .map_or_else(|| format!("key {id}"), |key| key.name),
                 };
+
                 audit::changed(
                     "notify_key_name",
                     previous,
@@ -92,6 +97,7 @@ pub async fn update(
             audit::changed("enabled", secondary.enabled, enabled),
             notify_key_change,
         ]);
+
         let secondary = bindizr_db::secondary::update_tx(
             &mut tx,
             Secondary {
@@ -105,15 +111,15 @@ pub async fn update(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // The UNIQUE(address) backstop for the pre-check above.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
                     "secondary with address '{}' already exists",
                     address
                 ))
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -125,9 +131,11 @@ pub async fn update(
             caller.change_attribution(),
         )
         .await?;
+
         Ok(secondary)
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
+
     load_response(cx, secondary).await
 }

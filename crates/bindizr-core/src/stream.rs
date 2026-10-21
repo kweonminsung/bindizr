@@ -34,13 +34,16 @@ fn write(closed: &AtomicBool, sink: &mut impl Write, text: &str) {
     if closed.load(Ordering::Relaxed) {
         return;
     }
-    let Err(e) = sink.write_all(text.as_bytes()) else {
+
+    let Err(error) = sink.write_all(text.as_bytes()) else {
         return;
     };
+
     // Either way this stream is done; only a closed pipe is success.
     closed.store(true, Ordering::Relaxed);
-    if e.kind() != ErrorKind::BrokenPipe {
-        let _ = WRITE_FAILURE.set(e);
+
+    if error.kind() != ErrorKind::BrokenPipe {
+        let _ = WRITE_FAILURE.set(error);
     }
 }
 
@@ -107,6 +110,7 @@ mod tests {
     fn stream_write_accepts_broken_pipe_and_preserves_other_errors() {
         let closed = AtomicBool::new(false);
         write(&closed, &mut FailingSink(ErrorKind::BrokenPipe), "x");
+
         assert!(
             closed.load(Ordering::Relaxed),
             "the stream is done either way"
@@ -115,9 +119,10 @@ mod tests {
 
         let closed = AtomicBool::new(false);
         write(&closed, &mut FailingSink(ErrorKind::StorageFull), "x");
+
         assert!(closed.load(Ordering::Relaxed));
         assert!(
-            write_failure().is_some_and(|e| e.to_string().contains("sink failed")),
+            write_failure().is_some_and(|error| error.to_string().contains("sink failed")),
             "lost output must be reported: {:?}",
             write_failure()
         );

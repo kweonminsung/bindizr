@@ -75,7 +75,7 @@ fn record_set(
         name: name.to_string(),
         record_type: record_type.to_string(),
         ttl,
-        values: values.iter().map(|v| v.to_string()).collect(),
+        values: values.iter().map(ToString::to_string).collect(),
     }
 }
 
@@ -137,9 +137,9 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
 #[test]
 fn parse_record_set_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
-        let err =
+        let error =
             parse_record_set(&record_set("a.example.com", record_type, None, &["x"])).unwrap_err();
-        assert_eq!(err.code(), ErrorCode::InvalidInput);
+        assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
     assert!(parse_record_set(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
@@ -147,17 +147,19 @@ fn parse_record_set_op_rejects_unsupported_types() {
 /// Verify that `parse_record_set` rejects multi value CNAME and empty values.
 #[test]
 fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
-    let err = parse_record_set(&record_set(
+    let error = parse_record_set(&record_set(
         "a.example.com",
         "CNAME",
         None,
         &["one.example.com", "two.example.com"],
     ))
     .unwrap_err();
-    assert_eq!(err.code(), ErrorCode::InvalidRecordValue);
 
-    let err = parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
-    assert_eq!(err.code(), ErrorCode::InvalidInput);
+    assert_eq!(error.code(), ErrorCode::InvalidRecordValue);
+
+    let error = parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
+
+    assert_eq!(error.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `parse_record_set` normalizes TTL.
@@ -240,6 +242,7 @@ fn adjust_record_set_canonicalizes_type_and_values() {
         &["CDN.Example.NET"],
     ))
     .unwrap();
+
     assert_eq!(adjusted.values, vec!["cdn.example.net."]);
     assert_eq!(adjusted.ttl, Some(300));
 }
@@ -254,7 +257,9 @@ fn adjust_record_set_returns_txt_values_in_presentation_form() {
         &["v=spf1 -all"],
     ))
     .unwrap();
+
     assert_eq!(adjusted.values, vec!["\"v=spf1 -all\""]);
+
     // ExternalDNS sends TTL 0 for "not configured".
     assert_eq!(adjusted.ttl, None);
 
@@ -262,9 +267,11 @@ fn adjust_record_set_returns_txt_values_in_presentation_form() {
     let canonical = "\"heritage=external-dns,external-dns/owner=default\"";
     let adjusted =
         adjust_record_set(&record_set("t.example.com", "TXT", None, &[canonical])).unwrap();
+
     assert_eq!(adjusted.values, vec![canonical]);
 
     let adjusted = adjust_record_set(&record_set("t.example.com", "TXT", None, &["   "])).unwrap();
+
     assert_eq!(adjusted.values, vec![r#""   ""#]);
 }
 
@@ -308,6 +315,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
 
     let grouped =
         group_operations_by_zone(&Caller::unauthenticated_api(), &zones, operations).unwrap();
+
     assert_eq!(grouped.len(), 1);
     assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
@@ -327,9 +335,10 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     };
     let operations = parse_changes_request(&request).unwrap();
 
-    let err =
+    let error =
         group_operations_by_zone(&Caller::unauthenticated_api(), &zones, operations).unwrap_err();
-    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
+
+    assert_eq!(error.code(), ErrorCode::ZoneNotFound);
 }
 
 /// Verify that group operations reads a hidden zone as absent instead of its granted parent.
@@ -372,12 +381,14 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     };
     let operations = parse_changes_request(&request).unwrap();
 
-    let err = group_operations_by_zone(&caller, &zones, operations).unwrap_err();
-    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
+    let error = group_operations_by_zone(&caller, &zones, operations).unwrap_err();
+
+    assert_eq!(error.code(), ErrorCode::ZoneNotFound);
     assert!(
-        err.to_string()
+        error
+            .to_string()
             .contains("no zone is authoritative for 'api.internal.example.com'"),
-        "{err}"
+        "{error}"
     );
 }
 
@@ -390,6 +401,7 @@ fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> Zon
         operations,
     )
     .unwrap();
+
     grouped.into_values().next().unwrap_or_default()
 }
 
@@ -516,7 +528,11 @@ fn change_set_replaces_rows_when_update_changes_targets() {
         ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(
-        change_set.deletes.iter().map(|r| r.id).collect::<Vec<_>>(),
+        change_set
+            .deletes
+            .iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>(),
         vec![RecordId::from(11)]
     );
     assert_eq!(change_set.creates.len(), 1);
@@ -579,9 +595,10 @@ fn change_set_enforces_cname_exclusivity() {
         deletes: vec![],
     };
 
-    let err =
+    let error =
         ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &existing).unwrap_err();
-    assert_eq!(err.code(), ErrorCode::RecordConflict);
+
+    assert_eq!(error.code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that change set allows CNAME when conflicting row is deleted in same request.

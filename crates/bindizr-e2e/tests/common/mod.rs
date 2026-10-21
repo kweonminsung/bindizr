@@ -170,6 +170,7 @@ impl TestApp {
     /// Create a test API token using the supplied CLI options.
     async fn create_token_with(&self, args: &[&str]) -> (String, String) {
         let args = [args, &["--output", "json"]].concat();
+
         let stdout = self.run_cli_success(&args, None).await;
         let created: Value =
             serde_json::from_str(&stdout).expect("token create did not print JSON");
@@ -179,6 +180,7 @@ impl TestApp {
                 .unwrap_or_else(|| panic!("token create output did not contain the {what}"))
                 .to_string()
         };
+
         (
             field(&created["token"]["name"], "name"),
             field(&created["secret"], "secret"),
@@ -223,10 +225,13 @@ impl TestApp {
         body: Option<Value>,
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
+
         let mut previous_record_key = self.read_previous_record_key(&method, path).await;
+
         let updated_zone_name = (method == Method::PUT)
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
+
         let response = self.send_http(method, path, body).await;
 
         if let Some(previous_zone_name) = updated_zone_name
@@ -252,6 +257,7 @@ impl TestApp {
     ) -> (StatusCode, Value) {
         let url = format!("{}{}", self.base_url, path);
         let mut request = self.client.request(method, url);
+
         if let Some(token) = &self.auth_token {
             request = request.bearer_auth(token);
         }
@@ -261,6 +267,7 @@ impl TestApp {
 
         let response = request.send().await.expect("failed to send HTTP request");
         let status = response.status();
+
         let bytes = response
             .bytes()
             .await
@@ -280,6 +287,7 @@ impl TestApp {
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
         let mut records = Vec::new();
         let mut offset = 0u64;
+
         loop {
             let (status, body) = self
                 .send_request(
@@ -290,6 +298,7 @@ impl TestApp {
                     None,
                 )
                 .await;
+
             assert_eq!(status, StatusCode::OK);
             let page = body["items"]
                 .as_array()
@@ -301,10 +310,12 @@ impl TestApp {
                 .as_u64()
                 .expect("record list response did not contain a total");
             offset += read as u64;
+
             if read == 0 || offset >= total {
                 break;
             }
         }
+
         records
     }
 
@@ -313,7 +324,9 @@ impl TestApp {
         let (status, body) = self
             .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
             .await;
+
         assert_eq!(status, StatusCode::OK);
+
         body["zone"]["serial"]
             .as_i64()
             .expect("zone carries a serial")
@@ -329,7 +342,9 @@ impl TestApp {
                 Some(json!({ "name": name, "address": address })),
             )
             .await;
+
         assert_eq!(status, StatusCode::CREATED, "{body}");
+
         body
     }
 
@@ -347,11 +362,14 @@ impl TestApp {
             "expire": 604800,
             "minimum_ttl": 86400
         });
+
         // The zone starts with its apex NS record naming ns1.
         let (status, body) = self
             .send_request(Method::POST, "/zones", Some(request))
             .await;
+
         assert_eq!(status, StatusCode::CREATED);
+
         body["zone"].clone()
     }
 
@@ -360,6 +378,7 @@ impl TestApp {
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
+
         self.run_cli_success(
             &[
                 "zone",
@@ -393,6 +412,7 @@ impl TestApp {
             }),
             _ => None,
         };
+
         let mut command = match &self.runtime {
             TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server")),
             TestRuntime::Compose(stack) => stack.cli_command(),
@@ -413,6 +433,7 @@ impl TestApp {
                     .expect("missing CLI stdin")
                     .write_all(input.as_bytes())
                     .expect("failed to write to CLI stdin");
+
                 child.wait_with_output().expect("failed to run bindizr CLI")
             }
             None => command
@@ -465,6 +486,7 @@ fn test_namespace() -> String {
         format!("e2e-{}-{}", elapsed.as_millis(), std::process::id())
     });
     let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+
     format!("{run_id}-{sequence}")
 }
 

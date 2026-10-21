@@ -49,10 +49,10 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
     fn try_from(version: &ZoneVersion) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
-            .map_err(|e| {
+            .map_err(|error| {
                 ServiceError::internal_with_source(
-                    format!("failed to decode version rname: {}", e),
-                    e,
+                    format!("failed to decode version rname: {}", error),
+                    error,
                 )
             })?;
         Ok(ZoneVersionResponse {

@@ -74,14 +74,14 @@ impl std::str::FromStr for TsigAlgorithm {
 
     /// Accepts the storage form or the wire form (trailing root dot tolerated),
     /// case-insensitively.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim_end_matches('.').to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim_end_matches('.').to_ascii_lowercase().as_str() {
             "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
             "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
             "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
             "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
             _ => Err(ParseTsigAlgorithmError {
-                value: s.to_string(),
+                value: value.to_string(),
             }),
         }
     }
@@ -91,8 +91,8 @@ impl TryFrom<String> for TsigAlgorithm {
     type Error = ParseTsigAlgorithmError;
 
     /// Validate and convert the stored value into a TSIG algorithm.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 

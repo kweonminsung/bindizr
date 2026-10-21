@@ -57,6 +57,7 @@ pub(crate) fn grant_record_match_sql(
             format!("(p.record_types = '*' OR {haystack} LIKE {needle})")
         }
     };
+
     format!("{read} AND {name} AND {types}")
 }
 
@@ -72,6 +73,7 @@ mod tests {
         assert!(sql.starts_with("',' || p.actions || ',' LIKE '%,record:read,%' AND "));
         assert!(sql.contains("p.record_name_pattern = '*'"));
         assert!(sql.contains("r.name = ''"));
+
         // The backslash a stored name carries is data, not a LIKE escape.
         assert!(sql.contains("ESCAPE '#'"));
         assert!(sql.contains("REPLACE(REPLACE(REPLACE(SUBSTR(p.record_name_pattern, 3)"));

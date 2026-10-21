@@ -13,6 +13,7 @@ async fn read(bytes: &[u8]) -> Result<Vec<u8>, DnsError> {
 #[tokio::test]
 async fn framing_round_trips_complete_message() {
     let mut framed = Vec::new();
+
     write_frame(&mut framed, &encode_tcp_message(b"payload").unwrap())
         .await
         .unwrap();

@@ -10,6 +10,7 @@ async fn token_create_rejects_duplicate_name() {
     let output = app
         .run_cli(&["token", "create", &name, "--role", "admin"], None)
         .await;
+
     assert!(!output.status.success());
 }
 

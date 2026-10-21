@@ -22,27 +22,30 @@ pub async fn check(
     name: &str,
 ) -> Result<CheckSecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
+
     let secondary = lookup_by_name(cx, name).await?;
 
     let config = cx.config();
     let catalog_zone = config.dns.catalog_zone_name.clone();
     let timeout = config.dns.notify.timeout();
+
     // The listener's serial is the reference: it reflects the catalog's
     // current membership, which a stored serial would not.
     let dns_addr = SocketAddr::new(
         loopback_if_unspecified(config.dns.listen_addr),
         config.dns.listen_port,
     );
+
     let (catalog_serial, listener_error) =
         match soa_client::probe_server(dns_addr, &catalog_zone, timeout).await {
             Ok(serial) => (Some(serial), None),
-            Err(e) => (None, Some(format!("{}: {}", dns_addr, e))),
+            Err(error) => (None, Some(format!("{}: {}", dns_addr, error))),
         };
 
     let (addresses, resolve_error) = match resolve_address_entry(&secondary.address, timeout).await
     {
         Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
-        Err(e) => (Vec::new(), Some(e.to_string())),
+        Err(error) => (Vec::new(), Some(error.to_string())),
     };
     let catalog = probe::probe_secondary(cx, &catalog_zone, &secondary, catalog_serial).await?;
     let notifies = notify::send_notify_to_secondary(cx, &catalog_zone, &secondary).await?;

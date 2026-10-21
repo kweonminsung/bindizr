@@ -25,11 +25,13 @@ fn unreadable_update_bodies_receive_header_only_formerr() {
     unreadable_update[8..10].copy_from_slice(&1u16.to_be_bytes());
     let mut trailing_data = valid;
     trailing_data.push(0);
+
     for wire in [unreadable_zone, unreadable_update, trailing_data] {
         for limit in [ResponseLimit::UDP, ResponseLimit::STREAM] {
             let response =
                 build_response(&wire, OptRcode::FORMERR, None, None, 300, limit).unwrap();
             let message = Message::from_octets(response.as_slice()).unwrap();
+
             assert_eq!(message.header().id(), 0x1234);
             assert_eq!(message.header().opcode(), Opcode::UPDATE);
             assert!(message.header().qr());
@@ -56,14 +58,15 @@ fn build_response_echoes_request_header_and_question() {
     )
     .unwrap();
 
-    let msg = Message::from_octets(&response[..]).unwrap();
-    let header = msg.header();
+    let message = Message::from_octets(&response[..]).unwrap();
+    let header = message.header();
+
     assert_eq!(header.id(), 0x1234);
     assert!(header.qr());
     assert_eq!(header.opcode(), Opcode::UPDATE);
     assert_eq!(header.rcode(), Rcode::REFUSED);
-    assert_eq!(msg.header_counts().qdcount(), 1);
-    assert_eq!(msg.header_counts().arcount(), 0);
+    assert_eq!(message.header_counts().qdcount(), 1);
+    assert_eq!(message.header_counts().arcount(), 0);
 }
 
 /// Verify that `build_response` answers an EDNS request with an OPT
@@ -86,9 +89,10 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
     )
     .unwrap();
 
-    let msg = Message::from_octets(&response[..]).unwrap();
-    let opt = msg.opt().expect("the OPT is echoed");
-    assert_eq!(opt.rcode(msg.header()), OptRcode::BADVERS);
+    let message = Message::from_octets(&response[..]).unwrap();
+    let opt = message.opt().expect("the OPT is echoed");
+
+    assert_eq!(opt.rcode(message.header()), OptRcode::BADVERS);
     assert_eq!(opt.udp_payload_size(), 1232);
 }
 
@@ -111,9 +115,10 @@ fn build_response_signs_with_request_mac_chain() {
     )
     .unwrap();
 
-    let msg = Message::from_octets(&response[..]).unwrap();
-    assert_eq!(msg.header().rcode(), Rcode::NOERROR);
-    let tsig_record = msg
+    let message = Message::from_octets(&response[..]).unwrap();
+
+    assert_eq!(message.header().rcode(), Rcode::NOERROR);
+    let tsig_record = message
         .additional()
         .unwrap()
         .limit_to::<Tsig<_, _>>()
@@ -121,6 +126,7 @@ fn build_response_signs_with_request_mac_chain() {
         .unwrap()
         .unwrap();
     let data = tsig_record.data();
+
     assert_eq!(data.error(), TsigRcode::NOERROR);
     assert_eq!(data.fudge(), 300);
 
@@ -154,6 +160,7 @@ fn build_response_signs_with_request_mac_chain() {
     digest.extend_from_slice(&0u16.to_be_bytes()); // other len
 
     let expected = hmac_sign(TsigAlgorithm::HmacSha256, &digest);
+
     assert_eq!(*data.mac(), &expected[..]);
 }
 /// UPDATE replies preserve MACs within the UDP limit.
@@ -189,6 +196,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
     }
     .to_signing_key()
     .unwrap();
+
     for size in [None, Some(512), Some(1232)] {
         let mut builder = message::build_response();
         builder.header_mut().set_opcode(Opcode::UPDATE);
@@ -197,6 +205,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
             .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
+
         if let Some(size) = size {
             additional
                 .opt(|opt| {
@@ -205,10 +214,12 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                 })
                 .unwrap();
         }
+
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let request = additional.finish().into_target();
         let signer = verify_tsig(&request, Some(key.clone())).unwrap();
+
         for rcode in [
             OptRcode::NOERROR,
             OptRcode::REFUSED,
@@ -224,6 +235,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                 crate::dns::message::ResponseLimit::udp(size.unwrap_or(512)),
             )
             .unwrap();
+
             assert!(response.len() <= size.unwrap_or(512) as usize);
             client
                 .answer(

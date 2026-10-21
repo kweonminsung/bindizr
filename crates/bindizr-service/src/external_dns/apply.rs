@@ -73,6 +73,7 @@ pub async fn apply_changes(
                     record_type: Some(&op.record_type),
                 })
                 .collect();
+
             caller
                 .reauthenticate_tx(&mut tx)
                 .await?
@@ -88,6 +89,7 @@ pub async fn apply_changes(
                 .collect();
             names.sort();
             names.dedup();
+
             let records_at_names = bindizr_db::record::list_by_names_tx(
                 &mut tx,
                 zone.id,
@@ -97,6 +99,7 @@ pub async fn apply_changes(
             .await?;
 
             let change_set = ZoneChangeSet::compute(operations, &zone, &records_at_names)?;
+
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                 continue;
             }
@@ -111,11 +114,13 @@ pub async fn apply_changes(
 
             // Apply the remaining delta and its signatures under one zone serial.
             let new_serial = generate_serial(Some(zone.serial));
+
             record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &change_set.deletes)
                 .await?;
             record::create_with_changes_tx(&mut tx, zone.id, new_serial, &change_set.creates)
                 .await?;
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+
             // Advance the serial once so IXFR consumers detect the change
             zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution())
                 .await?;
@@ -134,6 +139,7 @@ pub async fn apply_changes(
 
     // Every affected zone must commit before any secondary is asked to transfer.
     cx.metrics().track_serial_bumps(changed_zones.len() as u64);
+
     for zone_name in &changed_zones {
         crate::notify::notify_after_update(cx, zone_name).await;
     }

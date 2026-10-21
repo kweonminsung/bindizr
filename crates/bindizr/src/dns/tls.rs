@@ -21,9 +21,11 @@ pub(crate) fn build_server_config(certificate: Arc<TlsCertificate>) -> Arc<Serve
     let mut config = ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
         .with_no_client_auth()
         .with_cert_resolver(certificate);
+
     // RFC 9103, Section 7.1: the handshake selects "dot". Other tokens alone
     // fail here; a client naming none is closed by the listener instead.
     config.alpn_protocols = vec![b"dot".to_vec()];
+
     Arc::new(config)
 }
 
@@ -47,12 +49,14 @@ pub(crate) async fn run_tls_server(
         let permit = tokio::select! {
             biased;
             () = &mut stop => break Ok(()),
+
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
                     log::warn!("DNS TLS connection task failed: {}", error);
                 }
                 continue;
             }
+
             permit = open.clone().acquire_owned() => match permit {
                 Ok(permit) => permit,
                 Err(error) => break Err(error.into()),
@@ -61,31 +65,36 @@ pub(crate) async fn run_tls_server(
         let accepted = tokio::select! {
             biased;
             () = &mut stop => break Ok(()),
+
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
                     log::warn!("DNS TLS connection task failed: {}", error);
                 }
                 continue;
             }
+
             accepted = listener.accept() => accepted,
         };
+
         match accepted {
             Ok((stream, client_addr)) => {
                 let dns_cx = dns_cx.clone();
                 let acceptor = acceptor.clone();
                 let stop = connection_shutdown.waiter();
+
                 connections.spawn(async move {
                     let _permit = permit;
                     tokio::pin!(stop);
                     let handshake = tokio::select! {
                         biased;
                         () = &mut stop => return,
+
                         result = timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)) => result,
                     };
                     let mut session = match handshake {
                         Ok(Ok(session)) => session,
-                        Ok(Err(e)) => {
-                            log::warn!("TLS handshake with {} failed: {}", client_addr, e);
+                        Ok(Err(error)) => {
+                            log::warn!("TLS handshake with {} failed: {}", client_addr, error);
                             return;
                         }
                         Err(_) => {
@@ -97,18 +106,22 @@ pub(crate) async fn run_tls_server(
                             return;
                         }
                     };
+
                     // RFC 9103, Section 7.1: rustls may accept a client without ALPN.
                     if session.get_ref().1.alpn_protocol() != Some(b"dot") {
                         log::warn!(
                             "Closing TLS session with {}: no \"dot\" ALPN was selected",
                             client_addr
                         );
-                        if let Err(e) = session.shutdown().await {
-                            log::debug!("Closing TLS session with {}: {}", client_addr, e);
+
+                        if let Err(error) = session.shutdown().await {
+                            log::debug!("Closing TLS session with {}: {}", client_addr, error);
                         }
+
                         return;
                     }
-                    if let Err(e) = serve_connection(
+
+                    if let Err(error) = serve_connection(
                         dns_cx,
                         DnsStream::Tls(Box::new(session)),
                         client_addr,
@@ -116,20 +129,29 @@ pub(crate) async fn run_tls_server(
                     )
                     .await
                     {
-                        log::error!("Failed to read DNS TLS message from {}: {}", client_addr, e);
+                        log::error!(
+                            "Failed to read DNS TLS message from {}: {}",
+                            client_addr,
+                            error
+                        );
                     }
                 });
             }
-            Err(e) => log::error!("Failed to accept DNS TLS connection: {}", e),
+            Err(error) => log::error!("Failed to accept DNS TLS connection: {}", error),
         }
     };
+
+    // Stop accepting before asking existing connections to drain.
     drop(listener);
     connection_shutdown.trigger();
+
     while let Some(result) = connections.join_next().await {
         if let Err(error) = result {
             log::warn!("DNS TLS connection task failed: {}", error);
         }
     }
+
     log::info!("DNS TLS server stopped");
+
     outcome
 }

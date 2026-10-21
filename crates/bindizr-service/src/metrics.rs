@@ -26,6 +26,7 @@ pub async fn refresh_db_gauges(cx: &Context) -> Result<(), ServiceError> {
     metrics.zones_total.set(zones as i64);
     metrics.records_total.set(records as i64);
     metrics.dnssec_zones_total.set(dnssec_zones as i64);
+
     for (state, count) in [
         (DnssecKeyState::Published, published),
         (DnssecKeyState::Active, active),
@@ -36,6 +37,7 @@ pub async fn refresh_db_gauges(cx: &Context) -> Result<(), ServiceError> {
             .with_label_values(&[state.as_str()])
             .set(count as i64);
     }
+
     metrics.dnssec_rrsigs_expiring_total.set(expiring as i64);
     metrics.dnssec_rrsigs_expired_total.set(expired as i64);
 

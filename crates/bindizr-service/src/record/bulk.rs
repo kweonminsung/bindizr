@@ -47,6 +47,7 @@ pub async fn create_bulk(
     let zone_name = &zone::normalize_name(&request.zone_name)?;
     let items = &request.records;
     let run = Run::from_dry_run(request.dry_run);
+
     if items.is_empty() {
         return Err(ServiceError::invalid_input(
             "no records provided for bulk insert".to_string(),
@@ -73,8 +74,10 @@ pub async fn create_bulk(
 
     let apply_result = async {
         let t = Instant::now();
+
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
         timings.load_zone_ms = elapsed_ms(t);
 
         // Authorize before loading existing record rows so an ungranted caller
@@ -96,8 +99,10 @@ pub async fn create_bulk(
         // Only records whose owner name appears in the batch can conflict, so
         // load just those instead of the whole zone.
         let t = Instant::now();
-        let mut batch_names: Vec<OwnerName> =
-            writes.iter().map(|w| w.relative_name.clone()).collect();
+        let mut batch_names: Vec<OwnerName> = writes
+            .iter()
+            .map(|write| write.relative_name.clone())
+            .collect();
         batch_names.sort();
         batch_names.dedup();
 
@@ -110,14 +115,15 @@ pub async fn create_bulk(
         .await
         {
             Ok(records) => records,
-            Err(e) => {
-                log::error!("Failed to load zone records: {}", e);
+            Err(error) => {
+                log::error!("Failed to load zone records: {}", error);
                 return Err(ServiceError::internal_with_source(
                     "failed to create records",
-                    e,
+                    error,
                 ));
             }
         };
+
         timings.load_existing_ms = elapsed_ms(t);
 
         let new_serial = generate_serial(Some(zone.serial));
@@ -134,16 +140,19 @@ pub async fn create_bulk(
         let t = Instant::now();
         let mut records_by_name: HashMap<OwnerName, Vec<Record>> =
             HashMap::with_capacity(existing_records.len());
+
         for record in existing_records {
             records_by_name
                 .entry(record.name.clone())
                 .or_default()
                 .push(record);
         }
+
         timings.build_index_ms = elapsed_ms(t);
 
         let t = Instant::now();
         let mut to_insert = Vec::with_capacity(prepared.len());
+
         for (prepared_record, owner_name) in prepared.iter().zip(owners) {
             let owner_name = owner_name?;
 
@@ -175,6 +184,7 @@ pub async fn create_bulk(
             records_at_name.push(record.clone());
             to_insert.push(record);
         }
+
         timings.build_records_ms = elapsed_ms(t);
 
         zone::validate_record_changes_tx(&mut tx, &zone, &[], &to_insert).await?;
@@ -185,22 +195,30 @@ pub async fn create_bulk(
             let before =
                 caller.readable_records(zone.id, before_records.into_iter().map(RecordData::from));
             let mut after = before.clone();
+
             for record in &to_insert {
                 after.push_written(RecordData::from(record.clone()));
             }
+
             let diff = build_record_diff(&zone, &before, &after);
+
             return Ok((to_insert, zone.name, diff));
         }
 
         let t = Instant::now();
+
         let created_records =
             super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+
         timings.db_write_ms = elapsed_ms(t);
 
         let t = Instant::now();
+
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+
         // Advance the serial once so IXFR consumers detect the batch.
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
+
         timings.serial_ms = elapsed_ms(t);
 
         Ok::<(Vec<Record>, ZoneName, RecordDiffResponse), ServiceError>((
@@ -222,10 +240,12 @@ pub async fn create_bulk(
     );
 
     let t = Instant::now();
+
     if !run.is_dry_run() {
         cx.metrics().track_serial_bumps(1);
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
+
     let notify_ms = elapsed_ms(t);
 
     // Per-stage breakdown for profiling; debug-gated so it stays out of
@@ -257,6 +277,7 @@ pub async fn create_bulk(
             )
         })
         .collect();
+
     Ok(CreateBulkRecordsResponse {
         applied: !run.is_dry_run(),
         dry_run: run.is_dry_run(),

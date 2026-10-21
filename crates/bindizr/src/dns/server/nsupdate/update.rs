@@ -51,6 +51,7 @@ pub(crate) async fn apply_update(
     transport: TransferTransport,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
+
     let result = async {
         // A signature is verified first, whatever the listener's answer:
         // keys are zone-independent, and every refusal below is then signed.
@@ -91,6 +92,7 @@ pub(crate) async fn apply_update(
                 "the root zone is not served here".to_string(),
             ));
         }
+
         let zone_name =
             ZoneName::parse(&request.zone_name).map_err(|source| UpdateError::ZoneName {
                 name: request.zone_name.clone(),
@@ -106,9 +108,11 @@ pub(crate) async fn apply_update(
         };
 
         let changed = nsupdate::apply(dns_cx.daemon(), &caller, update).await?;
+
         Ok(changed)
     }
     .await;
+
     (result, signer)
 }
 
@@ -126,6 +130,7 @@ pub(crate) async fn authenticate_tsig_key(
     // Verify unknown keys too, so the response encoder receives BADKEY.
     let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
     let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key)?;
+
     Ok((tsig_key, signer))
 }
 
@@ -140,12 +145,13 @@ mod tests {
     /// Preserve the complete parser and backend source chains through the DNS boundary.
     #[test]
     fn update_errors_retain_sources_across_layers() {
-        let err = UpdateError::from(NsupdateError::from(ValidateUpdateShapeError::NonzeroTtl));
-        let nsupdate = err
+        let error = UpdateError::from(NsupdateError::from(ValidateUpdateShapeError::NonzeroTtl));
+        let nsupdate = error
             .source()
             .unwrap()
             .downcast_ref::<NsupdateError>()
             .unwrap();
+
         assert_eq!(nsupdate.rcode(), Rcode::FORMERR);
         assert_eq!(
             nsupdate
@@ -155,26 +161,29 @@ mod tests {
             Some(&ValidateUpdateShapeError::NonzeroTtl)
         );
 
-        let err = UpdateError::from(NsupdateError::from(ServiceError::internal_with_source(
+        let error = UpdateError::from(NsupdateError::from(ServiceError::internal_with_source(
             "storage failed",
             std::io::Error::other("storage"),
         )));
-        let nsupdate = err
+        let nsupdate = error
             .source()
             .unwrap()
             .downcast_ref::<NsupdateError>()
             .unwrap();
+
         assert_eq!(nsupdate.rcode(), Rcode::SERVFAIL);
         let service = nsupdate
             .source()
             .unwrap()
             .downcast_ref::<ServiceError>()
             .unwrap();
+
         assert!(service.source().unwrap().is::<std::io::Error>());
 
-        let err = UpdateError::from(TsigError::EmptySecret);
+        let error = UpdateError::from(TsigError::EmptySecret);
+
         assert!(matches!(
-            err.source().unwrap().downcast_ref::<TsigError>(),
+            error.source().unwrap().downcast_ref::<TsigError>(),
             Some(TsigError::EmptySecret)
         ));
     }

@@ -34,6 +34,7 @@ pub fn build_question(
         .expect("one question fits an unlimited message");
 
     let mut additional = question.additional();
+
     if let Some(udp_payload_size) = edns_udp_payload_size {
         additional
             .opt(|opt| {
@@ -57,6 +58,7 @@ pub fn build_axfr_query(qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
             opt.push(&TcpKeepalive::new(None))
         })
         .expect("one OPT record fits an unlimited message");
+
     (query_id, builder.finish())
 }
 
@@ -66,6 +68,7 @@ pub fn build_notify_query(
     key: Option<&TsigSigningKey>,
 ) -> (u16, AdditionalBuilder<Vec<u8>>) {
     let (id, mut builder) = build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+
     if key.is_some_and(|key| {
         builder.as_slice().len() + usize::from(key.as_ref().compose_len())
             > usize::from(crate::dns::message::UDP_PAYLOAD_SIZE_WITHOUT_EDNS)
@@ -77,5 +80,6 @@ pub fn build_notify_query(
             })
             .expect("one OPT record fits an unlimited message");
     }
+
     (id, builder)
 }

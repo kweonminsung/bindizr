@@ -1,4 +1,4 @@
-//! Manual NOTIFY orchestration; delivery goes through the registered sender.
+//! Manual NOTIFY requests after authorization and optional zone serial increments.
 
 use std::sync::Arc;
 

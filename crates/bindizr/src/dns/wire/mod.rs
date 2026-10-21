@@ -22,6 +22,7 @@ where
         writer.write_all(frame).await?;
         writer.flush().await
     };
+
     match timeout(TCP_WRITE_TIMEOUT, write).await {
         Ok(result) => result.map_err(DnsError::Io),
         Err(_) => Err(DnsError::WriteTimeout {
@@ -37,12 +38,14 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
     pending: &mut Vec<u8>,
 ) -> Result<Vec<u8>, DnsError> {
     let mut chunk = [0u8; 4096];
+
     loop {
         // The two-octet prefix cannot name more than the limit RFC 1035,
         // Section 4.2.2 sets, so the allocation is bounded by the wire.
         let expected = pending
             .get(..2)
             .map(|prefix| usize::from(u16::from_be_bytes([prefix[0], prefix[1]])));
+
         if let Some(len) = expected
             && pending.len() >= 2 + len
         {
@@ -52,6 +55,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
         }
 
         let read = reader.read(&mut chunk).await.map_err(DnsError::Io)?;
+
         if read == 0 {
             return Err(match expected {
                 None if pending.is_empty() => DnsError::PeerClosed,
@@ -59,6 +63,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
                 Some(expected) => DnsError::IncompleteMessage { expected },
             });
         }
+
         pending.extend_from_slice(&chunk[..read]);
     }
 }

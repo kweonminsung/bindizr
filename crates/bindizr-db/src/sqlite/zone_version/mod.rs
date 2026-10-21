@@ -37,6 +37,7 @@ pub(crate) async fn upsert_tx(
         .as_ref()
         .map(ChangeActor::as_columns)
         .unzip();
+
     sqlx::query(
         r#"
         INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
@@ -124,9 +125,11 @@ pub(crate) async fn list_by_filter(
         "#
     )))
     .bind(zone_id);
+
     if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
+
     query
         .bind(limit.map(i64::from).unwrap_or(i64::MAX))
         .bind(i64::try_from(offset).unwrap_or(i64::MAX))
@@ -149,10 +152,13 @@ pub(crate) async fn count_by_filter(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{predicate}"
     )))
     .bind(zone_id);
+
     if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
+
     let count: i64 = query.fetch_one(pool).await?;
+
     Ok(count as u64)
 }
 

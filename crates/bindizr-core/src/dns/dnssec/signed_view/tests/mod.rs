@@ -26,6 +26,7 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
     )
     .unwrap();
     key.id = DnssecKeyId::from(id);
+
     key
 }
 

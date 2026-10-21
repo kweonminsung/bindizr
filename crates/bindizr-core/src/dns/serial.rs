@@ -129,9 +129,9 @@ where
     /// Bind every wire serial in the signed 64-bit row form.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i64::from(*self).encode_by_ref(buf)
+        i64::from(*self).encode_by_ref(buffer)
     }
 }
 

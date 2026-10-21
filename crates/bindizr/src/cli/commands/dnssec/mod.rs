@@ -276,6 +276,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     (DaemonCommand::CancelDnssecWithdrawal { name }, output)
                 }
             };
+
             let response = client::send_command::<DnssecStatusResponse>(command).await?;
             print_status(&response.data, output)?;
         }
@@ -291,9 +292,11 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 ds_check: DsCheck::from_skip_ds_check(skip_ds_check),
             })
             .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         DnssecCommand::Status { name, output } => {
@@ -307,9 +310,11 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
         DnssecCommand::Sign { name, output } => {
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::SignZone { name }).await?;
-            match output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
@@ -341,6 +346,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             }
         },
     }
+
     Ok(())
 }
 
@@ -369,16 +375,20 @@ fn print_status(
         status.serial,
         policy.denial
     );
+
     if status.withdrawing {
         outln!(
             "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
         );
     }
+
     if let Some(addrs) = &status.parent_ns_addrs {
         outln!("Parent nameservers: {}", addrs.join(", "));
     }
+
     if let Some(delegation) = &status.delegation {
         let servers = delegation.parent_ns_addrs.join(", ");
+
         if delegation.ds_key_tags.is_empty() {
             outln!("Parent DS: none served by {}", servers);
         } else {
@@ -399,6 +409,7 @@ fn print_status(
                 delegation.ds_ttl.unwrap_or(0)
             );
         }
+
         for key in &delegation.keys {
             let mut line = format!(
                 "  {} ({}, {}): {}",
@@ -411,18 +422,23 @@ fn print_status(
                     (false, false) => "not at parent",
                 }
             );
+
             if let Some(eligible_at) = key.eligible_at {
                 line.push_str(&format!(", promotable from {}", display_time(eligible_at)));
             }
+
             outln!("{}", line);
         }
     }
+
     if let Some(expires_at) = status.earliest_signature_expires_at {
         outln!("Earliest signature expiry: {}", display_time(expires_at));
     }
+
     if let Some(resign_at) = status.next_resign_at {
         outln!("Next re-signing: {}", display_time(resign_at));
     }
+
     if status.expired_signatures == 0 {
         outln!("Signatures: {}", status.signatures);
     } else {
@@ -433,10 +449,12 @@ fn print_status(
             status.expired_signatures
         );
     }
+
     outln!("Policy:");
     print_table(vec![DnssecPolicyRow::from(policy)]);
     outln!("Keys:");
     print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
+
     if !status.ds_records.is_empty() {
         outln!("DS records (register in the parent zone):");
         for ds in &status.ds_records {

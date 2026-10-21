@@ -11,8 +11,10 @@ async fn root_record_targets_round_trip_via_cli() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
+
     for kind in ["NS", "CNAME", "PTR", "DNAME"] {
         let owner = kind.to_ascii_lowercase();
+
         let output = app
             .run_cli_success(
                 &[
@@ -23,8 +25,10 @@ async fn root_record_targets_round_trip_via_cli() {
             )
             .await;
         let output: Value = serde_json::from_str(&output).unwrap();
+
         assert_eq!(output["record"]["value"], ".");
         let id = output["record"]["id"].as_i64().unwrap().to_string();
+
         app.run_cli_success(
             &[
                 "record",
@@ -40,10 +44,12 @@ async fn root_record_targets_round_trip_via_cli() {
         app.run_cli_success(&["record", "update", "--id", &id, "--value", "."], None)
             .await;
     }
+
     let output = app
         .run_cli_success(&["record", "list", name, "--output", "json"], None)
         .await;
     let records: Value = serde_json::from_str(&output).unwrap();
+
     for kind in ["NS", "CNAME", "PTR", "DNAME"] {
         assert!(
             records["items"]
@@ -62,6 +68,7 @@ async fn escaped_record_targets_round_trip_via_cli() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
+
     for (kind, prefix) in [
         ("CNAME", ""),
         ("DNAME", ""),
@@ -74,6 +81,7 @@ async fn escaped_record_targets_round_trip_via_cli() {
         let input = format!("{prefix}tail\\ ");
         let expected = format!(r"{prefix}tail\032.");
         let owner = kind.to_ascii_lowercase();
+
         let output = app
             .run_cli_success(
                 &[
@@ -84,7 +92,9 @@ async fn escaped_record_targets_round_trip_via_cli() {
             )
             .await;
         let output: Value = serde_json::from_str(&output).unwrap();
+
         assert_eq!(output["record"]["value"], expected);
+
         let listed = app
             .run_cli_success(&["record", "list", name, "--output", "json"], None)
             .await;
@@ -93,8 +103,9 @@ async fn escaped_record_targets_round_trip_via_cli() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|r| r["type"] == kind && r["name"] == format!("{owner}.{name}."))
+            .find(|record| record["type"] == kind && record["name"] == format!("{owner}.{name}."))
             .unwrap();
+
         assert_eq!(record["value"], expected);
     }
 }
@@ -107,6 +118,7 @@ async fn record_supports_create_read_and_delete_via_cli() {
     let zone_name = app.zone_name("cli.example");
 
     let created_zone = app.create_zone_cli(&zone_name, "3600").await;
+
     assert!(created_zone.contains(&zone_name), "{created_zone}");
 
     let created_record = app
@@ -126,6 +138,7 @@ async fn record_supports_create_read_and_delete_via_cli() {
             None,
         )
         .await;
+
     assert!(
         created_record.contains(&format!("www.{zone_name}."))
             && created_record.contains("192.0.2.10"),
@@ -141,6 +154,7 @@ async fn record_supports_create_read_and_delete_via_cli() {
         .and_then(Value::as_array)
         .and_then(|records| records.iter().find(|record| record["type"] == "A"))
         .expect("CLI did not return the created record");
+
     assert_eq!(record["name"], format!("www.{zone_name}."));
     assert_eq!(record["value"], "192.0.2.10");
     let record_id = record["id"]
@@ -151,11 +165,13 @@ async fn record_supports_create_read_and_delete_via_cli() {
     let deleted_record = app
         .run_cli_success(&["record", "delete", "--id", &record_id], None)
         .await;
+
     assert!(deleted_record.contains("deleted successfully"));
 
     let deleted_zone = app
         .run_cli_success(&["zone", "delete", &zone_name], None)
         .await;
+
     assert!(deleted_zone.contains("deleted successfully"));
 }
 
@@ -165,6 +181,7 @@ async fn record_supports_create_read_and_delete_via_cli() {
 async fn record_update_changes_only_passed_fields_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-record-update.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     app.run_cli_success(
@@ -212,6 +229,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     let updated = &updated["record"];
+
     assert_eq!(updated["value"], "127.0.0.1");
     assert_eq!(updated["ttl"], 300);
     assert_eq!(updated["type"], "A");
@@ -224,6 +242,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
 async fn record_update_retype_clears_incompatible_priority_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     app.run_cli_success(
@@ -248,8 +267,8 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let record_id = records["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|r| r["type"] == "MX"))
-        .and_then(|r| r["id"].as_i64())
+        .and_then(|records| records.iter().find(|record| record["type"] == "MX"))
+        .and_then(|record| record["id"].as_i64())
         .expect("created MX record did not contain an ID")
         .to_string();
 
@@ -274,6 +293,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     let updated = &updated["record"];
+
     assert_eq!(updated["type"], "A");
     assert_eq!(updated["value"], "192.0.2.1");
     assert!(
@@ -289,6 +309,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
 async fn record_create_builds_txt_segments_from_repeated_values() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-txt.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     let created = app
@@ -301,6 +322,7 @@ async fn record_create_builds_txt_segments_from_repeated_values() {
         )
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+
     assert_eq!(
         created["record"]["value"],
         serde_json::json!(["v=spf1", "~all"])
@@ -324,6 +346,7 @@ async fn record_create_builds_txt_segments_from_repeated_values() {
         )
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+
     assert_eq!(updated["record"]["value"], "v=spf1 ~all");
 }
 
@@ -333,7 +356,9 @@ async fn record_create_builds_txt_segments_from_repeated_values() {
 async fn record_delete_by_name_narrows_by_type() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("delete-by-name.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
+
     for (record_type, value) in [("A", "192.0.2.1"), ("TXT", "hello")] {
         app.run_cli_success(
             &[
@@ -355,6 +380,7 @@ async fn record_delete_by_name_narrows_by_type() {
     let preview = app
         .run_cli_success(&["record", "delete", &zone_name, "www", "--dry-run"], None)
         .await;
+
     assert!(preview.contains("would be deleted"), "{preview}");
 
     // Narrowed to one type, so the TXT record stays.
@@ -364,6 +390,7 @@ async fn record_delete_by_name_narrows_by_type() {
             None,
         )
         .await;
+
     assert!(deleted.contains("1 record(s) deleted"), "{deleted}");
 
     let listed = app
@@ -377,6 +404,7 @@ async fn record_delete_by_name_narrows_by_type() {
         .iter()
         .map(|record| record["type"].as_str().expect("type"))
         .collect();
+
     assert!(types.contains(&"TXT"), "{types:?}");
     assert!(!types.contains(&"A"), "{types:?}");
 }
@@ -387,7 +415,9 @@ async fn record_delete_by_name_narrows_by_type() {
 async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("delete-txt-value.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
+
     for value in ["hello world", "keep me"] {
         app.run_cli_success(
             &[
@@ -415,6 +445,7 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
             None,
         )
         .await;
+
     assert!(deleted.contains("1 record(s) deleted"), "{deleted}");
 
     let listed = app
@@ -433,6 +464,7 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
         .iter()
         .filter_map(|record| record["value"].as_str())
         .collect();
+
     assert_eq!(values, vec!["keep me"], "{listed}");
 }
 
@@ -442,7 +474,9 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
 async fn record_get_by_name_lists_every_record_at_the_name() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("get-by-name.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
+
     for (record_type, value) in [("A", "192.0.2.1"), ("TXT", "hello")] {
         app.run_cli_success(
             &[
@@ -476,6 +510,7 @@ async fn record_get_by_name_lists_every_record_at_the_name() {
         .map(|record| record["type"].as_str().expect("type"))
         .collect();
     types.sort_unstable();
+
     assert_eq!(types, vec!["A", "TXT"], "{listed}");
 }
 
@@ -485,6 +520,7 @@ async fn record_get_by_name_lists_every_record_at_the_name() {
 async fn record_update_by_name_changes_the_one_record_at_the_name() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("update-by-name.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
     app.run_cli_success(
         &[
@@ -517,6 +553,7 @@ async fn record_update_by_name_changes_the_one_record_at_the_name() {
         )
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("record update did not print JSON");
+
     assert_eq!(updated["record"]["value"], "192.0.2.2", "{updated}");
 }
 
@@ -526,7 +563,9 @@ async fn record_update_by_name_changes_the_one_record_at_the_name() {
 async fn record_update_by_name_refuses_a_name_holding_several_records() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("update-ambiguous.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
+
     for (record_type, value) in [("A", "192.0.2.1"), ("TXT", "hello")] {
         app.run_cli_success(
             &[
@@ -549,6 +588,7 @@ async fn record_update_by_name_refuses_a_name_holding_several_records() {
     let args = [
         "record", "update", &zone_name, "www", "--ttl", "300", "--output", "json",
     ];
+
     let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "address one by its id");
 }
@@ -598,6 +638,7 @@ async fn record_listing_filters_by_zone_and_type() {
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let records = records["items"].as_array().expect("missing record items");
+
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["name"], format!("www.{one_zone}."));
     assert_eq!(records[0]["value"], "192.0.2.1");
@@ -609,6 +650,7 @@ async fn record_listing_filters_by_zone_and_type() {
 async fn record_rejects_invalid_values_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("validation.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     for (record_type, value, expected_error) in [
@@ -627,6 +669,7 @@ async fn record_rejects_invalid_values_via_cli() {
             "--ttl",
             "300",
         ];
+
         let output = app.run_cli(&args, None).await;
         assert_cli_failure_contains(&args, &output, expected_error);
     }
@@ -638,6 +681,7 @@ async fn record_rejects_invalid_values_via_cli() {
 async fn record_update_rejects_retype_without_value_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype-noval.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     app.run_cli_success(
@@ -660,14 +704,15 @@ async fn record_update_rejects_retype_without_value_via_cli() {
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let record_id = records["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|r| r["type"] == "A"))
-        .and_then(|r| r["id"].as_i64())
+        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|record| record["id"].as_i64())
         .expect("created A record did not contain an ID")
         .to_string();
 
     // A record's stored value is encoded for its type, so a value carried over from
     // the old type is invalid for the new one — retyping must supply a fresh value.
     let args = ["record", "update", "--id", &record_id, "--type", "TXT"];
+
     let output = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &output, "value is required when changing");
 }

@@ -38,10 +38,10 @@ pub(crate) async fn poll_with_deadline<T>(
 /// Read command input from a file path, or from stdin when the path is `-`.
 pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
     if path == "-" {
-        let mut buf = String::new();
-        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+        let mut buffer = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buffer)
             .map_err(ReadInputError::Stdin)?;
-        Ok(buf)
+        Ok(buffer)
     } else {
         std::fs::read_to_string(path).map_err(|source| ReadInputError::File {
             path: path.to_string(),

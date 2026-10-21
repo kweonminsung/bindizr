@@ -62,6 +62,7 @@ pub(crate) async fn list_zone_versions(
         VersionFilter::from_include_signer_serials(query.include_signer_serials),
     )
     .await?;
+
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -95,6 +96,7 @@ pub(crate) async fn get_zone_version(
         params.serial,
     )
     .await?;
+
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -134,6 +136,7 @@ pub(crate) async fn rollback_zone(
         Run::from_dry_run(query.dry_run),
     )
     .await?;
+
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -204,5 +207,6 @@ pub(crate) async fn diff_zone_versions(
         query.to,
     )
     .await?;
+
     Ok((StatusCode::OK, Json(diff)).into_response())
 }

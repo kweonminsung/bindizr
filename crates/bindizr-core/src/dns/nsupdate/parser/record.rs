@@ -50,10 +50,12 @@ impl UpdateRecord {
         if !matches!(self.class, Class::IN | Class::ANY | Class::NONE) {
             return Err(ValidateUpdateShapeError::Class { class: self.class });
         }
+
         // RFC 6895, Section 3.1 reserves 128-255 for query/meta types;
         // OPT is the meta type outside that range. ANY is permitted only
         // as the CLASS ANY whole-name delete (RFC 2136, Section 2.5.3).
         let delete_name = self.class == Class::ANY && self.record_type == Rtype::ANY;
+
         if !delete_name && matches!(self.record_type.to_int(), 0 | 41 | 128..=255 | 65535) {
             return Err(ValidateUpdateShapeError::RecordType {
                 record_type: self.record_type,
@@ -62,6 +64,7 @@ impl UpdateRecord {
         if self.class != Class::IN && self.ttl != 0 {
             return Err(ValidateUpdateShapeError::NonzeroTtl);
         }
+
         match self.class {
             Class::ANY if !self.rdata.is_empty() => Err(ValidateUpdateShapeError::AnyClassRdata),
             _ => Ok(()),
@@ -73,6 +76,7 @@ impl UpdateRecord {
         if self.record_type == Rtype::WKS {
             WksRecordValue::from_rdata(&self.rdata)?;
         }
+
         Ok(Rdata::parse_canonical(
             self.record_type,
             message,
@@ -150,10 +154,11 @@ impl UpdateRecord {
                     ParsedName::parse(parser).ok()
                 })?;
                 let value =
-                    to_presentation_name(&name).map_err(|e| ParseUpdateError::RdataName {
+                    to_presentation_name(&name).map_err(|error| ParseUpdateError::RdataName {
                         record_type: record_type.as_str().to_owned(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     })?;
+
                 Ok((record_type, value, None))
             }
             RecordType::Txt => {
@@ -178,10 +183,10 @@ impl UpdateRecord {
                 let data = self.parse_rdata(message, "NAPTR", |parser| {
                     domain::rdata::Naptr::parse(parser).ok()
                 })?;
-                let replacement = to_presentation_name(data.replacement()).map_err(|e| {
+                let replacement = to_presentation_name(data.replacement()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "NAPTR".to_string(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     }
                 })?;
                 let value = NaptrRecordValue::from_wire(
@@ -193,6 +198,7 @@ impl UpdateRecord {
                     &replacement,
                 )?
                 .canonical();
+
                 Ok((RecordType::Naptr, value, None))
             }
             RecordType::Sshfp => {
@@ -209,22 +215,24 @@ impl UpdateRecord {
             }
             RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = to_presentation_name(data.exchange()).map_err(|e| {
+                let host = to_presentation_name(data.exchange()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "MX".to_string(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     }
                 })?;
+
                 Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
             }
             RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = to_presentation_name(data.target()).map_err(|e| {
+                let target = to_presentation_name(data.target()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "SRV".to_string(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     }
                 })?;
+
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((
                     RecordType::Srv,

@@ -61,6 +61,7 @@ fn to_email_rejects_invalid_input() {
     assert!(SoaMailbox::from_encoded("no-separator").to_email().is_err());
     assert!(SoaMailbox::from_encoded(".example.com").to_email().is_err());
     assert!(SoaMailbox::from_encoded("dangling\\").to_email().is_err());
+
     for mailbox in [
         r"bad\99.example.com.",
         r"bad\999.example.com.",
@@ -87,9 +88,11 @@ fn encode_soa_rdata_returns_names_and_five_counters() {
     .unwrap();
     let mut expected = encode_name("ns1.example.com").unwrap();
     expected.extend(encode_name("admin.example.com").unwrap());
+
     for field in [42u32, 2, 3, 4, 5] {
         expected.extend(field.to_be_bytes());
     }
+
     assert_eq!(rdata.as_bytes(), expected);
 }
 
@@ -106,6 +109,7 @@ fn to_email_preserves_domain_octets() {
     ] {
         let email = format!("first.last@{domain}");
         let mailbox = SoaMailbox::from_email(&email).unwrap();
+
         assert_eq!(mailbox.to_email().unwrap(), email);
         assert_eq!(
             SoaMailbox::from_email(&mailbox.to_email().unwrap()).unwrap(),

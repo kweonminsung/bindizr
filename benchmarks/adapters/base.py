@@ -30,9 +30,9 @@ class DnsAdapter(abc.ABC):
     bulk_errors: int = 0
     supports_ixfr: bool = True
 
-    def __init__(self, cfg: dict, project: str):
+    def __init__(self, config: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
-        self.cfg = cfg
+        self.config = config
         self.project = project
 
     @abc.abstractmethod
@@ -54,7 +54,7 @@ class DnsAdapter(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def create_record(self, zone: str, rec: dict) -> str:
+    async def create_record(self, zone: str, record: dict) -> str:
         """Create a record; return a handle for later get/update/delete."""
 
     @abc.abstractmethod
@@ -62,7 +62,7 @@ class DnsAdapter(abc.ABC):
         """Fetch a record; return True on success."""
 
     @abc.abstractmethod
-    async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
         ...
 
@@ -77,6 +77,7 @@ class DnsAdapter(abc.ABC):
         Adapters may override this worker-pool fallback with a batch API."""
         self.bulk_errors = 0
         queue: asyncio.Queue[int] = asyncio.Queue()
+
         for i in range(len(records)):
             queue.put_nowait(i)
 
@@ -87,7 +88,9 @@ class DnsAdapter(abc.ABC):
                     i = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     return
+
                 delay = 0.02
+
                 for attempt in range(BULK_ATTEMPTS):
                     try:
                         await self.create_record(zone, records[i])

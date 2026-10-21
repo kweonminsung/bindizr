@@ -284,6 +284,7 @@ pub fn build_notify_message(target: NotifyTarget<'_>, serial: NotifySerial) -> S
         NotifySerial::Bump => " (serial bumped)",
         NotifySerial::Keep => "",
     };
+
     format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 

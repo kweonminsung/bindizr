@@ -25,6 +25,7 @@ async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let parent = FakeParent::start();
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -32,7 +33,9 @@ async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
             Some(json!({ "parent_ns_addrs": [parent.addr()] })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
+
     let (_, before) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
@@ -46,30 +49,38 @@ async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
         (OptRcode::NOERROR, Class::CH),
     ] {
         parent.set_response(rcode, class);
+
         for method in [Method::POST, Method::DELETE] {
             let path = if method == Method::POST {
                 format!("/zones/{zone_name}/dnssec/check-ds")
             } else {
                 format!("/zones/{zone_name}/dnssec")
             };
+
             let (status, body) = app.send_request(method, &path, None).await;
+
             assert_eq!(status, StatusCode::CONFLICT, "{rcode}/{class}: {body}");
             assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
         }
+
         let (_, after) = app
             .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
             .await;
+
         assert_eq!(after, before);
         assert_eq!(app.read_zone_serial(zone_name).await, serial);
+
         let (_, versions_after) = app
             .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
             .await;
+
         assert_eq!(versions_after, versions_before);
     }
 
     // A matching digest still belongs to its record class.
     let key_tag = before["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     parent.set_ds(vec![DsRecord::from_status(&before, key_tag, 300)]);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -77,14 +88,17 @@ async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED");
 
     parent.set_ds(Vec::new());
     parent.set_response(OptRcode::NOERROR, Class::IN);
+
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -93,9 +107,12 @@ async fn dnssec_disable_rejects_invalid_parent_responses_without_changes() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     let app = TestApp::start_local().await;
+
     let parent = FakeParent::start();
+
     // A short TTL lets the test reach rollover promotion.
     let zone_name = app.zone_name("ds-seen.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -108,6 +125,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
@@ -118,6 +136,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     parent.set_ds(vec![DsRecord::from_status(&body, old_key_tag, 60)]);
@@ -129,6 +148,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             Some(json!({})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let new_key_tag = body["keys"]
         .as_array()
@@ -138,6 +158,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
         .expect("rollover start pre-publishes the replacement key")["key_tag"]
         .as_u64()
         .unwrap() as u16;
+
     // The parent still serves only the old DS: the new key must not sign yet.
     let (status, _) = app
         .send_request(
@@ -146,7 +167,9 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -154,6 +177,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_DS_NOT_PUBLISHED");
     assert!(
@@ -171,6 +195,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let delegation_keys = body["delegation"]["keys"].as_array().unwrap();
     let delegation_key = |tag: u16| {
@@ -179,6 +204,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             .find(|key| key["key_tag"] == tag)
             .unwrap_or_else(|| panic!("no key tag {tag} in {delegation_keys:?}"))
     };
+
     assert_eq!(delegation_key(old_key_tag)["ds_published"], true);
     assert_eq!(delegation_key(new_key_tag)["ds_published"], false);
     assert!(
@@ -190,6 +216,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
         DsRecord::from_status(&body, old_key_tag, 60),
         DsRecord::from_status(&body, new_key_tag, 60),
     ]);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -197,6 +224,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let keys = body["keys"].as_array().unwrap();
     let key_by_tag = |tag: u16| {
@@ -204,6 +232,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
             .find(|key| key["key_tag"] == tag)
             .unwrap_or_else(|| panic!("no key tag {tag} in {keys:?}"))
     };
+
     assert_eq!(key_by_tag(new_key_tag)["state"], "active");
     assert_eq!(key_by_tag(old_key_tag)["state"], "retired");
 }
@@ -213,7 +242,9 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     let app = TestApp::start_local().await;
+
     let parent = FakeParent::start();
+
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
@@ -224,6 +255,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
             Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["parent_ns_addrs"], json!([parent.addr()]));
     assert!(body["delegation"].is_null(), "{body}");
@@ -234,6 +266,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_DS_PUBLISHED");
     assert!(
@@ -251,13 +284,16 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let delegation = &body["delegation"];
+
     assert_eq!(delegation["ds_state"], "published");
     assert_eq!(delegation["ds_key_tags"], json!([key_tag]));
     assert_eq!(delegation["ds_ttl"], 3600);
     assert_eq!(delegation["parent_ns_addrs"], json!([parent.addr()]));
     let key_id = body["keys"][0]["id"].clone();
+
     assert_eq!(
         delegation["keys"],
         json!([{ "id": key_id, "key_tag": key_tag, "role": "csk", "state": "active", "ds_published": true, "ds_digest_unsupported": false, "eligible_at": null }])
@@ -267,10 +303,12 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert!(body["delegation"].is_null(), "{body}");
 
     parent.set_ds(Vec::new());
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -278,6 +316,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["delegation"]["ds_state"], "hidden");
     assert_eq!(body["delegation"]["ds_key_tags"], json!([]));
@@ -287,10 +326,13 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
+
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["enabled"], false);
 }
@@ -310,12 +352,14 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             Some(json!({ "parent_ns_addrs": [closed_parent_addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     // A parent that does not answer may still serve the DS.
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED");
 
@@ -327,10 +371,12 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             Some(json!({})),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_INPUT");
 
     let parent = FakeParent::start();
+
     let (status, body) = app
         .send_request(
             Method::PUT,
@@ -339,6 +385,7 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             Some(json!({ "parent_ns_addrs": [format!(" {} ", parent.addr()), ""] })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["parent_ns_addrs"], json!([parent.addr()]));
 
@@ -350,6 +397,7 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             Some(json!({ "parent_ns_addrs": [] })),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_INPUT");
 
@@ -360,13 +408,17 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
+
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     let zone_name = app.zone_name("dnssec-skip.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -379,7 +431,9 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -387,7 +441,9 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             Some(json!({ "parent_ns_addrs": [closed_parent_addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
+
     let (status, _) = app
         .send_request(
             Method::DELETE,
@@ -395,6 +451,7 @@ async fn dnssec_disable_rejects_unreachable_parent() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -403,9 +460,11 @@ async fn dnssec_disable_rejects_unreachable_parent() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     let app = TestApp::start_local().await;
+
     let first_parent = FakeParent::start();
     let second_parent = FakeParent::start();
     let zone_name = app.zone_name("ds-seen-servers.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -418,10 +477,12 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
     let parent_ns_addrs = [first_parent.addr(), second_parent.addr()];
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -429,6 +490,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             Some(json!({ "parent_ns_addrs": parent_ns_addrs})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     let old_ds = DsRecord::from_status(&body, old_key_tag, 60);
@@ -442,6 +504,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             Some(json!({})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let new_key_tag = body["keys"]
         .as_array()
@@ -467,6 +530,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     // A DS with the new key's tag but another digest is another key's DS.
     first_parent.set_ds(vec![old_ds.clone(), new_ds.clone().with_wrong_digest()]);
     second_parent.set_ds(vec![old_ds.clone(), new_ds.clone().with_wrong_digest()]);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -474,15 +538,19 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(new_key_published(&body), false, "{body}");
+
     let (status, body) = app.send_request(Method::POST, &ds_seen_path, None).await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_NOT_PUBLISHED");
 
     // One parent server lagging behind the other still blocks promotion.
     first_parent.set_ds(vec![old_ds.clone(), new_ds.clone()]);
     second_parent.set_ds(vec![old_ds.clone()]);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -490,15 +558,20 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["delegation"]["ds_state"], "published");
     assert_eq!(new_key_published(&body), false, "{body}");
+
     let (status, body) = app.send_request(Method::POST, &ds_seen_path, None).await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_NOT_PUBLISHED");
 
     second_parent.set_ds(vec![old_ds, new_ds]);
+
     let (status, body) = app.send_request(Method::POST, &ds_seen_path, None).await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
         body["keys"]
@@ -515,8 +588,10 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
     let app = TestApp::start_local().await;
+
     let parent = FakeParent::start();
     let zone_name = app.zone_name("ds-seen-sha1.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -529,6 +604,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
@@ -539,6 +615,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     let old_ds = DsRecord::from_status(&body, old_key_tag, 60);
@@ -551,6 +628,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             Some(json!({})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let new_key_tag = body["keys"]
         .as_array()
@@ -560,6 +638,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
         .expect("rollover start pre-publishes the replacement key")["key_tag"]
         .as_u64()
         .unwrap() as u16;
+
     // Serve a parent-computed SHA-1 DS, which status never renders.
     let new_ds = DsRecord::sha1_from_status(&body, zone_name, new_key_tag, 60);
     parent.set_ds(vec![old_ds, new_ds]);
@@ -571,6 +650,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["delegation"]["keys"]
@@ -590,6 +670,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
         body["keys"]
@@ -605,8 +686,10 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
 #[tokio::test]
 async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds() {
     let app = TestApp::start_local().await;
+
     let parent = FakeParent::start();
     let zone_name = app.zone_name("ds-seen-digest.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -619,6 +702,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
@@ -629,6 +713,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
             Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let old_key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     let old_ds = DsRecord::from_status(&body, old_key_tag, 60);
@@ -641,6 +726,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
             Some(json!({})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let new_key_tag = body["keys"]
         .as_array()
@@ -650,6 +736,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .expect("rollover start pre-publishes the replacement key")["key_tag"]
         .as_u64()
         .unwrap() as u16;
+
     // Digest type 3 is GOST R 34.11-94; bindizr cannot verify a match.
     let new_ds = DsRecord::from_status(&body, new_key_tag, 60).with_digest_type(3);
     parent.set_ds(vec![old_ds, new_ds]);
@@ -661,6 +748,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     let key = body["delegation"]["keys"]
         .as_array()
@@ -669,6 +757,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .find(|key| key["key_tag"] == new_key_tag)
         .expect("the replacement key is a delegation key")
         .clone();
+
     assert_eq!(key["ds_published"], false, "{body}");
     assert_eq!(key["ds_digest_unsupported"], true, "{body}");
 
@@ -679,6 +768,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
 }
@@ -687,9 +777,11 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
 #[tokio::test]
 async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server() {
     let app = TestApp::start_local().await;
+
     let first_parent = FakeParent::start();
     let second_parent = FakeParent::start();
     let zone_name = app.zone_name("ds-digest-servers.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -702,10 +794,12 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
     let parent_ns_addrs = [first_parent.addr(), second_parent.addr()];
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -713,9 +807,11 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
             Some(json!({ "parent_ns_addrs": parent_ns_addrs})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let key_tag = body["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     let ds = DsRecord::from_status(&body, key_tag, 60);
+
     // Keep each parent's result so a verifiable digest cannot mask an unsupported one.
     first_parent.set_ds(vec![ds.clone()]);
     second_parent.set_ds(vec![ds.with_digest_type(3)]);
@@ -727,6 +823,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     let key = body["delegation"]["keys"]
         .as_array()
@@ -735,6 +832,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
         .find(|key| key["key_tag"] == key_tag)
         .expect("the signing key is a delegation key")
         .clone();
+
     assert_eq!(key["ds_published"], false, "{body}");
     assert_eq!(key["ds_digest_unsupported"], true, "{body}");
 }

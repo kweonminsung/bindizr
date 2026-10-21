@@ -28,6 +28,7 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
         "192.0.2.1 TCP 22",
         None,
     )];
+
     assert_eq!(
         validate_add(
             &existing,
@@ -41,6 +42,7 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
         .code(),
         ErrorCode::RecordConflict
     );
+
     for value in ["192.0.2.2 TCP 22", "192.0.2.1 UDP 22"] {
         assert!(
             validate_add(
@@ -63,11 +65,13 @@ fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     let zone = ZoneName::from_row("test.example.com");
 
     let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
+
     assert_eq!(outside.code(), ErrorCode::InvalidRecordName);
     assert!(outside.to_string().contains("a1.other.com."));
     assert!(outside.to_string().contains(zone.as_str()));
 
     let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
+
     assert_eq!(empty.code(), ErrorCode::InvalidRecordName);
     assert!(empty.to_string().starts_with("record name "));
 }
@@ -99,11 +103,13 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
     let at_apex = validate_add(&[], "", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+
     assert_eq!(at_apex.unwrap_err().code(), ErrorCode::InvalidRecordName);
 
     // The NS coupling is a final-state rule, enforced when the zone is
     // versioned — a lone DS passes the per-add shape checks.
     let without_ns = validate_add(&[], "sub", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+
     assert!(without_ns.is_ok());
 }
 
@@ -118,6 +124,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         RECORD_SET_TTL,
         None,
     );
+
     assert_eq!(
         cname_at_apex.unwrap_err().code(),
         ErrorCode::InvalidRecordName
@@ -131,6 +138,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         RECORD_SET_TTL,
         None,
     );
+
     assert!(delegation_ns.is_ok());
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
@@ -142,6 +150,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         RECORD_SET_TTL,
         None,
     );
+
     assert_eq!(
         cname_conflict.unwrap_err().code(),
         ErrorCode::RecordConflict
@@ -161,6 +170,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
         RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let existing_srv = test_record(
@@ -178,6 +188,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
         RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(duplicate_srv.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
@@ -195,6 +206,7 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
         RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
@@ -210,6 +222,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
         RECORD_SET_TTL,
         Some(0),
     );
+
     assert_eq!(
         null_mx_with_existing_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
@@ -224,6 +237,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
         RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(
         mx_with_existing_null_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
@@ -243,6 +257,7 @@ fn add_enforces_one_ttl_per_record_set() {
         600,
         None,
     );
+
     assert_eq!(differing_ttl.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
@@ -253,6 +268,7 @@ fn add_enforces_one_ttl_per_record_set() {
         RECORD_SET_TTL,
         None,
     );
+
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different record set.
@@ -265,6 +281,7 @@ fn add_enforces_one_ttl_per_record_set() {
         600,
         None,
     );
+
     assert!(other_record_set.is_ok());
 }
 
@@ -308,6 +325,7 @@ fn add_enforces_the_dname_rules() {
         None,
     )
     .unwrap_err();
+
     assert_eq!(second.code(), ErrorCode::RecordConflict);
     let ns_beside = validate_add(
         &dname_at_sub,
@@ -318,7 +336,9 @@ fn add_enforces_the_dname_rules() {
         None,
     )
     .unwrap_err();
+
     assert_eq!(ns_beside.code(), ErrorCode::RecordConflict);
+
     // Other data at the DNAME's own name is allowed; only names below it are not.
     validate_add(
         &dname_at_sub,
@@ -346,6 +366,7 @@ fn add_enforces_the_dname_rules() {
         None,
     )
     .unwrap_err();
+
     assert_eq!(dname_beside.code(), ErrorCode::RecordConflict);
 
     // The apex NS set is the zone's own, not a delegation.

@@ -29,8 +29,8 @@ pub enum ReloadConfigError {
 /// A refused reload is the operator's to fix.
 impl From<ReloadConfigError> for ServiceError {
     /// Classify the reload failure for the error payload.
-    fn from(err: ReloadConfigError) -> Self {
-        ServiceError::invalid_input(err)
+    fn from(error: ReloadConfigError) -> Self {
+        ServiceError::invalid_input(error)
     }
 }
 
@@ -112,6 +112,7 @@ impl Context {
             .expect("Bindizr configuration lock is poisoned");
         let changed = stored.changed_settings(&next);
         *stored = Arc::new(next);
+
         changed
     }
 
@@ -153,7 +154,7 @@ impl Context {
         }
     }
 
-    /// Queue a NOTIFY for later delivery. `false` once the worker has stopped,
+    /// Queue a NOTIFY to send later. `false` once the worker has stopped,
     /// so the caller can fall back to sending inline.
     pub(crate) fn enqueue_notify(&self, target: NotifyTarget<'_>) -> bool {
         self.notify_jobs.send(NotifyJob::new(target)).is_ok()

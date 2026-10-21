@@ -24,12 +24,14 @@ pub async fn list(
     validate_page_limit(page.limit)?;
 
     let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
+
     // One statement names every key rather than one per secondary.
     let key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|tsig_key| (tsig_key.id, tsig_key.name))
         .collect();
+
     Ok(build_page(
         secondaries
             .iter()

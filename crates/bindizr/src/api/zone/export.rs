@@ -54,6 +54,7 @@ pub(crate) async fn export_zone(
         ZoneView::from_signed(query.signed.unwrap_or(false)),
     )
     .await?;
+
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],

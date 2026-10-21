@@ -35,6 +35,7 @@ pub(crate) async fn handle_axfr(
         let access = tokio::select! {
             biased;
             () = writer.failed() => return Err(DnsError::PeerClosed),
+
             access = zone::refresh_catalog_content(cx, &identity.caller) => access?,
         };
         let content = match access {
@@ -44,6 +45,7 @@ pub(crate) async fn handle_axfr(
             }
             TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
         };
+
         return catalog::send_catalog_response(
             writer,
             query,
@@ -60,6 +62,7 @@ pub(crate) async fn handle_axfr(
             tokio::select! {
                 biased;
                 () = writer.failed() => return Err(DnsError::PeerClosed),
+
                 access = transfer_cache::authorize_transfer_content_by_name(dns_cx, &identity.caller, &zone_name) => access?,
             }
         }
@@ -82,13 +85,17 @@ pub(crate) async fn handle_axfr(
     );
 
     let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
+
     if let Some(signer) = identity.signer.take() {
         builder = builder.sign_with(signer);
     }
+
     // The opening SOA identifies the serial of this content snapshot.
     let serial = zone.serial;
+
     let streamed = async {
         let mut messages_sent = 0usize;
+
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
                 builder.add_soa(&zone, serial)
@@ -119,9 +126,11 @@ pub(crate) async fn handle_axfr(
             })
             .await?;
         messages_sent += writer.flush_if_not_empty(&mut builder).await?;
+
         Ok::<usize, DnsError>(messages_sent)
     }
     .await;
+
     // Handed back so a failure's SERVFAIL is signed too.
     identity.signer = builder.take_signer();
     let messages_sent = streamed?;
@@ -132,6 +141,7 @@ pub(crate) async fn handle_axfr(
         content.records.len() + content.dnssec_records.len(),
         messages_sent
     );
+
     transfer::save_ok(
         cx,
         client_ip,

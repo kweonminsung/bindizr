@@ -63,6 +63,7 @@ impl TlsCertificate {
             .unwrap_or_else(PoisonError::into_inner);
         let changed = current.cert != next.cert;
         *current = next;
+
         changed
     }
 }
@@ -83,7 +84,7 @@ impl ResolvesServerCert for TlsCertificate {
 /// its certificate.
 fn load_certified_key(files: TlsFiles<'_>) -> Result<CertifiedKey, LoadCertificateError> {
     let certs = CertificateDer::pem_file_iter(files.cert_file)
-        .and_then(|chain| chain.collect::<Result<Vec<_>, _>>())
+        .and_then(std::iter::Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|source| LoadCertificateError::Certificate {
             path: files.cert_file.to_string(),
             source,
@@ -94,6 +95,7 @@ fn load_certified_key(files: TlsFiles<'_>) -> Result<CertifiedKey, LoadCertifica
             source,
         }
     })?;
+
     CertifiedKey::from_der(certs, key, &ring::default_provider()).map_err(|source| {
         LoadCertificateError::Pair {
             cert_file: files.cert_file.to_string(),
@@ -132,6 +134,7 @@ impl TlsCertificates {
     /// Reload both certificate pairs before publishing either; a read failure preserves both listeners.
     pub(crate) fn reload(&self, config: &Config) -> Result<Vec<String>, LoadCertificateError> {
         let mut renewed = Vec::new();
+
         for (section, certificate, files) in [
             ("api.tls", &self.api, config.api.tls.tls_files()),
             ("dns.tls", &self.dns, config.dns.tls.tls_files()),
@@ -140,12 +143,15 @@ impl TlsCertificates {
                 renewed.push((section, certificate, load_certified_key(files)?));
             }
         }
+
         let mut changed = Vec::new();
+
         for (section, certificate, next) in renewed {
             if certificate.swap(next) {
                 changed.push(format!("{section} certificate"));
             }
         }
+
         Ok(changed)
     }
 }

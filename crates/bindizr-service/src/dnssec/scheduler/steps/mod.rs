@@ -44,18 +44,21 @@ pub(crate) async fn prune_zone_history_by_zone_id(
                 version_rows: 0,
             });
         }
+
         let journal_rows =
             bindizr_db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
                 .await?;
         let version_rows =
             bindizr_db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
                 .await?;
+
         Ok::<_, ServiceError>(PruneSummary {
             journal_rows,
             version_rows,
         })
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to prune zone history").await
 }
 
@@ -84,13 +87,16 @@ pub(crate) async fn resign_zone_by_zone_id(
         {
             return Ok(None);
         }
+
         Ok(Some(signed.zone.name.clone()))
     }
     .await;
     let changed = transaction::finish_tx(tx, result, "failed to sign zone").await?;
+
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
     }
+
     Ok(changed)
 }
 
@@ -107,10 +113,13 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         else {
             return Ok(None);
         };
+
         if signed.policy.zsk_lifetime_days.as_days() == 0 {
             return Ok(None);
         }
+
         let cutoff = Utc::now() - signed.policy.zsk_lifetime_days.to_duration();
+
         if signed
             .keys
             .iter()
@@ -118,6 +127,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         {
             return Ok(None);
         }
+
         let Some(template) = signed
             .keys
             .iter()
@@ -130,6 +140,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             dnssec::publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm)
                 .await?;
         signed.keys.push(new_key);
+
         let serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
@@ -137,13 +148,16 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             &ChangeAttribution::system(),
         )
         .await?;
+
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
     let changed = transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
     }
+
     Ok(changed)
 }
 
@@ -172,6 +186,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
             })
             .map(|key| key.id)
             .collect();
+
         if due.is_empty() {
             return Ok(None);
         }
@@ -188,13 +203,16 @@ pub(crate) async fn promote_zsks_by_zone_id(
             &ChangeAttribution::system(),
         )
         .await?;
+
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
     let changed = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
     }
+
     Ok(changed)
 }
 
@@ -211,27 +229,31 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         else {
             return Ok(None);
         };
+
         // The same rule `ds-seen` applies, minus the errors it reports.
         let Ok(awaiting) = promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
+
         let delegation = match dnssec::probe_delegation(cx, &signed).await {
             Ok(delegation) => delegation,
-            Err(e) => {
+            Err(error) => {
                 log::warn!(
                     "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
                     signed.zone.name.as_str(),
-                    e
+                    error
                 );
                 return Ok(None);
             }
         };
+
         // Every awaiting key, like `ds-seen`: a parent still propagating the
         // change must not move the rollover on a partial answer.
         let confirmed = delegation
             .keys
             .iter()
             .filter(|key| awaiting.contains(&key.id));
+
         if !confirmed.clone().all(|key| key.ds_published) {
             if confirmed.clone().any(|key| key.ds_digest_unsupported) {
                 log::warn!(
@@ -240,6 +262,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
                     signed.zone.name.as_str()
                 );
             }
+
             return Ok(None);
         }
 
@@ -258,13 +281,16 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             &ChangeAttribution::system(),
         )
         .await?;
+
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
     let changed = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
     }
+
     Ok(changed)
 }
 
@@ -308,6 +334,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         };
 
         let removable = removable_key_ids(&signed.keys, Utc::now());
+
         // Decided before any row goes: taking every key would leave the signed
         // records with no DNSKEY to validate them.
         if removable.is_empty() || removable.len() == signed.keys.len() {
@@ -315,6 +342,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         }
 
         let mut remaining = Vec::with_capacity(signed.keys.len());
+
         for key in std::mem::take(&mut signed.keys) {
             if removable.contains(&key.id) {
                 bindizr_db::dnssec_key::delete_tx(&mut tx, key.id).await?;
@@ -322,6 +350,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
                 remaining.push(key);
             }
         }
+
         signed.keys = remaining;
 
         let serial = dnssec::resign_zone_tx(
@@ -331,13 +360,16 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
             &ChangeAttribution::system(),
         )
         .await?;
+
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
     let changed = transaction::finish_tx(tx, result, "failed to remove retired keys").await?;
+
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
     }
+
     Ok(changed)
 }
 

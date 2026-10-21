@@ -33,6 +33,7 @@ impl OwnerName {
     /// Validate wire lengths without imposing hostname character rules.
     pub fn parse_in_zone(input: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
         let trimmed = trim_presentation_name(input);
+
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
         }
@@ -63,11 +64,13 @@ impl OwnerName {
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
         let trimmed = trim_presentation_name(input);
+
         if trimmed == Self::APEX {
             return Ok(Self::apex());
         }
 
         let (labels, _) = decode_name_labels(trimmed)?;
+
         relative_labels(&labels, zone_name.labels().as_slice())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
@@ -83,8 +86,12 @@ impl OwnerName {
             Ok((labels, _)) => Self(labels),
             // An externally corrupted row becomes one literal label; splitting it
             // would invent a different name.
-            Err(e) => {
-                log::error!("undecodable owner name in a record row: {} ({})", value, e);
+            Err(error) => {
+                log::error!(
+                    "undecodable owner name in a record row: {} ({})",
+                    value,
+                    error
+                );
                 Self(vec![value.as_bytes().to_ascii_lowercase()])
             }
         }
@@ -156,9 +163,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_stored().encode_by_ref(buf)
+        self.to_stored().encode_by_ref(buffer)
     }
 }
 
@@ -206,6 +213,7 @@ pub(crate) fn decode_preserved_labels(name: &str) -> Result<(Vec<Vec<u8>>, bool)
     // The root's empty label terminates a name rather than being one. Deciding
     // that here keeps an escaped trailing dot (`a\.`) from reading as the root.
     let absolute = labels.len() > 1 && labels[labels.len() - 1].is_empty();
+
     if absolute {
         labels.pop();
     }
@@ -213,6 +221,7 @@ pub(crate) fn decode_preserved_labels(name: &str) -> Result<(Vec<Vec<u8>>, bool)
     for label in &labels {
         classify_owner_label(label)?;
     }
+
     classify_wire_len(&labels, &[])?;
 
     Ok((labels, absolute))
@@ -235,6 +244,7 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
                 None => return Err(ParseNameError::DanglingEscape),
                 Some(d) if d.is_ascii_digit() => {
                     let mut octet: u32 = 0;
+
                     for _ in 0..3 {
                         let digit = chars
                             .next()
@@ -242,22 +252,24 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
                             .ok_or(ParseNameError::InvalidEscape)?;
                         octet = octet * 10 + digit;
                     }
+
                     label.push(u8::try_from(octet).map_err(|_| ParseNameError::InvalidEscape)?);
                 }
                 Some(&escaped) => {
                     chars.next();
-                    let mut buf = [0u8; 4];
-                    label.extend_from_slice(escaped.encode_utf8(&mut buf).as_bytes());
+                    let mut buffer = [0u8; 4];
+                    label.extend_from_slice(escaped.encode_utf8(&mut buffer).as_bytes());
                 }
             },
             c => {
-                let mut buf = [0u8; 4];
-                label.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+                let mut buffer = [0u8; 4];
+                label.extend_from_slice(c.encode_utf8(&mut buffer).as_bytes());
             }
         }
     }
 
     labels.push(label);
+
     Ok(labels)
 }
 
@@ -269,6 +281,7 @@ fn classify_owner_label(label: &[u8]) -> Result<(), ParseNameError> {
     if label.len() > MAX_DNS_LABEL_LEN {
         return Err(ParseNameError::LabelTooLong);
     }
+
     Ok(())
 }
 
@@ -281,9 +294,11 @@ fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNam
         .map(|label| label.len() + 1)
         .sum::<usize>()
         + 1;
+
     if wire_len > MAX_WIRE_NAME_LEN {
         return Err(ParseNameError::TooLong);
     }
+
     Ok(())
 }
 
@@ -295,6 +310,7 @@ const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
 /// a stored dot is always a label boundary (RFC 1035, Section 5.1).
 pub(crate) fn escape_label(label: &[u8]) -> String {
     let mut escaped = String::with_capacity(label.len());
+
     for &byte in label {
         match byte {
             b'.' => escaped.push_str(r"\046"),
@@ -306,6 +322,7 @@ pub(crate) fn escape_label(label: &[u8]) -> String {
             byte => escaped.push_str(&format!("\\{byte:03}")),
         }
     }
+
     escaped
 }
 

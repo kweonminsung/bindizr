@@ -65,12 +65,14 @@ impl Edns {
             let Ok(section) = section else {
                 return Self::Malformed;
             };
+
             for record in section {
                 if !record.is_ok_and(|record| record.rtype() != Rtype::OPT) {
                     return Self::Malformed;
                 }
             }
         }
+
         let Ok(additional) = message.additional() else {
             return Self::Malformed;
         };
@@ -85,9 +87,11 @@ impl Edns {
                 OptRecord::from(record)
             }
         };
+
         if opts.next().is_some() {
             return Self::Malformed;
         }
+
         Self::Present {
             udp_payload_size: first.udp_payload_size().max(UDP_PAYLOAD_SIZE_WITHOUT_EDNS),
             version: first.version(),
@@ -115,10 +119,12 @@ impl Edns {
         if self == Self::Absent {
             return;
         }
+
         additional
             .opt(|opt| {
                 opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
                 opt.set_rcode(rcode);
+
                 // RFC 3225, Section 3: copy DO, leaving reserved flags clear.
                 opt.set_dnssec_ok(matches!(
                     self,
@@ -127,12 +133,14 @@ impl Edns {
                         ..
                     }
                 ));
+
                 if let Some(code) = ede {
                     opt.push(&ExtendedError::<Vec<u8>>::from(code))?;
                 }
                 if let Some(keepalive) = keepalive {
                     opt.push(&keepalive)?;
                 }
+
                 Ok(())
             })
             .expect("one OPT record fits an unlimited message");
@@ -155,6 +163,7 @@ impl Keepalive {
         let Ok(timeout) = IdleTimeout::try_from(idle_timeout) else {
             return None;
         };
+
         Some(TcpKeepalive::new(Some(timeout)))
     }
 
@@ -240,8 +249,9 @@ pub struct ParsedQuery {
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
     pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<ParsedQuery, ParseQueryError> {
-        let message =
-            Message::from_octets(data).map_err(|e| ParseQueryError::Malformed(Box::new(e)))?;
+        let message = Message::from_octets(data)
+            .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
+
         if !super::has_readable_sections(data) {
             return Err(ParseQueryError::UnreadableSections(Box::new(
                 QueryMetadata::from_message(&message, keepalive),
@@ -348,10 +358,12 @@ fn foreign_record_class(message: &Message<&[u8]>) -> Option<Class> {
         let Ok(section) = section else {
             continue;
         };
+
         for record in section {
             let Ok(record) = record else {
                 break;
             };
+
             if matches!(record.rtype(), Rtype::OPT | Rtype::TSIG) {
                 continue;
             }
@@ -360,6 +372,7 @@ fn foreign_record_class(message: &Message<&[u8]>) -> Option<Class> {
             }
         }
     }
+
     None
 }
 
@@ -369,6 +382,6 @@ fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
         .authority()
         .ok()?
         .limit_to::<Soa<_>>()
-        .find_map(|record| record.ok())
+        .find_map(Result::ok)
         .map(|record| record.data().serial().into_int())
 }

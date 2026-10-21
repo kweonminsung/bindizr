@@ -64,8 +64,10 @@ pub async fn list(
     caller.authorize_action(Action::AuditRead)?;
 
     let filter = normalize_filter(filter)?;
+
     let total = bindizr_db::audit_log::count_by_filter(cx.db(), &filter).await?;
     let rows = bindizr_db::audit_log::list_by_filter(cx.db(), &filter).await?;
+
     Ok(build_paginated_response(
         rows.iter().map(AuditLogResponse::from).collect(),
         filter.limit,
@@ -93,17 +95,20 @@ fn normalize_filter(
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_ascii_lowercase);
+
     if let (Some(since), Some(until)) = (filter.since, filter.until)
         && since >= until
     {
         return Err(ServiceError::invalid_input("since must be before until"));
     }
+
     // Newest first is the log's natural order, whatever the field.
     let order = match filter.order.as_deref() {
         None => SortOrder::Desc,
         Some(order) => order.parse().map_err(ServiceError::invalid_input)?,
     };
     validate_page_limit(filter.limit)?;
+
     Ok(bindizr_db::audit_log::AuditLogFilter {
         entity,
         entity_name,
@@ -152,17 +157,19 @@ mod tests {
             ..AuditLogFilter::default()
         })
         .unwrap();
+
         assert_eq!(filter.sort, AuditLogSortField::EntityName);
         assert_eq!(filter.order, SortOrder::Asc);
 
         for (sort, order) in [(Some("name"), None), (None, Some("newest"))] {
-            let err = normalize_filter(AuditLogFilter {
+            let error = normalize_filter(AuditLogFilter {
                 sort: sort.map(str::to_string),
                 order: order.map(str::to_string),
                 ..AuditLogFilter::default()
             })
             .unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput);
+
+            assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }
 
@@ -189,6 +196,7 @@ mod tests {
             ..AuditLogFilter::default()
         })
         .unwrap_err();
+
         assert_eq!(unknown.code(), ErrorCode::InvalidInput);
         assert!(unknown.to_string().contains("tsig_key"), "{unknown}");
 
@@ -199,6 +207,7 @@ mod tests {
             ..AuditLogFilter::default()
         })
         .unwrap_err();
+
         assert_eq!(inverted.code(), ErrorCode::InvalidInput);
     }
 }

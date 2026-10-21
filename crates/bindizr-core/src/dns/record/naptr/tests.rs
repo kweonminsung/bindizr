@@ -8,6 +8,7 @@ fn naptr_flags_reject_non_alphanumeric_characters() {
         .filter(|byte| !byte.is_ascii_alphanumeric())
         .map(|byte| String::from(char::from(byte)))
         .chain(["é".to_string(), "한".to_string(), "９".to_string()]);
+
     for flags in invalid {
         for replacement in [".", "next.example."] {
             let text = format!(
@@ -15,6 +16,7 @@ fn naptr_flags_reject_non_alphanumeric_characters() {
                 to_quoted_charstr(flags.as_bytes()),
             );
             let parsed = NaptrRecordValue::parse(&text).unwrap();
+
             assert!(
                 matches!(parsed.validate(), Err(ParseRecordValueError::NaptrFlags)),
                 "{text} was accepted"
@@ -22,6 +24,7 @@ fn naptr_flags_reject_non_alphanumeric_characters() {
             let wire =
                 NaptrRecordValue::from_wire(1, 1, flags.as_bytes(), b"app", b"", replacement)
                     .unwrap();
+
             assert!(
                 matches!(wire.validate(), Err(ParseRecordValueError::NaptrFlags)),
                 "wire flags {flags:?} were accepted"
@@ -42,15 +45,19 @@ fn naptr_flags_allow_empty_and_application_defined_values() {
         let text = format!("1 1 \"{flags}\" \"app\" \"\" next.example.");
         let parsed = NaptrRecordValue::parse(&text).unwrap();
         parsed.validate().unwrap();
+
         assert_eq!(parsed.canonical(), text);
         let wire =
             NaptrRecordValue::from_wire(1, 1, flags.as_bytes(), b"app", b"", "next.example.")
                 .unwrap();
         wire.validate().unwrap();
+
         assert_eq!(wire.canonical(), text);
     }
+
     let escaped = NaptrRecordValue::parse(r#"1 1 "\117\090\057" "app" "" ."#).unwrap();
     escaped.validate().unwrap();
+
     assert_eq!(escaped.canonical(), r#"1 1 "uZ9" "app" "" ."#);
 }
 
@@ -106,10 +113,11 @@ fn naptr_regexp_preserves_quotes_and_escapes() {
 fn naptr_validation_rejects_invalid_regexp() {
     let parsed = NaptrRecordValue::parse("10 10 \"u\" \"E2U+sip\" \"garbage\" .").unwrap();
 
-    let err = parsed.validate().unwrap_err();
+    let error = parsed.validate().unwrap_err();
+
     assert!(
-        matches!(err, ParseRecordValueError::NaptrRegexp(_)),
-        "{err}"
+        matches!(error, ParseRecordValueError::NaptrRegexp(_)),
+        "{error}"
     );
 }
 

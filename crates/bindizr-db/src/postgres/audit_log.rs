@@ -4,7 +4,10 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Transaction};
 use crate::{
     audit_log::AuditLogFilter,
     error::DatabaseError,
-    model::{audit_log::AuditLog, zone_version::ChangeActor},
+    model::{
+        audit_log::{AuditEntity, AuditLog},
+        zone_version::ChangeActor,
+    },
 };
 
 /// Insert an audit log row in the current transaction.
@@ -14,6 +17,7 @@ pub(crate) async fn create_tx(
 ) -> Result<(), DatabaseError> {
     let (changed_by_kind, changed_by_name) =
         log.changed_by.as_ref().map(ChangeActor::as_columns).unzip();
+
     sqlx::query(
         r#"
         INSERT INTO audit_log (entity, entity_name, operation, detail, change_source, changed_by_kind, changed_by_name, created_at)
@@ -30,6 +34,7 @@ pub(crate) async fn create_tx(
     .bind(log.created_at)
     .execute(&mut **tx)
     .await?;
+
     Ok(())
 }
 
@@ -38,8 +43,9 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<Postgres>,
     filter: &AuditLogFilter,
 ) -> Result<Vec<AuditLog>, DatabaseError> {
-    let entity = filter.entity.map(|entity| entity.as_str());
+    let entity = filter.entity.map(AuditEntity::as_str);
     let order_by = filter.sort.order_by_sql(filter.order);
+
     let rows = sqlx::query_as::<_, AuditLog>(AssertSqlSafe(format!(
         r#"
         SELECT id, entity, entity_name, operation, detail, change_source, changed_by_kind, changed_by_name, created_at
@@ -65,6 +71,7 @@ pub(crate) async fn list_by_filter(
     )
     .fetch_all(pool)
     .await?;
+
     Ok(rows)
 }
 
@@ -73,7 +80,8 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
     filter: &AuditLogFilter,
 ) -> Result<u64, DatabaseError> {
-    let entity = filter.entity.map(|entity| entity.as_str());
+    let entity = filter.entity.map(AuditEntity::as_str);
+
     let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
@@ -90,6 +98,7 @@ pub(crate) async fn count_by_filter(
     .bind(filter.until)
     .fetch_one(pool)
     .await?;
+
     Ok(count as u64)
 }
 

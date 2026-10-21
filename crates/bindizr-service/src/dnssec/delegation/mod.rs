@@ -59,14 +59,17 @@ pub async fn check_ds(
             signed.zone.serial,
         )
         .await?;
+
         Ok((signed, status))
     }
     .await;
     let (signed, mut status) =
         transaction::finish_tx(tx, result, "failed to check the parent DS").await?;
+
     // Read-only, so the wait stays outside the transaction; the keys are
     // the ones the status describes.
     status.delegation = Some(probe_delegation(cx, &signed).await?);
+
     Ok(status)
 }
 
@@ -83,9 +86,10 @@ pub(crate) async fn probe_delegation(
         )
     })?;
     let timeout = cx.config().dns.notify.timeout();
+
     let parent = probe_parent_ds(&signed.zone.name, parent_ns_addrs, timeout)
         .await
-        .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
+        .map_err(|error| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), error))?;
 
     build_delegation_response(&signed.zone, &signed.keys, parent)
 }
@@ -105,12 +109,12 @@ fn build_delegation_response(
     ds_key_tags.sort_unstable();
     ds_key_tags.dedup();
 
-    let apex = zone
-        .name
-        .to_wire_name()
-        .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
+    let apex = zone.name.to_wire_name().map_err(|error| {
+        ServiceError::internal_with_source(format!("invalid zone apex: {}", error), error)
+    })?;
 
     let mut delegation_keys = Vec::new();
+
     for key in keys.iter().filter(|key| key.role.is_sep()) {
         // Compare full RDATA to avoid key-tag collisions, using the parent's digest types.
         // Require every server to agree before promoting a key.

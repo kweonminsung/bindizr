@@ -164,7 +164,7 @@ impl Metrics {
         let notify_sent_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_notify_sent_total",
-                "NOTIFY delivery attempts to secondaries, by outcome.",
+                "NOTIFY send attempts to secondaries, by outcome.",
             ),
             &["result"],
         )
@@ -277,21 +277,27 @@ impl Metrics {
                 }
             }
         }
+
         for result in SoaResult::ALL {
             soa_queries_total.with_label_values(&[result.label()]);
         }
+
         for result in NsupdateResult::ALL {
             nsupdate_requests_total.with_label_values(&[result.label()]);
         }
+
         for result in NotifyResult::ALL {
             notify_sent_total.with_label_values(&[result.label()]);
         }
+
         for result in SchedulerResult::ALL {
             dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
         }
+
         for table in ["journal", "version", "audit"] {
             pruned_rows_total.with_label_values(&[table]);
         }
+
         for result in ["hit", "miss"] {
             zone_cache_lookups_total.with_label_values(&[result]);
         }
@@ -417,6 +423,7 @@ impl NsupdateResult {
             Self::TsigFailed => return "tsig_failed",
             Self::Rcode(rcode) => *rcode,
         };
+
         match rcode {
             Rcode::NOERROR => "noerror",
             Rcode::FORMERR => "formerr",
@@ -505,7 +512,7 @@ impl Metrics {
             .inc();
     }
 
-    /// Record a NOTIFY delivery result.
+    /// Track a NOTIFY send result.
     pub fn track_notify(&self, result: NotifyResult) {
         self.notify_sent_total
             .with_label_values(&[result.label()])

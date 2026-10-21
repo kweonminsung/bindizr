@@ -36,6 +36,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
         app.create_secondary("loopback", "127.0.0.1").await;
         app.create_test_zone().await;
         let signing_key = create_tsig_key(&app, "catalog-key", KeyRole::Admin).await;
+
         for key in [None, Some(&signing_key)] {
             for qtype in [Rtype::SOA, Rtype::IXFR] {
                 let query = if qtype == Rtype::IXFR {
@@ -46,6 +47,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                 let response =
                     exchange_request(query, key, |bytes| exchange_udp(app.dns_port(), bytes))
                         .unwrap();
+
                 assert_eq!(
                     response.header().rcode(),
                     Rcode::NOERROR,
@@ -69,6 +71,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                 let response =
                     exchange_request(query, key, |bytes| exchange_tcp(app.dns_port(), bytes))
                         .unwrap();
+
                 assert_eq!(
                     response.header().rcode(),
                     Rcode::NOERROR,
@@ -79,9 +82,11 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                     .unwrap()
                     .qname()
                     .to_name::<Vec<u8>>();
+
                 assert_eq!(echoed.as_slice(), parse_name(question).unwrap().as_slice());
                 assert!(response.header_counts().ancount() >= 1);
             }
+
             assert_eq!(axfr(app.dns_port(), question, key).unwrap().records(), 5);
         }
     }
@@ -98,18 +103,24 @@ async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
         "c".repeat(63),
         "d".repeat(22)
     );
+
     assert_eq!(parse_name(&catalog).unwrap().as_slice().len(), 216);
+
     let app = TestApp::start_with_options(TestAppOptions {
         catalog_zone_name: catalog.clone(),
         ..Default::default()
     })
     .await;
     app.create_secondary("loopback", "127.0.0.1").await;
+
     assert_eq!(axfr(app.dns_port(), &catalog, None).unwrap().records(), 4);
+
     app.create_test_zone().await;
+
     assert_eq!(axfr(app.dns_port(), &catalog, None).unwrap().records(), 5);
     let query = build_edns_query(&catalog, Rtype::SOA, &[]).finish();
     let response = Message::from_octets(exchange_tcp(app.dns_port(), &query).unwrap()).unwrap();
+
     assert_eq!(response.header().rcode(), Rcode::NOERROR);
     assert!(
         response

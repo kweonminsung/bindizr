@@ -24,8 +24,10 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let policy = &body["dnssec_policy"];
+
     assert_eq!(policy["name"], policy_name);
     assert_eq!(policy["builtin"], false);
     assert_eq!(policy["algorithm"], "ed25519");
@@ -42,6 +44,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             Some(json!({ "name": policy_name })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_POLICY_CONFLICT");
 
@@ -52,6 +55,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec_policy"]["algorithm"], "ed25519");
 
@@ -59,6 +63,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
     let (status, body) = app
         .send_request(Method::GET, "/dnssec-policies", None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = body["items"]
         .as_array()
@@ -66,6 +71,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
         .iter()
         .map(|policy| policy["name"].as_str().unwrap())
         .collect();
+
     assert!(names.contains(&"default"), "{names:?}");
     assert!(names.contains(&policy_name.as_str()), "{names:?}");
 
@@ -76,8 +82,10 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             Some(json!({ "signature_validity_days": 30 })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let policy = &body["dnssec_policy"];
+
     assert_eq!(policy["signature_validity_days"], 30);
     assert_eq!(policy["signature_refresh_days"], 7);
     assert_eq!(policy["algorithm"], "ed25519");
@@ -91,6 +99,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             Some(json!({ "signature_refresh_days": 30 })),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_INPUT");
 
@@ -101,6 +110,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
@@ -110,6 +120,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "DNSSEC_POLICY_NOT_FOUND");
 
@@ -117,8 +128,10 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
     let (status, body) = app
         .send_request(Method::DELETE, "/dnssec-policies/default", None)
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_INPUT");
+
     let (status, body) = app
         .send_request(
             Method::PUT,
@@ -126,6 +139,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
             Some(json!({ "signature_validity_days": 14 })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec_policy"]["name"], "default");
     assert_eq!(body["dnssec_policy"]["builtin"], true);
@@ -137,6 +151,7 @@ async fn dnssec_policy_supports_create_read_update_and_delete() {
 async fn dnssec_policy_rejects_deletion_when_in_use() {
     let app = TestApp::start().await;
     let policy_name = format!("{}-in-use", app.namespace());
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -144,6 +159,7 @@ async fn dnssec_policy_rejects_deletion_when_in_use() {
             Some(json!({ "name": policy_name })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     let zone = app.create_test_zone().await;
@@ -157,6 +173,7 @@ async fn dnssec_policy_rejects_deletion_when_in_use() {
             Some(json!({ "policy_name": format!("{}-missing", app.namespace()) , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "DNSSEC_POLICY_NOT_FOUND");
 
@@ -168,6 +185,7 @@ async fn dnssec_policy_rejects_deletion_when_in_use() {
             Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["policy"]["name"], policy_name);
 
@@ -178,6 +196,7 @@ async fn dnssec_policy_rejects_deletion_when_in_use() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_POLICY_IN_USE");
 
@@ -189,6 +208,7 @@ async fn dnssec_policy_rejects_deletion_when_in_use() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
@@ -198,6 +218,7 @@ async fn dnssec_policy_rejects_deletion_when_in_use() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -216,12 +237,14 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
             Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     let serial_before = body["serial"].as_i64().unwrap();
 
     // A policy differing only in algorithm: the move double-signs the zone
     // through an algorithm rollover (RFC 6840, Section 5.11).
     let ed25519_policy = format!("{}-ed25519", app.namespace());
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -229,6 +252,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
             Some(json!({ "name": ed25519_policy, "algorithm": "ed25519" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
@@ -238,20 +262,25 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
             Some(json!({ "policy_name": ed25519_policy })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let dnssec = &body;
+
     assert_eq!(dnssec["policy"]["name"], ed25519_policy);
     let keys = dnssec["keys"].as_array().unwrap();
+
     assert_eq!(keys.len(), 2);
     let published = keys
         .iter()
         .find(|key| key["state"] == "published")
         .expect("the move pre-publishes a replacement of the new algorithm");
+
     assert_eq!(published["algorithm"], "ed25519");
     let active = keys
         .iter()
         .find(|key| key["state"] == "active")
         .expect("the old key keeps signing during the rollover");
+
     assert_eq!(active["algorithm"], "ecdsap256sha256");
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
 
@@ -263,6 +292,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
             Some(json!({ "policy_name": ed25519_policy })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["serial"].as_i64().unwrap(), serial_before + 1);
 }
@@ -276,6 +306,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let nsec_policy = format!("{}-nsec", app.namespace());
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -283,6 +314,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             Some(json!({ "name": nsec_policy, "denial": "nsec" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
@@ -292,6 +324,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             Some(json!({ "policy_name": nsec_policy, "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let mut serial = body["serial"].as_i64().unwrap();
 
@@ -303,6 +336,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
                 None,
             )
             .await;
+
         assert_eq!(status, StatusCode::OK, "{body}");
         let mut types: Vec<String> = body["items"]
             .as_array()
@@ -313,13 +347,16 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             .collect();
         types.sort();
         types.dedup();
+
         types
     };
+
     assert_eq!(denial_types(&app).await, ["NSEC"]);
 
     // The zone signs with ECDSA P-256, which is NSEC3-capable (RFC 5155,
     // Section 2), so the chain is replaced under one serial with no key roll.
     let nsec3_policy = format!("{}-nsec3", app.namespace());
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -327,6 +364,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             Some(json!({ "name": nsec3_policy, "denial": "nsec3" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
@@ -336,10 +374,12 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             Some(json!({ "policy_name": nsec3_policy })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["keys"].as_array().unwrap().len(), 1);
     assert_eq!(body["serial"].as_i64().unwrap(), serial + 1);
     serial += 1;
+
     assert_eq!(denial_types(&app).await, ["NSEC3", "NSEC3PARAM"]);
 
     // And back: neither direction needs a key roll.
@@ -350,6 +390,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             Some(json!({ "policy_name": nsec_policy })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["serial"].as_i64().unwrap(), serial + 1);
     assert_eq!(denial_types(&app).await, ["NSEC"]);

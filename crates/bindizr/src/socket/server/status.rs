@@ -16,6 +16,7 @@ pub(crate) async fn get_daemon_status(
     cx: &Context,
 ) -> Result<DaemonResponse<DaemonStatusResponse>, ServiceError> {
     let config = cx.config();
+
     let counts = async {
         let zones = zone::count_all(cx).await?;
         let secondaries = secondary::list_enabled(cx).await?.len();
@@ -24,7 +25,7 @@ pub(crate) async fn get_daemon_status(
     let (zones, secondaries, database_error) =
         match tokio::time::timeout(DB_PROBE_TIMEOUT, counts).await {
             Ok(Ok((zones, secondaries))) => (Some(zones), Some(secondaries), None),
-            Ok(Err(e)) => (None, None, Some(e.to_string())),
+            Ok(Err(error)) => (None, None, Some(error.to_string())),
             Err(_) => (
                 None,
                 None,
@@ -34,6 +35,7 @@ pub(crate) async fn get_daemon_status(
                 )),
             ),
         };
+
     let scheme = if config.api.tls.tls_files().is_some() {
         "https"
     } else {
@@ -77,6 +79,7 @@ pub(crate) fn reload_config(
         format!("Configuration reloaded: {} changed", changed.join(", "))
     };
     log::info!("event=config_reload changed={}", changed.join(","));
+
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

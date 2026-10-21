@@ -1,12 +1,12 @@
 //! Propagate committed changes by NOTIFY, inline or batched by `queue` per `dns.notify.batch_ms`.
 
-mod delivery;
 pub mod queue;
+mod send;
 use std::sync::Arc;
 
 use bindizr_core::dns::name::ZoneName;
-pub use delivery::{
-    NotifyDeliveryError, NotifyZoneError, send_notify_to_secondaries, send_notify_to_secondary,
+pub use send::{
+    NotifyZoneError, SendNotifyError, send_notify_to_secondaries, send_notify_to_secondary,
 };
 use thiserror::Error;
 use tokio::task::JoinSet;
@@ -40,9 +40,9 @@ pub enum NotifyError {
 /// Report post-commit NOTIFY failures as server errors; the requester cannot repair secondaries.
 impl From<NotifyError> for ServiceError {
     /// Report the NOTIFY failure as an internal error, keeping it as source.
-    fn from(err: NotifyError) -> Self {
-        match err {
-            NotifyError::Service(err) => err,
+    fn from(error: NotifyError) -> Self {
+        match error {
+            NotifyError::Service(error) => error,
             other => ServiceError::Internal {
                 message: other.to_string(),
                 source: Some(Box::new(other)),
@@ -58,15 +58,18 @@ pub(crate) async fn send_notify(
 ) -> Result<(), NotifyError> {
     let NotifyTarget::Zone(zone_name) = target else {
         let zones = crate::zone::list(cx).await?;
+
         let mut failures = Vec::new();
         let mut tasks = JoinSet::new();
+
         for zone in zones {
             let cx = cx.clone();
             tasks.spawn(async move {
-                let result = delivery::send_zone_notify(&cx, &zone.name).await;
+                let result = send::send_zone_notify(&cx, &zone.name).await;
                 (zone.name.to_string(), result)
             });
         }
+
         while let Some(result) = tasks.join_next().await {
             let (zone_name, result) = result
                 .map_err(|error| ServiceError::internal_with_source("NOTIFY task failed", error))?;
@@ -75,13 +78,14 @@ pub(crate) async fn send_notify(
                 failures.push((zone_name, error));
             }
         }
+
         return if failures.is_empty() {
             Ok(())
         } else {
             Err(NotifyError::Zones { failures })
         };
     };
-    Ok(delivery::send_zone_notify(cx, zone_name).await?)
+    Ok(send::send_zone_notify(cx, zone_name).await?)
 }
 
 /// NOTIFY after commit, queued when batching is enabled and inline otherwise.
@@ -91,7 +95,7 @@ pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
         return;
     }
 
-    if let Err(e) = delivery::send_zone_notify(cx, zone_name).await {
-        log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+    if let Err(error) = send::send_zone_notify(cx, zone_name).await {
+        log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, error);
     }
 }

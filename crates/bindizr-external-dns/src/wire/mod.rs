@@ -147,23 +147,27 @@ impl Endpoint {
         if self.dns_name.trim().is_empty() {
             return Err(ValidateEndpointError::EmptyDnsName);
         }
+
         let Some(record_type) = RecordType::parse_external_dns_supported(&self.record_type) else {
             return Err(ValidateEndpointError::UnsupportedRecordType {
                 record_type: self.record_type.clone(),
             });
         };
+
         if self.targets.is_empty() {
             return Err(ValidateEndpointError::NoTargets {
                 dns_name: self.dns_name.clone(),
             });
         }
+
         // Whitespace-only TXT content is valid; for other types it is garbage.
         let is_txt = record_type == RecordType::Txt;
-        if self.targets.iter().any(|t| {
+
+        if self.targets.iter().any(|target| {
             if is_txt {
-                t.is_empty()
+                target.is_empty()
             } else {
-                t.trim().is_empty()
+                target.trim().is_empty()
             }
         }) {
             return Err(ValidateEndpointError::EmptyTarget {

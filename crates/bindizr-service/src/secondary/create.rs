@@ -28,6 +28,7 @@ pub async fn create(
 
     let name = normalize_secondary_name(&request.name)?;
     let address = normalize_secondary_address(&request.address)?;
+
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {
         Some(key_name) => Some(tsig_key::lookup_by_name(cx, key_name).await?),
@@ -69,15 +70,15 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
                     "secondary with name '{}' or address '{}' already exists",
                     name, address
                 ))
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -95,10 +96,12 @@ pub async fn create(
             caller.change_attribution(),
         )
         .await?;
+
         Ok(secondary)
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
+
     Ok(SecondaryResponse::from_secondary(
         &secondary,
         notify_tsig_key

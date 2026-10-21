@@ -33,9 +33,11 @@ pub(super) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
     let mut rest = value;
     std::iter::from_fn(move || {
         rest = rest.trim_start();
+
         if rest.is_empty() {
             return None;
         }
+
         let mut escaped = false;
         let end = rest
             .char_indices()
@@ -53,6 +55,7 @@ pub(super) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
             .unwrap_or(rest.len());
         let (field, remaining) = rest.split_at(end);
         rest = remaining;
+
         Some(field)
     })
 }
@@ -91,12 +94,14 @@ pub(crate) fn parse_hex_record_field<'a>(
         .filter(|group| !matches!(*group, "(" | ")"))
         .collect();
     let hex = hex.as_str();
+
     if hex.is_empty() {
         return Err(ParseRecordValueError::Empty { field });
     }
     if !hex.len().is_multiple_of(2) {
         return Err(ParseRecordValueError::OddHexLength { field });
     }
+
     // Decoded from bytes, not `&str` slices: a multi-byte character must fail
     // as non-hex instead of panicking on a char boundary.
     hex.as_bytes()
@@ -137,11 +142,13 @@ pub(crate) fn parse_string_octets<'a>(
     if input.is_empty() {
         return Err(ParseRecordValueError::Empty { field });
     }
+
     let quoted = input.starts_with('"');
     let rest = input.strip_prefix('"').unwrap_or(input);
 
     let mut out = Vec::new();
     let mut bytes = rest.bytes().enumerate();
+
     while let Some((index, byte)) = bytes.next() {
         match byte {
             b'"' if quoted => {
@@ -196,8 +203,10 @@ pub(crate) fn parse_char_string<'a>(
             input: input.to_string(),
         });
     }
+
     let (octets, rest) = parse_string_octets(field, input)?;
     let text = String::from_utf8(octets).map_err(|_| ParseRecordValueError::NotUtf8 { field })?;
+
     if text.len() > MAX_CHARACTER_STRING_LEN {
         return Err(ParseRecordValueError::CharStringTooLong { field });
     }
@@ -212,6 +221,7 @@ pub(crate) fn validate_domain_record_value(
     value: &str,
 ) -> Result<(), ParseRecordValueError> {
     let trimmed = value.trim();
+
     if trimmed.is_empty() {
         return Err(ParseRecordValueError::Empty { field });
     }
@@ -219,6 +229,7 @@ pub(crate) fn validate_domain_record_value(
     if trimmed == "." {
         return Err(ParseRecordValueError::RootZone { field });
     }
+
     decode_name_labels(value).map_err(|source| ParseRecordValueError::Name { field, source })?;
 
     Ok(())
@@ -241,7 +252,7 @@ mod tests {
             "host-name.example.com",
         ] {
             validate_domain_record_value("CNAME record value", value)
-                .unwrap_or_else(|e| panic!("{value} was rejected: {e}"));
+                .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
         }
     }
 

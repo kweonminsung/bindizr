@@ -118,16 +118,17 @@ pub fn sign_request(
     key: TsigSigningKey,
 ) -> Result<ResponseVerifier, SignRequestError> {
     ClientTransaction::request(key.clone(), builder, Time48::now())
-        .map_err(|e| SignRequestError(Box::new(e)))?;
-    let message =
-        Message::from_octets(builder.as_slice()).map_err(|e| SignRequestError(Box::new(e)))?;
+        .map_err(|error| SignRequestError(Box::new(error)))?;
+    let message = Message::from_octets(builder.as_slice())
+        .map_err(|error| SignRequestError(Box::new(error)))?;
     let tsig = message
         .additional()
-        .map_err(|e| SignRequestError(Box::new(e)))?
+        .map_err(|error| SignRequestError(Box::new(error)))?
         .limit_to::<Tsig<_, _>>()
         .last()
         .ok_or_else(|| SignRequestError(Box::new(TsigError::RecordMissing)))?
-        .map_err(|e| SignRequestError(Box::new(e)))?;
+        .map_err(|error| SignRequestError(Box::new(error)))?;
+
     Ok(ResponseVerifier {
         key,
         request_mac: tsig.data().mac().to_vec(),
@@ -141,12 +142,13 @@ pub fn verify_response(
     response: &[u8],
 ) -> Result<(), VerifyResponseError> {
     let rejected = |error| VerifyResponseError::Rejected(Box::new(error));
-    let message =
-        Message::from_octets(response).map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?;
+    let message = Message::from_octets(response)
+        .map_err(|error| VerifyResponseError::Malformed(Box::new(error)))?;
     let tsig = ParsedTsig::parse(&message)
-        .map_err(|e| VerifyResponseError::Malformed(Box::new(e)))?
+        .map_err(|error| VerifyResponseError::Malformed(Box::new(error)))?
         .ok_or_else(|| rejected(ValidationError::ServerUnsigned))?;
     let data = tsig.record.data();
+
     // RFC 8945, Section 5.3.2: these errors carry no authenticated MAC.
     if message.header().rcode() == Rcode::NOTAUTH {
         match data.error() {
@@ -155,6 +157,7 @@ pub fn verify_response(
             _ => {}
         }
     }
+
     if !tsig.matches_key(&verifier.key) {
         return Err(rejected(ValidationError::BadKey));
     }
@@ -164,8 +167,11 @@ pub fn verify_response(
     {
         return Err(rejected(ValidationError::FormErr));
     }
+
+    // Authenticate the MAC before trusting server-reported TSIG errors.
     tsig.verify_mac(&verifier.key, &message, Some(&verifier.request_mac))
-        .map_err(|e| VerifyResponseError::Rejected(Box::new(e)))?;
+        .map_err(|error| VerifyResponseError::Rejected(Box::new(error)))?;
+
     if data.mac().len() != verifier.key.as_ref().native_len() {
         return Err(VerifyResponseError::TruncatedMac);
     }
@@ -186,6 +192,7 @@ pub fn verify_response(
     if data.error() != TsigRcode::NOERROR {
         return Err(VerifyResponseError::ServerError(data.error()));
     }
+
     Ok(())
 }
 
@@ -202,9 +209,9 @@ pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
 impl TsigKey {
     /// Decode and validate this stored key for TSIG signing and verification.
     pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {
-        let name = KeyName::from_str(&self.name).map_err(|e| TsigError::InvalidKeyName {
+        let name = KeyName::from_str(&self.name).map_err(|error| TsigError::InvalidKeyName {
             name: self.name.clone(),
-            source: Box::new(e),
+            source: Box::new(error),
         })?;
 
         let (algorithm, hmac_algorithm) = match self.algorithm {
@@ -217,18 +224,21 @@ impl TsigKey {
         let secret = base64::engine::general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(TsigError::SecretNotBase64)?;
+
         if secret.is_empty() {
             return Err(TsigError::EmptySecret);
         }
 
         // RFC 8945, Section 5.2: authenticate the MAC before checking local length policy.
         let min_mac_len = 10.max(algorithm.native_len() / 2);
-        let domain = Key::new(algorithm, &secret, name, Some(min_mac_len), None).map_err(|e| {
-            TsigError::InvalidKey {
-                name: self.name.clone(),
-                source: Box::new(e),
-            }
-        })?;
+        let domain =
+            Key::new(algorithm, &secret, name, Some(min_mac_len), None).map_err(|error| {
+                TsigError::InvalidKey {
+                    name: self.name.clone(),
+                    source: Box::new(error),
+                }
+            })?;
+
         Ok(TsigSigningKey {
             domain: Arc::new(domain),
             hmac: hmac::Key::new(hmac_algorithm, &secret),
@@ -243,15 +253,17 @@ pub fn verify_tsig(
     key: Option<TsigSigningKey>,
 ) -> Result<ResponseSigner, TsigError> {
     let message =
-        Message::from_octets(query_data).map_err(|e| TsigError::Malformed(Box::new(e)))?;
+        Message::from_octets(query_data).map_err(|error| TsigError::Malformed(Box::new(error)))?;
     let malformed = || TsigError::Malformed(Box::new(ValidationError::FormErr));
     let tsig = ParsedTsig::parse(&message)
-        .map_err(|e| TsigError::Malformed(Box::new(e)))?
+        .map_err(|error| TsigError::Malformed(Box::new(error)))?
         .ok_or(TsigError::RecordMissing)?;
     let data = tsig.record.data();
+
     if !is_request_tsig_valid(data) {
         return Err(malformed());
     }
+
     let now = Time48::now();
     let rejected = |rcode, key: Option<TsigSigningKey>| TsigError::Rejected {
         rcode,
@@ -261,6 +273,7 @@ pub fn verify_tsig(
     let Some(key) = key.filter(|key| tsig.matches_key(key)) else {
         return Err(rejected(TsigRcode::BADKEY, None));
     };
+
     // RFC 8945, Section 5.2: key, MAC, time, then local truncation policy.
     if tsig.verify_mac(&key, &message, None).is_err() {
         return Err(rejected(TsigRcode::BADSIG, None));
@@ -271,6 +284,7 @@ pub fn verify_tsig(
     if data.mac().len() < key.domain.native_len() {
         return Err(rejected(TsigRcode::BADTRUNC, Some(key)));
     }
+
     Ok(ResponseSigner {
         key,
         request_mac: data.mac().to_vec(),
@@ -295,6 +309,7 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     let Ok(message) = Message::from_octets(query_data) else {
         return RequestSignature::Absent;
     };
+
     match ParsedTsig::parse(&message) {
         Ok(None) => RequestSignature::Absent,
         Ok(Some(tsig)) if is_request_tsig_valid(tsig.record.data()) => RequestSignature::Key {
@@ -326,9 +341,11 @@ pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) ->
 fn algorithm_from_name<N: ToName>(name: &N) -> Option<Algorithm> {
     let mut labels = name.iter_labels();
     let first = labels.next()?;
+
     if !labels.next()?.is_root() || labels.next().is_some() {
         return None;
     }
+
     [
         ("hmac-sha1", Algorithm::Sha1),
         ("hmac-sha256", Algorithm::Sha256),

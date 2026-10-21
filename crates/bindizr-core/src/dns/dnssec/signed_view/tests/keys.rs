@@ -64,6 +64,7 @@ fn dnssec_keys_advertise_sha256_ds_digest() {
 
     let apex = zone.name.to_wire_name().unwrap();
     let rdata = key.ds_rdata(&apex, DS_DIGEST_TYPE).unwrap();
+
     // Generated DS records use the recommended SHA-256 digest independently
     // of the key's signing algorithm (RFC 9904 / IANA DS registry).
     assert_eq!(rdata.as_bytes()[3], 2);
@@ -86,13 +87,17 @@ fn ds_rdata_pairs_the_key_with_each_supported_digest() {
     let apex = zone.name.to_wire_name().unwrap();
 
     let sha384 = key.ds_rdata(&apex, 4).unwrap();
+
     // A parent registering the SHA-256 form of the same key is as valid.
     let sha256 = key.ds_rdata(&apex, 2).unwrap();
+
     assert_eq!(&sha256.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha256.as_bytes()[3], 2);
     assert_eq!(sha256.as_bytes().len(), 4 + 32);
+
     // A SHA-1 DS a parent still serves must match too (RFC 8624, Section 3.3).
     let sha1 = key.ds_rdata(&apex, 1).unwrap();
+
     assert_eq!(&sha1.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha1.as_bytes()[3], 1);
     assert_eq!(sha1.as_bytes().len(), 4 + 20);
@@ -132,6 +137,7 @@ fn ed448_keys_generate_verifiable_signatures() {
     // ring-to-OpenSSL fallback staying wired up.
     let apex = OwnerName::apex();
     let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type()));
+
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
 }
@@ -168,6 +174,7 @@ fn rsa_keys_generate_verifiable_signatures() {
     // RSA key generation also runs on the OpenSSL backend (ring only signs).
     let apex = OwnerName::apex();
     let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type()));
+
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);
 }

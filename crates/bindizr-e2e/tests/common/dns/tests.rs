@@ -60,6 +60,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
             Txt::from_octets(vec![2, b'a', b'b', 1, b'c']).unwrap(),
         ))
         .unwrap();
+
     for rdata in [
         b"\x00\x05issue".as_slice(),
         b"\x80\x06custom\x00\xFF\x0A\"\\",
@@ -86,6 +87,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
             Txt::from_octets(vec![2, 0, 255, 1, 195, 1, 169, 0]).unwrap(),
         ))
         .unwrap();
+
     for bytes in [b"".as_slice(), &[0, 255, 192, 12]] {
         answer
             .push(Record::new(
@@ -133,8 +135,12 @@ fn extract_dns_records_names_refused_rcode_in_error() {
     builder.header_mut().set_qr(true);
     builder.header_mut().set_rcode(Rcode::REFUSED);
 
-    let err = extract_dns_records(9, &builder.finish()).unwrap_err();
-    assert!(err.contains("REFUSED RCODE (5)"), "unexpected error: {err}");
+    let error = extract_dns_records(9, &builder.finish()).unwrap_err();
+
+    assert!(
+        error.contains("REFUSED RCODE (5)"),
+        "unexpected error: {error}"
+    );
 }
 
 /// Verify that `extract_dns_records` treats nxdomain as no records.
@@ -146,5 +152,6 @@ fn extract_dns_records_treats_nxdomain_as_no_records() {
     builder.header_mut().set_rcode(Rcode::NXDOMAIN);
 
     let records = extract_dns_records(9, &builder.finish()).unwrap();
+
     assert!(records.is_empty());
 }

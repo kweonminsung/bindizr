@@ -85,9 +85,9 @@ where
     /// Bind the row form.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i32::from(*self).encode_by_ref(buf)
+        i32::from(*self).encode_by_ref(buffer)
     }
 }
 

@@ -24,22 +24,26 @@ def generate(count: int, seed: int, zone: str = ZONE) -> list[dict]:
     """Generate a reproducible list of benchmark records."""
     rng = random.Random(seed)
     records = []
+
     for i in range(count):
         name = f"host{i:06d}"
         roll = rng.random()
+
         if roll < 0.60:
-            rec = {"name": name, "type": "A", "value": _generate_ipv4(rng), "ttl": 3600}
+            record = {"name": name, "type": "A", "value": _generate_ipv4(rng), "ttl": 3600}
         elif roll < 0.80:
-            rec = {"name": name, "type": "AAAA", "value": _generate_ipv6(rng), "ttl": 3600}
+            record = {"name": name, "type": "AAAA", "value": _generate_ipv6(rng), "ttl": 3600}
         elif roll < 0.90:
             target = f"host{rng.randint(0, max(i, 1)):06d}.{zone}"
-            rec = {"name": name, "type": "CNAME", "value": target, "ttl": 3600}
+            record = {"name": name, "type": "CNAME", "value": target, "ttl": 3600}
         elif roll < 0.97:
-            rec = {"name": name, "type": "TXT", "value": f"v=bench{i}", "ttl": 3600}
+            record = {"name": name, "type": "TXT", "value": f"v=bench{i}", "ttl": 3600}
         else:
-            rec = {"name": name, "type": "MX", "value": f"mail{i % 5}.{zone}",
+            record = {"name": name, "type": "MX", "value": f"mail{i % 5}.{zone}",
                    "ttl": 3600, "priority": 10}
-        records.append(rec)
+
+        records.append(record)
+
     return records
 
 
@@ -53,6 +57,7 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="-")
     args = ap.parse_args()
     data = generate(args.count, args.seed)
+
     if args.out == "-":
         print(json.dumps(data[:10], indent=2))
         print(f"... {len(data)} records (showing first 10)")

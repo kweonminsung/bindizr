@@ -162,7 +162,7 @@ benchmarks/
                             # (bindizr_knot/_nsd/_pdns reuse systems/bindizr/compose.yml through profiles;
                             # BIND9-based systems add compose.arm.yml, built from systems/bind9.arm.Dockerfile)
   runners/bNN_*.py          # one module per benchmark
-  lib/                      # settings, metrics, loadgen, dnsquery, dnsutil, dockerutil, zonefile, resources, report, env
+  lib/                      # settings, metrics, loadgen, dnsquery, dig, docker, zonefile, resources, report, env
   results_<timestamp>/      # generated artifacts (md/csv/json/graphs), one dir per run
 ```
 

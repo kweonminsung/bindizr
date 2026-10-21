@@ -13,6 +13,7 @@ use crate::{Context, error::ServiceError, transaction};
 /// name, which a write would be rejected for taking.
 pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError> {
     let name = &cx.config().dns.catalog_zone_name;
+
     if bindizr_db::zone::get_by_name(cx.db(), name)
         .await?
         .is_some()
@@ -22,6 +23,7 @@ pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError
             name
         )));
     }
+
     Ok(())
 }
 
@@ -73,7 +75,7 @@ pub(crate) async fn refresh_catalog_from_zones(
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
         .iter()
-        .map(|z| z.name.clone())
+        .map(|zone| zone.name.clone())
         .filter(|name| name != catalog_zone_name)
         .map(|name| name.to_string())
         .collect();
@@ -84,9 +86,10 @@ pub(crate) async fn refresh_catalog_from_zones(
     let digest = catalog_digest(&member_zones);
     let base_serial = all_zones
         .iter()
-        .map(|z| z.serial)
+        .map(|zone| zone.serial)
         .max()
         .unwrap_or(Serial::from(1));
+
     let serial = advance_catalog_serial(cx, catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
@@ -118,6 +121,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
     members.sort();
 
     let mut hasher = digest::Context::new(&SHA256);
+
     for member in members {
         hasher.update(member.as_bytes());
         hasher.update(b"\n");
@@ -134,10 +138,12 @@ mod tests {
     /// indifferent to their order.
     #[test]
     fn catalog_digest_changes_only_with_membership() {
-        let members = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        let members = |names: &[&str]| names.iter().map(ToString::to_string).collect::<Vec<_>>();
 
         let original = catalog_digest(&members(&["example.com", "test.com"]));
+
         assert_ne!(original, catalog_digest(&members(&["example.com"])));
+
         // Order is not membership, so it must not read as a change.
         assert_eq!(
             original,

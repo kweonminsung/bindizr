@@ -84,23 +84,28 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
     ) else {
         return false;
     };
+
     if !response.header().qr()
         || response.header().id() != request.header().id()
         || response.header().opcode() != request.header().opcode()
     {
         return false;
     }
+
     let Ok(rcode) = response_rcode(&response) else {
         return false;
     };
+
     // Some NOTIFY refusals omit the question; retain the server's error.
     let empty_notify_error = response.header().opcode() == Opcode::NOTIFY
         && rcode != OptRcode::NOERROR
         && response.header_counts().qdcount() == 0;
+
     if !empty_notify_error {
         let (Ok(wanted), Ok(answered)) = (request.sole_question(), response.sole_question()) else {
             return false;
         };
+
         if !wanted.qname().name_eq(answered.qname())
             || wanted.qtype() != answered.qtype()
             || wanted.qclass() != answered.qclass()
@@ -108,6 +113,8 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
             return false;
         }
     }
+
+    // A matching header is insufficient when a record section is malformed.
     for section in [
         response.answer(),
         response.authority(),
@@ -116,6 +123,7 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
         let Ok(section) = section else {
             return false;
         };
+
         if section
             .limit_to::<AllRecordData<_, _>>()
             .any(|record| record.is_err())
@@ -123,6 +131,7 @@ pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
             return false;
         }
     }
+
     true
 }
 
@@ -147,13 +156,15 @@ fn validate_question(
 ) -> Result<(), ParseResponseError> {
     let question = message
         .sole_question()
-        .map_err(|e| ParseResponseError::MalformedQuestion(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::MalformedQuestion(Box::new(error)))?;
+
     if !question.qname().name_eq(qname)
         || question.qtype() != rtype
         || question.qclass() != Class::IN
     {
         return Err(ParseResponseError::OtherQuestion);
     }
+
     Ok(())
 }
 
@@ -190,10 +201,11 @@ fn parse_response_header(
     opcode: Opcode,
     response: &[u8],
 ) -> Result<Message<&[u8]>, ParseResponseError> {
-    let message =
-        Message::from_octets(response).map_err(|e| ParseResponseError::Malformed(Box::new(e)))?;
+    let message = Message::from_octets(response)
+        .map_err(|error| ParseResponseError::Malformed(Box::new(error)))?;
 
     let header = message.header();
+
     if header.id() != query_id {
         return Err(ParseResponseError::IdMismatch {
             expected: query_id,
@@ -209,6 +221,7 @@ fn parse_response_header(
     if !header.qr() {
         return Err(ParseResponseError::NotResponse);
     }
+
     Ok(message)
 }
 
@@ -242,20 +255,26 @@ pub fn extract_transfer_records(
     use domain::rdata::AllRecordData;
 
     let message = parse_response_header(query_id, Opcode::QUERY, response)?;
+
     if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {
         validate_question(&message, qname, Rtype::AXFR)?;
     }
+
     let rcode = response_rcode(&message)?;
+
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::Rcode(rcode));
     }
 
     let answer = message
         .answer()
-        .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::MalformedAnswer(Box::new(error)))?;
     let mut records = Vec::new();
+
     for record in answer.limit_to::<AllRecordData<_, _>>() {
-        let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
+        let record =
+            record.map_err(|error| ParseResponseError::MalformedAnswerRecord(Box::new(error)))?;
+
         // Reject foreign classes before the import parser renders them as IN.
         if record.class() != Class::IN {
             return Err(ParseResponseError::ForeignClass {
@@ -263,6 +282,7 @@ pub fn extract_transfer_records(
                 owner: record.owner().to_string(),
             });
         }
+
         let mut rdata = Vec::new();
         let Ok(()) = record.data().compose_rdata(&mut rdata);
         records.push(TransferRecord {
@@ -273,6 +293,7 @@ pub fn extract_transfer_records(
             rdata: Rdata::new(rdata)?,
         });
     }
+
     Ok(records)
 }
 
@@ -283,21 +304,26 @@ pub fn validate_notify_response(
     response: &[u8],
 ) -> Result<(), ParseResponseError> {
     let message = parse_response(query_id, Opcode::NOTIFY, response)
-        .map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::Notify(Box::new(error)))?;
     let header = message.header();
+
     if header.opcode() != Opcode::NOTIFY {
         return Err(ParseResponseError::NotifyOpcode {
             got: header.opcode().to_int(),
         });
     }
+
     // Read RCODE first: refusals may omit the question (NSD 4.6 NOTAUTH).
     let rcode = response_rcode(&message)?;
+
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::NotifyRcode(rcode));
     }
+
     // The acknowledgement copies the request's question (RFC 1996, Section 3.7).
     parse_question_response(query_id, Opcode::NOTIFY, qname, Rtype::SOA, response)
-        .map_err(|e| ParseResponseError::Notify(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::Notify(Box::new(error)))?;
+
     Ok(())
 }
 
@@ -309,15 +335,19 @@ pub fn extract_soa_serial(
 ) -> Result<u32, ParseResponseError> {
     let message = parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
     let rcode = response_rcode(&message)?;
+
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::Rcode(rcode));
     }
 
     let answer = message
         .answer()
-        .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::MalformedAnswer(Box::new(error)))?;
+
     for record in answer.limit_to::<Soa<_>>() {
-        let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
+        let record =
+            record.map_err(|error| ParseResponseError::MalformedAnswerRecord(Box::new(error)))?;
+
         if record.owner().name_eq(qname) {
             if record.class() != Class::IN {
                 return Err(ParseResponseError::ForeignClass {
@@ -325,9 +355,11 @@ pub fn extract_soa_serial(
                     owner: record.owner().to_string(),
                 });
             }
+
             return Ok(record.data().serial().into_int());
         }
     }
+
     Err(ParseResponseError::NoSoa)
 }
 
@@ -366,6 +398,7 @@ pub fn extract_ds_record_set(
     response: &[u8],
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
     let message = parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
+
     match response_rcode(&message)? {
         OptRcode::NOERROR => {}
         OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
@@ -374,15 +407,19 @@ pub fn extract_ds_record_set(
 
     let answer = message
         .answer()
-        .map_err(|e| ParseResponseError::MalformedAnswer(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::MalformedAnswer(Box::new(error)))?;
     let mut records = Vec::new();
     let mut ttl: Option<u32> = None;
+
     for record in answer.limit_to::<Ds<_>>() {
-        let record = record.map_err(|e| ParseResponseError::MalformedAnswerRecord(Box::new(e)))?;
+        let record =
+            record.map_err(|error| ParseResponseError::MalformedAnswerRecord(Box::new(error)))?;
+
         // Only DS records at the child's own name are its delegation.
         if !record.owner().name_eq(qname) {
             continue;
         }
+
         // RFC 2181, Section 5: another class is a different record set.
         if record.class() != Class::IN {
             return Err(ParseResponseError::ForeignClass {
@@ -390,6 +427,7 @@ pub fn extract_ds_record_set(
                 owner: record.owner().to_string(),
             });
         }
+
         let mut rdata = Vec::new();
         let Ok(()) = record.data().compose_rdata(&mut rdata);
         records.push(DsRecord {
@@ -397,13 +435,17 @@ pub fn extract_ds_record_set(
             digest_type: record.data().digest_type().to_int(),
             rdata,
         });
-        ttl = Some(ttl.map_or(record.ttl().as_secs(), |t| t.min(record.ttl().as_secs())));
+        ttl = Some(ttl.map_or(record.ttl().as_secs(), |minimum_ttl| {
+            minimum_ttl.min(record.ttl().as_secs())
+        }));
     }
+
     let Some(ttl) = ttl else {
         return validate_parent_soa(&message, qname).map(|_| None);
     };
     records.sort();
     records.dedup();
+
     Ok(Some(DsRecordSet { records, ttl }))
 }
 
@@ -416,10 +458,12 @@ fn validate_parent_soa(
 ) -> Result<(), ParseResponseError> {
     let authority = message
         .authority()
-        .map_err(|e| ParseResponseError::MalformedAuthority(Box::new(e)))?;
+        .map_err(|error| ParseResponseError::MalformedAuthority(Box::new(error)))?;
+
     for record in authority.limit_to::<Soa<_>>() {
-        let record =
-            record.map_err(|e| ParseResponseError::MalformedAuthorityRecord(Box::new(e)))?;
+        let record = record
+            .map_err(|error| ParseResponseError::MalformedAuthorityRecord(Box::new(error)))?;
+
         if qname.ends_with(record.owner()) && !qname.name_eq(record.owner()) {
             if record.class() != Class::IN {
                 return Err(ParseResponseError::ForeignClass {
@@ -427,9 +471,11 @@ fn validate_parent_soa(
                     owner: record.owner().to_string(),
                 });
             }
+
             return Ok(());
         }
     }
+
     Err(ParseResponseError::NoParentSoa)
 }
 
@@ -444,11 +490,13 @@ pub enum TransferMessagePosition {
 pub fn extract_tcp_keepalive_timeout(
     response: &[u8],
 ) -> Result<Option<Duration>, ParseResponseError> {
-    let message =
-        Message::from_octets(response).map_err(|e| ParseResponseError::Malformed(Box::new(e)))?;
+    let message = Message::from_octets(response)
+        .map_err(|error| ParseResponseError::Malformed(Box::new(error)))?;
+
     if Edns::from_message(&message) == Edns::Malformed {
         return Err(ParseResponseError::MalformedEdns);
     }
+
     let Some(opt) = message.opt() else {
         return Ok(None);
     };
@@ -460,8 +508,10 @@ pub fn extract_tcp_keepalive_timeout(
         .map_err(|_| ParseResponseError::MalformedEdns)?
         .timeout()
         .ok_or(ParseResponseError::MalformedEdns)?;
+
     if options.next().is_some() {
         return Err(ParseResponseError::MalformedEdns);
     }
+
     Ok(Some(Duration::from(timeout)))
 }

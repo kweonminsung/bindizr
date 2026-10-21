@@ -41,9 +41,11 @@ pub async fn get_status(
             .authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
+
         load_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to read DNSSEC status").await
 }
 
@@ -147,10 +149,9 @@ pub(crate) async fn load_status_tx(
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
 fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, ServiceError> {
-    let apex = zone
-        .name
-        .to_wire_name()
-        .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
+    let apex = zone.name.to_wire_name().map_err(|error| {
+        ServiceError::internal_with_source(format!("invalid zone apex: {}", error), error)
+    })?;
     let rdata = key
         .ds_rdata(&apex, DS_DIGEST_TYPE)
         .map_err(ServiceError::dnssec_signing_failed)?;

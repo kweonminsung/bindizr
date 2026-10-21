@@ -451,15 +451,16 @@ impl From<&ImportZonesItemResponse> for ImportZonesRow {
     fn from(item: &ImportZonesItemResponse) -> Self {
         let summary = item.import.as_ref().map(|import| import.summary);
         let count = |value: Option<u64>| display_option(&value);
+
         ImportZonesRow {
             zone_name: item.zone_name.clone(),
             result: item.result.to_string(),
-            parsed: count(summary.map(|s| s.parsed)),
-            added: count(summary.map(|s| s.added)),
-            deleted: count(summary.map(|s| s.deleted)),
-            updated: count(summary.map(|s| s.updated)),
-            unchanged: count(summary.map(|s| s.unchanged)),
-            skipped: count(summary.map(|s| s.skipped)),
+            parsed: count(summary.map(|summary| summary.parsed)),
+            added: count(summary.map(|summary| summary.added)),
+            deleted: count(summary.map(|summary| summary.deleted)),
+            updated: count(summary.map(|summary| summary.updated)),
+            unchanged: count(summary.map(|summary| summary.unchanged)),
+            skipped: count(summary.map(|summary| summary.skipped)),
             error: display_option(&item.error.as_ref().map(|error| &error.error)),
         }
     }
@@ -621,7 +622,7 @@ impl From<&RoleGrantResponse> for RoleGrantRow {
             actions: grant
                 .actions
                 .iter()
-                .map(|action| action.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
             record_name_pattern: grant.record_name_pattern.clone(),
@@ -731,6 +732,7 @@ mod tests {
                 last_transfer: None,
             };
             let row = SecondaryStatusRow::from_secondary(&secondary, Serial::from(zone_serial));
+
             assert_eq!(
                 row.lag, lag,
                 "{zone_serial} vs {visible_serial:?}: {status}"

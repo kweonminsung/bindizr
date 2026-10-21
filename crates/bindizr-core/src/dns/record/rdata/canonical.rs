@@ -40,11 +40,14 @@ impl Rdata {
         parser.advance(start)?;
         let mut rdata = parser.parse_parser(len)?;
         let data = AllRecordData::<_, ParsedName<_>>::parse_any_rdata(record_type, &mut rdata)?;
+
         if rdata.remaining() != 0 {
             return Err(ParseRdataError::TrailingBytes);
         }
+
         let mut bytes = Vec::new();
         let Ok(()) = data.compose_canonical_rdata(&mut bytes);
+
         Ok(Self::new(bytes)?)
     }
 

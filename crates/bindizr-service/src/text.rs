@@ -13,6 +13,7 @@ pub(crate) fn normalize_identifier(
     max_len: usize,
 ) -> Result<String, ServiceError> {
     let name = value.trim().to_lowercase();
+
     if name.is_empty() {
         return Err(ServiceError::invalid_input(format!(
             "{} must not be empty",
@@ -34,6 +35,7 @@ pub(crate) fn normalize_identifier(
             what
         )));
     }
+
     Ok(name)
 }
 
@@ -46,6 +48,7 @@ pub(crate) fn normalize_description(
     let Some(description) = value.map(str::trim).filter(|text| !text.is_empty()) else {
         return Ok(None);
     };
+
     if description.chars().count() > MAX_COLUMN_TEXT_LEN {
         return Err(error(format!(
             "description must be {} characters or fewer",
@@ -57,6 +60,7 @@ pub(crate) fn normalize_description(
             "description must not contain NUL characters".to_string(),
         ));
     }
+
     Ok(Some(description.to_string()))
 }
 
@@ -78,8 +82,8 @@ mod tests {
     #[test]
     fn normalize_identifier_rejects_empty_long_and_invalid_names() {
         for value in ["", "  ", "a b", "a/b", &"n".repeat(65)] {
-            let err = normalize_identifier(value, "name", 64).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput, "{value:?}");
+            let error = normalize_identifier(value, "name", 64).unwrap_err();
+            assert_eq!(error.code(), ErrorCode::InvalidInput, "{value:?}");
         }
     }
 

@@ -121,6 +121,7 @@ impl TryFrom<String> for JournalRecordType {
         if let Ok(record_type) = value.parse::<RecordType>() {
             return Ok(JournalRecordType::User(record_type));
         }
+
         value
             .parse::<DnssecRecordType>()
             .map(JournalRecordType::Derived)
@@ -149,9 +150,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.as_str().to_string().encode_by_ref(buf)
+        self.as_str().to_string().encode_by_ref(buffer)
     }
 }
 
@@ -177,8 +178,8 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_text().encode_by_ref(buf)
+        self.to_text().encode_by_ref(buffer)
     }
 }

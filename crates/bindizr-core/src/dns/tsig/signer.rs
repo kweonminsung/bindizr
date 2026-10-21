@@ -95,17 +95,21 @@ impl TransferSigner {
         digest.update(&(self.previous_mac.len() as u16).to_be_bytes());
         digest.update(&self.previous_mac);
         digest.update(message.as_slice());
+
         if self.first {
             digest.update(name.as_slice());
             digest.update(&Class::ANY.to_int().to_be_bytes());
             digest.update(&0u32.to_be_bytes());
             digest.update(algorithm.as_slice());
         }
+
         digest.update(&now.into_octets());
         digest.update(&fudge.to_be_bytes());
+
         if self.first {
             digest.update(&[0, 0, 0, 0]); // Error and Other Len.
         }
+
         let mac = digest.sign();
         message.push((
             &name,
@@ -124,6 +128,7 @@ impl TransferSigner {
         ))?;
         self.previous_mac = mac.as_ref().to_vec();
         self.first = false;
+
         Ok(())
     }
 

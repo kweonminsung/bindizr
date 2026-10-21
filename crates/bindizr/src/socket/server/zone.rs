@@ -22,6 +22,7 @@ pub(crate) async fn get_zone(
     name: &str,
 ) -> Result<DaemonResponse<SingleZoneResponse>, ServiceError> {
     let zone = zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
         data: SingleZoneResponse {
@@ -48,6 +49,7 @@ pub(crate) async fn create_zone(
     request: &CreateZoneRequest,
 ) -> Result<DaemonResponse<WriteZoneResponse>, ServiceError> {
     let response = zone::create(cx, &Caller::socket(), request).await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Zone would be created".to_string()
@@ -71,6 +73,7 @@ pub(crate) async fn update_zone(
         request,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Zone would be updated".to_string()
@@ -104,6 +107,7 @@ pub(crate) async fn import_zone(
     } else {
         "Zone imported successfully".to_string()
     };
+
     Ok(DaemonResponse {
         message,
         data: response,
@@ -129,6 +133,7 @@ pub(crate) async fn import_zones(
         summary.rejected,
         summary.failed
     );
+
     Ok(DaemonResponse {
         message,
         data: response,
@@ -165,6 +170,7 @@ pub(crate) async fn list_zone_versions(
         filter,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: "Versions retrieved successfully".to_string(),
         data: response,
@@ -200,6 +206,7 @@ pub(crate) async fn diff_zone_versions(
         to_serial,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: format!(
             "Serial {} -> {}: +{} -{} ~{}",
@@ -239,6 +246,7 @@ pub(crate) async fn rollback_zone(
             response.target_serial, response.new_serial
         )
     };
+
     Ok(DaemonResponse {
         message,
         data: response,
@@ -254,7 +262,7 @@ pub(crate) async fn get_zone_status(
     let in_sync = response
         .secondaries
         .iter()
-        .filter(|s| s.is_in_sync())
+        .filter(|secondary| secondary.is_in_sync())
         .count();
     let message = if response.secondaries.is_empty() {
         "No enabled secondaries".to_string()
@@ -266,6 +274,7 @@ pub(crate) async fn get_zone_status(
             response.serial
         )
     };
+
     Ok(DaemonResponse {
         message,
         data: response,
@@ -279,6 +288,7 @@ pub(crate) async fn delete_zone(
     run: Run,
 ) -> Result<DaemonResponse<DeleteZoneResponse>, ServiceError> {
     let response = zone::delete(cx, &Caller::socket(), &zone::normalize_name(name)?, run).await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!(

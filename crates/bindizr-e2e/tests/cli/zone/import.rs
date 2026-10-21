@@ -14,22 +14,26 @@ async fn zone_import_accepts_the_full_serial_range() {
     let content = format!(
         "@ IN SOA ns.old.example. hostmaster.{zone_name}. (4294967295 7200 1800 1209600 300)\n@ IN NS ns.old.example.\nwww IN A 192.0.2.10\n"
     );
+
     app.run_cli_success(
         &["zone", "import", &zone_name, "-", "--create", "--dry-run"],
         Some(&content),
     )
     .await;
+
     assert!(
         !app.run_cli(&["zone", "get", &zone_name], None)
             .await
             .status
             .success()
     );
+
     app.run_cli_success(
         &["zone", "import", &zone_name, "-", "--create"],
         Some(&content),
     )
     .await;
+
     // The import advances the file's maximum serial past zero (RFC 2136, Section 7.11).
     assert_eq!(app.read_zone_serial(&zone_name).await, 1);
 }
@@ -40,6 +44,7 @@ async fn zone_import_accepts_the_full_serial_range() {
 async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-reject.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     // A record type bindizr does not store fails the whole file, and a CI step
@@ -50,15 +55,18 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
             Some("www IN A 192.0.2.40\nbox IN TYPE128 \\# 0\n"),
         )
         .await;
+
     assert!(!output.status.success(), "{output:?}");
 
     let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
+
     assert_eq!(summary_cells(&stdout)[0], "no", "{stdout}");
 
     // Nothing landed, including the record that was valid on its own.
     let listed = app
         .run_cli_success(&["record", "list", &zone_name], None)
         .await;
+
     assert!(!listed.contains("192.0.2.40"), "{listed}");
 }
 
@@ -68,6 +76,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
 async fn zone_import_reads_zone_file_from_stdin() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     let imported = app
@@ -76,6 +85,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
             Some("www IN A 192.0.2.30\nmail IN A 192.0.2.31\n"),
         )
         .await;
+
     assert!(
         imported.contains("Zone imported successfully"),
         "{imported}"
@@ -92,6 +102,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
             Some("extra IN A 192.0.2.32\n"),
         )
         .await;
+
     assert!(
         dry_run.contains("Dry run completed; no changes applied"),
         "{dry_run}"
@@ -106,6 +117,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
         )
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+
     assert_eq!(
         records["items"]
             .as_array()
@@ -121,6 +133,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
 async fn zone_import_dry_run_shows_the_diff_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-dry-run.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     // Preview renders a +/-/~ diff and, being a dry run, applies nothing.
@@ -130,6 +143,7 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
             Some("www IN A 192.0.2.30\nmail IN A 192.0.2.31\n"),
         )
         .await;
+
     assert!(dry_run.contains("+ www."), "{dry_run}");
     assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
@@ -137,14 +151,16 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+
     // Only the apex NS seeded at creation exists.
     let names: Vec<&str> = records["items"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| r["type"] == "A")
-        .map(|r| r["name"].as_str().unwrap())
+        .filter(|record| record["type"] == "A")
+        .map(|record| record["name"].as_str().unwrap())
         .collect();
+
     assert!(names.is_empty(), "records were: {names:?}");
 }
 
@@ -155,7 +171,9 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     // The transfer ACL must admit the test's own loopback AXFR.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
+
     let zone_name = app.zone_name("axfr-import.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     // Keep empty and binary CAA values through the master file and AXFR
@@ -171,10 +189,12 @@ async fn zone_import_from_server_round_trips_over_axfr() {
         "a".repeat(255),
         "b".repeat(300),
     );
+
     app.run_cli_success(&["zone", "import", &zone_name, "-"], Some(&content))
         .await;
 
     let server = format!("127.0.0.1:{}", app.dns_port());
+
     let dry_run = app
         .run_cli_success(
             &[
@@ -190,6 +210,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             None,
         )
         .await;
+
     // A transfer of the zone's own content replaces it with itself.
     assert!(dry_run.contains("By name and type: +0 -0 ~0"), "{dry_run}");
 
@@ -207,6 +228,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             None,
         )
         .await;
+
     assert!(applied.contains("Zone imported successfully"), "{applied}");
     assert_eq!(
         summary_row(&applied),
@@ -223,9 +245,11 @@ async fn zone_import_pulls_several_zones_from_one_server() {
     // The transfer ACL must admit the test's own loopback AXFRs.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
+
     let first = app.zone_name("bulk-a.example");
     let second = app.zone_name("bulk-b.example");
     let missing = app.zone_name("bulk-missing.example");
+
     app.create_zone_cli(&first, "3600").await;
     app.create_zone_cli(&second, "3600").await;
     app.run_cli_success(
@@ -238,6 +262,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         Some("www IN A 192.0.2.2\nmail IN A 192.0.2.3\n"),
     )
     .await;
+
     let server = format!("127.0.0.1:{}", app.dns_port());
 
     // From a list: both zones replace themselves; the third exists nowhere,
@@ -253,10 +278,13 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         "--mode",
         "replace",
     ];
+
     let output = app.run_cli(&args, Some(&zones)).await;
+
     assert!(!output.status.success(), "a failed zone must exit non-zero");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+
     assert!(
         stdout.contains("2 of 3 zone(s) imported; 0 rejected, 1 failed"),
         "{stdout}"
@@ -272,6 +300,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
             .unwrap_or_else(|| panic!("no row for {zone}: {stdout}"))
             .to_string()
     };
+
     assert!(row(&first).contains(" ok "), "{stdout}");
     assert!(row(&second).contains(" ok "), "{stdout}");
     assert!(
@@ -298,6 +327,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         )
         .await;
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+
     assert_eq!(listed["dry_run"], true);
     assert_eq!(listed["summary"]["zones"], 2, "{listed}");
     assert_eq!(listed["summary"]["ok"], 2, "{listed}");
@@ -332,6 +362,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         .iter()
         .map(|item| item["zone_name"].as_str().unwrap())
         .collect();
+
     assert_eq!(names, [first.as_str(), second.as_str()], "{listed}");
     assert_eq!(listed["summary"]["ok"], 2, "{listed}");
     assert_eq!(listed["zones"][1]["import"]["applied"], true);
@@ -341,6 +372,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
     let refused = app
         .run_cli(&["zone", "import", "--zones", "-"], Some(&zones))
         .await;
+
     assert!(!refused.status.success());
     let args = [
         "zone",
@@ -351,6 +383,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         "--zones",
         "-",
     ];
+
     let refused = app.run_cli(&args, Some(&zones)).await;
     assert_cli_failure_contains(&args, &refused, "cannot be used with");
 }

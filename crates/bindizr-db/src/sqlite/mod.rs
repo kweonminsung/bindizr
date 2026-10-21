@@ -11,6 +11,7 @@ pub(crate) mod dnssec_key;
 pub(crate) mod dnssec_policy;
 pub(crate) mod dnssec_record;
 pub(crate) mod dnssec_withdrawal;
+pub(crate) mod path;
 pub(crate) mod record;
 pub(crate) mod role;
 pub(crate) mod role_grant;

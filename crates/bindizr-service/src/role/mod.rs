@@ -55,13 +55,13 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // A create that raced past the pre-check trips UNIQUE(name); the
             // backstop reads as the same conflict.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::role_conflict(&name)
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -75,10 +75,12 @@ pub async fn create(
             caller.change_attribution(),
         )
         .await?;
+
         Ok(role)
     }
     .await;
     let role = transaction::finish_tx(tx, result, "failed to create role").await?;
+
     Ok(RoleResponse {
         id: role.id,
         builtin: role.is_builtin(),
@@ -101,20 +103,27 @@ pub async fn list(
     validate_page_limit(page.limit)?;
 
     let roles = bindizr_db::role::list_all(cx.db()).await?;
+
     // Management collections are small, so each is read once and counted
     // here rather than queried per role.
     let mut grants: HashMap<RoleId, u64> = HashMap::new();
+
     for grant in bindizr_db::role_grant::list_all(cx.db()).await? {
         *grants.entry(grant.role_id).or_default() += 1;
     }
+
     let mut tokens: HashMap<RoleId, u64> = HashMap::new();
+
     for token in bindizr_db::api_token::list_all(cx.db()).await? {
         *tokens.entry(token.role_id).or_default() += 1;
     }
+
     let mut keys: HashMap<RoleId, u64> = HashMap::new();
+
     for tsig_key in bindizr_db::tsig_key::list_all(cx.db()).await? {
         *keys.entry(tsig_key.role_id).or_default() += 1;
     }
+
     Ok(build_page(
         roles
             .into_iter()
@@ -142,6 +151,7 @@ pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<RoleRespon
     let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), role.id).await?;
     let tokens = bindizr_db::api_token::list_by_role_id(cx.db(), role.id).await?;
     let keys = bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?;
+
     Ok(RoleResponse {
         id: role.id,
         builtin: role.is_builtin(),
@@ -172,6 +182,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         .into_iter()
         .map(|tsig_key| tsig_key.name)
         .collect();
+
     if !tokens.is_empty() || !keys.is_empty() {
         return Err(ServiceError::role_in_use(&role.name, &tokens, &keys));
     }
@@ -184,22 +195,24 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .authorize_action(Action::AccessManage)?;
         let deleted = bindizr_db::role::delete_tx(&mut tx, role.id)
             .await
-            .map_err(|e| {
+            .map_err(|error| {
                 // A credential that took the role between the counts above and
                 // this delete trips the FK: the same in-use conflict.
-                if e.is_foreign_key_violation() {
+                if error.is_foreign_key_violation() {
                     ServiceError::RoleInUse(format!(
                         "role '{}' is still held by an API token or TSIG key",
                         role.name
                     ))
                 } else {
-                    e.into()
+                    error.into()
                 }
             })?;
+
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !deleted {
             return Err(ServiceError::role_not_found(&role.name));
         }
+
         // Its grants go with it, under the one row.
         audit::save_tx(
             &mut tx,
@@ -212,6 +225,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         .await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to delete role").await
 }
 
@@ -230,6 +244,7 @@ fn refuse_builtin(role: &Role) -> Result<(), ServiceError> {
             role.name
         )));
     }
+
     Ok(())
 }
 
@@ -237,12 +252,14 @@ fn refuse_builtin(role: &Role) -> Result<(), ServiceError> {
 /// URL path segment for `/roles/{name}`.
 fn normalize_role_name(name: &str) -> Result<String, ServiceError> {
     let name = normalize_identifier(name, "role name", MAX_COLUMN_TEXT_LEN)?;
+
     // Dot segments get normalized away.
     if name == "." || name == ".." {
         return Err(ServiceError::invalid_input(format!(
             "role name must not be '{name}'"
         )));
     }
+
     Ok(name)
 }
 

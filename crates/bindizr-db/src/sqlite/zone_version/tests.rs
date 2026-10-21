@@ -13,9 +13,11 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
         .connect("sqlite::memory:")
         .await
         .unwrap();
+
     for query in crate::schema::sqlite::table_creation_queries() {
         sqlx::query(query).execute(&pool).await.unwrap();
     }
+
     sqlx::query(
         "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, created_at)
          VALUES (1, 'example.com', 'ns1.example.com', 'admin@example.com', 3600, 1, ?)",
@@ -24,6 +26,7 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
     .execute(&pool)
     .await
     .unwrap();
+
     let version = ZoneVersion {
         id: ZoneVersionId::UNWRITTEN,
         zone_id: ZoneId::from(1),
@@ -39,6 +42,7 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
         changed_by: None,
         created_at: Utc::now(),
     };
+
     (pool, version)
 }
 
@@ -46,6 +50,7 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
 #[tokio::test]
 async fn actor_columns_round_trip_through_upsert_and_reads() {
     let (pool, mut version) = fixture().await;
+
     for (source, actor, expected_kind, expected_name) in [
         (
             ChangeSource::Api,
@@ -67,10 +72,13 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
     ] {
         version.change_source = source;
         version.changed_by = actor.clone();
+
         let mut tx = pool.begin().await.unwrap();
         let saved = upsert_tx(&mut tx, version.clone()).await.unwrap();
+
         assert_eq!(saved.change_source, source);
         assert_eq!(saved.changed_by, actor);
+
         tx.commit().await.unwrap();
 
         let columns: (Option<String>, Option<String>) =
@@ -78,8 +86,10 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
+
         assert_eq!(columns.0.as_deref(), expected_kind);
         assert_eq!(columns.1.as_deref(), expected_name);
+
         let mut tx = pool.begin().await.unwrap();
         let read = get_by_serial_tx(
             &mut tx,
@@ -91,6 +101,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         .unwrap()
         .unwrap();
         tx.commit().await.unwrap();
+
         assert_eq!(read.changed_by, actor);
     }
 }
@@ -108,15 +119,17 @@ async fn actor_columns_reject_partial_or_unknown_identities() {
         (None, Some("admin")),
         (Some("unknown"), Some("admin")),
     ] {
-        let err = sqlx::query("UPDATE zone_versions SET changed_by_kind = ?, changed_by_name = ?")
-            .bind(kind)
-            .bind(name)
-            .execute(&pool)
-            .await
-            .unwrap_err();
+        let error =
+            sqlx::query("UPDATE zone_versions SET changed_by_kind = ?, changed_by_name = ?")
+                .bind(kind)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .unwrap_err();
+
         assert!(
-            err.as_database_error().unwrap().is_check_violation(),
-            "{err}"
+            error.as_database_error().unwrap().is_check_violation(),
+            "{error}"
         );
     }
 }
@@ -126,22 +139,27 @@ async fn actor_columns_reject_partial_or_unknown_identities() {
 async fn history_ranges_and_catalog_serials_wrap() {
     let (pool, mut version) = fixture().await;
     let mut tx = pool.begin().await.unwrap();
+
     for serial in [u32::MAX - 1, u32::MAX, 0, 1, 0x8000_0001] {
         version.serial = Serial::from(serial);
         upsert_tx(&mut tx, version.clone()).await.unwrap();
         sqlx::query("INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES (1, ?, 'ADD', 'www', 'A', '192.0.2.1', NULL, 300, NULL, FALSE, ?)")
             .bind(version.serial).bind(Utc::now()).execute(&mut *tx).await.unwrap();
     }
+
     let from = Serial::from(u32::MAX);
     let to = Serial::from(1);
+
     let mut versions: Vec<_> = list_in_serial_range_tx(&mut tx, version.zone_id, from, to)
         .await
         .unwrap()
         .into_iter()
-        .map(|v| v.serial.as_u32())
+        .map(|version| version.serial.as_u32())
         .collect();
     versions.sort_unstable();
+
     assert_eq!(versions, [0, 1, u32::MAX]);
+
     let journal = crate::sqlite::zone_change::list_between_serials_tx(
         &mut tx,
         version.zone_id,
@@ -151,10 +169,11 @@ async fn history_ranges_and_catalog_serials_wrap() {
     )
     .await
     .unwrap();
+
     assert_eq!(
         journal
             .iter()
-            .map(|c| c.serial.as_u32())
+            .map(|change| change.serial.as_u32())
             .collect::<Vec<_>>(),
         [0, 1]
     );
@@ -171,12 +190,14 @@ async fn history_ranges_and_catalog_serials_wrap() {
         1
     );
     let catalog = bindizr_core::dns::name::ZoneName::parse("catalog.example").unwrap();
+
     assert_eq!(
         crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "one", from)
             .await
             .unwrap(),
         from
     );
+
     // A changed digest past the maximum wraps to one, never zero (RFC 2136,
     // Section 7.11); the same digest keeps it.
     assert_eq!(

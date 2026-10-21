@@ -87,6 +87,7 @@ pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> Reco
     if *record_type != RecordType::Txt {
         return RecordValue::Text(record_type.display_value(value));
     }
+
     match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
         Some(TxtContent::Single(value)) => RecordValue::Text(value),
         Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
@@ -452,6 +453,7 @@ mod tests {
                 value
             );
         }
+
         for invalid in ["SOA", "ANY", "AAAAA"] {
             assert!(
                 serde_json::from_value::<ServedRecordType>(serde_json::json!(invalid)).is_err()

@@ -18,6 +18,7 @@ fn missing_parent_nameservers_remains_a_typed_service_error() {
         "example.com",
         ProbeDelegationError::NoParentNameservers,
     );
+
     assert_eq!(error.code(), crate::error::ErrorCode::DnssecDsUnverified);
     assert_eq!(
         error.to_string(),

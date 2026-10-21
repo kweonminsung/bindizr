@@ -43,8 +43,9 @@ async fn mock_handler(State(state): State<MockState>, request: Request) -> Respo
     let authorization = request
         .headers()
         .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
+        .and_then(|header| header.to_str().ok())
         .map(str::to_string);
+
     let body = axum::body::to_bytes(request.into_body(), usize::MAX)
         .await
         .unwrap();
@@ -65,6 +66,7 @@ async fn mock_handler(State(state): State<MockState>, request: Request) -> Respo
             r#"{"error":"not found","code":"NOT_FOUND"}"#.to_string(),
         ),
     };
+
     (
         StatusCode::from_u16(status).unwrap(),
         [(header::CONTENT_TYPE, "application/json")],
@@ -102,11 +104,14 @@ async fn spawn_mock_with_adjust(
         adjust: (adjust.0, adjust.1.to_string()),
     };
     let router = axum::Router::new().fallback(mock_handler).with_state(state);
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
+
     MockUpstream { addr, requests }
 }
 
@@ -135,12 +140,15 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
         upstream,
         metrics: AdapterMetrics::new().expect("metrics"),
     });
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let webhook = webhook_router(state);
+
     tokio::spawn(async move {
         axum::serve(listener, webhook).await.unwrap();
     });
+
     format!("http://{}", addr)
 }
 
@@ -148,16 +156,19 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
 async fn get(url: &str, accept: Option<&str>) -> (StatusCode, Option<String>, String) {
     let client = reqwest::Client::new();
     let mut request = client.get(url);
+
     if let Some(accept) = accept {
         request = request.header(header::ACCEPT, accept);
     }
+
     let response = request.send().await.unwrap();
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap();
     let content_type = response
         .headers()
         .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
+        .and_then(|header| header.to_str().ok())
         .map(str::to_string);
+
     (status, content_type, response.text().await.unwrap())
 }
 
@@ -171,6 +182,7 @@ async fn post(url: &str, body: Value) -> (StatusCode, String) {
         .await
         .unwrap();
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap();
+
     (status, response.text().await.unwrap())
 }
 
@@ -178,12 +190,14 @@ async fn post(url: &str, body: Value) -> (StatusCode, String) {
 #[tokio::test]
 async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, content_type, body) = get(&base, Some(MEDIA_TYPE)).await;
 
     assert_eq!(status, StatusCode::OK);
+
     // external-dns compares the negotiation Content-Type byte-for-byte.
     assert_eq!(content_type.as_deref(), Some(MEDIA_TYPE));
     assert_eq!(
@@ -192,6 +206,7 @@ async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
     );
 
     let recorded = mock.recorded();
+
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].0, "/external-dns/domains");
     assert_eq!(recorded[0].1.as_deref(), Some("Bearer test-token"));
@@ -201,6 +216,7 @@ async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
 #[tokio::test]
 async fn negotiate_rejects_token_without_manageable_names() {
     let (_, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
@@ -214,6 +230,7 @@ async fn negotiate_rejects_token_without_manageable_names() {
 #[tokio::test]
 async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
@@ -227,6 +244,7 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
             assert_eq!(status, StatusCode::NOT_ACCEPTABLE, "{path} {accept}");
         }
     }
+
     assert!(mock.recorded().is_empty());
 }
 
@@ -234,8 +252,10 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
 #[tokio::test]
 async fn webhook_get_routes_negotiate_equivalent_accept_ranges() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
+
     for path in ["", "/records"] {
         for accept in [
             None,
@@ -261,6 +281,7 @@ async fn list_records_maps_records_to_endpoints() {
         {"name": "app.example.com", "type": "TXT", "ttl": 3600,
          "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
     ]});
+
     let mock = spawn_mock(
         (200, json!({"domains": []})),
         (200, records),
@@ -289,6 +310,7 @@ async fn list_records_maps_records_to_endpoints() {
 #[tokio::test]
 async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
@@ -307,6 +329,7 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let recorded = mock.recorded();
+
     assert_eq!(
         recorded.len(),
         1,
@@ -333,6 +356,7 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
 #[tokio::test]
 async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
@@ -341,10 +365,12 @@ async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
         json!({"create": [{"dnsName": "a.example.com", "targets": ["x"], "recordType": "SRV"}]}),
     )
     .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.contains("not supported"));
 
     let (status, _) = post(&format!("{}/records", base), json!({"create": "nope"})).await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     assert!(mock.recorded().is_empty());
@@ -413,17 +439,21 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
     )
     .await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
+
     let changes = json!({"create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A"}]});
 
     let (status, _) = post(&format!("{}/records", base), changes.clone()).await;
+
     assert_eq!(status, StatusCode::BAD_GATEWAY);
 
     // A closed upstream port maps to the same retryable 502.
     let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let closed_addr = closed.local_addr().unwrap();
     drop(closed);
+
     let base = spawn_adapter(closed_addr, Some("test-token")).await;
     let (status, _) = post(&format!("{}/records", base), changes).await;
+
     assert_eq!(status, StatusCode::BAD_GATEWAY);
 }
 
@@ -431,6 +461,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
 #[tokio::test]
 async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock_with_adjust(
         domains,
         records,
@@ -457,6 +488,7 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     .await;
 
     assert_eq!(status, StatusCode::OK);
+
     // Identity (dnsName, labels) stays the caller's, type/TTL/targets are
     // the server's, and provider-specific properties are dropped.
     assert_eq!(
@@ -468,6 +500,7 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     );
 
     let recorded = mock.recorded();
+
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].0, "/external-dns/adjust");
     assert_eq!(
@@ -483,6 +516,7 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
 #[tokio::test]
 async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
@@ -501,6 +535,7 @@ async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
 #[tokio::test]
 async fn healthz_reflects_bindizr_reachability() {
     let (domains, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock(domains, records, changes).await;
 
     let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
@@ -508,18 +543,22 @@ async fn healthz_reflects_bindizr_reachability() {
         upstream,
         metrics: AdapterMetrics::new().expect("metrics"),
     });
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let health = health_router(state);
+
     tokio::spawn(async move {
         axum::serve(listener, health).await.unwrap();
     });
 
     let (status, _, body) = get(&format!("http://{}/healthz", addr), None).await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, "ok");
 
     let (status, _, body) = get(&format!("http://{}/metrics", addr), None).await;
+
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("bindizr_external_dns_requests_total"));
 }
@@ -530,6 +569,7 @@ async fn healthz_reports_unready_without_manageable_names() {
     // `negotiate` already refuses this, so readiness must not stay green and
     // leave the sidecar taking traffic it can do nothing with.
     let (_, records, changes) = ok_mock_bodies();
+
     let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
 
     let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
@@ -537,13 +577,16 @@ async fn healthz_reports_unready_without_manageable_names() {
         upstream,
         metrics: AdapterMetrics::new().expect("metrics"),
     });
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+
     tokio::spawn(async move {
         axum::serve(listener, health_router(state)).await.unwrap();
     });
 
     let (status, _, body) = get(&format!("http://{}/healthz", addr), None).await;
+
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body.contains("no manageable names"), "{body}");
 }
@@ -564,6 +607,7 @@ fn endpoint_label_tracks_head_with_get_and_skips_unrouted_methods() {
         endpoint_label(&Method::POST, "/adjustendpoints"),
         Some("adjustendpoints")
     );
+
     // An unsupported method 405s without a handler; it must not count.
     assert_eq!(endpoint_label(&Method::DELETE, "/records"), None);
 }

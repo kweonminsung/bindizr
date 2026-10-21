@@ -80,7 +80,7 @@ impl TransferCache {
     fn locked(&self) -> MutexGuard<'_, Entries> {
         self.entries
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Find content at `version_id`, enforcing budget reductions even on cache hits.
@@ -93,12 +93,15 @@ impl TransferCache {
     ) -> Option<CachedTransferContent> {
         let mut entries = self.locked();
         let evicted = entries.trim_to(max_records);
+
         if evicted > 0 {
             metrics.track_zone_cache_store(entries.records, evicted);
         }
+
         let content = entries.find(zone_id, version_id);
         drop(entries);
         metrics.track_zone_cache_lookup(content.is_some());
+
         content
     }
 
@@ -126,6 +129,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     let cx = dns_cx.daemon();
     let max_records = cx.config().dns.transfer.cache_max_records as usize;
+
     if max_records == 0 {
         return fetch_transfer_content(cx, caller, zone_name).await;
     }
@@ -135,6 +139,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
+
     // RFC 1982 serials can repeat; version ids identify the locked snapshot.
     if let Some(content) =
         dns_cx
@@ -147,6 +152,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     // A miss reads under its own lock, deciding the zone and the grant there
     // again; concurrent misses may load twice, each one complete serial.
     let loaded = fetch_transfer_content(cx, caller, zone_name).await?;
+
     if let TransferAccess::Granted((zone, content)) = &loaded {
         dns_cx.transfer_cache.store_content(
             cx.metrics(),
@@ -156,6 +162,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
             content.clone(),
         );
     }
+
     Ok(loaded)
 }
 
@@ -201,6 +208,7 @@ impl Entries {
         if self.records <= max_records {
             return 0;
         }
+
         // One recency-ordered pass, not a full scan per eviction under the lock.
         let mut by_recency: Vec<(u64, ZoneId)> = self
             .zones
@@ -209,6 +217,7 @@ impl Entries {
             .collect();
         by_recency.sort_unstable();
         let mut evicted = 0;
+
         for (_, lru_id) in by_recency {
             if self.records <= max_records {
                 break;
@@ -216,6 +225,7 @@ impl Entries {
             self.remove(lru_id);
             evicted += 1;
         }
+
         evicted
     }
 
@@ -231,6 +241,7 @@ impl Entries {
             .get_mut(&zone_id)
             .filter(|entry| entry.version_id == version_id)?;
         entry.last_used = now;
+
         Some(entry.content.clone())
     }
 
@@ -246,6 +257,7 @@ impl Entries {
         self.remove(zone_id);
 
         let records = content.record_count();
+
         if records > max_records {
             return 0;
         }

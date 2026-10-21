@@ -19,8 +19,10 @@ def write_result(benchmark: str, result: dict[str, Any]) -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     out = RAW_DIR / f"{benchmark}.json"
     payload: dict[str, Any] = {"benchmark": benchmark, "results": []}
+
     if out.exists():
         payload = json.loads(out.read_text())
+
     payload["results"].append(result)
     out.write_text(json.dumps(payload, indent=2))
 
@@ -39,32 +41,36 @@ def _render_markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
     """Render headers and rows as a Markdown table."""
     line = "| " + " | ".join(headers) + " |\n"
     line += "| " + " | ".join("---" for _ in headers) + " |\n"
-    for r in rows:
-        line += "| " + " | ".join(str(c) for c in r) + " |\n"
+    for row in rows:
+        line += "| " + " | ".join(str(c) for c in row) + " |\n"
     return line
 
 
-def write_report(env: dict, cfg: dict) -> None:
+def write_report(env: dict, config: dict) -> None:
     """Write the combined JSON, CSV, Markdown, and graph reports."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     data = _load_all()
 
-    full = {"environment": env, "config_seed": cfg.get("seed"), "benchmarks": data}
+    full = {"environment": env, "config_seed": config.get("seed"), "benchmarks": data}
     (RESULTS_DIR / "performance.json").write_text(json.dumps(full, indent=2))
 
     csv_rows: list[dict] = []
+
     for name, payload in data.items():
-        for r in payload["results"]:
+        for result in payload["results"]:
             row = {"benchmark": name}
-            row.update({k: v for k, v in r.items() if not isinstance(v, (dict, list))})
+            row.update({k: v for k, v in result.items() if not isinstance(v, (dict, list))})
             csv_rows.append(row)
+
     if csv_rows:
         keys: list[str] = []
-        for r in csv_rows:
-            for k in r:
+
+        for result in csv_rows:
+            for k in result:
                 if k not in keys:
                     keys.append(k)
+
         with open(RESULTS_DIR / "performance.csv", "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=keys)
             w.writeheader()
@@ -83,47 +89,61 @@ DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status")
 def _aggregate(rows: list[dict]) -> list[dict]:
     """Report mean, sample deviation and count by dimension, averaging only complete numeric metrics."""
     groups: dict[tuple, list[dict]] = {}
-    for r in rows:
-        groups.setdefault(tuple(str(r.get(f)) for f in DIMENSION_FIELDS), []).append(r)
+
+    for row in rows:
+        groups.setdefault(tuple(str(row.get(f)) for f in DIMENSION_FIELDS), []).append(row)
 
     out = []
+
     for grp in groups.values():
         base = grp[0]
         agg: dict = {}
+
         for k in base:
             vals = [g.get(k) for g in grp]
             numeric = [v for v in vals
                        if isinstance(v, (int, float)) and not isinstance(v, bool)]
+
             if k not in DIMENSION_FIELDS and numeric and len(numeric) == len(vals):
                 agg[k] = round(sum(numeric) / len(numeric), 3)
                 agg[f"{k}_std"] = round(stdev(numeric), 3) if len(numeric) > 1 else 0.0
             else:
                 agg[k] = base.get(k)
+
         if len(grp) > 1:
             agg["runs"] = len(grp)
+
         out.append(agg)
+
     return out
 
 
 def _display_metric(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
     """Render a metric as `mean ± std` (std omitted when 0 / single run)."""
     mean = row.get(key)
+
     if not isinstance(mean, (int, float)) or isinstance(mean, bool):
         return default
+
     std = row.get(f"{key}_std", 0) or 0
+
     if std:
         return f"{mean:.{prec}f} ± {std:.{prec}f}"
+
     return f"{mean:.{prec}f}"
 
 
 def _render_bulk_linearity_note(rows: list[dict]) -> str:
     """Per-series 10k→100k scaling: import time should grow ~10x for 10x records."""
     by_sys: dict[str, dict[int, float]] = {}
-    for r in rows:
-        secs = r.get("import_secs")
-        if isinstance(r.get("size"), int) and isinstance(secs, (int, float)):
-            by_sys.setdefault(r["system"], {})[r["size"]] = secs
+
+    for row in rows:
+        secs = row.get("import_secs")
+        if isinstance(row.get("size"), int) and isinstance(secs, (int, float)):
+            by_sys.setdefault(row["system"], {})[row["size"]] = secs
+
     lines = []
+
     for system, bysize in by_sys.items():
         if 10000 in bysize and 100000 in bysize and bysize[10000]:
             ratio = bysize[100000] / bysize[10000]
@@ -132,8 +152,10 @@ def _render_bulk_linearity_note(rows: list[dict]) -> str:
             lines.append(
                 f"- **{system}:** 10k → {bysize[10000]:.2f}s, "
                 f"100k → {bysize[100000]:.2f}s ({ratio:.1f}× for 10× records → {verdict})")
+
     if not lines:
         return ""
+
     return ("\n> **10k → 100k scaling** (ideal 10.0× — confirms bulk import stays "
             "linear at scale):\n" + "\n".join(lines) + "\n")
 
@@ -167,6 +189,7 @@ def _render_b08_conclusion(comparable: dict[str, dict]) -> str:
     Compare each gap with the run-to-run noise tolerance."""
     within: list[str] = []
     outside: list[str] = []
+
     for pairing, standalone in QUERY_BASELINES.items():
         p, s = comparable.get(pairing), comparable.get(standalone)
         if not p or not s:
@@ -174,43 +197,47 @@ def _render_b08_conclusion(comparable: dict[str, dict]) -> str:
         delta = (p["qps"] / s["qps"] - 1) * 100
         entry = f"`{pairing}` vs `{standalone}` ({delta:+.1f}%)"
         (within if abs(delta) <= QUERY_NOISE_TOLERANCE_PCT else outside).append(entry)
+
     if not within and not outside:
         return ("\n> ⚠️ No-overhead conclusion unavailable: this run has no Bindizr "
                 "pairing and standalone run of the same server to compare.\n")
 
     out = ""
+
     if within:
         out += ("\n> **Bindizr introduces no measurable DNS query overhead because it "
                 "is outside the DNS data plane.** Queries are served by the secondary, "
                 "not by Bindizr, so each pairing tracks that server run standalone: "
                 + ", ".join(within)
                 + f" — within the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% run-to-run tolerance.\n")
+
     if outside:
         out += (f"\n> ⚠️ Outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance, "
                 "so this run does not support the no-overhead conclusion there: "
                 + ", ".join(outside) + ".\n")
+
     return out
 
 
 def _render_b07(rows: list[dict]) -> str:
     """Render separate Benchmark 7 tables for CRUD TPS and bulk-import time by size."""
-    crud = [r for r in rows if "create_tps" in r]
-    bulk = [r for r in rows if "import_secs" in r]
-    failed = [r for r in rows if r.get("status") == "FAILED"]
+    crud = [row for row in rows if "create_tps" in row]
+    bulk = [row for row in rows if "import_secs" in row]
+    failed = [row for row in rows if row.get("status") == "FAILED"]
     out = ["\n## Benchmark 7 — Database Performance\n"]
 
     if crud:
         out.append("\n### 7a — CRUD throughput by backend\n")
-        crud = sorted(crud, key=lambda r: (r.get("system", ""),
-                                           r.get("backend", "")))
+        crud = sorted(crud, key=lambda row: (row.get("system", ""),
+                                           row.get("backend", "")))
         crud_rows = [[
-            r.get("system", "-"),
-            r.get("backend", "-"), _display_metric(r, "create_tps"), _display_metric(r, "read_tps"),
-            _display_metric(r, "create_p95_ms", 2), _display_metric(r, "read_p95_ms", 2),
-            f'{r.get("error_rate", 0) * 100:.2f}%', r.get("peak_mem_mb", "-"),
-            r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
-            r.get("runs", 1),
-        ] for r in crud]
+            row.get("system", "-"),
+            row.get("backend", "-"), _display_metric(row, "create_tps"), _display_metric(row, "read_tps"),
+            _display_metric(row, "create_p95_ms", 2), _display_metric(row, "read_p95_ms", 2),
+            f'{row.get("error_rate", 0) * 100:.2f}%', row.get("peak_mem_mb", "-"),
+            row.get("bindizr_peak_mem_mb", "-"), row.get("db_peak_mem_mb", "-"),
+            row.get("runs", 1),
+        ] for row in crud]
         out.append(_render_markdown_table(
             ["Pairing", "Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
              "Read p95 (ms)", "Error Rate", "Peak mem (MB)",
@@ -223,30 +250,31 @@ def _render_b07(rows: list[dict]) -> str:
 
     if bulk:
         out.append("\n### 7b — Bulk import by backend\n")
-        bulk = sorted(bulk, key=lambda r: (r.get("system", ""),
-                                           r.get("backend", ""),
-                                           r.get("size", 0)))
+        bulk = sorted(bulk, key=lambda row: (row.get("system", ""),
+                                           row.get("backend", ""),
+                                           row.get("size", 0)))
         bulk_rows = [[
-            r.get("system", "-"), r.get("backend", "-"), r.get("size", "-"),
-            _display_metric(r, "import_secs", 3), _display_metric(r, "records_per_sec"),
-            r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
-            r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
-            r.get("runs", 1),
-        ] for r in bulk]
+            row.get("system", "-"), row.get("backend", "-"), row.get("size", "-"),
+            _display_metric(row, "import_secs", 3), _display_metric(row, "records_per_sec"),
+            row.get("import_errors", "-"), row.get("peak_mem_mb", "-"),
+            row.get("bindizr_peak_mem_mb", "-"), row.get("db_peak_mem_mb", "-"),
+            row.get("runs", 1),
+        ] for row in bulk]
         out.append(_render_markdown_table(
             ["Pairing", "Backend", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
             bulk_rows))
         # One series per pairing and backend, so the note keys on both.
         out.append(_render_bulk_linearity_note(
-            [{**r, "system": f'{r.get("system", "-")} / {r.get("backend", "-")}'}
-             for r in bulk]))
+            [{**row, "system": f'{row.get("system", "-")} / {row.get("backend", "-")}'}
+             for row in bulk]))
 
     if failed:
         out.append("\n> ⚠️ Failed backends: " +
-                   ", ".join(f'{r.get("system", "-")} / {r.get("backend")} '
-                             f'({r.get("error", "?")})'
-                             for r in failed) + "\n")
+                   ", ".join(f'{row.get("system", "-")} / {row.get("backend")} '
+                             f'({row.get("error", "?")})'
+                             for row in failed) + "\n")
+
     return "".join(out)
 
 
@@ -258,8 +286,8 @@ def _rows(data: dict, key: str) -> list[dict]:
 def _union_headers(results: list[dict]) -> list[str]:
     """Collect columns in first-seen order, including failure-only status/error keys."""
     headers: list[str] = []
-    for r in results:
-        for h in r:
+    for row in results:
+        for h in row:
             if not h.endswith("_std") and h not in headers:
                 headers.append(h)
     return headers
@@ -290,13 +318,15 @@ def _render_markdown(env: dict, data: dict) -> str:
     if "b01_crud_tps" in data:
         out.append("\n## Benchmark 1 — Record CRUD TPS\n")
         rows = []
-        for r in _rows(data, "b01_crud_tps"):
+
+        for row in _rows(data, "b01_crud_tps"):
             rows.append([
-                r["system"], _display_metric(r, "create_tps"), _display_metric(r, "update_tps"),
-                _display_metric(r, "delete_tps"), _display_metric(r, "read_tps"),
-                _display_metric(r, "read_p95_ms", 2), f'{r.get("error_rate", 0) * 100:.2f}%',
-                r.get("runs", 1),
+                row["system"], _display_metric(row, "create_tps"), _display_metric(row, "update_tps"),
+                _display_metric(row, "delete_tps"), _display_metric(row, "read_tps"),
+                _display_metric(row, "read_p95_ms", 2), f'{row.get("error_rate", 0) * 100:.2f}%',
+                row.get("runs", 1),
             ])
+
         out.append(_render_markdown_table(
             ["Product", "Create TPS", "Update TPS", "Delete TPS", "Read TPS",
              "Read p95 (ms)", "Error Rate", "Runs"], rows))
@@ -304,16 +334,18 @@ def _render_markdown(env: dict, data: dict) -> str:
     # Curated table: mean ± std on time / throughput.
     if "b02_bulk_import" in data:
         results = sorted(_rows(data, "b02_bulk_import"),
-                         key=lambda r: (r["system"], r.get("size", 0)))
+                         key=lambda row: (row["system"], row.get("size", 0)))
         out.append("\n## Benchmark 2 — Bulk Import\n")
         rows = []
-        for r in results:
+
+        for row in results:
             rows.append([
-                r["system"], r.get("size", "-"),
-                _display_metric(r, "import_secs", 3), _display_metric(r, "records_per_sec"),
-                r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
-                r.get("runs", 1),
+                row["system"], row.get("size", "-"),
+                _display_metric(row, "import_secs", 3), _display_metric(row, "records_per_sec"),
+                row.get("import_errors", "-"), row.get("peak_mem_mb", "-"),
+                row.get("runs", 1),
             ])
+
         out.append(_render_markdown_table(
             ["System", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Runs"], rows))
@@ -326,15 +358,19 @@ def _render_markdown(env: dict, data: dict) -> str:
         "b05_ixfr": "Benchmark 5 — IXFR Performance",
         "b06_large_zone": "Benchmark 6 — Large Zone Performance",
     }
+
     for key, title in titles.items():
         if key not in data:
             continue
+
         results = _rows(data, key)
+
         if not results:
             continue
+
         out.append(f"\n## {title}\n")
         headers = _union_headers(results)
-        rows = [[r.get(h, "-") for h in headers] for r in results]
+        rows = [[row.get(h, "-") for h in headers] for row in results]
         out.append(_render_markdown_table(headers, rows))
 
     if "b07_database" in data:
@@ -343,28 +379,32 @@ def _render_markdown(env: dict, data: dict) -> str:
     if "b08_query_perf" in data:
         results = _rows(data, "b08_query_perf")
 
-        def _has_reportable_qps(r):
+        def _has_reportable_qps(row):
             """Select non-failed runs with QPS; failures are reported outside numeric comparisons."""
-            return r.get("status") != "FAILED" and r.get("qps") is not None
+            return row.get("status") != "FAILED" and row.get("qps") is not None
 
-        failed = [r for r in results if not _has_reportable_qps(r)]
-        ok = [r for r in results if _has_reportable_qps(r)]
+        failed = [row for row in results if not _has_reportable_qps(row)]
+        ok = [row for row in results if _has_reportable_qps(row)]
         # A run whose every timed query failed reports qps 0.0 without being
         # FAILED; it is listed, but cannot anchor or receive a comparison.
-        comparable = {r["system"]: r for r in ok if r["qps"] > 0}
+        comparable = {row["system"]: row for row in ok if row["qps"] > 0}
         out.append("\n## Benchmark 8 — DNS Query Performance\n")
         rows = []
-        for r in ok:
-            rows.append([r["system"], r.get("qps", "-"), r.get("avg_latency_ms", "-"),
-                         r.get("p95_ms", "-"), r.get("p99_ms", "-"),
-                         _display_b08_query_delta(r, comparable)])
+
+        for row in ok:
+            rows.append([row["system"], row.get("qps", "-"), row.get("avg_latency_ms", "-"),
+                         row.get("p95_ms", "-"), row.get("p99_ms", "-"),
+                         _display_b08_query_delta(row, comparable)])
+
         out.append(_render_markdown_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
              "QPS vs. same server standalone"], rows))
+
         if failed:
             out.append("\n> ⚠️ Failed runs: " +
-                       ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
-                                 for r in failed) + "\n")
+                       ", ".join(f'{row.get("system", "?")} ({row.get("error", "?")})'
+                                 for row in failed) + "\n")
+
         out.append(_render_b08_conclusion(comparable))
 
     if "b09_resource_usage" in data:
@@ -372,8 +412,9 @@ def _render_markdown(env: dict, data: dict) -> str:
         if results:
             out.append("\n## Benchmark 9 — Resource Usage\n")
             headers = _union_headers(results)
-            rows = [[r.get(h, "-") for h in headers] for r in results]
+            rows = [[row.get(h, "-") for h in headers] for row in results]
             out.append(_render_markdown_table(headers, rows))
+
     return "\n".join(out)
 
 
@@ -391,6 +432,7 @@ def _write_graphs(data: dict) -> None:
         """Write one benchmark metric's bar chart to a PNG."""
         if not labels:
             return
+
         fig, ax = plt.subplots(figsize=(8, 4.5))
         ax.bar(labels, values, color="#3b82f6")
         ax.set_title(title)
@@ -403,25 +445,30 @@ def _write_graphs(data: dict) -> None:
     if "b01_crud_tps" in data:
         rs = _rows(data, "b01_crud_tps")
         write_bar_chart("b01_create_tps.png", "Record Create TPS",
-            [r["system"] for r in rs], [r.get("create_tps", 0) for r in rs], "TPS")
+            [row["system"] for row in rs], [row.get("create_tps", 0) for row in rs], "TPS")
         write_bar_chart("b01_read_tps.png", "Record Read TPS",
-            [r["system"] for r in rs], [r.get("read_tps", 0) for r in rs], "TPS")
+            [row["system"] for row in rs], [row.get("read_tps", 0) for row in rs], "TPS")
+
     if "b08_query_perf" in data:
         rs = _rows(data, "b08_query_perf")
         write_bar_chart("b08_qps.png", "DNS Query Throughput (QPS)",
-            [r["system"] for r in rs], [r.get("qps", 0) for r in rs], "QPS")
+            [row["system"] for row in rs], [row.get("qps", 0) for row in rs], "QPS")
+
     if "b03_propagation" in data:
         rs = _rows(data, "b03_propagation")
         write_bar_chart("b03_visible_p95.png", "DNS-Visible Latency p95 (create -> answerable)",
-            [r["system"] for r in rs], [r.get("visible_p95_ms", 0) for r in rs], "ms")
+            [row["system"] for row in rs], [row.get("visible_p95_ms", 0) for row in rs], "ms")
+
     if "b02_bulk_import" in data:
         # Largest-size row per system.
         by_sys: dict[str, dict] = {}
-        for r in _rows(data, "b02_bulk_import"):
-            prev = by_sys.get(r["system"])
-            if prev is None or r.get("size", 0) >= prev.get("size", 0):
-                by_sys[r["system"]] = r
+
+        for row in _rows(data, "b02_bulk_import"):
+            prev = by_sys.get(row["system"])
+            if prev is None or row.get("size", 0) >= prev.get("size", 0):
+                by_sys[row["system"]] = row
+
         rs = list(by_sys.values())
         write_bar_chart("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
-            [r["system"] for r in rs], [r.get("records_per_sec", 0) for r in rs],
+            [row["system"] for row in rs], [row.get("records_per_sec", 0) for row in rs],
             "records/sec")

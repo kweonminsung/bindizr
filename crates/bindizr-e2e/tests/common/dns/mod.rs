@@ -27,6 +27,7 @@ mod tests;
 /// Build the DNS comparison form of an API record value.
 pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
+
     if !matches!(record_type, 15 | 33) {
         return value;
     }
@@ -41,11 +42,13 @@ pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Valu
         33 => fields.len() == 3,
         _ => false,
     };
+
     if !expects_priority_fallback {
         return value;
     }
 
     let priority = record["priority"].as_u64().unwrap_or(10);
+
     json!(format!("{priority} {target}"))
 }
 
@@ -59,6 +62,7 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
         .as_str()
         .and_then(dns_record_type)
         .expect("record contained an unsupported DNS type");
+
     (name, record_type)
 }
 
@@ -67,7 +71,7 @@ pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
     record_type
         .parse::<domain::base::Rtype>()
         .ok()
-        .map(|rtype| rtype.to_int())
+        .map(Rtype::to_int)
 }
 
 /// Poll DNS until its answers match the expected record values.
@@ -81,6 +85,7 @@ pub(crate) async fn wait_for_dns_records(
     eprintln!(
         "Waiting for {expected_count} type {record_type} record(s) for {name} on 127.0.0.1:{port}..."
     );
+
     for attempt in 1..=120 {
         match query_dns_records(port, name, record_type) {
             Ok(records)
@@ -132,6 +137,7 @@ fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord
     if record_type == 6 {
         return true;
     }
+
     let normalize = |value: &Value| {
         let value = value.to_string();
         if matches!(record_type, 2 | 5 | 12 | 15 | 33 | 39) {
@@ -148,6 +154,7 @@ fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord
         .collect::<Vec<_>>();
     expected.sort();
     actual.sort();
+
     expected == actual
 }
 
@@ -155,6 +162,7 @@ fn matches_dns_values(record_type: u16, expected: &[Value], records: &[DnsRecord
 /// without decoding RDATA.
 pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: u16) {
     eprintln!("Waiting for a type {record_type} record for {name} on 127.0.0.1:{port}...");
+
     for attempt in 1..=120 {
         if matches!(query_dns_record_count(port, name, record_type), Ok(count) if count > 0) {
             eprintln!("{name} type {record_type} is served by 127.0.0.1:{port}.");
@@ -188,18 +196,21 @@ fn query_dns_records(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsR
 /// Query DNS and count the returned answers.
 fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
-    let message = Message::from_octets(response.as_slice()).map_err(|e| e.to_string())?;
+    let message = Message::from_octets(response.as_slice()).map_err(|error| error.to_string())?;
+
     if !validate_response_header(query_id, &message)? {
         return Ok(0);
     }
 
-    let answer = message.answer().map_err(|e| e.to_string())?;
+    let answer = message.answer().map_err(|error| error.to_string())?;
     let mut count = 0;
+
     for record in answer {
-        if record.map_err(|e| e.to_string())?.rtype().to_int() == record_type {
+        if record.map_err(|error| error.to_string())?.rtype().to_int() == record_type {
             count += 1;
         }
     }
+
     Ok(count)
 }
 
@@ -222,7 +233,7 @@ fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8
     let mut question = builder.question();
     question
         .push((&parse_name(name)?, Rtype::from_int(record_type)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
 
     Ok(question.finish())
 }
@@ -233,7 +244,7 @@ pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     if trimmed.is_empty() {
         return Ok(Name::root_vec());
     }
-    Name::from_str(trimmed).map_err(|e| format!("invalid DNS name '{name}': {e}"))
+    Name::from_str(trimmed).map_err(|error| format!("invalid DNS name '{name}': {error}"))
 }
 
 /// Validate a DNS response and extract answer or referral records.
@@ -241,15 +252,17 @@ pub(crate) fn extract_dns_records(
     query_id: u16,
     response: &[u8],
 ) -> Result<Vec<DnsRecord>, String> {
-    let message = Message::from_octets(response).map_err(|e| e.to_string())?;
+    let message = Message::from_octets(response).map_err(|error| error.to_string())?;
+
     if !validate_response_header(query_id, &message)? {
         return Ok(Vec::new());
     }
 
-    let answer = message.answer().map_err(|e| e.to_string())?;
+    let answer = message.answer().map_err(|error| error.to_string())?;
     let mut records = Vec::new();
+
     for record in answer.limit_to::<AllRecordData<_, _>>() {
-        let record = record.map_err(|e| e.to_string())?;
+        let record = record.map_err(|error| error.to_string())?;
         let record_type = record.rtype().to_int();
         records.push(DnsRecord {
             record_type,
@@ -260,9 +273,10 @@ pub(crate) fn extract_dns_records(
     // A delegation NS record set comes back as a referral: NOERROR with an empty
     // answer section and the NS rows in authority (RFC 1034, Section 4.3.2).
     if records.is_empty() {
-        let authority = message.authority().map_err(|e| e.to_string())?;
+        let authority = message.authority().map_err(|error| error.to_string())?;
+
         for record in authority.limit_to::<AllRecordData<_, _>>() {
-            let record = record.map_err(|e| e.to_string())?;
+            let record = record.map_err(|error| error.to_string())?;
             let record_type = record.rtype().to_int();
             records.push(DnsRecord {
                 record_type,
@@ -285,6 +299,7 @@ fn validate_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<b
     if !header.qr() {
         return Err("DNS response is not marked as a response".to_string());
     }
+
     match header.rcode() {
         Rcode::NOERROR => Ok(true),
         Rcode::NXDOMAIN => Ok(false),
@@ -334,12 +349,13 @@ fn decode_dns_value(
         AllRecordData::Txt(txt) => {
             let segments = txt
                 .iter_charstrs()
-                .map(|charstr| charstr.as_slice())
+                .map(domain::base::CharStr::as_slice)
                 .collect::<Vec<_>>();
             let text = segments
                 .iter()
                 .map(|segment| std::str::from_utf8(segment))
                 .collect::<Result<Vec<_>, _>>();
+
             if let Ok(text) = text {
                 if let [value] = text.as_slice() {
                     json!(value)
@@ -375,10 +391,12 @@ fn decode_dns_value(
         AllRecordData::Unknown(unknown) => {
             let bytes = unknown.data();
             let mut value = format!(r"\# {}", bytes.len());
+
             if !bytes.is_empty() {
                 value.push(' ');
                 value.push_str(&hex_upper(bytes));
             }
+
             Value::String(value)
         }
         AllRecordData::Soa(_) => return Ok(None),
@@ -399,10 +417,12 @@ fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
 /// Render the API's escaped FQDN form without losing label octets or boundaries.
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     let mut out = String::new();
+
     for label in name.iter() {
         if label.is_root() {
             break;
         }
+
         for &byte in label.as_slice() {
             match byte {
                 b'.' => out.push_str(r"\046"),
@@ -414,11 +434,14 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
                 _ => out.push_str(&format!("\\{byte:03}")),
             }
         }
+
         out.push('.');
     }
+
     if out.is_empty() {
         out.push('.');
     }
+
     out
 }
 
@@ -426,6 +449,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
 /// control and non-ASCII bytes as `\DDD`, so it matches what the API reports.
 fn to_quoted_string(bytes: &[u8]) -> String {
     let mut out = String::from("\"");
+
     for &byte in bytes {
         match byte {
             b'"' => out.push_str("\\\""),
@@ -434,7 +458,9 @@ fn to_quoted_string(bytes: &[u8]) -> String {
             _ => out.push_str(&format!("\\{byte:03}")),
         }
     }
+
     out.push('"');
+
     out
 }
 
@@ -455,10 +481,12 @@ pub(crate) async fn fetch_exported_record_sets(
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     let mut file = Zonefile::new();
     file.extend_from_slice(generic_wks_export(body.as_str().unwrap()).as_bytes());
     let mut sets = std::collections::BTreeMap::<_, Vec<_>>::new();
+
     while let Some(entry) = file.next_entry().unwrap() {
         if let Entry::Record(record) = entry {
             let name = format!("{}.", record.owner().to_string().trim_end_matches('.'));
@@ -467,6 +495,7 @@ pub(crate) async fn fetch_exported_record_sets(
             sets.entry((name, record.rtype())).or_default().push(rdata);
         }
     }
+
     sets
 }
 
@@ -476,16 +505,20 @@ fn generic_wks_export(text: &str) -> String {
         .lines()
         .map(|line| {
             let fields: Vec<_> = line.split_whitespace().collect();
+
             if fields.get(3) != Some(&"WKS") || fields.get(4) == Some(&r"\#") {
                 return line.to_owned();
             }
+
             let address: std::net::Ipv4Addr = fields[4].parse().unwrap();
             let protocol: u8 = fields[5].parse().unwrap();
             let mut bitmap = vec![0u8; 8192];
+
             for port in &fields[6..] {
                 let port = usize::from(port.parse::<u16>().unwrap());
                 bitmap[port / 8] |= 1 << (7 - port % 8);
             }
+
             bitmap.truncate(
                 bitmap
                     .iter()
@@ -496,10 +529,12 @@ fn generic_wks_export(text: &str) -> String {
             bytes.push(protocol);
             bytes.extend(bitmap);
             let hex: String = bytes.iter().map(|byte| format!("{byte:02X}")).collect();
+
             format!(r"{} \# {} {}", fields[..4].join(" "), bytes.len(), hex)
         })
         .collect::<Vec<_>>()
         .join("\n");
     normalized.push('\n');
+
     normalized
 }

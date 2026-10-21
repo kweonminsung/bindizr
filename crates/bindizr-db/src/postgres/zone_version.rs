@@ -135,12 +135,14 @@ pub(crate) async fn count_by_filter(
         VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
         VersionFilter::All => "",
     };
+
     let count: i64 = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = $1{predicate}"
     )))
     .bind(zone_id)
     .fetch_one(pool)
     .await?;
+
     Ok(count as u64)
 }
 

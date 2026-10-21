@@ -11,7 +11,7 @@ use bindizr_service::{
 
 use crate::socket::types::DaemonResponse;
 
-/// Request NOTIFY delivery for one zone.
+/// Send NOTIFY requests for one zone.
 pub(crate) async fn notify_zone(
     cx: &Arc<Context>,
     zone_name: &str,
@@ -21,7 +21,7 @@ pub(crate) async fn notify_zone(
     notify(cx, NotifyTarget::Zone(&zone_name), serial).await
 }
 
-/// Request NOTIFY delivery for all zones.
+/// Send NOTIFY requests for all zones.
 pub(crate) async fn notify_all_zones(
     cx: &Arc<Context>,
     serial: NotifySerial,
@@ -29,7 +29,7 @@ pub(crate) async fn notify_all_zones(
     notify(cx, NotifyTarget::All, serial).await
 }
 
-/// Request NOTIFY delivery for the zones `target` names.
+/// Send NOTIFY requests for the zones `target` names.
 async fn notify(
     cx: &Arc<Context>,
     target: NotifyTarget<'_>,

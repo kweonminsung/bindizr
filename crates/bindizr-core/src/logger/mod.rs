@@ -90,10 +90,12 @@ impl Logger {
         let log_level = Level::from(logging.level);
 
         set_format(logging.format);
-        if let Err(e) = log::set_boxed_logger(Box::new(Logger)) {
-            crate::errln!("Failed to set logger: {}", e);
+
+        if let Err(error) = log::set_boxed_logger(Box::new(Logger)) {
+            crate::errln!("Failed to set logger: {}", error);
             return;
         }
+
         set_level(logging.level);
 
         log::info!("Console logging level: {}", log_level);

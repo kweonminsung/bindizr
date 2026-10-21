@@ -26,24 +26,29 @@ async def measure(adapter, prepop: int) -> dict:
     """Measure record creation throughput at one prepopulated zone size."""
     await adapter.delete_zone(ZONE)
     await adapter.create_zone(ZONE)
+
     pool = generate(prepop, 1337)
-    for i, rec in enumerate(pool):
-        rec["name"] = f"pool{i:07d}"
+
+    for i, record in enumerate(pool):
+        record["name"] = f"pool{i:07d}"
+
     await adapter.import_records(ZONE, pool)
 
-    create_recs = generate(300_000, 4242)
+    create_records = generate(300_000, 4242)
 
     async def step(seq: int) -> bool:
         """Create one uniquely named record in the growing zone."""
-        rec = dict(create_recs[seq % len(create_recs)])
-        rec["name"] = f"crt{seq:08d}"
-        await adapter.create_record(ZONE, rec)
+        record = dict(create_records[seq % len(create_records)])
+        record["name"] = f"crt{seq:08d}"
+        await adapter.create_record(ZONE, record)
         return True
 
-    rec = await loadgen.run_closed_loop(step, CONCURRENCY, DURATION, WARMUP)
-    s = rec.summary()
-    return {"prepop": prepop, "create_tps": s["tps"],
-            "p95_ms": s["p95_ms"], "p99_ms": s["p99_ms"], "errors": rec.errors}
+    recorder = await loadgen.run_closed_loop(step, CONCURRENCY, DURATION, WARMUP)
+
+    summary = recorder.summary()
+
+    return {"prepop": prepop, "create_tps": summary["tps"],
+            "p95_ms": summary["p95_ms"], "p99_ms": summary["p99_ms"], "errors": recorder.errors}
 
 
 async def main() -> None:
@@ -52,6 +57,7 @@ async def main() -> None:
     adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}},
                              f"bench-lz-{label}", notify_after_update=False)
     rows = []
+
     try:
         await adapter.setup()
         for size in SIZES:
@@ -66,9 +72,10 @@ async def main() -> None:
     base = rows[0]["create_tps"] or 1
     print(f"\n=== {label}: create TPS vs zone size ===")
     print(f"{'prepop':>8} {'create_tps':>12} {'vs 1k':>8} {'p95_ms':>10}")
-    for r in rows:
-        print(f"{r['prepop']:>8} {r['create_tps']:>12.1f} "
-              f"{r['create_tps'] / base * 100:>7.0f}% {r['p95_ms']:>10.1f}")
+
+    for row in rows:
+        print(f"{row['prepop']:>8} {row['create_tps']:>12.1f} "
+              f"{row['create_tps'] / base * 100:>7.0f}% {row['p95_ms']:>10.1f}")
 
 
 if __name__ == "__main__":

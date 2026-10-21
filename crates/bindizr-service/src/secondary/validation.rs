@@ -32,13 +32,16 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<AddressTarget, 
             address
         )));
     }
+
     let address = AddressTarget::parse(address, DEFAULT_DNS_PORT);
+
     if address.to_string().len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "secondary address must be {} characters or fewer",
             MAX_COLUMN_TEXT_LEN
         )));
     }
+
     Ok(address)
 }
 
@@ -60,8 +63,8 @@ mod tests {
     #[test]
     fn normalize_secondary_name_rejects_a_name_that_is_not_a_plain_identifier() {
         for name in ["", "ns 2", "ns2/eu", &"n".repeat(256)] {
-            let err = normalize_secondary_name(name).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput, "{name:?}");
+            let error = normalize_secondary_name(name).unwrap_err();
+            assert_eq!(error.code(), ErrorCode::InvalidInput, "{name:?}");
         }
     }
 
@@ -104,8 +107,8 @@ mod tests {
     #[test]
     fn normalize_secondary_address_rejects_an_entry_that_is_not_an_address_target() {
         for address in ["", "not a host", "ns2.example.net:port", "192.0.2.7:0"] {
-            let err = normalize_secondary_address(address).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput, "{address:?}");
+            let error = normalize_secondary_address(address).unwrap_err();
+            assert_eq!(error.code(), ErrorCode::InvalidInput, "{address:?}");
         }
     }
 }

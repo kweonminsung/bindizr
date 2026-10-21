@@ -10,9 +10,9 @@ from lib import zonefile
 class NsupdateAdapter(DnsAdapter):
     """Query records with dig and apply changes with nsupdate."""
 
-    def __init__(self, cfg: dict, project: str, endpoint: Endpoint, zone: str):
+    def __init__(self, config: dict, project: str, endpoint: Endpoint, zone: str):
         """Store the primary endpoint, managed zone, and update failure detail."""
-        super().__init__(cfg, project)
+        super().__init__(config, project)
         self._endpoint = endpoint
         self._zone = zone
         self._last_err = ""
@@ -24,7 +24,9 @@ class NsupdateAdapter(DnsAdapter):
             name, rtype, "+short", "+tries=1", "+time=3",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         out, _ = await proc.communicate()
+
         text = out.decode().strip()
+
         return (bool(text), text)
 
     async def _nsupdate(self, script: str, retries: int = 5) -> bool:
@@ -32,34 +34,42 @@ class NsupdateAdapter(DnsAdapter):
         header = f"server {self._endpoint.host} {self._endpoint.port}\nzone {self._zone}\n"
         payload = (header + script + "send\n").encode()
         delay = 0.05
+
         for attempt in range(retries + 1):
             proc = await asyncio.create_subprocess_exec(
                 "nsupdate", stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-            _, err = await proc.communicate(payload)
+            _, stderr = await proc.communicate(payload)
+
             if proc.returncode == 0:
                 return True
-            self._last_err = (err or b"").decode(errors="replace").strip()
+
+            self._last_err = (stderr or b"").decode(errors="replace").strip()
+
             # A primary can refuse updates while flushing its journal.
             if attempt < retries:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 0.5)
+
         return False
 
     def _fqdn(self, name: str) -> str:
         """Qualify a record owner with the managed zone."""
         return f"{name}.{self._zone}."
 
-    async def create_record(self, zone: str, rec: dict) -> str:
+    async def create_record(self, zone: str, record: dict) -> str:
         """Create a record and return its name-and-type handle."""
-        fqdn = self._fqdn(rec["name"])
+        fqdn = self._fqdn(record["name"])
+
         ok = await self._nsupdate(
-            f'update add {fqdn} {rec.get("ttl", 3600)} '
-            f'{rec["type"]} {zonefile.build_record_data(rec)}\n')
+            f'update add {fqdn} {record.get("ttl", 3600)} '
+            f'{record["type"]} {zonefile.build_record_data(record)}\n')
+
         if not ok:
             raise RuntimeError(f"nsupdate add failed: {self._last_err!r} "
-                               f"rec={rec['type']} {zonefile.build_record_data(rec)}")
-        return f'{fqdn}|{rec["type"]}'
+                               f"rec={record['type']} {zonefile.build_record_data(record)}")
+
+        return f'{fqdn}|{record["type"]}'
 
     async def get_record(self, zone: str, handle: str) -> bool:
         """Check whether the record identified by the handle is present."""
@@ -67,13 +77,13 @@ class NsupdateAdapter(DnsAdapter):
         ok, _ = await self._dig(fqdn, rtype)
         return ok
 
-    async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
         fqdn, rtype = handle.rsplit("|", 1)
         return await self._nsupdate(
             f"update delete {fqdn} {rtype}\n"
-            f'update add {fqdn} {rec.get("ttl", 3600)} {rtype} '
-            f'{zonefile.build_record_data({**rec, "type": rtype})}\n')
+            f'update add {fqdn} {record.get("ttl", 3600)} {rtype} '
+            f'{zonefile.build_record_data({**record, "type": rtype})}\n')
 
     async def delete_record(self, zone: str, handle: str) -> bool:
         """Delete the record identified by the handle."""

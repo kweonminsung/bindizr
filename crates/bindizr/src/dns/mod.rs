@@ -64,8 +64,8 @@ pub(crate) async fn start(
                 catalog.serial
             );
         }
-        Err(e) => {
-            log::warn!("Failed to generate catalog zone: {}", e);
+        Err(error) => {
+            log::warn!("Failed to generate catalog zone: {}", error);
         }
     }
 
@@ -90,11 +90,13 @@ pub(crate) async fn start(
             source,
         })?;
     let udp_socket = UdpSocket::new(udp_socket).map_err(StartDnsError::UdpPacketInfo)?;
+
     // Bound before anything serves, so a failure exits the start.
     let tls_listener = match certificate {
         Some(certificate) => {
             let tls_addr = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
             let server_config = tls::build_server_config(certificate);
+
             let listener =
                 TcpListener::bind(tls_addr)
                     .await
@@ -104,6 +106,7 @@ pub(crate) async fn start(
                         setting: "dns.tls.listen_port",
                         source,
                     })?;
+
             Some((tls_addr, listener, server_config))
         }
         None => None,
@@ -114,9 +117,10 @@ pub(crate) async fn start(
 
     let tcp_stop = shutdown.waiter();
     let tcp_cx = dns_cx.clone();
+
     let tcp_task = tokio::spawn(async move {
-        if let Err(e) = tcp::run_tcp_server(tcp_cx, tcp_listener, tcp_stop).await {
-            log::error!("DNS TCP server error: {}", e);
+        if let Err(error) = tcp::run_tcp_server(tcp_cx, tcp_listener, tcp_stop).await {
+            log::error!("DNS TCP server error: {}", error);
         }
     });
 
@@ -124,9 +128,11 @@ pub(crate) async fn start(
         log::info!("DNS TLS server listening on {} (XoT)", tls_addr);
         let tls_stop = shutdown.waiter();
         let tls_cx = dns_cx.clone();
+
         tokio::spawn(async move {
-            if let Err(e) = tls::run_tls_server(tls_cx, listener, server_config, tls_stop).await {
-                log::error!("DNS TLS server error: {}", e);
+            if let Err(error) = tls::run_tls_server(tls_cx, listener, server_config, tls_stop).await
+            {
+                log::error!("DNS TLS server error: {}", error);
             }
         })
     });

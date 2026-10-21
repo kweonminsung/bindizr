@@ -67,9 +67,11 @@ pub async fn authorize_soa_content_by_name(
         } else {
             Vec::new()
         };
+
         Ok(TransferAccess::Granted((zone, signatures)))
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to load SOA content").await
 }
 
@@ -92,6 +94,7 @@ pub async fn authorize_transfer_by_name(
         }
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
@@ -108,15 +111,19 @@ pub async fn refresh_catalog_content(
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        if let Err(e) = caller.authorize_action(Action::ZoneTransfer) {
-            return Ok(TransferAccess::Refused(e.to_string()));
+
+        if let Err(error) = caller.authorize_action(Action::ZoneTransfer) {
+            return Ok(TransferAccess::Refused(error.to_string()));
         }
+
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
+
         Ok(TransferAccess::Granted(
             zones.into_iter().filter(|zone| zone.enabled).collect(),
         ))
     }
     .await;
+
     match transaction::finish_tx(tx, result, "failed to load catalog content").await? {
         TransferAccess::Granted(zones) => Ok(TransferAccess::Granted(
             super::refresh_catalog_from_zones(cx, zones).await?,
@@ -143,6 +150,7 @@ pub async fn authorize_transfer_content_by_name(
         let dnssec_records =
             bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
+
         Ok(TransferAccess::Granted(TransferContent {
             zone,
             version_id,
@@ -151,6 +159,7 @@ pub async fn authorize_transfer_content_by_name(
         }))
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
@@ -180,16 +189,19 @@ async fn authorize_transfer_tx(
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
+
     // A zone the role does not reach is refused rather than hidden: NOTAUTH
     // would claim the zone is not served, and its name is no secret here.
     match caller.authorize_zone_action(Action::ZoneTransfer, &zone) {
         Ok(()) => Ok(TransferAccess::Granted(zone)),
-        Err(e) if e.code() == ErrorCode::ZoneNotFound => Ok(TransferAccess::Refused(format!(
-            "role does not permit '{}' in zone '{}'",
-            Action::ZoneTransfer,
-            zone.name
-        ))),
-        Err(e) => Ok(TransferAccess::Refused(e.to_string())),
+        Err(error) if error.code() == ErrorCode::ZoneNotFound => {
+            Ok(TransferAccess::Refused(format!(
+                "role does not permit '{}' in zone '{}'",
+                Action::ZoneTransfer,
+                zone.name
+            )))
+        }
+        Err(error) => Ok(TransferAccess::Refused(error.to_string())),
     }
 }
 
@@ -201,7 +213,9 @@ async fn reauthenticate_transfer_tx(
 ) -> Result<TransferAccess<Caller>, ServiceError> {
     match caller.reauthenticate_tx(tx).await {
         Ok(caller) => Ok(TransferAccess::Granted(caller)),
-        Err(e) if e.code() == ErrorCode::InvalidToken => Ok(TransferAccess::Refused(e.to_string())),
-        Err(e) => Err(e),
+        Err(error) if error.code() == ErrorCode::InvalidToken => {
+            Ok(TransferAccess::Refused(error.to_string()))
+        }
+        Err(error) => Err(error),
     }
 }

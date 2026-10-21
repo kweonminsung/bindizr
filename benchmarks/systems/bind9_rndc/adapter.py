@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import Endpoint  # noqa: E402
 from adapters.bind9_zonefile import Bind9ZoneFileAdapter  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import docker  # noqa: E402
 
 DNS_PORT = 15357
 ZONE = "bench.example"
@@ -25,10 +25,10 @@ class Bind9RndcAdapter(Bind9ZoneFileAdapter):
     resource_services = ["bind9"]
     supports_ixfr = True
 
-    def __init__(self, cfg: dict, project: str):
+    def __init__(self, config: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
-        super().__init__(cfg, project, Endpoint(SERVER, DNS_PORT), ZONE, ZONE_PATH)
-        self.compose = dockerutil.Compose(HERE / "compose.yml", project)
+        super().__init__(config, project, Endpoint(SERVER, DNS_PORT), ZONE, ZONE_PATH)
+        self.compose = docker.Compose(HERE / "compose.yml", project)
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
@@ -45,9 +45,12 @@ class Bind9RndcAdapter(Bind9ZoneFileAdapter):
                 "+tries=1", "+time=3",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
             out, _ = await proc.communicate()
+
             if out.decode().strip():
                 return
+
             await asyncio.sleep(0.5)
+
         raise RuntimeError("BIND9 (rndc) did not become ready")
 
     async def teardown(self) -> None:

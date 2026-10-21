@@ -10,6 +10,7 @@ pub(crate) async fn create_tx(
     mut role: Role,
 ) -> Result<Role, DatabaseError> {
     let now = Utc::now();
+
     let result = sqlx::query(
         r#"
         INSERT INTO roles (name, description, created_at)
@@ -24,18 +25,19 @@ pub(crate) async fn create_tx(
 
     role.id = RoleId::from(super::last_insert_id(&result)?);
     role.created_at = now;
+
     Ok(role)
 }
 
 /// Find a role by ID.
 pub(crate) async fn get(pool: &Pool<Sqlite>, id: RoleId) -> Result<Option<Role>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let role = sqlx::query_as::<_, Role>(
         "SELECT id, name, description, created_at FROM roles WHERE id = ?",
     )
     .bind(id)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(role)
@@ -46,13 +48,13 @@ pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
     name: &str,
 ) -> Result<Option<Role>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let role = sqlx::query_as::<_, Role>(
         "SELECT id, name, description, created_at FROM roles WHERE name = ?",
     )
     .bind(name)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(role)
@@ -60,12 +62,12 @@ pub(crate) async fn get_by_name(
 
 /// List all roles.
 pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<Role>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let roles = sqlx::query_as::<_, Role>(
         "SELECT id, name, description, created_at FROM roles ORDER BY name",
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(roles)

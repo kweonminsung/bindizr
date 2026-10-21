@@ -71,12 +71,14 @@ fn published_key_cosigns_key_record_sets_but_not_zone_data() {
 
     let apex = OwnerName::apex();
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
+
     // Both keys are published and advertised to the parent (double-DS).
     assert_eq!(
         records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
         2
     );
     assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 2);
+
     // Both SEP keys sign the DNSKEY record set — a validator may arrive via either
     // DS — but only the active key signs zone data.
     assert_eq!(
@@ -118,6 +120,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     });
 
     let apex = OwnerName::apex();
+
     // Still in the DNSKEY record set (cached signatures and a possibly lingering
     // old DS need it) and still co-signing that record set...
     assert_eq!(
@@ -133,12 +136,14 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
         .len(),
         2
     );
+
     // ...but no longer advertised to the parent: its DS should be dropped.
     assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
         records_of_type(&diff.added, DnssecRecordType::Cdnskey).len(),
         1
     );
+
     // And it signs no zone data.
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
 }
@@ -170,10 +175,12 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
 
     let apex = OwnerName::apex();
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
+
     assert_eq!(
         records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
         2
     );
+
     // Only the KSK is in the parent DS set and signs the key record sets
     // (RFC 7344, Section 4.1); only the ZSK signs zone data.
     assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
@@ -235,6 +242,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     // RFC 6840, Section 5.11: every algorithm in the DNSKEY record set must sign
     // all data, so the pre-published new-algorithm key signs immediately.
     let apex = OwnerName::apex();
+
     assert_eq!(
         rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
         2
@@ -274,6 +282,7 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     // The old DNSKEY is still served, so the old algorithm must keep covering
     // all data until the key is removed (RFC 6840, Section 5.11).
     let apex = OwnerName::apex();
+
     assert_eq!(
         rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
         2

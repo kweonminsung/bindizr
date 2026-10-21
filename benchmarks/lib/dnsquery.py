@@ -25,22 +25,22 @@ def build_query(qid: int, name: str, qtype: int = 1) -> bytes:
     return header + question
 
 
-def _ancount(resp: bytes) -> int:
+def _ancount(response: bytes) -> int:
     """Read the answer count from a DNS response header."""
-    if len(resp) < 12:
+    if len(response) < 12:
         return 0
-    return struct.unpack(">H", resp[6:8])[0]
+    return struct.unpack(">H", response[6:8])[0]
 
 
 async def query_load(server: str, port: int, names: list[str], qtype: int,
                      concurrency: int, duration_secs: float,
                      warmup_secs: float = 0.0) -> LatencyRecorder:
     """Measure UDP DNS query throughput and latency with a fixed worker pool."""
-    rec = LatencyRecorder()
+    recorder = LatencyRecorder()
     clock = time.monotonic
     warmup_until = clock() + warmup_secs
     measure_end = warmup_until + duration_secs
-    rec.started_at = warmup_until
+    recorder.started_at = warmup_until
     loop = asyncio.get_event_loop()
     counter = itertools.count()
     n = len(names)
@@ -50,35 +50,46 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setblocking(False)
         sock.connect((server, port))
+
         try:
             while True:
                 now = clock()
+
                 if now >= measure_end:
                     return
+
                 seq = next(counter)
                 name = names[seq % n]
-                pkt = build_query(seq, name, qtype)
+                packet = build_query(seq, name, qtype)
                 t0 = clock()
                 ok = False
+
                 try:
-                    await loop.sock_sendall(sock, pkt)
+                    await loop.sock_sendall(sock, packet)
+
                     # Discard replies to earlier queries: one timed-out query
                     # would otherwise leave every later read off by one, since
                     # the socket is reused for the worker's whole run.
                     while True:
-                        resp = await asyncio.wait_for(
+                        response = await asyncio.wait_for(
                             loop.sock_recv(sock, 512), timeout=2.0)
-                        if resp[:2] == pkt[:2]:
+                        if response[:2] == packet[:2]:
                             break
-                    ok = _ancount(resp) > 0
+
+                    ok = _ancount(response) > 0
                 except Exception:
                     ok = False
+
+                # Keep warmup replies out of both latency and throughput samples.
                 t1 = clock()
+
                 if t1 >= warmup_until:
-                    rec.track_latency(t1 - t0, ok=ok)
+                    recorder.track_latency(t1 - t0, ok=ok)
         finally:
             sock.close()
 
     await asyncio.gather(*[worker() for _ in range(concurrency)])
-    rec.ended_at = clock()
-    return rec
+
+    recorder.ended_at = clock()
+
+    return recorder

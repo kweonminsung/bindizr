@@ -43,6 +43,7 @@ impl DnsStream {
     pub(crate) fn into_split(self) -> (ReadHalf<DnsStream>, ResponseWriter) {
         let transport = self.transport();
         let (reader, writer) = tokio::io::split(self);
+
         (
             reader,
             ResponseWriter {
@@ -59,11 +60,11 @@ impl AsyncRead for DnsStream {
     fn poll_read(
         self: Pin<&mut Self>,
         task_cx: &mut task::Context<'_>,
-        buf: &mut ReadBuf<'_>,
+        buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_read(task_cx, buf),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_read(task_cx, buf),
+            DnsStream::Tcp(stream) => Pin::new(stream).poll_read(task_cx, buffer),
+            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_read(task_cx, buffer),
         }
     }
 }
@@ -73,11 +74,11 @@ impl AsyncWrite for DnsStream {
     fn poll_write(
         self: Pin<&mut Self>,
         task_cx: &mut task::Context<'_>,
-        buf: &[u8],
+        buffer: &[u8],
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_write(task_cx, buf),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_write(task_cx, buf),
+            DnsStream::Tcp(stream) => Pin::new(stream).poll_write(task_cx, buffer),
+            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_write(task_cx, buffer),
         }
     }
 
@@ -130,17 +131,22 @@ impl ResponseWriter {
     /// Write a frame unless the connection has failed; notify waiters on errors.
     async fn write_frame(&self, frame: &[u8]) -> Result<(), DnsError> {
         let mut writer = self.writer.lock().await;
+
         if *self.failure.borrow() {
             return Err(DnsError::PeerClosed);
         }
+
         let result = tokio::select! {
             biased;
             () = self.failed() => Err(DnsError::PeerClosed),
+
             result = wire::write_frame(&mut *writer, frame) => result,
         };
+
         if result.is_err() {
             self.fail();
         }
+
         result
     }
 
@@ -163,6 +169,7 @@ impl ResponseWriter {
         if *self.failure.borrow() {
             return Err(DnsError::PeerClosed);
         }
+
         match builder.add_answer_or_overflow(add_answer) {
             Ok(Some(frame)) => {
                 self.write_frame(&frame).await?;
@@ -223,6 +230,7 @@ mod tests {
         let mut client = client.unwrap();
         let (_, writer) = DnsStream::Tcp(accepted.unwrap().0).into_split();
         let writer = Arc::new(writer);
+
         let guard = writer.writer.lock().await;
         let pending: Vec<_> = (0..3)
             .map(|_| {
@@ -230,21 +238,29 @@ mod tests {
                 tokio::spawn(async move { writer.write_message(b"response").await })
             })
             .collect();
+
         writer.fail();
+
         timeout(Duration::from_secs(1), writer.failed())
             .await
             .unwrap();
+
         drop(guard);
+
         for task in pending {
             assert!(matches!(task.await.unwrap(), Err(DnsError::PeerClosed)));
         }
+
         writer.shutdown().await.unwrap();
+
         drop(writer);
         let mut received = Vec::new();
+
         timeout(Duration::from_secs(1), client.read_to_end(&mut received))
             .await
             .unwrap()
             .unwrap();
+
         assert!(received.is_empty());
     }
 }

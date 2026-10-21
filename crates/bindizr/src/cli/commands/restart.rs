@@ -24,12 +24,14 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
     let before = client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
         .await?
         .data;
-    let res = client::send_control_command::<MessageResponse>(DaemonCommand::Restart).await?;
+    let response = client::send_control_command::<MessageResponse>(DaemonCommand::Restart).await?;
+
     // The acknowledgement is progress, not the result: the command answers for
     // the replacement it waits for below.
     if output == OutputFormat::Table {
-        outln!("{}", res.message);
+        outln!("{}", response.message);
     }
+
     // exec keeps the PID, so a changed start time is the restart signal.
     let replaced = super::poll_with_deadline(RESTART_DEADLINE, async || {
         client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
@@ -39,19 +41,23 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
             .filter(|status| status.started_at_ms != before.started_at_ms)
     })
     .await;
+
     match replaced {
         Some(status) => {
             let pid = status
                 .pid
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
-            match output {
-                OutputFormat::Table => outln!(
+
+            if output == OutputFormat::Table {
+                outln!(
                     "Bindizr restarted: pid {} (version {})",
                     pid,
                     status.version
-                ),
-                _ => print_payload(&status, output)?,
+                )
+            } else {
+                print_payload(&status, output)?
             }
+
             Ok(())
         }
         None => Err(CliError::request(format!(

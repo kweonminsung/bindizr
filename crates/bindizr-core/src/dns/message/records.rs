@@ -165,6 +165,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), EncodeMessageError> {
         let ptr_name = crate::dns::catalog_member_owner_name(&zone.name, member_zone);
         let ptr_target = to_fqdn(member_zone);
+
         self.add_text_rdata(
             &ptr_name,
             zone.default_ttl.as_secs(),
@@ -229,5 +230,5 @@ impl DnsMessageBuilder {
 /// Parses a presentation-form name through the one core name encoding.
 fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
     let wire = encode_name(name)?;
-    Name::from_octets(wire).map_err(|e| EncodeWireNameError::Octets(Box::new(e)).into())
+    Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)).into())
 }

@@ -83,6 +83,7 @@ fn expirations_spread_across_the_jitter_window() {
             .iter()
             .filter_map(|row| row.expires_at)
             .collect();
+
     assert!(
         expirations.len() > 1,
         "one pass would come due for every signature at once: {expirations:?}"
@@ -92,6 +93,7 @@ fn expirations_spread_across_the_jitter_window() {
         .iter()
         .next_back()
         .expect("signatures were emitted");
+
     assert!(latest <= default_expiration());
     assert!(earliest > default_expiration() - Duration::seconds(window));
 }

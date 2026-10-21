@@ -26,6 +26,7 @@ pub(crate) async fn enable_dnssec(
         request,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: "DNSSEC enabled successfully".to_string(),
         data: status,
@@ -45,7 +46,9 @@ pub(crate) async fn disable_dnssec(
         ds_check,
     )
     .await?;
+
     let message = "DNSSEC disabled successfully".to_string();
+
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },
@@ -90,6 +93,7 @@ pub(crate) async fn start_dnssec_rollover(
         request,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: "Key rollover started successfully".to_string(),
         data: status,
@@ -111,6 +115,7 @@ pub(crate) async fn advance_dnssec_rollover(
         holddown,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),
         data: status,
@@ -142,6 +147,7 @@ pub(crate) async fn update_dnssec_settings(
         request,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: "DNSSEC settings changed successfully".to_string(),
         data: status,
@@ -173,6 +179,7 @@ pub(crate) async fn import_dnssec_keys(
         request,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: "DNSSEC key imported successfully".to_string(),
         data: status,

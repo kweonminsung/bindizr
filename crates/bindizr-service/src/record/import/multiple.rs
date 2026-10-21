@@ -39,17 +39,21 @@ pub async fn import_zones(
         },
     };
     let server = request.from_server.trim();
+
     if !is_address_target(server) {
         return Err(ServiceError::invalid_input(
             "from_server must name one server as host[:port]",
         ));
     }
+
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
         authorize_new_zone_import(caller, mode)?;
     }
+
     let config = cx.config();
     let mut client = AxfrClient::new(server);
+
     let zone_names = match (&request.zone_names, &request.from_catalog) {
         (Some(names), None) => normalize_zone_names(names)?,
         (None, Some(catalog)) => {
@@ -58,25 +62,35 @@ pub async fn import_zones(
             for action in import_actions(mode) {
                 caller.authorize_all_whole_zones(*action)?;
             }
+
             let catalog = zone::normalize_name(catalog)?;
+
             let records = client
                 .fetch_zone(&catalog, &config.dns.import)
                 .await
-                .map_err(|e| {
+                .map_err(|error| {
                     ServiceError::invalid_input_with_source(
-                        format!("AXFR of catalog {} from {} failed: {}", catalog, server, e),
-                        e,
+                        format!(
+                            "AXFR of catalog {} from {} failed: {}",
+                            catalog, server, error
+                        ),
+                        error,
                     )
                 })?;
-            let members = extract_member_zones(&records, &catalog).map_err(|e| {
+            let members = extract_member_zones(&records, &catalog).map_err(|error| {
                 ServiceError::invalid_input_with_source(
-                    format!("catalog {} from {} cannot be read: {}", catalog, server, e),
-                    e,
+                    format!(
+                        "catalog {} from {} cannot be read: {}",
+                        catalog, server, error
+                    ),
+                    error,
                 )
             })?;
+
             for member in &members {
                 zone::validate_name(member)?;
             }
+
             members
         }
         (Some(_), Some(_)) => {
@@ -98,18 +112,26 @@ pub async fn import_zones(
         failed: 0,
     };
     let mut zones = Vec::with_capacity(zone_names.len());
+
+    // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
         let (result, import, error) =
             match import_transfer(cx, caller, zone_name, &mut client, server, options).await {
                 Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
                 Ok(import) => (ImportResult::Ok, Some(import), None),
-                Err(e) => (ImportResult::Failed, None, Some(ErrorResponse::from(&e))),
+                Err(error) => (
+                    ImportResult::Failed,
+                    None,
+                    Some(ErrorResponse::from(&error)),
+                ),
             };
+
         match result {
             ImportResult::Ok => summary.ok += 1,
             ImportResult::Rejected => summary.rejected += 1,
             ImportResult::Failed => summary.failed += 1,
         }
+
         zones.push(ImportZonesItemResponse {
             zone_name: zone_name.to_string(),
             result,
@@ -117,6 +139,7 @@ pub async fn import_zones(
             error,
         });
     }
+
     log::info!(
         "event=zones_import server={} mode={:?} dry_run={} zones={} ok={} rejected={} failed={}",
         server,
@@ -127,6 +150,7 @@ pub async fn import_zones(
         summary.rejected,
         summary.failed,
     );
+
     Ok(ImportZonesResponse {
         dry_run: request.dry_run,
         summary,

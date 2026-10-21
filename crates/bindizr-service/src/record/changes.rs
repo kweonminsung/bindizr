@@ -42,7 +42,9 @@ pub(crate) async fn create_with_changes_tx(
             derived: false,
         })
         .collect();
+
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
+
     Ok(created_records)
 }
 
@@ -55,6 +57,7 @@ pub(crate) async fn update_with_changes_tx(
     updated: Record,
 ) -> Result<Record, ServiceError> {
     let updated = bindizr_db::record::update_tx(tx, updated).await?;
+
     let change = |operation, record: &Record| ZoneChange {
         zone_id: record.zone_id,
         serial: new_serial,
@@ -71,7 +74,9 @@ pub(crate) async fn update_with_changes_tx(
         change(ChangeOperation::Delete, existing),
         change(ChangeOperation::Add, &updated),
     ];
+
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
+
     Ok(updated)
 }
 
@@ -86,8 +91,10 @@ pub(crate) async fn delete_with_changes_tx(
         return Ok(());
     }
 
-    let ids: Vec<RecordId> = records.iter().map(|r| r.id).collect();
+    let ids: Vec<RecordId> = records.iter().map(|record| record.id).collect();
+
     bindizr_db::record::delete_many_tx(tx, &ids).await?;
+
     let changes: Vec<ZoneChange> = records
         .iter()
         .map(|record| ZoneChange {
@@ -103,6 +110,8 @@ pub(crate) async fn delete_with_changes_tx(
             derived: false,
         })
         .collect();
+
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
+
     Ok(())
 }

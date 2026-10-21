@@ -34,6 +34,7 @@ impl WksRecordValue {
             _ => parse_u8_record_field("WKS protocol", protocol)?,
         };
         let mut services = Vec::new();
+
         for port in words.filter(|word| !matches!(*word, "(" | ")")) {
             let port = usize::from(parse_u16_record_field("WKS port", port)?);
             let index = port / 8;
@@ -42,6 +43,7 @@ impl WksRecordValue {
             }
             services[index] |= 0x80 >> (port % 8);
         }
+
         Ok(Self {
             address,
             protocol,
@@ -54,10 +56,12 @@ impl WksRecordValue {
         if !(WKS_PREFIX_LEN..=WKS_PREFIX_LEN + MAX_SERVICE_BITMAP_LEN).contains(&bytes.len()) {
             return Err(ParseRecordValueError::WksRdata);
         }
+
         // BIND rejects trailing zero bitmap bytes, which would prevent zone loading.
         if bytes.len() > WKS_PREFIX_LEN && bytes.last() == Some(&0) {
             return Err(ParseRecordValueError::WksBitmapPadding);
         }
+
         Ok(Self {
             address: Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]),
             protocol: bytes[4],
@@ -73,6 +77,7 @@ impl WksRecordValue {
     /// Render the protocol and distinct ports as ordered numeric fields.
     pub fn canonical(&self) -> String {
         let mut value = format!("{} {}", self.address, self.protocol);
+
         for (index, byte) in self.services.iter().enumerate() {
             for bit in 0..8 {
                 if byte & (0x80 >> bit) != 0 {
@@ -80,6 +85,7 @@ impl WksRecordValue {
                 }
             }
         }
+
         value
     }
 
@@ -106,6 +112,7 @@ mod tests {
     fn parse_encodes_port_bitmap_boundaries() {
         let parsed = WksRecordValue::parse("192.0.2.1 TCP ( 65535 8 7 0 8 )").unwrap();
         let bytes = parsed.to_rdata().unwrap();
+
         assert_eq!(&bytes.as_bytes()[..7], &[192, 0, 2, 1, 6, 0x81, 0x80]);
         assert_eq!(
             bytes.as_bytes().len(),
@@ -125,6 +132,7 @@ mod tests {
             vec![192, 0, 2, 1, 6, 0x80, 1],
         ] {
             let parsed = WksRecordValue::from_rdata(&bytes).unwrap();
+
             assert_eq!(
                 WksRecordValue::parse(&parsed.canonical())
                     .unwrap()
@@ -134,6 +142,7 @@ mod tests {
                 bytes
             );
         }
+
         assert_eq!(
             WksRecordValue::parse("192.0.2.1 UDP 53")
                 .unwrap()
@@ -159,6 +168,7 @@ mod tests {
         ] {
             assert!(WksRecordValue::parse(value).is_err(), "{value}");
         }
+
         assert!(WksRecordValue::from_rdata(&[0; 4]).is_err());
         assert_eq!(
             WksRecordValue::from_rdata(&[192, 0, 2, 1, 6, 0x80, 0]),

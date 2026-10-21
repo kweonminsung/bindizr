@@ -76,6 +76,7 @@ pub(crate) fn evaluate_prerequisite(
     wanted: &mut RecordSets,
 ) -> Result<(), NsupdateError> {
     let name = prerequisite.name();
+
     match prerequisite {
         Prerequisite::NameExists { .. } => {
             if !served.keys().any(|(owner, _)| owner == name) {
@@ -112,6 +113,7 @@ pub(crate) fn evaluate_prerequisite(
                 .insert(rdata.clone());
         }
     }
+
     Ok(())
 }
 
@@ -129,6 +131,7 @@ pub(crate) fn evaluate_record_set_prerequisites(
             )));
         }
     }
+
     Ok(())
 }
 
@@ -141,26 +144,32 @@ fn zone_record_sets(
 ) -> Result<RecordSets, ServiceError> {
     let mut sets = RecordSets::new();
     let mut insert = |name: OwnerName, record_type: Rtype, rdata: Rdata| {
-        let rdata = rdata.to_canonical(record_type).map_err(|e| {
-            ServiceError::internal_with_source("failed to decode stored prerequisite content", e)
+        let rdata = rdata.to_canonical(record_type).map_err(|error| {
+            ServiceError::internal_with_source(
+                "failed to decode stored prerequisite content",
+                error,
+            )
         })?;
         sets.entry((name, record_type)).or_default().insert(rdata);
+
         Ok::<(), ServiceError>(())
     };
-    let soa = zone
-        .soa_rdata(zone.serial)
-        .map_err(|e| ServiceError::internal_with_source("failed to encode the zone's SOA", e))?;
+    let soa = zone.soa_rdata(zone.serial).map_err(|error| {
+        ServiceError::internal_with_source("failed to encode the zone's SOA", error)
+    })?;
     insert(OwnerName::apex(), Rtype::SOA, soa)?;
+
     for record in records {
-        let rdata = record
-            .to_rdata()
-            .map_err(|e| ServiceError::internal_with_source("failed to encode a zone record", e))?;
+        let rdata = record.to_rdata().map_err(|error| {
+            ServiceError::internal_with_source("failed to encode a zone record", error)
+        })?;
         insert(
             record.name.clone(),
             Rtype::from_int(record.record_type.wire_type()),
             rdata,
         )?;
     }
+
     for record in derived {
         insert(
             record.name.clone(),
@@ -168,5 +177,6 @@ fn zone_record_sets(
             record.rdata.clone(),
         )?;
     }
+
     Ok(sets)
 }

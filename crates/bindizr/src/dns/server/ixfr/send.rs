@@ -22,11 +22,13 @@ pub(crate) async fn send_soa_response(
     signer: Option<TransferSigner>,
 ) -> Result<(), DnsError> {
     let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
+
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }
 
     builder.add_soa(zone, zone.serial)?;
+
     writer.flush_if_not_empty(&mut builder).await?;
 
     Ok(())
@@ -63,9 +65,11 @@ pub(crate) async fn send_ixfr_response(
     signer: Option<TransferSigner>,
 ) -> Result<(), SendIxfrError> {
     let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
+
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
     }
+
     let mut messages_sent = 0usize;
 
     let result = async {
@@ -85,6 +89,7 @@ pub(crate) async fn send_ixfr_response(
             .await?;
 
         let mut changes_by_serial: HashMap<Serial, Vec<&ZoneChange>> = HashMap::new();
+
         for change in changes {
             let serial = change.serial;
             changes_by_serial.entry(serial).or_default().push(change);
@@ -109,6 +114,7 @@ pub(crate) async fn send_ixfr_response(
                     which: "old",
                     serial: old_serial,
                 })?;
+
             writer
                 .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
                     builder.add_version_soa(old_soa)
@@ -117,7 +123,7 @@ pub(crate) async fn send_ixfr_response(
 
             for change in serial_changes
                 .iter()
-                .filter(|c| c.operation == ChangeOperation::Delete)
+                .filter(|change| change.operation == ChangeOperation::Delete)
             {
                 writer
                     .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
@@ -133,6 +139,7 @@ pub(crate) async fn send_ixfr_response(
                     which: "new",
                     serial,
                 })?;
+
             writer
                 .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
                     builder.add_version_soa(new_soa)
@@ -141,7 +148,7 @@ pub(crate) async fn send_ixfr_response(
 
             for change in serial_changes
                 .iter()
-                .filter(|c| c.operation == ChangeOperation::Add)
+                .filter(|change| change.operation == ChangeOperation::Add)
             {
                 writer
                     .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
@@ -170,12 +177,12 @@ pub(crate) async fn send_ixfr_response(
         }
         // A failure after the first flush leaves the stream mid-transfer, and
         // so does an I/O failure on the first frame: part of it may be out.
-        Err(err)
+        Err(error)
             if messages_sent > 0
-                || matches!(err, DnsError::Io(_) | DnsError::WriteTimeout { .. }) =>
+                || matches!(error, DnsError::Io(_) | DnsError::WriteTimeout { .. }) =>
         {
             Err(SendIxfrError::Partial {
-                error: err,
+                error,
                 signer: builder.take_signer().map(Box::new),
             })
         }

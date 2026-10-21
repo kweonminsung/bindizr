@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from lib.dockerutil import is_arm_override_enabled
+from lib.docker import is_arm_override_enabled
 
 SYSTEMS_DIR = Path(__file__).resolve().parent.parent / "systems"
 
@@ -27,23 +27,29 @@ def _read_command_output(args: list[str]) -> str:
 def _load_compose_images() -> dict[str, str]:
     """Read service images from Compose, applying ARM overrides and excluding seed scaffolding."""
     images: dict[str, str] = {}
+
     for compose in sorted(SYSTEMS_DIR.glob("*/compose.yml")):
         files = [compose]
         override = compose.with_name("compose.arm.yml")
+
         if is_arm_override_enabled() and override.exists():
             files.append(override)
+
         for file in files:
             try:
                 with open(file) as fh:
                     services = (yaml.safe_load(fh) or {}).get("services") or {}
             except Exception:
                 continue
+
             for name, service in services.items():
                 image = (service or {}).get("image")
                 if image and name != "seed":
                     images[name] = image
+
     if "bindizr" in images:
         images["bindizr"] += " (built from source)"
+
     return dict(sorted(images.items()))
 
 
@@ -56,6 +62,7 @@ def _read_cpu_model() -> str:
                     return line.split(":", 1)[1].strip()
     except OSError:
         pass
+
     return platform.processor() or "unknown"
 
 
@@ -69,12 +76,14 @@ def _read_mem_total_gb() -> float:
                     return round(kb / 1024 / 1024, 1)
     except OSError:
         pass
+
     return 0.0
 
 
-def collect(cfg: dict) -> dict:
+def collect(config: dict) -> dict:
     """Collect hardware, software, and benchmark settings for the report."""
     free = shutil.disk_usage("/").free
+
     return {
         "hardware": {
             "cpu": _read_cpu_model(),
@@ -92,11 +101,11 @@ def collect(cfg: dict) -> dict:
         },
         "software": _load_compose_images(),
         "config": {
-            "seed": cfg.get("seed"),
-            "sizes": cfg.get("sizes"),
-            "crud_concurrency": cfg.get("crud", {}).get("concurrency"),
-            "crud_duration_secs": cfg.get("crud", {}).get("duration_secs"),
-            "repeats": int(cfg.get("repeats", 1)),
+            "seed": config.get("seed"),
+            "sizes": config.get("sizes"),
+            "crud_concurrency": config.get("crud", {}).get("concurrency"),
+            "crud_duration_secs": config.get("crud", {}).get("duration_secs"),
+            "repeats": int(config.get("repeats", 1)),
         },
         "limits": {
             # Per-SUT-container resource caps applied via compose deploy.resources.

@@ -58,10 +58,10 @@ pub struct ErrorResponse {
 
 impl From<&ServiceError> for ErrorResponse {
     /// Build an error response from a service error's code and message.
-    fn from(err: &ServiceError) -> Self {
+    fn from(error: &ServiceError) -> Self {
         ErrorResponse {
-            error: err.to_string(),
-            code: err.code(),
+            error: error.to_string(),
+            code: error.code(),
         }
     }
 }

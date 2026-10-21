@@ -53,12 +53,12 @@ impl std::str::FromStr for DnssecDenial {
     type Err = ParseDenialError;
 
     /// Parse a DNSSEC denial from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "nsec" => Ok(DnssecDenial::Nsec),
             "nsec3" => Ok(DnssecDenial::Nsec3),
             _ => Err(ParseDenialError {
-                value: s.to_string(),
+                value: value.to_string(),
             }),
         }
     }
@@ -68,8 +68,8 @@ impl TryFrom<String> for DnssecDenial {
     type Error = ParseDenialError;
 
     /// Validate and convert the stored value into a DNSSEC denial.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -232,9 +232,9 @@ where
     /// Bind the row form.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i32::from(*self).encode_by_ref(buf)
+        i32::from(*self).encode_by_ref(buffer)
     }
 }
 

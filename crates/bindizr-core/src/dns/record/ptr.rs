@@ -35,6 +35,7 @@ mod tests {
             let value = PtrRecordValue::parse(input).unwrap();
             assert_eq!(encode_name(&value.canonical()).unwrap(), expected);
         }
+
         for invalid in ["", ".."] {
             assert!(PtrRecordValue::parse(invalid).is_err(), "{invalid:?}");
         }

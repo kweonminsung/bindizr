@@ -31,6 +31,7 @@ pub(crate) fn validate_default_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
             MAX_DEFAULT_TTL
         )));
     }
+
     Ttl::try_from(ttl).map_err(ServiceError::invalid_zone_field)
 }
 
@@ -57,9 +58,11 @@ pub(crate) fn validate_soa_interval<T: TryFrom<i32>>(
             field
         ))
     };
+
     if secs < 0 {
         return Err(non_negative());
     }
+
     T::try_from(secs).map_err(|_| non_negative())
 }
 

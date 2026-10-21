@@ -47,7 +47,7 @@ impl DnssecKey {
             DnssecAlgorithm::Ed448 => domain::crypto::sign::GenerateParams::Ed448,
         };
         let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
-            .map_err(|e| GenerateKeyError(Box::new(e)))?;
+            .map_err(|error| GenerateKeyError(Box::new(error)))?;
 
         Ok(DnssecKey {
             id: DnssecKeyId::UNWRITTEN,

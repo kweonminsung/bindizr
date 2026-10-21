@@ -126,9 +126,9 @@ where
     /// Bind the row form.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i64::from(*self).encode_by_ref(buf)
+        i64::from(*self).encode_by_ref(buffer)
     }
 }
 
@@ -160,6 +160,7 @@ mod tests {
             let json = serde_json::to_string(&ttl).unwrap();
             assert_eq!(serde_json::from_str::<Ttl>(&json).unwrap(), ttl);
         }
+
         for value in [-1i64, i64::from(u32::MAX) + 1] {
             assert!(Ttl::try_from(value).is_err());
         }

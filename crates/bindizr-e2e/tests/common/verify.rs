@@ -39,9 +39,11 @@ impl TestApp {
 
         if path.starts_with("/records/") {
             let (status, body) = self.send_http(Method::GET, path, None).await;
+
             return status.is_success().then(|| {
                 let record = &body["record"];
                 let (name, record_type) = extract_record_key(record);
+
                 PreviousRecordKey {
                     zone_name: record["zone_name"]
                         .as_str()
@@ -76,6 +78,7 @@ impl TestApp {
         // Read every API page so all secondaries are checked against the complete zone.
         let mut records = Vec::new();
         let mut offset = 0u64;
+
         loop {
             let (status, body) = self
                 .send_http(
@@ -87,6 +90,7 @@ impl TestApp {
                     None,
                 )
                 .await;
+
             assert_eq!(
                 status,
                 StatusCode::OK,
@@ -102,6 +106,7 @@ impl TestApp {
                 .as_u64()
                 .expect("record list response did not contain a total");
             offset += read as u64;
+
             if read == 0 || offset >= total {
                 break;
             }
@@ -122,13 +127,16 @@ impl TestApp {
             .collect::<HashSet<_>>();
 
         let mut expected = HashMap::<(String, u16), Vec<Value>>::new();
+
         for record in &records {
             let zone_name = record["zone_name"]
                 .as_str()
                 .expect("record did not contain a zone name");
+
             if !served_zones.contains(zone_name) {
                 continue;
             }
+
             let name = record["name"]
                 .as_str()
                 .expect("record did not contain a name")

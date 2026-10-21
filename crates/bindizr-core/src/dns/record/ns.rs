@@ -34,6 +34,7 @@ mod tests {
             let value = NsRecordValue::parse(input).unwrap();
             assert_eq!(encode_name(&value.canonical()).unwrap(), expected);
         }
+
         for invalid in ["", ".."] {
             assert!(NsRecordValue::parse(invalid).is_err(), "{invalid:?}");
         }

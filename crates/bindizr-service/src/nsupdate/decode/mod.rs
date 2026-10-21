@@ -64,9 +64,11 @@ pub(crate) fn decode_prerequisite(
 
     // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
     let name = parse_update_owner(&record.name, zone_name)?;
+
     match record.class {
         Class::ANY | Class::NONE => {
             let is_any_class = record.class == Class::ANY;
+
             if !record.rdata.is_empty() {
                 return Err(NsupdateError::FormErr(format!(
                     "{}-class prerequisite must have empty rdata",
@@ -87,6 +89,7 @@ pub(crate) fn decode_prerequisite(
                     "IN-class prerequisite must specify a record type".to_string(),
                 ));
             }
+
             Ok(Prerequisite::RecordValueMatches {
                 name,
                 record_type: record.record_type,
@@ -114,10 +117,12 @@ fn decode_update(
         }
         return Err(NsupdateError::ManagedType(record.record_type));
     }
+
     match record.class {
         Class::IN => {
             // RFC 8767, Section 4: every bit belongs to the positive TTL value.
             let ttl = Ttl::from_secs(record.ttl);
+
             if record.record_type == Rtype::SOA {
                 return Ok(Some(UpdateOperation::ReplaceSoa {
                     name,
@@ -125,7 +130,9 @@ fn decode_update(
                     value: record.to_soa_value(query_data)?,
                 }));
             }
+
             let (record_type, value, priority) = record.to_record_value(query_data)?;
+
             Ok(Some(UpdateOperation::Record(RecordOperation::AddRecord {
                 name,
                 record_type,
@@ -152,7 +159,9 @@ fn decode_update(
             if RecordType::try_from(record.record_type).is_err() {
                 return Ok(None);
             }
+
             let (record_type, value, priority) = record.to_record_value(query_data)?;
+
             Ok(Some(UpdateOperation::Record(
                 RecordOperation::DeleteRecord {
                     name,

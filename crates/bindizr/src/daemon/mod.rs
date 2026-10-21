@@ -111,9 +111,9 @@ pub(crate) enum ReloadError {
 /// invalid input, as a refused configuration is.
 impl From<ReloadError> for ServiceError {
     /// Classify the reload failure for the error payload.
-    fn from(err: ReloadError) -> Self {
-        match err {
-            ReloadError::Config(err) => ServiceError::from(err),
+    fn from(error: ReloadError) -> Self {
+        match error {
+            ReloadError::Config(error) => ServiceError::from(error),
             tls @ ReloadError::Tls(_) => ServiceError::invalid_input(tls),
         }
     }
@@ -140,6 +140,7 @@ pub(crate) fn reload_config(
     cx.set_scheduler_period(config.dns.scheduler_interval_secs);
 
     changed.extend(certificates);
+
     Ok(changed)
 }
 
@@ -154,6 +155,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     let config = Config::load(&config_path)?;
 
     Logger::init(&config.logging);
+
     // Reported after the logger exists, so it carries the configured format.
     log::info!("Configuration loaded from {}", config_path);
 
@@ -193,13 +195,14 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --role admin`"
             ),
             Ok(_) => {}
-            Err(e) => log::warn!("Could not count API tokens: {}", e),
+            Err(error) => log::warn!("Could not count API tokens: {}", error),
         }
     }
 
     let scheduler_worker = scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
+
     let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
 
     let (control_tx, mut control_rx) = socket::server::control::channel();
@@ -209,6 +212,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         tls.clone(),
     ));
     let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
+
     let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
 
     // A front end that stops on its own ends the daemon: the control socket
@@ -218,6 +222,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     watch(&mut servers, "API server", api_task);
     watch(&mut servers, "DNS TCP server", dns_servers.tcp);
     watch(&mut servers, "DNS UDP server", dns_servers.udp);
+
     if let Some(task) = dns_servers.tls {
         watch(&mut servers, "DNS TLS server", task);
     }
@@ -247,10 +252,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
                 log::info!("Interrupt received, shutting down...");
                 break RunResult::Stop;
             }
+
             _ = terminate.recv() => {
                 log::info!("SIGTERM received, shutting down...");
                 break RunResult::Stop;
             }
+
             _ = hangup.recv() => {
                 match reload_config(&cx, &tls) {
                     Ok(changed) if changed.is_empty() => {
@@ -259,13 +266,16 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
                     Ok(changed) => {
                         log::info!("SIGHUP received, reloaded: {}", changed.join(", "))
                     }
-                    Err(e) => log::error!("SIGHUP received, nothing reloaded: {}", e),
+                    Err(error) => log::error!("SIGHUP received, nothing reloaded: {}", error),
                 }
+
                 continue;
             }
+
             Some(Ok((name, result))) = servers.join_next() => {
                 break RunResult::server_stopped(name, result);
             }
+
             control = control_rx.recv() => control,
         };
 
@@ -286,7 +296,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
     match outcome {
         RunResult::Stop => Ok(()),
-        RunResult::Failed(e) => Err(e),
+        RunResult::Failed(error) => Err(error),
         // exec replaces this image, so it returns only on failure, and by
         // then nothing is listening: the failure ends the process.
         RunResult::Restart => Err(reexec(daemon_exe)),
@@ -329,6 +339,7 @@ async fn drain(
         if let Err(error) = scheduler_worker.stop().await {
             log::warn!("DNSSEC scheduler did not stop cleanly: {}", error);
         }
+
         // Flush only after every NOTIFY producer has stopped.
         let _ = notify_worker.stop().await;
     })

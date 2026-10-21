@@ -80,12 +80,14 @@ fn parse_time(value: &str) -> Result<DateTime<Utc>, ParseTimeError> {
     let invalid = || ParseTimeError {
         value: value.to_string(),
     };
+
     if let Some(span) = parse_span(value) {
         return Utc::now().checked_sub_signed(span).ok_or_else(invalid);
     }
     if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
         return Ok(date.and_time(NaiveTime::MIN).and_utc());
     }
+
     DateTime::parse_from_rfc3339(value)
         .map(|time| time.with_timezone(&Utc))
         .map_err(|_| invalid())
@@ -95,6 +97,7 @@ fn parse_time(value: &str) -> Result<DateTime<Utc>, ParseTimeError> {
 fn parse_span(value: &str) -> Option<Duration> {
     let (digits, unit) = value.split_at_checked(value.len().checked_sub(1)?)?;
     let count = digits.parse::<u32>().ok().map(i64::from)?;
+
     match unit {
         "m" => Duration::try_minutes(count),
         "h" => Duration::try_hours(count),
@@ -117,7 +120,7 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<AuditLogResponse>>(
+            let response = client::send_command::<PaginatedResponse<AuditLogResponse>>(
                 DaemonCommand::ListAuditLogs(AuditLogFilter {
                     entity,
                     entity_name: name,
@@ -130,10 +133,11 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
                 }),
             )
             .await?;
-            log::debug!("Audit list result: {:?}", res);
-            print_page(&res.data, output, |item| AuditLogRow::from(item))?;
+            log::debug!("Audit list result: {:?}", response);
+            print_page(&response.data, output, |item| AuditLogRow::from(item))?;
         }
     }
+
     Ok(())
 }
 
@@ -154,6 +158,7 @@ mod tests {
             let before = Utc::now();
             let parsed = parse_time(value).unwrap();
             let after = Utc::now();
+
             assert!(
                 parsed >= before - span && parsed <= after - span,
                 "{value}: {parsed}"
@@ -161,6 +166,7 @@ mod tests {
         }
 
         let midnight = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
+
         assert_eq!(parse_time("2026-10-01").unwrap(), midnight);
         assert_eq!(parse_time(" 2026-10-01 ").unwrap(), midnight);
         assert_eq!(parse_time("2026-10-01T09:00:00+09:00").unwrap(), midnight);

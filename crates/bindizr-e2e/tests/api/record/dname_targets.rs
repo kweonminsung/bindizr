@@ -18,6 +18,7 @@ async fn dname_targets_reject_both_creation_orders_and_previews() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
+
     for kind in ["NS", "MX", "PTR", "SRV"] {
         for dname_first in [true, false] {
             let redirect = format!("redirect-{}-{dname_first}", kind.to_ascii_lowercase());
@@ -35,18 +36,24 @@ async fn dname_targets_reject_both_creation_orders_and_previews() {
             } else {
                 (reference, alias)
             };
+
             let (status, body) = app
                 .send_request(Method::POST, "/records", Some(first))
                 .await;
+
             assert_eq!(status, StatusCode::CREATED, "{body}");
+
             let serial = app.read_zone_serial(name).await;
             let before = app.list_records(name).await;
+
             for dry_run in [true, false] {
                 let mut request = second.clone();
                 request["dry_run"] = json!(dry_run);
+
                 let (status, body) = app
                     .send_request(Method::POST, "/records", Some(request))
                     .await;
+
                 assert_eq!(
                     status,
                     StatusCode::CONFLICT,
@@ -67,6 +74,7 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
+
     let (status, body) = app.send_request(Method::POST, "/records/bulk", Some(json!({
         "zone_name": name,
         "records": [
@@ -75,8 +83,10 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
             {"name": "redirect.delegated", "type": "DNAME", "value": "elsewhere.example.net."}
         ]
     }))).await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let delegation_id = body["records"][1]["id"].as_i64().unwrap();
+
     for target in [
         format!("redirect.{name}."),
         format!(r"host\046redirect.{name}."),
@@ -92,8 +102,10 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
                 })),
             )
             .await;
+
         assert_eq!(status, StatusCode::CREATED, "{target}: {body}");
     }
+
     for (owner, kind, value, priority) in [
         ("null-mail", "MX", ".", Some(0)),
         ("no-service", "SRV", "0 0 .", Some(0)),
@@ -104,8 +116,10 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
         }))).await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
+
     // Removing the cut would make its DNAME authoritative over a stored target.
     let serial = app.read_zone_serial(name).await;
+
     for dry_run in [true, false] {
         let (status, body) = app
             .send_request(
@@ -114,6 +128,7 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
                 None,
             )
             .await;
+
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert_eq!(app.read_zone_serial(name).await, serial);
     }
@@ -126,9 +141,11 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
+
     let key = create_tsig_key(&app, "dname-targets", KeyRole::Admin).await;
     let serial = app.read_zone_serial(name).await;
     let before = app.list_records(name).await;
+
     for dry_run in [true, false] {
         let (status, body) = app.send_request(Method::POST, "/records/bulk", Some(json!({
             "zone_name": name, "dry_run": dry_run,
@@ -137,10 +154,12 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
                 {"name": "mail", "type": "MX", "priority": 10, "value": format!("host.redirect.{name}.")}
             ]
         }))).await;
+
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         let content = format!(
             "redirect IN DNAME elsewhere.example.net.\nmail IN MX 10 host.redirect.{name}.\n"
         );
+
         let (status, body) = app
             .send_request(
                 Method::POST,
@@ -150,11 +169,13 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
                 })),
             )
             .await;
+
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
         assert_eq!(body["applied"], false);
         assert_eq!(app.read_zone_serial(name).await, serial);
         assert_eq!(app.list_records(name).await, before);
     }
+
     let target = parse_name(&format!("host.redirect.{name}."))
         .unwrap()
         .as_slice()
@@ -175,6 +196,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
             rdata: mx,
         },
     ];
+
     assert_eq!(
         send_update_tcp(app.dns_port(), name, &[], &updates, Some(&key)).unwrap(),
         Rcode::REFUSED
@@ -191,13 +213,18 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
+
     let (status, body) = app.send_request(Method::POST, "/records", Some(json!({
         "zone_name": name, "name": "mail", "type": "MX", "priority": 10, "value": format!("redirect.{name}.")
     }))).await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let mx_id = body["record"]["id"].as_i64().unwrap();
+
     let serial = app.read_zone_serial(name).await;
+
     for dry_run in [true, false] {
         let (status, body) = app
             .send_request(
@@ -208,11 +235,14 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
                 })),
             )
             .await;
+
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert_eq!(app.read_zone_serial(name).await, serial);
     }
+
     // Replacing the zone removes the DNAME before the target constraint is checked.
     let content = format!("@ IN NS ns.example.net.\nmail IN MX 10 host.redirect.{name}.\n");
+
     for dry_run in [true, false] {
         let (status, body) = app
             .send_request(
@@ -223,6 +253,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
                 })),
             )
             .await;
+
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["applied"], !dry_run);
     }

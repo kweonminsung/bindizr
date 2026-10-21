@@ -46,14 +46,17 @@ pub async fn create(
         .map(|action| action.trim().parse::<Action>())
         .collect::<Result<ActionSet, _>>()
         .map_err(ServiceError::invalid_input)?;
+
     if actions.is_empty() {
         return Err(ServiceError::invalid_input(
             "a grant needs at least one action",
         ));
     }
+
     let record_name_pattern = normalize_pattern(request.record_name_pattern.as_deref())?;
     let record_types = normalize_types(request.record_types.as_deref())?;
     let constrained = record_name_pattern != MATCH_ANY || record_types != MATCH_ANY;
+
     if constrained && !actions.iter().any(Action::is_record_action) {
         return Err(ServiceError::invalid_input(
             "record_name_pattern and record_types constrain record actions, and the grant has none",
@@ -69,6 +72,7 @@ pub async fn create(
                     action
                 )));
             }
+
             Some(zone::lookup_by_name(cx, &zone::normalize_name(zone_name)?).await?)
         }
     };
@@ -94,13 +98,13 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // The zone or role can go between the lookups above and this insert;
             // the FK reports it.
-            if e.is_foreign_key_violation() {
+            if error.is_foreign_key_violation() {
                 ServiceError::ZoneNotFound("zone or role no longer exists".to_string())
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -115,6 +119,7 @@ pub async fn create(
             caller.change_attribution(),
         )
         .await?;
+
         Ok(grant)
     }
     .await;
@@ -166,6 +171,7 @@ pub async fn revoke(
 
     let role = super::lookup_by_name(cx, role_name).await?;
     super::refuse_builtin(&role)?;
+
     let grant = bindizr_db::role_grant::get(cx.db(), grant_id)
         .await?
         .filter(|grant| grant.role_id == role.id)
@@ -177,6 +183,7 @@ pub async fn revoke(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
+
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         // Read for the audit row's detail alone; a zone gone meanwhile reads as its id.
         let zone_name = match grant.zone_scope.zone_id() {
@@ -187,9 +194,11 @@ pub async fn revoke(
             ),
             None => None,
         };
+
         if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
             return Err(ServiceError::role_grant_not_found(grant.id));
         }
+
         audit::save_tx(
             &mut tx,
             AuditEntity::RoleGrant,
@@ -201,6 +210,7 @@ pub async fn revoke(
         .await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to revoke role grant").await
 }
 

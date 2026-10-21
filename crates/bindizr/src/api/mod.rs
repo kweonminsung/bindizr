@@ -127,12 +127,13 @@ pub(crate) async fn start(
     let Some(certificate) = certificate else {
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
+
         return Ok(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, router::routes(cx))
+            if let Err(error) = axum::serve(listener, router::routes(cx))
                 .with_graceful_shutdown(stop)
                 .await
             {
-                log::error!("API server error: {:?}", e);
+                log::error!("API server error: {:?}", error);
             }
         }));
     };
@@ -152,17 +153,19 @@ pub(crate) async fn start(
     let handle = Handle::new();
     let stop = shutdown.waiter();
     let stopping = handle.clone();
+
     tokio::spawn(async move {
         stop.await;
         stopping.graceful_shutdown(Some(TLS_SHUTDOWN_GRACE));
     });
+
     Ok(tokio::spawn(async move {
-        if let Err(e) = server
+        if let Err(error) = server
             .handle(handle)
             .serve(router::routes(cx).into_make_service())
             .await
         {
-            log::error!("API server error: {:?}", e);
+            log::error!("API server error: {:?}", error);
         }
     }))
 }

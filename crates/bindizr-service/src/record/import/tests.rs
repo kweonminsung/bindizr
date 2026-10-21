@@ -17,7 +17,9 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
         "database": { "sqlite": { "file_path": "sqlite::memory:" } },
     }))
     .unwrap();
+
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+
     let (notify_jobs, _jobs) = tokio::sync::mpsc::unbounded_channel();
     let (scheduler, _period) = tokio::sync::watch::channel(0);
     let cx = Context::new(
@@ -33,6 +35,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     drop(listener);
     let name = ZoneName::parse("example.com").unwrap();
     let caller = Caller::socket();
+
     let single = import_zone(
         &cx,
         &caller,
@@ -71,14 +74,17 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
     ] {
         assert_eq!(error.code(), ErrorCode::InvalidInput);
         let source = error.source().unwrap();
+
         assert!(source.downcast_ref::<FetchZoneError>().is_some());
         assert_eq!(error.to_string(), format!("{context}: {source}"));
         let cause = source.source().unwrap().source().unwrap();
+
         assert!(matches!(
             cause.downcast_ref::<io::Error>(),
             Some(cause) if cause.kind() == io::ErrorKind::ConnectionRefused,
         ));
     }
+
     assert!(zone::list(&cx).await.unwrap().is_empty());
 }
 

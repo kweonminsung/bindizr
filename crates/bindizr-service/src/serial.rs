@@ -16,6 +16,7 @@ mod tests {
     #[test]
     fn serials_advance_through_the_entire_wire_range() {
         assert_eq!(generate_serial(None), Serial::from(1));
+
         for (before, after) in [(1, 2), (0x7fff_ffff, 0x8000_0000), (u32::MAX, 1)] {
             assert_eq!(
                 generate_serial(Some(Serial::from(before))),

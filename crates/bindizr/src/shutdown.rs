@@ -34,6 +34,7 @@ impl Shutdown {
     /// Resolves once [`Shutdown::trigger`] has been called, before or after.
     pub(crate) fn waiter(&self) -> impl Future<Output = ()> + Send + 'static {
         let mut rx = self.tx.subscribe();
+
         async move {
             // `changed` only reports transitions, so test the current value first.
             if *rx.borrow_and_update() {
@@ -55,6 +56,7 @@ mod tests {
     async fn waiter_observes_triggers_before_and_after_subscription() {
         let late = Shutdown::new();
         late.trigger();
+
         tokio::time::timeout(Duration::from_secs(1), late.waiter())
             .await
             .unwrap();
@@ -62,6 +64,7 @@ mod tests {
         let early = Shutdown::new();
         let waiter = early.waiter();
         early.trigger();
+
         tokio::time::timeout(Duration::from_secs(1), waiter)
             .await
             .unwrap();

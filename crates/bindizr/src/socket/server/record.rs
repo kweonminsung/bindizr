@@ -44,6 +44,7 @@ pub(crate) async fn create_record(
     request: &CreateRecordRequest,
 ) -> Result<DaemonResponse<WriteRecordResponse>, ServiceError> {
     let response = record::create(cx, &Caller::socket(), request).await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be created".to_string()
@@ -61,6 +62,7 @@ pub(crate) async fn update_record(
     request: &UpdateRecordRequest,
 ) -> Result<DaemonResponse<WriteRecordResponse>, ServiceError> {
     let response = record::update(cx, &Caller::socket(), id, request).await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be updated".to_string()
@@ -86,6 +88,7 @@ pub(crate) async fn update_record_by_name(
         request,
     )
     .await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be updated".to_string()
@@ -110,6 +113,7 @@ pub(crate) async fn create_bulk_records(
     } else {
         format!("Added {} record(s)", response.added)
     };
+
     Ok(DaemonResponse {
         message,
         data: response,
@@ -124,6 +128,7 @@ pub(crate) async fn delete_record(
     run: Run,
 ) -> Result<DaemonResponse<DeleteRecordsResponse>, ServiceError> {
     let response = record::delete(cx, &Caller::socket(), id, run).await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!("Record {} would be deleted", id)
@@ -140,6 +145,7 @@ pub(crate) async fn delete_matching_records(
     request: &DeleteRecordsRequest,
 ) -> Result<DaemonResponse<DeleteRecordsResponse>, ServiceError> {
     let response = record::delete_matching(cx, &Caller::socket(), request).await?;
+
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!("{} record(s) would be deleted", response.deleted)

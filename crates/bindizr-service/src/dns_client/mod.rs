@@ -86,11 +86,13 @@ pub(crate) async fn exchange_over_tcp(
     what: &'static str,
 ) -> Result<Vec<u8>, ExchangeMessageError> {
     let frame = encode_tcp_message(request)?;
+
     let exchange = async {
         let mut stream = TcpStream::connect(server_addr).await?;
         stream.write_all(&frame).await?;
         Ok(read_tcp_message(&mut stream).await?)
     };
+
     tokio::time::timeout(timeout, exchange)
         .await
         .map_err(|_| ExchangeMessageError::TcpTimedOut { what })?
@@ -128,6 +130,7 @@ pub(crate) async fn exchange_over_udp(
     let sent = tokio::time::timeout(timeout, socket.send(request))
         .await
         .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
+
     if sent != request.len() {
         return Err(ExchangeMessageError::IncompleteSend {
             what,
@@ -138,9 +141,11 @@ pub(crate) async fn exchange_over_udp(
     }
 
     let mut response = [0u8; UDP_RESPONSE_BUF];
+
     let receive = async {
         loop {
             let received = socket.recv(&mut response[..=limit.max_len()]).await?;
+
             // Ignore unmatched datagrams without extending the exchange's deadline.
             if limit.validate_len(received).is_ok()
                 && matches_response_to_request(request, &response[..received])
@@ -155,6 +160,7 @@ pub(crate) async fn exchange_over_udp(
             server: server_addr,
         }
     })??;
+
     Ok((received, response))
 }
 
@@ -168,10 +174,13 @@ pub(crate) async fn resolve_address_entries(
 
     for item in raw.split(',') {
         let trimmed = item.trim();
+
         if trimmed.is_empty() {
             continue;
         }
+
         let target = AddressTarget::parse(trimmed, DEFAULT_DNS_PORT);
+
         let result = resolve_address_entry(&target, resolve_timeout).await;
         entries.push((trimmed.to_string(), result));
     }
@@ -196,9 +205,9 @@ pub async fn resolve_address_entry(
                         Ok(addrs)
                     }
                 }
-                Ok(Err(e)) => {
-                    log::error!("Invalid server address '{}': {}", entry, e);
-                    Err(ResolveAddressError::Lookup(e))
+                Ok(Err(error)) => {
+                    log::error!("Invalid server address '{}': {}", entry, error);
+                    Err(ResolveAddressError::Lookup(error))
                 }
                 Err(_) => {
                     log::error!(
@@ -246,27 +255,35 @@ mod tests {
                 advertised,
             );
             let request = request.finish();
+
             let mut exchange = tokio::spawn(async move {
                 exchange_over_udp(address, Duration::from_secs(1), &request, "test").await
             });
+
             let mut buffer = [0; 1232];
+
             let (len, peer) = server.recv_from(&mut buffer).await.unwrap();
             let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
             let valid = query
                 .build_signed_error_response(OptRcode::NOERROR, None, None)
                 .unwrap();
+
             for size in [limit + 1, 4096] {
                 let mut oversized = valid.clone();
                 oversized.resize(size, 0);
+
                 server.send_to(&oversized, peer).await.unwrap();
+
                 assert!(
                     tokio::time::timeout(Duration::from_millis(20), &mut exchange)
                         .await
                         .is_err()
                 );
             }
+
             server.send_to(&valid, peer).await.unwrap();
             let (len, response) = exchange.await.unwrap().unwrap();
+
             assert_eq!(&response[..len], valid);
         }
     }

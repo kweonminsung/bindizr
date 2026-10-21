@@ -25,10 +25,12 @@ pub(crate) async fn create_many_tx(
     // rows; 8 binds per row leaves room under SQLite's 32766 limit.
     const CHUNK: usize = 500;
     let mut out = Vec::with_capacity(records.len());
+
     for chunk in records.chunks(CHUNK) {
         let mut sql = String::from(
             "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
         );
+
         for i in 0..chunk.len() {
             sql.push_str(if i == 0 {
                 "(?, ?, ?, ?, ?, ?, ?, ?)"
@@ -39,30 +41,34 @@ pub(crate) async fn create_many_tx(
 
         let now = Utc::now();
         let mut query = sqlx::query(AssertSqlSafe(sql));
-        for r in chunk {
+
+        for record in chunk {
             query = query
-                .bind(&r.name)
-                .bind(r.record_type.as_str())
-                .bind(r.value.clone())
-                .bind(r.record_type.display_value(&r.value))
-                .bind(r.ttl)
-                .bind(r.priority)
-                .bind(r.zone_id)
+                .bind(&record.name)
+                .bind(record.record_type.as_str())
+                .bind(record.value.clone())
+                .bind(record.record_type.display_value(&record.value))
+                .bind(record.ttl)
+                .bind(record.priority)
+                .bind(record.zone_id)
                 .bind(now);
         }
+
         let result = query.execute(&mut **tx).await?;
 
         // SQLite assigns contiguous rowids within a single insert; the last
         // one is `last_insert_rowid()`, so the chunk spans first..=last.
         let last = super::last_insert_id(&result)?;
         let first = last - chunk.len() as i32 + 1;
-        for (offset, r) in chunk.iter().enumerate() {
-            let mut rec = r.clone();
-            rec.id = RecordId::from(first + offset as i32);
-            rec.created_at = now;
-            out.push(rec);
+
+        for (offset, record) in chunk.iter().enumerate() {
+            let mut created_record = record.clone();
+            created_record.id = RecordId::from(first + offset as i32);
+            created_record.created_at = now;
+            out.push(created_record);
         }
     }
+
     Ok(out)
 }
 
@@ -71,11 +77,11 @@ pub(crate) async fn get(
     pool: &Pool<Sqlite>,
     id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
         .bind(id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *connection)
         .await
         ?;
 
@@ -87,7 +93,7 @@ pub(crate) async fn get_with_zone(
     pool: &Pool<Sqlite>,
     id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, RecordWithZone>(
         r#"
@@ -99,7 +105,7 @@ pub(crate) async fn get_with_zone(
         "#,
     )
     .bind(id)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(record)
@@ -164,18 +170,23 @@ pub(crate) async fn list_by_record_types_tx(
     if record_types.is_empty() {
         return Ok(Vec::new());
     }
+
     let mut sql = String::from(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND record_type IN (",
     );
+
     for i in 0..record_types.len() {
         sql.push_str(if i == 0 { "?" } else { ",?" });
     }
+
     sql.push_str(") ORDER BY name, id");
 
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+
     for record_type in record_types {
         query = query.bind(record_type.as_str());
     }
+
     let records = query.fetch_all(&mut **tx).await?;
 
     Ok(records)
@@ -205,26 +216,33 @@ pub(crate) async fn list_by_names_tx(
     if names.is_empty() {
         return Ok(Vec::new());
     }
+
     // Load only same-name conflicts using idx_records_zone_name;
     // chunk the IN list below SQLite's bind-variable limit.
     const CHUNK: usize = 400;
     let mut out = Vec::new();
+
     for chunk in names.chunks(CHUNK) {
         let mut sql = String::from(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
         );
+
         for i in 0..chunk.len() {
             sql.push_str(if i == 0 { "?" } else { ",?" });
         }
+
         sql.push(')');
 
         let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+
         for name in chunk {
             query = query.bind(name);
         }
+
         let mut rows = query.fetch_all(&mut **tx).await?;
         out.append(&mut rows);
     }
+
     Ok(out)
 }
 
@@ -233,12 +251,15 @@ pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Sqlite>,
     filter: RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let value = filter.value.as_deref().map(partial_term);
     let value_exact = filter.value.as_deref().map(str::trim);
     let search = like_pattern(filter.search.as_deref());
     let name_like_types = name_like_types_sql();
     let apex_owner = apex_owner_sql();
+
+    // Only fixed SQL fragments are interpolated; caller values stay in bindings.
     let order_by = filter.sort.order_by_sql(filter.order);
     let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
     let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
@@ -310,6 +331,7 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(&search)
     .bind(&search);
+
     let records = query
         .bind(filter.scope_role_id)
         .bind(filter.scope_role_id)
@@ -320,7 +342,7 @@ pub(crate) async fn list_by_filter_with_zone(
                 .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
                 .unwrap_or(0),
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *connection)
         .await?;
 
     Ok(records)
@@ -344,7 +366,8 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<Sqlite>,
     filter: RecordFilter,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let value = filter.value.as_deref().map(partial_term);
     let value_exact = filter.value.as_deref().map(str::trim);
     let search = like_pattern(filter.search.as_deref());
@@ -419,7 +442,8 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(filter.scope_role_id)
     .bind(filter.scope_role_id);
-    let count = query.fetch_one(&mut *conn).await?;
+
+    let count = query.fetch_one(&mut *connection).await?;
 
     Ok(count as u64)
 }
@@ -458,20 +482,27 @@ pub(crate) async fn delete_many_tx(
     if ids.is_empty() {
         return Ok(());
     }
+
     // One bind per id; keep the count under SQLite's conservative limit.
     const CHUNK: usize = 900;
+
     for chunk in ids.chunks(CHUNK) {
         let mut sql = String::from("DELETE FROM records WHERE id IN (");
+
         for i in 0..chunk.len() {
             sql.push_str(if i == 0 { "?" } else { ",?" });
         }
+
         sql.push(')');
 
         let mut query = sqlx::query(AssertSqlSafe(sql));
+
         for id in chunk {
             query = query.bind(id);
         }
+
         query.execute(&mut **tx).await?;
     }
+
     Ok(())
 }

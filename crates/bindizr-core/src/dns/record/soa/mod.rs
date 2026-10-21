@@ -42,6 +42,7 @@ impl<N: AsRef<str>> SoaRecordValue<N> {
     pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = encode_name(self.mname.as_ref())?;
         rdata.extend_from_slice(&encode_name(self.rname.as_ref())?);
+
         for field in [
             self.serial,
             self.refresh,
@@ -51,6 +52,7 @@ impl<N: AsRef<str>> SoaRecordValue<N> {
         ] {
             rdata.extend_from_slice(&field.to_be_bytes());
         }
+
         Rdata::new(rdata)
     }
 }
@@ -75,6 +77,7 @@ impl SoaMailbox {
             domain.trim_end_matches('.')
         ));
         Name::<Vec<u8>>::from_str(mailbox.as_str())?;
+
         Ok(mailbox)
     }
 
@@ -90,11 +93,13 @@ impl SoaMailbox {
         let labels = name
             .iter()
             .filter(|label| !label.is_root())
-            .map(|label| label.as_slice())
+            .map(domain::base::name::Label::as_slice)
             .collect::<Vec<_>>();
+
         if labels.len() < 2 {
             return Err(ParseMailboxError::NotEncodedEmail);
         }
+
         Ok(format!(
             "{}@{}",
             std::str::from_utf8(labels[0])?,

@@ -46,6 +46,7 @@ pub(crate) fn parse_record_fields(
         .map_err(ServiceError::invalid_record_value)?;
 
     validate_management_value(record_type, &value)?;
+
     Ok(ParsedRecord {
         record_type,
         value,
@@ -79,7 +80,7 @@ pub(crate) fn normalize_record_owner_name(
     input_name: &str,
     zone_name: &ZoneName,
 ) -> Result<OwnerName, ServiceError> {
-    let owner = OwnerName::parse_in_zone(input_name, zone_name).map_err(|e| match e {
+    let owner = OwnerName::parse_in_zone(input_name, zone_name).map_err(|error| match error {
         ParseNameError::OutsideZone => ServiceError::invalid_record_name(format!(
             "record name '{}' is outside zone '{}'",
             input_name, zone_name
@@ -100,8 +101,9 @@ fn has_matching_rdata<'a>(
 ) -> bool {
     // One comparison form for the candidate, however many rows it meets.
     let wanted = record_type.canonical_value(value, priority);
-    records.into_iter().any(|r| {
-        r.record_type == *record_type && record_type.canonical_value(&r.value, r.priority) == wanted
+    records.into_iter().any(|record| {
+        record.record_type == *record_type
+            && record_type.canonical_value(&record.value, record.priority) == wanted
     })
 }
 
@@ -127,7 +129,10 @@ pub(crate) fn validate_record_constraints(
 
     let records_at_name: Vec<_> = records
         .iter()
-        .filter(|r| r.name == *stored_name && except_record_id.map(|id| id != r.id).unwrap_or(true))
+        .filter(|record| {
+            record.name == *stored_name
+                && except_record_id.map(|id| id != record.id).unwrap_or(true)
+        })
         .collect();
 
     if has_matching_rdata(
@@ -154,13 +159,13 @@ pub(crate) fn validate_record_constraints(
 
     if *record_type == RecordType::Mx {
         let adding_null_mx = MxRecordValue::parse(value, priority).is_ok_and(|mx| mx.is_null());
-        let has_existing_null_mx = records_at_name.iter().any(|r| {
-            r.record_type == RecordType::Mx
-                && MxRecordValue::parse(&r.value, r.priority).is_ok_and(|mx| mx.is_null())
+        let has_existing_null_mx = records_at_name.iter().any(|record| {
+            record.record_type == RecordType::Mx
+                && MxRecordValue::parse(&record.value, record.priority).is_ok_and(|mx| mx.is_null())
         });
         let has_existing_mx = records_at_name
             .iter()
-            .any(|r| r.record_type == RecordType::Mx);
+            .any(|record| record.record_type == RecordType::Mx);
 
         if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
             return Err(ServiceError::record_conflict(format!(
@@ -179,7 +184,7 @@ pub(crate) fn validate_record_constraints(
         }
         if records_at_name
             .iter()
-            .any(|r| r.record_type == RecordType::Cname)
+            .any(|record| record.record_type == RecordType::Cname)
         {
             return Err(ServiceError::record_conflict(format!(
                 "A CNAME record with name '{}' already exists in this zone",
@@ -190,7 +195,12 @@ pub(crate) fn validate_record_constraints(
 
     // RFC 6672, Section 2.4: one DNAME per name, and none beside a
     // delegation, which at any name but the apex is what NS records are.
-    let has_at_name = |wanted: RecordType| records_at_name.iter().any(|r| r.record_type == wanted);
+    let has_at_name = |wanted: RecordType| {
+        records_at_name
+            .iter()
+            .any(|record| record.record_type == wanted)
+    };
+
     if *record_type == RecordType::Dname {
         if has_at_name(RecordType::Dname) {
             return Err(ServiceError::record_conflict(format!(
@@ -205,6 +215,7 @@ pub(crate) fn validate_record_constraints(
             )));
         }
     }
+
     if *record_type == RecordType::Ns && !stored_name.is_apex() && has_at_name(RecordType::Dname) {
         return Err(ServiceError::record_conflict(format!(
             "NS records cannot delegate '{}' beside its DNAME record",
@@ -224,7 +235,7 @@ pub(crate) fn validate_record_constraints(
     // RFC 2181, Section 5.2: one TTL per record set.
     if let Some(conflicting) = records_at_name
         .iter()
-        .find(|r| r.record_type == *record_type && r.ttl != ttl)
+        .find(|record| record.record_type == *record_type && record.ttl != ttl)
     {
         return Err(ServiceError::record_conflict(format!(
             "TTL {} does not match the existing {} records for '{}' (TTL {}); records sharing a name and type share one TTL",
@@ -241,10 +252,10 @@ pub(crate) fn validate_record_name_in_zone(
     name: &OwnerName,
     zone_name: &ZoneName,
 ) -> Result<(), ServiceError> {
-    name.to_wire(zone_name).map(|_| ()).map_err(|e| {
+    name.to_wire(zone_name).map(|_| ()).map_err(|error| {
         ServiceError::invalid_record_name(format!(
             "record name '{}' under zone '{}' {}",
-            name, zone_name, e
+            name, zone_name, error
         ))
     })
 }
@@ -274,9 +285,9 @@ pub(crate) async fn validate_add_tx(
     let records_at_name =
         bindizr_db::record::list_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
             .await
-            .map_err(|e| {
-                log::error!("Failed to load records: {}", e);
-                ServiceError::internal_with_source("failed to load records", e)
+            .map_err(|error| {
+                log::error!("Failed to load records: {}", error);
+                ServiceError::internal_with_source("failed to load records", error)
             })?;
 
     if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {

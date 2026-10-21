@@ -10,38 +10,47 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     let port = socket.local_addr().unwrap().port();
     let server = Arc::new(UdpSocket::new(socket).unwrap());
     let mut clients = Vec::new();
+
     for (index, destination) in destinations.iter().enumerate() {
         let client_ip = if destination.is_ipv4() {
             IpAddr::V4(Ipv4Addr::LOCALHOST)
         } else {
             IpAddr::V6(Ipv6Addr::LOCALHOST)
         };
+
         let client = tokio::net::UdpSocket::bind((client_ip, 0)).await.unwrap();
         client.connect((*destination, port)).await.unwrap();
         client.send(&[u8::try_from(index).unwrap()]).await.unwrap();
+
         clients.push(client);
     }
 
     let mut received = Vec::new();
+
     for _ in destinations {
-        let mut buf = [0; 128];
-        let (len, target) = timeout(Duration::from_secs(2), server.recv_from(&mut buf))
+        let mut buffer = [0; 128];
+
+        let (len, target) = timeout(Duration::from_secs(2), server.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
-        let index = usize::from(buf[0]);
+
+        let index = usize::from(buffer[0]);
+
         assert_eq!(target.local_ip.to_canonical(), destinations[index]);
         assert_eq!(
             target.client_addr.ip().to_canonical(),
             clients[index].local_addr().unwrap().ip()
         );
-        received.push((target, buf[..len].to_vec()));
+        received.push((target, buffer[..len].to_vec()));
     }
 
     // Responses retain their own destination even after other packets arrive.
     let mut replies = JoinSet::new();
+
     for (target, data) in received.into_iter().rev() {
         let server = server.clone();
+
         replies.spawn(async move {
             server
                 .send_to(
@@ -53,17 +62,21 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
                 .unwrap()
         });
     }
+
     while let Some(result) = replies.join_next().await {
         assert_eq!(result.unwrap(), 1);
     }
+
     for (index, client) in clients.into_iter().enumerate() {
-        let mut buf = [0; 128];
-        let (len, peer) = timeout(Duration::from_secs(2), client.recv_from(&mut buf))
+        let mut buffer = [0; 128];
+
+        let (len, peer) = timeout(Duration::from_secs(2), client.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
+
         assert_eq!(peer, SocketAddr::new(destinations[index], port));
-        assert_eq!(&buf[..len], &[u8::try_from(index).unwrap()]);
+        assert_eq!(&buffer[..len], &[u8::try_from(index).unwrap()]);
     }
 }
 
@@ -108,6 +121,7 @@ async fn udp_preserves_destination_across_interleaved_requests() {
         Ipv4Addr::new(127, 0, 0, 3).into(),
         Ipv4Addr::new(127, 0, 0, 2).into(),
     ];
+
     exchange(Ipv4Addr::UNSPECIFIED.into(), &destinations).await;
     exchange(Ipv6Addr::UNSPECIFIED.into(), &destinations).await;
 }
@@ -118,11 +132,13 @@ async fn recv_from_rejects_truncated_datagram() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
     let server = UdpSocket::new(socket).unwrap();
+
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client.send_to(&[0; 32], addr).await.unwrap();
     let result = timeout(Duration::from_secs(2), server.recv_from(&mut [0; 4]))
         .await
         .unwrap();
+
     assert!(matches!(result, Err(UdpError::Truncated)));
 }
 
@@ -132,6 +148,7 @@ async fn recv_from_rejects_missing_destination() {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
     let port = socket.local_addr().unwrap().port();
     let server = UdpSocket { socket };
+
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client
         .send_to(&[0; 32], (Ipv4Addr::LOCALHOST, port))
@@ -140,6 +157,7 @@ async fn recv_from_rejects_missing_destination() {
     let result = timeout(Duration::from_secs(2), server.recv_from(&mut [0; 128]))
         .await
         .unwrap();
+
     assert!(matches!(result, Err(UdpError::MissingDestination)));
 }
 
@@ -148,6 +166,7 @@ async fn recv_from_rejects_missing_destination() {
 async fn udp_send_enforces_the_response_budget() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let server = UdpSocket::new(socket).unwrap();
+
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client
         .connect(server.socket.local_addr().unwrap())
@@ -155,6 +174,7 @@ async fn udp_send_enforces_the_response_budget() {
         .unwrap();
     client.send(&[0]).await.unwrap();
     let (_, target) = server.recv_from(&mut [0; 1]).await.unwrap();
+
     assert!(matches!(
         server.send_to(&[0; 513], target, ResponseLimit::UDP).await,
         Err(DnsError::Protocol(message::EncodeMessageError::TooLarge {
@@ -163,7 +183,7 @@ async fn udp_send_enforces_the_response_budget() {
         }))
     ));
     assert!(
-        matches!(client.try_recv(&mut [0; 1024]), Err(e) if e.kind() == io::ErrorKind::WouldBlock)
+        matches!(client.try_recv(&mut [0; 1024]), Err(error) if error.kind() == io::ErrorKind::WouldBlock)
     );
     assert_eq!(
         server
@@ -173,6 +193,7 @@ async fn udp_send_enforces_the_response_budget() {
         512
     );
     let mut response = [0; 1024];
+
     assert_eq!(
         timeout(Duration::from_secs(1), client.recv(&mut response))
             .await

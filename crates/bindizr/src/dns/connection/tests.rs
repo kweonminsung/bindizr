@@ -29,7 +29,9 @@ async fn context() -> Arc<Context> {
     config.dns.notify.batch_ms = 0;
     config.dns.notify.timeout_secs = 3;
     config.dns.notify.retries = 0;
+
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+
     Arc::new(Context::new(
         config,
         String::new(),
@@ -45,11 +47,13 @@ async fn context() -> Arc<Context> {
 async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
     for tcp in [false, true] {
         let cx = context().await;
+
         let caller = Caller::socket();
         let request = serde_json::from_str(
             r#"{"name":"example.com","mname":"ns1.example.com","rname":"admin@example.com"}"#,
         )
         .unwrap();
+
         zone::create(&cx, &caller, &request).await.unwrap();
         let secondary_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let request = serde_json::from_value(serde_json::json!({
@@ -57,12 +61,15 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             "address": secondary_socket.local_addr().unwrap().to_string(),
         }))
         .unwrap();
+
         secondary::create(&cx, &caller, &request).await.unwrap();
+
         let dns_cx = Arc::new(DnsContext::new(cx.clone()));
         let shutdown = Shutdown::new();
         let stop = shutdown.waiter();
         let mut tcp_client = None;
         let mut udp_client = None;
+
         let mut server = if tcp {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             tcp_client = Some(
@@ -70,16 +77,21 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
                     .await
                     .unwrap(),
             );
+
             tokio::spawn(async move { run_tcp_server(dns_cx, listener, stop).await.unwrap() })
         } else {
             let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let address = socket.local_addr().unwrap();
+
             let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             client.connect(address).await.unwrap();
+
             udp_client = Some(client);
             let socket = udp::UdpSocket::new(socket).unwrap();
+
             tokio::spawn(udp::run_udp_server(dns_cx, socket, stop))
         };
+
         let (_, question) = build_question(
             Opcode::UPDATE,
             false,
@@ -96,6 +108,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             0, 0, 1, 44, // TTL 300
             0, 4, 192, 0, 2, 9,
         ]);
+
         if let Some(client) = &mut tcp_client {
             client
                 .write_all(&encode_tcp_message(&update).unwrap())
@@ -104,7 +117,9 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         } else {
             udp_client.as_ref().unwrap().send(&update).await.unwrap();
         }
+
         let mut notify = [0; 4096];
+
         let (len, peer) = timeout(
             Duration::from_secs(2),
             secondary_socket.recv_from(&mut notify),
@@ -112,7 +127,9 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         .await
         .unwrap()
         .unwrap();
+
         shutdown.trigger();
+
         assert!(
             timeout(Duration::from_millis(50), &mut server)
                 .await
@@ -122,6 +139,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             .unwrap()
             .build_signed_error_response(OptRcode::NOERROR, None, None)
             .unwrap();
+
         secondary_socket.send_to(&response, peer).await.unwrap();
         let response = if let Some(client) = &mut tcp_client {
             let len = timeout(Duration::from_secs(2), client.read_u16())
@@ -129,10 +147,13 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
                 .unwrap()
                 .unwrap();
             let mut response = vec![0; usize::from(len)];
+
             client.read_exact(&mut response).await.unwrap();
+
             response
         } else {
             let mut response = vec![0; 4096];
+
             let len = timeout(
                 Duration::from_secs(2),
                 udp_client.as_ref().unwrap().recv(&mut response),
@@ -141,9 +162,12 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             .unwrap()
             .unwrap();
             response.truncate(len);
+
             response
         };
+
         assert_eq!(response[3] & 15, 0, "tcp={tcp}");
+
         timeout(Duration::from_secs(2), server)
             .await
             .unwrap()
@@ -159,6 +183,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         )
         .await
         .unwrap();
+
         assert_eq!(records.items.len(), 1);
     }
 }
@@ -169,13 +194,16 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
     for tls in [false, true] {
         let cx = context().await;
         let dns_cx = Arc::new(DnsContext::new(cx));
+
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut client = TcpStream::connect(listener.local_addr().unwrap())
             .await
             .unwrap();
+
         let shutdown = Shutdown::new();
         let stop = shutdown.waiter();
         let server_cx = dns_cx.clone();
+
         let server = tokio::spawn(async move {
             if tls {
                 let config = rustls::ServerConfig::builder_with_protocol_versions(&[
@@ -183,6 +211,7 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
                 ])
                 .with_no_client_auth()
                 .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
+
                 run_tls_server(server_cx, listener, Arc::new(config), stop)
                     .await
                     .unwrap();
@@ -197,12 +226,16 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
         })
         .await
         .unwrap();
+
         shutdown.trigger();
+
         timeout(Duration::from_secs(2), server)
             .await
             .unwrap()
             .unwrap();
+
         let mut byte = [0];
+
         assert_eq!(client.read(&mut byte).await.unwrap(), 0, "tls={tls}");
     }
 }

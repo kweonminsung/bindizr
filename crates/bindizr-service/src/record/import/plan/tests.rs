@@ -58,12 +58,15 @@ fn desired(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Desire
 
 /// Collect record IDs for import-plan assertions.
 fn ids(records: &[Record]) -> Vec<RecordId> {
-    records.iter().map(|r| r.id).collect()
+    records.iter().map(|record| record.id).collect()
 }
 
 /// Collect values added by an import plan.
 fn added<'a>(plan: &ImportPlan<'a>) -> Vec<&'a str> {
-    plan.adds.iter().map(|a| a.data.value.as_str()).collect()
+    plan.adds
+        .iter()
+        .map(|desired_record| desired_record.data.value.as_str())
+        .collect()
 }
 
 /// Verify that append never deletes what it did not ask about.

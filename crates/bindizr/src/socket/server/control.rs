@@ -38,7 +38,7 @@ pub(crate) fn restart(socket_cx: &SocketContext) -> DaemonResponse<MessageRespon
     }
 }
 
-/// Deliver the transition after a short delay so the command response reaches
+/// Send the transition after a short delay so the command response reaches
 /// the client before the daemon tears down.
 fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
     let tx = socket_cx.control().clone();

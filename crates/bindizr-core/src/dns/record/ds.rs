@@ -58,6 +58,7 @@ impl DsRecordValue {
             Some((_, number)) => *number,
             None => parse_u8_record_field("DS algorithm", algorithm)?,
         };
+
         Ok(Self {
             key_tag: KeyTag::from(parse_u16_record_field("DS key tag", key_tag)?),
             algorithm,
@@ -76,6 +77,7 @@ impl DsRecordValue {
             4 => Some(48),
             _ => None,
         };
+
         if let Some(expected) = expected
             && self.digest.len() != expected
         {
@@ -85,15 +87,18 @@ impl DsRecordValue {
                 len: self.digest.len(),
             });
         }
+
         // Bounded so the record fits one transfer message beside its 4 fixed
         // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
         const MAX_DIGEST: usize = MAX_RECORD_RDATA - 4;
+
         if self.digest.len() > MAX_DIGEST {
             return Err(ParseRecordValueError::DsDigestTooLong {
                 max: MAX_DIGEST,
                 len: self.digest.len(),
             });
         }
+
         Ok(())
     }
 
@@ -145,6 +150,7 @@ mod tests {
     #[test]
     fn validate_pins_the_digest_length_per_type() {
         let short = DsRecordValue::parse("1 13 2 4B9B").unwrap();
+
         assert!(
             short
                 .validate()
@@ -152,6 +158,7 @@ mod tests {
                 .to_string()
                 .contains("32-byte")
         );
+
         // Unknown digest types carry no known length to enforce.
         assert!(
             DsRecordValue::parse("1 13 9 4B9B")

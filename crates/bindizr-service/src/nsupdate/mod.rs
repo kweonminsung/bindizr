@@ -102,7 +102,7 @@ impl NsupdateError {
             Self::NxRrset(_) => Rcode::NXRRSET,
             Self::NotAuth(_) => Rcode::NOTAUTH,
             Self::Refused(_) => Rcode::REFUSED,
-            Self::Service(err) if err.code().is_internal() => Rcode::SERVFAIL,
+            Self::Service(error) if error.code().is_internal() => Rcode::SERVFAIL,
             Self::Service(_) => Rcode::REFUSED,
         }
     }
@@ -111,8 +111,8 @@ impl NsupdateError {
 /// A database failure is a backend fault, classified through the service error.
 impl From<bindizr_db::error::DatabaseError> for NsupdateError {
     /// Map a database failure to SERVFAIL.
-    fn from(err: bindizr_db::error::DatabaseError) -> Self {
-        NsupdateError::from(ServiceError::from(err))
+    fn from(error: bindizr_db::error::DatabaseError) -> Self {
+        NsupdateError::from(ServiceError::from(error))
     }
 }
 
@@ -142,6 +142,7 @@ pub async fn apply(
             update.zone_name, update.zone_class
         )));
     }
+
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
     let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {
@@ -168,9 +169,12 @@ pub async fn apply(
         } else {
             list_served_record_sets_tx(&mut tx, &zone).await?
         };
+
         let mut wanted = RecordSets::new();
+
         for record in update.prerequisites {
             let prerequisite = decode_prerequisite(record, &zone.name, update.message)?;
+
             // A prerequisite reads what it names, so its read grant precedes its
             // evaluation (Section 3.3.1); SOA and DNSSEC need one without a type restriction.
             let record_type = prerequisite
@@ -186,11 +190,13 @@ pub async fn apply(
             )?;
             evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;
         }
+
         evaluate_record_set_prerequisites(&served, &wanted)?;
 
         // The prescan parses the owners the update grants are checked on.
         let updates = decode_updates(update.updates, &zone.name, update.message)?;
         let mut accesses = Vec::new();
+
         for op in &updates {
             match op {
                 UpdateOperation::Record(op) => accesses.push(RecordAccess {
@@ -203,6 +209,7 @@ pub async fn apply(
                 }
             }
         }
+
         caller.authorize_record_access(&zone, &accesses)?;
 
         let plan = plan::UpdatePlan::compute(&zone, updates)?;
@@ -216,10 +223,12 @@ pub async fn apply(
 
         if changed {
             zone::validate_record_changes_tx(&mut tx, &plan.zone, &[], &[]).await?;
+
             if plan.soa_changed {
                 let changes = zone::soa_replacement_changes(&zone, &plan.zone, new_serial)?;
                 bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
             }
+
             let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
             dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
             zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_attribution())

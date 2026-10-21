@@ -376,9 +376,13 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
         } => {
             let content = super::read_input(&file)?;
+
             // YAML is a superset of JSON, so one parse accepts both formats.
-            let parsed: serde_json::Value = serde_norway::from_str(&content).map_err(|e| {
-                CliError::request_with_source(format!("invalid JSON/YAML in '{}': {}", file, e), e)
+            let parsed: serde_json::Value = serde_norway::from_str(&content).map_err(|error| {
+                CliError::request_with_source(
+                    format!("invalid JSON/YAML in '{}': {}", file, error),
+                    error,
+                )
             })?;
             let records = match parsed {
                 serde_json::Value::Array(_) => parsed,
@@ -391,9 +395,14 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     ));
                 }
             };
-            let records: Vec<BulkRecordItem> = serde_json::from_value(records).map_err(|e| {
-                CliError::request_with_source(format!("invalid record in '{}': {}", file, e), e)
-            })?;
+            let records: Vec<BulkRecordItem> =
+                serde_json::from_value(records).map_err(|error| {
+                    CliError::request_with_source(
+                        format!("invalid record in '{}': {}", file, error),
+                        error,
+                    )
+                })?;
+
             let response = client::send_command::<CreateBulkRecordsResponse>(
                 DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
                     zone_name: zone,
@@ -403,16 +412,16 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             )
             .await?;
             let bulk = &response.data;
-            match output {
-                OutputFormat::Table => {
-                    outln!("{}", response.message);
-                    if dry_run {
-                        out!("{}", render_change_preview(&bulk.diff));
-                    } else {
-                        print_table(bulk.records.iter().map(RecordRow::from).collect());
-                    }
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message);
+                if dry_run {
+                    out!("{}", render_change_preview(&bulk.diff));
+                } else {
+                    print_table(bulk.records.iter().map(RecordRow::from).collect());
                 }
-                _ => print_payload(bulk, output)?,
+            } else {
+                print_payload(bulk, output)?
             }
         }
         // clap holds the two selectors apart.
@@ -438,6 +447,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             // This command promises every record at the owner, so traverse all pages.
             let mut items: Vec<RecordResponse> = Vec::new();
             let mut offset = 0u64;
+
             let total = loop {
                 let page = client::send_command::<PaginatedResponse<RecordResponse>>(
                     DaemonCommand::ListRecords(RecordFilter {
@@ -452,6 +462,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 let read = page.items.len() as u64;
                 items.extend(page.items);
                 offset += read;
+
                 if read == 0 || offset >= page.pagination.total {
                     break page.pagination.total;
                 }
@@ -546,9 +557,11 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     run: Run::from_dry_run(dry_run),
                 })
                 .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         RecordCommand::Delete {
@@ -572,9 +585,11 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 }),
             )
             .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         RecordCommand::Delete { .. } => {
@@ -583,6 +598,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ));
         }
     }
+
     Ok(())
 }
 

@@ -40,9 +40,9 @@ pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
 /// The zones the DNS plane serves: the catalog's membership and the NOTIFY
 /// fan-out read it.
 pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
-    let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|e| {
-        log::error!("Failed to fetch zones: {}", e);
-        ServiceError::internal_with_source("failed to fetch zones", e)
+    let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|error| {
+        log::error!("Failed to fetch zones: {}", error);
+        ServiceError::internal_with_source("failed to fetch zones", error)
     })?;
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }
@@ -81,6 +81,7 @@ pub async fn list_by_filter(
     {
         crate::ttl::validate_record_ttl(ttl)?;
     }
+
     let scope_role_id = caller.scope_role_id();
     validate_page_limit(filter.limit)?;
     let limit = filter.limit;
@@ -115,6 +116,7 @@ pub async fn list_by_filter(
     let total = bindizr_db::zone::count_by_filter(cx.db(), zone_filter.clone()).await?;
     let zones = bindizr_db::zone::list_by_filter(cx.db(), zone_filter).await?;
     let items = zones.iter().map(ZoneResponse::from).collect();
+
     Ok(build_paginated_response(items, limit, offset, total))
 }
 

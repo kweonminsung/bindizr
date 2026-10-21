@@ -16,24 +16,25 @@ pub struct CaaRecordValue<'a> {
 impl<'a> CaaRecordValue<'a> {
     /// Parse `<flags> <tag> <value>`, decoding quoted or bare value escapes.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
-        let err = || ParseRecordValueError::CaaShape {
+        let error = || ParseRecordValueError::CaaShape {
             value: value.to_string(),
         };
         let (flags, rest) = value
             .trim_start()
             .split_once(char::is_whitespace)
-            .ok_or_else(err)?;
+            .ok_or_else(error)?;
         let (tag, rest) = rest
             .trim_start()
             .split_once(char::is_whitespace)
-            .ok_or_else(err)?;
+            .ok_or_else(error)?;
         let rest = rest.trim_start();
 
         // RFC 8659, Section 4.1: property values are octets, including empty
         // or non-UTF-8 values; the presentation escapes preserve those bytes.
         let (value, trailing) = parse_string_octets("CAA value", rest)?;
+
         if !trailing.is_empty() {
-            return Err(err());
+            return Err(error());
         }
 
         Ok(Self {
@@ -54,15 +55,18 @@ impl<'a> CaaRecordValue<'a> {
                 tag: self.tag.to_string(),
             });
         }
+
         // Bounded so the record fits one transfer message beside the flags and
         // length-prefixed tag; enforced here so a stored row cannot poison an AXFR.
         let max_value = MAX_RECORD_RDATA - 2 - self.tag.len();
+
         if self.value.len() > max_value {
             return Err(ParseRecordValueError::CaaValueTooLong {
                 max: max_value,
                 len: self.value.len(),
             });
         }
+
         Ok(())
     }
 
@@ -96,6 +100,7 @@ impl<'a> CaaRecordValue<'a> {
         rdata.push(tag_len);
         rdata.extend_from_slice(self.tag.as_bytes());
         rdata.extend_from_slice(&self.value);
+
         Rdata::new(rdata)
     }
 }

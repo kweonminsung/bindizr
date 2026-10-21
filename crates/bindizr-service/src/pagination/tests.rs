@@ -33,7 +33,9 @@ use crate::{
 async fn context() -> Context {
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".to_string();
+
     let db = Db::connect(&config.database).await.unwrap();
+
     Context::new(
         config,
         String::new(),
@@ -50,6 +52,7 @@ fn page_limit_accepts_absence_and_rejects_out_of_range() {
     for limit in [None, Some(1), Some(MAX_PAGE_LIMIT)] {
         validate_page_limit(limit).unwrap();
     }
+
     for limit in [Some(0), Some(MAX_PAGE_LIMIT + 1), Some(u32::MAX)] {
         assert_eq!(
             validate_page_limit(limit).unwrap_err().code(),
@@ -81,9 +84,13 @@ fn build_page_preserves_unbounded_windows_and_metadata() {
 #[tokio::test]
 async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     let cx = context().await;
+
     let caller = Caller::socket();
+
     let mut tx = cx.db().begin().await.unwrap();
+
     let mut first_zone = None;
+
     for index in 0..1001 {
         let zone = bindizr_db::zone::create_tx(
             &mut tx,
@@ -107,9 +114,11 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         )
         .await
         .unwrap();
+
         if first_zone.is_none() {
             first_zone = Some(zone);
         }
+
         bindizr_db::role::create_tx(
             &mut tx,
             Role {
@@ -137,6 +146,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         .await
         .unwrap();
     }
+
     let zone = first_zone.unwrap();
     let records = (0..1001)
         .map(|index| Record {
@@ -150,9 +160,11 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             zone_id: zone.id,
         })
         .collect::<Vec<_>>();
+
     bindizr_db::record::create_many_tx(&mut tx, &records)
         .await
         .unwrap();
+
     let derived = (0..3)
         .map(|index| DnssecRecord {
             id: DnssecRecordId::UNWRITTEN,
@@ -166,9 +178,11 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             record_set_digest: None,
         })
         .collect::<Vec<_>>();
+
     bindizr_db::dnssec_record::create_many_tx(&mut tx, &derived)
         .await
         .unwrap();
+
     for serial in 1..=1001 {
         bindizr_db::zone_version::upsert_tx(
             &mut tx,
@@ -191,6 +205,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         .await
         .unwrap();
     }
+
     tx.commit().await.unwrap();
 
     for (limit, offset, expected) in [
@@ -248,6 +263,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         )
         .await
         .unwrap();
+
         for (count, pagination) in [
             (zones.items.len(), zones.pagination),
             (records.items.len(), records.pagination),
@@ -273,6 +289,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         )
         .await
         .unwrap();
+
         assert_eq!(roles.items.len(), expected);
         assert_eq!(roles.pagination.total, 1002);
         assert_eq!(roles.pagination.limit, 1002);
@@ -301,6 +318,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         )
         .await
         .unwrap();
+
         assert_eq!(
             records.items.iter().filter(|row| row.id.is_some()).count(),
             users
@@ -321,7 +339,9 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
 #[tokio::test]
 async fn collection_listings_reject_invalid_limits_before_role_queries() {
     let cx = context().await;
+
     let caller = Caller::socket();
+
     for limit in [0, 1001] {
         let token = crate::token::list(
             &cx,
@@ -356,6 +376,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
         )
         .await
         .unwrap_err();
+
         for error in [token, tsig, grant] {
             assert_eq!(error.code(), ErrorCode::InvalidInput);
         }

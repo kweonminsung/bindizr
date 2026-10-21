@@ -98,6 +98,7 @@ impl QueryMetadata {
         mut signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
         let limit = self.response_limit();
+
         for minimal in [false, true] {
             let mut candidate_signer = signer.as_deref().cloned();
             let mut additional = self.build_response(
@@ -105,12 +106,15 @@ impl QueryMetadata {
                 truncated || minimal,
                 if minimal { None } else { ede },
             );
+
             if let Some(candidate) = &mut candidate_signer {
                 candidate
                     .sign_response(&mut additional, Time48::now())
-                    .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
+                    .map_err(|error| EncodeMessageError::Sign(Box::new(error)))?;
             }
+
             let response = additional.finish().into_target();
+
             match limit.validate_len(response.len()) {
                 Ok(()) => {
                     if let (Some(signer), Some(candidate)) =
@@ -124,6 +128,7 @@ impl QueryMetadata {
                 Err(_) => {}
             }
         }
+
         unreachable!()
     }
 
@@ -138,10 +143,12 @@ impl QueryMetadata {
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
+
         // RFC 1035, Section 4.1.1: a response echoes the request's opcode and RD.
         header.set_opcode(self.opcode);
         header.set_rd(self.rd);
         header.set_rcode(rcode.rcode());
+
         // RFC 5936, Section 2.2.1: AA stays set on an error about a held zone and
         // "if in doubt"; NOTAUTH, FORMERR and NOTIMP deny authority, so it clears.
         header.set_aa(
@@ -151,6 +158,7 @@ impl QueryMetadata {
         header.set_tc(truncated);
 
         let mut question = builder.question();
+
         if let Some(value) = &self.question {
             question
                 .push(value)
@@ -160,6 +168,7 @@ impl QueryMetadata {
         let mut additional = question.additional();
         self.edns
             .push_response_opt(&mut additional, rcode, ede, self.keepalive.tcp_keepalive());
+
         additional
     }
 }
@@ -190,10 +199,12 @@ pub fn has_readable_sections(data: &[u8]) -> bool {
     let Ok(mut additional) = message.additional() else {
         return false;
     };
+
     for record in additional.by_ref() {
         if record.is_err() {
             return false;
         }
     }
+
     additional.pos() == data.len()
 }

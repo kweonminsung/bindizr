@@ -37,8 +37,10 @@ pub(crate) async fn serve_connection(
         // A connection with a query in flight is not idle (RFC 7766, Section
         // 6.2.3); the cancel-safe read may be interrupted by a query finishing.
         let busy = !in_flight.is_empty() || !transfers.is_empty();
+
         let read = async {
             let read = wire::read_tcp_message(&mut reader, &mut pending);
+
             if busy {
                 read.await
             } else {
@@ -62,9 +64,13 @@ pub(crate) async fn serve_connection(
                 stopping = true;
                 break Ok(());
             }
+
             () = writer.failed() => break Err(DnsError::PeerClosed),
+
             Some(_) = in_flight.join_next(), if !in_flight.is_empty() => continue,
+
             Some(_) = transfers.join_next(), if !transfers.is_empty() => continue,
+
             result = read => result,
         };
         let query_data = match result {
@@ -83,11 +89,15 @@ pub(crate) async fn serve_connection(
                     stopping = true;
                     break Ok(());
                 }
+
                 () = writer.failed() => break Err(DnsError::PeerClosed),
+
                 Some(_) = in_flight.join_next(), if !in_flight.is_empty() => {},
+
                 Some(_) = transfers.join_next(), if !transfers.is_empty() => {},
             }
         }
+
         // Separate retryable transfers from requests that must finish during shutdown.
         let transfer =
             message::ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(idle_timeout))
@@ -97,9 +107,11 @@ pub(crate) async fn serve_connection(
                 });
         let dns_cx = dns_cx.clone();
         let writer = writer.clone();
+
         let answer = async move {
             dispatch_query(&dns_cx, &writer, client_addr, &query_data, idle_timeout).await;
         };
+
         if transfer {
             transfers.spawn(answer);
         } else {
@@ -114,20 +126,23 @@ pub(crate) async fn serve_connection(
         writer.fail();
         transfers.abort_all();
     }
+
     while in_flight.join_next().await.is_some() {}
+
     while transfers.join_next().await.is_some() {}
 
     // A TLS peer is owed close_notify ahead of the FIN; a plain socket closes.
     if outcome.is_ok()
-        && let Err(e) = writer.shutdown().await
+        && let Err(error) = writer.shutdown().await
     {
         log::debug!(
             "Closing DNS {} connection from {}: {}",
             transport,
             client_addr,
-            e
+            error
         );
     }
+
     outcome
 }
 
@@ -140,6 +155,7 @@ async fn dispatch_query(
     idle_timeout: Duration,
 ) {
     let transport = writer.transport();
+
     if message::is_response(query_data) {
         log::warn!("Ignoring a DNS {} response from {}", transport, client_addr);
         return;
@@ -157,10 +173,12 @@ async fn dispatch_query(
                 error
             );
         }
+
         return;
     }
 
     let keepalive = Keepalive::IdleTimeout(idle_timeout);
+
     match server::refuse_unsupported_opcode(dns_cx, query_data, keepalive, transport).await {
         Ok(Some((response, _))) => {
             if let Err(error) = writer.write_message(&response).await {
@@ -171,6 +189,7 @@ async fn dispatch_query(
                     error
                 );
             }
+
             return;
         }
         Ok(None) => {}
@@ -187,14 +206,15 @@ async fn dispatch_query(
 
     let query = match message::ParsedQuery::parse(query_data, keepalive) {
         Ok(query) => query,
-        Err(e) => {
+        Err(error) => {
             log::warn!(
                 "Failed to parse DNS {} query from {}: {}",
                 transport,
                 client_addr,
-                e
+                error
             );
-            if let Some(metadata) = e.query_metadata() {
+
+            if let Some(metadata) = error.query_metadata() {
                 let result = async {
                     let rcode = metadata
                         .format_error()
@@ -204,6 +224,7 @@ async fn dispatch_query(
                     writer.write_message(&response).await
                 }
                 .await;
+
                 if let Err(error) = result {
                     log::error!(
                         "Failed to answer malformed DNS {} query from {}: {}",
@@ -213,6 +234,7 @@ async fn dispatch_query(
                     );
                 }
             }
+
             return;
         }
     };
@@ -227,6 +249,7 @@ async fn dispatch_query(
                 ede,
             )
             .await?;
+
             writer.write_message(&response).await
         } else if query.qtype == Rtype::SOA {
             server::soa::handle_tcp_soa(dns_cx, writer, client_addr, &query, query_data).await
@@ -235,6 +258,7 @@ async fn dispatch_query(
         }
     }
     .await;
+
     if let Err(error) = result {
         log::error!(
             "DNS {} query from {} failed (opcode={:?} qtype={:?} qclass={}): {}",

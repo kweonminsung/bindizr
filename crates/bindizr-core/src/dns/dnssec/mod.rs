@@ -39,7 +39,7 @@ pub(crate) type WireRecord<D> = domain::base::Record<WireName, D>;
 
 /// A typed name's wire bytes into the domain form.
 fn to_wire_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {
-    Name::from_octets(wire).map_err(|e| EncodeWireNameError::Octets(Box::new(e)))
+    Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)))
 }
 
 impl ZoneName {

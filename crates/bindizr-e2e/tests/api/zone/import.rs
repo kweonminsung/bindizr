@@ -12,6 +12,7 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
             Some(json!({ "zone_name": zone_name, "records": records })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
 }
 
@@ -27,6 +28,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
     let content = "ns IN NS .\ncname IN CNAME .\nptr IN PTR .\ndname IN DNAME .\n";
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -34,9 +36,12 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
             Some(json!({"content": content})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 4);
+
     let sets = fetch_exported_record_sets(&app, name).await;
+
     for (owner, rtype) in [
         ("ns", Rtype::NS),
         ("cname", Rtype::CNAME),
@@ -45,6 +50,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     ] {
         assert_eq!(sets[&(format!("{owner}.{name}."), rtype)], [vec![0]]);
     }
+
     let before = app.list_records(name).await;
     let serial = app.read_zone_serial(name).await;
     let (status, versions) = app
@@ -54,10 +60,13 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
+
     for kind in ["NS", "CNAME", "PTR", "DNAME"] {
         for dry_run in [true, false] {
             let content = format!("valid IN A 192.0.2.1\nbad IN {kind} ..\n");
+
             let (status, body) = app
                 .send_request(
                     Method::POST,
@@ -65,6 +74,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
                     Some(json!({"content": content, "mode": "replace", "dry_run": dry_run})),
                 )
                 .await;
+
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
             assert_eq!(body["applied"], false);
             assert!(!body["errors"].as_array().unwrap().is_empty());
@@ -72,6 +82,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
             assert_eq!(app.read_zone_serial(name).await, serial);
         }
     }
+
     let (status, after) = app
         .send_request(
             Method::GET,
@@ -79,6 +90,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(after, versions);
 }
@@ -101,6 +113,7 @@ async fn zone_import_previews_zone_file_before_apply() {
             Some(json!({ "content": content, "dry_run": true })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
@@ -125,6 +138,7 @@ async fn zone_import_previews_zone_file_before_apply() {
             Some(json!({ "content": content })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 3);
@@ -136,6 +150,7 @@ async fn zone_import_previews_zone_file_before_apply() {
             None,
         )
         .await;
+
     assert_eq!(body["items"].as_array().unwrap().len(), before + 3);
 
     // Re-applying in append mode is idempotent: everything is unchanged.
@@ -146,6 +161,7 @@ async fn zone_import_previews_zone_file_before_apply() {
             Some(json!({ "content": content })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 0);
@@ -172,6 +188,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
 
     // Replace retains the apex NS while removing the absent address.
     let content = format!("@ IN NS ns1.{zone_name}.\nkeep IN A 192.0.2.1\nadd IN A 192.0.2.3\n");
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -179,6 +196,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
             Some(json!({ "content": content, "mode": "replace" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
@@ -192,6 +210,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
             None,
         )
         .await;
+
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
     let (_, body) = app
@@ -201,6 +220,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
             None,
         )
         .await;
+
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 }
 
@@ -228,6 +248,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
 
     // Only the `www` A record set appears in the file, so only it is replaced.
     let content = "www IN A 192.0.2.3\n";
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -235,20 +256,22 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
             Some(json!({ "content": content, "mode": "upsert" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
     assert_eq!(body["summary"]["deleted"], 2);
 
     let values = |body: &serde_json::Value| -> Vec<String> {
-        let mut v: Vec<String> = body["items"]
+        let mut values: Vec<String> = body["items"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|r| r["value"].as_str().unwrap().to_string())
+            .map(|record| record["value"].as_str().unwrap().to_string())
             .collect();
-        v.sort();
-        v
+        values.sort();
+
+        values
     };
 
     let (_, body) = app
@@ -258,6 +281,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
             None,
         )
         .await;
+
     assert_eq!(values(&body), vec!["192.0.2.3"]);
 
     // Same owner, different type: untouched.
@@ -268,6 +292,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
             None,
         )
         .await;
+
     assert_eq!(values(&body), vec!["keep me"]);
 
     // Different owner entirely: untouched.
@@ -278,6 +303,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
             None,
         )
         .await;
+
     assert_eq!(values(&body), vec!["192.0.2.9"]);
 }
 
@@ -306,6 +332,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
 
     // A TTL-only upsert is reported as an update and must change the stored TTL.
     let content = "www 600 IN A 192.0.2.1\n";
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -313,6 +340,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
             Some(json!({ "content": content, "mode": "upsert" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 0);
@@ -327,6 +355,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
             None,
         )
         .await;
+
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
     assert_eq!(ttl_of(&body), 600);
 
@@ -338,6 +367,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
             Some(json!({ "content": content, "mode": "upsert" })),
         )
         .await;
+
     assert_eq!(body["summary"]["updated"], 0);
     assert_eq!(body["summary"]["unchanged"], 1);
 
@@ -349,6 +379,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
             Some(json!({ "content": "www 900 IN A 192.0.2.1\n", "mode": "append" })),
         )
         .await;
+
     assert_eq!(body["summary"]["updated"], 0);
     assert_eq!(body["summary"]["unchanged"], 1);
 
@@ -359,6 +390,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
             None,
         )
         .await;
+
     assert_eq!(ttl_of(&body), 600);
 }
 
@@ -371,6 +403,7 @@ async fn zone_import_fetches_server_records_over_http() {
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -378,10 +411,12 @@ async fn zone_import_fetches_server_records_over_http() {
             Some(json!({ "content": "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     // A transfer of the zone's own content replaces it with itself.
     let server = format!("127.0.0.1:{}", app.dns_port());
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -389,6 +424,7 @@ async fn zone_import_fetches_server_records_over_http() {
             Some(json!({ "from_server": server, "mode": "replace" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["parsed"], 3);
@@ -408,6 +444,7 @@ async fn zone_import_fetches_server_records_over_http() {
                 Some(request),
             )
             .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
@@ -419,6 +456,7 @@ async fn zone_import_fetches_server_records_over_http() {
 async fn zone_import_creates_the_zone_from_the_files_soa() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-create.example");
+
     // A migrated zone's serial has to carry over, or a secondary holding the
     // old primary's higher serial ignores the transfer.
     let content = format!(
@@ -435,14 +473,17 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
             Some(json!({ "content": content, "create": true, "dry_run": true })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
+
     // The zone is created empty, so the file's NS and A are both adds.
     assert_eq!(body["summary"]["added"], 2);
 
     let (status, _) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, body) = app
@@ -452,23 +493,28 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
             Some(json!({ "content": content, "create": true })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let zone = &body["zone"];
+
     assert_eq!(zone["mname"], "ns1.old.example");
     assert_eq!(zone["rname"], format!("hostmaster@{zone_name}"));
     assert_eq!(zone["refresh"], 7200);
     assert_eq!(zone["retry"], 1800);
     assert_eq!(zone["expire"], 1209600);
     assert_eq!(zone["minimum_ttl"], 300);
+
     // The import advanced it once for the records it added.
     assert_eq!(zone["serial"], 2026091602);
     let default_ttl = zone["default_ttl"].clone();
+
     let (status, records) = app
         .send_request(
             Method::GET,
@@ -476,6 +522,7 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(records["items"][0]["ttl"], default_ttl);
 }
@@ -488,6 +535,7 @@ async fn zone_import_preserves_supported_initial_serials() {
 
     for serial in [0u32, 1, 2137483647, 2147483648, u32::MAX] {
         let zone_name = app.zone_name(&format!("import-serial-{serial}.example"));
+
         // The increment passes over zero (RFC 2136, Section 7.11).
         let next = if serial == u32::MAX { 1 } else { serial + 1 };
         let content = format!(
@@ -495,6 +543,7 @@ async fn zone_import_preserves_supported_initial_serials() {
              @ IN NS ns.old.example.\n\
              www IN A 192.0.2.10\n"
         );
+
         for dry_run in [true, false] {
             let (status, body) = app
                 .send_request(
@@ -503,11 +552,14 @@ async fn zone_import_preserves_supported_initial_serials() {
                     Some(json!({ "content": content, "create": true, "dry_run": dry_run })),
                 )
                 .await;
+
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(body["applied"], !dry_run);
+
             let (status, body) = app
                 .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
                 .await;
+
             if dry_run {
                 assert_eq!(status, StatusCode::NOT_FOUND);
             } else {
@@ -524,6 +576,7 @@ async fn zone_import_preserves_supported_initial_serials() {
                 Some(json!({ "content": content.replace(&format!("({serial} "), "(2140000000 "), "create": true })),
             )
             .await;
+
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["summary"]["added"], 0);
         assert_eq!(app.read_zone_serial(&zone_name).await, i64::from(next));
@@ -544,6 +597,7 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
             Some(json!({ "content": "www IN A 192.0.2.10\n" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 
@@ -555,6 +609,7 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
             Some(json!({ "content": "www IN A 192.0.2.10\n", "create": true })),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("no SOA"), "{body}");
 }
@@ -565,6 +620,7 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
 async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-create-reject.example");
+
     // The SOA is enough to create the zone from, but the CNAME collides with
     // the A record at the same name, so validation rejects the whole file.
     let content = format!(
@@ -581,6 +637,7 @@ async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
             Some(json!({ "content": content, "create": true })),
         )
         .await;
+
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["applied"], false);
     assert!(
@@ -592,6 +649,7 @@ async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
     let (status, _) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -602,6 +660,7 @@ async fn zone_import_preserves_native_wks_values() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -609,13 +668,17 @@ async fn zone_import_preserves_native_wks_values() {
             Some(json!({"content": "services IN WKS 192.0.2.1 TCP ( 443 22\n 80 22 )\n"})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
+
     let records = app.list_records(zone_name).await;
     let wks = records
         .iter()
         .find(|record| record["type"] == "WKS")
         .unwrap();
+
     assert_eq!(wks["value"], "192.0.2.1 6 22 80 443");
+
     let (_, export) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
@@ -627,6 +690,7 @@ async fn zone_import_preserves_native_wks_values() {
             Some(json!({"content": export, "mode": "replace"})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(app.list_records(zone_name).await, records);
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
@@ -639,11 +703,14 @@ async fn zone_import_rejects_unsupported_types_atomically() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
+
     for rtype in ["TYPE128", "HINFO", "TYPE65280"] {
         for dry_run in [false, true] {
             let content = format!("www IN A 192.0.2.1\nbox IN {rtype} \\# 2 0000\n");
+
             let (status, body) = app
                 .send_request(
                     Method::POST,
@@ -651,6 +718,7 @@ async fn zone_import_rejects_unsupported_types_atomically() {
                     Some(json!({"content": content, "dry_run": dry_run})),
                 )
                 .await;
+
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
             assert_eq!(body["applied"], false, "{body}");
             assert!(!body["errors"].as_array().unwrap().is_empty(), "{body}");
@@ -670,6 +738,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
 
     // A CNAME cannot coexist with another record of the same name.
     let content = "dup IN A 192.0.2.1\ndup IN CNAME www\n";
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -677,6 +746,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
             Some(json!({ "content": content })),
         )
         .await;
+
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
@@ -689,6 +759,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
             None,
         )
         .await;
+
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 }
 
@@ -703,6 +774,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
     // A CNAME that can't coexist with the A fails the whole import, so the dry-run
     // preview must report the error with an empty diff, not a never-applied add.
     let content = "dup IN A 192.0.2.1\ndup IN CNAME www\n";
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -710,6 +782,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
             Some(json!({ "content": content, "dry_run": true })),
         )
         .await;
+
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
@@ -749,6 +822,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
             Some(json!({ "content": "WWW IN CNAME target\n", "mode": "append" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
@@ -762,6 +836,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
         )
         .await;
     let items = body["items"].as_array().unwrap();
+
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["type"], "A");
     assert_eq!(items[0]["value"], "192.0.2.1");
@@ -792,6 +867,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
             Some(json!({ "content": "alias IN A 192.0.2.9\n", "mode": "append" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
@@ -804,6 +880,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
         )
         .await;
     let items = body["items"].as_array().unwrap();
+
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["type"], "CNAME");
 }
@@ -833,6 +910,7 @@ async fn zone_import_append_dedups_against_existing_db_record() {
             Some(json!({ "content": "www IN A 192.0.2.1\n", "mode": "append" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 0);
@@ -845,6 +923,7 @@ async fn zone_import_append_dedups_against_existing_db_record() {
             None,
         )
         .await;
+
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 }
 
@@ -874,6 +953,7 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
             Some(json!({ "content": "c1 IN A 192.0.2.3\n", "mode": "append" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
@@ -887,6 +967,7 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
                 None,
             )
             .await;
+
         assert_eq!(
             body["items"].as_array().unwrap().len(),
             1,
@@ -920,6 +1001,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
             Some(json!({ "content": content })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 5);
     assert_eq!(body["errors"].as_array().unwrap().len(), 0, "{body}");
@@ -931,6 +1013,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
             None,
         )
         .await;
+
     assert_eq!(
         body["items"][0]["value"],
         format!(
@@ -943,6 +1026,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let exported = body.as_str().unwrap().to_string();
 
@@ -953,12 +1037,14 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
             Some(json!({ "content": exported })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 0, "{body}");
     assert_eq!(body["errors"].as_array().unwrap().len(), 0, "{body}");
 
     // The delegation NS cannot go while its DS survives; DS first, then NS.
     let record_id = |listing: &serde_json::Value| listing["items"][0]["id"].as_i64().unwrap();
+
     let (_, ns_listing) = app
         .send_request(
             Method::GET,
@@ -973,6 +1059,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
     let (_, ds_listing) = app
@@ -982,6 +1069,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
             None,
         )
         .await;
+
     for listing in [ds_listing, ns_listing] {
         let (status, _) = app
             .send_request(
@@ -990,6 +1078,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
                 None,
             )
             .await;
+
         assert_eq!(status, StatusCode::OK);
     }
 }
@@ -1001,13 +1090,16 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
+
     for flags in ["!", r"\000", r"\195\169"] {
         for dry_run in [true, false] {
             let content = format!(
                 "must-not-exist IN A 192.0.2.18\nbad IN NAPTR 10 10 \"{flags}\" \"app\" \"\" .\n"
             );
+
             let (status, body) = app
                 .send_request(
                     Method::POST,
@@ -1015,6 +1107,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
                     Some(json!({"content": content, "dry_run": dry_run})),
                 )
                 .await;
+
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
             assert_eq!(body["applied"], false);
             assert!(
@@ -1046,6 +1139,7 @@ async fn zone_import_export_preserves_dname_and_naptr() {
         "future IN NAPTR 100 10 \"z9\" \"app\" \"\" next.example.com.\n",
         "alias IN DNAME target.example.com.\n",
     );
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1053,6 +1147,7 @@ async fn zone_import_export_preserves_dname_and_naptr() {
             Some(json!({ "content": content })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true, "{body}");
     assert_eq!(body["summary"]["added"], 5, "{body}");
@@ -1060,10 +1155,12 @@ async fn zone_import_export_preserves_dname_and_naptr() {
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     // The rdata comes back as written, the root replacement included.
     let exported = body.as_str().expect("zone file text");
+
     assert!(
         exported.contains("200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" ."),
         "{exported}"
@@ -1099,6 +1196,7 @@ async fn zone_import_export_preserves_escaped_labels_and_values() {
         "1    IN CNAME 1.0/25.2.0.192.in-addr.arpa.\n",
         "@    IN CAA   0 issue \"a\\\"b\\\\c\"\n",
     );
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1106,6 +1204,7 @@ async fn zone_import_export_preserves_escaped_labels_and_values() {
             Some(json!({ "content": content })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true, "{body}");
     assert_eq!(body["summary"]["added"], 3, "{body}");
@@ -1113,11 +1212,13 @@ async fn zone_import_export_preserves_escaped_labels_and_values() {
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     // RFC 2317, Section 4 delegates through a label carrying a slash, and the
     // CAA value keeps the escapes it was written with.
     let exported = body.as_str().expect("zone file text");
+
     assert!(
         exported.contains("1.0/25.2.0.192.in-addr.arpa."),
         "{exported}"
@@ -1132,6 +1233,7 @@ async fn zone_import_rejects_unknown_mode_in_service() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1139,6 +1241,7 @@ async fn zone_import_rejects_unknown_mode_in_service() {
             Some(json!({"content": "www IN A 192.0.2.10", "mode": "unknown"})),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_INPUT");
     assert!(
@@ -1160,6 +1263,7 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap().to_string();
     let missing = app.zone_name("bulk-missing.example");
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -1167,6 +1271,7 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
             Some(json!({ "content": "www IN A 192.0.2.30\n" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     let server = format!("127.0.0.1:{}", app.dns_port());
 
@@ -1181,6 +1286,7 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["summary"],
@@ -1209,6 +1315,7 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["summary"]["zones"], 1, "{body}");
@@ -1243,6 +1350,7 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
     .await;
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
+
     let (_, scoped_token) = app.create_scoped_api_token().await;
     app.set_auth_token(scoped_token);
     let zone_name = app.zone_name("bulk-scoped.example");
@@ -1259,7 +1367,9 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1267,6 +1377,7 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
             Some(json!({ "from_server": "127.0.0.1:1", "from_catalog": "catalog.bindizr" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
 
     let (status, body) = app
@@ -1276,6 +1387,7 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
             Some(json!({ "from_server": "127.0.0.1:1", "zone_names": [zone_name] })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zones"][0]["result"], "failed");
     assert_eq!(body["zones"][0]["error"]["code"], "ZONE_NOT_FOUND");
@@ -1367,6 +1479,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
             ))
             .unwrap();
         answer.push((&owner, Ttl::from_secs(300), closing)).unwrap();
+
         if trailing {
             answer
                 .push((
@@ -1376,8 +1489,10 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
                 ))
                 .unwrap();
         }
+
         write_frame(&mut stream, &answer.finish()).unwrap();
     });
+
     (address, server)
 }
 
@@ -1399,6 +1514,7 @@ fn serve_catalog(
     let address = listener.local_addr().unwrap().to_string();
     let server = std::thread::spawn(move || {
         let mut queries = Vec::new();
+
         for (index, zone) in std::iter::once("catalog.example".to_string())
             .chain(members.iter().cloned())
             .take(1 + member_transfers)
@@ -1432,11 +1548,13 @@ fn serve_catalog(
             answer
                 .push((&owner, Ttl::from_secs(300), soa.clone()))
                 .unwrap();
+
             if !catalog || apex_ns {
                 answer
                     .push((&owner, Ttl::from_secs(300), Ns::new(primary)))
                     .unwrap();
             }
+
             if catalog {
                 answer
                     .push((
@@ -1445,6 +1563,7 @@ fn serve_catalog(
                         Txt::from_octets(vec![1, b'2']).unwrap(),
                     ))
                     .unwrap();
+
                 for (index, member) in members.iter().enumerate() {
                     answer
                         .push((
@@ -1454,6 +1573,7 @@ fn serve_catalog(
                         ))
                         .unwrap();
                 }
+
                 if split {
                     write_frame(&mut stream, &answer.finish()).unwrap();
                     let mut builder = MessageBuilder::new_vec();
@@ -1461,6 +1581,7 @@ fn serve_catalog(
                     builder.header_mut().set_qr(true);
                     answer = builder.answer();
                 }
+
                 answer
                     .push((
                         &parse_name("VERSION.CATALOG.example").unwrap(),
@@ -1468,6 +1589,7 @@ fn serve_catalog(
                         Txt::from_octets(vec![1, b'2']).unwrap(),
                     ))
                     .unwrap();
+
                 for (index, member) in members.iter().enumerate() {
                     answer
                         .push((
@@ -1486,19 +1608,23 @@ fn serve_catalog(
                     ))
                     .unwrap();
             }
+
             answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
             write_frame(&mut stream, &answer.finish()).unwrap();
         }
+
         if member_transfers == 0 {
             // Keep listening after a rejected catalog: no member AXFR may follow.
             listener.set_nonblocking(true).unwrap();
             let until = std::time::Instant::now() + std::time::Duration::from_millis(150);
+
             while std::time::Instant::now() < until {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         stream
                             .set_read_timeout(Some(std::time::Duration::from_secs(1)))
                             .unwrap();
+
                         if let Some(query) = read_frame(&mut stream).unwrap() {
                             queries.push(
                                 Message::from_octets(query.as_slice())
@@ -1509,6 +1635,7 @@ fn serve_catalog(
                                     .to_string(),
                             );
                         }
+
                         break;
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -1518,8 +1645,10 @@ fn serve_catalog(
                 }
             }
         }
+
         queries
     });
+
     (address, server)
 }
 
@@ -1528,11 +1657,15 @@ fn serve_catalog(
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
     let app = TestApp::start_local().await;
+
     for cli in [false, true] {
         for split in [false, true] {
             let member = app.zone_name(&format!("member-{cli}-{split}.example"));
+
             app.create_zone_cli(&member, "3600").await;
+
             let (address, server) = serve_catalog(vec![member.clone()], split, true, 1);
+
             let body = if cli {
                 let output = app
                     .run_cli_success(
@@ -1549,6 +1682,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
                         None,
                     )
                     .await;
+
                 serde_json::from_str::<Value>(&output).unwrap()
             } else {
                 let (status, body) = app
@@ -1558,13 +1692,18 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
                         Some(json!({"from_server": address, "from_catalog": "catalog.example"})),
                     )
                     .await;
+
                 assert_eq!(status, StatusCode::OK, "{body}");
+
                 body
             };
+
             server.join().unwrap();
+
             assert_eq!(body["summary"]["ok"], 1, "{body}");
             assert_eq!(body["summary"]["zones"], 1, "{body}");
             assert_eq!(body["zones"][0]["import"]["applied"], true, "{body}");
+
             let (status, records) = app
                 .send_request(
                     Method::GET,
@@ -1572,6 +1711,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
                     None,
                 )
                 .await;
+
             assert_eq!(status, StatusCode::OK);
             assert_eq!(records["items"][0]["value"], "192.0.2.50", "{records}");
         }
@@ -1589,8 +1729,10 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
+
     for cli in [false, true] {
         let (address, server) = serve_import_transfer(zone_name.to_string(), false);
+
         if cli {
             app.run_cli_success(
                 &[
@@ -1613,11 +1755,15 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
                     Some(json!({"from_server": address, "mode": "replace"})),
                 )
                 .await;
+
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(body["errors"], json!([]));
         }
+
         server.join().unwrap();
+
         let sets = fetch_exported_record_sets(&app, zone_name).await;
+
         for (owner, rtype) in [
             ("rootns", Rtype::NS),
             ("cname", Rtype::CNAME),
@@ -1626,6 +1772,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
         ] {
             assert_eq!(sets[&(format!("{owner}.{zone_name}."), rtype)], [vec![0]]);
         }
+
         assert!(
             app.list_records(zone_name)
                 .await
@@ -1633,9 +1780,12 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
                 .any(|row| row["type"] == "A" && row["ttl"] == u32::MAX)
         );
     }
+
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
+
     let (address, server) = serve_import_transfer(zone_name.to_string(), true);
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1643,9 +1793,11 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
             Some(json!({"from_server": address, "mode": "replace"})),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.to_string().contains("after the closing SOA"), "{body}");
     server.join().unwrap();
+
     assert_eq!(app.list_records(zone_name).await, before);
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
 }
@@ -1655,13 +1807,16 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_import_requires_apex_ns_before_fetching_members() {
     let app = TestApp::start_local().await;
+
     for cli in [false, true] {
         for dry_run in [false, true] {
             for existing in [false, true] {
                 let member = app.zone_name(&format!("member-{cli}-{dry_run}-{existing}.example"));
+
                 if existing {
                     app.create_zone_cli(&member, "3600").await;
                 }
+
                 let before = app
                     .send_request(Method::GET, &format!("/zones/{member}"), None)
                     .await;
@@ -1670,7 +1825,9 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                 } else {
                     Vec::new()
                 };
+
                 let (address, server) = serve_catalog(vec![member.clone()], false, false, 0);
+
                 if cli {
                     let mut args = vec![
                         "zone",
@@ -1683,13 +1840,16 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                         "--output",
                         "json",
                     ];
+
                     if dry_run {
                         args.push("--dry-run");
                     }
+
                     let output = app.run_cli(&args, None).await;
                     crate::common::assert_cli_failure_contains(&args, &output, "no apex NS");
                 } else {
                     let (status, body) = app.send_request(Method::POST, "/import", Some(json!({"from_server": address, "from_catalog": "catalog.example", "create": true, "dry_run": dry_run}))).await;
+
                     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
                     assert_eq!(body["code"], "INVALID_INPUT", "{body}");
                     assert!(
@@ -1697,11 +1857,15 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                         "{body}"
                     );
                 }
+
                 assert_eq!(server.join().unwrap(), ["catalog.example"]);
+
                 let after = app
                     .send_request(Method::GET, &format!("/zones/{member}"), None)
                     .await;
+
                 assert_eq!(after, before);
+
                 if existing {
                     assert_eq!(app.list_records(&member).await, before_records);
                 }
@@ -1721,16 +1885,21 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     use crate::common::dns::exchange_dns_query;
 
     let app = TestApp::start_local().await;
+
     // This valid name sorts before '*', so checking members only as they are imported fails.
     let first = format!("!.{}", app.zone_name("first-member.example"));
+
     app.create_zone_cli(&first, "3600").await;
     let records = app.list_records(&first).await;
     let zones = app.send_request(Method::GET, "/zones", None).await;
     let versions_path = format!("/zones/{first}/versions?include_signer_serials=true");
+
     let versions = app.send_request(Method::GET, &versions_path, None).await;
+
     let catalog_serial = || {
         let (_, wire) = exchange_dns_query(app.dns_port(), "catalog.bindizr", 6).unwrap();
         let message = Message::from_octets(wire.as_slice()).unwrap();
+
         message
             .answer()
             .unwrap()
@@ -1743,6 +1912,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
             .into_int()
     };
     let serial = catalog_serial();
+
     let notify = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("notify", &notify.local_addr().unwrap().to_string())
         .await;
@@ -1752,6 +1922,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
             for wildcard in ["*", r"\*", r"\042"] {
                 let member = format!("{wildcard}.{}", app.zone_name("invalid.example"));
                 let (address, server) = serve_catalog(vec![first.clone(), member], false, true, 0);
+
                 if cli {
                     let mut args = vec![
                         "zone",
@@ -1766,10 +1937,13 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                         "--output",
                         "json",
                     ];
+
                     if dry_run {
                         args.push("--dry-run");
                     }
+
                     let output = app.run_cli(&args, None).await;
+
                     assert_eq!(server.join().unwrap(), ["catalog.example"]);
                     crate::common::assert_cli_failure_contains(&args, &output, "wildcard");
                 } else {
@@ -1786,7 +1960,9 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                             })),
                         )
                         .await;
+
                     let queries = server.join().unwrap();
+
                     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
                     assert_eq!(body["code"], "INVALID_ZONE_FIELD", "{body}");
                     assert!(
@@ -1795,6 +1971,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                     );
                     assert_eq!(queries, ["catalog.example"]);
                 }
+
                 assert_eq!(app.send_request(Method::GET, "/zones", None).await, zones);
                 assert_eq!(app.list_records(&first).await, records);
                 assert_eq!(
@@ -1805,6 +1982,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
             }
         }
     }
+
     assert!(
         tokio::time::timeout(Duration::from_millis(150), notify.recv_from(&mut [0; 4096]))
             .await
@@ -1820,6 +1998,7 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
     use crate::common::dns::parse_name;
 
     let app = TestApp::start_local().await;
+
     for cli in [false, true] {
         for dry_run in [false, true] {
             let members = vec![
@@ -1830,6 +2009,7 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                 ),
             ];
             let (address, server) = serve_catalog(members.clone(), false, true, members.len());
+
             let body = if cli {
                 let mut args = vec![
                     "zone",
@@ -1842,9 +2022,11 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                     "--output",
                     "json",
                 ];
+
                 if dry_run {
                     args.push("--dry-run");
                 }
+
                 serde_json::from_str::<Value>(&app.run_cli_success(&args, None).await).unwrap()
             } else {
                 let (status, body) = app
@@ -1859,14 +2041,19 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                         })),
                     )
                     .await;
+
                 assert_eq!(status, StatusCode::OK, "{body}");
+
                 body
             };
+
             let queries = server.join().unwrap();
+
             assert_eq!(queries.len(), 3, "{queries:?}");
             assert_eq!(queries[0], "catalog.example");
             assert_eq!(body["summary"]["zones"], 2, "{body}");
             assert_eq!(body["summary"]["ok"], 2, "{body}");
+
             for (index, member) in members.iter().enumerate() {
                 assert_eq!(
                     parse_name(&queries[index + 1]).unwrap(),
@@ -1876,15 +2063,19 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                     body["zones"][index]["import"]["applied"], !dry_run,
                     "{body}"
                 );
+
                 let (status, zone) = app
                     .send_request(Method::GET, &super::zone_path(member), None)
                     .await;
+
                 if dry_run {
                     assert_eq!(status, StatusCode::NOT_FOUND, "{zone}");
                 } else {
                     assert_eq!(status, StatusCode::OK, "{zone}");
                     assert_eq!(zone["zone"]["name"], *member, "{zone}");
+
                     let records = app.list_records(member).await;
+
                     assert!(
                         records.iter().any(|record| record["value"] == "192.0.2.50"),
                         "{records:?}"

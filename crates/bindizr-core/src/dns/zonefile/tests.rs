@@ -16,6 +16,7 @@ fn txt_preserves_non_utf8_octets() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
@@ -33,6 +34,7 @@ fn parse_reads_generic_rdata_of_known_types() {
         &zone,
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
@@ -51,11 +53,12 @@ fn parse_reads_generic_rdata_of_known_types() {
         &zone,
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed
             .errors
             .iter()
-            .any(|e| e.contains("does not encode a A record")),
+            .any(|error| error.contains("does not encode a A record")),
         "{:?}",
         parsed.errors
     );
@@ -71,8 +74,9 @@ fn parse_error_names_the_line_of_the_submitted_text() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
-        parsed.errors.iter().any(|e| e.contains(": 2:")),
+        parsed.errors.iter().any(|error| error.contains(": 2:")),
         "expected the error to name line 2, got: {:?}",
         parsed.errors
     );
@@ -86,6 +90,7 @@ fn txt_parser_preserves_utf8_segments() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed.errors.is_empty(),
         "unexpected errors: {:?}",
@@ -96,6 +101,7 @@ fn txt_parser_preserves_utf8_segments() {
         .iter()
         .find(|record| record.record_type == RecordType::Txt)
         .expect("a TXT record");
+
     match &record.value {
         ZoneFileValue::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
         other => panic!("expected segments, got {other:?}"),
@@ -138,6 +144,7 @@ fn zonefile_preserves_naptr_presentation() {
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     let values: Vec<_> = parsed.records.iter().map(|record| &record.value).collect();
+
     assert_eq!(
         values,
         [
@@ -160,6 +167,7 @@ fn zonefile_rejects_non_apex_soa() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed.soa.is_none(),
         "a foreign SOA was read as the zone's own"
@@ -168,7 +176,7 @@ fn zonefile_rejects_non_apex_soa() {
         parsed
             .errors
             .iter()
-            .any(|e| e.contains("does not belong to zone")),
+            .any(|error| error.contains("does not belong to zone")),
         "{:?}",
         parsed.errors
     );
@@ -178,6 +186,7 @@ fn zonefile_rejects_non_apex_soa() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert_eq!(parsed.soa.expect("apex SOA").serial, Serial::from(99));
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
 
@@ -189,11 +198,12 @@ fn zonefile_rejects_non_apex_soa() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed
             .errors
             .iter()
-            .any(|e| e.contains("more than one SOA")),
+            .any(|error| error.contains("more than one SOA")),
         "{:?}",
         parsed.errors
     );
@@ -208,6 +218,7 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     };
     let mut bytes = Vec::new();
     let Ok(()) = record.data().compose_rdata(&mut bytes);
+
     TransferRecord {
         name: crate::dns::name::to_fqdn(&record.owner().to_string()),
         rtype,
@@ -220,6 +231,7 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
 #[test]
 fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
     let zone = ZoneName::parse("example.com").unwrap();
+
     for (kind, rtype) in [
         ("NS", Rtype::NS),
         ("CNAME", Rtype::CNAME),
@@ -233,6 +245,7 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
                 &[transfer_record("target.example.com.", rtype, target)],
                 &zone,
             );
+
             assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
             assert!(transferred.errors.is_empty(), "{:?}", transferred.errors);
             assert_eq!(parsed.records, transferred.records, "{kind} {target}");
@@ -260,6 +273,7 @@ fn transfer_keeps_one_soa_for_creation() {
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(parsed.soa.expect("the opening SOA").serial, Serial::from(7));
+
     // The SOA is the zone's own, never one of its records.
     assert_eq!(parsed.records.len(), 1);
 }
@@ -301,6 +315,7 @@ fn transfer_preserves_escaped_names() {
         .iter()
         .map(|record| (record.owner_fqdn.as_str(), &record.value))
         .collect();
+
     assert_eq!(
         carried,
         [
@@ -343,6 +358,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         transfer_record("example.com.", Rtype::MX, "0 ."),
     ];
     let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
@@ -359,6 +375,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
     assert_eq!(parsed.records[3].value, ZoneFileValue::Rdata(".".into()));
     assert_eq!(parsed.records[3].priority, Some(0));
     let text = ParsedZoneFile::parse("@ 300 IN MX 0 .\n", &zone, Ttl::try_from(300).unwrap());
+
     assert_eq!(text.records, parsed.records[3..]);
 
     let invalid = TransferRecord {
@@ -368,6 +385,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         rdata: Rdata::new(vec![1, 255]).unwrap(),
     };
     let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone);
+
     assert!(parsed.errors.is_empty());
     assert_eq!(
         parsed.records[0].value,
@@ -396,6 +414,7 @@ fn transfer_import_accepts_case_varied_closing_soa() {
         closing,
     ];
     let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert!(parsed.soa.is_some());
     assert_eq!(parsed.records.len(), 1);

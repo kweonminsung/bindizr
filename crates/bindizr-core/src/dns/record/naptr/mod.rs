@@ -35,13 +35,10 @@ impl<'a> NaptrRecordValue<'a> {
         let (regexp, rest) = parse_char_string("NAPTR regexp", rest)?;
 
         let mut fields = split_record_fields(rest);
-        let replacement = match (fields.next(), fields.next()) {
-            (Some(replacement), None) => replacement,
-            _ => {
-                return Err(ParseRecordValueError::NaptrShape {
-                    value: value.to_string(),
-                });
-            }
+        let (Some(replacement), None) = (fields.next(), fields.next()) else {
+            return Err(ParseRecordValueError::NaptrShape {
+                value: value.to_string(),
+            });
         };
 
         Ok(Self {
@@ -59,6 +56,7 @@ impl<'a> NaptrRecordValue<'a> {
         let mut rdata = Vec::with_capacity(4);
         rdata.extend_from_slice(&self.order.to_be_bytes());
         rdata.extend_from_slice(&self.preference.to_be_bytes());
+
         for (field, text) in [
             ("NAPTR flags", &self.flags),
             ("NAPTR services", &self.services),
@@ -69,7 +67,9 @@ impl<'a> NaptrRecordValue<'a> {
             rdata.push(len);
             rdata.extend_from_slice(text.as_bytes());
         }
+
         rdata.extend_from_slice(&encode_name(self.replacement)?);
+
         Rdata::new(rdata)
     }
 
@@ -79,12 +79,14 @@ impl<'a> NaptrRecordValue<'a> {
         if !self.flags.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
             return Err(ParseRecordValueError::NaptrFlags);
         }
+
         validate_naptr_regexp(&self.regexp)?;
 
         // The replacement is a name or the root, which ends the rewrite chain.
         if self.replacement == "." {
             return Ok(());
         }
+
         // RFC 3403, Section 4.1: the two are mutually exclusive.
         if !self.regexp.is_empty() {
             return Err(ParseRecordValueError::NaptrReplacementWithRegexp);

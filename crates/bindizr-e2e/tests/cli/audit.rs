@@ -9,6 +9,7 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 async fn audit_list_shows_socket_changes_via_cli() {
     let app = TestApp::start().await;
     let name = format!("{}-cli-audited", app.namespace());
+
     app.run_cli_success(&["role", "create", &name], None).await;
     app.run_cli_success(&["token", "create", &name, "--role", &name], None)
         .await;
@@ -23,10 +24,13 @@ async fn audit_list_shows_socket_changes_via_cli() {
         )
         .await;
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+
     assert_eq!(listed["pagination"]["total"], 2, "{listed}");
     let items = listed["items"].as_array().unwrap();
+
     assert_eq!(items[0]["operation"], "delete");
     assert_eq!(items[1]["operation"], "create");
+
     for item in items {
         assert_eq!(item["entity"], "token");
         assert_eq!(item["entity_name"], name);
@@ -41,6 +45,7 @@ async fn audit_list_shows_socket_changes_via_cli() {
         .run_cli_success(&["audit", "list", "--name", &name], None)
         .await;
     let rows: Vec<&str> = table.lines().filter(|line| line.contains(&name)).collect();
+
     assert_eq!(rows.len(), 3, "{table}");
     assert!(
         rows.iter()
@@ -69,6 +74,7 @@ async fn audit_list_shows_socket_changes_via_cli() {
         .iter()
         .map(|item| item["entity"].as_str().unwrap())
         .collect();
+
     assert_eq!(entities, ["role", "token", "token"], "{sorted}");
 
     // A span ago reaches the daemon as a time: everything is newer than an
@@ -82,7 +88,9 @@ async fn audit_list_shows_socket_changes_via_cli() {
         )
         .await;
     let recent: Value = serde_json::from_str(&recent).expect("CLI did not return valid JSON");
+
     assert_eq!(recent["pagination"]["total"], 3, "{recent}");
+
     let older = app
         .run_cli_success(
             &[
@@ -92,13 +100,17 @@ async fn audit_list_shows_socket_changes_via_cli() {
         )
         .await;
     let older: Value = serde_json::from_str(&older).expect("CLI did not return valid JSON");
+
     assert_eq!(older["pagination"]["total"], 0, "{older}");
 
     let args = ["audit", "list", "--entity", "record"];
+
     let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "unsupported audit entity");
 
     let args = ["audit", "list", "--since", "yesterday"];
+
     let refused = app.run_cli(&args, None).await;
+
     assert!(!refused.status.success());
 }

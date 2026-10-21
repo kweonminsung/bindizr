@@ -45,10 +45,10 @@ use crate::{
 pub(crate) async fn list_zones(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut query): Query<ZoneFilter>,
+    Query(mut filter): Query<ZoneFilter>,
 ) -> Result<Response, ApiError> {
-    query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = zone::list_by_filter(&cx, &caller, query).await?;
+    filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = zone::list_by_filter(&cx, &caller, filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -75,6 +75,7 @@ pub(crate) async fn get_zone(
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let zone = zone::get_by_name(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
+
     Ok((
         StatusCode::OK,
         Json(SingleZoneResponse {
@@ -108,12 +109,14 @@ pub(crate) async fn create_zone(
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let response = zone::create(&cx, &caller, &body).await?;
+
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {
         StatusCode::CREATED
     } else {
         StatusCode::OK
     };
+
     Ok((status, Json(response)).into_response())
 }
 
@@ -172,14 +175,15 @@ pub(crate) async fn delete_zone(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(preview): Query<DryRunQuery>,
+    Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
     let response = zone::delete(
         &cx,
         &caller,
         &zone::normalize_name(&params.name)?,
-        Run::from_dry_run(preview.dry_run),
+        Run::from_dry_run(query.dry_run),
     )
     .await?;
+
     Ok((StatusCode::OK, Json(response)).into_response())
 }

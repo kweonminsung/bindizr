@@ -27,8 +27,8 @@ where
     type Rejection = ApiError;
 
     /// Parse a JSON request body into the expected input type.
-    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let Json(value) = Json::<T>::from_request(req, state).await?;
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let Json(value) = Json::<T>::from_request(request, state).await?;
         Ok(Self(value))
     }
 }

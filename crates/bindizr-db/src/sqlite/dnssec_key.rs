@@ -17,6 +17,7 @@ pub(crate) async fn create_tx(
     mut key: DnssecKey,
 ) -> Result<DnssecKey, DatabaseError> {
     let now = Utc::now();
+
     let result = sqlx::query(
         r#"
         INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at)
@@ -39,6 +40,7 @@ pub(crate) async fn create_tx(
 
     key.id = DnssecKeyId::from(super::last_insert_id(&result)?);
     key.created_at = now;
+
     Ok(key)
 }
 
@@ -69,7 +71,7 @@ pub(crate) async fn list_by_state_eligible_before(
     state: DnssecKeyState,
     cutoff: DateTime<Utc>,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     // SQLite compares timestamps as text; sqlx's RFC 3339 sorts chronologically.
     let keys = sqlx::query_as::<_, DnssecKey>(
@@ -82,7 +84,7 @@ pub(crate) async fn list_by_state_eligible_before(
     )
     .bind(state.as_str())
     .bind(cutoff)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(keys)
@@ -95,7 +97,7 @@ pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     state: DnssecKeyState,
     cutoff: DateTime<Utc>,
 ) -> Result<Vec<ZoneId>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     // datetime() normalizes both sides to one stored format.
     let zone_ids = sqlx::query_scalar::<_, ZoneId>(
@@ -114,7 +116,7 @@ pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     .bind(role.as_str())
     .bind(state.as_str())
     .bind(cutoff)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(zone_ids)
@@ -125,11 +127,11 @@ pub(crate) async fn count_by_state(
     pool: &Pool<Sqlite>,
     state: DnssecKeyState,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM dnssec_keys WHERE state = ?")
         .bind(state.as_str())
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *connection)
         .await?;
 
     Ok(count as u64)

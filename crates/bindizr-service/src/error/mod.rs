@@ -267,10 +267,10 @@ impl ServiceError {
 /// Call sites map UNIQUE/FK conflicts where their meaning is known.
 impl From<bindizr_core::dns::ConvertSerialError> for ServiceError {
     /// Report the conversion failure as an internal error, keeping it as source.
-    fn from(err: bindizr_core::dns::ConvertSerialError) -> Self {
+    fn from(error: bindizr_core::dns::ConvertSerialError) -> Self {
         ServiceError::Internal {
-            message: err.to_string(),
-            source: Some(Box::new(err)),
+            message: error.to_string(),
+            source: Some(Box::new(error)),
         }
     }
 }
@@ -278,20 +278,20 @@ impl From<bindizr_core::dns::ConvertSerialError> for ServiceError {
 /// A stored TTL that does not convert is corrupt data: a server fault.
 impl From<bindizr_core::dns::ConvertTtlError> for ServiceError {
     /// Report the conversion failure as an internal error, keeping it as source.
-    fn from(err: bindizr_core::dns::ConvertTtlError) -> Self {
+    fn from(error: bindizr_core::dns::ConvertTtlError) -> Self {
         ServiceError::Internal {
-            message: err.to_string(),
-            source: Some(Box::new(err)),
+            message: error.to_string(),
+            source: Some(Box::new(error)),
         }
     }
 }
 
 impl From<bindizr_db::error::DatabaseError> for ServiceError {
     /// Wrap a database error as an internal service error.
-    fn from(err: bindizr_db::error::DatabaseError) -> Self {
+    fn from(error: bindizr_db::error::DatabaseError) -> Self {
         ServiceError::Internal {
-            message: format!("database error: {}", err),
-            source: Some(Box::new(err)),
+            message: format!("database error: {}", error),
+            source: Some(Box::new(error)),
         }
     }
 }
@@ -451,6 +451,7 @@ impl ServiceError {
     /// Build an error explaining that credentials still authenticate into a role.
     pub fn role_in_use(name: impl fmt::Display, tokens: &[String], keys: &[String]) -> Self {
         let mut holders = Vec::new();
+
         if !tokens.is_empty() {
             let noun = if tokens.len() == 1 {
                 "API token"
@@ -459,6 +460,7 @@ impl ServiceError {
             };
             holders.push(format!("{} {}", noun, tokens.join(", ")));
         }
+
         if !keys.is_empty() {
             let noun = if keys.len() == 1 {
                 "TSIG key"
@@ -467,6 +469,7 @@ impl ServiceError {
             };
             holders.push(format!("{} {}", noun, keys.join(", ")));
         }
+
         ServiceError::RoleInUse(format!(
             "role '{}' is still held by {}",
             name,

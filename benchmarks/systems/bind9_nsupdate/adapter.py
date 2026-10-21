@@ -10,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import Endpoint  # noqa: E402
 from adapters.nsupdate import NsupdateAdapter  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import docker  # noqa: E402
 
 DNS_PORT = 15356
 ZONE = "bench.example"
@@ -22,10 +22,10 @@ class Bind9NsupdateAdapter(NsupdateAdapter):
     resource_services = ["bind9"]
     supports_ixfr = True
 
-    def __init__(self, cfg: dict, project: str):
+    def __init__(self, config: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
-        super().__init__(cfg, project, Endpoint(SERVER, DNS_PORT), ZONE)
-        self.compose = dockerutil.Compose(HERE / "compose.yml", project)
+        super().__init__(config, project, Endpoint(SERVER, DNS_PORT), ZONE)
+        self.compose = docker.Compose(HERE / "compose.yml", project)
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
@@ -37,13 +37,16 @@ class Bind9NsupdateAdapter(NsupdateAdapter):
         """Wait for SOA queries and dynamic updates before prepopulating the zone."""
         for _ in range(timeout * 2):
             code, _out = await self._dig(ZONE, "SOA")
+
             if code:
                 probe = await self._nsupdate(
                     "update add probe0.bench.example. 10 A 127.0.0.1\n"
                     "update delete probe0.bench.example. A\n")
                 if probe:
                     return
+
             await asyncio.sleep(0.5)
+
         raise RuntimeError("BIND9 (nsupdate) did not become ready")
 
     async def teardown(self) -> None:

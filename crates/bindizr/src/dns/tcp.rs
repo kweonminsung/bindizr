@@ -26,12 +26,14 @@ pub(crate) async fn run_tcp_server(
         let permit = tokio::select! {
             biased;
             () = &mut stop => break Ok(()),
+
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
                     log::warn!("DNS TCP connection task failed: {}", error);
                 }
                 continue;
             }
+
             permit = open.clone().acquire_owned() => match permit {
                 Ok(permit) => permit,
                 Err(error) => break Err(error.into()),
@@ -41,12 +43,14 @@ pub(crate) async fn run_tcp_server(
         let accepted = tokio::select! {
             biased;
             () = &mut stop => break Ok(()),
+
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
                     log::warn!("DNS TCP connection task failed: {}", error);
                 }
                 continue;
             }
+
             accepted = listener.accept() => accepted,
         };
 
@@ -54,27 +58,38 @@ pub(crate) async fn run_tcp_server(
             Ok((stream, client_addr)) => {
                 let dns_cx = dns_cx.clone();
                 let stop = connection_shutdown.waiter();
+
                 connections.spawn(async move {
                     let _permit = permit;
-                    if let Err(e) =
+
+                    if let Err(error) =
                         serve_connection(dns_cx, DnsStream::Tcp(stream), client_addr, stop).await
                     {
-                        log::error!("Failed to read DNS TCP message from {}: {}", client_addr, e);
+                        log::error!(
+                            "Failed to read DNS TCP message from {}: {}",
+                            client_addr,
+                            error
+                        );
                     }
                 });
             }
-            Err(e) => {
-                log::error!("Failed to accept DNS TCP connection: {}", e);
+            Err(error) => {
+                log::error!("Failed to accept DNS TCP connection: {}", error);
             }
         }
     };
+
+    // Stop accepting before asking existing connections to drain.
     drop(listener);
     connection_shutdown.trigger();
+
     while let Some(result) = connections.join_next().await {
         if let Err(error) = result {
             log::warn!("DNS TCP connection task failed: {}", error);
         }
     }
+
     log::info!("DNS TCP server stopped");
+
     outcome
 }

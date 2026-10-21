@@ -37,43 +37,58 @@ impl SchedulerWorker {
 /// worker idle until a reload names one.
 pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> SchedulerWorker {
     let mut period = *period_rx.borrow();
+
     if period == 0 {
         log::info!("Scheduler disabled by dns.scheduler_interval_secs = 0");
     }
+
     let (stop_tx, mut stop) = watch::channel(false);
+
     let task = tokio::spawn(async move {
         let mut interval = scheduler_interval(period);
+
         loop {
             if *stop.borrow() {
                 break;
             }
+
             tokio::select! {
                 biased;
                 _ = stop.changed() => break,
+
                 _ = interval.tick(), if period != 0 => {}
+
                 changed = period_rx.changed() => {
                     if changed.is_err() {
                         break;
                     }
+
                     // Rebuild here rather than after the old period elapses,
                     // which a shortened interval would otherwise wait out.
                     let reloaded = *period_rx.borrow_and_update();
+
                     if reloaded != period {
                         period = reloaded;
                         interval = scheduler_interval(period);
                     }
+
                     continue;
                 }
             }
+
             // A panic in the pass would otherwise unwind the scheduler itself.
             let pass_cx = cx.clone();
-            if let Err(e) = tokio::spawn(async move { run_scheduler_pass(&pass_cx).await }).await {
-                log::error!("DNSSEC scheduler pass did not finish: {}", e);
+
+            if let Err(error) =
+                tokio::spawn(async move { run_scheduler_pass(&pass_cx).await }).await
+            {
+                log::error!("DNSSEC scheduler pass did not finish: {}", error);
                 cx.metrics()
                     .track_dnssec_scheduler(SchedulerResult::Panicked);
             }
         }
     });
+
     SchedulerWorker {
         task,
         stop: stop_tx,
@@ -97,28 +112,33 @@ async fn run_scheduler_pass(cx: &Context) {
     // Bound retained IXFR and rollback history before maintaining signed zones,
     // one zone per transaction under its lock, like every other step here.
     let zone_max_days = config.history.zone_max_days;
+
     if zone_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(zone_max_days));
+
         match bindizr_db::zone::list_all(cx.db()).await {
             Ok(zones) => {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
+
                 for zone in zones {
                     match prune_zone_history_by_zone_id(cx, zone.id, cutoff).await {
                         Ok(pruned) => {
                             journal_rows += pruned.journal_rows;
                             version_rows += pruned.version_rows;
                         }
-                        Err(e) => {
+                        Err(error) => {
                             failed = true;
                             log::error!(
                                 "Zone history pruning for zone id {} failed: {}",
                                 zone.id,
-                                e
+                                error
                             )
                         }
                     }
                 }
+
                 cx.metrics().track_pruned_rows(journal_rows, version_rows);
+
                 if journal_rows > 0 || version_rows > 0 {
                     log::info!(
                         "Pruned {} journal and {} version rows",
@@ -127,17 +147,19 @@ async fn run_scheduler_pass(cx: &Context) {
                     );
                 }
             }
-            Err(e) => {
+            Err(error) => {
                 failed = true;
-                log::error!("Zone history pruning scan failed: {}", e)
+                log::error!("Zone history pruning scan failed: {}", error)
             }
         }
     }
 
     // The audit log has no row lock to take: one statement bounds it.
     let audit_max_days = config.history.audit_max_days;
+
     if audit_max_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
+
         match bindizr_db::audit_log::prune_older_than(cx.db(), cutoff).await {
             Ok(rows) => {
                 cx.metrics().track_pruned_audit_log_rows(rows);
@@ -145,9 +167,9 @@ async fn run_scheduler_pass(cx: &Context) {
                     log::info!("Pruned {} audit log rows", rows);
                 }
             }
-            Err(e) => {
+            Err(error) => {
                 failed = true;
-                log::error!("Audit log pruning failed: {}", e)
+                log::error!("Audit log pruning failed: {}", error)
             }
         }
     }
@@ -164,16 +186,16 @@ async fn run_scheduler_pass(cx: &Context) {
                         crate::notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => {
+                    Err(error) => {
                         failed = true;
-                        log::error!("Re-signing zone id {} failed: {}", zone_id, e)
+                        log::error!("Re-signing zone id {} failed: {}", zone_id, error)
                     }
                 }
             }
         }
-        Err(e) => {
+        Err(error) => {
             failed = true;
-            log::error!("Re-signing scan failed: {}", e)
+            log::error!("Re-signing scan failed: {}", error)
         }
     }
 
@@ -195,20 +217,20 @@ async fn run_scheduler_pass(cx: &Context) {
                         crate::notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => {
+                    Err(error) => {
                         failed = true;
                         log::error!(
                             "Scheduled ZSK rollover for zone id {} failed: {}",
                             zone_id,
-                            e
+                            error
                         )
                     }
                 }
             }
         }
-        Err(e) => {
+        Err(error) => {
             failed = true;
-            log::error!("ZSK lifetime scan failed: {}", e)
+            log::error!("ZSK lifetime scan failed: {}", error)
         }
     }
 
@@ -228,6 +250,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 .map(|key| key.zone_id)
                 .collect();
             zone_ids.dedup();
+
             for zone_id in zone_ids {
                 match promote_zsks_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
@@ -235,9 +258,9 @@ async fn run_scheduler_pass(cx: &Context) {
                         crate::notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => {
+                    Err(error) => {
                         failed = true;
-                        log::error!("ZSK promotion for zone id {} failed: {}", zone_id, e)
+                        log::error!("ZSK promotion for zone id {} failed: {}", zone_id, error)
                     }
                 }
             }
@@ -250,6 +273,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 .map(|key| key.zone_id)
                 .collect();
             zone_ids.dedup();
+
             for zone_id in zone_ids {
                 match promote_sep_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
@@ -260,16 +284,20 @@ async fn run_scheduler_pass(cx: &Context) {
                         crate::notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => {
+                    Err(error) => {
                         failed = true;
-                        log::error!("SEP key promotion for zone id {} failed: {}", zone_id, e)
+                        log::error!(
+                            "SEP key promotion for zone id {} failed: {}",
+                            zone_id,
+                            error
+                        )
                     }
                 }
             }
         }
-        Err(e) => {
+        Err(error) => {
             failed = true;
-            log::error!("Rollover promotion scan failed: {}", e)
+            log::error!("Rollover promotion scan failed: {}", error)
         }
     }
 
@@ -285,6 +313,7 @@ async fn run_scheduler_pass(cx: &Context) {
             // Keys arrive ordered by zone id, so dedup() leaves one entry per zone.
             let mut zone_ids: Vec<ZoneId> = keys.iter().map(|key| key.zone_id).collect();
             zone_ids.dedup();
+
             for zone_id in zone_ids {
                 match prune_retired_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
@@ -292,16 +321,20 @@ async fn run_scheduler_pass(cx: &Context) {
                         crate::notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => {
+                    Err(error) => {
                         failed = true;
-                        log::error!("Retired-key removal for zone id {} failed: {}", zone_id, e)
+                        log::error!(
+                            "Retired-key removal for zone id {} failed: {}",
+                            zone_id,
+                            error
+                        )
                     }
                 }
             }
         }
-        Err(e) => {
+        Err(error) => {
             failed = true;
-            log::error!("Retired-key scan failed: {}", e)
+            log::error!("Retired-key scan failed: {}", error)
         }
     }
 
@@ -313,4 +346,106 @@ async fn run_scheduler_pass(cx: &Context) {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use std::time::Duration;
+
+    use bindizr_core::{config::Config, metrics::Metrics};
+    use bindizr_db::Db;
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    /// Build real service state and its reload channel over a disposable SQLite database.
+    async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
+        let mut config: Config = serde_json::from_str("{}").unwrap();
+        config.database.sqlite.file_path = "sqlite::memory:".into();
+        config.dns.scheduler_interval_secs = period;
+
+        let db = Db::connect(&config.database).await.unwrap();
+
+        let (period_tx, period_rx) = watch::channel(period);
+        let cx = Arc::new(Context::new(
+            config,
+            String::new(),
+            db,
+            Metrics::new().unwrap(),
+            mpsc::unbounded_channel().0,
+            period_tx,
+        ));
+
+        (cx, period_rx)
+    }
+
+    /// A disabled scheduler stops even while the context keeps its reload sender alive.
+    #[tokio::test]
+    async fn stop_joins_disabled_worker_without_starting_a_pass() {
+        let (cx, period_rx) = context(0).await;
+        let worker = spawn(cx.clone(), period_rx);
+
+        tokio::time::timeout(Duration::from_secs(2), worker.stop())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            cx.metrics()
+                .encode()
+                .contains("bindizr_dnssec_scheduler_runs_total{result=\"ok\"} 0")
+        );
+    }
+
+    /// Shutdown waits for the current database pass and skips ticks accumulated during that pass.
+    #[tokio::test]
+    async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
+        let (cx, period_rx) = context(1).await;
+
+        // Occupy every connection so the pass cannot finish its first query until released.
+        let mut held = Vec::new();
+
+        for _ in 0..cx.db().stats().max {
+            held.push(cx.db().begin_read().await.unwrap());
+        }
+
+        let worker = spawn(cx.clone(), period_rx);
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            // The scheduler's additional Arc belongs to the spawned in-flight pass.
+            while Arc::strong_count(&cx) < 3 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let task = worker.stop();
+
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+
+        assert!(!task.is_finished(), "shutdown must await the blocked pass");
+        assert!(
+            cx.metrics()
+                .encode()
+                .contains("bindizr_dnssec_scheduler_runs_total{result=\"ok\"} 0")
+        );
+
+        for tx in held {
+            tx.rollback().await.unwrap();
+        }
+
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            cx.metrics()
+                .encode()
+                .contains("bindizr_dnssec_scheduler_runs_total{result=\"ok\"} 1")
+        );
+        assert!(
+            cx.metrics()
+                .encode()
+                .contains("bindizr_dnssec_scheduler_runs_total{result=\"failed\"} 0")
+        );
+    }
+}

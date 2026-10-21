@@ -45,6 +45,7 @@ pub(crate) async fn check_running(report: &mut Report) -> bool {
     let status = client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
         .await
         .map(|response| response.data);
+
     match status {
         Ok(status) => {
             let pid = status
@@ -54,10 +55,11 @@ pub(crate) async fn check_running(report: &mut Report) -> bool {
                 "Daemon running: pid {} (version {})",
                 pid, status.version
             ));
+
             true
         }
-        Err(e) => {
-            report.fail(format!("Daemon not reachable: {}", e.message));
+        Err(error) => {
+            report.fail(format!("Daemon not reachable: {}", error.message));
             false
         }
     }
@@ -77,15 +79,18 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
                 "API listening: https://{} (TLS handshake not attempted)",
                 addr
             )),
-            Ok(Err(e)) => report.fail(format!("API not reachable: https://{} ({})", addr, e)),
+            Ok(Err(error)) => {
+                report.fail(format!("API not reachable: https://{} ({})", addr, error))
+            }
             Err(_) => report.fail(format!("API not reachable: https://{} (timed out)", addr)),
         }
+
         return;
     }
 
     match probe_http_status_line(addr).await {
         Ok(status_line) => report.ok(format!("API reachable: http://{} ({})", addr, status_line)),
-        Err(e) => report.fail(format!("API not reachable: http://{} ({})", addr, e)),
+        Err(error) => report.fail(format!("API not reachable: http://{} ({})", addr, error)),
     }
 }
 
@@ -94,37 +99,46 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
 async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiError> {
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await?;
+
         let request = format!(
             "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
             addr
         );
+
         stream.write_all(request.as_bytes()).await?;
 
         // TCP may split the response; read until the status line is complete.
-        let mut buf = Vec::new();
+        let mut buffer = Vec::new();
         let mut chunk = [0u8; 256];
+
         loop {
             let read = stream.read(&mut chunk).await?;
+
             if read == 0 {
                 break;
             }
-            buf.extend_from_slice(&chunk[..read]);
-            if buf.contains(&b'\n') || buf.len() >= 1024 {
+
+            buffer.extend_from_slice(&chunk[..read]);
+
+            if buffer.contains(&b'\n') || buffer.len() >= 1024 {
                 break;
             }
         }
-        Ok::<_, ProbeApiError>(String::from_utf8_lossy(&buf).to_string())
+
+        Ok::<_, ProbeApiError>(String::from_utf8_lossy(&buffer).to_string())
     };
     let response = tokio::time::timeout(API_CHECK_TIMEOUT, exchange)
         .await
         .map_err(|_| ProbeApiError::TimedOut)??;
 
     let status_line = response.lines().next().unwrap_or_default().trim();
+
     if !status_line.starts_with("HTTP/") {
         return Err(ProbeApiError::UnexpectedResponse {
             line: status_line.to_string(),
         });
     }
+
     // A 5xx to this request means the API is answering but cannot serve, which
     // is a failing check rather than a reachable API.
     let answered_5xx = status_line
@@ -133,20 +147,22 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
         .and_then(|code| code.parse::<u16>().ok())
         .and_then(|code| StatusCode::from_u16(code).ok())
         .is_some_and(|status| status.is_server_error());
+
     if answered_5xx {
         return Err(ProbeApiError::ServerFault {
             line: status_line.to_string(),
         });
     }
+
     Ok(status_line.to_string())
 }
 
 /// Check database, DNS listener, and secondary status through the daemon.
 pub(crate) async fn check_services(report: &mut Report) {
     let doctor = match client::send_command::<DaemonDoctorResponse>(DaemonCommand::Doctor).await {
-        Ok(res) => res.data,
-        Err(e) => {
-            report.fail(format!("Daemon-side checks failed: {}", e.message));
+        Ok(response) => response.data,
+        Err(error) => {
+            report.fail(format!("Daemon-side checks failed: {}", error.message));
             return;
         }
     };
@@ -154,6 +170,7 @@ pub(crate) async fn check_services(report: &mut Report) {
     let database_failed = doctor.database.status == DoctorCheckStatus::Failed;
     report.push(doctor.database);
     report.push(doctor.dns_server);
+
     if let Some(check) = doctor.dns_tls_server {
         report.push(check);
     }
@@ -169,8 +186,10 @@ pub(crate) async fn check_services(report: &mut Report) {
 
     // These serials are the catalog zone's, unlike `zone status`, so say so.
     let catalog_zone = &doctor.catalog_zone_name;
+
     for secondary in &doctor.secondaries {
         let serial = secondary.visible_serial.map_or(0, Serial::as_u32);
+
         match secondary.status {
             SecondaryStatus::InSync | SecondaryStatus::Reachable => report.ok(format!(
                 "Secondary {}: {} (catalog zone {} at serial {})",
@@ -196,7 +215,7 @@ pub(crate) async fn check_services(report: &mut Report) {
     for notify in &doctor.notifies {
         match &notify.error {
             None => report.ok(format!("NOTIFY accepted: {}", notify.address)),
-            Some(e) => report.fail(format!("NOTIFY rejected: {} ({})", notify.address, e)),
+            Some(error) => report.fail(format!("NOTIFY rejected: {} ({})", notify.address, error)),
         }
     }
 
@@ -207,6 +226,7 @@ pub(crate) async fn check_services(report: &mut Report) {
             transfer.address,
             display_transfer_summary(&transfer.summary)
         );
+
         if transfer.summary.zones == 0 {
             report.skip(line);
         } else {

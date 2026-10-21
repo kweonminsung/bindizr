@@ -57,6 +57,7 @@ pub(crate) async fn import_zone(
 ) -> Result<Response, ApiError> {
     let response =
         record::import_zone(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
+
     // A rejected file is a failed request, so a generic client does not read it
     // as an import; the body stays the same so the errors survive the status.
     let status = if response.was_rejected() {
@@ -64,6 +65,7 @@ pub(crate) async fn import_zone(
     } else {
         StatusCode::OK
     };
+
     Ok((status, Json(response)).into_response())
 }
 

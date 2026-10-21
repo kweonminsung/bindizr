@@ -67,17 +67,17 @@ impl DatabaseError {
 impl From<sqlx::Error> for DatabaseError {
     /// Classify a sqlx error by the constraint it reports, keeping it as the
     /// source.
-    fn from(err: sqlx::Error) -> Self {
-        match &err {
+    fn from(error: sqlx::Error) -> Self {
+        match &error {
             sqlx::Error::PoolTimedOut => DatabaseError::PoolTimedOut,
             sqlx::Error::Database(db_err) => match db_err.kind() {
-                sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(err),
+                sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(error),
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
-                    DatabaseError::ForeignKeyViolation(err)
+                    DatabaseError::ForeignKeyViolation(error)
                 }
-                _ => DatabaseError::QueryFailed(err),
+                _ => DatabaseError::QueryFailed(error),
             },
-            _ => DatabaseError::QueryFailed(err),
+            _ => DatabaseError::QueryFailed(error),
         }
     }
 }

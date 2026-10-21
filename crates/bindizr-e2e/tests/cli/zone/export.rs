@@ -6,6 +6,7 @@ use crate::{cli::common::summary_row, common::TestApp};
 async fn zone_export_returns_zone_file_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("export.example");
+
     // Zone TTL is deliberately not 3600 so an inherited TTL is distinguishable.
     app.create_zone_cli(&zone_name, "7200").await;
     app.run_cli_success(
@@ -44,6 +45,7 @@ async fn zone_export_returns_zone_file_via_cli() {
     let exported = app
         .run_cli_success(&["zone", "export", &zone_name], None)
         .await;
+
     assert!(
         exported.contains(&format!("$ORIGIN {zone_name}.")),
         "{exported}"
@@ -63,6 +65,7 @@ async fn zone_export_returns_zone_file_via_cli() {
     let reimport = app
         .run_cli_success(&["zone", "import", &zone_name, "-"], Some(&exported))
         .await;
+
     assert_eq!(summary_row(&reimport)[1..3], ["0", "0"], "{reimport}");
 }
 
@@ -72,6 +75,7 @@ async fn zone_export_returns_zone_file_via_cli() {
 async fn zone_export_orders_by_name_then_type_then_rdata() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("export-order.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     // Fed in deliberately unsorted; rows also come back from the DB in no

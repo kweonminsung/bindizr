@@ -12,6 +12,7 @@ fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
         assert_eq!(error.code(), ErrorCode::InvalidInput);
         assert!(error.source().is_none());
     }
+
     assert_eq!(
         ServiceError::invalid_input("invalid input").to_string(),
         "invalid input"
@@ -48,6 +49,7 @@ fn ds_check_failure_preserves_source_and_wire_message() {
          zone's parent nameserver addresses, or skip the DS check",
     );
     let source = error.source().unwrap();
+
     assert!(matches!(
         source.downcast_ref::<ProbeParentDsError>(),
         Some(ProbeParentDsError::Unresolved { entry, .. }) if entry == "ns.parent.example",
@@ -78,9 +80,9 @@ fn unsupported_ds_digest_preserves_policy_message_without_source() {
 /// Verify that a signing failure is not an internal error.
 #[test]
 fn signing_failure_preserves_dnssec_error_class() {
-    let err = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
-    assert_eq!(err.code(), ErrorCode::DnssecSigningFailed);
-    assert!(err.code().is_internal());
+    let error = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
+    assert_eq!(error.code(), ErrorCode::DnssecSigningFailed);
+    assert!(error.code().is_internal());
 }
 
 /// Preserve the concrete source when an internal failure gains context.
@@ -91,6 +93,7 @@ fn internal_context_preserves_the_source() {
         "failed to load records",
         std::io::Error::new(std::io::ErrorKind::ConnectionReset, "database disconnected"),
     );
+
     assert_eq!(error.code(), ErrorCode::Internal);
     assert_eq!(error.to_string(), "failed to load records");
     let source = error
@@ -98,6 +101,7 @@ fn internal_context_preserves_the_source() {
         .unwrap()
         .downcast_ref::<std::io::Error>()
         .unwrap();
+
     assert_eq!(source.kind(), std::io::ErrorKind::ConnectionReset);
 }
 

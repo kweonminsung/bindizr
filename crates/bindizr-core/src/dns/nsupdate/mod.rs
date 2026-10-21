@@ -42,47 +42,54 @@ pub fn build_response(
     fudge: u16,
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, BuildResponseError> {
-    let msg =
-        Message::from_octets(query_data).map_err(|e| BuildResponseError::Malformed(Box::new(e)))?;
+    let message = Message::from_octets(query_data)
+        .map_err(|error| BuildResponseError::Malformed(Box::new(error)))?;
     let readable = has_readable_sections(query_data);
+
     for minimal in [false, true] {
         let rcode = if minimal { OptRcode::NOERROR } else { rcode };
         let mut builder = crate::dns::message::build_response();
         let mut answer = if readable {
             builder
-                .start_answer(&msg, rcode.rcode())
-                .map_err(|e| BuildResponseError::Malformed(Box::new(e)))?
+                .start_answer(&message, rcode.rcode())
+                .map_err(|error| BuildResponseError::Malformed(Box::new(error)))?
         } else {
             let header = builder.header_mut();
-            header.set_id(msg.header().id());
+            header.set_id(message.header().id());
             header.set_qr(true);
-            header.set_opcode(msg.header().opcode());
-            header.set_rd(msg.header().rd());
+            header.set_opcode(message.header().opcode());
+            header.set_rd(message.header().rd());
             header.set_rcode(rcode.rcode());
+
             builder.answer()
         };
         answer.header_mut().set_tc(minimal);
         let mut additional = answer.additional();
+
         if readable {
-            Edns::from_message(&msg).push_response_opt(
+            Edns::from_message(&message).push_response_opt(
                 &mut additional,
                 rcode,
                 if minimal { None } else { ede },
                 None,
             );
         }
+
         if let Some(signer) = signer.clone() {
             signer
                 .sign_response_with_fudge(&mut additional, Time48::now(), fudge)
-                .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
+                .map_err(|error| EncodeMessageError::Sign(Box::new(error)))?;
         }
+
         let response = additional.finish().into_target();
+
         match limit.validate_len(response.len()) {
             Ok(()) => return Ok(response),
             Err(error) if minimal || !limit.is_udp() => return Err(error.into()),
             Err(_) => {}
         }
     }
+
     unreachable!()
 }
 

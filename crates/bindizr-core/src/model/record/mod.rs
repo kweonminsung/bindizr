@@ -104,6 +104,7 @@ impl Record {
         if self.has_rdata(value, priority) {
             return false;
         }
+
         match self.record_type {
             RecordType::Cname | RecordType::Dname => true,
             RecordType::Wks => {
@@ -235,8 +236,8 @@ impl TryFrom<String> for RecordType {
     type Error = ParseRecordTypeError;
 
     /// Validate and convert the stored value into a record type.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -264,9 +265,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.as_str().to_owned().encode_by_ref(buf)
+        self.as_str().to_owned().encode_by_ref(buffer)
     }
 }
 
@@ -274,8 +275,8 @@ impl std::str::FromStr for RecordType {
     type Err = ParseRecordTypeError;
 
     /// Parse a record type from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_uppercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
             "AAAA" => Ok(RecordType::Aaaa),
             "CAA" => Ok(RecordType::Caa),
@@ -291,9 +292,9 @@ impl std::str::FromStr for RecordType {
             "SSHFP" => Ok(RecordType::Sshfp),
             "TLSA" => Ok(RecordType::Tlsa),
             "WKS" => Ok(RecordType::Wks),
-            _ => s
+            _ => value
                 .parse::<Rtype>()
-                .map_err(|_| ParseRecordTypeError::Unknown(s.to_string()))
+                .map_err(|_| ParseRecordTypeError::Unknown(value.to_string()))
                 .and_then(Self::try_from),
         }
     }
@@ -456,6 +457,7 @@ impl RecordType {
         // Names retain escaped whitespace; other grammars trim or parse their own fields.
         let trimmed = value.trim();
         let name = trim_presentation_name(value);
+
         match self {
             RecordType::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
@@ -566,6 +568,7 @@ fn to_display_text(text: &str) -> String {
     }
 
     let mut out = String::with_capacity(text.len() + 4);
+
     for c in text.chars() {
         if c.is_ascii_control() {
             out.push_str(&format!("\\{:03}", c as u8));
@@ -573,6 +576,7 @@ fn to_display_text(text: &str) -> String {
             out.push(c);
         }
     }
+
     out
 }
 
@@ -611,6 +615,7 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
         return value.to_string();
     };
     fields.push(crate::dns::name::to_fqdn(&last));
+
     fields.join(" ")
 }
 

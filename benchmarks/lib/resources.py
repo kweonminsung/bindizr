@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 import threading
 
-from . import dockerutil
+from . import docker
 
 
 def _to_bytes(s: str) -> float:
@@ -16,8 +16,10 @@ def _to_bytes(s: str) -> float:
     # Docker uses a lowercase SI 'k' for NET/BLOCK IO (e.g. "2.48kB") and binary
     # MiB/GiB for memory; accept both.
     m = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", s)
+
     if not m:
         return 0.0
+
     val, unit = float(m.group(1)), m.group(2)
     scale = {
         "B": 1,
@@ -31,14 +33,15 @@ def _to_bytes(s: str) -> float:
         "GB": 1000**3,
         "TB": 1000**4,
     }
+
     return val * scale.get(unit, 1)
 
 
-def sampler_for(adapter, cfg: dict) -> "ResourceSampler":
+def sampler_for(adapter, config: dict) -> "ResourceSampler":
     """Sampler over the containers an adapter declares measurable."""
     ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
     return ResourceSampler([i for i in ids if i],
-                           cfg["resources"]["sample_interval_secs"])
+                           config["resources"]["sample_interval_secs"])
 
 
 class ResourceSampler:
@@ -58,10 +61,11 @@ class ResourceSampler:
     def _loop(self) -> None:
         """Poll container resource usage until sampling is stopped."""
         tick = 0
+
         while not self._stop.is_set():
             # One snapshot covers every container; stamp samples with their tick
             # so summary() can total the stack for that interval.
-            for row in dockerutil.read_stats(self.ids):
+            for row in docker.read_stats(self.ids):
                 cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
                 mem_use = _to_bytes(row.get("MemUsage", "0B").split("/")[0])
                 net = row.get("NetIO", "0B / 0B").split("/")
@@ -78,6 +82,7 @@ class ResourceSampler:
                         "blk_w": _to_bytes(blk[1]) if len(blk) > 1 else 0,
                     }
                 )
+
             tick += 1
             self._stop.wait(self.interval)
 

@@ -13,6 +13,7 @@ pub fn matches_name(pattern: &str, name: &OwnerName) -> bool {
     if pattern == MATCH_ANY {
         return true;
     }
+
     // Patterns are stored in presentation form, where the apex is `@`.
     if pattern == OwnerName::APEX {
         return name.is_apex();
@@ -34,6 +35,7 @@ pub fn has_pattern_coverage(outer: &str, inner: &str) -> bool {
     if inner == MATCH_ANY {
         return false;
     }
+
     match inner.strip_prefix("*.") {
         // Only a subtree at or above it covers a subtree.
         Some(root) => outer.strip_prefix("*.").is_some_and(|outer_root| {

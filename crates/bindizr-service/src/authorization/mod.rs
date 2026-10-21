@@ -215,6 +215,7 @@ impl Caller {
         bearer_token: &str,
     ) -> Result<(Caller, ApiToken), ServiceError> {
         let token_hash = hash_token(bearer_token);
+
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
             Ok(Some(token)) => token,
             Ok(None) => {
@@ -222,11 +223,11 @@ impl Caller {
                     "invalid or expired token".to_string(),
                 ));
             }
-            Err(e) => {
-                log::error!("Failed to validate token: {}", e);
+            Err(error) => {
+                log::error!("Failed to validate token: {}", error);
                 return Err(ServiceError::internal_with_source(
                     "failed to validate token",
-                    e,
+                    error,
                 ));
             }
         };
@@ -240,16 +241,19 @@ impl Caller {
         let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
             Utc::now() - last_used < Duration::seconds(LAST_USED_STAMP_INTERVAL_SECS)
         });
+
         let token = if stamp_is_fresh {
             stored_token
         } else {
             let last_used_at = Utc::now();
+
             bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
                 .await
-                .map_err(|e| {
-                    log::error!("Failed to update last_used_at: {}", e);
-                    ServiceError::internal_with_source("failed to update last_used_at", e)
+                .map_err(|error| {
+                    log::error!("Failed to update last_used_at: {}", error);
+                    ServiceError::internal_with_source("failed to update last_used_at", error)
                 })?;
+
             ApiToken {
                 last_used_at: Some(last_used_at),
                 ..stored_token
@@ -257,6 +261,7 @@ impl Caller {
         };
 
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), token.role_id).await?;
+
         Ok((Caller::from_token(&token, grants), token))
     }
 
@@ -278,6 +283,7 @@ impl Caller {
         {
             return Ok(());
         }
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' in all zones",
             action
@@ -296,7 +302,9 @@ impl Caller {
         {
             return Ok(());
         }
+
         self.authorize_zone_visible(zone)?;
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' in zone '{}'",
             action, zone.name
@@ -366,11 +374,13 @@ impl Caller {
                             .is_none_or(|expires_at| Utc::now() < expires_at)
                     })
                     .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
+
                 (token.role_id, Credential::Token(token.id))
             }
         };
         let grants =
             bindizr_db::role_grant::list_by_role_id_tx(tx, role_id, LockLevel::Shared).await?;
+
         Ok(Caller {
             scope: CallerScope::Role {
                 id: role_id,
@@ -391,11 +401,13 @@ impl Caller {
         let Some(grants) = self.grants() else {
             return Ok(());
         };
+
         // Ahead of the per-write loop, which a batch resolving to no writes
         // would otherwise pass vacuously.
         if !grants.reaches_zone(zone.id) {
             return Err(ServiceError::zone_not_found(zone.name.as_str()));
         }
+
         authorize_with_grants(grants, zone, writes)
     }
 
@@ -478,6 +490,7 @@ impl Caller {
         {
             return Ok(());
         }
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' over all zones whole",
             action
@@ -499,6 +512,7 @@ impl Caller {
         }
 
         self.authorize_zone_visible(zone)?;
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' over zone '{}' whole",
             action, zone.name
@@ -531,6 +545,7 @@ fn authorize_with_grants(
             )));
         }
     }
+
     Ok(())
 }
 

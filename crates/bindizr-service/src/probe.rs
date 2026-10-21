@@ -14,10 +14,10 @@ use crate::{
 
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
-    fn from(err: ProbeSoaError) -> Self {
+    fn from(error: ProbeSoaError) -> Self {
         ServiceError::Internal {
-            message: err.to_string(),
-            source: Some(Box::new(err)),
+            message: error.to_string(),
+            source: Some(Box::new(error)),
         }
     }
 }
@@ -63,6 +63,7 @@ pub async fn probe_secondaries(
     expected_serial: Option<Serial>,
 ) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
+
     if secondaries.is_empty() {
         return Ok(Vec::new());
     }
@@ -70,8 +71,10 @@ pub async fn probe_secondaries(
     let timeout = cx.config().dns.notify.timeout();
 
     let mut tasks = Vec::new();
+
     for secondary in secondaries {
         let zone_name = zone_name.clone();
+
         tasks.push((
             secondary.address.to_string(),
             tokio::spawn(
@@ -81,13 +84,14 @@ pub async fn probe_secondaries(
     }
 
     let mut probes = Vec::new();
+
     for (address, task) in tasks {
         match task.await {
             Ok(Ok(probe)) => {
                 let status = build_secondary_status(probe.address, expected_serial, probe.serial);
                 probes.push(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
             }
-            Ok(Err(e)) => return Err(e.into()),
+            Ok(Err(error)) => return Err(error.into()),
             Err(error) => probes.push(SecondaryStatusResponse {
                 address,
                 status: SecondaryStatus::Unreachable,
@@ -124,14 +128,16 @@ async fn attach_last_transfer(
     if clients.is_empty() {
         return probe;
     }
+
     probe.last_transfer =
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
             Ok(transfer) => transfer.as_ref().map(TransferResponse::from),
-            Err(e) => {
-                log::warn!("Failed to read the transfers of {}: {}", zone_name, e);
+            Err(error) => {
+                log::warn!("Failed to read the transfers of {}: {}", zone_name, error);
                 None
             }
         };
+
     probe
 }
 

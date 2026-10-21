@@ -60,7 +60,7 @@ fn user(record_type: RecordType) -> JournalRecordType {
 
 /// Collect rewound record values for comparison.
 fn values(records: &[RecordData]) -> Vec<&str> {
-    records.iter().map(|r| r.value.as_str()).collect()
+    records.iter().map(|record| record.value.as_str()).collect()
 }
 
 /// Verify that undoing an add takes the record back out.

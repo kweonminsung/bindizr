@@ -92,17 +92,17 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             role,
             output,
         } => {
-            let res = client::send_command::<SingleTsigKeyResponse>(DaemonCommand::CreateTsigKey(
-                CreateTsigKeyRequest {
+            let response = client::send_command::<SingleTsigKeyResponse>(
+                DaemonCommand::CreateTsigKey(CreateTsigKeyRequest {
                     name,
                     algorithm,
                     secret,
                     role_name: role,
-                },
-            ))
+                }),
+            )
             .await?;
-            log::debug!("TSIG key creation result: {:?}", res);
-            print_response(&res.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            log::debug!("TSIG key creation result: {:?}", response);
+            print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::List {
             role,
@@ -110,7 +110,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<TsigKeyResponse>>(
+            let response = client::send_command::<PaginatedResponse<TsigKeyResponse>>(
                 DaemonCommand::ListTsigKeys(TsigKeyFilter {
                     role_name: role,
                     limit,
@@ -118,33 +118,36 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key list result: {:?}", res);
-            print_page(&res.data, output, |item| TsigKeyRow::from(item))?;
+            log::debug!("TSIG key list result: {:?}", response);
+            print_page(&response.data, output, |item| TsigKeyRow::from(item))?;
         }
         TsigKeyCommand::Get { name, output } => {
-            let res =
+            let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
-            log::debug!("TSIG key get result: {:?}", res);
-            print_response(&res.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            log::debug!("TSIG key get result: {:?}", response);
+            print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::Export { name } => {
-            let res =
+            let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
-            print_bind_key(&res.data);
+            print_bind_key(&response.data);
         }
         TsigKeyCommand::Delete { name, output } => {
-            let res =
+            let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigKey { name })
                     .await?;
-            log::debug!("TSIG key deletion result: {:?}", res);
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
+            log::debug!("TSIG key deletion result: {:?}", response);
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
     }
+
     Ok(())
 }
 

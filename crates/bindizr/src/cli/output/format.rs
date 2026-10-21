@@ -34,9 +34,10 @@ where
     T: Serialize,
     U: Tabled,
 {
-    match format {
-        OutputFormat::Table => print_table(to_table_rows(data)),
-        _ => print_payload(data, format)?,
+    if format == OutputFormat::Table {
+        print_table(to_table_rows(data))
+    } else {
+        print_payload(data, format)?
     }
     Ok(())
 }
@@ -54,8 +55,10 @@ where
     if format != OutputFormat::Table {
         return print_payload(page, format);
     }
+
     print_table(page.items.iter().map(to_table_row).collect());
     let seen = page.pagination.offset + page.items.len() as u64;
+
     if seen < page.pagination.total {
         outln!(
             "Showing {} of {}; page the rest with --limit and --offset.",
@@ -63,6 +66,7 @@ where
             page.pagination.total
         );
     }
+
     Ok(())
 }
 
@@ -78,6 +82,7 @@ pub(crate) fn print_payload<T: Serialize>(
         }
     };
     outln!("{}", rendered);
+
     Ok(())
 }
 

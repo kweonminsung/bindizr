@@ -40,7 +40,9 @@ pub async fn create(
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_key_name(&request.name)?;
+
     let role = role::lookup_by_name(cx, &request.role_name).await?;
+
     let algorithm = request
         .algorithm
         .as_deref()
@@ -79,15 +81,15 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // A create that raced past the pre-check trips UNIQUE(name); the
             // backstop reads as the same conflict.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::tsig_key_conflict(&name)
-            } else if e.is_foreign_key_violation() {
+            } else if error.is_foreign_key_violation() {
                 ServiceError::role_not_found(&role.name)
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -102,6 +104,7 @@ pub async fn create(
             caller.change_attribution(),
         )
         .await?;
+
         Ok(tsig_key)
     }
     .await;
@@ -131,6 +134,7 @@ pub async fn list(
         .into_iter()
         .map(|role| (role.id, role.name))
         .collect();
+
     Ok(build_page(
         keys.iter()
             .map(|tsig_key| {
@@ -155,6 +159,7 @@ pub async fn get(
     let role = bindizr_db::role::get(cx.db(), tsig_key.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(tsig_key.role_id))?;
+
     Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
 }
 
@@ -185,6 +190,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let secondary_count =
         bindizr_db::secondary::count_by_notify_tsig_key_id(cx.db(), tsig_key.id).await?;
+
     if secondary_count > 0 {
         return Err(ServiceError::TsigKeyInUse(format!(
             "TSIG key '{}' still signs NOTIFY for {} secondar{}",
@@ -202,21 +208,23 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .authorize_action(Action::AccessManage)?;
         let deleted = bindizr_db::tsig_key::delete_tx(&mut tx, tsig_key.id)
             .await
-            .map_err(|e| {
+            .map_err(|error| {
                 // A secondary that took the key between the count above and this
                 // delete trips the FK: the same in-use conflict.
-                if e.is_foreign_key_violation() {
+                if error.is_foreign_key_violation() {
                     ServiceError::TsigKeyInUse(
                         "TSIG key still signs NOTIFY for a secondary".to_string(),
                     )
                 } else {
-                    e.into()
+                    error.into()
                 }
             })?;
+
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !deleted {
             return Err(ServiceError::tsig_key_not_found(&tsig_key.name));
         }
+
         audit::save_tx(
             &mut tx,
             AuditEntity::TsigKey,
@@ -228,6 +236,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         .await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to delete TSIG key").await
 }
 
@@ -235,13 +244,15 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     let name = parse_lookup_name(value)
-        .map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))?;
+        .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {}", error)))?;
+
     if name.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "TSIG key name must be {} characters or fewer in its canonical spelling",
             MAX_COLUMN_TEXT_LEN
         )));
     }
+
     Ok(name)
 }
 
@@ -263,8 +274,8 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(trimmed)
-        .map_err(|e| {
-            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", e))
+        .map_err(|error| {
+            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", error))
         })?;
 
     if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
@@ -305,8 +316,14 @@ mod tests {
     #[test]
     fn normalize_key_name_rejects_invalid_names() {
         for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
-            let err = normalize_key_name(invalid).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
+            let error = normalize_key_name(invalid).unwrap_err();
+
+            assert_eq!(
+                error.code(),
+                ErrorCode::InvalidInput,
+                "input: {:?}",
+                invalid
+            );
         }
     }
 
@@ -335,9 +352,11 @@ mod tests {
         );
 
         let invalid = normalize_secret("not base64!!").unwrap_err();
+
         assert_eq!(invalid.code(), ErrorCode::InvalidInput);
 
         let empty = normalize_secret("").unwrap_err();
+
         assert_eq!(empty.code(), ErrorCode::InvalidInput);
     }
 
@@ -346,6 +365,7 @@ mod tests {
     fn normalize_secret_enforces_length_bounds() {
         // 6 decoded bytes: far below the 128-bit minimum.
         let short = normalize_secret("c2VjcmV0").unwrap_err();
+
         assert_eq!(short.code(), ErrorCode::InvalidInput);
         assert!(short.to_string().contains("at least 16 bytes"));
 
@@ -355,8 +375,10 @@ mod tests {
 
         // The base64 form must fit the VARCHAR(255) column.
         let oversized = base64::engine::general_purpose::STANDARD.encode([0x42u8; 200]);
+
         assert!(oversized.len() > 255);
         let too_long = normalize_secret(&oversized).unwrap_err();
+
         assert_eq!(too_long.code(), ErrorCode::InvalidInput);
         assert!(too_long.to_string().contains("at most 255"));
     }

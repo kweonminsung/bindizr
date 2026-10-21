@@ -6,6 +6,7 @@ use crate::dns::{name::encode_name, record::Rdata};
 fn extract_member_zones_requires_apex_ns() {
     let catalog = ZoneName::parse("catalog.example").unwrap();
     let version = version_record("catalog.example", b"2");
+
     for extra in [
         None,
         Some(name_record("child.catalog.example.", Rtype::NS, "invalid.")),
@@ -17,6 +18,7 @@ fn extract_member_zones_requires_apex_ns() {
             Err(ExtractMemberZonesError::MissingApexNs)
         ));
     }
+
     for owner in [
         "catalog.example.",
         "CATALOG.EXAMPLE.",
@@ -29,6 +31,7 @@ fn extract_member_zones_requires_apex_ns() {
             ns,
             name_record("catalog.example.", Rtype::NS, "ns.example."),
         ];
+
         assert!(extract_member_zones(&records, &catalog).unwrap().is_empty());
     }
 }
@@ -49,6 +52,7 @@ fn name_record(owner: &str, rtype: Rtype, target: &str) -> TransferRecord {
 fn version_record(catalog: &str, version: &[u8]) -> TransferRecord {
     let mut rdata = vec![version.len() as u8];
     rdata.extend_from_slice(version);
+
     TransferRecord {
         name: format!("version.{catalog}."),
         rtype: Rtype::TXT,
@@ -101,6 +105,7 @@ fn extract_member_zones_rejects_repeated_members() {
         &catalog,
     )
     .unwrap_err();
+
     assert!(
         matches!(
             two_ptrs,
@@ -118,6 +123,7 @@ fn extract_member_zones_rejects_repeated_members() {
         &catalog,
     )
     .unwrap_err();
+
     assert!(
         matches!(&two_nodes, ExtractMemberZonesError::MemberRepeated { name } if name == "zone-a.example"),
         "{two_nodes}"
@@ -142,6 +148,7 @@ fn extract_member_zones_ignores_repeated_transfer_records() {
             "ZONE-A.example.",
         ),
     ];
+
     assert_eq!(
         extract_member_zones(&records, &catalog).unwrap(),
         vec![ZoneName::parse("zone-a.example").unwrap()]
@@ -155,6 +162,7 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
     let member = name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example.");
 
     let missing = extract_member_zones(std::slice::from_ref(&member), &catalog).unwrap_err();
+
     assert!(matches!(missing, ExtractMemberZonesError::MissingVersion));
 
     let two_versions = extract_member_zones(
@@ -166,6 +174,7 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
         &catalog,
     )
     .unwrap_err();
+
     assert!(
         matches!(two_versions, ExtractMemberZonesError::VersionNotSingular),
         "{two_versions}"
@@ -174,6 +183,7 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
     let foreign_version =
         extract_member_zones(&[version_record("catalog.example", b"1"), member], &catalog)
             .unwrap_err();
+
     assert!(
         matches!(&foreign_version, ExtractMemberZonesError::UnsupportedVersion { found } if found == "1"),
         "{foreign_version}"
@@ -187,6 +197,7 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
         &catalog,
     )
     .unwrap_err();
+
     assert!(
         matches!(foreign_owner, ExtractMemberZonesError::OwnerName { .. }),
         "{foreign_owner}"
@@ -197,6 +208,7 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
 #[test]
 fn zone_name_to_member_id_preserves_identity_across_case_changes() {
     let id = zone_name_to_member_id("example.com");
+
     assert_eq!(id, zone_name_to_member_id("example.com"));
     assert_eq!(id, zone_name_to_member_id("EXAMPLE.COM"));
     assert!(
@@ -217,6 +229,7 @@ fn zone_name_to_member_id_fits_label_limit_for_longest_zone_name() {
         "d".repeat(61),
     ]
     .join(".");
+
     assert_eq!(long.len(), 253);
     assert!(zone_name_to_member_id(&long).len() <= 63);
 }

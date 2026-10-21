@@ -62,17 +62,20 @@ async fn import_transfer(
         let zone = zone::lookup_by_name(cx, zone_name).await?;
         authorize_import(caller, options.mode, &zone)?;
     }
+
     let config = cx.config();
+
     let records = client
         .fetch_zone(zone_name, &config.dns.import)
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             ServiceError::invalid_input_with_source(
-                format!("AXFR from {} failed: {}", server, e),
-                e,
+                format!("AXFR from {} failed: {}", server, error),
+                error,
             )
         })?;
     let source = ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name));
+
     apply_import(cx, caller, zone_name, source, options).await
 }
 
@@ -83,14 +86,17 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
             "zone_names must name at least one zone",
         ));
     }
+
     let mut zone_names: Vec<ZoneName> = Vec::with_capacity(names.len());
     let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
+
     for name in names {
         let zone_name = zone::normalize_name(name)?;
         if seen.insert(zone_name.clone()) {
             zone_names.push(zone_name);
         }
     }
+
     Ok(zone_names)
 }
 

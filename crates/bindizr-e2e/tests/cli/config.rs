@@ -27,12 +27,15 @@ level = "info"
 fn run_config_check(file: Option<&str>, env: &[(&str, &str)]) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"));
     command.args(["config", "check"]);
+
     if let Some(file) = file {
         command.args(["--config", file]);
     }
+
     for (key, value) in env {
         command.env(key, value);
     }
+
     command
         .stdin(Stdio::null())
         .output()
@@ -52,6 +55,7 @@ fn config_check_accepts_a_config_flag() {
 
     assert_cli_success(&["config", "check", "--config", path], &output);
     let stdout = String::from_utf8_lossy(&output.stdout);
+
     assert!(stdout.contains(path));
     assert!(stdout.contains("valid"));
 }
@@ -64,6 +68,7 @@ fn config_check_accepts_wildcard_dns_addresses() {
     let config_path = temp_dir.path().join("bindizr.conf.toml");
     std::fs::write(&config_path, VALID_CONFIG).unwrap();
     let path = config_path.to_str().unwrap();
+
     for addr in ["0.0.0.0", "::"] {
         let output = run_config_check(Some(path), &[("BINDIZR_DNS_LISTEN_ADDR", addr)]);
         assert_cli_success(&["config", "check"], &output);
@@ -106,6 +111,7 @@ fn config_check_uses_config_path_env_without_argument() {
     let output = run_config_check(None, &[("BINDIZR_CONFIG_PATH", path)]);
 
     assert_cli_success(&["config", "check"], &output);
+
     assert!(String::from_utf8_lossy(&output.stdout).contains(path));
 }
 
@@ -153,6 +159,7 @@ async fn config_list_and_get_show_loaded_config() {
     let app = TestApp::start().await;
 
     let listed = app.run_cli_success(&["config", "list"], None).await;
+
     assert!(listed.contains("[api]"));
     assert!(listed.contains("[api.tls]"));
     assert!(listed.contains("[dns]"));
@@ -164,9 +171,11 @@ async fn config_list_and_get_show_loaded_config() {
     let value = app
         .run_cli_success(&["config", "get", "api.authentication_required"], None)
         .await;
+
     assert_eq!(value.trim(), "false");
 
     let args = ["config", "get", "no.such.key"];
+
     let missing = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &missing, "unknown configuration key");
 }
@@ -191,7 +200,9 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
         original.replace(r#"level = "error""#, r#"level = "warn""#),
     )
     .expect("rewrite config");
+
     let reloaded = app.run_cli_success(&["config", "reload"], None).await;
+
     assert!(reloaded.contains("logging"), "{reloaded}");
     assert_eq!(
         app.run_cli_success(&["config", "get", "logging.level"], None)
@@ -213,8 +224,10 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     )
     .expect("rewrite config");
     let args = ["config", "reload"];
+
     let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "fixed while bindizr runs");
+
     assert_eq!(
         app.run_cli_success(&["config", "get", "api.listen_port"], None)
             .await

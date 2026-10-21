@@ -12,33 +12,36 @@ from datasets.gen_dataset import generate  # noqa: E402
 from lib import loadgen  # noqa: E402
 
 
-async def run(adapter, cfg, ctx) -> dict:
+async def run(adapter, config, context) -> dict:
     """Measure record creation, reading, updating, and deletion throughput."""
-    zone = ctx["zone"]
-    c = cfg["crud"]
-    conc = c["concurrency"]
-    dur = c["duration_secs"]
-    warm = c["warmup_secs"]
-    npool = c["records_prepopulate"]
+    zone = context["zone"]
+    crud_config = config["crud"]
+    conc = crud_config["concurrency"]
+    dur = crud_config["duration_secs"]
+    warm = crud_config["warmup_secs"]
+    npool = crud_config["records_prepopulate"]
 
     await adapter.create_zone(zone)
 
     # Prepopulate a non-destructive pool for READ/UPDATE.
-    pool_recs = generate(npool, cfg["seed"] + 1)
-    for i, rec in enumerate(pool_recs):
-        rec["name"] = f"pool{i:07d}"
-    pool_handles: list[str] = []
-    for rec in pool_recs:
-        pool_handles.append(await adapter.create_record(zone, rec))
+    pool_records = generate(npool, config["seed"] + 1)
 
-    create_recs = generate(200_000, cfg["seed"] + 3)
+    for i, record in enumerate(pool_records):
+        record["name"] = f"pool{i:07d}"
+
+    pool_handles: list[str] = []
+
+    for record in pool_records:
+        pool_handles.append(await adapter.create_record(zone, record))
+
+    create_records = generate(200_000, config["seed"] + 3)
     created: list[str] = []
 
     async def create_step(seq: int) -> bool:
         """Create one uniquely named record for the measured workload."""
-        rec = dict(create_recs[seq % len(create_recs)])
-        rec["name"] = f"crt{seq:08d}"
-        h = await adapter.create_record(zone, rec)
+        record = dict(create_records[seq % len(create_records)])
+        record["name"] = f"crt{seq:08d}"
+        h = await adapter.create_record(zone, record)
         created.append(h)
         return True
 
@@ -53,9 +56,9 @@ async def run(adapter, cfg, ctx) -> dict:
     async def update_step(seq: int) -> bool:
         """Update only TTL so record-group and ID-based APIs do comparable work."""
         idx = seq % len(pool_handles)
-        rec = dict(pool_recs[idx])
-        rec["ttl"] = 1800
-        return await adapter.update_record(zone, pool_handles[idx], rec)
+        record = dict(pool_records[idx])
+        record["ttl"] = 1800
+        return await adapter.update_record(zone, pool_handles[idx], record)
 
     update_rec = await loadgen.run_closed_loop(update_step, conc, dur, warm)
 
@@ -76,7 +79,7 @@ async def run(adapter, cfg, ctx) -> dict:
                  + (delete_rec.total if delete_rec else 0))
 
     return {
-        "system": ctx["label"],
+        "system": context["label"],
         "create_tps": cs["tps"],
         "update_tps": us["tps"],
         "delete_tps": ds["tps"],

@@ -38,6 +38,7 @@ impl DsRecord {
             .find(|record| record["key_tag"] == key_tag)
             .unwrap_or_else(|| panic!("no DS for key tag {key_tag} in {dnssec}"));
         let digest = record["digest"].as_str().expect("DS digest is hex");
+
         Self {
             key_tag,
             algorithm: record["algorithm"].as_u64().expect("DS algorithm") as u8,
@@ -75,12 +76,14 @@ impl DsRecord {
                 .decode(fields[3])
                 .expect("DNSKEY public key is base64"),
         );
+
         // RFC 4034, Section 5.1.4: the digest covers the wire owner name,
         // then the DNSKEY RDATA.
         let apex = Name::<Vec<u8>>::from_str(zone_name).expect("zone name");
         let mut hasher = Context::new(&SHA1_FOR_LEGACY_USE_ONLY);
         hasher.update(apex.as_slice());
         hasher.update(&rdata);
+
         Self {
             key_tag,
             algorithm,
@@ -133,12 +136,13 @@ impl FakeParent {
         let served = Arc::clone(&response);
 
         thread::spawn(move || {
-            let mut buf = [0_u8; 4096];
+            let mut buffer = [0_u8; 4096];
+
             loop {
-                let Ok((len, peer)) = socket.recv_from(&mut buf) else {
+                let Ok((len, peer)) = socket.recv_from(&mut buffer) else {
                     return;
                 };
-                let Ok(query) = Message::from_octets(&buf[..len]) else {
+                let Ok(query) = Message::from_octets(&buffer[..len]) else {
                     continue;
                 };
                 let Ok(question) = query.sole_question() else {
@@ -151,6 +155,7 @@ impl FakeParent {
                     .expect("start the answer");
                 answer.header_mut().set_aa(true);
                 let mut served_any = false;
+
                 if question.qtype() == Rtype::DS {
                     for record in &response.records {
                         served_any = true;
@@ -170,7 +175,9 @@ impl FakeParent {
                             .expect("push the DS record");
                     }
                 }
+
                 let mut authority = answer.authority();
+
                 if !served_any {
                     // A negative answer needs the parent's SOA (RFC 2308, Section 2).
                     let parent = qname
@@ -194,7 +201,9 @@ impl FakeParent {
                         ))
                         .expect("push the parent SOA");
                 }
+
                 let mut additional = authority.additional();
+
                 if let Some(opt) = query.opt() {
                     additional
                         .opt(|answer| {
@@ -204,6 +213,7 @@ impl FakeParent {
                         })
                         .expect("push response OPT");
                 }
+
                 let _ = socket.send_to(&additional.finish(), peer);
             }
         });

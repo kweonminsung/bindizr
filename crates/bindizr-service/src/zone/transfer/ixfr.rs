@@ -42,6 +42,7 @@ pub async fn authorize_ixfr_plan_by_name(
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
         let current = zone.serial;
+
         // RFC 1995, Section 2: equal or newer client serials need only the current SOA.
         let plan = if client_serial == current || client_serial.is_newer_than(current) {
             IxfrPlan::SoaOnly
@@ -60,6 +61,7 @@ pub async fn authorize_ixfr_plan_by_name(
             .await?;
             let zone_rows = bindizr_db::record::count_tx(&mut tx, zone.id).await?
                 + bindizr_db::dnssec_record::count_tx(&mut tx, zone.id).await?;
+
             if rows >= zone_rows {
                 IxfrPlan::Full
             } else {
@@ -71,6 +73,7 @@ pub async fn authorize_ixfr_plan_by_name(
                     LockLevel::Unlocked,
                 )
                 .await?;
+
                 if changes.is_empty() {
                     IxfrPlan::Full
                 } else {
@@ -81,6 +84,7 @@ pub async fn authorize_ixfr_plan_by_name(
                         current,
                     )
                     .await?;
+
                     let mut journal_serials: Vec<Serial> =
                         changes.iter().map(|change| change.serial).collect();
                     journal_serials.sort_unstable_by_key(|serial| {
@@ -89,6 +93,7 @@ pub async fn authorize_ixfr_plan_by_name(
                     journal_serials.dedup();
                     let version_serials: Vec<Serial> =
                         versions.iter().map(|version| version.serial).collect();
+
                     match validate_delta(client_serial, current, &journal_serials, &version_serials)
                     {
                         Ok(()) => IxfrPlan::Changes { changes, versions },
@@ -105,9 +110,11 @@ pub async fn authorize_ixfr_plan_by_name(
                 }
             }
         };
+
         Ok(TransferAccess::Granted((zone, plan)))
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to load the transfer delta").await
 }
 
@@ -148,6 +155,7 @@ fn validate_delta(
         .filter(|&serial| serial.is_newer_than(client_serial))
         .collect();
     steps.sort_unstable_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
+
     if journal_serials != steps {
         return Err(ValidateDeltaError::StepsDiffer {
             journal: journal_serials.to_vec(),
@@ -162,6 +170,7 @@ fn validate_delta(
             client: client_serial,
         });
     }
+
     Ok(())
 }
 
@@ -246,6 +255,7 @@ mod tests {
             &serials(&[10, 11, 12]),
         )
         .unwrap_err();
+
         assert!(
             matches!(&gap, ValidateDeltaError::StepsDiffer { journal, steps, .. } if journal == &serials(&[12]) && steps == &serials(&[11, 12])),
             "{gap}"

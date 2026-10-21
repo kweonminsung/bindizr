@@ -35,6 +35,7 @@ pub(crate) async fn handle_tcp_nsupdate(
         writer.transport(),
         client_addr
     );
+
     let response = handle_nsupdate_request(
         dns_cx,
         query_data,
@@ -43,6 +44,7 @@ pub(crate) async fn handle_tcp_nsupdate(
         ResponseLimit::STREAM,
     )
     .await?;
+
     writer.write_message(&response).await
 }
 
@@ -58,6 +60,7 @@ pub(crate) async fn handle_udp_nsupdate(
 
     let limit = QueryMetadata::parse(query_data, Keepalive::None)
         .map_or(ResponseLimit::UDP, |metadata| metadata.response_limit());
+
     let response = handle_nsupdate_request(
         dns_cx,
         query_data,
@@ -68,6 +71,7 @@ pub(crate) async fn handle_udp_nsupdate(
     .await?;
 
     socket.send_to(&response, target, limit).await?;
+
     Ok(())
 }
 
@@ -80,11 +84,13 @@ async fn handle_nsupdate_request(
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, DnsError> {
     let cx = dns_cx.daemon();
+
     let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
-        Ok(req) => req,
-        Err(e) => {
-            log::warn!("NSUPDATE parse error from {}: {}", client_addr, e);
+        Ok(request) => request,
+        Err(error) => {
+            log::warn!("NSUPDATE parse error from {}: {}", client_addr, error);
             let mut response_rcode = OptRcode::FORMERR;
+
             // RFC 8945, Section 5.2: a request whose key verifies is answered
             // under it, a FORMERR included; a bad key or MAC is its own error.
             let (signer, fudge) = match request_signature(query_data) {
@@ -110,6 +116,7 @@ async fn handle_nsupdate_request(
                                         rcode
                                     );
                                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
+
                                     return Ok(response);
                                 }
                                 Err(error) => {
@@ -119,29 +126,34 @@ async fn handle_nsupdate_request(
                                         error
                                     );
                                     response_rcode = OptRcode::SERVFAIL;
+
                                     (None, DEFAULT_FUDGE)
                                 }
                             }
                         }
-                        Err(err) => {
-                            log::warn!("NSUPDATE key check failed from {}: {}", client_addr, err);
-                            if matches!(&err, update::UpdateError::LoadTsigKey(_))
+                        Err(error) => {
+                            log::warn!("NSUPDATE key check failed from {}: {}", client_addr, error);
+
+                            if matches!(&error, update::UpdateError::LoadTsigKey(_))
                                 || matches!(
-                                    &err,
+                                    &error,
                                     update::UpdateError::Tsig(error)
                                         if !matches!(error, TsigError::Malformed(_))
                                 )
                             {
                                 response_rcode = OptRcode::SERVFAIL;
                             }
+
                             (None, DEFAULT_FUDGE)
                         }
                     }
                 }
                 RequestSignature::Absent | RequestSignature::Malformed => (None, DEFAULT_FUDGE),
             };
+
             cx.metrics()
                 .track_nsupdate(NsupdateResult::Rcode(response_rcode.rcode()));
+
             return Ok(build_response(
                 query_data,
                 response_rcode,
@@ -198,39 +210,41 @@ async fn handle_nsupdate_request(
             log::info!("Refusing the EDNS of an NSUPDATE from {}", client_addr);
             (rcode, None)
         }
-        Err(update::UpdateError::NotSupported(msg)) => {
-            log::info!("NSUPDATE refused from {}: {}", client_addr, msg);
+        Err(update::UpdateError::NotSupported(message)) => {
+            log::info!("NSUPDATE refused from {}: {}", client_addr, message);
             (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
-        Err(err @ update::UpdateError::Tsig(TsigError::Malformed(_))) => {
-            log::warn!("NSUPDATE refused from {}: {}", client_addr, err);
+        Err(error @ update::UpdateError::Tsig(TsigError::Malformed(_))) => {
+            log::warn!("NSUPDATE refused from {}: {}", client_addr, error);
             (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
-        Err(err @ (update::UpdateError::NotAuth(_) | update::UpdateError::ZoneName { .. })) => {
-            log::warn!("NSUPDATE notauth from {}: {}", client_addr, err);
+        Err(error @ (update::UpdateError::NotAuth(_) | update::UpdateError::ZoneName { .. })) => {
+            log::warn!("NSUPDATE notauth from {}: {}", client_addr, error);
             (
                 OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
             )
         }
-        Err(update::UpdateError::Nsupdate(err)) => {
-            let rcode = err.rcode();
+        Err(update::UpdateError::Nsupdate(error)) => {
+            let rcode = error.rcode();
             let ede = match rcode {
                 Rcode::REFUSED => Some(ExtendedErrorCode::PROHIBITED),
                 Rcode::NOTAUTH => Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 _ => None,
             };
-            log::warn!("NSUPDATE {} from {}: {}", rcode, client_addr, err);
+            log::warn!("NSUPDATE {} from {}: {}", rcode, client_addr, error);
+
             (rcode.into(), ede)
         }
-        Err(err @ (update::UpdateError::LoadTsigKey(_) | update::UpdateError::Tsig(_))) => {
-            log::warn!("NSUPDATE internal error from {}: {}", client_addr, err);
+        Err(error @ (update::UpdateError::LoadTsigKey(_) | update::UpdateError::Tsig(_))) => {
+            log::warn!("NSUPDATE internal error from {}: {}", client_addr, error);
             (OptRcode::SERVFAIL, None)
         }
     };
 
     cx.metrics()
         .track_nsupdate(NsupdateResult::Rcode(rcode.rcode()));
+
     Ok(build_response(
         query_data, rcode, ede, signer, fudge, limit,
     )?)

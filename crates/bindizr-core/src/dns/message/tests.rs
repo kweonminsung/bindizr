@@ -34,12 +34,14 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
     }
     .to_signing_key()
     .unwrap();
+
     for udp_size in [None, Some(512), Some(1232)] {
         let mut question = build_response().question();
         question
             .push((Name::<Vec<u8>>::from_str(&long_name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
+
         if let Some(size) = udp_size {
             additional
                 .opt(|opt| {
@@ -48,12 +50,15 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 })
                 .unwrap();
         }
+
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let request = additional.finish().into_target();
+
         assert!(request.len() < 512);
         let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
         let signer: TransferSigner = verify_tsig(&request, Some(key.clone())).unwrap().into();
+
         for rcode in [
             OptRcode::REFUSED,
             OptRcode::SERVFAIL,
@@ -67,6 +72,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                     Some(&mut signer.clone()),
                 )
                 .unwrap();
+
             assert!(response.len() <= query.response_limit().max_len());
             assert_eq!(
                 Message::from_octets(response.as_slice())
@@ -83,9 +89,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 .unwrap();
             assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
         }
+
         let response = query
             .build_signed_truncated_response(Some(&mut signer.clone()))
             .unwrap();
+
         assert!(response.len() <= query.response_limit().max_len());
         assert!(
             Message::from_octets(response.as_slice())
@@ -106,6 +114,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
             .unwrap();
         let response = builder.build().unwrap();
         let message = Message::from_octets(response.clone()).unwrap();
+
         assert!(message.header().tc());
         assert_eq!(message.header_counts().ancount(), 0);
         assert!(response.len() <= query.response_limit().max_len());
@@ -123,6 +132,7 @@ fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
     let mut question = builder.question();
     question.push((&qname, qtype)).unwrap();
     let mut additional = question.additional();
+
     for version in opt_versions {
         additional
             .opt(|opt| {
@@ -132,6 +142,7 @@ fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
             })
             .unwrap();
     }
+
     additional.finish()
 }
 
@@ -150,6 +161,7 @@ fn unreadable_query_bodies_receive_header_only_formerr() {
     for section in [4, 6, 8, 10] {
         let mut wire = build_question(Rtype::SOA, &[]);
         wire[section..section + 2].copy_from_slice(&2u16.to_be_bytes());
+
         for keepalive in [Keepalive::None, Keepalive::IdleTimeout(Duration::ZERO)] {
             let error = ParsedQuery::parse(&wire, keepalive).unwrap_err();
             let response = error
@@ -158,6 +170,7 @@ fn unreadable_query_bodies_receive_header_only_formerr() {
                 .build_signed_error_response(OptRcode::FORMERR, None, None)
                 .unwrap();
             let message = Message::from_octets(response.as_slice()).unwrap();
+
             assert_eq!(message.header().id(), 1234);
             assert!(message.header().qr());
             assert_eq!(message.header().rcode(), Rcode::FORMERR);
@@ -193,11 +206,13 @@ fn encoding_splits_overflowing_answers_into_frames() {
                     None,
                 )
             })
-            .unwrap_or_else(|e| panic!("{}", e));
+            .unwrap_or_else(|error| panic!("{}", error));
+
         if let Some(frame) = frame {
             wire.extend_from_slice(&frame);
         }
     }
+
     if let Some(frame) = builder.take_frame().unwrap() {
         wire.extend_from_slice(&frame);
     }
@@ -205,6 +220,7 @@ fn encoding_splits_overflowing_answers_into_frames() {
     let mut answer_count = 0usize;
     let mut frame_count = 0;
     let mut pos = 0;
+
     while pos < wire.len() {
         let len = usize::from(u16::from_be_bytes([wire[pos], wire[pos + 1]]));
         assert!(len <= DNS_TCP_MAX_SIZE);
@@ -234,7 +250,9 @@ fn truncated_response_echoes_the_question_with_tc_set() {
     let query = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
 
     let response = query.build_signed_truncated_response(None).unwrap();
+
     assert_eq!(&response[0..2], &4242u16.to_be_bytes());
+
     // QR, AA, and TC set; RCODE NOERROR; one question, no answers.
     assert_eq!(response[2], 0x86);
     assert_eq!(response[3] & 0x0f, 0);
@@ -246,12 +264,14 @@ fn truncated_response_echoes_the_question_with_tc_set() {
 #[test]
 fn is_response_separates_a_reply_from_a_query() {
     let query = build_question(Rtype::A, &[]);
+
     assert!(!is_response(&query));
 
     let parsed = ParsedQuery::parse(&query, Keepalive::None).expect("a question-only query parses");
     let reply = parsed
         .build_signed_error_response(super::Rcode::REFUSED.into(), None, None)
         .unwrap();
+
     assert!(is_response(&reply));
 }
 
@@ -267,21 +287,27 @@ fn multi_question_headers_receive_formerr_only_for_query() {
         query.header_mut().set_opcode(opcode);
         let mut wire = query.into_octets();
         wire[4..6].copy_from_slice(&count.to_be_bytes());
+
         if count == 2 {
             wire.extend_from_within(12..);
         }
+
         let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+
         assert_eq!(parsed.question_count, count);
         assert_eq!(parsed.format_error(), expected, "{opcode} QDCOUNT={count}");
+
         if let Some(rcode) = expected {
             let response = parsed
                 .build_signed_error_response(rcode, None, None)
                 .unwrap();
             let response = Message::from_octets(response).unwrap();
+
             assert_eq!(response.header().rcode(), Rcode::FORMERR);
             assert_eq!(response.header_counts().qdcount(), 1);
             assert_eq!(response.header_counts().ancount(), 0);
         }
+
         for body in [&[][..], &[0xc0, 0x0c][..]] {
             let mut unreadable = wire[..12].to_vec();
             unreadable.extend_from_slice(body);
@@ -294,6 +320,7 @@ fn multi_question_headers_receive_formerr_only_for_query() {
                     .unwrap(),
             )
             .unwrap();
+
             assert_eq!(response.header().id(), 1234);
             assert_eq!(response.header().opcode(), opcode);
             assert_eq!(response.header().rcode(), Rcode::FORMERR);
@@ -318,10 +345,12 @@ fn question_less_queries_receive_formerr() {
             .unwrap(),
     )
     .unwrap();
+
     assert_eq!(response.header().id(), 1234);
     assert!(response.header().qr());
     assert_eq!(response.header().rcode(), Rcode::FORMERR);
     assert_eq!(response.header_counts().qdcount(), 0);
+
     // A header shorter than twelve octets names no query to answer.
     assert!(
         ParsedQuery::parse(&wire[..11], Keepalive::None)
@@ -348,6 +377,7 @@ fn build_signed_axfr_query(
         .unwrap();
 
     let mut additional = question.additional();
+
     if let Some(dnssec_ok) = dnssec_ok {
         additional
             .opt(|opt| {
@@ -357,7 +387,9 @@ fn build_signed_axfr_query(
             })
             .unwrap();
     }
+
     let client = ClientSequence::request(key, &mut additional, Time48::now()).unwrap();
+
     (additional.finish(), client)
 }
 
@@ -381,6 +413,7 @@ fn signed_transfer_authenticates_every_envelope() {
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
     let mut frames = Vec::new();
+
     for index in 0..4000 {
         let frame = builder
             .add_answer_or_overflow(|builder| {
@@ -392,12 +425,15 @@ fn signed_transfer_authenticates_every_envelope() {
                     None,
                 )
             })
-            .unwrap_or_else(|e| panic!("{}", e));
+            .unwrap_or_else(|error| panic!("{}", error));
+
         if let Some(frame) = frame {
             frames.push(frame);
         }
     }
+
     frames.push(builder.take_frame().unwrap().unwrap());
+
     assert!(frames.len() >= 2, "expected a multi-message transfer");
 
     for frame in frames {
@@ -407,6 +443,7 @@ fn signed_transfer_authenticates_every_envelope() {
             .answer(&mut message, Time48::now())
             .expect("envelope did not verify against the request's key");
     }
+
     client.done().expect("the sequence did not close cleanly");
 }
 
@@ -454,11 +491,13 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
     .unwrap();
     let mut remaining = MAX_RECORD_RDATA;
     let mut segments = Vec::new();
+
     while remaining > 0 {
         let len = (remaining - 1).min(255);
         segments.push(vec![b'x'; len]);
         remaining -= len + 1;
     }
+
     let values = [
         (
             RecordType::Txt,
@@ -483,6 +522,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
             format!("3 0 0 {}", "AB".repeat(MAX_RECORD_RDATA - 3)),
         ),
     ];
+
     for (record_type, value) in values {
         record_type.validate_value(&value, None).unwrap();
         let mut question = MessageBuilder::new_vec().question();
@@ -502,6 +542,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
         let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
             .sign_with(verify_tsig(&request, Some(key.clone())).unwrap().into());
         let mut frames = Vec::new();
+
         for _ in 0..2 {
             if let Some(frame) = builder
                 .add_answer_or_overflow(|builder| {
@@ -519,21 +560,27 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
                 frames.push(frame);
             }
         }
+
         frames.push(builder.take_frame().unwrap().unwrap());
+
         assert_eq!(frames.len(), 2);
+
         for frame in frames {
             assert_eq!(
                 usize::from(u16::from_be_bytes([frame[0], frame[1]])),
                 frame.len() - 2
             );
             let mut message = Message::from_octets(strip_frame_length(frame)).unwrap();
+
             assert!(message.as_slice().len() <= DNS_TCP_MAX_SIZE);
             assert!(message.opt().unwrap().opt().tcp_keepalive().is_some());
             let answer = message.answer().unwrap().next().unwrap().unwrap();
+
             assert_eq!(answer.rtype().to_int(), record_type.wire_type());
             assert_eq!(usize::from(answer.rdlen()), MAX_RECORD_RDATA);
             client.answer(&mut message, Time48::now()).unwrap();
         }
+
         client.done().unwrap();
     }
 }
@@ -543,6 +590,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
 #[test]
 fn edns_query_returns_opt() {
     let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
+
     assert_eq!(
         parsed.edns,
         Edns::Present {
@@ -562,6 +610,7 @@ fn edns_query_returns_opt() {
         .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().expect("an EDNS query is answered with an OPT");
+
     assert_eq!(opt.version(), 0);
     assert_eq!(opt.udp_payload_size(), 1232);
     let ede = opt
@@ -570,19 +619,23 @@ fn edns_query_returns_opt() {
         .next()
         .expect("the refusal names its reason")
         .unwrap();
+
     assert_eq!(ede.code(), ExtendedErrorCode::PROHIBITED);
 
     let doubled =
         ParsedQuery::parse(&build_question(Rtype::SOA, &[0, 0]), Keepalive::None).unwrap();
+
     assert_eq!(doubled.edns, Edns::Malformed);
     let reply = doubled
         .build_signed_error_response(doubled.format_error().unwrap(), None, None)
         .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
+
     assert_eq!(reply.header().rcode(), Rcode::FORMERR);
     assert!(reply.opt().is_some());
 
     let newer = ParsedQuery::parse(&build_question(Rtype::SOA, &[1]), Keepalive::None).unwrap();
+
     assert_eq!(
         newer.edns,
         Edns::Present {
@@ -596,6 +649,7 @@ fn edns_query_returns_opt() {
         .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
     let opt = reply.opt().unwrap();
+
     assert_eq!(opt.rcode(reply.header()), OptRcode::BADVERS);
     assert_eq!(opt.version(), 0);
 
@@ -625,9 +679,11 @@ fn response_encoding_preserves_edns_dnssec_ok() {
                     .unwrap(),
                 parsed.build_signed_truncated_response(None).unwrap(),
             ];
+
             for response in responses {
                 let response = Message::from_octets(response).unwrap();
                 let opt = response.opt().unwrap();
+
                 // RFC 6891, Section 6.1.4 leaves reserved flags clear.
                 assert_eq!(
                     opt.as_record().ttl().as_secs() & 0xffff,
@@ -646,6 +702,7 @@ fn udp_response_truncates_answers_above_limit() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
     let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&parsed, Rtype::SOA);
+
     for _ in 0..100 {
         builder
             .add_raw_rdata(
@@ -674,12 +731,14 @@ fn response_encoding_preserves_question_class() {
     let mut question = builder.question();
     question.push((&qname, Rtype::SOA, Class::CH)).unwrap();
     let parsed = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
+
     assert_eq!(parsed.qclass, Class::CH);
 
     let reply = parsed
         .build_signed_error_response(Rcode::NOTAUTH.into(), None, None)
         .unwrap();
     let reply = Message::from_octets(reply.as_slice()).unwrap();
+
     assert_eq!(reply.first_question().unwrap().qclass(), Class::CH);
 }
 
@@ -702,6 +761,7 @@ fn tcp_response_advertises_idle_timeout() {
         .opt()
         .tcp_keepalive()
         .expect("a TCP answer advertises its idle timeout");
+
     assert_eq!(keepalive.timeout().map(u16::from), Some(300));
 
     let udp = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
@@ -709,6 +769,7 @@ fn tcp_response_advertises_idle_timeout() {
         .build_signed_error_response(Rcode::REFUSED.into(), None, None)
         .unwrap();
     let message = Message::from_octets(response.as_slice()).unwrap();
+
     assert!(message.opt().unwrap().opt().tcp_keepalive().is_none());
 }
 
@@ -720,16 +781,19 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
     let start = plain.len();
     let mut named = wire.clone();
     named.splice(start..start + 1, [1, b'x', 0]);
+
     assert_eq!(
         ParsedQuery::parse(&named, Keepalive::None)
             .unwrap()
             .format_error(),
         Some(OptRcode::FORMERR)
     );
+
     for count in [6, 8] {
         let mut misplaced = wire.clone();
         misplaced[count..count + 2].copy_from_slice(&1u16.to_be_bytes());
         misplaced[10..12].fill(0);
+
         assert_eq!(
             ParsedQuery::parse(&misplaced, Keepalive::None)
                 .unwrap()
@@ -738,6 +802,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
         );
         misplaced[10..12].copy_from_slice(&1u16.to_be_bytes());
         misplaced.extend_from_slice(&wire[start..]);
+
         assert_eq!(
             ParsedQuery::parse(&misplaced, Keepalive::None)
                 .unwrap()
@@ -758,6 +823,7 @@ fn response_limits_follow_transport_and_edns() {
         (65535, 1232),
     ] {
         let limit = ResponseLimit::udp(advertised);
+
         assert!(limit.is_udp());
         assert_eq!(limit.max_len(), expected);
         assert!(limit.validate_len(expected).is_ok());
@@ -775,9 +841,11 @@ fn response_limits_follow_transport_and_edns() {
         let wire = wire.finish();
         let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
         let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+
         assert_eq!(udp.response_limit(), limit);
         assert_eq!(stream.response_limit(), ResponseLimit::STREAM);
     }
+
     assert!(ResponseLimit::STREAM.validate_len(65535).is_ok());
     assert!(ResponseLimit::STREAM.validate_len(65536).is_err());
 }
@@ -814,6 +882,7 @@ fn oversized_response_does_not_advance_the_signer() {
     let wire = additional.finish();
     let mut signer: TransferSigner = verify_tsig(&wire, Some(key)).unwrap().into();
     let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+
     assert!(matches!(
         udp.build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer)),
         Err(EncodeMessageError::TooLarge {
@@ -854,6 +923,7 @@ fn oversized_frame_does_not_advance_the_signer() {
     let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
     let signer = verify_tsig(&wire, Some(key)).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
+
     // Bypass the chunking helper to exercise the final frame guard itself.
     for _ in 0..70 {
         builder
@@ -865,6 +935,7 @@ fn oversized_frame_does_not_advance_the_signer() {
             )
             .unwrap();
     }
+
     assert!(matches!(
         builder.take_frame(),
         Err(EncodeMessageError::TooLarge { max_len: 65535, .. })

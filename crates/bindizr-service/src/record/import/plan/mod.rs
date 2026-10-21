@@ -48,15 +48,21 @@ impl<'a> ImportPlan<'a> {
             existing_records.iter().map(Record::match_key).collect();
         let mut existing_by_key: HashMap<&RecordKey, Vec<&Record>> =
             HashMap::with_capacity(existing_records.len());
+
         for (record, key) in existing_records.iter().zip(&existing_keys) {
             existing_by_key.entry(key).or_default().push(record);
         }
-        let desired_keys: Vec<RecordKey> = desired.iter().map(|d| d.data.match_key()).collect();
+
+        let desired_keys: Vec<RecordKey> = desired
+            .iter()
+            .map(|desired_record| desired_record.data.match_key())
+            .collect();
         let desired_key_set: HashSet<&RecordKey> = desired_keys.iter().collect();
+
         // Upsert only touches the names and types the file speaks about.
         let desired_set_keys: HashSet<(&OwnerName, RecordType)> = desired
             .iter()
-            .map(|d| (&d.data.name, d.data.record_type))
+            .map(|desired_record| (&desired_record.data.name, desired_record.data.record_type))
             .collect();
 
         let dels: Vec<Record> = match mode {
@@ -65,16 +71,16 @@ impl<'a> ImportPlan<'a> {
                 .iter()
                 .zip(&existing_keys)
                 .filter(|(_, key)| !desired_key_set.contains(key))
-                .map(|(e, _)| e.clone())
+                .map(|(existing_record, _)| existing_record.clone())
                 .collect(),
             ImportMode::Upsert => existing_records
                 .iter()
                 .zip(&existing_keys)
-                .filter(|(e, key)| {
-                    desired_set_keys.contains(&(&e.name, e.record_type))
+                .filter(|(existing_record, key)| {
+                    desired_set_keys.contains(&(&existing_record.name, existing_record.record_type))
                         && !desired_key_set.contains(key)
                 })
-                .map(|(e, _)| e.clone())
+                .map(|(existing_record, _)| existing_record.clone())
                 .collect(),
         };
 
@@ -85,24 +91,26 @@ impl<'a> ImportPlan<'a> {
         let mut adds = Vec::new();
         let mut unchanged = 0;
         let mut updated = 0;
-        for (d, key) in desired.iter().zip(&desired_keys) {
-            let desired_ttl = d.data.ttl;
+
+        for (desired_record, key) in desired.iter().zip(&desired_keys) {
+            let desired_ttl = desired_record.data.ttl;
             let mut present = false;
             let mut stale = false;
-            for e in existing_by_key.get(key).into_iter().flatten() {
+
+            for existing_record in existing_by_key.get(key).into_iter().flatten() {
                 present = true;
                 // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
-                if reconcile_ttl && e.ttl != desired_ttl {
-                    ttl_dels.push((*e).clone());
+                if reconcile_ttl && existing_record.ttl != desired_ttl {
+                    ttl_dels.push((*existing_record).clone());
                     stale = true;
                 }
             }
 
             if !present {
-                adds.push(d);
+                adds.push(desired_record);
             } else if stale {
                 updated += 1;
-                adds.push(d);
+                adds.push(desired_record);
             } else {
                 unchanged += 1;
             }
@@ -131,7 +139,7 @@ impl ImportPlan<'_> {
             .dels
             .iter()
             .chain(&self.ttl_dels)
-            .map(|r| r.id)
+            .map(|record| record.id)
             .collect();
 
         let before =
@@ -144,6 +152,7 @@ impl ImportPlan<'_> {
                 .cloned()
                 .map(RecordData::from),
         );
+
         for add in &self.adds {
             after.push_written(add.data.clone());
         }

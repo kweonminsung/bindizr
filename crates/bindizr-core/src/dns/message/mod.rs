@@ -168,7 +168,7 @@ impl DnsMessageBuilder {
         rdata: Rdata,
     ) -> Result<(), EncodeMessageError> {
         let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-            .map_err(|e| EncodeMessageError::RawRdata(Box::new(e)))?;
+            .map_err(|error| EncodeMessageError::RawRdata(Box::new(error)))?;
         self.add_answer(owner, ttl, data);
         Ok(())
     }
@@ -196,6 +196,7 @@ impl DnsMessageBuilder {
         } else {
             0
         };
+
         DNS_HEADER_LEN + self.qname.len() + QUESTION_FIELDS_LEN + self.answers_len + opt + signature
     }
 
@@ -248,6 +249,7 @@ impl DnsMessageBuilder {
         let frame = self.take_frame().map_err(AddAnswerError::without_frame)?;
 
         self.push_answer(last_answer);
+
         if self.message_len() > self.limit.max_len() {
             return Err(AddAnswerError {
                 frame,
@@ -289,24 +291,27 @@ impl DnsMessageBuilder {
         let mut question = builder.question();
         question
             .push((&self.qname, Rtype::from_int(self.qtype), self.qclass))
-            .map_err(|e| EncodeMessageError::ComposeQuestion(Box::new(e)))?;
+            .map_err(|error| EncodeMessageError::ComposeQuestion(Box::new(error)))?;
 
         let mut answer = question.answer();
+
         for composed in &self.answers {
             answer
                 .push(ComposedRecord(composed))
-                .map_err(|e| EncodeMessageError::ComposeAnswer(Box::new(e)))?;
+                .map_err(|error| EncodeMessageError::ComposeAnswer(Box::new(error)))?;
         }
 
         // The OPT precedes the TSIG, which must be last (RFC 8945, Section 5.1).
         let mut additional = answer.additional();
         self.edns
             .push_response_opt(&mut additional, OptRcode::NOERROR, None, self.keepalive);
+
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .sign_response(&mut additional, Time48::now())
-                .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
+                .map_err(|error| EncodeMessageError::Sign(Box::new(error)))?;
         }
+
         Ok(additional.finish().into_target())
     }
 
@@ -317,9 +322,11 @@ impl DnsMessageBuilder {
             self.limit.validate_len(message.len())?;
             encode_tcp_message(&message)
         });
+
         if frame.is_err() {
             self.signer = signer;
         }
+
         frame
     }
 
@@ -328,18 +335,22 @@ impl DnsMessageBuilder {
     pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let signer = self.signer.clone();
         let response = self.build_message()?;
+
         if let Err(error) = self.limit.validate_len(response.len()) {
             if !self.limit.is_udp() {
                 return Err(error);
             }
+
             // Rebuild from the original MAC chain (RFC 8945, Section 5.3).
             self.signer = signer;
             self.clear_answers();
             self.truncated = true;
             let response = self.build_message()?;
             self.limit.validate_len(response.len())?;
+
             return Ok(response);
         }
+
         Ok(response)
     }
 }
@@ -352,6 +363,7 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError>
     let mut result = Vec::with_capacity(2 + message.len());
     result.extend_from_slice(&len.to_be_bytes());
     result.extend_from_slice(message);
+
     Ok(result)
 }
 

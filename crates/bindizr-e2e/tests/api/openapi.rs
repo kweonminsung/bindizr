@@ -13,19 +13,25 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
     })
     .await;
     let (status, document) = app.send_request(Method::GET, "/openapi.json", None).await;
+
     assert_eq!(status, StatusCode::OK);
+
     for schema in ["CreateZoneRequest", "UpdateZoneRequest"] {
         let minimum = &document["components"]["schemas"][schema]["properties"]["minimum_ttl"];
         assert_eq!(minimum["minimum"], 0, "{schema}");
         assert_eq!(minimum["maximum"], u32::MAX, "{schema}");
     }
+
     let zone = app.create_test_zone().await;
+
     for ttl in [-1, 0, i64::from(u32::MAX), i64::from(u32::MAX) + 1] {
         let name = app.zone_name(&format!("minimum-{}.example", ttl + 1));
         let accepted = (0..=i64::from(u32::MAX)).contains(&ttl);
+
         let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({
             "name": name, "mname": "ns.example.com", "rname": "admin@example.com", "minimum_ttl": ttl
         }))).await;
+
         assert_eq!(
             status,
             if accepted {
@@ -35,9 +41,11 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
             },
             "{ttl}: {body}"
         );
+
         if accepted {
             assert_eq!(body["zone"]["minimum_ttl"], ttl);
         }
+
         let (status, body) = app
             .send_request(
                 Method::PUT,
@@ -45,6 +53,7 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
                 Some(json!({"minimum_ttl": ttl})),
             )
             .await;
+
         assert_eq!(
             status,
             if accepted {
@@ -54,6 +63,7 @@ async fn minimum_ttl_schema_matches_zone_write_boundaries() {
             },
             "{ttl}: {body}"
         );
+
         if accepted {
             assert_eq!(body["zone"]["minimum_ttl"], ttl);
         }
@@ -84,12 +94,15 @@ async fn openapi_serves_documents_without_token_when_enabled() {
     .await;
 
     let (status, body) = app.send_request(Method::GET, "/openapi.json", None).await;
+
     assert_eq!(status, StatusCode::OK);
     assert!(body["paths"]["/zones"]["get"].is_object());
     let optional_serial =
         &body["components"]["schemas"]["CreateZoneRequest"]["properties"]["serial"];
+
     assert_eq!(optional_serial["oneOf"][1]["type"], "null");
     let serial = &optional_serial["oneOf"][0];
+
     assert_eq!(serial["minimum"], 0);
     assert_eq!(serial["maximum"], u32::MAX);
     assert_eq!(serial["format"], "int64");
@@ -98,11 +111,13 @@ async fn openapi_serves_documents_without_token_when_enabled() {
         &body["components"]["schemas"]["ZoneResponse"]["properties"]["serial"],
         serial
     );
+
     for (path, item) in body["paths"].as_object().unwrap() {
         for operation in item.as_object().unwrap().values() {
             let Some(parameters) = operation["parameters"].as_array() else {
                 continue;
             };
+
             for parameter in parameters {
                 let ttl_filter = matches!(
                     parameter["name"].as_str(),
@@ -115,9 +130,11 @@ async fn openapi_serves_documents_without_token_when_enabled() {
                             | "max_default_ttl"
                     )
                 );
+
                 if ttl_filter {
                     assert_eq!(parameter["required"], false, "{path}");
                 }
+
                 if ttl_filter
                     || matches!(
                         parameter["name"].as_str(),
@@ -133,6 +150,7 @@ async fn openapi_serves_documents_without_token_when_enabled() {
             }
         }
     }
+
     for name in [
         "CreateRecordRequest",
         "UpdateRecordRequest",
@@ -141,26 +159,33 @@ async fn openapi_serves_documents_without_token_when_enabled() {
     ] {
         let ttl = &body["components"]["schemas"][name]["properties"]["ttl"];
         let alternatives = ttl["oneOf"].as_array().expect("TTL accepts null");
+
         assert!(alternatives.iter().any(|schema| schema["type"] == "null"));
         let integer = alternatives
             .iter()
             .find(|schema| schema["type"] == "integer")
             .unwrap();
+
         assert_eq!(integer["minimum"], 0, "{name}");
         assert_eq!(integer["maximum"], u32::MAX, "{name}");
         assert_eq!(integer["format"], "int64", "{name}");
     }
+
     for name in ["CreateZoneRequest", "UpdateZoneRequest"] {
         let minimum = &body["components"]["schemas"][name]["properties"]["minimum_ttl"];
         assert_eq!(minimum["minimum"], 0, "{name}");
         assert_eq!(minimum["maximum"], u32::MAX, "{name}");
     }
+
     let record_type = &body["components"]["schemas"]["RecordType"];
+
     assert_eq!(record_type["type"], "string");
     let supported_types = record_type["enum"].as_array().unwrap();
+
     assert_eq!(supported_types.len(), 15);
     assert!(supported_types.iter().any(|name| name == "WKS"));
     assert!(!supported_types.iter().any(|name| name == "TYPE65280"));
+
     for name in ["ImportZoneRequest", "ImportZonesRequest"] {
         assert!(
             body["components"]["schemas"][name]["properties"]
@@ -168,6 +193,7 @@ async fn openapi_serves_documents_without_token_when_enabled() {
                 .is_none()
         );
     }
+
     assert!(
         body["components"]["schemas"]["ImportZoneResponse"]["properties"]
             .get("skipped_records")
@@ -188,6 +214,7 @@ async fn openapi_serves_documents_without_token_when_enabled() {
 
     // YAML is not JSON, so the harness hands it back as a plain string.
     let (status, body) = app.send_request(Method::GET, "/openapi.yaml", None).await;
+
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.as_str().is_some_and(|yaml| yaml.contains("openapi:")),
@@ -206,11 +233,14 @@ async fn pagination_limits_match_the_openapi_contract() {
     .await;
 
     let (status, document) = app.send_request(Method::GET, "/openapi.json", None).await;
+
     assert_eq!(status, StatusCode::OK);
+
     for (path, item) in document["paths"].as_object().unwrap() {
         let Some(parameters) = item["get"]["parameters"].as_array() else {
             continue;
         };
+
         for parameter in parameters {
             if parameter["name"] == "limit" && parameter["in"] == "query" {
                 assert_eq!(parameter["schema"]["minimum"], 1, "{path}");
@@ -221,6 +251,7 @@ async fn pagination_limits_match_the_openapi_contract() {
 
     for path in ["/zones", "/tokens"] {
         let (status, body) = app.send_request(Method::GET, path, None).await;
+
         assert_eq!(status, StatusCode::OK, "{path}: {body}");
         assert_eq!(body["pagination"]["limit"], 50, "{path}");
 
@@ -231,8 +262,11 @@ async fn pagination_limits_match_the_openapi_contract() {
             (1001, StatusCode::BAD_REQUEST),
         ] {
             let url = format!("{path}?limit={limit}");
+
             let (status, body) = app.send_request(Method::GET, &url, None).await;
+
             assert_eq!(status, expected_status, "{url}: {body}");
+
             if status == StatusCode::OK {
                 assert_eq!(body["pagination"]["limit"], limit, "{url}");
             } else {

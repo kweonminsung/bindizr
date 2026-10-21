@@ -41,8 +41,8 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Re
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
     let cli = config::Cli::parse();
-    let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|e| {
-        errln!("Error: {}", e);
+    let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|error| {
+        errln!("Error: {}", error);
         std::process::exit(EXIT_CONFIG);
     });
 
@@ -64,14 +64,14 @@ pub async fn execute() {
         adapter_config.timeout_secs,
         adapter_config.ca_file.as_deref(),
     )
-    .unwrap_or_else(|e| {
-        errln!("Error: {}", e);
+    .unwrap_or_else(|error| {
+        errln!("Error: {}", error);
         std::process::exit(EXIT_CONFIG);
     });
     let state = Arc::new(server::AppState {
         upstream,
-        metrics: metrics::AdapterMetrics::new().unwrap_or_else(|e| {
-            errln!("Error: {}", e);
+        metrics: metrics::AdapterMetrics::new().unwrap_or_else(|error| {
+            errln!("Error: {}", error);
             std::process::exit(1);
         }),
     });
@@ -79,17 +79,17 @@ pub async fn execute() {
     // Bind both endpoints before either server starts accepting requests.
     let webhook_listener = tokio::net::TcpListener::bind(adapter_config.listen_addr)
         .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to bind {}: {:?}", adapter_config.listen_addr, e);
+        .unwrap_or_else(|error| {
+            log::error!("Failed to bind {}: {:?}", adapter_config.listen_addr, error);
             std::process::exit(1);
         });
     let health_listener = tokio::net::TcpListener::bind(adapter_config.health_listen_addr)
         .await
-        .unwrap_or_else(|e| {
+        .unwrap_or_else(|error| {
             log::error!(
                 "Failed to bind {}: {:?}",
                 adapter_config.health_listen_addr,
-                e
+                error
             );
             std::process::exit(1);
         });
@@ -119,6 +119,7 @@ pub async fn execute() {
             log_server_stopped(name, result);
             true
         }
+
         () = wait_for_signal() => {
             log::info!("Shutting down");
             false
@@ -128,10 +129,12 @@ pub async fn execute() {
     // Answer what external-dns already sent before going: a severed reply
     // leaves it unable to tell an applied change from a dropped one.
     let _ = stop.send(true);
+
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
     })
     .await;
+
     if drained.is_err() {
         log::warn!(
             "In-flight requests did not finish within {}s; exiting anyway",
@@ -160,13 +163,14 @@ async fn wait_for_stop(mut stop: watch::Receiver<bool>) {
 async fn wait_for_signal() {
     let mut terminate = match signal(SignalKind::terminate()) {
         Ok(terminate) => terminate,
-        Err(e) => {
-            log::error!("Failed to listen for SIGTERM: {}", e);
+        Err(error) => {
+            log::error!("Failed to listen for SIGTERM: {}", error);
             return;
         }
     };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
+
         _ = terminate.recv() => {}
     }
 }
@@ -175,7 +179,7 @@ async fn wait_for_signal() {
 fn log_server_stopped(name: &str, result: Result<std::io::Result<()>, tokio::task::JoinError>) {
     match result {
         Ok(Ok(())) => log::error!("{} server stopped", name),
-        Ok(Err(e)) => log::error!("{} server error: {:?}", name, e),
-        Err(e) => log::error!("{} server task failed: {}", name, e),
+        Ok(Err(error)) => log::error!("{} server error: {:?}", name, error),
+        Err(error) => log::error!("{} server task failed: {}", name, error),
     }
 }
