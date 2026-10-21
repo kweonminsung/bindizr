@@ -1381,11 +1381,12 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
     (address, server)
 }
 
-/// Serve a catalog with repeated version/PTR records, then its single member's AXFR.
+/// Serve repeated catalog records and the expected member transfers, recording requests.
 fn serve_catalog(
-    member: String,
+    members: Vec<String>,
     split: bool,
     apex_ns: bool,
+    member_transfers: usize,
 ) -> (String, std::thread::JoinHandle<Vec<String>>) {
     use domain::{
         base::{Message, MessageBuilder, Serial, Ttl},
@@ -1398,7 +1399,12 @@ fn serve_catalog(
     let address = listener.local_addr().unwrap().to_string();
     let server = std::thread::spawn(move || {
         let mut queries = Vec::new();
-        for catalog in [true, false].into_iter().take(if apex_ns { 2 } else { 1 }) {
+        for (index, zone) in std::iter::once("catalog.example".to_string())
+            .chain(members.iter().cloned())
+            .take(1 + member_transfers)
+            .enumerate()
+        {
+            let catalog = index == 0;
             let (mut stream, _) = listener.accept().unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(5)))
@@ -1406,8 +1412,7 @@ fn serve_catalog(
             let query = read_frame(&mut stream).unwrap().unwrap();
             let message = Message::from_octets(query.as_slice()).unwrap();
             queries.push(message.sole_question().unwrap().qname().to_string());
-            let zone = if catalog { "catalog.example" } else { &member };
-            let owner = parse_name(zone).unwrap();
+            let owner = parse_name(&zone).unwrap();
             let primary = parse_name(&format!("ns1.{zone}.")).unwrap();
             let soa = Soa::new(
                 primary.clone(),
@@ -1440,13 +1445,15 @@ fn serve_catalog(
                         Txt::from_octets(vec![1, b'2']).unwrap(),
                     ))
                     .unwrap();
-                answer
-                    .push((
-                        &parse_name("member.zones.catalog.example").unwrap(),
-                        Ttl::from_secs(0),
-                        Ptr::new(parse_name(&member).unwrap()),
-                    ))
-                    .unwrap();
+                for (index, member) in members.iter().enumerate() {
+                    answer
+                        .push((
+                            &parse_name(&format!("member-{index}.zones.catalog.example")).unwrap(),
+                            Ttl::from_secs(0),
+                            Ptr::new(parse_name(member).unwrap()),
+                        ))
+                        .unwrap();
+                }
                 if split {
                     write_frame(&mut stream, &answer.finish()).unwrap();
                     let mut builder = MessageBuilder::new_vec();
@@ -1461,17 +1468,19 @@ fn serve_catalog(
                         Txt::from_octets(vec![1, b'2']).unwrap(),
                     ))
                     .unwrap();
-                answer
-                    .push((
-                        &parse_name("MEMBER.ZONES.CATALOG.example").unwrap(),
-                        Ttl::from_secs(120),
-                        Ptr::new(parse_name(&member.to_ascii_uppercase()).unwrap()),
-                    ))
-                    .unwrap();
+                for (index, member) in members.iter().enumerate() {
+                    answer
+                        .push((
+                            &parse_name(&format!("MEMBER-{index}.ZONES.CATALOG.example")).unwrap(),
+                            Ttl::from_secs(120),
+                            Ptr::new(parse_name(&member.to_ascii_uppercase()).unwrap()),
+                        ))
+                        .unwrap();
+                }
             } else {
                 answer
                     .push((
-                        &parse_name(&format!("www.{member}")).unwrap(),
+                        &parse_name(&format!("www.{zone}")).unwrap(),
                         Ttl::from_secs(300),
                         A::new("192.0.2.50".parse().unwrap()),
                     ))
@@ -1480,8 +1489,8 @@ fn serve_catalog(
             answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
             write_frame(&mut stream, &answer.finish()).unwrap();
         }
-        if !apex_ns {
-            // Keep listening after the invalid catalog: no member AXFR may follow.
+        if member_transfers == 0 {
+            // Keep listening after a rejected catalog: no member AXFR may follow.
             listener.set_nonblocking(true).unwrap();
             let until = std::time::Instant::now() + std::time::Duration::from_millis(150);
             while std::time::Instant::now() < until {
@@ -1523,7 +1532,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
         for split in [false, true] {
             let member = app.zone_name(&format!("member-{cli}-{split}.example"));
             app.create_zone_cli(&member, "3600").await;
-            let (address, server) = serve_catalog(member.clone(), split, true);
+            let (address, server) = serve_catalog(vec![member.clone()], split, true, 1);
             let body = if cli {
                 let output = app
                     .run_cli_success(
@@ -1661,7 +1670,7 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                 } else {
                     Vec::new()
                 };
-                let (address, server) = serve_catalog(member.clone(), false, false);
+                let (address, server) = serve_catalog(vec![member.clone()], false, false, 0);
                 if cli {
                     let mut args = vec![
                         "zone",
@@ -1695,6 +1704,191 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                 assert_eq!(after, before);
                 if existing {
                     assert_eq!(app.list_records(&member).await, before_records);
+                }
+            }
+        }
+    }
+}
+
+/// Reject wildcard members before member AXFR or any writes, serial changes or NOTIFY.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
+    use std::time::Duration;
+
+    use domain::{base::Message, rdata::Soa};
+
+    use crate::common::dns::exchange_dns_query;
+
+    let app = TestApp::start_local().await;
+    // This valid name sorts before '*', so checking members only as they are imported fails.
+    let first = format!("!.{}", app.zone_name("first-member.example"));
+    app.create_zone_cli(&first, "3600").await;
+    let records = app.list_records(&first).await;
+    let zones = app.send_request(Method::GET, "/zones", None).await;
+    let versions_path = format!("/zones/{first}/versions?include_signer_serials=true");
+    let versions = app.send_request(Method::GET, &versions_path, None).await;
+    let catalog_serial = || {
+        let (_, wire) = exchange_dns_query(app.dns_port(), "catalog.bindizr", 6).unwrap();
+        let message = Message::from_octets(wire.as_slice()).unwrap();
+        message
+            .answer()
+            .unwrap()
+            .limit_to::<Soa<_>>()
+            .next()
+            .unwrap()
+            .unwrap()
+            .data()
+            .serial()
+            .into_int()
+    };
+    let serial = catalog_serial();
+    let notify = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    app.create_secondary("notify", &notify.local_addr().unwrap().to_string())
+        .await;
+
+    for cli in [false, true] {
+        for dry_run in [false, true] {
+            for wildcard in ["*", r"\*", r"\042"] {
+                let member = format!("{wildcard}.{}", app.zone_name("invalid.example"));
+                let (address, server) = serve_catalog(vec![first.clone(), member], false, true, 0);
+                if cli {
+                    let mut args = vec![
+                        "zone",
+                        "import",
+                        "--from-server",
+                        &address,
+                        "--from-catalog",
+                        "catalog.example",
+                        "--create",
+                        "--mode",
+                        "replace",
+                        "--output",
+                        "json",
+                    ];
+                    if dry_run {
+                        args.push("--dry-run");
+                    }
+                    let output = app.run_cli(&args, None).await;
+                    assert_eq!(server.join().unwrap(), ["catalog.example"]);
+                    crate::common::assert_cli_failure_contains(&args, &output, "wildcard");
+                } else {
+                    let (status, body) = app
+                        .send_request(
+                            Method::POST,
+                            "/import",
+                            Some(json!({
+                                "from_server": address,
+                                "from_catalog": "catalog.example",
+                                "create": true,
+                                "mode": "replace",
+                                "dry_run": dry_run,
+                            })),
+                        )
+                        .await;
+                    let queries = server.join().unwrap();
+                    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+                    assert_eq!(body["code"], "INVALID_ZONE_FIELD", "{body}");
+                    assert!(
+                        body["error"].as_str().unwrap().contains("wildcard"),
+                        "{body}"
+                    );
+                    assert_eq!(queries, ["catalog.example"]);
+                }
+                assert_eq!(app.send_request(Method::GET, "/zones", None).await, zones);
+                assert_eq!(app.list_records(&first).await, records);
+                assert_eq!(
+                    app.send_request(Method::GET, &versions_path, None).await,
+                    versions
+                );
+                assert_eq!(catalog_serial(), serial);
+            }
+        }
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), notify.recv_from(&mut [0; 4096]))
+            .await
+            .is_err(),
+        "rejected catalog imports must not send NOTIFY"
+    );
+}
+
+/// Keep ordinary and escaped-octet catalog members importable through HTTP and CLI.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn catalog_import_preserves_valid_members_and_escaped_octets() {
+    use crate::common::dns::parse_name;
+
+    let app = TestApp::start_local().await;
+    for cli in [false, true] {
+        for dry_run in [false, true] {
+            let members = vec![
+                app.zone_name(&format!("ordinary-{cli}-{dry_run}.example")),
+                format!(
+                    r"{}.\032",
+                    app.zone_name(&format!("space-{cli}-{dry_run}.example"))
+                ),
+            ];
+            let (address, server) = serve_catalog(members.clone(), false, true, members.len());
+            let body = if cli {
+                let mut args = vec![
+                    "zone",
+                    "import",
+                    "--from-server",
+                    &address,
+                    "--from-catalog",
+                    "catalog.example",
+                    "--create",
+                    "--output",
+                    "json",
+                ];
+                if dry_run {
+                    args.push("--dry-run");
+                }
+                serde_json::from_str::<Value>(&app.run_cli_success(&args, None).await).unwrap()
+            } else {
+                let (status, body) = app
+                    .send_request(
+                        Method::POST,
+                        "/import",
+                        Some(json!({
+                            "from_server": address,
+                            "from_catalog": "catalog.example",
+                            "create": true,
+                            "dry_run": dry_run,
+                        })),
+                    )
+                    .await;
+                assert_eq!(status, StatusCode::OK, "{body}");
+                body
+            };
+            let queries = server.join().unwrap();
+            assert_eq!(queries.len(), 3, "{queries:?}");
+            assert_eq!(queries[0], "catalog.example");
+            assert_eq!(body["summary"]["zones"], 2, "{body}");
+            assert_eq!(body["summary"]["ok"], 2, "{body}");
+            for (index, member) in members.iter().enumerate() {
+                assert_eq!(
+                    parse_name(&queries[index + 1]).unwrap(),
+                    parse_name(member).unwrap()
+                );
+                assert_eq!(
+                    body["zones"][index]["import"]["applied"], !dry_run,
+                    "{body}"
+                );
+                let (status, zone) = app
+                    .send_request(Method::GET, &super::zone_path(member), None)
+                    .await;
+                if dry_run {
+                    assert_eq!(status, StatusCode::NOT_FOUND, "{zone}");
+                } else {
+                    assert_eq!(status, StatusCode::OK, "{zone}");
+                    assert_eq!(zone["zone"]["name"], *member, "{zone}");
+                    let records = app.list_records(member).await;
+                    assert!(
+                        records.iter().any(|record| record["value"] == "192.0.2.50"),
+                        "{records:?}"
+                    );
                 }
             }
         }

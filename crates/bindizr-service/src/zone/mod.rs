@@ -34,5 +34,5 @@ pub use transfer::{
 pub(crate) use update::soa_replacement_changes;
 pub use update::update;
 pub use validation::normalize_name;
-pub(crate) use validation::validate_record_changes_tx;
+pub(crate) use validation::{validate_name, validate_record_changes_tx};
 pub(crate) use version::{advance_serial_tx, save_version_tx};

@@ -62,13 +62,20 @@ pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
     }
 
     let name = normalize_domain_name(value, "zone name")?;
+    validate_name(&name)?;
+
+    Ok(name)
+}
+
+/// Apply the zone policy to a name already parsed from a request or DNS records.
+pub(crate) fn validate_name(name: &ZoneName) -> Result<(), ServiceError> {
     if name.labels().first().is_some_and(|label| label == b"*") {
         return Err(ServiceError::invalid_zone_field(
             "wildcard zone names are not allowed".to_string(),
         ));
     }
 
-    Ok(name)
+    Ok(())
 }
 
 /// Parse a domain name, phrasing any rejection against `field`. The rules

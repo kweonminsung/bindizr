@@ -222,12 +222,16 @@ pub async fn import_zones(
                         e,
                     )
                 })?;
-            extract_member_zones(&records, &catalog).map_err(|e| {
+            let members = extract_member_zones(&records, &catalog).map_err(|e| {
                 ServiceError::invalid_input_with_source(
                     format!("catalog {} from {} cannot be read: {}", catalog, server, e),
                     e,
                 )
-            })?
+            })?;
+            for member in &members {
+                zone::validate_name(member)?;
+            }
+            members
         }
         (Some(_), Some(_)) => {
             return Err(ServiceError::invalid_input(

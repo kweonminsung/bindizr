@@ -522,7 +522,9 @@ question in the DNS server once the catalog check has passed, where a name
 the type refuses is answered NOTAUTH like a missing zone (an nsupdate too,
 RFC 2136, Section 3.1.2), since no stored zone can match it. A name inside a request body
 or a listing filter is parsed by the service function that takes that
-payload, since the payload is its argument. Everything beneath —
+payload, since the payload is its argument. Catalog members are already parsed
+by the core; the service applies the shared `zone::validate_name` policy to all
+members before fetching or importing any member zone. Everything beneath —
 the `_tx` lookups, the NOTIFY and probe clients, the zone-file parser, the
 db layer, which binds a `ZoneName` as it binds an `OwnerName` — takes
 `&ZoneName` and parses nothing again, and `dns.catalog_zone_name` is a
