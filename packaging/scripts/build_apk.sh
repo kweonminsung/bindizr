@@ -14,7 +14,7 @@ mkdir -p /build/pkg/bindizr
 sed -e "s/^pkgver=.*/pkgver=$APK_VERSION/" -e "s/^pkgrel=.*/pkgrel=$RELEASE/" \
     /packaging/alpine/APKBUILD > /build/pkg/bindizr/APKBUILD
 cp /packaging/scripts/postinstall.sh /build/pkg/bindizr/bindizr.post-install
-cp /packaging/scripts/postremove.sh /build/pkg/bindizr/bindizr.post-deinstall
+cp /packaging/scripts/postremove.sh /build/pkg/bindizr/bindizr.pre-deinstall
 cd /build/pkg/bindizr
 
 # abuild signs with a key it must also trust; this one lives only in the

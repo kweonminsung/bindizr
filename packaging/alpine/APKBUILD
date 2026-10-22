@@ -8,7 +8,7 @@ pkgdesc="Open-source control plane for authoritative DNS"
 url="https://github.com/kweonminsung/bindizr"
 arch="x86_64 aarch64"
 license="Apache-2.0"
-install="$pkgname.post-install $pkgname.post-deinstall"
+install="$pkgname.post-install $pkgname.pre-deinstall"
 # The binary is static musl, built and stripped by cargo; nothing to test here.
 options="!check !strip"
 source=""

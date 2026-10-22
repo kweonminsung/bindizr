@@ -3,7 +3,7 @@ mod transfer;
 mod transport;
 pub(crate) mod tsig;
 
-use std::{str::FromStr, time::Duration};
+use std::{net::Ipv4Addr, str::FromStr, time::Duration};
 
 use domain::{
     base::{Message, MessageBuilder, Name, Rtype, iana::Rcode, name::ParsedName},
@@ -388,6 +388,10 @@ fn decode_dns_value(
         )),
         // CAA values are opaque octets, escaped losslessly (RFC 8659, Section 4.1).
         AllRecordData::Caa(caa) => Value::String(caa.to_string()),
+        // `domain` leaves WKS untyped; compare its native fields rather than generic wire text.
+        AllRecordData::Unknown(unknown) if record_type == Rtype::WKS.to_int() => {
+            Value::String(decode_wks_value(unknown.data())?)
+        }
         AllRecordData::Unknown(unknown) => {
             let bytes = unknown.data();
             let mut value = format!(r"\# {}", bytes.len());
@@ -403,6 +407,30 @@ fn decode_dns_value(
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
     };
     Ok(Some(value))
+}
+
+/// Decode WKS's IPv4 address, protocol number, and service bitmap for API comparisons.
+fn decode_wks_value(bytes: &[u8]) -> Result<String, String> {
+    let Some((fields, bitmap)) = bytes.split_at_checked(5) else {
+        return Err("WKS rdata is missing its IPv4 address or protocol".to_string());
+    };
+    if bitmap.len() > (usize::from(u16::MAX) + 1) / 8 {
+        return Err("WKS service bitmap exceeds port 65535".to_string());
+    }
+
+    let address = Ipv4Addr::new(fields[0], fields[1], fields[2], fields[3]);
+    let mut value = format!("{} {}", address, fields[4]);
+
+    // RFC 1035, Section 3.4.2: the first bitmap byte's high bit is port zero.
+    for (index, byte) in bitmap.iter().enumerate() {
+        for bit in 0..8 {
+            if byte & (0x80 >> bit) != 0 {
+                value.push_str(&format!(" {}", index * 8 + bit));
+            }
+        }
+    }
+
+    Ok(value)
 }
 
 /// Encode bytes as uppercase hexadecimal text.
