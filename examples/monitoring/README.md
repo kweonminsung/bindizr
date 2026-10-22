@@ -5,10 +5,11 @@ Prometheus + Grafana stack for bindizr's `GET /metrics`, with a pre-provisioned
 XFR/NOTIFY/nsupdate rates).
 
 Start bindizr with the API on port 3000 and `api.listen_addr = "0.0.0.0"`
-(on Linux, containers cannot reach a host listener bound to `127.0.0.1`), then:
+(on Linux, containers cannot reach a host listener bound to `127.0.0.1`), then
+run from the repository root:
 
 ```bash
-$ docker compose up -d
+$ docker compose -f examples/monitoring/docker-compose.yml up -d
 ```
 
 - Prometheus: http://localhost:9090 (scrapes every 5 s; rules at http://localhost:9090/alerts)

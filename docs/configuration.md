@@ -24,7 +24,7 @@ rejected and the current configuration stays active.
 
 | Settings | Reload behavior |
 | --- | --- |
-| `[logging]` and `[dns]` except the settings below | Reloadable |
+| `[logging]`, `[history]`, and `[dns]` except the settings below | Reloadable |
 | `[api]`, `[database]`, `[dns.tls]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name`, `dns.tcp_max_connections` | Restart required |
 | The certificate and key files `[api.tls]` and `[dns.tls]` name | Re-read on reload, so a renewed pair serves without a restart; the paths stay fixed |
 

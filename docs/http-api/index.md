@@ -1,8 +1,9 @@
 # HTTP API
 
 Manage zones, records, secondaries, access control, and DNSSEC over HTTP.
-The packaged configuration listens on `127.0.0.1:3000`; the Compose and Helm
-examples use port `8000`.
+The packaged configuration listens on `0.0.0.0:3000` (all IPv4 addresses);
+the Compose and Helm examples use port `8000`. Set
+`api.listen_addr = "127.0.0.1"` for access from this host only.
 
 [Open the full API reference :material-open-in-new:](https://kweonminsung.github.io/bindizr/api/){ .md-button .md-button--primary }
 
@@ -76,7 +77,9 @@ curl -H "Authorization: Bearer $BINDIZR_TOKEN" \
 ```
 
 `/zones` and `/records` also accept `sort` and `order`; tied values are ordered
-by ID. The CLI uses `--limit` and `--offset`, with a default page size of 1000.
+by ID. CLI list commands use `--limit` and `--offset` and return all matching
+items when `--limit` is omitted. An explicit limit must be 1–1000.
+`secondary transfers` has a separate default of 1000 entries.
 
 To include generated DNSSEC records, use
 `GET /records?zone_name=example.com&signed=true`. They follow user records in
