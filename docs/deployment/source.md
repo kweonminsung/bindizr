@@ -1,7 +1,7 @@
 # Building from Source
 
 For a host the packages do not cover, or to run a change before it is
-released. The result is the same `bindizr` binary the `.deb` and `.rpm`
+released. The result is the same `bindizr` binary the `.deb`, `.rpm`, and `.apk`
 carry; once it is built, [Manual Installation](manual.md) covers the
 secondary, the configuration, and the service around it.
 
@@ -89,8 +89,9 @@ CC_x86_64_unknown_linux_musl=musl-gcc \
 ```
 
 `packaging/scripts/build_packages.sh` runs this build and wraps the result
-in the `.deb` and `.rpm` together with the systemd unit, the default
-configuration, the man page, and the shell completions. Its own
+in the `.deb`, `.rpm`, and `.apk` together with the systemd unit (the OpenRC
+script in the `.apk`), the default configuration, the man page, and the shell
+completions. Its own
 prerequisite, `fpm`, is in the
 [packaging README](https://github.com/kweonminsung/bindizr/blob/main/packaging/README.md).
 

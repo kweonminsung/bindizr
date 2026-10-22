@@ -55,71 +55,83 @@ impl Prerequisite {
 }
 
 /// Canonical RDATA sets, excluding TTL (RFC 2136, Sections 1.1 and 3.2.3).
-type RecordSets = BTreeMap<(OwnerName, Rtype), BTreeSet<Rdata>>;
+pub(crate) type RecordSets = BTreeMap<(OwnerName, Rtype), BTreeSet<Rdata>>;
 
-/// Evaluate prerequisites under the caller's zone lock, before writes.
-pub(crate) async fn evaluate_prerequisites_tx(
+/// The complete served zone at this transaction's serial, under the caller's
+/// zone lock: the SOA, ordinary and signer-generated records.
+pub(crate) async fn list_served_record_sets_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    prerequisites: &[Prerequisite],
-) -> Result<(), NsupdateError> {
-    if prerequisites.is_empty() {
-        return Ok(());
-    }
-
+) -> Result<RecordSets, NsupdateError> {
     let records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
-    let served = zone_record_sets(zone, &records, &derived)?;
-    let mut wanted = RecordSets::new();
+    Ok(zone_record_sets(zone, &records, &derived)?)
+}
 
-    for prerequisite in prerequisites {
-        let name = prerequisite.name();
-        match prerequisite {
-            Prerequisite::NameExists { .. } => {
-                if !served.keys().any(|(owner, _)| owner == name) {
-                    return Err(NsupdateError::NxDomain(format!(
-                        "owner '{name}' does not exist"
-                    )));
-                }
+/// Evaluate one prerequisite in wire order (RFC 2136, Section 3.2.5); a
+/// value-dependent set joins `wanted` for the whole-set comparison.
+pub(crate) fn evaluate_prerequisite(
+    served: &RecordSets,
+    prerequisite: &Prerequisite,
+    wanted: &mut RecordSets,
+) -> Result<(), NsupdateError> {
+    let name = prerequisite.name();
+
+    match prerequisite {
+        Prerequisite::NameExists { .. } => {
+            if !served.keys().any(|(owner, _)| owner == name) {
+                return Err(NsupdateError::NxDomain(format!(
+                    "owner '{name}' does not exist"
+                )));
             }
-            Prerequisite::NameAbsent { .. } => {
-                if served.keys().any(|(owner, _)| owner == name) {
-                    return Err(NsupdateError::YxDomain(format!("owner '{name}' exists")));
-                }
+        }
+        Prerequisite::NameAbsent { .. } => {
+            if served.keys().any(|(owner, _)| owner == name) {
+                return Err(NsupdateError::YxDomain(format!("owner '{name}' exists")));
             }
-            Prerequisite::RecordSetExists { record_type, .. } => {
-                if !served.contains_key(&(name.clone(), *record_type)) {
-                    return Err(NsupdateError::NxRrset(format!(
-                        "no {record_type} records at {name}"
-                    )));
-                }
+        }
+        Prerequisite::RecordSetExists { record_type, .. } => {
+            if !served.contains_key(&(name.clone(), *record_type)) {
+                return Err(NsupdateError::NxRrset(format!(
+                    "no {record_type} records at {name}"
+                )));
             }
-            Prerequisite::RecordSetAbsent { record_type, .. } => {
-                if served.contains_key(&(name.clone(), *record_type)) {
-                    return Err(NsupdateError::YxRrset(format!(
-                        "{record_type} records at {name} exist"
-                    )));
-                }
+        }
+        Prerequisite::RecordSetAbsent { record_type, .. } => {
+            if served.contains_key(&(name.clone(), *record_type)) {
+                return Err(NsupdateError::YxRrset(format!(
+                    "{record_type} records at {name} exist"
+                )));
             }
-            Prerequisite::RecordValueMatches {
-                record_type, rdata, ..
-            } => {
-                wanted
-                    .entry((name.clone(), *record_type))
-                    .or_default()
-                    .insert(rdata.clone());
-            }
+        }
+        Prerequisite::RecordValueMatches {
+            record_type, rdata, ..
+        } => {
+            wanted
+                .entry((name.clone(), *record_type))
+                .or_default()
+                .insert(rdata.clone());
         }
     }
 
+    Ok(())
+}
+
+/// Compare every value-dependent prerequisite set whole with the served one
+/// (RFC 2136, Section 3.2.3), once the section has been read.
+pub(crate) fn evaluate_record_set_prerequisites(
+    served: &RecordSets,
+    wanted: &RecordSets,
+) -> Result<(), NsupdateError> {
     for (key, values) in wanted {
-        if served.get(&key) != Some(&values) {
+        if served.get(key) != Some(values) {
             return Err(NsupdateError::NxRrset(format!(
                 "{} records at {} are not the ones the prerequisite names",
                 key.1, key.0,
             )));
         }
     }
+
     Ok(())
 }
 
@@ -132,26 +144,32 @@ fn zone_record_sets(
 ) -> Result<RecordSets, ServiceError> {
     let mut sets = RecordSets::new();
     let mut insert = |name: OwnerName, record_type: Rtype, rdata: Rdata| {
-        let rdata = rdata.to_canonical(record_type).map_err(|e| {
-            ServiceError::internal_with_source("failed to decode stored prerequisite content", e)
+        let rdata = rdata.to_canonical(record_type).map_err(|error| {
+            ServiceError::internal_with_source(
+                "failed to decode stored prerequisite content",
+                error,
+            )
         })?;
         sets.entry((name, record_type)).or_default().insert(rdata);
+
         Ok::<(), ServiceError>(())
     };
-    let soa = zone
-        .soa_rdata(zone.serial)
-        .map_err(|e| ServiceError::internal_with_source("failed to encode the zone's SOA", e))?;
+    let soa = zone.soa_rdata(zone.serial).map_err(|error| {
+        ServiceError::internal_with_source("failed to encode the zone's SOA", error)
+    })?;
     insert(OwnerName::apex(), Rtype::SOA, soa)?;
+
     for record in records {
-        let rdata = record
-            .to_rdata()
-            .map_err(|e| ServiceError::internal_with_source("failed to encode a zone record", e))?;
+        let rdata = record.to_rdata().map_err(|error| {
+            ServiceError::internal_with_source("failed to encode a zone record", error)
+        })?;
         insert(
             record.name.clone(),
             Rtype::from_int(record.record_type.wire_type()),
             rdata,
         )?;
     }
+
     for record in derived {
         insert(
             record.name.clone(),
@@ -159,5 +177,6 @@ fn zone_record_sets(
             record.rdata.clone(),
         )?;
     }
+
     Ok(sets)
 }

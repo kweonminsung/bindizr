@@ -26,35 +26,41 @@ pub(crate) fn exchange_request(
     let client = key
         .map(|key| {
             ClientTransaction::request(key.to_tsig_key()?, &mut request, Time48::now())
-                .map_err(|e| e.to_string())
+                .map_err(|error| error.to_string())
         })
         .transpose()?;
     let response = send(&request.finish())?;
-    let response = Message::from_octets(response).map_err(|e| e.to_string())?;
+    let response = Message::from_octets(response).map_err(|error| error.to_string())?;
+
     if response.header().id() != query_id || !response.header().qr() {
         return Err("DNS response does not match the request".to_string());
     }
+
     if let Some(client) = client {
         // The verifier strips TSIG; retain it for the test's wire assertions.
         client
             .answer(&mut response.clone(), Time48::now())
-            .map_err(|e| format!("DNS response signature did not verify: {e}"))?;
+            .map_err(|error| format!("DNS response signature did not verify: {error}"))?;
     }
+
     Ok(response)
 }
 
 /// Send one datagram and return the response bytes.
 pub(crate) fn exchange_udp(port: u16, message: &[u8]) -> Result<Vec<u8>, String> {
-    let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
+    let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|error| error.to_string())?;
     socket
         .set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     socket
         .send_to(message, ("127.0.0.1", port))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     let mut response = vec![0u8; usize::from(u16::MAX)];
-    let (len, _) = socket.recv_from(&mut response).map_err(|e| e.to_string())?;
+    let (len, _) = socket
+        .recv_from(&mut response)
+        .map_err(|error| error.to_string())?;
     response.truncate(len);
+
     Ok(response)
 }
 
@@ -80,13 +86,14 @@ fn exchange<S: Read + Write>(stream: &mut S, message: &[u8]) -> Result<Vec<u8>, 
 
 /// Connect to a TCP listener with bounded reads and writes.
 pub(crate) fn connect_tcp(port: u16) -> Result<TcpStream, String> {
-    let stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let stream = TcpStream::connect(("127.0.0.1", port)).map_err(|error| error.to_string())?;
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     stream
         .set_write_timeout(Some(Duration::from_secs(10)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
+
     Ok(stream)
 }
 
@@ -97,27 +104,33 @@ pub(crate) fn connect_tls(
 ) -> Result<StreamOwned<ClientConnection, TcpStream>, String> {
     let tcp = connect_tcp(port)?;
     let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    let session = ClientConnection::new(Arc::new(client), server).map_err(|e| e.to_string())?;
+    let session =
+        ClientConnection::new(Arc::new(client), server).map_err(|error| error.to_string())?;
     Ok(StreamOwned::new(session, tcp))
 }
 
 /// Write a DNS message with its two-byte TCP length prefix.
 pub(crate) fn write_frame<W: Write>(stream: &mut W, message: &[u8]) -> Result<(), String> {
-    let length = u16::try_from(message.len()).map_err(|e| e.to_string())?;
+    let length = u16::try_from(message.len()).map_err(|error| error.to_string())?;
     let mut frame = length.to_be_bytes().to_vec();
     frame.extend_from_slice(message);
-    stream.write_all(&frame).map_err(|e| e.to_string())
+    stream.write_all(&frame).map_err(|error| error.to_string())
 }
 
 /// Read the next length-prefixed DNS frame.
 pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
     let mut len = [0u8; 2];
+
     match stream.read_exact(&mut len) {
         Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(error.to_string()),
     }
+
     let mut frame = vec![0u8; usize::from(u16::from_be_bytes(len))];
-    stream.read_exact(&mut frame).map_err(|e| e.to_string())?;
+    stream
+        .read_exact(&mut frame)
+        .map_err(|error| error.to_string())?;
+
     Ok(Some(frame))
 }

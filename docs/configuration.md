@@ -77,7 +77,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [dns]
 # listen_addr = "0.0.0.0"
-# listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
+# listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host, 853 to TLS (RFC 7858)
 # catalog_zone_name = "catalog.bindizr"  # RFC 9432 catalog zone the secondaries follow; fixed while running
 # scheduler_interval_secs = 3600         # Seconds between signing, rollover, and pruning passes
 # tcp_idle_timeout_secs = 30             # TCP/TLS idle seconds; advertised via edns-tcp-keepalive (RFC 7828)
@@ -92,7 +92,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # tsig_required = true          # false admits unsigned updates from anyone
 
 [dns.tls]                     # Set both files to serve zone transfers over TLS (XoT, RFC 9103)
-# listen_port = 853           # On dns.listen_addr
+# listen_port = 853           # On dns.listen_addr; never 53 (RFC 7858, Section 3.1)
 # cert_file = "/etc/bindizr/tls/xot.crt"
 # key_file = "/etc/bindizr/tls/xot.key"
 
@@ -113,7 +113,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
 # zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
-# audit_max_days = 365          # Audit log entries: who changed a token, role, key, secondary, or policy
+# audit_max_days = 365          # Audit log entries: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace
@@ -136,7 +136,11 @@ certificate bundles of RDS and Cloud SQL are. The URL's own parameters
 needs its verifying `mode` beside it rather than in the URL.
 
 Use distinct catalog names for independent Bindizr deployments feeding the
-same secondary. Configure [TLS](http-api/index.md#tls) before exposing the API
+same secondary. A catalog name must fit within 216 wire octets, including the
+root label: the generated 32-character member ID and `zones` labels need the
+remaining 39 octets of DNS's 255-octet name limit. Startup checks the effective
+name after environment overrides; presentation escapes do not add wire octets.
+Configure [TLS](http-api/index.md#tls) before exposing the API
 off-host. Signing settings are managed per zone through [DNSSEC](dnssec/index.md).
 
 ## Environment variables

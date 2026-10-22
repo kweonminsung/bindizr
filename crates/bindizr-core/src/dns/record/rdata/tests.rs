@@ -18,6 +18,7 @@ fn encode_a_rdata_returns_address_octets() {
 fn encode_aaaa_rdata_returns_address_octets() {
     // RFC 3596, Section 2.2.
     let encoded = EncodedRdata::from_columns(&RecordType::Aaaa, "2001:db8::1", None).unwrap();
+
     assert_eq!(encoded.record_type, 28);
     assert_eq!(
         encoded.rdata.as_bytes(),
@@ -30,6 +31,7 @@ fn encode_aaaa_rdata_returns_address_octets() {
 fn encode_cname_rdata_returns_target_name() {
     let encoded =
         EncodedRdata::from_columns(&RecordType::Cname, "mail.example.com.", None).unwrap();
+
     assert_eq!(encoded.record_type, 5);
     assert_eq!(
         encoded.rdata.as_bytes(),
@@ -43,10 +45,12 @@ fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
     // RFC 8659, Section 4.1.
     let encoded =
         EncodedRdata::from_columns(&RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
+
     assert_eq!(encoded.record_type, 257);
     let mut expected = vec![0u8, 5];
     expected.extend_from_slice(b"issue");
     expected.extend_from_slice(b"letsencrypt.org");
+
     assert_eq!(encoded.rdata.as_bytes(), expected);
 }
 
@@ -73,6 +77,7 @@ fn encode_tlsa_rdata_returns_usage_selector_matching_and_data() {
 fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
     // RFC 4034, Section 5.1.
     let encoded = EncodedRdata::from_columns(&RecordType::Ds, "34217 13 2 4B9B6B07", None).unwrap();
+
     assert_eq!(encoded.record_type, 43);
     assert_eq!(
         encoded.rdata.as_bytes(),
@@ -86,9 +91,11 @@ fn encode_mx_rdata_returns_preference_and_exchange() {
     // RFC 1035, Section 3.3.9; the preference lives in the priority column.
     let encoded =
         EncodedRdata::from_columns(&RecordType::Mx, "mail.example.com", Some(10)).unwrap();
+
     assert_eq!(encoded.record_type, 15);
     let mut expected = vec![0, 10];
     expected.extend(encode_name("mail.example.com").unwrap());
+
     assert_eq!(encoded.rdata.as_bytes(), expected);
 }
 
@@ -98,9 +105,11 @@ fn encode_srv_rdata_returns_priority_weight_port_and_target() {
     // RFC 2782; the value stores `weight port target`, priority its column.
     let encoded =
         EncodedRdata::from_columns(&RecordType::Srv, "5 5060 sip.example.com", Some(1)).unwrap();
+
     assert_eq!(encoded.record_type, 33);
     let mut expected = vec![0, 1, 0, 5, 0x13, 0xc4];
     expected.extend(encode_name("sip.example.com").unwrap());
+
     assert_eq!(encoded.rdata.as_bytes(), expected);
 }
 
@@ -151,6 +160,7 @@ fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
     let start = message.len();
     message.extend_from_slice(&[0, 10, 0xc0, 0, 0xaa, 0xbb]);
     let rdata = Rdata::parse_canonical(Rtype::MX, &message, start, 4).unwrap();
+
     assert_eq!(rdata.as_bytes(), b"\0\x0a\x02ns\x07example\x03com\0");
     assert!(Rdata::parse_canonical(Rtype::MX, &message, start, 3).is_err());
     assert!(matches!(
@@ -167,6 +177,7 @@ fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
     let message = [0xc0, 0, 0xff, 0xee];
     let unknown = Rtype::from_int(65280);
     let rdata = Rdata::parse_canonical(unknown, &message, 0, 3).unwrap();
+
     assert_eq!(rdata.as_bytes(), &message[..3]);
     assert!(
         Rdata::parse_canonical(unknown, &message, 2, 0)
@@ -175,6 +186,7 @@ fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
             .is_empty()
     );
     let txt = Rdata::new(vec![2, b'A', 0xff]).unwrap();
+
     assert_eq!(txt.to_canonical(Rtype::TXT).unwrap(), txt);
 }
 
@@ -189,11 +201,13 @@ fn canonical_rdata_observes_dnssec_name_case_rules() {
         .unwrap()
         .to_canonical(Rtype::RRSIG)
         .unwrap();
+
     assert_eq!(&rdata.as_bytes()[18..], b"\x02ns\x07example\x03com\0A\xff");
     assert_eq!(&rdata.as_bytes()[..18], &sig[..18]);
     let mut nsec = name.to_vec();
     nsec.extend_from_slice(&[0, 1, 0x40]);
     let rdata = Rdata::new(nsec).unwrap();
+
     assert_eq!(rdata.to_canonical(Rtype::NSEC).unwrap(), rdata);
 }
 
@@ -201,6 +215,7 @@ fn canonical_rdata_observes_dnssec_name_case_rules() {
 #[test]
 fn canonical_rdata_rejects_malformed_known_types() {
     let bytes = [192, 0, 2, 1, 0];
+
     assert!(Rdata::parse_canonical(Rtype::A, &bytes, 0, 3).is_err());
     assert!(matches!(
         Rdata::parse_canonical(Rtype::A, &bytes, 0, 5),

@@ -5,16 +5,15 @@ use domain::{
     base::{
         iana::{Class, Rtype},
         name::ParsedName,
-        rdata::{ComposeRecordData, ParseRecordData},
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, AllRecordData, Mx, Soa, Srv},
+    rdata::{A, Aaaa, Mx, Soa, Srv},
 };
 use thiserror::Error;
 
 use super::{ParseUpdateError, to_presentation_name};
 use crate::{
-    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue},
+    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue},
     model::record::RecordType,
 };
 
@@ -51,10 +50,12 @@ impl UpdateRecord {
         if !matches!(self.class, Class::IN | Class::ANY | Class::NONE) {
             return Err(ValidateUpdateShapeError::Class { class: self.class });
         }
+
         // RFC 6895, Section 3.1 reserves 128-255 for query/meta types;
         // OPT is the meta type outside that range. ANY is permitted only
         // as the CLASS ANY whole-name delete (RFC 2136, Section 2.5.3).
         let delete_name = self.class == Class::ANY && self.record_type == Rtype::ANY;
+
         if !delete_name && matches!(self.record_type.to_int(), 0 | 41 | 128..=255 | 65535) {
             return Err(ValidateUpdateShapeError::RecordType {
                 record_type: self.record_type,
@@ -63,6 +64,7 @@ impl UpdateRecord {
         if self.class != Class::IN && self.ttl != 0 {
             return Err(ValidateUpdateShapeError::NonzeroTtl);
         }
+
         match self.class {
             Class::ANY if !self.rdata.is_empty() => Err(ValidateUpdateShapeError::AnyClassRdata),
             _ => Ok(()),
@@ -71,6 +73,10 @@ impl UpdateRecord {
 
     /// Decode prerequisite RDATA for comparison, resolving names in `message`.
     pub fn to_rdata(&self, message: &[u8]) -> Result<Rdata, ParseUpdateError> {
+        if self.record_type == Rtype::WKS {
+            WksRecordValue::from_rdata(&self.rdata)?;
+        }
+
         Ok(Rdata::parse_canonical(
             self.record_type,
             message,
@@ -127,24 +133,11 @@ impl UpdateRecord {
         message: &[u8],
     ) -> Result<(RecordType, String, Option<i32>), ParseUpdateError> {
         match RecordType::try_from(self.record_type)? {
-            record_type @ RecordType::Unknown(_) => {
-                // Known legacy types may contain compressed names. Unknown types
-                // remain opaque (RFC 3597, Sections 3 and 4).
-                let data = self.parse_rdata(message, &record_type.to_text(), |parser| {
-                    AllRecordData::<_, ParsedName<_>>::parse_rdata(self.record_type, parser)
-                        .ok()
-                        .flatten()
-                })?;
-                let mut bytes = Vec::new();
-                let Ok(()) = data.compose_rdata(&mut bytes);
-                Ok((
-                    record_type,
-                    format!(r"\# {} {}", bytes.len(), hex::encode_upper(bytes))
-                        .trim_end()
-                        .to_string(),
-                    None,
-                ))
-            }
+            RecordType::Wks => Ok((
+                RecordType::Wks,
+                WksRecordValue::from_rdata(&self.rdata)?.canonical(),
+                None,
+            )),
             RecordType::A => {
                 let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
                 Ok((RecordType::A, data.addr().to_string(), None))
@@ -157,14 +150,15 @@ impl UpdateRecord {
             | RecordType::Dname
             | RecordType::Ns
             | RecordType::Ptr) => {
-                let name = self.parse_rdata(message, &record_type.to_text(), |parser| {
+                let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
                 let value =
-                    to_presentation_name(&name).map_err(|e| ParseUpdateError::RdataName {
-                        record_type: record_type.to_text(),
-                        source: Box::new(e),
+                    to_presentation_name(&name).map_err(|error| ParseUpdateError::RdataName {
+                        record_type: record_type.as_str().to_owned(),
+                        source: Box::new(error),
                     })?;
+
                 Ok((record_type, value, None))
             }
             RecordType::Txt => {
@@ -189,10 +183,10 @@ impl UpdateRecord {
                 let data = self.parse_rdata(message, "NAPTR", |parser| {
                     domain::rdata::Naptr::parse(parser).ok()
                 })?;
-                let replacement = to_presentation_name(data.replacement()).map_err(|e| {
+                let replacement = to_presentation_name(data.replacement()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "NAPTR".to_string(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     }
                 })?;
                 let value = NaptrRecordValue::from_wire(
@@ -204,6 +198,7 @@ impl UpdateRecord {
                     &replacement,
                 )?
                 .canonical();
+
                 Ok((RecordType::Naptr, value, None))
             }
             RecordType::Sshfp => {
@@ -220,22 +215,24 @@ impl UpdateRecord {
             }
             RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = to_presentation_name(data.exchange()).map_err(|e| {
+                let host = to_presentation_name(data.exchange()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "MX".to_string(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     }
                 })?;
+
                 Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
             }
             RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = to_presentation_name(data.target()).map_err(|e| {
+                let target = to_presentation_name(data.target()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "SRV".to_string(),
-                        source: Box::new(e),
+                        source: Box::new(error),
                     }
                 })?;
+
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((
                     RecordType::Srv,

@@ -1,6 +1,6 @@
 # Packaging Bindizr
 
-This document provides instructions for building Debian and RPM packages for Bindizr from the source code using `fpm`.
+This document provides instructions for building Debian, RPM, and Alpine packages for Bindizr from the source code using `fpm`.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ First, you need to install Ruby and some development tools.
 *   **On Debian/Ubuntu:**
     ```bash
     sudo apt update
-    sudo apt install -y ruby ruby-dev build-essential
+    sudo apt install -y ruby ruby-dev build-essential rpm
     ```
 *   **On Fedora/CentOS/RHEL:**
     ```bash
@@ -62,7 +62,9 @@ covers the toolchain and the dynamic build in more detail.
 
 ## Building Packages
 
-A helper script is provided to build both `.deb` and `.rpm` packages.
+A helper script is provided to build the `.deb`, `.rpm`, and `.apk` packages.
+The `.apk` is built by `abuild` in an `alpine` container, so Docker must be
+running; fpm's own Alpine output is refused by apk-tools 3.
 
 ```bash
 # Clone the repository
@@ -87,9 +89,10 @@ $ TARGET=aarch64-unknown-linux-musl ./packaging/scripts/build_packages.sh
 
 `build_image.sh` builds the image for amd64 and arm64 as one manifest and
 pushes it. The argument is the tag (default: the Cargo version); `IMAGE`
-overrides the repository. The release workflows push the same image when a
-tag is released, and the Publish Image workflow pushes it under a tag you
-enter, so this is for a push from your own machine.
+overrides the repository. It also points `latest` at the image it pushes,
+whatever the tag. The release workflows push the same image when a tag is
+released, and the Publish Image workflow pushes it under a tag you enter, so
+this is for a push from your own machine.
 
 ```bash
 $ ./packaging/scripts/build_image.sh
@@ -106,4 +109,14 @@ $ sudo dpkg -i bindizr_*.deb
 ### Fedora/CentOS/RHEL
 
 ```bash
-$ sudo rpm -i bindizr_*.rpm
+$ sudo rpm -i bindizr-*.rpm
+```
+
+### Alpine
+
+The `.apk` carries an OpenRC script instead of the systemd unit and is signed
+with a key made for that build alone, so `apk` has to be told to trust it:
+
+```bash
+$ sudo apk add --allow-untrusted bindizr-*.apk
+```

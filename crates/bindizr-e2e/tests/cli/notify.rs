@@ -6,12 +6,15 @@ use crate::common::TestApp;
 async fn notify_supports_all_zones_and_one_zone_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-notify.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
+
     // A secondary answers NOTAUTH for a zone the catalog has not reached yet.
     app.assert_dns_matches_api(None).await;
 
     // No zone name means all zones.
     let all = app.run_cli_success(&["zone", "notify"], None).await;
+
     assert!(
         all.contains("NOTIFY sent successfully for all zones"),
         "{all}"
@@ -20,10 +23,30 @@ async fn notify_supports_all_zones_and_one_zone_via_cli() {
     let one = app
         .run_cli_success(&["zone", "notify", &zone_name, "--bump-serial"], None)
         .await;
+
     assert!(
         one.contains(&format!(
             "NOTIFY sent successfully for zone: {zone_name} (serial bumped)"
         )),
         "{one}"
+    );
+
+    let catalog = app
+        .run_cli_success(
+            &[
+                "zone",
+                "notify",
+                "catalog.bindizr",
+                "--bump-serial",
+                "-o",
+                "json",
+            ],
+            None,
+        )
+        .await;
+    let response: serde_json::Value = serde_json::from_str(&catalog).unwrap();
+    assert_eq!(
+        response["message"],
+        "NOTIFY sent successfully for zone: catalog.bindizr"
     );
 }

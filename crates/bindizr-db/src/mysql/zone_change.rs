@@ -11,10 +11,12 @@ pub(crate) async fn create_many_tx(
 ) -> Result<(), DatabaseError> {
     const CHUNK: usize = 500;
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
     for chunk in changes.chunks(CHUNK) {
         let mut sql = String::from(
             "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
         );
+
         for i in 0..chunk.len() {
             if i > 0 {
                 sql.push(',');
@@ -24,22 +26,25 @@ pub(crate) async fn create_many_tx(
 
         let now = Utc::now();
         let mut query = sqlx::query(AssertSqlSafe(sql));
-        for c in chunk {
+
+        for change in chunk {
             query = query
-                .bind(c.zone_id)
-                .bind(c.serial)
-                .bind(c.operation)
-                .bind(&c.record_name)
-                .bind(c.record_type.clone())
-                .bind(c.record_value.clone())
-                .bind(c.record_rdata.clone())
-                .bind(c.record_ttl)
-                .bind(c.record_priority)
-                .bind(c.derived)
+                .bind(change.zone_id)
+                .bind(change.serial)
+                .bind(change.operation)
+                .bind(&change.record_name)
+                .bind(change.record_type.clone())
+                .bind(change.record_value.clone())
+                .bind(change.record_rdata.clone())
+                .bind(change.record_ttl)
+                .bind(change.record_priority)
+                .bind(change.derived)
                 .bind(now);
         }
+
         query.execute(&mut **tx).await?;
     }
+
     Ok(())
 }
 

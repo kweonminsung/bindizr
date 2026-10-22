@@ -186,6 +186,7 @@ impl From<&[TransferWithZone]> for TransferSummaryResponse {
     /// Count each zone by its latest transfer among `transfers`.
     fn from(transfers: &[TransferWithZone]) -> Self {
         let mut latest: HashMap<&str, &TransferWithZone> = HashMap::new();
+
         for transfer in transfers {
             let entry = latest
                 .entry(transfer.zone_name.as_str())
@@ -194,6 +195,7 @@ impl From<&[TransferWithZone]> for TransferSummaryResponse {
                 *entry = transfer;
             }
         }
+
         let mut summary = TransferSummaryResponse {
             zones: latest.len() as u64,
             axfr: 0,
@@ -202,6 +204,7 @@ impl From<&[TransferWithZone]> for TransferSummaryResponse {
             refused: 0,
             failed: 0,
         };
+
         for transfer in latest.values() {
             match (transfer.result, transfer.kind, transfer.incremental) {
                 (TransferResult::Refused, _, _) => summary.refused += 1,
@@ -211,6 +214,7 @@ impl From<&[TransferWithZone]> for TransferSummaryResponse {
                 (TransferResult::Ok, TransferKind::Ixfr, false) => summary.ixfr_full += 1,
             }
         }
+
         summary
     }
 }
@@ -235,6 +239,14 @@ pub struct SecondaryTransferSummaryResponse {
     #[schema(example = "ns2.example.net:53")]
     pub address: String,
     pub summary: TransferSummaryResponse,
+}
+
+/// Catalog diagnostics for the enabled secondaries, before and after NOTIFY.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+pub struct CheckSecondariesResponse {
+    pub secondaries: Vec<SecondaryStatusResponse>,
+    pub notifies: Vec<CheckNotifyResponse>,
+    pub transfers: Vec<SecondaryTransferSummaryResponse>,
 }
 
 /// Query parameters of a secondary's transfer listing.

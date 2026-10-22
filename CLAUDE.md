@@ -97,7 +97,18 @@ dirs are git-ignored.
 | `bindizr-external-dns` | ExternalDNS webhook adapter forwarding to `/external-dns` over HTTP; no DNS logic or independent state. |
 | `bindizr-e2e` | API/CLI/DNS end-to-end tests. Its binary targets let `env!("CARGO_BIN_EXE_…")` resolve inside the test package. |
 
+Within the service, `zone` owns single-zone and bulk imports, while `record`
+owns record validation and journaled row mutations. Common change provenance
+lives in core's `model::change` and service's `change`, shared by callers,
+audit logs, and zone versions. The service-root `scheduler` owns periodic work
+and its lifecycle; zone history owns retention transactions, and DNSSEC owns
+signing and key-maintenance transactions. Keep the existing scheduler settings
+and metrics names independent of these internal module paths.
+
 ### Modules and backend dispatch
+
+Name modules for the responsibility they own (`sqlite::path`, benchmark `dig`
+and `docker`), not `utils` or `helpers`.
 
 Use modules as namespaces, not unit structs with associated functions
 (`zone::create`, not `ZoneService::create`; `api::zone::routes`, not `ZoneApi`).
@@ -135,6 +146,12 @@ with the started-at gauge; status reads it for uptime. Components return values
 from constructors, with `stop` where draining is needed, never `initialize` into
 globals. Bind the daemon socket before building other state to reject a second
 daemon early, then `serve` it.
+
+Listeners own their accepted requests and connections. Shutdown stops new reads
+and waits for accepted mutations, then stops and joins the scheduler before
+flushing NOTIFY. A transfer may be interrupted for the secondary to retry;
+canceling it must not leave a partially written frame usable by another reply.
+The daemon's overall drain timeout bounds this wait.
 
 Only two production process globals remain: the `log` facade (`Logger::init`,
 `set_level`, its level/format atomics) and stdout/stderr write state behind
@@ -179,6 +196,11 @@ code, including core and db, propagates errors to its caller.
 - **A use case has one home.** When two front ends answer the same question,
   the assembly lives in one place both reach (`zone::get_status`,
   shared by the HTTP API and the daemon socket), not once per transport.
+  Manual NOTIFY returns its completed `MessageResponse`; a front end does not
+  infer which serials advanced from the requested option. Daemon installation
+  checks own local listener diagnostics; `secondary::check_enabled` owns the
+  enabled secondaries' SOA, NOTIFY, and transfer-summary report. It remains
+  distinct from the named-secondary check, which also accepts disabled targets.
 - **A body is the service's to read.** The front end parses only what
   reaches it outside a body — a path or query parameter, a flag, the peer it
   authenticates into a `Caller` — and hands a body over whole, as its
@@ -231,8 +253,8 @@ than returning anything.
   API without authentication (`Caller::unauthenticated_api()`), and an
   unsigned DNS request the ACL or the configuration admits
   (`Caller::unsigned_dns()`) are the only global callers. A key that only signs outbound NOTIFY still names a role,
-  an empty one when it needs nothing. Change attribution stays the
-  credential (`ChangeActor::Token`/`TsigKey`), never the role.
+  an empty one when it needs nothing. `ChangeActor` identifies the
+  credential (`Token`/`TsigKey`), never the role.
 - **A grant is a zone scope, a set of actions, and record constraints.**
   `RoleZoneScope` is `All` (row `zone_id` NULL, covering zones created later)
   or `Zone(ZoneId)`. `Action` is a closed enum spelled `<resource>:<action>`:
@@ -306,22 +328,22 @@ than returning anything.
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
   `record:read`, an add `record:create`, a delete `record:delete`, against the
-  signing key's role; an add that replaces a CNAME or DNAME needs
+  signing key's role; an add that replaces a CNAME, DNAME, or matching WKS record needs
   `record:delete` too, one that moves the record set's TTL `record:update`.
   An SOA addition needs `zone:update`, since it replaces zone metadata.
   A TSIG-signed transfer needs `zone:transfer` (the
   catalog zone an `All` grant); an unsigned one is the ACL's alone.
 
-### Change attribution
+### Change origin
 
 Keep the request path, actor, and access scope separate. `ChangeSource` names
 `Api`, `Socket`, `Nsupdate`, or `System`, never an authentication method or a
 permission level. `changed_by` is an optional `ChangeActor` carrying a credential
 kind and its name (`Token` or `TsigKey`), snapshotted without a foreign key.
 Socket commands, unauthenticated API requests, unsigned updates, and background
-work have no named token/key actor. The trusted entry point supplies attribution;
+work have no named token/key actor. The trusted entry point supplies the origin;
 request payloads cannot choose it. `CallerScope` decides permissions independently
-of the `ChangeAttribution` stored with a version. Persist an actor in the scalar
+of the `ChangeOrigin` stored with a version. Persist an actor in the scalar
 columns `changed_by_kind` and `changed_by_name`; both are populated or both null.
 Decode them into `Option<ChangeActor>` at the row boundary. The API's object shape
 does not dictate a JSON database column.
@@ -405,9 +427,12 @@ locked state, validate the proposed state, apply, commit, then notify and report
 success. Management operations re-authenticate before locking their own rows, as
 [Transactions and locking](#transactions-and-locking) specifies. Reads keep their own transaction contract.
 
-- Parse each supplied value once and carry the result forward. State-dependent
-  defaults and cross-field checks use the locked rows. Preserve authorization and
-  error precedence: an input parse may keep its `Result` until authorization permits
+- Normalize supplied fields once at their owning boundary and carry the result
+  forward. Independent validation, canonical comparison, and wire encoding may
+  read that normalized representation; this does not require another cached
+  request type. State-dependent defaults and cross-field checks use the locked
+  rows. Preserve authorization and error precedence: an input parse may keep its
+  `Result` until authorization permits
   reporting it. Never fill missing update fields from an unlocked pre-read.
 - Build the actual candidate or change set. Do not repack an update as a creation
   request or add dummy fields to reuse validation. Share field validators and real
@@ -441,6 +466,29 @@ stage. Keep orchestration explicit; do not introduce a callback-based execution
 framework. Input sources and protocols retain their distinct entry contracts.
 
 ## DNS contracts
+
+Use existing wire and parsed types across DNS functions. Reading the same message
+for a different protocol responsibility is allowed; `Message::from_octets` only
+checks the header length. Add cached or intermediate representations only when
+measured cost or a concrete invariant justifies their maintenance. TSIG request
+verification returns authentication results; a separate encoder composes errors.
+Service `notify` and `probe` flows select secondaries, load keys/history and
+assemble reports; `dns_client` owns network exchanges and response validation.
+Service flows choose configured targets and timeouts, including parent DS probes;
+network clients receive those inputs explicitly. SOA/XFR response metrics and
+transfer history reflect the final encoding/transmission outcome; handlers do
+not count a refusal or success before work that could turn it into a failure.
+Encoding failures remain typed outcomes until the handler
+chooses its fallback response. UPDATE metrics describe request processing and
+the committed mutation outcome: a failed response write cannot undo a commit.
+Its TSIG error fallback is selected before that processing outcome is counted.
+
+Listing services validate an explicit page limit before querying. An omitted
+limit remains unbounded; HTTP supplies its default of 50, while the daemon
+socket supplies none. An explicit limit is 1 through 1000. Collection paging and
+response metadata only apply the validated window; they do not validate input or
+choose another default. A documented use-case default, such as the secondary
+transfer log's 1000, is resolved by that service entry point.
 
 ### Names and record values
 
@@ -490,13 +538,18 @@ question in the DNS server once the catalog check has passed, where a name
 the type refuses is answered NOTAUTH like a missing zone (an nsupdate too,
 RFC 2136, Section 3.1.2), since no stored zone can match it. A name inside a request body
 or a listing filter is parsed by the service function that takes that
-payload, since the payload is its argument. Everything beneath —
+payload, since the payload is its argument. Catalog members are already parsed
+by the core; the service applies the shared `zone::validate_name` policy to all
+members before fetching or importing any member zone. Everything beneath —
 the `_tx` lookups, the NOTIFY and probe clients, the zone-file parser, the
 db layer, which binds a `ZoneName` as it binds an `OwnerName` — takes
 `&ZoneName` and parses nothing again, and `dns.catalog_zone_name` is a
 `ZoneName` from the moment the configuration loads. The transfer log's
 `save_refused` and `save_failed` alone take the question's text, because a
 refusal may come before any parse: a name no zone can carry leaves no row.
+
+The effective catalog configuration must also leave wire space for generated
+member owners; validate that bound after environment overrides.
 
 Record values own their encoding: the SOA RNAME uses `SoaMailbox`, TXT uses
 `TxtRecordValue`, and CAA uses `CaaRecordValue`. CAA property values are octets,
@@ -506,10 +559,37 @@ arbitrary octets and preserve segment boundaries. CAA tags and the names in
 SRV, DNAME and NAPTR RDATA retain their original case; comparison and DNSSEC
 canonicalization operate on separate wire data. Management creation of CAA
 permits flags 0 or 128; UPDATE and import preserve unknown flag bits.
+The root name `.` is a valid NS, CNAME, PTR, or DNAME target and SOA MNAME
+(RFC 2181, Section 11);
+it remains distinct from a literal dot label (`\.`).
 
-Ordinary record types without a typed editor use `TYPE<number>` and RFC 3597
-`\# <length> <hex>` values, including zero-length RDATA. Meta/query types and
-SOA or signer-managed DNSSEC types remain outside ordinary record writes.
+The managed zone name still cannot be the root. NS, MX, PTR and SRV targets
+cannot require CNAME or DNAME redirection within the zone (RFC 6672, Section 5.1).
+A DNAME redirects only proper descendants; one stored below a non-apex NS
+delegation is occluded and does not govern the parent zone's target validation
+(RFC 5936, Section 3.5).
+
+User records use a closed list of implemented types, including WKS. Unsupported
+ordinary types are rejected across API, CLI, imports, and DNS UPDATE; there is
+no opaque fallback or option to skip unsupported import records. Rejecting
+unknown types is an explicit product exception to RFC 3597, Section 3's
+transparent-handling requirement. A failed import leaves the zone unchanged. Numeric TYPE aliases
+resolve only to implemented types. An UPDATE record of such a type is FORMERR
+(RFC 2136, Section 3.4.1.2); a prerequisite may name any type and is evaluated
+against the served zone. SOA and signer-managed DNSSEC data retain
+their separate contracts.
+
+Explicit UPDATE additions and deletions naming signer-managed DNSSEC types are
+refused by policy (REFUSED), after wire-shape and RDATA validation (FORMERR).
+Prerequisites may read these types; a name-wide delete changes user records and
+lets the signer rebuild the derived view.
+
+`WksRecordValue` owns IPv4/protocol/port parsing and bitmap encoding. WKS UPDATE
+replacement compares its address and protocol (RFC 2136, Section 1.1.5). Ports
+are numeric and protocols are numeric or TCP/UDP. Empty service lists encode no
+bitmap bytes. As BIND's `fromwire_in_wks` does, reject trailing zero bitmap octets
+before storing them, so the zone remains loadable by BIND. This is an
+interoperability restriction, not an RFC 1035 requirement.
 
 `NaptrRecordValue` validates flags after decoding presentation escapes:
 empty or ASCII letters and digits (RFC 3403, Section 4.1). The application
@@ -519,7 +599,7 @@ defines flag meanings; DNS record validation does not restrict them to a list.
 
 Except for the explicit deviations below, the DNS plane implements the RFCs it
 cites (1034/1035, 1982, 1995, 1996,
-2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8945, 9103, 9432, 9619), and a
+2136, 2181, 3225, 4034/4035, 5155, 5936, 6672, 6891, 7766, 8767, 8945, 9103, 9432, 9619), and a
 requirement one states is met as written: a MUST is implemented, a SHOULD
 is followed unless the reason not to stands in a comment beside the code,
 and a MAY is a design choice recorded here or in the docs. Interoperability
@@ -531,9 +611,85 @@ key and its registered address both pass (RFC 9103, Section 7.5), though
 the plain listener takes either alone. Code that meets a requirement cites
 the section (`RFC 9103, Section 7.1`), so a reader can check the text.
 
-QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch
-(RFC 9619, Section 4). The shared format check preserves TSIG and EDNS for
-readable queries; an unreadable question receives a header-only response.
+These SHOULD recommendations have explicit exceptions. TSIG verification does
+not retain the latest Time Signed per key (RFC 8945, Section 5.2.3), because
+UDP and concurrent stream requests can arrive out of order; every request
+still passes MAC and Time Signed/Fudge checks. A truncated MAC, the
+`hmac-sha1-96` Section 6 asks implementations to accept, is refused with
+BADTRUNC under the local policy Section 7 permits: every key carries a
+full-length MAC. Delegation NS and DS TTLs are recommended to match (RFC
+4035, Section 2.4), but independently edited or imported sets retain the
+operator's explicit per-type TTLs. Each RRset still has one TTL. Names are
+lowercased when they enter, rather than preserved as RFC 1035, Section 2.3.3
+and RFC 4343, Section 4 prefer, so that one name has one spelling in rows,
+grants and exports; comparison stays case-insensitive either way.
+
+Generated TSIG secrets match the HMAC output length (RFC 8945, Section 8).
+Imported secrets retain a 16-byte minimum regardless of algorithm, preserving
+the secret already shared with an external DNS server. The recommendation to
+choose an output-sized secret applies to new keys; shorter imports are not
+treated as malformed HMAC keys.
+
+A NOTIFY transaction ends on any matching response, whatever its RCODE, or on
+an ICMP port-unreachable error (RFC 1996, Sections 3.6 and 4.8); only silence
+is retransmitted, `dns.notify.retries` times at `dns.notify.timeout_secs`
+intervals, the operational parameters Section 3.6 leaves to the operator. A
+retransmission repeats the same message on the same socket, so a late reply
+to an earlier copy still ends it. An unsigned or unverifiable reply to a
+signed NOTIFY is logged and ignored while the request waits (RFC 8945,
+Section 5.4). An all-zones round notifies zones concurrently, so one silent
+secondary cannot hold later zones behind its ACK/retry wait (Section 4.3).
+The queue continues collecting writes during outstanding transactions;
+intentional batching, measured from enqueue, is bounded by SOA REFRESH. The
+16-zone preparation limit excludes ACK waits, and active transactions share
+a connected UDP socket per target with no ID reuse on that socket. These
+scheduling rules do not promise real-time NOTIFY sends under OS or resolver failure.
+Signed NOTIFY requests whose final size exceeds 512 octets include EDNS.
+An import's AXFR client honors the server's keepalive timeout: zero closes
+after the outstanding transfer, and a positive value bounds idle reuse
+(RFC 7828, Section 3.2.2).
+
+Serials wrap past 4294967295 to 1, never 0 (RFC 2136, Section 7.11), on
+every automatic increment, the catalog serial included; a serial a request
+states is taken as given. A zone's SOA REFRESH, RETRY, EXPIRE and MINIMUM
+accept zero (RFC 1035, Section 3.3.13 sets no floor; MINIMUM 0 turns negative
+caching off), though `dns.zone_defaults` may not default a new zone to it.
+A CDS/CDNSKEY pair is published for a pre-published SEP key at once, before
+the DNSKEY propagation interval RFC 7583, Section 3.3.1 waits out: the old DS
+stays beside it (double-DS, RFC 6781, Section 4.1.2), so every validator keeps
+a chain, and promotion still waits for both the interval and the parent's DS.
+
+Generated DS/CDS use SHA-256, recommended by the IANA DS registry under
+RFC 9904. Storing a user-supplied DS is not digest generation; do not apply
+the signer's algorithm policy to raw DS input or parent-DS matching.
+DNSSEC signs DS at an authoritative delegation, never data below an earlier cut.
+
+Stored RDATA must fit a signed EDNS transfer message with worst-case question,
+owner and key names, including OPT and TCP keepalive overhead. TLS requests
+with an unsupported opcode receive REFUSED and, when EDNS was requested, EDE 21
+(RFC 9103, Section 7.8); plain TCP/UDP return NOTIMP (RFC 8906, Section 8.1.4).
+Classify these opcodes from the header without requiring a QUERY-shaped body.
+
+Ordinary zone data is IN-only. An otherwise valid IN QUERY carrying an ordinary
+RR of another class in Answer, Authority, or Additional receives FORMERR before
+handler dispatch, including foreign-class IXFR SOAs (RFC 1995, Section 3).
+OPT and TSIG retain their own CLASS semantics; UPDATE's ANY/NONE controls remain
+in the UPDATE handler. Question-class refusals, EDNS version errors, and TSIG
+validation retain their existing response codes and authentication behavior.
+
+QUERY messages with QDCOUNT greater than one receive FORMERR before dispatch,
+including requests with an unsupported EDNS version (RFC 9619, Section 4).
+QDCOUNT 0 is not itself prohibited by that RFC; unsupported empty QUERY requests
+default to FORMERR, while a readable unsupported EDNS version receives BADVERS.
+Single-question requests also receive BADVERS for an unsupported EDNS version.
+Preserve readable EDNS and authenticate TSIG before these refusals; TSIG
+failures retain their specific errors. A message with an unreadable body receives
+a header-only response; a header shorter than twelve octets receives no reply.
+A transfer error about a zone this server holds (REFUSED, SERVFAIL) keeps AA set,
+as RFC 5936, Section 2.2.1 recommends when in doubt; NOTAUTH, FORMERR and NOTIMP clear it.
+The TSIG algorithm name is matched case-insensitively (RFC 1035, Section
+2.3.3): the digest takes its canonical form (RFC 8945, Section 4.3.3), so
+`HMAC-SHA256.` on the wire names the same key.
 
 `dns.listen_addr` accepts a specific local IP or a wildcard (`0.0.0.0`, `::`).
 UDP replies use the query's local destination IP and the listener's bound port
@@ -547,22 +703,55 @@ These defaults also apply when their sections are absent. The selected database
 still needs its location. Parse the file and fill defaults, then apply environment
 overrides before validation; explicit invalid values remain errors.
 
+DNS response budgets use `ResponseLimit`. Ingress reads EDNS from `ParsedQuery`
+or `QueryMetadata` and chooses UDP/EDNS or stream; UPDATE and outbound UDP
+clients use `QueryMetadata` when they need only response metadata, not QUERY
+validation. Authentication and service operations return outcomes without
+encoding packets or taking response budgets. Response encoders use the request's
+budget, from their existing parsed input or an explicit `ResponseLimit` when
+they receive raw bytes. A builder holding `ParsedQuery` accepts no second size
+override. Final encoders check compressed bytes after OPT and TSIG; UDP send
+checks the same budget before I/O. Transfer builders may estimate size while
+splitting stream messages, but that estimate never replaces the final check.
+UDP may rebuild a TC response or compact TSIG validation error; stream overflow
+is an error. Commit a TSIG chain only when its completed message fits. Outbound
+UDP clients discard responses larger than their advertisement within the
+original deadline. Fixed name, RDATA, and TCP frame widths remain checked by
+their owning types; signing and field composition primitives do not take
+transport budgets.
+
 EDNS parsing and response encoding are shared by QUERY, UPDATE, and TSIG errors.
 A readable OPT retains its version and DO bit even when rejected with BADVERS;
 response OPTs copy DO and clear reserved flags (RFC 3225, Section 3).
 BADTIME responses sign the complete response, including OPT, and the six-byte
-server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3).
+server time in Other Data (RFC 8945, Sections 4.3 and 5.2.3). If a TSIG
+validation error exceeds the UDP limit, omit its question and re-sign the
+same error, retaining its time fields, OPT and full MAC. Stream errors keep
+their question (RFC 5936, Section 2.2.2).
+Every TSIG MAC includes the original Other Len and Other Data octets. Requests
+require Error zero; requests and responses both require the final Additional
+TSIG to carry CLASS ANY and TTL zero (RFC 8945, Sections 4.2 and 5.2).
 Bindizr requires full-length TSIG MACs. Key, MAC, and time validation precede
 this policy; authenticated truncations receive signed BADTRUNC, while invalid MACs
 receive unsigned BADSIG (RFC 8945, Sections 5.2 and 5.3.2).
+TSIG outside Additional, or other malformed TSIG placement, receives unsigned
+FORMERR before UPDATE authority or permission checks (RFC 8945, Section 5.2).
 
 An UPDATE reaches the service with its zone class and complete wire sections.
 The parser checks the zone count and SOA type; the service decides authority
 over the name and class. A class other than IN is NOTAUTH, even when its name
 matches a stored zone (RFC 2136, Section 3.1.1). After locating the authoritative
-zone, the service checks every update record's owner and wire shape before
-selecting operations (RFC 2136, Section 3.4.1). Even a
-delete that will be ignored must pass that prescan. Checked owners remain
+zone, the service keeps RFC 2136, Section 3's order: an unsigned request
+`dns.nsupdate.tsig_required` refuses is refused there, after NOTAUTH and before
+anything is read; then the prerequisites are decoded and evaluated one by one
+in wire order (Section 3.2.5, once the read grant each needs is checked), the
+value-dependent sets compared whole after the section (Section 3.2.3); then
+every update record's owner, wire shape and type are checked before the grants
+on it and before any operation is selected (Sections 3.3 and 3.4.1). Even a
+delete that will be ignored must pass that prescan. An unsupported EDNS version
+is BADVERS ahead of every policy refusal (RFC 6891, Section 6.1.3). The response
+echoes the zone section alone, as BIND, Knot and PowerDNS do: an explicit
+exception to RFC 2136, Section 3.8. Checked owners remain
 `OwnerName` values through authorization and execution, without re-parsing.
 Prerequisites compare with the complete served zone at that transaction's
 serial: the SOA, ordinary records, and signer-generated DNSSEC records.
@@ -710,7 +899,7 @@ configuration, or transaction state; assembly of equal-standing inputs into a
 payload/standard type/map; and operations whose receiver would be a slice,
 `Option`, or foreign type. A payload's methods only reshape representations, not
 apply service policy. Page limits/metadata live in `pagination`, probe classification
-in `dns_client::probe::build_secondary_status`, and imported SOA preparation in
+in `probe::build_secondary_status`, and imported SOA preparation in
 `prepare_zone` beside the import flow. Methods use their module's error;
 `ServiceError` appears on methods only in service-owned structs and the caller gate.
 
@@ -787,8 +976,11 @@ variant, not `io::Error::new`.
   context absent from the cause (UNIQUE to `zone_conflict`, `internal_with_source`);
   never flatten a source into a formatted message.
 - `ServiceError` variants match `ErrorCode`s and carry the wire message.
-  `Internal` and `DnssecSigningFailed` retain their cause as a source. `code()`
-  and `Display` supply the payload; front ends map codes to HTTP status, CLI exit
+  `Internal`, `DnssecSigningFailed`, and `DnssecDsUnverified` retain their cause as
+  a source. Operational failures mapped to `InvalidInput`, such as an inbound
+  AXFR failure, retain theirs too; plain input or policy classifications need
+  no artificial cause. `code()` and `Display` supply the payload; front ends map
+  codes to HTTP status, CLI exit
   code, or DNS RCODE. The service knows no HTTP. Other layers use their own errors
   (`DaemonError`, `DnsError`, `CliError`) with `From` conversions.
 - Box `domain` errors in `dns::LibraryError`; their types vary and callers do
@@ -1116,6 +1308,59 @@ Use one name per concept across crates. Do not wrap a function just to rename or
 reorder its arguments. A short entry point with an independent contract follows
 [Function boundaries](#function-boundaries).
 
+### Local variables and parameters
+
+Use the same vocabulary for parameters, local bindings, loop items, and closure
+arguments. Name the value's role, omitting an operation or entity already clear
+from the function and module: `request`, not `create_zone_request` inside
+`zone::create`. HTTP extractors retain their transport roles: `JsonBody(body)`,
+`Query(query)` for query options, `Query(filter)` for a domain filter, and
+`Query(page)` for pagination alone.
+
+Use `request`, `response`, `message`, `config`, `connection`, `buffer`, and `error`,
+not `req`, `res`, `resp`, `msg`, `cfg`, `conn`, `buf`, `e`, or `err`.
+When several values coexist, qualify their roles (`parse_error`, `rollback_error`,
+`request_bytes`, `response_message`) rather than numbering them. `source` remains
+appropriate for a cause being attached to an error. A loop or closure over records
+uses `record`; one over changes uses `change`. Short conventional indices (`i`,
+`j`) and protocol names (`id`, `ip`, `ttl`, `rcode`, `rdata`) are meaningful.
+The state names `cx`, `dns_cx`, `socket_cx`, and `task_cx` keep their explicit
+contracts. SQL aliases and serialized fields retain their own spelling.
+Clippy's `disallowed-names` configuration rejects the abbreviated bindings above.
+Python benchmarks use `config` and `context`; a latency accumulator is `recorder`,
+one DNS item is `record`, and a sampled resource report is `resource_usage`.
+For NOTIFY, use `send` for the operation and its errors, `handle` for the returned
+value that waits for the result and keeps the target socket alive, and `task` or
+`worker` for spawned work. Carry concept renames through error variants, tests,
+comments, and documentation.
+
+### Control flow and calls
+
+Within functions, separate changes of responsibility with one blank line:
+input checks and authorization, preparation, I/O or mutation, cleanup, and result
+construction. Keep dependent statements together rather than separating every
+declaration or assertion. Do not add blank lines merely to separate `match` arms;
+keep phase boundaries inside each arm. Expand compressed branches inside macros too. Add a
+short comment where a state transition, lifetime boundary, or protocol decision
+needs a reason; preserve existing RFC rationale.
+
+Use `?` to propagate failures; use `let ... else` to bind a successful pattern
+when every other case returns, breaks, or continues. Use `if let` for one
+conditional action and `if` for a boolean decision. Keep `match` when its arms
+classify outcomes or produce different values. Preserve validation order, lazy
+evaluation, error causes, and ownership when simplifying a branch.
+CLI's table-versus-serialized-output branch uses
+`if output == OutputFormat::Table { ... } else { ... }` throughout; a dispatch
+that handles each format separately keeps `match`.
+
+Pass a function or method directly to an iterator or `Option`/`Result` combinator
+when the closure only forwards its argument (`map(RecordRow::from)`,
+`filter_map(Result::ok)`). Keep closures that capture context, select fields,
+adjust references, or add error context. Keep sequential orchestration and
+ordinary conditions explicit; do not turn them into arrays of steps or callbacks.
+The workspace's `manual_let_else` and `redundant_closure_for_method_calls` Clippy
+lints enforce the mechanical part of these rules.
+
 ### Construction names
 
 Choose a name from the responsibility, not the return type's implementation:
@@ -1179,7 +1424,7 @@ grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
 
 An enum with a stored, wire, or textual representation has two spellings and no more.
 The storage and API form uses `as_str() -> &str` when it can borrow its text, or
-`to_text() -> String` when variant data must be formatted (`TYPE<number>`).
+`to_text() -> String` when variant data must be formatted.
 Serde produces the same form; each such enum's `spells_itself_once` test holds
 them together. Rows and metric labels use that form. `Display` is the presentation
 form, the one a person reads in a table cell or a message, and every front end
@@ -1344,7 +1589,7 @@ never bare `pub`):
 1. **Default**: a private `fn` inside the test file that uses it.
 2. **Same crate, across modules**: export from the owning module's
    `#[cfg(test)]` tests module with at most `pub(crate)` (e.g.
-   `nsupdate/parser/tests.rs::minimal_update_with_ztype`). No crate-wide
+   `nsupdate/parser/tests.rs::build_minimal_update_with_ztype`). No crate-wide
    `test_util` grab-bag modules.
 3. **e2e suite**: `e2e.rs` is the one harness binary — a `tests/*.rs` sibling
    would be built as a second one — and it declares a flat group per surface a

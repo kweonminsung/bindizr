@@ -8,7 +8,7 @@ use crate::{
 
 /// Insert the transfer, or replace the row for its client address and zone.
 pub(crate) async fn upsert(pool: &Pool<Postgres>, transfer: Transfer) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     sqlx::query(
         r#"
@@ -34,7 +34,7 @@ pub(crate) async fn upsert(pool: &Pool<Postgres>, transfer: Transfer) -> Result<
     .bind(transfer.serial)
     .bind(transfer.served_at)
     .bind(&transfer.error)
-    .execute(&mut *conn)
+    .execute(&mut *connection)
     .await?;
 
     Ok(())
@@ -45,7 +45,7 @@ pub(crate) async fn list_by_client_addr_with_zone(
     pool: &Pool<Postgres>,
     client_addr: &str,
 ) -> Result<Vec<TransferWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let transfers = sqlx::query_as::<_, TransferWithZone>(
         r#"
@@ -57,7 +57,7 @@ pub(crate) async fn list_by_client_addr_with_zone(
         "#,
     )
     .bind(client_addr)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(transfers)
@@ -69,7 +69,7 @@ pub(crate) async fn get_by_client_addr_and_zone_name_with_zone(
     client_addr: &str,
     zone_name: &ZoneName,
 ) -> Result<Option<TransferWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let transfer = sqlx::query_as::<_, TransferWithZone>(
         r#"
@@ -81,7 +81,7 @@ pub(crate) async fn get_by_client_addr_and_zone_name_with_zone(
     )
     .bind(client_addr)
     .bind(zone_name)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(transfer)

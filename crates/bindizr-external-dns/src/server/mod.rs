@@ -1,5 +1,7 @@
 //! The webhook listener (external-dns side) and the health/metrics listener.
 
+mod media_type;
+
 use std::{sync::Arc, time::Instant};
 
 use axum::{
@@ -83,8 +85,8 @@ impl IntoResponse for UpstreamError {
                 format!("bindizr responded with status {}", status),
             )
                 .into_response(),
-            err @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_)) => {
-                (StatusCode::BAD_GATEWAY, err.to_string()).into_response()
+            error @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_)) => {
+                (StatusCode::BAD_GATEWAY, error.to_string()).into_response()
             }
             UpstreamError::NoManageableNames => {
                 (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
@@ -99,21 +101,11 @@ fn build_json_response<T: serde::Serialize>(value: &T) -> Response {
         // external-dns compares the negotiation Content-Type byte-for-byte,
         // so success responses carry the exact media-type string.
         Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, MEDIA_TYPE)], body).into_response(),
-        Err(e) => (
+        Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to encode response: {}", e),
+            format!("failed to encode response: {}", error),
         )
             .into_response(),
-    }
-}
-
-/// Check whether the client accepts the supported webhook media type.
-fn is_accept_supported(headers: &HeaderMap) -> bool {
-    match headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
-        // external-dns always sends the exact media type; tolerate wildcard
-        // and absent Accept for manual diagnostics.
-        Some(accept) => accept.contains(MEDIA_TYPE) || accept.contains("*/*"),
-        None => true,
     }
 }
 
@@ -167,12 +159,13 @@ async fn track_webhook_metrics(
             .with_label_values(&[endpoint])
             .observe(started.elapsed().as_secs_f64());
     }
+
     response
 }
 
 /// `GET /` — negotiation: return the DomainFilter of manageable names.
 async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !is_accept_supported(&headers) {
+    if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
             format!("supported media type: {}", MEDIA_TYPE),
@@ -188,13 +181,13 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
             log::info!("event=negotiate domains={}", domains.len());
             build_json_response(&DomainFilter { include: domains })
         }
-        Err(e) => e.into_response(),
+        Err(error) => error.into_response(),
     }
 }
 
 /// `GET /records` — all managed records as grouped endpoints.
 async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !is_accept_supported(&headers) {
+    if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
             format!("supported media type: {}", MEDIA_TYPE),
@@ -208,7 +201,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
             log::info!("event=records_get endpoints={}", endpoints.len());
             build_json_response(&endpoints)
         }
-        Err(e) => e.into_response(),
+        Err(error) => error.into_response(),
     }
 }
 
@@ -218,10 +211,10 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
 
     let changes: Changes = match serde_json::from_str(&body) {
         Ok(changes) => changes,
-        Err(e) => {
+        Err(error) => {
             return (
                 StatusCode::BAD_REQUEST,
-                format!("invalid changes body: {}", e),
+                format!("invalid changes body: {}", error),
             )
                 .into_response();
         }
@@ -235,6 +228,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         }
     };
 
+    // Keep the whole plan in one upstream mutation so partial application cannot escape.
     match state.upstream.apply_changes(&bindizr_changes).await {
         Ok(()) => {
             log::info!(
@@ -246,7 +240,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
             );
             StatusCode::NO_CONTENT.into_response()
         }
-        Err(e) => e.into_response(),
+        Err(error) => error.into_response(),
     }
 }
 
@@ -255,10 +249,10 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
 async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> Response {
     let endpoints: Vec<Endpoint> = match serde_json::from_str(&body) {
         Ok(endpoints) => endpoints,
-        Err(e) => {
+        Err(error) => {
             return (
                 StatusCode::BAD_REQUEST,
-                format!("invalid endpoints body: {}", e),
+                format!("invalid endpoints body: {}", error),
             )
                 .into_response();
         }
@@ -287,7 +281,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
             log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
             build_json_response(&build_adjusted_endpoints(endpoints, adjusted))
         }
-        Err(e) => e.into_response(),
+        Err(error) => error.into_response(),
     }
 }
 
@@ -301,8 +295,8 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
             format!("bindizr answered {}: {}", status, message),
         )
             .into_response(),
-        Err(err @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_))) => {
-            (StatusCode::SERVICE_UNAVAILABLE, err.to_string()).into_response()
+        Err(error @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_))) => {
+            (StatusCode::SERVICE_UNAVAILABLE, error.to_string()).into_response()
         }
         Err(UpstreamError::NoManageableNames) => {
             (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()

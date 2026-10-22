@@ -36,13 +36,14 @@ fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> Str
 /// changed entry stacks its removed records above its added ones.
 fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
     let mut out = String::new();
+
     for entry in entries {
         let sign = entry.change.to_string();
-        let rtype = entry.record_type.to_text();
+        let rtype = entry.record_type.as_str();
 
         // Show only the delta: records removed, then records added.
         let rendered =
-            |value: &RecordDiffValueResponse| (value.ttl.to_string(), display_rdata(value, &rtype));
+            |value: &RecordDiffValueResponse| (value.ttl.to_string(), display_rdata(value, rtype));
         let from_lines: Vec<(String, String)> = entry.from.iter().map(rendered).collect();
         let to_lines: Vec<(String, String)> = entry.to.iter().map(rendered).collect();
         let mut lines: Vec<(String, String)> = from_lines
@@ -76,6 +77,7 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
             out.push('\n');
         }
     }
+
     out
 }
 
@@ -90,6 +92,7 @@ pub(crate) fn render_change_preview(diff: &RecordDiffResponse) -> String {
         color::red(&format!("{}{}", RecordChange::Removed, summary.removed)),
         color::yellow(&format!("{}{}", RecordChange::Changed, summary.changed))
     ));
+
     out
 }
 
@@ -112,5 +115,6 @@ pub(crate) fn render_version_diff(response: &DiffZoneVersionsResponse) -> String
         RecordChange::Changed,
         summary.changed
     ));
+
     out
 }

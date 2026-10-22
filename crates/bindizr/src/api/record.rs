@@ -59,10 +59,10 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_records(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut query): Query<RecordFilter>,
+    Query(mut filter): Query<RecordFilter>,
 ) -> Result<Response, ApiError> {
-    query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = record::list_by_filter_with_zone(&cx, &caller, query).await?;
+    filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = record::list_by_filter_with_zone(&cx, &caller, filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -118,12 +118,14 @@ pub(crate) async fn create_record(
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
     let response = record::create(&cx, &caller, &body).await?;
+
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {
         StatusCode::CREATED
     } else {
         StatusCode::OK
     };
+
     Ok((status, Json(response)).into_response())
 }
 
@@ -182,10 +184,10 @@ pub(crate) async fn delete_record(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
-    Query(preview): Query<DryRunQuery>,
+    Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
     let response =
-        record::delete(&cx, &caller, params.id, Run::from_dry_run(preview.dry_run)).await?;
+        record::delete(&cx, &caller, params.id, Run::from_dry_run(query.dry_run)).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -248,5 +250,6 @@ pub(crate) async fn create_bulk_records(
     } else {
         StatusCode::OK
     };
+
     Ok((status, Json(response)).into_response())
 }

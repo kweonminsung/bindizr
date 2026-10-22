@@ -3,6 +3,7 @@
 
 pub mod audit;
 pub mod authorization;
+mod change;
 pub mod context;
 pub mod dns_client;
 pub mod dnssec;
@@ -10,12 +11,15 @@ pub mod dnssec_policy;
 pub mod error;
 pub mod external_dns;
 pub(crate) mod grant_pattern;
+pub mod metrics;
 pub mod notify;
 pub mod nsupdate;
 mod pagination;
 pub mod permission;
+pub mod probe;
 pub mod record;
 pub mod role;
+pub mod scheduler;
 pub mod secondary;
 pub(crate) mod serial;
 pub(crate) mod text;

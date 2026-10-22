@@ -46,6 +46,7 @@ pub async fn export_keys(
             LockLevel::Shared,
         )
         .await?;
+
         Ok(ExportDnssecKeysResponse {
             zone_name: zone.name.as_str().to_string(),
             keys: keys
@@ -67,6 +68,7 @@ pub async fn export_keys(
         })
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to export DNSSEC keys").await
 }
 
@@ -81,6 +83,7 @@ pub async fn import_keys(
     if request.keys.is_empty() {
         return Err(ServiceError::invalid_input("no key pair to import"));
     }
+
     let policy_name = normalize_policy_name(
         request
             .policy_name
@@ -93,12 +96,14 @@ pub async fn import_keys(
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
+
         if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
             .await?
             .is_empty()
         {
             return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
         }
+
         let policy =
             bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
                 .await?
@@ -106,6 +111,7 @@ pub async fn import_keys(
 
         let now = Utc::now();
         let mut keys: Vec<DnssecKey> = Vec::with_capacity(request.keys.len());
+
         for pair in &request.keys {
             let key = DnssecKey::import(
                 &zone,
@@ -115,6 +121,7 @@ pub async fn import_keys(
                 now,
             )
             .map_err(ServiceError::invalid_input)?;
+
             if key.algorithm != policy.algorithm {
                 return Err(ServiceError::invalid_input(format!(
                     "key algorithm {} does not match policy '{}' ({}); import it under a \
@@ -122,6 +129,7 @@ pub async fn import_keys(
                     key.algorithm, policy.name, policy.algorithm
                 )));
             }
+
             // Distinct keys may share a tag (RFC 4034, Appendix B); only
             // a byte-identical public key is a duplicate.
             if keys.iter().any(|other| other.public_key == key.public_key) {
@@ -130,8 +138,10 @@ pub async fn import_keys(
                     key.key_tag
                 )));
             }
+
             keys.push(key);
         }
+
         // The timing placed each key in its rollover; every role the
         // layout names still needs the active key that signs for it.
         let has_active = |role: DnssecKeyRole| {
@@ -143,6 +153,7 @@ pub async fn import_keys(
         } else {
             has_active(DnssecKeyRole::Csk)
         };
+
         if !signed {
             return Err(ServiceError::invalid_input(format!(
                 "key set does not match policy '{}' ({}); import an active pair for \
@@ -155,10 +166,13 @@ pub async fn import_keys(
 
         // Store the validated key set and its first signed view together.
         bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
+
         let mut stored = Vec::with_capacity(keys.len());
+
         for key in keys {
             stored.push(bindizr_db::dnssec_key::create_tx(&mut tx, key).await?);
         }
+
         let signed = SignedZone {
             zone: Zone {
                 dnssec_policy_id: Some(policy.id),
@@ -172,7 +186,7 @@ pub async fn import_keys(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -185,11 +199,13 @@ pub async fn import_keys(
             new_serial,
         )
         .await?;
+
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
     let (response, changed) =
         transaction::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
+
     if changed {
         cx.metrics().track_serial_bumps(1);
     }
@@ -200,5 +216,6 @@ pub async fn import_keys(
     if changed {
         crate::notify::notify_after_update(cx, zone_name).await;
     }
+
     Ok(response)
 }

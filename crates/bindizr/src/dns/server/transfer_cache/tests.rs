@@ -88,6 +88,7 @@ fn transfer_cache_releases_entry_when_zone_exceeds_budget() {
 #[test]
 fn transfer_cache_evicts_previous_zone_to_fit_new_zone() {
     let mut entries = Entries::default();
+
     // A cap on zones would have held both, at 120% of the budget.
     entries.store(
         ZoneId::from(1),
@@ -131,6 +132,7 @@ fn transfer_cache_evicts_least_recently_used_zone() {
         zone_content(MAX_RECORDS * 2 / 5),
         MAX_RECORDS,
     );
+
     assert!(
         entries
             .find(ZoneId::from(1), ZoneVersionId::from(1))
@@ -201,6 +203,7 @@ fn transfer_cache_evicts_existing_zones_when_budget_is_lowered() {
     let mut entries = Entries::default();
     entries.store(ZoneId::from(1), ZoneVersionId::from(1), zone_content(3), 10);
     entries.store(ZoneId::from(2), ZoneVersionId::from(1), zone_content(3), 10);
+
     assert_eq!(entries.records, 6);
 
     assert_eq!(entries.trim_to(3), 1);

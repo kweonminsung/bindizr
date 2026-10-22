@@ -14,16 +14,13 @@ use thiserror::Error;
 
 use crate::{
     dns::{
-        message::Edns,
+        message::{DNS_HEADER_LEN, Edns},
         name::labels_to_presentation,
         record::{ParseRdataError, ParseRecordValueError},
-        tsig::is_mac_size_in_bounds,
+        tsig::is_request_tsig_valid,
     },
     model::record::ParseRecordTypeError,
 };
-
-/// Fixed length of a DNS message header, in bytes.
-const DNS_HEADER_LEN: usize = 12;
 
 /// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +91,7 @@ impl UpdateRequest {
         }
 
         let counts = message.header_counts();
+
         if counts.qdcount() != 1 {
             return Err(ParseUpdateError::InvalidHeader);
         }
@@ -116,16 +114,19 @@ impl UpdateRequest {
         if Rtype::from_int(ztype) != Rtype::SOA {
             return Err(ParseUpdateError::InvalidZoneSection);
         }
+
         let zone_name = to_presentation_name(&zone)?;
 
         // UPDATE uses the answer count for prerequisites and the authority count
         // for changes; these are not ordinary response sections.
         let mut prerequisites = Vec::with_capacity(usize::from(counts.ancount()));
+
         for _ in 0..counts.ancount() {
             prerequisites.push(parse_record(&mut parser, data)?);
         }
 
         let mut updates = Vec::with_capacity(usize::from(counts.nscount()));
+
         for _ in 0..counts.nscount() {
             updates.push(parse_record(&mut parser, data)?);
         }
@@ -160,6 +161,12 @@ fn parse_record(
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidRecord)?,
     );
+
+    // RFC 8945, Section 5.2 confines TSIG to the Additional section.
+    if record_type == Rtype::TSIG {
+        return Err(ParseUpdateError::InvalidTsig);
+    }
+
     let class = Class::from_int(
         parser
             .parse_u16_be()
@@ -256,7 +263,8 @@ fn parse_tsig_record(
         .parse_parser(rdlen)
         .map_err(|_| ParseUpdateError::InvalidTsig)?;
     let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseUpdateError::InvalidTsig)?;
-    if rdata.remaining() != 0 || !is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().len()) {
+
+    if rdata.remaining() != 0 || !is_request_tsig_valid(&tsig) {
         return Err(ParseUpdateError::InvalidTsig);
     }
 

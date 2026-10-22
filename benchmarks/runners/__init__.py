@@ -1,1 +1,1 @@
-"""Benchmark runners. Each module exposes `async def run(adapter, cfg, ctx) -> dict`."""
+"""Benchmark runners. Each module exposes `async def run(adapter, config, context) -> dict`."""

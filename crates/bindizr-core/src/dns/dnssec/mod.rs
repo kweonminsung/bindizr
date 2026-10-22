@@ -1,6 +1,4 @@
-//! DNSSEC signing: key material, the RDATA it implies, and the signed view a
-//! zone's records produce. Pure computation; when to sign and what to do with
-//! the result is the service's.
+//! Compute DNSSEC keys, RDATA and signed zone views; the service owns scheduling and storage.
 
 mod key;
 mod key_file;
@@ -41,7 +39,7 @@ pub(crate) type WireRecord<D> = domain::base::Record<WireName, D>;
 
 /// A typed name's wire bytes into the domain form.
 fn to_wire_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {
-    Name::from_octets(wire).map_err(|e| EncodeWireNameError::Octets(Box::new(e)))
+    Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)))
 }
 
 impl ZoneName {

@@ -24,7 +24,10 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{ChangeActor, VersionFilter, ZoneVersion},
+    model::{
+        change::ChangeActor,
+        zone_version::{VersionFilter, ZoneVersion},
+    },
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -37,6 +40,7 @@ pub(crate) async fn upsert_tx(
         .as_ref()
         .map(ChangeActor::as_columns)
         .unzip();
+
     sqlx::query(
         r#"
         INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
@@ -107,7 +111,7 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<Sqlite>,
     zone_id: ZoneId,
     filter: VersionFilter,
-    limit: u32,
+    limit: Option<u32>,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     let predicate = match filter {
@@ -124,11 +128,13 @@ pub(crate) async fn list_by_filter(
         "#
     )))
     .bind(zone_id);
+
     if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
+
     query
-        .bind(i64::from(limit))
+        .bind(limit.map(i64::from).unwrap_or(i64::MAX))
         .bind(i64::try_from(offset).unwrap_or(i64::MAX))
         .fetch_all(pool)
         .await
@@ -149,10 +155,13 @@ pub(crate) async fn count_by_filter(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{predicate}"
     )))
     .bind(zone_id);
+
     if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
+
     let count: i64 = query.fetch_one(pool).await?;
+
     Ok(count as u64)
 }
 

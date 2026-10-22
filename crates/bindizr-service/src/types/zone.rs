@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::{model::zone::Zone, notify::NotifyTarget};
+use crate::model::zone::Zone;
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
@@ -63,7 +63,7 @@ pub struct ZoneResponse {
     pub mname: String,
     #[schema(example = "admin@example.com")]
     pub rname: String,
-    #[schema(example = 3600, value_type = i32)]
+    #[schema(example = 3600, inline)]
     pub default_ttl: Ttl,
     #[schema(inline)]
     pub serial: Serial,
@@ -73,7 +73,7 @@ pub struct ZoneResponse {
     pub retry: SoaInterval,
     #[schema(example = 604800, value_type = i32)]
     pub expire: SoaInterval,
-    #[schema(example = 3600, value_type = i32)]
+    #[schema(example = 3600, inline)]
     pub minimum_ttl: Ttl,
     /// Whether the DNS plane serves the zone. A disabled one stays editable but
     /// leaves the catalog and answers no transfer, so secondaries drop it.
@@ -114,8 +114,8 @@ pub struct CreateZoneRequest {
     pub rname: String,
     /// Record TTL the zone hands out when a record names none; defaults to
     /// `dns.zone_defaults.ttl`.
-    #[schema(example = 3600)]
-    pub default_ttl: Option<i32>,
+    #[schema(example = 3600, minimum = 60, maximum = 604800)]
+    pub default_ttl: Option<i64>,
     /// Starting serial, auto-generated if not provided. Accepts 0-4294967295, advances modulo 2^32, and can only be set at creation.
     #[schema(inline)]
     pub serial: Option<Serial>,
@@ -125,13 +125,13 @@ pub struct CreateZoneRequest {
     pub retry: Option<i32>,
     #[schema(example = 604800)]
     pub expire: Option<i32>,
-    #[schema(example = 3600)]
-    pub minimum_ttl: Option<i32>,
+    #[schema(schema_with = build_minimum_ttl_schema)]
+    pub minimum_ttl: Option<i64>,
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
     pub description: Option<String>,
-    /// Start the zone with an apex NS record naming the SOA MNAME; false
-    /// leaves every NS record to the caller.
+    /// Start with apex NS naming MNAME; false creates a disabled zone.
+    /// Add apex NS before explicitly enabling a zone created without it.
     #[serde(default = "default_apex_ns")]
     #[schema(default = true, example = true)]
     pub apex_ns: bool,
@@ -139,6 +139,19 @@ pub struct CreateZoneRequest {
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
+}
+
+/// Describe the nullable nonnegative SOA minimum accepted by zone writes.
+fn build_minimum_ttl_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, SchemaType, Type};
+
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Integer, Type::Null]))
+        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
+        .minimum(Some(0_u64))
+        .maximum(Some(u64::from(Ttl::MAX.as_secs())))
+        .examples([3600])
+        .into()
 }
 
 /// Create the apex NS record when a request leaves the choice out.
@@ -165,14 +178,17 @@ pub struct ZoneFilter {
     #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
     /// Filter by default TTL.
-    #[schema(example = 3600)]
-    pub default_ttl: Option<i32>,
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
+    #[param(value_type = Option<Ttl>, inline)]
+    pub default_ttl: Option<i64>,
     /// Filter by minimum default TTL.
-    #[schema(example = 300)]
-    pub min_default_ttl: Option<i32>,
+    #[schema(example = 300, value_type = Option<Ttl>, inline)]
+    #[param(value_type = Option<Ttl>, inline)]
+    pub min_default_ttl: Option<i64>,
     /// Filter by maximum default TTL.
-    #[schema(example = 86400)]
-    pub max_default_ttl: Option<i32>,
+    #[schema(example = 86400, value_type = Option<Ttl>, inline)]
+    #[param(value_type = Option<Ttl>, inline)]
+    pub max_default_ttl: Option<i64>,
     /// Filter by serial.
     #[schema(inline)]
     #[param(inline)]
@@ -230,8 +246,8 @@ pub struct UpdateZoneRequest {
     #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 3600)]
-    pub default_ttl: Option<i32>,
+    #[schema(example = 3600, minimum = 60, maximum = 604800)]
+    pub default_ttl: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
@@ -242,8 +258,8 @@ pub struct UpdateZoneRequest {
     #[schema(example = 604800)]
     pub expire: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 3600)]
-    pub minimum_ttl: Option<i32>,
+    #[schema(schema_with = build_minimum_ttl_schema)]
+    pub minimum_ttl: Option<i64>,
     /// `false` stops the DNS plane serving the zone without deleting it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = true)]
@@ -256,19 +272,6 @@ pub struct UpdateZoneRequest {
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
-}
-
-/// The success message every front end serves for a manual NOTIFY.
-pub fn build_notify_message(target: NotifyTarget<'_>, serial: NotifySerial) -> String {
-    let scope = match target {
-        NotifyTarget::Zone(zone_name) => format!("zone: {}", zone_name),
-        NotifyTarget::All => "all zones".to_string(),
-    };
-    let suffix = match serial {
-        NotifySerial::Bump => " (serial bumped)",
-        NotifySerial::Keep => "",
-    };
-    format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 
 /// What deleting a zone takes with it. A dry run reports the counts and

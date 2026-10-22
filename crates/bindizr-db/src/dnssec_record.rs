@@ -21,9 +21,9 @@ pub struct DnssecRecordFilter {
     pub name: Option<String>,
     /// The wire record type number, the column form.
     pub record_type: Option<i32>,
-    pub ttl: Option<i32>,
-    pub min_ttl: Option<i32>,
-    pub max_ttl: Option<i32>,
+    pub ttl: Option<i64>,
+    pub min_ttl: Option<i64>,
+    pub max_ttl: Option<i64>,
     /// Partial match against the zone name, the owner name, and the FQDN —
     /// the name forms a derived row shares with a user one.
     pub search: Option<String>,
@@ -45,6 +45,24 @@ pub async fn create_many_tx(
         TransactionKind::MySql(tx) => mysql::dnssec_record::create_many_tx(tx, records).await,
         TransactionKind::Postgres(tx) => postgres::dnssec_record::create_many_tx(tx, records).await,
         TransactionKind::Sqlite(tx) => sqlite::dnssec_record::create_many_tx(tx, records).await,
+    }
+}
+
+/// Read apex SOA signatures in the same snapshot as the locked zone row.
+pub async fn list_signatures_covering_apex_soa_tx(
+    tx: &mut Transaction<'_>,
+    zone_id: ZoneId,
+) -> Result<Vec<DnssecRecord>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::dnssec_record::list_signatures_covering_apex_soa_tx(tx, zone_id).await
+        }
+        TransactionKind::Postgres(tx) => {
+            postgres::dnssec_record::list_signatures_covering_apex_soa_tx(tx, zone_id).await
+        }
+        TransactionKind::Sqlite(tx) => {
+            sqlite::dnssec_record::list_signatures_covering_apex_soa_tx(tx, zone_id).await
+        }
     }
 }
 

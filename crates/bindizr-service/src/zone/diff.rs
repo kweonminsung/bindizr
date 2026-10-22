@@ -39,6 +39,7 @@ fn group_record_sets(
     records: &[RecordData],
 ) -> BTreeMap<RecordSetKey, Vec<RecordSetMember>> {
     let mut record_sets: BTreeMap<RecordSetKey, Vec<RecordSetMember>> = BTreeMap::new();
+
     for record in records {
         let key = RecordSetKey {
             name: record.name.to_fqdn(&zone.name),
@@ -59,24 +60,23 @@ fn group_record_sets(
             },
         });
     }
+
     record_sets
 }
 
 /// Collect sorted, borrowed record identities for comparison without copying their contents.
 fn record_set_identities(record_set: &[RecordSetMember]) -> Vec<&MemberIdentity> {
-    let mut ids: Vec<_> = record_set.iter().map(|r| &r.identity).collect();
+    let mut ids: Vec<_> = record_set.iter().map(|record| &record.identity).collect();
     ids.sort();
     ids
 }
 
 /// Collect the record values belonging to an owner and type.
 fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValueResponse> {
-    record_set.into_iter().map(|r| r.value).collect()
+    record_set.into_iter().map(|record| record.value).collect()
 }
 
-/// Diff two serials' records at the record set level. TTL is part of a record's identity,
-/// so a TTL-only change shows as `changed`. Both sides are [`ReadableRecords`], so a
-/// diff shows only rows the caller may read.
+/// Diff authorized [`ReadableRecords`] by record set, counting TTL-only edits as changes.
 pub(crate) fn build_record_diff(
     zone: &Zone,
     before: &ReadableRecords<RecordData>,
@@ -89,7 +89,7 @@ pub(crate) fn build_record_diff(
     keys.extend(
         after_record_sets
             .keys()
-            .filter(|k| !before_record_sets.contains_key(*k))
+            .filter(|record_set_key| !before_record_sets.contains_key(*record_set_key))
             .cloned(),
     );
     keys.sort();
@@ -102,6 +102,7 @@ pub(crate) fn build_record_diff(
         let before = before_record_sets.remove(&key);
         let after = after_record_sets.remove(&key);
         let RecordSetKey { name, record_type } = key;
+
         match (before, after) {
             (None, Some(after)) => {
                 added += 1;

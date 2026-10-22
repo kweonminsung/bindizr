@@ -1,9 +1,6 @@
-//! MySQL DDL.
-//!
-//! Names compare under `utf8mb4_bin`, and `idx_records_zone_name` takes a
-//! 255-character prefix: a utf8mb4 VARCHAR(1024) exceeds InnoDB's 3,072-byte
-//! key. Record values are MEDIUMTEXT: a TXT rendered with `\DDD` escapes can
-//! quadruple its 65,535-octet RDATA past what TEXT holds.
+//! MySQL DDL: binary name comparison and 255-character index prefixes keep
+//! utf8mb4 VARCHAR(1024) keys below InnoDB's 3,072-byte limit.
+//! MEDIUMTEXT holds TXT values whose `\DDD` escapes can quadruple 65,535-byte RDATA.
 
 /// Return the statements that create the application schema.
 pub(crate) fn table_creation_queries() -> Vec<&'static str> {
@@ -27,12 +24,12 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(1020) CHARACTER SET ascii COLLATE ascii_bin UNIQUE NOT NULL,
             mname VARCHAR(1020) CHARACTER SET ascii NOT NULL,
             rname VARCHAR(1020) NOT NULL,
-            default_ttl INT NOT NULL,
+            default_ttl BIGINT NOT NULL,
             serial BIGINT NOT NULL,
             refresh INT NOT NULL DEFAULT 300,
             retry INT NOT NULL DEFAULT 60,
             expire INT NOT NULL DEFAULT 3600000,
-            minimum_ttl INT NOT NULL DEFAULT 86400,
+            minimum_ttl BIGINT NOT NULL DEFAULT 86400,
             dnssec_policy_id INT NULL,
             parent_ns_addrs VARCHAR(1024) NULL,
             enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -49,7 +46,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             record_type VARCHAR(50) NOT NULL,
             value MEDIUMTEXT NOT NULL,
             display_value MEDIUMTEXT NOT NULL,
-            ttl INT NOT NULL,
+            ttl BIGINT NOT NULL,
             priority INT,
             created_at DATETIME NOT NULL,
             zone_id INT NOT NULL,
@@ -69,7 +66,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             record_type VARCHAR(50) NOT NULL,
             record_value MEDIUMTEXT,
             record_rdata BLOB,
-            record_ttl INT NOT NULL,
+            record_ttl BIGINT NOT NULL,
             record_priority INT,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
             created_at DATETIME NOT NULL,
@@ -87,11 +84,11 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             serial BIGINT NOT NULL,
             mname TEXT NOT NULL,
             rname TEXT NOT NULL,
-            default_ttl INT NOT NULL,
+            default_ttl BIGINT NOT NULL,
             refresh INT NOT NULL,
             retry INT NOT NULL,
             expire INT NOT NULL,
-            minimum_ttl INT NOT NULL,
+            minimum_ttl BIGINT NOT NULL,
             change_source VARCHAR(16) NOT NULL,
             changed_by_kind VARCHAR(16),
             changed_by_name VARCHAR(255),
@@ -229,7 +226,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             state VARCHAR(16) NOT NULL,
             state_changed_at DATETIME NOT NULL,
             eligible_at DATETIME NOT NULL,
-            max_signed_ttl INT NOT NULL DEFAULT 0,
+            max_signed_ttl BIGINT NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_dnssec_keys_zone (zone_id)
@@ -242,7 +239,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type INT NOT NULL,
             covered_record_type INT,
-            ttl INT NOT NULL,
+            ttl BIGINT NOT NULL,
             rdata BLOB NOT NULL,
             expires_at DATETIME,
             record_set_digest VARCHAR(64),

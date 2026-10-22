@@ -102,8 +102,8 @@ deny rules. How grants combine, and what each operation needs, is in
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
 | `record:read` | Listing and reading records; export, version detail, diffs, and rollback |
 | `record:create` | Adding records |
-| `record:update` | Changing records in place, found by id or name without `record:read`; without it every field must be given, since an omitted one is read from the record |
-| `record:delete` | Deleting records, found by id without `record:read` |
+| `record:update` | Retiming records by nsupdate; changing records in place, found by id or name without `record:read`; without it every field must be given, since an omitted one is read from the record |
+| `record:delete` | Deleting records, found by id without `record:read`; also required for nsupdate CNAME, DNAME, or matching WKS replacement |
 | `dnssec:read` | DNSSEC status, `dnssec check-ds`; listing DNSSEC policies |
 | `dnssec:manage` | Every other DNSSEC operation; changing DNSSEC policies |
 | `secondary:read` | Listing secondaries, their details and transfers — needs all zones |
@@ -159,13 +159,25 @@ the NOTIFY Bindizr sends to a secondary registered with `--notify-key` — see
 [Signed NOTIFY](secondaries.md#signed-notify). A key's name is what appears
 on the wire.
 
+New keys default to HMAC-SHA256. HMAC-SHA384 and HMAC-SHA512 are also supported;
+HMAC-SHA1 is available for interoperability as required by RFC 8945, Section 6,
+which discourages its use for new deployments.
+
+Generated secrets match the HMAC output length: 20, 32, 48, or 64 bytes for
+SHA1, SHA256, SHA384, or SHA512. RFC 8945, Section 8 recommends at least this
+length for newly chosen secrets. Imports accept at least 16 decoded bytes for
+any algorithm to retain the secret already shared with another DNS server.
+
 ```bash
 # Create a key in a role; use `get` below to retrieve its secret later
 bindizr tsig-key create update-key --role external-dns-prod
 
-# Import an existing base64 secret, or pick another HMAC algorithm
-bindizr tsig-key create legacy-key --role external-dns-prod --algorithm hmac-sha512 \
+# Import an existing 32-byte base64 secret
+bindizr tsig-key create legacy-key --role external-dns-prod --algorithm hmac-sha256 \
     --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
+
+# Generate a 64-byte secret for HMAC-SHA512
+bindizr tsig-key create sha512-key --role external-dns-prod --algorithm hmac-sha512
 
 # List keys (secrets are not shown), only one role's, or show one with its secret
 bindizr tsig-key list

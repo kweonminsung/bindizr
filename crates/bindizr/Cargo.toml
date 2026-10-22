@@ -22,19 +22,17 @@ name = "bindizr"
 path = "src/main.rs"
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.2" }
-bindizr-db = { path = "../bindizr-db", version = "0.1.0-rc.2" }
-bindizr-service = { path = "../bindizr-service", version = "0.1.0-rc.2" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-rc.3" }
+bindizr-db = { path = "../bindizr-db", version = "0.1.0-rc.3" }
+bindizr-service = { path = "../bindizr-service", version = "0.1.0-rc.3" }
 axum.workspace = true
 axum-server.workspace = true
 chrono.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
-hex.workspace = true
 log.workspace = true
 nix.workspace = true
-ring.workspace = true
 # The XoT listener builds its own server config; axum-server builds the API's.
 rustls.workspace = true
 serde = { workspace = true, features = ["rc"] }
@@ -48,6 +46,7 @@ tower-http.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
+sqlx = { workspace = true, features = ["sqlite"] }
 # `test-util` so a write deadline is asserted on a paused clock, not in real time.
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true

@@ -1,0 +1,27 @@
+# Maintainer: Minsung Kweon <kevin136583@gmail.com>
+# Packages the staged tree build_packages.sh assembles; build_apk.sh fills
+# pkgver and pkgrel from Cargo.toml and points STAGE at that tree.
+pkgname=bindizr
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Open-source control plane for authoritative DNS"
+url="https://github.com/kweonminsung/bindizr"
+arch="x86_64 aarch64"
+license="Apache-2.0"
+install="$pkgname.post-install $pkgname.pre-deinstall"
+# The binary is static musl, built and stripped by cargo; nothing to test here.
+options="!check !strip"
+source=""
+
+package() {
+	cd "${STAGE:?staged tree}"
+	install -Dm755 usr/bin/bindizr "$pkgdir"/usr/bin/bindizr
+	install -Dm755 etc/init.d/bindizr "$pkgdir"/etc/init.d/bindizr
+	install -Dm600 etc/bindizr/bindizr.conf.toml "$pkgdir"/etc/bindizr/bindizr.conf.toml
+	install -Dm644 usr/share/doc/bindizr/README.md "$pkgdir"/usr/share/doc/bindizr/README.md
+	install -Dm644 usr/share/licenses/bindizr/LICENSE "$pkgdir"/usr/share/licenses/bindizr/LICENSE
+	install -Dm644 usr/share/man/man1/bindizr.1.gz "$pkgdir"/usr/share/man/man1/bindizr.1.gz
+	install -Dm644 usr/share/bash-completion/completions/bindizr "$pkgdir"/usr/share/bash-completion/completions/bindizr
+	install -Dm644 usr/share/zsh/site-functions/_bindizr "$pkgdir"/usr/share/zsh/site-functions/_bindizr
+	install -Dm644 usr/share/fish/vendor_completions.d/bindizr.fish "$pkgdir"/usr/share/fish/vendor_completions.d/bindizr.fish
+}

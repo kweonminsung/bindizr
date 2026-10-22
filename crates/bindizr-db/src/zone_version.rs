@@ -49,7 +49,7 @@ pub async fn list_by_filter(
     db: &Db,
     zone_id: ZoneId,
     filter: VersionFilter,
-    limit: u32,
+    limit: Option<u32>,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     match &db.0 {

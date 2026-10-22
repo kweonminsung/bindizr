@@ -27,3 +27,6 @@ jobs:
       
     - name: Run tests
       run: cargo test --workspace --all-features --verbose -- --test-threads=1
+
+    - name: Lint
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings

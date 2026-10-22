@@ -90,6 +90,7 @@ jobs:
           path: |
             bindizr_*.deb
             bindizr-*.rpm
+            bindizr-*.apk
           if-no-files-found: error
 
   licenses:
@@ -267,6 +268,7 @@ jobs:
           files: |
             bindizr_*.deb
             bindizr-*.rpm
+            bindizr-*.apk
             THIRD_PARTY_LICENSES.html
           body_path: RELEASE_NOTES.md
         env:

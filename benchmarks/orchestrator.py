@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Bindizr benchmark orchestrator.
-
-Runs selected benchmarks against selected systems, one system at a time (to keep
-the host uncontended), collecting structured results and writing the final
-report. Each system is fully set up, exercised, and torn down in isolation.
+"""Run selected workloads one system at a time, with isolated setup/teardown, then report.
 
 Usage:
     python orchestrator.py                          # all enabled, all benchmarks
@@ -44,8 +40,8 @@ RUNNERS = {
 NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import"}
 
 
-def bindizr_notify_for(bench: str) -> bool:
-    """Choose whether this workload needs bindizr NOTIFY delivery."""
+def is_bindizr_notify_enabled(bench: str) -> bool:
+    """Choose whether this workload needs bindizr to send NOTIFY."""
     override = os.environ.get("BENCH_BINDIZR_NOTIFY")
     if override is not None:
         return override.lower() == "true"
@@ -57,9 +53,9 @@ def project_name(system: str) -> str:
     return f"bench-{system}".replace("_", "-")
 
 
-async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
+async def run_one(bench: str, system: str, config: dict) -> dict | None:
     """Set up one system, run its selected workload, and collect the result."""
-    label = settings.system_label(cfg, system)
+    label = settings.system_label(config, system)
     print(f"\n=== {bench} :: {label} ({system}) ===", flush=True)
     proj = project_name(system)
 
@@ -67,31 +63,41 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
     if bench == "b07_database":
         try:
             mod = importlib.import_module(RUNNERS[bench])
-            ctx = {"zone": ZONE, "label": label, "system": system, "project": proj}
-            result = await mod.run(None, cfg, ctx)
+            context = {"zone": ZONE, "label": label, "system": system, "project": proj}
+
+            result = await mod.run(None, config, context)
+
             rows = result if isinstance(result, list) else [result]
+
             for row in rows:
                 report.write_result(bench, row)
+
             print(f"  OK: {rows}", flush=True)
+
             return rows
-        except Exception as e:
-            print(f"  [FAIL] {bench}: {e}")
+        except Exception as error:
+            print(f"  [FAIL] {bench}: {error}")
             traceback.print_exc()
             return None
 
     kwargs = {}
+
     if registry.is_bindizr(system):
-        kwargs["notify_after_update"] = bindizr_notify_for(bench)
+        kwargs["notify_after_update"] = is_bindizr_notify_enabled(bench)
+
     try:
-        adapter = registry.build_adapter(system, cfg, proj, **kwargs)
-    except Exception as e:
-        print(f"  [SKIP] cannot build adapter: {e}")
+        adapter = registry.build_adapter(system, config, proj, **kwargs)
+    except Exception as error:
+        print(f"  [SKIP] cannot build adapter: {error}")
         return None
 
     sampler = None
+
     try:
         print("  setup...", flush=True)
+
         await adapter.setup()
+
         mod = importlib.import_module(RUNNERS[bench])
 
         # A runner that samples its own measured phase sets SELF_SAMPLES; a
@@ -99,50 +105,59 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
         if not getattr(mod, "SELF_SAMPLES", False):
             ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
             ids = [i for i in ids if i]
-            sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
+            sampler = ResourceSampler(ids, config["resources"]["sample_interval_secs"])
             sampler.start()
 
-        ctx = {"zone": ZONE, "label": label, "system": system, "project": proj}
-        result = await mod.run(adapter, cfg, ctx)
+        context = {"zone": ZONE, "label": label, "system": system, "project": proj}
 
-        res = sampler.stop() if sampler else {}
+        result = await mod.run(adapter, config, context)
+
+        resource_usage = sampler.stop() if sampler else {}
         sampler = None
         rows = result if isinstance(result, list) else [result]
+
         for row in rows:
             # Attach only metrics this wrapper actually sampled.
-            if res.get("samples"):
-                row.setdefault("peak_mem_mb", res["peak_mem_mb"])
-                row.setdefault("avg_cpu_pct", res["avg_cpu_pct"])
+            if resource_usage.get("samples"):
+                row.setdefault("peak_mem_mb", resource_usage["peak_mem_mb"])
+                row.setdefault("avg_cpu_pct", resource_usage["avg_cpu_pct"])
             report.write_result(bench, row)
+
         print(f"  OK: {rows}", flush=True)
+
         return rows
-    except Exception as e:
-        print(f"  [FAIL] {bench}/{system}: {e}")
+    except Exception as error:
+        print(f"  [FAIL] {bench}/{system}: {error}")
         traceback.print_exc()
         print("  --- container logs (tail) ---")
         for s in adapter.resource_services:
             print(adapter.compose.read_logs(s, tail=30))
         return None
     finally:
+        # Workload failures must still stop observation and remove the test stack.
         if sampler:
-            sampler.stop()
+            try:
+                sampler.stop()
+            except Exception as error:
+                print(f"  sampler error during cleanup: {error}")
         print("  teardown...", flush=True)
         try:
             await adapter.teardown()
-        except Exception as e:
-            print(f"  teardown error: {e}")
+        except Exception as error:
+            print(f"  teardown error: {error}")
 
 
 async def main_async(args) -> None:
     """Run the selected systems and benchmarks and write their report."""
-    cfg = settings.load()
-    repeats = int(cfg.get("repeats", 1))
+    config = settings.load()
+    repeats = int(config.get("repeats", 1))
     benches = args.benchmarks or list(RUNNERS.keys())
 
     # Systems whose required CLI tool is missing (set by benchmark.sh preflight,
     # e.g. bind9_nsupdate when `nsupdate` is absent) are dropped from every
     # benchmark's matrix rather than attempted and failed.
     disabled = {s for s in os.environ.get("BENCH_DISABLE_SYSTEMS", "").split(",") if s}
+
     if disabled:
         print(f"Skipping systems (required tools unavailable): "
               f"{', '.join(sorted(disabled))}", flush=True)
@@ -151,23 +166,26 @@ async def main_async(args) -> None:
     # invocations never accumulate stale/duplicate rows, while a subset re-run
     # (e.g. -b b07_database) preserves the other benchmarks' existing results.
     report.RAW_DIR.mkdir(parents=True, exist_ok=True)
+
     for bench in benches:
         f = report.RAW_DIR / f"{bench}.json"
         if f.exists():
             f.unlink()
+
     for bench in benches:
-        systems = args.systems or cfg["benchmarks"].get(bench, [])
+        systems = args.systems or config["benchmarks"].get(bench, [])
         systems = [s for s in systems
-                   if (s == "bind9_native" or cfg["systems"].get(s, {}).get("enabled"))
+                   if (s == "bind9_native" or config["systems"].get(s, {}).get("enabled"))
                    and s not in disabled]
+
         for system in systems:
             for rep in range(repeats):
                 if repeats > 1:
                     print(f"\n----- repeat {rep + 1}/{repeats} -----", flush=True)
-                await run_one(bench, system, cfg)
+                await run_one(bench, system, config)
 
     print("\n=== building report ===")
-    report.write_report(envmod.collect(cfg), cfg)
+    report.write_report(envmod.collect(config), config)
     print(f"Report written to {settings.RESULTS_DIR}")
     print(f"To re-run a subset into this same directory:\n"
           f"  BENCH_RESULTS_DIR={settings.RESULTS_DIR.name} python3 orchestrator.py -b <bench>")
@@ -180,10 +198,12 @@ def main() -> None:
     ap.add_argument("-s", "--systems", nargs="*", help="system keys (default: per-benchmark)")
     ap.add_argument("--list", action="store_true", help="list benchmarks and exit")
     args = ap.parse_args()
+
     if args.list:
         for k in RUNNERS:
             print(k)
         return
+
     asyncio.run(main_async(args))
 
 

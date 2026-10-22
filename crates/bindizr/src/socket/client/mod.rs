@@ -17,9 +17,9 @@ use crate::{
 /// garbled response may come from a live but wedged daemon.
 pub(crate) async fn is_daemon_socket_gone() -> bool {
     /// Check whether a connection error means no daemon is listening.
-    fn is_missing_listener(err: &std::io::Error) -> bool {
+    fn is_missing_listener(error: &std::io::Error) -> bool {
         matches!(
-            err.kind(),
+            error.kind(),
             std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
         )
     }
@@ -27,8 +27,8 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
     match try_connect_daemon_socket().await {
         Ok(_) => false,
         // An owner-only socket this user cannot open is a live daemon.
-        Err(ConnectDaemonSocketError { primary: err, .. })
-            if err.kind() == std::io::ErrorKind::PermissionDenied =>
+        Err(ConnectDaemonSocketError { primary: error, .. })
+            if error.kind() == std::io::ErrorKind::PermissionDenied =>
         {
             false
         }
@@ -39,9 +39,9 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         }) => is_missing_listener(&fallback_err),
         // Primary failed in an unexpected way; the fallback was not tried.
         Err(ConnectDaemonSocketError {
-            primary: err,
+            primary: error,
             fallback: None,
-        }) => is_missing_listener(&err),
+        }) => is_missing_listener(&error),
     }
 }
 
@@ -54,13 +54,13 @@ pub(crate) async fn send_control_command<T: DeserializeOwned>(
 
     tokio::time::timeout(CONTROL_TIMEOUT, send_command(command))
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             CliError::request_with_source(
                 format!(
                     "the daemon did not answer within {} seconds",
                     CONTROL_TIMEOUT.as_secs()
                 ),
-                e,
+                error,
             )
         })?
 }
@@ -72,22 +72,25 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
 ) -> Result<DaemonResponse<T>, CliError> {
     let mut stream = connect_to_daemon_socket().await?;
 
-    let json = serde_json::to_string(&command).map_err(|e| {
-        CliError::request_with_source(format!("failed to serialize command: {}", e), e)
+    let json = serde_json::to_string(&command).map_err(|error| {
+        CliError::request_with_source(format!("failed to serialize command: {}", error), error)
     })?;
 
-    stream.write_all(json.as_bytes()).await.map_err(|e| {
-        CliError::request_with_source(format!("failed to write to socket: {}", e), e)
+    stream.write_all(json.as_bytes()).await.map_err(|error| {
+        CliError::request_with_source(format!("failed to write to socket: {}", error), error)
     })?;
-    stream.write_all(b"\n").await.map_err(|e| {
-        CliError::request_with_source(format!("failed to write newline to socket: {}", e), e)
+    stream.write_all(b"\n").await.map_err(|error| {
+        CliError::request_with_source(
+            format!("failed to write newline to socket: {}", error),
+            error,
+        )
     })?;
 
     let mut reader = BufReader::new(stream);
     let mut response = String::new();
 
-    reader.read_line(&mut response).await.map_err(|e| {
-        CliError::request_with_source(format!("failed to read from socket: {}", e), e)
+    reader.read_line(&mut response).await.map_err(|error| {
+        CliError::request_with_source(format!("failed to read from socket: {}", error), error)
     })?;
 
     // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
@@ -96,8 +99,9 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
         return Err(CliError::from_daemon(Some(error.code), error.error));
     }
 
-    serde_json::from_str(&response)
-        .map_err(|e| CliError::request_with_source(format!("failed to parse response: {}", e), e))
+    serde_json::from_str(&response).map_err(|error| {
+        CliError::request_with_source(format!("failed to parse response: {}", error), error)
+    })
 }
 /// Open a connection to the daemon's control socket, refusing a daemon this
 /// user may not drive (a socket another user planted in /tmp).
@@ -112,6 +116,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
             } else {
                 None
             };
+
             match denied_path {
                 Some(path) => CliError::request_with_source(format!(
                     "permission denied on the daemon socket at '{}'. Run the CLI as the daemon's user (for a package install, `sudo bindizr ...`).", path
@@ -122,16 +127,20 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
 
     let peer_uid = stream
         .peer_cred()
-        .map_err(|e| {
+        .map_err(|error| {
             CliError::request_with_source(
-                format!("could not identify the daemon behind its socket: {}", e),
-                e,
+                format!("could not identify the daemon behind its socket: {}", error),
+                error,
             )
         })?
         .uid();
-    let own_uid = read_own_uid().map_err(|e| {
-        CliError::request_with_source(format!("could not read this process's uid: {}", e), e)
+    let own_uid = read_own_uid().map_err(|error| {
+        CliError::request_with_source(
+            format!("could not read this process's uid: {}", error),
+            error,
+        )
     })?;
+
     // Root drives another user's daemon on the primary socket only, as `sudo bindizr` does.
     if !is_trusted_daemon(peer_uid, own_uid, socket_path) {
         let message = if own_uid == 0 {
@@ -148,6 +157,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
         };
         return Err(CliError::request(message));
     }
+
     Ok(stream)
 }
 
@@ -157,9 +167,9 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
 {
     match UnixStream::connect(SOCKET_FILE_PATH).await {
         Ok(stream) => Ok((SOCKET_FILE_PATH, stream)),
-        Err(err)
+        Err(error)
             if matches!(
-                err.kind(),
+                error.kind(),
                 std::io::ErrorKind::PermissionDenied
                     | std::io::ErrorKind::ConnectionRefused
                     | std::io::ErrorKind::NotFound
@@ -168,13 +178,13 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
             match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
                 Ok(stream) => Ok((FALLBACK_SOCKET_FILE_PATH, stream)),
                 Err(fallback_err) => Err(ConnectDaemonSocketError {
-                    primary: err,
+                    primary: error,
                     fallback: Some(fallback_err),
                 }),
             }
         }
-        Err(err) => Err(ConnectDaemonSocketError {
-            primary: err,
+        Err(error) => Err(ConnectDaemonSocketError {
+            primary: error,
             fallback: None,
         }),
     }

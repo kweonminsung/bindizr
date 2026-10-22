@@ -38,6 +38,7 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
     // The harness reached the daemon over https to get here, certificate
     // verified against the pair generated for this run.
     let (status, body) = app.send_request(Method::GET, "/health", None).await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "healthy", "{body}");
 
@@ -47,6 +48,7 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await;
+
     assert!(plain.is_err(), "plain HTTP answered: {plain:?}");
 
     // An untrusted client is refused rather than downgraded.
@@ -55,6 +57,7 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await;
+
     assert!(
         untrusted.is_err(),
         "untrusted client accepted: {untrusted:?}"
@@ -71,6 +74,7 @@ async fn config_reload_replaces_api_certificate() {
         ..Default::default()
     })
     .await;
+
     let trusting = |cert: &reqwest::tls::Certificate| {
         reqwest::Client::builder()
             .add_root_certificate(cert.clone())
@@ -81,21 +85,27 @@ async fn config_reload_replaces_api_certificate() {
     let started_with = reqwest::Certificate::from_der(app.tls_cert()).unwrap();
 
     let renewed = app.renew_test_certificate();
+
     let output = app.run_cli_success(&["config", "reload"], None).await;
+
     assert!(output.contains("api.tls certificate"), "{output}");
 
     let renewed = reqwest::Certificate::from_der(&renewed).unwrap();
+
     let response = trusting(&renewed)
         .get(format!("{}/health", app.base_url()))
         .send()
         .await
         .expect("the renewed certificate is served");
+
     assert_eq!(response.status(), StatusCode::OK);
+
     // The certificate the run started with is no longer presented.
     let stale = trusting(&started_with)
         .get(format!("{}/health", app.base_url()))
         .send()
         .await;
+
     assert!(
         stale.is_err(),
         "the old certificate still served: {stale:?}"

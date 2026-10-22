@@ -12,12 +12,15 @@ SYSTEMS = ROOT / "systems"
 def _load_adapter_module(key: str):
     """Load the adapter module for the requested system key."""
     path = SYSTEMS / key / "adapter.py"
+
     if not path.exists():
         raise FileNotFoundError(f"no adapter for system '{key}' at {path}")
+
     spec = importlib.util.spec_from_file_location(f"systems.{key}.adapter", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
+
     return mod
 
 
@@ -46,8 +49,8 @@ def is_bindizr(key: str) -> bool:
     return key in BINDIZR_SYSTEMS
 
 
-def build_adapter(key: str, cfg: dict, project: str, **kwargs):
+def build_adapter(key: str, config: dict, project: str, **kwargs):
     """Construct the adapter for a benchmark system and project."""
     mod = _load_adapter_module(key)
     cls = getattr(mod, _CLASS[key])
-    return cls(cfg, project, **kwargs)
+    return cls(config, project, **kwargs)

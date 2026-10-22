@@ -1,2 +1,3 @@
 too-many-lines-threshold = 100
 too-many-arguments-threshold = 10
+disallowed-names = ["..", "req", "res", "resp", "msg", "cfg", "conn", "buf", "e", "err"]

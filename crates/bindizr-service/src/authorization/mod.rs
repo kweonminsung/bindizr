@@ -1,10 +1,5 @@
-//! Authorize a caller through its role's grants. Invisible zones read as 404;
-//! denied operations as 403.
-//!
-//! Management entry points authorize their [`Caller`]; the local socket passes
-//! [`Caller::socket`]. The DNS plane authenticates its TSIG key into a
-//! [`Caller`] as well, or takes [`Caller::unsigned_dns`] where the address
-//! ACL or the configuration admits an unsigned request.
+//! Authorize [`Caller`] through role grants: invisible zones yield 404, denied actions 403.
+//! Socket callers are unrestricted; DNS callers use TSIG or explicitly admitted unsigned access.
 
 use bindizr_core::{
     dns::name::OwnerName,
@@ -20,23 +15,23 @@ use chrono::{Duration, Utc};
 
 use crate::{
     Context, Transaction,
+    change::ChangeOrigin,
     error::ServiceError,
     model::{
         api_token::ApiToken,
+        change::{ChangeActor, ChangeSource},
         record::{Record, RecordData, RecordType},
         tsig_key::{TsigKey, TsigKeyId},
         zone::Zone,
-        zone_version::{ChangeActor, ChangeSource},
     },
     token::hash_token,
-    zone::version::ChangeAttribution,
 };
 
-/// A request's access rights and change attribution, kept as independent facts.
+/// A request's access rights and change origin, kept as independent facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
     scope: CallerScope,
-    attribution: ChangeAttribution,
+    origin: ChangeOrigin,
 }
 
 /// Which resources the caller may access; transport and credential names do not decide it.
@@ -137,7 +132,7 @@ impl Caller {
     pub fn socket() -> Self {
         Self {
             scope: CallerScope::Global,
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Socket,
                 actor: None,
             },
@@ -148,7 +143,7 @@ impl Caller {
     pub fn unauthenticated_api() -> Self {
         Self {
             scope: CallerScope::Global,
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Api,
                 actor: None,
             },
@@ -160,11 +155,17 @@ impl Caller {
     pub fn unsigned_dns() -> Self {
         Self {
             scope: CallerScope::Global,
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Nsupdate,
                 actor: None,
             },
         }
+    }
+
+    /// Whether this is the unsigned DNS caller: a request no TSIG key named,
+    /// which the policy on unsigned requests may still refuse.
+    pub fn is_unsigned_dns(&self) -> bool {
+        self.origin.source == ChangeSource::Nsupdate && self.origin.actor.is_none()
     }
 
     /// Build an API caller from an authenticated token and its role's loaded grants.
@@ -175,7 +176,7 @@ impl Caller {
                 credential: Credential::Token(token.id),
                 grants: grants.into(),
             },
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Api,
                 actor: Some(ChangeActor::Token {
                     name: token.name.clone(),
@@ -185,12 +186,12 @@ impl Caller {
     }
 
     /// Return the request origin and credential snapshot recorded with a mutation.
-    pub(crate) fn change_attribution(&self) -> &ChangeAttribution {
-        &self.attribution
+    pub(crate) fn change_origin(&self) -> &ChangeOrigin {
+        &self.origin
     }
 
     /// Build the DNS plane's caller from a verified key and its role's loaded
-    /// grants; a key's writes are nsupdates, so that is its attribution.
+    /// grants; its change origin preserves the nsupdate path and key name.
     pub(crate) fn from_tsig_key(tsig_key: &TsigKey, grants: Vec<RoleGrant>) -> Self {
         Self {
             scope: CallerScope::Role {
@@ -198,7 +199,7 @@ impl Caller {
                 credential: Credential::TsigKey(tsig_key.id),
                 grants: grants.into(),
             },
-            attribution: ChangeAttribution {
+            origin: ChangeOrigin {
                 source: ChangeSource::Nsupdate,
                 actor: Some(ChangeActor::TsigKey {
                     name: tsig_key.name.clone(),
@@ -214,6 +215,7 @@ impl Caller {
         bearer_token: &str,
     ) -> Result<(Caller, ApiToken), ServiceError> {
         let token_hash = hash_token(bearer_token);
+
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
             Ok(Some(token)) => token,
             Ok(None) => {
@@ -221,11 +223,11 @@ impl Caller {
                     "invalid or expired token".to_string(),
                 ));
             }
-            Err(e) => {
-                log::error!("Failed to validate token: {}", e);
+            Err(error) => {
+                log::error!("Failed to validate token: {}", error);
                 return Err(ServiceError::internal_with_source(
                     "failed to validate token",
-                    e,
+                    error,
                 ));
             }
         };
@@ -239,16 +241,19 @@ impl Caller {
         let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
             Utc::now() - last_used < Duration::seconds(LAST_USED_STAMP_INTERVAL_SECS)
         });
+
         let token = if stamp_is_fresh {
             stored_token
         } else {
             let last_used_at = Utc::now();
+
             bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
                 .await
-                .map_err(|e| {
-                    log::error!("Failed to update last_used_at: {}", e);
-                    ServiceError::internal_with_source("failed to update last_used_at", e)
+                .map_err(|error| {
+                    log::error!("Failed to update last_used_at: {}", error);
+                    ServiceError::internal_with_source("failed to update last_used_at", error)
                 })?;
+
             ApiToken {
                 last_used_at: Some(last_used_at),
                 ..stored_token
@@ -256,6 +261,7 @@ impl Caller {
         };
 
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), token.role_id).await?;
+
         Ok((Caller::from_token(&token, grants), token))
     }
 
@@ -277,6 +283,7 @@ impl Caller {
         {
             return Ok(());
         }
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' in all zones",
             action
@@ -295,7 +302,9 @@ impl Caller {
         {
             return Ok(());
         }
+
         self.authorize_zone_visible(zone)?;
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' in zone '{}'",
             action, zone.name
@@ -335,39 +344,23 @@ impl Caller {
         }
     }
 
-    /// This caller authenticated again in `tx`: its token and its role's grants
-    /// re-read, share-locked where the backend locks rows. A revocation waits
-    /// for a write (SQLite's writer reservation serializes them too); a read
-    /// decides on what its own snapshot holds. Taken right after the zone row.
+    /// Re-read the credential and grants in `tx`, after locking the zone.
+    /// Shared row locks or SQLite's writer reservation serialize revocation with writes.
     pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
     ) -> Result<Caller, ServiceError> {
-        match &self.scope {
-            CallerScope::Global => Ok(self.clone()),
+        let (role_id, credential) = match &self.scope {
+            CallerScope::Global => return Ok(self.clone()),
             CallerScope::Role {
                 credential: Credential::TsigKey(key_id),
                 ..
             } => {
-                // The key that signed may have been deleted since; locked, a
-                // deletion waits for this transaction.
+                // Lock the key so deletion waits for this transaction.
                 let tsig_key = bindizr_db::tsig_key::get_tx(tx, *key_id, LockLevel::Shared)
                     .await?
                     .ok_or_else(|| ServiceError::invalid_token("TSIG key no longer exists"))?;
-                let grants = bindizr_db::role_grant::list_by_role_id_tx(
-                    tx,
-                    tsig_key.role_id,
-                    LockLevel::Shared,
-                )
-                .await?;
-                Ok(Caller {
-                    scope: CallerScope::Role {
-                        id: tsig_key.role_id,
-                        credential: Credential::TsigKey(tsig_key.id),
-                        grants: grants.into(),
-                    },
-                    attribution: self.attribution.clone(),
-                })
+                (tsig_key.role_id, Credential::TsigKey(tsig_key.id))
             }
             CallerScope::Role {
                 credential: Credential::Token(token_id),
@@ -381,22 +374,21 @@ impl Caller {
                             .is_none_or(|expires_at| Utc::now() < expires_at)
                     })
                     .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
-                let grants = bindizr_db::role_grant::list_by_role_id_tx(
-                    tx,
-                    token.role_id,
-                    LockLevel::Shared,
-                )
-                .await?;
-                Ok(Caller {
-                    scope: CallerScope::Role {
-                        id: token.role_id,
-                        credential: Credential::Token(token.id),
-                        grants: grants.into(),
-                    },
-                    attribution: self.attribution.clone(),
-                })
+
+                (token.role_id, Credential::Token(token.id))
             }
-        }
+        };
+        let grants =
+            bindizr_db::role_grant::list_by_role_id_tx(tx, role_id, LockLevel::Shared).await?;
+
+        Ok(Caller {
+            scope: CallerScope::Role {
+                id: role_id,
+                credential,
+                grants: grants.into(),
+            },
+            origin: self.origin.clone(),
+        })
     }
 
     /// Authorize record reads and writes in `zone`; a zone no grant reaches
@@ -409,11 +401,13 @@ impl Caller {
         let Some(grants) = self.grants() else {
             return Ok(());
         };
+
         // Ahead of the per-write loop, which a batch resolving to no writes
         // would otherwise pass vacuously.
         if !grants.reaches_zone(zone.id) {
             return Err(ServiceError::zone_not_found(zone.name.as_str()));
         }
+
         authorize_with_grants(grants, zone, writes)
     }
 
@@ -496,6 +490,7 @@ impl Caller {
         {
             return Ok(());
         }
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' over all zones whole",
             action
@@ -517,6 +512,7 @@ impl Caller {
         }
 
         self.authorize_zone_visible(zone)?;
+
         Err(ServiceError::forbidden(format!(
             "role does not permit '{}' over zone '{}' whole",
             action, zone.name
@@ -543,12 +539,13 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map(RecordType::to_text)
+                    .map(|record_type| record_type.as_str().to_owned())
                     .unwrap_or("records".into()),
                 zone.name
             )));
         }
     }
+
     Ok(())
 }
 

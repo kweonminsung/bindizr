@@ -53,18 +53,19 @@ impl AddressCache {
     fn locked(&self) -> MutexGuard<'_, HashMap<String, CachedAddrs>> {
         self.cache
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
 /// Check enabled secondary addresses afresh so changes affect the next transfer.
 /// A direct IP match avoids hostname resolution.
-pub(crate) async fn is_client_allowed(
+pub(crate) async fn evaluate_client_access(
     dns_cx: &DnsContext,
     client_ip: IpAddr,
 ) -> Result<bool, ServiceError> {
     let secondaries = secondary::list_enabled(dns_cx.daemon()).await?;
-    Ok(allows_client(
+
+    Ok(matches_client_address(
         &dns_cx.address_cache,
         secondaries.iter().map(|secondary| &secondary.address),
         client_ip,
@@ -73,7 +74,7 @@ pub(crate) async fn is_client_allowed(
 }
 
 /// Match literal IPs first, then resolve hostnames through the ACL cache.
-async fn allows_client<'a>(
+async fn matches_client_address<'a>(
     cache: &AddressCache,
     addresses: impl Iterator<Item = &'a AddressTarget> + Clone,
     client_ip: IpAddr,
@@ -89,6 +90,7 @@ async fn allows_client<'a>(
         let AddressTarget::HostPort(host_port) = address else {
             continue;
         };
+
         let addrs = match cache.cached_addrs(host_port) {
             Some(addrs) => addrs,
             None => {
@@ -106,13 +108,16 @@ async fn allows_client<'a>(
                         expires_at: Instant::now() + ttl,
                     },
                 );
+
                 addrs
             }
         };
+
         if addrs.contains(&client_ip) {
             return true;
         }
     }
+
     false
 }
 
@@ -141,8 +146,9 @@ mod tests {
         let cache = AddressCache::new();
 
         for ip in ["192.0.2.10", "2001:db8::10"] {
-            assert!(allows_client(&cache, addresses.iter(), ip.parse().unwrap()).await);
+            assert!(matches_client_address(&cache, addresses.iter(), ip.parse().unwrap()).await);
         }
+
         assert!(cache.locked().is_empty());
     }
 
@@ -151,8 +157,8 @@ mod tests {
     async fn acl_rejects_unconfigured_addresses() {
         let cache = AddressCache::new();
         let client_ip = "192.0.2.11".parse().unwrap();
-        assert!(!allows_client(&cache, targets(&[]).iter(), client_ip).await);
-        assert!(!allows_client(&cache, targets(&["192.0.2.10"]).iter(), client_ip).await);
+        assert!(!matches_client_address(&cache, targets(&[]).iter(), client_ip).await);
+        assert!(!matches_client_address(&cache, targets(&["192.0.2.10"]).iter(), client_ip).await);
     }
 
     /// Reuse successful and failed resolutions under the canonical hostname key.
@@ -179,8 +185,10 @@ mod tests {
             ),
         ]);
 
-        assert!(allows_client(&cache, addresses.iter(), client_ip).await);
-        assert!(!allows_client(&cache, addresses.iter(), "192.0.2.11".parse().unwrap()).await);
+        assert!(matches_client_address(&cache, addresses.iter(), client_ip).await);
+        assert!(
+            !matches_client_address(&cache, addresses.iter(), "192.0.2.11".parse().unwrap()).await
+        );
         assert_eq!(cache.locked()["missing.example:53"].expires_at, expires_at);
         assert_eq!(cache.locked()["bind9.example:53"].expires_at, expires_at);
     }

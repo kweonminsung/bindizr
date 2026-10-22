@@ -10,9 +10,11 @@ pip install -r requirements.txt      # aiohttp, PyYAML, matplotlib (use --user/-
 ./benchmark.sh --ci                  # quick run (small sizes)
 ./benchmark.sh                       # full run
 BENCH_ARM=true ./benchmark.sh        # on an ARM host (e.g. Apple Silicon)
+python3 -m unittest discover -s tests -v  # resource lifecycle regressions; no Docker required
 ```
 
-`BENCH_ARM=true` layers each system's `compose.arm.yml`, building BIND from
+`BENCH_ARM=true` layers `compose.arm.yml` onto every BIND9-based system
+(`bindizr*`, `bind9_native`, `bind9_nsupdate`, `bind9_rndc`), building BIND from
 Debian: the ISC image is amd64-only and segfaults under emulation, taking every
 `bind9`-based system with it. That is BIND 9.20 against ISC's 9.21, so ARM
 numbers are internally consistent but not comparable with amd64 ones.
@@ -38,10 +40,12 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 | `coredns` | CoreDNS | zone file + `file` plugin mtime-poll reload (no management API) |
 
 > **The four Bindizr pairings.** `bindizr*` share one control plane and differ
-> only in which server answers queries. B7 turns NOTIFY off and the four agree
-> there (within ~2%), but writes elsewhere do not: each one sends a NOTIFY the
-> secondary answers with a transfer, so B1's create throughput varies with which
-> secondary absorbs that. Reads, which notify nobody, agree throughout.
+> only in which server answers queries. B1, B2 and B7 run with NOTIFY off — the
+> adapter registers no secondary, so a write notifies nobody — and the four
+> agree there (B7 within ~2%). Benchmarks that run with NOTIFY on (B3–B6, B8,
+> B9) send each write's NOTIFY to the registered secondary, which answers with
+> a transfer, so their write-side numbers vary with which secondary absorbs
+> that. Reads, which notify nobody, agree throughout.
 > `knot` and `powerdns` without the prefix are a different comparison — those
 > run standalone with their own write plane.
 
@@ -70,14 +74,14 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 
 | # | Key | What it measures | Systems |
 | --- | --- | --- | --- |
-| 1 | `b01_crud_tps` | Record Create/Read/Update/Delete TPS, p50/p95/p99, error rate | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot |
+| 1 | `b01_crud_tps` | Record Create/Read/Update/Delete TPS, create/read/update p95, read p50/p99, error rate | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot |
 | 2 | `b02_bulk_import` | Import 1K–1M records: time, records/sec, peak mem/CPU | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_rndc, knot, coredns* |
 | 3 | `b03_propagation` | Create → API done → **DNS-visible** latency (p50/p95/p99) | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot |
 | 4 | `b04_axfr` | Full zone transfer time, size, records/sec | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
-| 5 | `b05_ixfr` | Incremental transfer size/time for 1–1000 changes | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot |
+| 5 | `b05_ixfr` | Incremental transfer size/time for 1–10,000 changes on a 100k-record zone (`--ci`: 1–1,000 on 1k) | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot |
 | 6 | `b06_large_zone` | Zone create/populate/export/delete + mem/CPU by size | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns |
-| 7 | `b07_database` | Bindizr CRUD **and bulk import (10k/100k)** across SQLite / MySQL / PostgreSQL | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns |
-| 8 | `b08_query_perf` | DNS **QPS** + latency; proves zero query-path overhead | native, bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
+| 7 | `b07_database` | Bindizr create/read TPS **and bulk import (10k/100k)** across SQLite / MySQL / PostgreSQL | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns |
+| 8 | `b08_query_perf` | DNS **QPS** + latency against the same server run standalone | bind9_native, bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
 | 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
 
 <sub>\* CoreDNS's bulk number includes its zone-file reload poll — see the CoreDNS scope note above.</sub>
@@ -85,10 +89,11 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 ### The Benchmark 8 claim
 
 Bindizr sits **outside the DNS data plane**: clients query the secondary, not
-Bindizr. Benchmark 8 verifies that each pairing's QPS matches the same server
-run standalone — `Bindizr + BIND9` against `Native BIND9`, `Bindizr + Knot DNS`
+Bindizr. Benchmark 8 compares each pairing's QPS with the same server run
+standalone — `Bindizr + BIND9` against `Native BIND9`, `Bindizr + Knot DNS`
 against `Knot DNS`, `Bindizr + PowerDNS` against `PowerDNS Authoritative` —
-i.e. **Bindizr introduces no measurable DNS query overhead**. NSD has no
+and the report states **no measurable DNS query overhead** only for a pairing
+within the ±5% run-to-run tolerance, flagging any outside it. NSD has no
 standalone run, so its pairing is reported without a comparison.
 
 ## Methodology & fairness
@@ -108,15 +113,18 @@ standalone run, so its pairing is reported without a comparison.
   the host (unlimited), as is standard — the *server* is what's constrained.
 - **notify_after_update split.** Bindizr's write path can either (a) just persist
   to the DB — the adapter registers no secondary, so a write notifies nobody —
-  or (b) additionally push NOTIFY+XFR to the registered secondary synchronously.
+  or (b) additionally send a NOTIFY to the registered secondary inline on the
+  write path; the secondary then pulls the AXFR/IXFR asynchronously.
   Management-plane benchmarks (B1 CRUD, B2 bulk, B7 database) run with
   `notify_after_update=false` to isolate raw write throughput; propagation /
-  AXFR / IXFR / query / resource benchmarks run with it **on** because they
-  require the secondary to receive updates. (TTL is fixed at 3600 and not varied
+  AXFR / IXFR / large-zone / query / resource benchmarks (B3–B6, B8, B9) run
+  with it **on** because they require the secondary to receive updates;
+  `BENCH_BINDIZR_NOTIFY=true|false` overrides this for all but B7. (TTL is
+  fixed at 3600 and not varied
   — the query benchmarks hit authoritative servers directly, so resolver-cache
   TTL effects don't apply.)
 - **Repeatable & averaged.** A full run repeats every measurement **5 times**
-  (`repeats` in `config/settings.yaml`; CI uses `repeats_ci: 1`, override with
+  (`repeats` in `config/settings.yaml`; `--ci` uses `repeats_ci: 1`, override with
   `BENCH_REPEATS=N`). The report averages numeric metrics per system/backend,
   reports the **sample standard deviation** as `mean ± std` on headline metrics,
   and shows a `runs` column. Each full run starts from a clean `raw/` under its
@@ -150,39 +158,47 @@ benchmarks/
   orchestrator.py           # drives benchmarks × systems, writes the report
   config/settings.yaml      # sizes, workload knobs, seed, system/benchmark matrix
   datasets/gen_dataset.py   # deterministic record generator
-  adapters/                 # base interface + registry
-  systems/<key>/            # compose.yml + config + adapter.py per system
+  adapters/                 # base interface, registry, and the shared BIND zone-file and nsupdate helpers
+  systems/<key>/            # adapter.py per system, plus compose.yml + config where it has its own stack
+                            # (bindizr_knot/_nsd/_pdns reuse systems/bindizr/compose.yml through profiles;
+                            # BIND9-based systems add compose.arm.yml, built from systems/bind9.arm.Dockerfile)
   runners/bNN_*.py          # one module per benchmark
-  lib/                      # metrics, loadgen, dnsquery, resources, report, env
+  lib/                      # settings, metrics, loadgen, dnsquery, dig, docker, zonefile, resources, report, env
   results_<timestamp>/      # generated artifacts (md/csv/json/graphs), one dir per run
 ```
 
 ## Configuration & overrides
 
 Defaults live in [`config/settings.yaml`](config/settings.yaml). Handy env
-overrides (used by CI and quick runs):
+overrides (for quick runs; `--ci` sets `BENCH_CI=1`):
 
 | Env | Effect |
 | --- | --- |
 | `BENCH_CI=1` | use small CI sizes |
 | `BENCH_RESULTS_DIR=results_20260710_233856` | reuse an existing results directory instead of creating one; pass it when re-running a subset (`-b ...`) so the report is rebuilt from the full raw set |
-| `BENCH_SIZES=1000,10000` | override bulk/AXFR sizes |
+| `BENCH_SIZES=1000,10000` | override the record-set sizes for bulk import (B2), AXFR (B4), and large zone (B6) |
 | `BENCH_SEED=1337` | dataset seed |
 | `BENCH_CRUD_DURATION` / `BENCH_CRUD_CONCURRENCY` / `BENCH_CRUD_PREPOP` | CRUD window/load |
 | `BENCH_QUERY_DURATION` / `BENCH_QUERY_ZONE_SIZE` | query load |
 | `BENCH_PROP_SAMPLES` | propagation samples |
 | `BENCH_CPU_LIMIT` / `BENCH_MEM_LIMIT` | per-SUT-container caps (default `4` / `4g`) |
-| `BENCH_REPEATS` | repeat each measurement N times and average (default `5`, CI `1`) |
+| `BENCH_REPEATS` | repeat each measurement N times and average (default `5`, `--ci` `1`) |
+| `BENCH_BINDIZR_NOTIFY=true\|false` | force NOTIFY on or off for every benchmark but B7 |
+| `BENCH_DISABLE_SYSTEMS=knot,coredns` | skip systems without editing the matrix |
 | `BENCH_DB_BULK_SIZES=10000,100000` | per-backend bulk-import sizes (Benchmark 7) |
 | `BENCH_BINDIZR_LOG_LEVEL=debug` | surface Bindizr's per-stage timing lines (`event=record_bulk_create_timing` / `event=zone_import_timing`) in the container logs |
 | `BENCH_BINDIZR_BULK_CHUNK` / `BENCH_BINDIZR_IMPORT_CHUNK` | records per JSON-bulk / zone-import request (default `2000` / `5000`); set equal to compare the two paths apples-to-apples, since each chunk is one transaction + serial bump + NOTIFY |
 
-The **1,000,000-record** size is heavy (time + disk) and excluded from CI; run it
-explicitly with `BENCH_SIZES=1000000`.
+The **1,000,000-record** size is part of a full run's default `sizes` but heavy
+(time + disk); `--ci` omits it. To run only that size, set `BENCH_SIZES=1000000`.
 
-To read the per-stage breakdown after a run, grep the Bindizr container logs (with
-`BENCH_BINDIZR_LOG_LEVEL=debug`) for `event=record_bulk_create_timing` /
-`event=zone_import_timing`; each line reports `*_ms` for every stage plus `total_ms`.
+To read the per-stage breakdown, set `BENCH_BINDIZR_LOG_LEVEL=debug` and follow
+the Bindizr container's logs while the run is in progress (`docker compose -p
+bench-bindizr logs -f bindizr`; projects are `bench-<system>` with `_` as `-`,
+and B7 uses `bench-<system>-db-<backend>`), looking for
+`event=record_bulk_create_timing` / `event=zone_import_timing`; each line
+reports `*_ms` for every stage plus `total_ms`. Every stack is torn down with
+`down -v` at the end of its benchmark, so the logs do not outlive the run.
 
 ## Requirements
 

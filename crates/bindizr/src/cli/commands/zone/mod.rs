@@ -47,7 +47,7 @@ and the contact is the address a resolver operator writes to.")]
         rname: String,
         /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
         #[arg(long)]
-        default_ttl: Option<i32>,
+        default_ttl: Option<i64>,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<u32>,
@@ -62,11 +62,11 @@ and the contact is the address a resolver operator writes to.")]
         expire: Option<i32>,
         /// SOA minimum TTL (seconds)
         #[arg(long)]
-        minimum_ttl: Option<i32>,
+        minimum_ttl: Option<i64>,
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
-        /// Start without the apex NS record that would name --mname
+        /// Create a disabled zone without apex NS; add NS records before enabling
         #[arg(long)]
         no_apex_ns: bool,
         /// Validate and report the change without writing it
@@ -91,13 +91,13 @@ and the contact is the address a resolver operator writes to.")]
         rname: Option<String>,
         /// Filter by default TTL
         #[arg(long)]
-        default_ttl: Option<i32>,
+        default_ttl: Option<i64>,
         /// Filter by minimum default TTL
         #[arg(long)]
-        min_default_ttl: Option<i32>,
+        min_default_ttl: Option<i64>,
         /// Filter by maximum default TTL
         #[arg(long)]
-        max_default_ttl: Option<i32>,
+        max_default_ttl: Option<i64>,
         /// Filter by serial
         #[arg(long)]
         serial: Option<u32>,
@@ -165,7 +165,7 @@ and the contact is the address a resolver operator writes to.")]
         rname: Option<String>,
         /// Default record TTL (seconds)
         #[arg(long)]
-        default_ttl: Option<i32>,
+        default_ttl: Option<i64>,
         /// SOA refresh interval (seconds)
         #[arg(long)]
         refresh: Option<i32>,
@@ -177,7 +177,7 @@ and the contact is the address a resolver operator writes to.")]
         expire: Option<i32>,
         /// SOA minimum TTL (seconds)
         #[arg(long)]
-        minimum_ttl: Option<i32>,
+        minimum_ttl: Option<i64>,
         /// Serve the zone or stop serving it without deleting it
         #[arg(long, value_name = "true|false")]
         enabled: Option<bool>,
@@ -272,10 +272,6 @@ skipped); a catalog zone (RFC 9432) names every zone the server provisions.")]
         /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
-        /// Pass over record types bindizr does not store instead of failing
-        /// the whole file
-        #[arg(long)]
-        skip_unsupported: bool,
         /// Create the zone from the file's SOA when it does not exist yet
         #[arg(long)]
         create: bool,
@@ -507,9 +503,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 run: Run::from_dry_run(dry_run),
             })
             .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         ZoneCommand::Export { name, signed } => {
@@ -528,7 +526,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_catalog,
             mode,
             dry_run,
-            skip_unsupported,
             create,
             output,
             ..
@@ -545,6 +542,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         .map(str::to_string)
                         .collect::<Vec<_>>()
                 });
+
             let response = client::send_command::<ImportZonesResponse>(DaemonCommand::ImportZones(
                 ImportZonesRequest {
                     from_server,
@@ -552,31 +550,30 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     from_catalog,
                     mode: types::ImportMode::from(mode).as_str().to_owned(),
                     dry_run,
-                    skip_unsupported,
                     create,
                 },
             ))
             .await?;
             let import = &response.data;
-            match output {
-                OutputFormat::Table => {
-                    outln!("{}", response.message);
-                    // Diagnostics go to stderr, so a pipeline keeps the table clean.
-                    for item in &import.zones {
-                        let Some(zone_import) = &item.import else {
-                            continue;
-                        };
-                        for error in &zone_import.errors {
-                            errln!("  {} - {}", item.zone_name, error);
-                        }
-                        for skipped in &zone_import.skipped_records {
-                            errln!("  {} ~ {}", item.zone_name, skipped);
-                        }
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message);
+
+                // Diagnostics go to stderr, so a pipeline keeps the table clean.
+                for item in &import.zones {
+                    let Some(zone_import) = &item.import else {
+                        continue;
+                    };
+                    for error in &zone_import.errors {
+                        errln!("  {} - {}", item.zone_name, error);
                     }
-                    print_table(import.zones.iter().map(ImportZonesRow::from).collect());
                 }
-                _ => print_payload(import, output)?,
+
+                print_table(import.zones.iter().map(ImportZonesRow::from).collect());
+            } else {
+                print_payload(import, output)?
             }
+
             // A zone left behind must not exit as a success.
             if import.has_rejected_or_failed() {
                 return Err(CliError::request(format!(
@@ -592,12 +589,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_server,
             mode,
             dry_run,
-            skip_unsupported,
             create,
             output,
             ..
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
+
             let response = client::send_command::<ImportZoneResponse>(DaemonCommand::ImportZone {
                 zone_name: name,
                 request: ImportZoneRequest {
@@ -605,29 +602,29 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     from_server,
                     mode: types::ImportMode::from(mode).as_str().to_owned(),
                     dry_run,
-                    skip_unsupported,
                     create,
                 },
             })
             .await?;
             let import = &response.data;
-            match output {
-                OutputFormat::Table => {
-                    outln!("{}", response.message);
-                    // Diagnostics go to stderr, so a pipeline keeps the summary clean.
-                    for error in &import.errors {
-                        errln!("  - {}", error);
-                    }
-                    for skipped in &import.skipped_records {
-                        errln!("  ~ {}", skipped);
-                    }
-                    print_table(vec![ImportSummaryRow::from(import)]);
-                    if dry_run {
-                        out!("{}", render_change_preview(&import.diff));
-                    }
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message);
+
+                // Diagnostics go to stderr, so a pipeline keeps the summary clean.
+                for error in &import.errors {
+                    errln!("  - {}", error);
                 }
-                _ => print_payload(import, output)?,
+
+                print_table(vec![ImportSummaryRow::from(import)]);
+
+                if dry_run {
+                    out!("{}", render_change_preview(&import.diff));
+                }
+            } else {
+                print_payload(import, output)?
             }
+
             // A rejected import applied nothing, so it must not exit as a success.
             if import.was_rejected() {
                 return Err(CliError::request(format!(
@@ -642,15 +639,19 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 client::send_command::<ZoneStatusResponse>(DaemonCommand::GetZoneStatus { name })
                     .await?;
             let status = &response.data;
+
             if output != OutputFormat::Table {
                 print_payload(status, output)?;
                 return Ok(());
             }
+
             outln!("Zone {} (serial {})", status.zone_name, status.serial);
+
             if status.secondaries.is_empty() {
                 outln!("No enabled secondaries.");
                 return Ok(());
             }
+
             print_table(SecondaryStatusRow::rows_from_status(status));
         }
         ZoneCommand::Notify(args) => {
@@ -660,12 +661,16 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 Some(zone_name) => DaemonCommand::NotifyZone { zone_name, serial },
                 None => DaemonCommand::NotifyAllZones { serial },
             };
+
             let response = client::send_command::<MessageResponse>(command).await?;
-            match args.output {
-                OutputFormat::Table => outln!("{}", response.message),
-                _ => print_payload(&response.data, args.output)?,
+
+            if args.output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, args.output)?
             }
         }
     }
+
     Ok(())
 }

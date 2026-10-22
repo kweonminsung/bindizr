@@ -26,6 +26,7 @@ impl TlsaRecordValue {
                 value: value.to_string(),
             });
         };
+
         Ok(Self {
             cert_usage: parse_u8_record_field("TLSA certificate usage", cert_usage)?,
             selector: parse_u8_record_field("TLSA selector", selector)?,
@@ -43,6 +44,7 @@ impl TlsaRecordValue {
             2 => Some(64),
             _ => None,
         };
+
         if let Some(expected) = expected
             && self.cert_data.len() != expected
         {
@@ -52,15 +54,18 @@ impl TlsaRecordValue {
                 len: self.cert_data.len(),
             });
         }
+
         // Bounded so the record fits one transfer message beside its 3 fixed
         // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
         const MAX_CERT_DATA: usize = MAX_RECORD_RDATA - 3;
+
         if self.cert_data.len() > MAX_CERT_DATA {
             return Err(ParseRecordValueError::TlsaDataTooLong {
                 max: MAX_CERT_DATA,
                 len: self.cert_data.len(),
             });
         }
+
         Ok(())
     }
 
@@ -97,6 +102,7 @@ mod tests {
             "3 1 1 4b9b6b073edd97fe1a7b19871ee93be250e49b2d9466e661a22c74c426ace383",
         )
         .unwrap();
+
         assert_eq!(
             parsed.canonical(),
             "3 1 1 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383"
@@ -107,6 +113,7 @@ mod tests {
     #[test]
     fn validate_pins_digest_lengths_but_not_full_certificates() {
         let short = TlsaRecordValue::parse("3 1 1 4B9B").unwrap();
+
         assert!(
             short
                 .validate()
@@ -114,6 +121,7 @@ mod tests {
                 .to_string()
                 .contains("32-byte")
         );
+
         // Matching type 0 carries the full certificate at any length.
         assert!(
             TlsaRecordValue::parse("3 0 0 4B9B")
@@ -130,6 +138,7 @@ mod tests {
         let cap = MAX_RECORD_RDATA - 3;
 
         let at_limit = format!("3 0 0 {}", "AB".repeat(cap));
+
         assert!(
             TlsaRecordValue::parse(&at_limit)
                 .unwrap()
@@ -137,7 +146,8 @@ mod tests {
                 .is_ok()
         );
         let oversized = format!("3 0 0 {}", "AB".repeat(cap + 1));
-        let err = TlsaRecordValue::parse(&oversized).unwrap().validate();
-        assert!(err.unwrap_err().to_string().contains(&cap.to_string()));
+        let error = TlsaRecordValue::parse(&oversized).unwrap().validate();
+
+        assert!(error.unwrap_err().to_string().contains(&cap.to_string()));
     }
 }

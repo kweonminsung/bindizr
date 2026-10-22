@@ -85,6 +85,7 @@ pub(crate) async fn check_secondary(
     } else {
         format!("Secondary '{}' failed the check", name)
     };
+
     Ok(DaemonResponse {
         message,
         data: check,
@@ -98,6 +99,7 @@ pub(crate) async fn list_secondary_transfers(
     filter: SecondaryTransferFilter,
 ) -> Result<DaemonResponse<SecondaryTransfersResponse>, ServiceError> {
     let transfers = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
+
     Ok(DaemonResponse {
         message: format!(
             "{} transfer(s) served to secondary '{}'",

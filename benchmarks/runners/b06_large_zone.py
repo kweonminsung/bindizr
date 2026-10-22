@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
-from lib import dnsutil  # noqa: E402
+from lib import dig  # noqa: E402
 from lib.resources import sampler_for  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
@@ -23,99 +23,109 @@ SELF_SAMPLES = True
 APEX_LINES = 10
 
 
-async def run(adapter, cfg, ctx) -> list:
+async def run(adapter, config, context) -> list:
     """Measure large-zone creation, import, transfer, deletion, and resource use."""
-    zone = ctx["zone"]
+    zone = context["zone"]
     xe = adapter.xfr_endpoint()
     loop = asyncio.get_event_loop()
     rows = []
-    for size in cfg["sizes"]:
-        sampler = sampler_for(adapter, cfg)
-        sampler.start()
 
-        await adapter.delete_zone(zone)
-        # Wait for the delete to reach the XFR endpoint before recreating: the
-        # secondary drops the zone via the catalog seconds later, and the new
-        # low serial would otherwise collide with the stale copy it still holds.
-        drop_deadline = time.monotonic() + 30
-        dropped = False
-        while time.monotonic() < drop_deadline:
-            _, count, _ = await loop.run_in_executor(
-                None, dnsutil.axfr, zone, xe.host, xe.port, 300)
-            if count <= APEX_LINES:
-                dropped = True
-                break
-            await asyncio.sleep(1.0)
+    for size in config["sizes"]:
+        sampler = sampler_for(adapter, config)
+        with sampler:
+            await adapter.delete_zone(zone)
 
-        # Recreating over a zone the secondary still serves measures the stale
-        # copy, which a descending BENCH_SIZES would report as the new size.
-        if not dropped:
-            print(f'  [FAIL] b06: secondary still serves the old zone '
-                  f'for size {size}')
-            sampler.stop()
-            rows.append({
-                "system": ctx["label"],
-                "size": size,
-                "status": "FAILED",
-                "error": "delete timeout: secondary still serves the old zone",
-            })
-            continue
+            # Wait for the delete to reach the XFR endpoint before recreating: the
+            # secondary drops the zone via the catalog seconds later, and the new
+            # low serial would otherwise collide with the stale copy it still holds.
+            drop_deadline = time.monotonic() + 30
+            dropped = False
 
-        t = time.monotonic()
-        await adapter.create_zone(zone)
-        create_secs = time.monotonic() - t
+            while time.monotonic() < drop_deadline:
+                _, count, _ = await loop.run_in_executor(
+                    None, dig.axfr, zone, xe.host, xe.port, 300)
+                if count <= APEX_LINES:
+                    dropped = True
+                    break
+                await asyncio.sleep(1.0)
 
-        recs = generate(size, cfg["seed"], zone)
-        t = time.monotonic()
-        await adapter.import_records(zone, recs)
-        populate_secs = time.monotonic() - t
+            # Recreating over a zone the secondary still serves measures the stale
+            # copy, which a descending BENCH_SIZES would report as the new size.
+            if not dropped:
+                print(f'  [FAIL] b06: secondary still serves the old zone '
+                      f'for size {size}')
+                rows.append({
+                    "system": context["label"],
+                    "size": size,
+                    "status": "FAILED",
+                    "error": "delete timeout: secondary still serves the old zone",
+                })
 
-        # The secondary pulls asynchronously (import_records returns after
-        # commit+NOTIFY, not after the transfer lands), so poll until the count
-        # covers the set before timing the export; scale the bound with size.
-        deadline = time.monotonic() + max(120, size / 500)
-        prev = -1
-        propagated = False
-        while time.monotonic() < deadline:
-            _, count, _ = await loop.run_in_executor(
-                None, dnsutil.axfr, zone, xe.host, xe.port, 300)
-            if count >= size and count == prev:
-                propagated = True
-                break
-            prev = count
-            await asyncio.sleep(1.0)
+                continue
 
-        # A timed-out poll means the secondary never received the full zone;
-        # exporting anyway would time a stale transfer and label it this size.
-        if not propagated:
-            print(f'  [FAIL] b06: zone not fully transferable within deadline '
-                  f'for size {size}')
-            sampler.stop()
-            rows.append({
-                "system": ctx["label"],
-                "size": size,
-                "status": "FAILED",
-                "error": "propagation timeout: zone not fully transferable",
-            })
-            continue
+            t = time.monotonic()
 
-        export_secs, _, export_bytes = await loop.run_in_executor(
-            None, dnsutil.axfr, zone, xe.host, xe.port, 300)
+            await adapter.create_zone(zone)
 
-        t = time.monotonic()
-        await adapter.delete_zone(zone)
-        delete_secs = time.monotonic() - t
+            create_secs = time.monotonic() - t
 
-        res = sampler.stop()
+            recs = generate(size, config["seed"], zone)
+            t = time.monotonic()
+
+            await adapter.import_records(zone, recs)
+
+            populate_secs = time.monotonic() - t
+
+            # The secondary pulls asynchronously (import_records returns after
+            # commit+NOTIFY, not after the transfer lands), so poll until the count
+            # covers the set before timing the export; scale the bound with size.
+            deadline = time.monotonic() + max(120, size / 500)
+            prev = -1
+            propagated = False
+
+            while time.monotonic() < deadline:
+                _, count, _ = await loop.run_in_executor(
+                    None, dig.axfr, zone, xe.host, xe.port, 300)
+                if count >= size and count == prev:
+                    propagated = True
+                    break
+                prev = count
+                await asyncio.sleep(1.0)
+
+            # A timed-out poll means the secondary never received the full zone;
+            # exporting anyway would time a stale transfer and label it this size.
+            if not propagated:
+                print(f'  [FAIL] b06: zone not fully transferable within deadline '
+                      f'for size {size}')
+                rows.append({
+                    "system": context["label"],
+                    "size": size,
+                    "status": "FAILED",
+                    "error": "propagation timeout: zone not fully transferable",
+                })
+
+                continue
+
+            export_secs, _, export_bytes = await loop.run_in_executor(
+                None, dig.axfr, zone, xe.host, xe.port, 300)
+
+            t = time.monotonic()
+
+            await adapter.delete_zone(zone)
+
+            delete_secs = time.monotonic() - t
+        resource_usage = sampler.summary()
+
         rows.append({
-            "system": ctx["label"],
+            "system": context["label"],
             "size": size,
             "create_secs": round(create_secs, 3),
             "populate_secs": round(populate_secs, 3),
             "export_secs": round(export_secs, 3),
             "export_mb": round(export_bytes / 1024**2, 2),
             "delete_secs": round(delete_secs, 3),
-            "peak_mem_mb": res.get("peak_mem_mb", 0),
-            "peak_cpu_pct": res.get("peak_cpu_pct", 0),
+            "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
+            "peak_cpu_pct": resource_usage.get("peak_cpu_pct", 0),
         })
+
     return rows

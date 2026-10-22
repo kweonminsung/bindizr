@@ -23,15 +23,18 @@ pub(crate) async fn create_many_tx(
 ) -> Result<Vec<Record>, DatabaseError> {
     const CHUNK: usize = 500;
     let mut out = Vec::with_capacity(records.len());
+
     for chunk in records.chunks(CHUNK) {
         let mut sql = String::from(
             "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
         );
         let mut p = 1;
+
         for i in 0..chunk.len() {
             if i > 0 {
                 sql.push(',');
             }
+
             sql.push_str(&format!(
                 "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                 p,
@@ -45,31 +48,35 @@ pub(crate) async fn create_many_tx(
             ));
             p += 8;
         }
+
         sql.push_str(" RETURNING id");
 
         let now = Utc::now();
         let mut query = sqlx::query(AssertSqlSafe(sql));
-        for r in chunk {
+
+        for record in chunk {
             query = query
-                .bind(&r.name)
-                .bind(r.record_type.to_text())
-                .bind(r.value.clone())
-                .bind(r.record_type.display_value(&r.value))
-                .bind(r.ttl)
-                .bind(r.priority)
-                .bind(r.zone_id)
+                .bind(&record.name)
+                .bind(record.record_type.as_str())
+                .bind(record.value.clone())
+                .bind(record.record_type.display_value(&record.value))
+                .bind(record.ttl)
+                .bind(record.priority)
+                .bind(record.zone_id)
                 .bind(now);
         }
+
         let rows = query.fetch_all(&mut **tx).await?;
 
         // Postgres returns RETURNING rows in the order the VALUES were given.
-        for (r, row) in chunk.iter().zip(rows) {
-            let mut rec = r.clone();
-            rec.id = RecordId::from(row.get::<i32, _>(0));
-            rec.created_at = now;
-            out.push(rec);
+        for (record, row) in chunk.iter().zip(rows) {
+            let mut created_record = record.clone();
+            created_record.id = RecordId::from(row.get::<i32, _>(0));
+            created_record.created_at = now;
+            out.push(created_record);
         }
     }
+
     Ok(out)
 }
 
@@ -78,11 +85,11 @@ pub(crate) async fn get(
     pool: &Pool<Postgres>,
     id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1")
         .bind(id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *connection)
         .await
         ?;
 
@@ -94,7 +101,7 @@ pub(crate) async fn get_with_zone(
     pool: &Pool<Postgres>,
     id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, RecordWithZone>(
         r#"
@@ -106,7 +113,7 @@ pub(crate) async fn get_with_zone(
         "#,
     )
     .bind(id)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(record)
@@ -173,21 +180,26 @@ pub(crate) async fn list_by_record_types_tx(
     if record_types.is_empty() {
         return Ok(Vec::new());
     }
+
     let mut sql = String::from(
         "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND record_type IN (",
     );
+
     for i in 0..record_types.len() {
         if i > 0 {
             sql.push(',');
         }
         sql.push_str(&format!("${}", i + 2));
     }
+
     sql.push_str(") ORDER BY name, id");
 
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+
     for record_type in record_types {
-        query = query.bind(record_type.to_text());
+        query = query.bind(record_type.as_str());
     }
+
     let records = query.fetch_all(&mut **tx).await?;
 
     Ok(records)
@@ -217,30 +229,37 @@ pub(crate) async fn list_by_names_tx(
     if names.is_empty() {
         return Ok(Vec::new());
     }
+
     // Lock only conflicting names; 5000-name chunks reduce round trips
     // without reaching the 65535-placeholder limit.
     const CHUNK: usize = 5000;
     let mut out = Vec::new();
+
     for chunk in names.chunks(CHUNK) {
         let mut sql = String::from(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (",
         );
+
         for i in 0..chunk.len() {
             if i > 0 {
                 sql.push(',');
             }
             sql.push_str(&format!("${}", i + 2));
         }
+
         sql.push(')');
         sql.push_str(lock_level.clause());
 
         let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+
         for name in chunk {
             query = query.bind(name);
         }
+
         let mut rows = query.fetch_all(&mut **tx).await?;
         out.append(&mut rows);
     }
+
     Ok(out)
 }
 
@@ -249,15 +268,18 @@ pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Postgres>,
     filter: RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let value = filter.value.as_deref().map(partial_term);
     let value_exact = filter.value.as_deref().map(str::trim);
     let search = like_pattern(filter.search.as_deref());
     let name_like_types = name_like_types_sql();
     let apex_owner = apex_owner_sql();
 
+    // Only fixed SQL fragments are interpolated; caller values stay in bindings.
     let order_by = filter.sort.order_by_sql(filter.order);
     let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
+
     let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
@@ -275,9 +297,9 @@ pub(crate) async fn list_by_filter_with_zone(
                 WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                 ELSE POSITION($31 IN r.display_value) > 0
           END))
-          AND ($10::INT4 IS NULL OR r.ttl = $11)
-          AND ($12::INT4 IS NULL OR r.ttl >= $13)
-          AND ($14::INT4 IS NULL OR r.ttl <= $15)
+          AND ($10::INT8 IS NULL OR r.ttl = $11)
+          AND ($12::INT8 IS NULL OR r.ttl >= $13)
+          AND ($14::INT8 IS NULL OR r.ttl <= $15)
           AND ($16::INT4 IS NULL OR r.priority = $17)
           AND ($18::INT4 IS NULL OR r.priority >= $19)
           AND ($20::INT4 IS NULL OR r.priority <= $21)
@@ -335,7 +357,7 @@ pub(crate) async fn list_by_filter_with_zone(
     )
     .bind(filter.scope_role_id)
     .bind(value_exact)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(records)
@@ -359,7 +381,8 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
     filter: RecordFilter,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let value = filter.value.as_deref().map(partial_term);
     let value_exact = filter.value.as_deref().map(str::trim);
     let search = like_pattern(filter.search.as_deref());
@@ -367,6 +390,7 @@ pub(crate) async fn count_by_filter(
     let apex_owner = apex_owner_sql();
 
     let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
+
     let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         r#"
         SELECT COUNT(*)
@@ -383,9 +407,9 @@ pub(crate) async fn count_by_filter(
                 WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                 ELSE POSITION($29 IN r.display_value) > 0
           END))
-          AND ($10::INT4 IS NULL OR r.ttl = $11)
-          AND ($12::INT4 IS NULL OR r.ttl >= $13)
-          AND ($14::INT4 IS NULL OR r.ttl <= $15)
+          AND ($10::INT8 IS NULL OR r.ttl = $11)
+          AND ($12::INT8 IS NULL OR r.ttl >= $13)
+          AND ($14::INT8 IS NULL OR r.ttl <= $15)
           AND ($16::INT4 IS NULL OR r.priority = $17)
           AND ($18::INT4 IS NULL OR r.priority >= $19)
           AND ($20::INT4 IS NULL OR r.priority <= $21)
@@ -434,7 +458,7 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(filter.scope_role_id)
     .bind(value_exact)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)
@@ -453,7 +477,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.to_text())
+    .bind(record.record_type.as_str())
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)
@@ -474,9 +498,11 @@ pub(crate) async fn delete_many_tx(
     if ids.is_empty() {
         return Ok(());
     }
+
     sqlx::query("DELETE FROM records WHERE id = ANY($1)")
         .bind(ids)
         .execute(&mut **tx)
         .await?;
+
     Ok(())
 }

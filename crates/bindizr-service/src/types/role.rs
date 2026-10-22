@@ -101,7 +101,7 @@ impl RoleGrantResponse {
         RoleGrantResponse {
             id: grant.id,
             role_name: role_name.to_string(),
-            zone_name: zone_name.map(|name| name.to_string()),
+            zone_name: zone_name.map(ToString::to_string),
             actions: grant.actions.iter().collect(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),

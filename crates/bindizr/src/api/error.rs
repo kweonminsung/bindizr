@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{FromRequestParts, rejection::JsonRejection},
-    http::{StatusCode, request::Parts},
+    http::{HeaderValue, StatusCode, header::WWW_AUTHENTICATE, request::Parts},
     response::{IntoResponse, Response},
 };
 use bindizr_service::{
@@ -11,7 +11,7 @@ use bindizr_service::{
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
+use crate::api::middleware::body_parser::{DEFAULT_BODY_BYTES, MAX_UPLOAD_BODY_BYTES};
 
 /// The HTTP status each error code answers with. Every code is spelled out,
 /// so a new one has to choose its status here.
@@ -75,11 +75,24 @@ impl From<ServiceError> for ApiError {
 impl IntoResponse for ApiError {
     /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
-        (
-            http_status(self.0.code()),
-            Json(ErrorResponse::from(&self.0)),
-        )
-            .into_response()
+        let status = http_status(self.0.code());
+        let code = self.0.code();
+        let mut response = (status, Json(ErrorResponse::from(&self.0))).into_response();
+
+        // RFC 9110, Section 15.5.2 wants a challenge on every 401; RFC 6750, Section 3
+        // spells it with a realm and, for a refused token, `error="invalid_token"`.
+        if status == StatusCode::UNAUTHORIZED {
+            let challenge = if code == ErrorCode::InvalidToken {
+                "Bearer realm=\"bindizr\", error=\"invalid_token\""
+            } else {
+                "Bearer realm=\"bindizr\""
+            };
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static(challenge));
+        }
+
+        response
     }
 }
 
@@ -100,11 +113,13 @@ impl From<JsonRejection> for ApiError {
             ),
             // A body over DefaultBodyLimit arrives as a BytesRejection; it is a
             // client size error, so keep axum's status instead of reporting 500.
+            // The rejection does not say which limit the route carries.
             JsonRejection::BytesRejection(_)
                 if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
             {
                 ServiceError::PayloadTooLarge(format!(
-                    "request body exceeds the {} MiB limit",
+                    "request body exceeds the {} MiB limit ({} MiB for zone imports, bulk record writes and ExternalDNS changes)",
+                    DEFAULT_BODY_BYTES / (1024 * 1024),
                     MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
                 ))
             }
@@ -177,6 +192,7 @@ mod tests {
         else {
             panic!("an unknown query key must be rejected");
         };
+
         assert_eq!(error.0.code(), ErrorCode::InvalidInput);
         assert!(
             error.0.to_string().contains("unknown field `record_type`"),
@@ -199,6 +215,7 @@ mod tests {
         else {
             panic!("the spelled-out filter must parse");
         };
+
         assert_eq!(filter.record_type.as_deref(), Some("A"));
         assert!(filter.dry_run);
     }
@@ -219,6 +236,7 @@ mod tests {
             panic!("an unknown body field must be rejected");
         };
         let error = ApiError::from(rejection);
+
         assert_eq!(error.0.code(), ErrorCode::InvalidJsonBody);
         assert!(
             error.0.to_string().contains("unknown field `tll`"),

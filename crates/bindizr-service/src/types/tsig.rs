@@ -13,7 +13,7 @@ use crate::model::tsig_key::TsigKey;
 pub struct CreateTsigKeyRequest {
     #[schema(example = "update-key")]
     pub name: String,
-    /// Defaults to `hmac-sha256`; also accepts `hmac-sha384` and `hmac-sha512`.
+    /// Defaults to `hmac-sha256`; also accepts `hmac-sha384`, `hmac-sha512`, and legacy `hmac-sha1` (RFC 8945).
     #[schema(example = "hmac-sha256")]
     pub algorithm: Option<String>,
     /// Existing base64 secret to import; omit to generate a random one.

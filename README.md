@@ -6,7 +6,7 @@
 Open-source control plane for authoritative DNS
 
 <p>
-    <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">
+    <a href="https://github.com/kweonminsung/bindizr/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/license-Apache 2.0-blue" />
     </a>
     <a href="https://github.com/kweonminsung/bindizr/actions/workflows/ci.yml">
@@ -26,21 +26,21 @@ Open-source control plane for authoritative DNS
 
 &nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding the secondaries, which answer client queries">
 
-Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND, Knot DNS, NSD, PowerDNS, or Technitium — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
+Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND, Knot DNS, NSD, PowerDNS, Technitium, or CoreDNS — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
 
 ## Features
 
 - **Zone and Record Management** — full CRUD through the HTTP API, documented by OpenAPI, or the CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
 - **Multiple Database Backends** — MySQL, PostgreSQL, or SQLite.
-- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
+- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and a per-serial transfer cache, on by default. A zone served elsewhere moves over in one command.
 - **Transfers over TLS** — XoT (RFC 9103) to the BIND, Knot DNS, and NSD versions that speak it.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
 - **Audit Log** — every change to a token, role, grant, TSIG key, secondary, or policy, and every zone deletion, is logged with who made it and when; a zone's own changes are its versions.
-- **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
-- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
+- **DNSSEC** — named signing policies, automatic signing and re-signing, ZSK rollovers the scheduler starts and completes on a policy's key lifetime, operator-started CSK/KSK rollovers that complete once the parent serves the new DS, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
+- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in the zones and subtrees its token's role is granted, through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, text or JSON logs, and `bindizr status` / `bindizr doctor` diagnostics.
 
@@ -48,7 +48,7 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 
 <img src="docs/assets/secondaries.svg" width="720px" alt="BIND, Knot DNS, NSD, PowerDNS, Technitium, and CoreDNS follow Bindizr's catalog zone; Windows Server DNS, YADIFA, and Unbound take its zones one by one">
 
-Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven updates, and DNSSEC-signed zones. The left column learns zones from the catalog zone; the right one is given each zone by hand. Versions, TSIG support, and each server's configuration are in [Secondary Servers](https://kweonminsung.github.io/bindizr/secondaries/).
+Every server above has been run as a Bindizr secondary: transfers, updates on NOTIFY (Unbound, which refuses NOTIFY, picks them up on its SOA refresh), and DNSSEC-signed zones. The left column learns zones from the catalog zone; the right one is given each zone by hand. Versions, TSIG support, and each server's configuration are in [Secondary Servers](https://kweonminsung.github.io/bindizr/secondaries/).
 
 ## Roadmap
 
@@ -59,9 +59,9 @@ Every server above has been run as a Bindizr secondary: transfers, NOTIFY-driven
 - **Webhooks** — a change is visible today only by polling the API or the
   zone versions. Posting each zone, record, and DNSSEC key event to a
   configured URL lets other systems react as it happens.
-- **More Record Types** — fourteen types are stored today, and an import
-  drops the rest with `--skip-unsupported`. Adding SVCB/HTTPS and storing any
-  other type in its RFC 3597 generic form lets a zone move over whole.
+- **More Record Types** — fifteen types are parsed and validated today,
+  including WKS. Other ordinary types are rejected. Adding SVCB/HTTPS would
+  let those records be managed through the same API and CLI.
 - **Terraform Provider** — infrastructure as code reaches Bindizr through
   the ExternalDNS adapter alone. A provider over the HTTP API lets zones,
   records, and access rights be declared beside the rest of the stack.
@@ -80,7 +80,7 @@ The default BIND image is amd64-only. On arm64, use the image override in the
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.2 --set postgresql.enabled=true
+  --version 0.1.0-rc.3 --set postgresql.enabled=true
 ```
 
 ### Docker Compose
@@ -103,11 +103,15 @@ $ docker compose -f examples/compose/docker-compose.yml \
 
 ### Docker Swarm
 
-Brings up Bindizr, PostgreSQL, and BIND on an overlay network.
-The example's BIND image is amd64-only; choose an arm64 BIND image before
-deploying it on arm64 nodes.
+Brings up Bindizr, PostgreSQL, and BIND on an overlay network. The stack
+mounts a transfer key as a Swarm secret, created once before deploying. The
+example's BIND image is amd64-only; on arm64 nodes build `examples/swarm/bind9`
+on each node and deploy with `BIND9_IMAGE`, as in the
+[Swarm walkthrough](docs/deployment/docker-compose.md#docker-swarm).
 
 ```bash
+$ printf 'key "swarm-xfr" {\n  algorithm hmac-sha256;\n  secret "%s";\n};\n' \
+  "$(openssl rand -base64 32)" | docker secret create bindizr_xfr_key -
 $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```
 
@@ -116,6 +120,7 @@ $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```bash
 $ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu (bindizr_*_arm64.deb on arm64)
 $ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL (bindizr-*.aarch64.rpm on arm64)
+$ sudo apk add --allow-untrusted bindizr-*.x86_64.apk    # Alpine (bindizr-*.aarch64.apk on arm64)
 ```
 
 The package runs on SQLite out of the box and serves zone transfers on port

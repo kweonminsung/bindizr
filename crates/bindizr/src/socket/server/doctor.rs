@@ -2,13 +2,8 @@ use std::net::SocketAddr;
 
 use bindizr_core::dns::address::loopback_if_unspecified;
 use bindizr_service::{
-    Context,
-    authorization::Caller,
-    dns_client::{notify, probe},
-    error::ServiceError,
-    secondary,
-    types::SecondaryTransferSummaryResponse,
-    zone,
+    Context, authorization::Caller, dns_client, error::ServiceError, secondary,
+    types::CheckSecondariesResponse, zone,
 };
 use tokio::net::TcpStream;
 
@@ -27,6 +22,7 @@ pub(crate) async fn check_installation(
     // Count zones without materializing them; large tables must fit the deadline.
     let caller = Caller::socket();
     let zones_probe = zone::count(cx, &caller);
+
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Ok,
@@ -35,9 +31,9 @@ pub(crate) async fn check_installation(
                 config.database.database_type, total
             ),
         },
-        Ok(Err(e)) => DoctorCheckResponse {
+        Ok(Err(error)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
-            message: format!("Database not reachable: {}", e),
+            message: format!("Database not reachable: {}", error),
         },
         Err(_) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
@@ -56,7 +52,9 @@ pub(crate) async fn check_installation(
     let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
-        match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
+        match dns_client::probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout)
+            .await
+        {
             Ok(serial) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Ok,
@@ -67,10 +65,10 @@ pub(crate) async fn check_installation(
                 },
                 Some(serial),
             ),
-            Err(e) => (
+            Err(error) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Failed,
-                    message: format!("DNS server not reachable: {}: {}", dns_addr, e),
+                    message: format!("DNS server not reachable: {}: {}", dns_addr, error),
                 },
                 None,
             ),
@@ -93,9 +91,12 @@ pub(crate) async fn check_installation(
                             dns_tls_addr
                         ),
                     },
-                    Ok(Err(e)) => DoctorCheckResponse {
+                    Ok(Err(error)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
-                        message: format!("DNS TLS server not reachable: {}: {}", dns_tls_addr, e),
+                        message: format!(
+                            "DNS TLS server not reachable: {}: {}",
+                            dns_tls_addr, error
+                        ),
                     },
                     Err(_) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
@@ -112,24 +113,10 @@ pub(crate) async fn check_installation(
 
     // The secondaries are rows: a database that did not answer is not asked
     // for them again.
-    let (secondaries, notifies, transfers) = if database.status == DoctorCheckStatus::Failed {
-        (Vec::new(), Vec::new(), Vec::new())
+    let diagnostics = if database.status == DoctorCheckStatus::Failed {
+        CheckSecondariesResponse::default()
     } else {
-        // Capture secondary serials before the NOTIFY check can trigger a refresh.
-        let secondaries =
-            probe::probe_secondaries(cx, &config.dns.catalog_zone_name, catalog_serial).await?;
-        // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-        let notifies =
-            notify::send_notify_to_secondaries(cx, &config.dns.catalog_zone_name).await?;
-        let mut transfers = Vec::new();
-        for secondary in secondary::list_enabled(cx).await? {
-            transfers.push(SecondaryTransferSummaryResponse {
-                summary: secondary::summarize_transfers(cx, &secondary).await?,
-                secondary_name: secondary.name,
-                address: secondary.address.to_string(),
-            });
-        }
-        (secondaries, notifies, transfers)
+        secondary::check_enabled(cx, &caller, &config.dns.catalog_zone_name, catalog_serial).await?
     };
 
     let response = DaemonDoctorResponse {
@@ -138,9 +125,9 @@ pub(crate) async fn check_installation(
         dns_tls_server,
         catalog_zone_name: config.dns.catalog_zone_name.to_string(),
         catalog_serial,
-        secondaries,
-        notifies,
-        transfers,
+        secondaries: diagnostics.secondaries,
+        notifies: diagnostics.notifies,
+        transfers: diagnostics.transfers,
     };
 
     Ok(DaemonResponse {

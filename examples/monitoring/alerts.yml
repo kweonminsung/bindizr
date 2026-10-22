@@ -47,7 +47,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "NOTIFY delivery to a secondary is failing"
+          summary: "Sending NOTIFY to a secondary is failing"
           description: "Check the secondary's address (`bindizr secondary list`) and BIND's allow-notify; `bindizr doctor` reports both."
 
       # The client is outside the ACL, or signs with an unknown key.

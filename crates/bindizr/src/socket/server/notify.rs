@@ -1,17 +1,19 @@
+use std::sync::Arc;
+
 use bindizr_service::{
     Context,
     authorization::Caller,
     error::ServiceError,
     notify::NotifyTarget,
-    types::{MessageResponse, NotifySerial, build_notify_message},
+    types::{MessageResponse, NotifySerial},
     zone,
 };
 
 use crate::socket::types::DaemonResponse;
 
-/// Request NOTIFY delivery for one zone.
+/// Send NOTIFY requests for one zone.
 pub(crate) async fn notify_zone(
-    cx: &Context,
+    cx: &Arc<Context>,
     zone_name: &str,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
@@ -19,24 +21,23 @@ pub(crate) async fn notify_zone(
     notify(cx, NotifyTarget::Zone(&zone_name), serial).await
 }
 
-/// Request NOTIFY delivery for all zones.
+/// Send NOTIFY requests for all zones.
 pub(crate) async fn notify_all_zones(
-    cx: &Context,
+    cx: &Arc<Context>,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     notify(cx, NotifyTarget::All, serial).await
 }
 
-/// Request NOTIFY delivery for the zones `target` names.
+/// Send NOTIFY requests for the zones `target` names.
 async fn notify(
-    cx: &Context,
+    cx: &Arc<Context>,
     target: NotifyTarget<'_>,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    zone::notify(cx, &Caller::socket(), target, serial).await?;
-    let message = build_notify_message(target, serial);
+    let response = zone::notify(cx, &Caller::socket(), target, serial).await?;
     Ok(DaemonResponse {
-        message: message.clone(),
-        data: MessageResponse { message },
+        message: response.message.clone(),
+        data: response,
     })
 }

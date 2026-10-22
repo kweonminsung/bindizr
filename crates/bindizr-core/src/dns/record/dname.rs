@@ -9,7 +9,10 @@ pub struct DnameRecordValue<'a> {
 impl<'a> DnameRecordValue<'a> {
     /// Parse and validate a DNAME record value.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
-        validate_domain_record_value("DNAME record value", value)?;
+        // RFC 2181, Section 11 allows root targets.
+        if value != "." {
+            validate_domain_record_value("DNAME record value", value)?;
+        }
         Ok(Self { target: value })
     }
 
@@ -22,6 +25,21 @@ impl<'a> DnameRecordValue<'a> {
 #[cfg(test)]
 mod tests {
     use super::DnameRecordValue;
+
+    /// Keep root targets distinct from literal dot labels.
+    #[test]
+    fn dname_accepts_root_target_and_preserves_literal_dot() {
+        use crate::dns::name::encode_name;
+
+        for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {
+            let value = DnameRecordValue::parse(input).unwrap();
+            assert_eq!(encode_name(&value.canonical()).unwrap(), expected);
+        }
+
+        for invalid in ["", ".."] {
+            assert!(DnameRecordValue::parse(invalid).is_err(), "{invalid:?}");
+        }
+    }
 
     /// Keep DNAME target case in stored and wire forms.
     #[test]

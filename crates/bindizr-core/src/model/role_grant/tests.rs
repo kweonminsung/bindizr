@@ -80,6 +80,7 @@ fn role_grants_answer_over_their_union() {
     assert!(grants.covers_whole_zone(Action::RecordRead, zone));
     assert!(!grants.covers_whole_zone(Action::RecordCreate, zone));
     assert!(grants.reaches_zone(other));
+
     // Only an all-zones grant carries an action in all zones.
     assert!(grants.permits_all_zones(Action::RecordRead));
     assert!(!grants.permits_all_zones(Action::RecordCreate));
@@ -151,6 +152,7 @@ fn patterns_holding_unions_grants_per_pattern() {
             "TXT",
         ),
     ]);
+
     assert_eq!(
         disjoint
             .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
@@ -174,6 +176,7 @@ fn patterns_holding_unions_grants_per_pattern() {
             "*",
         ),
     ]);
+
     assert_eq!(
         nested
             .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
@@ -189,6 +192,7 @@ fn patterns_holding_unions_grants_per_pattern() {
         "*.mail",
         "MX",
     )]);
+
     assert!(
         mail.patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .is_empty()

@@ -149,6 +149,7 @@ fn parse_keeps_bare_value_whitespace() {
         TxtRecordValue::parse("   ").unwrap().to_content(),
         Some(TxtContent::Single("   ".to_string()))
     );
+
     // Whitespace around a quoted value is formatting, not content.
     assert_eq!(
         TxtRecordValue::parse(r#"  "padded"  "#)
@@ -187,6 +188,7 @@ fn to_presentation_round_trips_ownership_records() {
         TxtRecordValue::from_string("v=spf1 \"x\\y\"").to_presentation(),
         "\"v=spf1 \\\"x\\\\y\\\"\""
     );
+
     // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
     assert_eq!(
         TxtRecordValue::from_string("a\u{1}b").to_presentation(),
@@ -194,14 +196,17 @@ fn to_presentation_round_trips_ownership_records() {
     );
 
     let ownership = r#""heritage=external-dns,external-dns/owner=default,external-dns/resource=ingress/default/app""#;
+
     assert_eq!(
         TxtRecordValue::parse(ownership).unwrap().to_presentation(),
         ownership
     );
+
     // A bare value canonicalizes to its quoted form and is then stable.
     let canonical = TxtRecordValue::parse("v=spf1 -all")
         .unwrap()
         .to_presentation();
+
     assert_eq!(canonical, r#""v=spf1 -all""#);
     assert_eq!(
         TxtRecordValue::parse(&canonical).unwrap().to_presentation(),
@@ -214,6 +219,7 @@ fn to_presentation_round_trips_ownership_records() {
 fn validate_rejects_data_that_cannot_fit_one_dns_message() {
     let segment = "a".repeat(255);
     let value = TxtRecordValue::from_segments(vec![segment.as_str(); 256]).unwrap();
+
     assert!(value.validate().is_err());
     assert!(
         TxtRecordValue::from_segments(vec![segment.as_str(); 4])

@@ -1,5 +1,4 @@
-//! A stand-in for a parent zone's nameserver: answers every DS question
-//! authoritatively with the records it is told to serve, whatever the child.
+//! Authoritative parent DS responder with configurable records and metadata.
 
 use std::{
     net::{SocketAddr, UdpSocket},
@@ -12,7 +11,7 @@ use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl,
-        iana::{Class, DigestAlgorithm, Rcode, SecurityAlgorithm},
+        iana::{Class, DigestAlgorithm, OptRcode, SecurityAlgorithm},
     },
     rdata::{Ds, Soa},
 };
@@ -39,6 +38,7 @@ impl DsRecord {
             .find(|record| record["key_tag"] == key_tag)
             .unwrap_or_else(|| panic!("no DS for key tag {key_tag} in {dnssec}"));
         let digest = record["digest"].as_str().expect("DS digest is hex");
+
         Self {
             key_tag,
             algorithm: record["algorithm"].as_u64().expect("DS algorithm") as u8,
@@ -51,9 +51,7 @@ impl DsRecord {
         }
     }
 
-    /// The SHA-1 DS of key `key_tag`, digested from the status payload's
-    /// DNSKEY since bindizr renders none: what a parent digesting the
-    /// DNSKEY itself may register.
+    /// Compute a parent's SHA-1 DS from the status DNSKEY; status does not render SHA-1.
     pub(crate) fn sha1_from_status(
         dnssec: &Value,
         zone_name: &str,
@@ -78,12 +76,14 @@ impl DsRecord {
                 .decode(fields[3])
                 .expect("DNSKEY public key is base64"),
         );
+
         // RFC 4034, Section 5.1.4: the digest covers the wire owner name,
         // then the DNSKEY RDATA.
         let apex = Name::<Vec<u8>>::from_str(zone_name).expect("zone name");
         let mut hasher = Context::new(&SHA1_FOR_LEGACY_USE_ONLY);
         hasher.update(apex.as_slice());
         hasher.update(&rdata);
+
         Self {
             key_tag,
             algorithm,
@@ -99,19 +99,26 @@ impl DsRecord {
         self
     }
 
-    /// The same DS relabelled as another digest type, to stand in for one
-    /// bindizr cannot compute.
+    /// Relabel the digest type to test unsupported digests.
     pub(crate) fn with_digest_type(mut self, digest_type: u8) -> Self {
         self.digest_type = digest_type;
         self
     }
 }
 
-/// A parent nameserver on loopback, serving whatever DS records the test hands it.
+/// The records and response metadata the fake parent serves.
+#[derive(Debug)]
+struct ParentResponse {
+    records: Vec<DsRecord>,
+    rcode: OptRcode,
+    class: Class,
+}
+
+/// A loopback parent serving configurable DS records and metadata.
 #[derive(Debug)]
 pub(crate) struct FakeParent {
     addr: SocketAddr,
-    ds: Arc<Mutex<Vec<DsRecord>>>,
+    response: Arc<Mutex<ParentResponse>>,
 }
 
 impl FakeParent {
@@ -121,34 +128,41 @@ impl FakeParent {
         let addr = socket
             .local_addr()
             .expect("failed to read the fake parent's port");
-        let ds: Arc<Mutex<Vec<DsRecord>>> = Arc::new(Mutex::new(Vec::new()));
-        let served = Arc::clone(&ds);
+        let response = Arc::new(Mutex::new(ParentResponse {
+            records: Vec::new(),
+            rcode: OptRcode::NOERROR,
+            class: Class::IN,
+        }));
+        let served = Arc::clone(&response);
 
         thread::spawn(move || {
-            let mut buf = [0_u8; 4096];
+            let mut buffer = [0_u8; 4096];
+
             loop {
-                let Ok((len, peer)) = socket.recv_from(&mut buf) else {
+                let Ok((len, peer)) = socket.recv_from(&mut buffer) else {
                     return;
                 };
-                let Ok(query) = Message::from_octets(&buf[..len]) else {
+                let Ok(query) = Message::from_octets(&buffer[..len]) else {
                     continue;
                 };
                 let Ok(question) = query.sole_question() else {
                     continue;
                 };
                 let qname = question.qname().to_name::<Vec<u8>>();
+                let response = served.lock().expect("parent response lock");
                 let mut answer = MessageBuilder::new_vec()
-                    .start_answer(&query, Rcode::NOERROR)
+                    .start_answer(&query, response.rcode.rcode())
                     .expect("start the answer");
                 answer.header_mut().set_aa(true);
                 let mut served_any = false;
+
                 if question.qtype() == Rtype::DS {
-                    for record in served.lock().expect("ds lock").iter() {
+                    for record in &response.records {
                         served_any = true;
                         answer
                             .push((
                                 &qname,
-                                Class::IN,
+                                response.class,
                                 Ttl::from_secs(record.ttl),
                                 Ds::new(
                                     record.key_tag,
@@ -161,7 +175,9 @@ impl FakeParent {
                             .expect("push the DS record");
                     }
                 }
+
                 let mut authority = answer.authority();
+
                 if !served_any {
                     // A negative answer needs the parent's SOA (RFC 2308, Section 2).
                     let parent = qname
@@ -171,7 +187,7 @@ impl FakeParent {
                     authority
                         .push((
                             &parent,
-                            Class::IN,
+                            response.class,
                             Ttl::from_secs(60),
                             Soa::new(
                                 parent.clone(),
@@ -185,20 +201,40 @@ impl FakeParent {
                         ))
                         .expect("push the parent SOA");
                 }
-                let _ = socket.send_to(&authority.finish(), peer);
+
+                let mut additional = authority.additional();
+
+                if let Some(opt) = query.opt() {
+                    additional
+                        .opt(|answer| {
+                            answer.set_udp_payload_size(opt.udp_payload_size());
+                            answer.set_rcode(response.rcode);
+                            Ok(())
+                        })
+                        .expect("push response OPT");
+                }
+
+                let _ = socket.send_to(&additional.finish(), peer);
             }
         });
 
-        Self { addr, ds }
+        Self { addr, response }
     }
 
-    /// The `host:port` entry to give bindizr as the zone's parent address.
+    /// Return the parent address for zone configuration.
     pub(crate) fn addr(&self) -> String {
         self.addr.to_string()
     }
 
     /// Replace the DS records served.
     pub(crate) fn set_ds(&self, records: Vec<DsRecord>) {
-        *self.ds.lock().expect("ds lock") = records;
+        self.response.lock().expect("parent response lock").records = records;
+    }
+
+    /// Set response RCODE and record class, retaining DS records.
+    pub(crate) fn set_response(&self, rcode: OptRcode, class: Class) {
+        let mut response = self.response.lock().expect("parent response lock");
+        response.rcode = rcode;
+        response.class = class;
     }
 }

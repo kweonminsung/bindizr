@@ -4,10 +4,19 @@ Bindizr serves nsupdate, the RFC 2136 UPDATE message, through the DNS listener,
 authenticated with TSIG. The key named in the request's TSIG record says who
 is calling; the key's [role](access-control.md) says what it may change.
 
+Only the [implemented user record types](zones.md) are accepted. An update
+record of another ordinary type, a delete included, is `FORMERR` (RFC 2136,
+Section 3.4.1.2), and the entire request leaves records and the serial
+unchanged. A prerequisite may name any type; it is evaluated against the
+served zone, where no record of an unsupported type can exist.
+
+A WKS addition replaces the WKS at the same name, IPv4 address, and protocol.
+Different addresses or protocols can coexist.
+
 The role needs `record:read` for prerequisites, `record:create` for ordinary additions,
-and `record:delete` for deletions. An addition that replaces a CNAME or DNAME
-needs `record:delete` as well, and one whose TTL differs from the record set's
-needs `record:update`, since it moves the whole set. An SOA addition needs
+and `record:delete` for deletions. An addition that replaces a CNAME, DNAME, or matching WKS record
+needs `record:delete` as well, and one whose TTL differs from its name and type's
+needs `record:update`, since it moves every record there. An SOA addition needs
 `zone:update`, since it changes the zone's metadata. If any record falls
 outside its grants, the entire update is refused.
 
@@ -39,7 +48,10 @@ EOF
 ## Unsigned requests
 
 With `dns.nsupdate.tsig_required = true`, the default, an unsigned update is
-refused for all zones.
+refused for all zones. The refusal follows the zone's authority check
+(RFC 2136, Section 3.1.1): an unsigned update for a zone Bindizr does not
+serve is answered `NOTAUTH`, one for a served zone `REFUSED`, as BIND and
+Knot answer.
 
 !!! warning "Unsigned updates are for testing only"
 
@@ -48,38 +60,51 @@ refused for all zones.
     `api.authentication_required = false` does for the HTTP API. Signed
     requests are always verified either way.
 
+Each signed request must pass MAC verification and its Time Signed/Fudge
+window. Bindizr does not retain a latest Time Signed per key: UDP and
+concurrent stream requests can arrive out of order. This is an explicit
+exception to the cache recommendation in
+[RFC 8945, Section 5.2.3](https://www.rfc-editor.org/rfc/rfc8945.html#section-5.2.3).
+
 ## Response codes
 
 The response follows RFC 2136, Section 2.2. `NOTAUTH` names a zone or class
 Bindizr does not serve: only IN is served, even when another class names an
 existing zone (Section 3.1.1). `NOTZONE` names an owner outside the zone,
-`FORMERR` a malformed section (a prerequisite with a TTL, a delete carrying
-rdata, a type no update may carry, or a type Bindizr does not store in an add), and
+`FORMERR` a malformed section (a prerequisite with a TTL, an ANY-class delete carrying
+rdata, malformed wire RDATA, or a query/meta or unsupported type no update may carry), and
 `REFUSED` a policy decision: an unsigned request where a signature is
-required, a key whose role does not reach what the update touches, or an
-update sent to the TLS listener, which serves transfers alone (RFC 9103,
-Section 7.8). A
+required, a key whose role does not reach what the update touches, a direct
+addition or deletion of signer-managed
+DNSSEC records, or an update sent to the TLS listener, which serves transfers alone (RFC 9103,
+Section 7.8). An unsupported EDNS version is `BADVERS` ahead of every policy
+refusal (RFC 6891, Section 6.1.3). A
 request whose key verifies is answered under that key whatever the code; a
-TSIG record that is doubled, not last, unreadable, or carries a MAC of a size
+TSIG record outside Additional, doubled, not last, unreadable, or carrying a MAC of a size
 its algorithm cannot produce is a `FORMERR` signed by no one (RFC 8945,
 Section 5.2). The
 prerequisite codes (`NXDOMAIN`, `YXDOMAIN`, `NXRRSET`, `YXRRSET`) report the
-first prerequisite that failed. Prerequisites read the whole served zone:
+first prerequisite that failed. Prerequisites are evaluated before the update
+section is prescanned and before the key's grants on it are checked, in the
+order RFC 2136, Section 3 gives; only the read grant a prerequisite itself
+needs comes first, so a failed prerequisite reveals nothing the key may not
+read. Prerequisites read the whole served zone:
 ordinary records, the SOA (serial included), and generated DNSSEC records.
 A name holding only DNSSEC records is in use. Value-dependent prerequisites
-must match the entire RRset; order, duplicates, and TTL do not affect equality
+must match every record of that name and type; order, duplicates, and TTL do not affect equality
 (RFC 2136, Section 3.2). All checks use the same locked zone state as the update.
 
 Some records in an update are passed over rather than refused, as the RFC
 says: a delete that would remove the SOA or the last apex NS record, a CNAME
 added beside other data or data added beside a CNAME, a DNAME added beside a
-CNAME, and a delete of a data type Bindizr never stores. Every update record
+CNAME. Every update record
 must first pass the zone and wire-shape checks, including a delete that will
 be ignored (RFC 2136, Section 3.4.1). An out-of-zone owner or forbidden
 query/meta type rejects the whole update without changing records or the
 serial. A second CNAME or DNAME
-replaces the first, and an add whose TTL differs from the record set's moves
-the whole set to the new TTL. A record below a DNAME, or a DNAME above
+replaces the first. A WKS addition replaces the record with the same owner,
+address, and protocol; other addresses and protocols remain. An add whose TTL differs from its name and type's current TTL moves all
+those records to the new TTL. A record below a DNAME, or a DNAME above
 existing records, is refused: nothing may exist under a DNAME (RFC 6672,
 Section 2.4).
 
@@ -90,10 +115,16 @@ The accepted serial is used for all changes in that request; automatic
 incrementing applies only when records change without an SOA advance
 (RFC 2136, Sections 3.4.2.2 and 3.6).
 
-SOA replacements accept serials 0–4294967295, with wraparound comparison and
-automatic incrementing under RFC 1982. The zone-write policy requires SOA TTL 60–604800 seconds, positive timing fields at most
-2147483647, a supported MNAME and an email-convertible RNAME. A newer SOA
+Prerequisites are decoded and evaluated one by one in wire order (RFC 2136,
+Section 3.2.5), so the first one that fails names the response code; the
+value-dependent ones (Section 3.2.3) are compared whole once the section has
+been read. SOA replacements accept serials 0–4294967295, with wraparound comparison and
+automatic incrementing under RFC 1982. The zone-write policy requires SOA TTL 60–604800 seconds, refresh/retry/expire from 1–2147483647 seconds, minimum TTL from
+1–4294967295 seconds, a supported MNAME and an email-convertible RNAME. A newer SOA
 outside that policy refuses the whole request with `REFUSED`.
+
+Record TTLs accept 0–4294967295 and retain the high bit as part of the value
+([RFC 8767, Section 4](https://www.rfc-editor.org/rfc/rfc8767.html#section-4)).
 
 ## The first key
 

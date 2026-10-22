@@ -1,6 +1,4 @@
-//! Adapter configuration from CLI flags and environment variables. The
-//! adapter runs next to external-dns, away from the bindizr server, so it
-//! deliberately does not read the bindizr configuration file.
+//! Read adapter flags/environment; the adapter runs beside external-dns and does not read bindizr's config.
 
 use std::net::SocketAddr;
 
@@ -104,9 +102,11 @@ impl AdapterConfig {
     /// Validate CLI options and build the adapter configuration.
     pub(crate) fn load(cli: Cli) -> Result<Self, LoadAdapterConfigError> {
         let bindizr_url = cli.bindizr_url.trim().trim_end_matches('/').to_string();
+
         if !bindizr_url.starts_with("http://") && !bindizr_url.starts_with("https://") {
             return Err(LoadAdapterConfigError::UrlScheme { url: bindizr_url });
         }
+
         // Endpoint paths are appended to this string, so it must parse as a
         // URL and carry no query/fragment for the joined URLs to stay valid.
         let parsed = reqwest::Url::parse(&bindizr_url).map_err(|source| {
@@ -115,6 +115,7 @@ impl AdapterConfig {
                 source: Box::new(source),
             }
         })?;
+
         if parsed.query().is_some() || parsed.fragment().is_some() {
             return Err(LoadAdapterConfigError::UrlQueryOrFragment { url: bindizr_url });
         }
@@ -129,9 +130,9 @@ impl AdapterConfig {
                     .trim()
                     .to_string(),
             ),
-            None => cli.token.as_deref().map(|t| t.trim().to_string()),
+            None => cli.token.as_deref().map(|token| token.trim().to_string()),
         };
-        let token = token.filter(|t| !t.is_empty());
+        let token = token.filter(|token| !token.is_empty());
 
         let log_level = cli
             .log_level
@@ -205,6 +206,7 @@ mod tests {
 
         let config =
             AdapterConfig::load(to_cli(&["--bindizr-url", "http://bindizr:8000/api"])).unwrap();
+
         assert_eq!(config.bindizr_url, "http://bindizr:8000/api");
     }
 
@@ -238,6 +240,7 @@ mod tests {
             "",
         ]))
         .unwrap();
+
         assert!(config.token.is_none());
     }
 }

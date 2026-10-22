@@ -52,12 +52,13 @@ impl FakeSecondary {
         let seen = Arc::clone(&received);
 
         thread::spawn(move || {
-            let mut buf = [0_u8; 4096];
+            let mut buffer = [0_u8; 4096];
+
             loop {
-                let Ok((len, peer)) = socket.recv_from(&mut buf) else {
+                let Ok((len, peer)) = socket.recv_from(&mut buffer) else {
                     return;
                 };
-                let Ok(mut request) = Message::from_octets(buf[..len].to_vec()) else {
+                let Ok(mut request) = Message::from_octets(buffer[..len].to_vec()) else {
                     continue;
                 };
                 let Ok(question) = request.sole_question() else {
@@ -72,6 +73,7 @@ impl FakeSecondary {
                         .start_answer(&request, Rcode::NOERROR)
                         .expect("start the answer");
                     answer.header_mut().set_aa(true);
+
                     if question.qtype() == Rtype::SOA {
                         let mname = Name::<Vec<u8>>::root_vec();
                         answer
@@ -91,7 +93,9 @@ impl FakeSecondary {
                             ))
                             .expect("push the SOA");
                     }
+
                     let _ = socket.send_to(&answer.finish(), peer);
+
                     continue;
                 }
 
@@ -106,6 +110,7 @@ impl FakeSecondary {
 
                 // With a key, the signature decides the answer.
                 let mut signer = None;
+
                 if let Some(key) = &key {
                     match ServerTransaction::request(key, &mut request, Time48::now()) {
                         Ok(context) => signer = context,
@@ -115,15 +120,18 @@ impl FakeSecondary {
                                 signed,
                                 verified: false,
                             });
+
                             if let Ok(response) =
                                 error.build_message(&request, MessageBuilder::new_vec())
                             {
                                 let _ = socket.send_to(&response.finish(), peer);
                             }
+
                             continue;
                         }
                     }
                 }
+
                 seen.lock().expect("received lock").push(ReceivedNotify {
                     zone,
                     signed,
@@ -134,11 +142,13 @@ impl FakeSecondary {
                     .start_answer(&request, Rcode::NOERROR)
                     .expect("start the answer")
                     .additional();
+
                 if let Some(signer) = signer {
                     signer
                         .answer(&mut answer, Time48::now())
                         .expect("sign the answer");
                 }
+
                 let _ = socket.send_to(&answer.finish(), peer);
             }
         });

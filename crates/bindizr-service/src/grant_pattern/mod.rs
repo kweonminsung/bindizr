@@ -33,6 +33,7 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
 
     // Store the canonical spelling so one name is one pattern.
     let canonical = labels_to_presentation(&parse_relative_name(name_part)?);
+
     Ok(match raw.strip_prefix("*.") {
         Some(_) => format!("*.{}", canonical),
         None => canonical,
@@ -43,7 +44,7 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
 /// rules themselves (empty, length, charset) come with decoding.
 fn parse_relative_name(name: &str) -> Result<Vec<Vec<u8>>, ServiceError> {
     let (labels, rooted) = decode_name_labels(name)
-        .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))?;
+        .map_err(|error| ServiceError::invalid_input(format!("record name pattern {}", error)))?;
 
     // A pattern is relative, and `*` is the language's metacharacter: it is
     // not escaped on render, so a label spelled `\042` would read as a grant.
@@ -69,9 +70,10 @@ pub(crate) fn normalize_types(value: Option<&str>) -> Result<String, ServiceErro
     }
 
     let mut types: Vec<String> = Vec::new();
+
     for part in raw.split(',') {
         let record_type: RecordType = part.trim().parse().map_err(ServiceError::invalid_input)?;
-        let name = record_type.to_text();
+        let name = record_type.as_str().to_owned();
         if !types.contains(&name) {
             types.push(name);
         }

@@ -9,9 +9,10 @@ use bindizr_core::{
 use bindizr_db::{Db, PoolStats};
 use chrono::{DateTime, Utc};
 use thiserror::Error;
-use tokio::sync::{mpsc::UnboundedSender, watch};
+use tokio::sync::{Semaphore, mpsc::UnboundedSender, watch};
 
 use crate::{
+    dns_client::notify::NotifyClient,
     error::ServiceError,
     notify::{NotifyTarget, queue::NotifyJob},
 };
@@ -28,14 +29,12 @@ pub enum ReloadConfigError {
 /// A refused reload is the operator's to fix.
 impl From<ReloadConfigError> for ServiceError {
     /// Classify the reload failure for the error payload.
-    fn from(err: ReloadConfigError) -> Self {
-        ServiceError::invalid_input(err)
+    fn from(error: ReloadConfigError) -> Self {
+        ServiceError::invalid_input(error)
     }
 }
 
-/// Shared state for service flows. The workers that need it back
-/// (the NOTIFY queue, the scheduler) are spawned after it with an `Arc` of
-/// their own; only their senders live here.
+/// Shared service state; workers hold an `Arc`, and only their senders live here.
 #[derive(Debug)]
 pub struct Context {
     /// Swapped whole by `reload_config`; a reader takes a snapshot, so one
@@ -48,6 +47,8 @@ pub struct Context {
     db: Db,
     metrics: Metrics,
     notify_jobs: UnboundedSender<NotifyJob>,
+    notify_client: NotifyClient,
+    notify_preparations: Semaphore,
     /// The scheduler's period, so a reload reaches it without waiting the
     /// old one out; zero stands the scheduler down.
     scheduler_period: watch::Sender<u64>,
@@ -71,6 +72,8 @@ impl Context {
             db,
             metrics,
             notify_jobs,
+            notify_client: NotifyClient::default(),
+            notify_preparations: Semaphore::new(crate::notify::CONCURRENT_PREPARATIONS),
             scheduler_period,
             started_at: OnceLock::new(),
         }
@@ -101,9 +104,7 @@ impl Context {
         Ok(next)
     }
 
-    /// Replace the running configuration with one `load_config` read, naming
-    /// the sections that changed. The caller applies the logger level and
-    /// scheduler period.
+    /// Replace configuration and report changed sections; the caller updates logging and scheduling.
     pub fn set_config(&self, next: Config) -> Vec<String> {
         let mut stored = self
             .config
@@ -111,12 +112,23 @@ impl Context {
             .expect("Bindizr configuration lock is poisoned");
         let changed = stored.changed_settings(&next);
         *stored = Arc::new(next);
+
         changed
     }
 
     /// The database every query runs on.
     pub(crate) fn db(&self) -> &Db {
         &self.db
+    }
+
+    /// The service's bounded key/address preparation queue.
+    pub(crate) fn notify_preparations(&self) -> &Semaphore {
+        &self.notify_preparations
+    }
+
+    /// Shared NOTIFY sockets and their active exchanges.
+    pub(crate) fn notify_client(&self) -> &NotifyClient {
+        &self.notify_client
     }
 
     /// The daemon's metrics registry.
@@ -142,7 +154,7 @@ impl Context {
         }
     }
 
-    /// Queue a NOTIFY for later delivery. `false` once the worker has stopped,
+    /// Queue a NOTIFY to send later. `false` once the worker has stopped,
     /// so the caller can fall back to sending inline.
     pub(crate) fn enqueue_notify(&self, target: NotifyTarget<'_>) -> bool {
         self.notify_jobs.send(NotifyJob::new(target)).is_ok()

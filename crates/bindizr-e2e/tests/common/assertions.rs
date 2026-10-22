@@ -28,6 +28,7 @@ pub(crate) fn assert_cli_failure_contains(
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+
     assert!(
         combined.contains(expected_error),
         "bindizr {} response did not contain '{expected_error}': {combined}",

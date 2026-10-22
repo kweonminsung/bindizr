@@ -7,15 +7,17 @@ use crate::{
 /// Decode compressed SOA names and unsigned fields without crossing RDLENGTH.
 #[test]
 fn soa_update_decodes_compression_and_checks_rdata_length() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     let start = message.len();
     message.extend_from_slice(&[3, b'n', b's', b'1', 0xc0, 12]);
     message.extend_from_slice(&[
         11, b'h', b'o', b's', b't', b'.', b'm', b'a', b's', b't', b'e', b'r', 0xc0, 12,
     ]);
+
     for field in [u32::MAX, 7200, 3600, 604800, 86400] {
         message.extend_from_slice(&field.to_be_bytes());
     }
+
     let mut record = UpdateRecord {
         name: "example.com.".to_string(),
         record_type: Rtype::SOA,
@@ -25,6 +27,7 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
         rdata_start: start,
     };
     let soa = record.to_soa_value(&message).unwrap();
+
     assert_eq!(soa.mname, "ns1.example.com.");
     assert_eq!(soa.rname, r"host\046master.example.com.");
     assert_eq!(soa.serial, u32::MAX);
@@ -33,18 +36,21 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
         [7200, 3600, 604800, 86400]
     );
     let length = record.rdata.len();
+
     for length in 0..length {
         record.rdata.truncate(length);
         assert!(record.to_soa_value(&message).is_err());
         record.rdata = message[start..].to_vec();
     }
+
     record.rdata.push(0);
     message.push(0);
+
     assert!(record.to_soa_value(&message).is_err());
 }
 
 /// Build a minimal UPDATE message with the requested zone type.
-pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
+pub(crate) fn build_minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     let mut message = Vec::new();
     message.extend_from_slice(&[
         0x12, 0x34, // ID
@@ -57,6 +63,7 @@ pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     ]);
     message.extend_from_slice(&ztype.to_be_bytes());
     message.extend_from_slice(&1u16.to_be_bytes());
+
     message
 }
 
@@ -107,15 +114,40 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
+/// TSIG belongs only at the end of Additional (RFC 8945, Section 5.2),
+/// even when a misplaced owner would fail a later zone or grant check.
+#[test]
+fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
+    for count_offset in [6, 8] {
+        for owner in [&b"\xc0\x0c"[..], &b"\x03key\x00"[..]] {
+            for additional_tsig in [false, true] {
+                let mut message = build_minimal_update_with_ztype(6);
+                message[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
+                append_tsig_record_with_owner(&mut message, owner);
+
+                if additional_tsig {
+                    set_arcount(&mut message, 1);
+                    append_tsig_record(&mut message);
+                }
+
+                assert!(matches!(
+                    UpdateRequest::parse(&message),
+                    Err(ParseUpdateError::InvalidTsig)
+                ));
+            }
+        }
+    }
+}
+
 /// Reject non-SOA zone types before the service considers authority.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
     for class in [Class::IN, Class::CH, Class::HS, Class::from_int(65280)] {
-        let mut message = minimal_update_with_ztype(1);
+        let mut message = build_minimal_update_with_ztype(1);
         let class_start = message.len() - 2;
         message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
-        let err = UpdateRequest::parse(&message).unwrap_err();
-        assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
+        let error = UpdateRequest::parse(&message).unwrap_err();
+        assert!(matches!(error, ParseUpdateError::InvalidZoneSection));
     }
 }
 
@@ -132,12 +164,14 @@ fn parse_update_request_preserves_zone_class() {
         Class::from_int(65280),
         Class::from_int(u16::MAX),
     ] {
-        let mut message = minimal_update_with_ztype(6);
+        let mut message = build_minimal_update_with_ztype(6);
         let class_start = message.len() - 2;
         message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
         let request = UpdateRequest::parse(&message).unwrap();
+
         assert_eq!(request.zone_name, "example.com.");
         assert_eq!(request.zone_class, class);
+
         for count in [0u16, 2] {
             message[4..6].copy_from_slice(&count.to_be_bytes());
             assert!(matches!(
@@ -151,7 +185,8 @@ fn parse_update_request_preserves_zone_class() {
 /// A missing class field is malformed, not an unsupported zone class.
 #[test]
 fn parse_update_request_rejects_truncated_zone_class() {
-    let message = minimal_update_with_ztype(6);
+    let message = build_minimal_update_with_ztype(6);
+
     for missing in [1, 2] {
         assert!(matches!(
             UpdateRequest::parse(&message[..message.len() - missing]),
@@ -163,7 +198,7 @@ fn parse_update_request_rejects_truncated_zone_class() {
 /// Verify that `UpdateRequest::parse` accepts opt additional without TSIG.
 #[test]
 fn parse_update_request_accepts_opt_additional_without_tsig() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_opt_record(&mut message);
 
@@ -174,13 +209,14 @@ fn parse_update_request_accepts_opt_additional_without_tsig() {
 /// Verify that `UpdateRequest::parse` accepts opt before TSIG.
 #[test]
 fn parse_update_request_accepts_opt_before_tsig() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
     append_opt_record(&mut message);
     append_tsig_record(&mut message);
 
     let request = UpdateRequest::parse(&message).unwrap();
     let tsig = request.tsig.unwrap();
+
     assert_eq!(tsig.name, "key.");
     assert_eq!(tsig.fudge, 300);
 }
@@ -189,7 +225,7 @@ fn parse_update_request_accepts_opt_before_tsig() {
 /// the same spelling, which decodes to different labels.
 #[test]
 fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_tsig_record_with_owner(
         &mut message,
@@ -199,6 +235,7 @@ fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
     );
 
     let request = UpdateRequest::parse(&message).unwrap();
+
     assert_eq!(request.tsig.unwrap().name, r"Key\046With\046Dot.");
 }
 
@@ -222,19 +259,21 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     message.extend_from_slice(&1u16.to_be_bytes());
 
     let request = UpdateRequest::parse(&message).unwrap();
+
     assert_eq!(request.zone_name, r"evil\046example.com.");
 }
 
 /// Verify that `UpdateRequest::parse` rejects TSIG before other additional records.
 #[test]
 fn parse_update_request_rejects_tsig_before_other_additional_records() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
     append_tsig_record(&mut message);
     append_opt_record(&mut message);
 
-    let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseUpdateError::InvalidTsig));
+    let error = UpdateRequest::parse(&message).unwrap_err();
+
+    assert!(matches!(error, ParseUpdateError::InvalidTsig));
 }
 
 /// Verify that `to_record_value` preserves TXT character string boundaries.
@@ -279,6 +318,7 @@ fn variable_length_rdata_stops_before_the_next_record() {
         record.rdata_start = message.len();
         message.extend_from_slice(&rdata);
         message.extend_from_slice(b"following record or TSIG");
+
         assert_eq!(
             record.to_record_value(&message).unwrap(),
             expected,
@@ -307,6 +347,7 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
     };
 
     let (record_type, value, priority) = record.to_record_value(&message).unwrap();
+
     assert_eq!(record_type, RecordType::Cname);
     assert_eq!(value, "example.com.");
     assert_eq!(priority, None);
@@ -325,8 +366,8 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
 
     for message in [&forward[..], &self_referential[..]] {
         let record = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
-        let err = record.to_record_value(message).unwrap_err();
-        assert!(!err.to_string().is_empty());
+        let error = record.to_record_value(message).unwrap_err();
+        assert!(!error.to_string().is_empty());
     }
 }
 
@@ -335,8 +376,8 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
 fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
     let record = update_record(Rtype::CNAME, Class::IN, 300, message.to_vec());
-    let err = record.to_record_value(&message).unwrap_err();
-    assert!(!err.to_string().is_empty());
+    let error = record.to_record_value(&message).unwrap_err();
+    assert!(!error.to_string().is_empty());
 }
 
 /// Verify rejection of empty TXT RDATA, which lacks the character-string required by RFC 1035,
@@ -344,8 +385,8 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
 #[test]
 fn to_record_value_rejects_empty_txt_rdata() {
     let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
-    let err = record.to_record_value(&[]).unwrap_err();
-    assert!(!err.to_string().is_empty());
+    let error = record.to_record_value(&[]).unwrap_err();
+    assert!(!error.to_string().is_empty());
 }
 
 /// Preserve arbitrary TXT octets through UPDATE decoding.
@@ -369,6 +410,7 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
     let (record_type, value, priority) = record.to_record_value(&rdata).unwrap();
 
     assert_eq!(record_type, RecordType::Srv);
+
     // The wire encoder reads back this 3-field form with the priority column.
     assert_eq!(value, "20 5060 sip.example.com.");
     assert_eq!(priority, Some(10));
@@ -443,6 +485,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
             let data = if class == Class::ANY { vec![] } else { vec![1] };
             let record = update_record(rtype, class, 0, data);
             let result = record.validate_update_shape();
+
             if class == Class::ANY && rtype == Rtype::ANY {
                 assert!(result.is_ok());
             } else {
@@ -452,6 +495,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
                 );
             }
         }
+
         // A valid data type may be absent from the storage model; its
         // deletion still has a well-formed wire shape (RFC 3597, Section 2).
         for rtype in [Rtype::A, Rtype::SOA, Rtype::HINFO, Rtype::from_int(65280)] {
@@ -461,10 +505,12 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
                 .unwrap();
         }
     }
+
     assert_eq!(
         update_record(Rtype::A, Class::CH, 0, vec![192, 0, 2, 1]).validate_update_shape(),
         Err(ValidateUpdateShapeError::Class { class: Class::CH })
     );
+
     // TTL normalization belongs to additions, never to the delete shape.
     update_record(Rtype::A, Class::IN, u32::MAX, vec![192, 0, 2, 1])
         .validate_update_shape()
@@ -475,9 +521,10 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
 /// are malformed, and a version above 0 is unsupported.
 #[test]
 fn parse_update_request_reads_the_opt_record() {
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_opt_record(&mut message);
+
     assert_eq!(
         UpdateRequest::parse(&message).unwrap().edns,
         Edns::Present {
@@ -487,21 +534,24 @@ fn parse_update_request_reads_the_opt_record() {
         }
     );
 
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
     append_opt_record(&mut message);
     append_opt_record(&mut message);
+
     assert_eq!(
         UpdateRequest::parse(&message).unwrap().edns,
         Edns::Malformed
     );
 
-    let mut message = minimal_update_with_ztype(6);
+    let mut message = build_minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
+
     // The TTL's second octet is the EDNS version.
     message.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
     ]);
+
     assert_eq!(
         UpdateRequest::parse(&message).unwrap().edns,
         Edns::Present {
@@ -512,28 +562,11 @@ fn parse_update_request_reads_the_opt_record() {
     );
 }
 
-/// Generic legacy types decompress names before storage; unknown bytes and empty values stay opaque.
+/// Unsupported ordinary types cannot become stored update values.
 #[test]
-fn generic_records_preserve_uncompressed_rdata() {
-    for data in [vec![], vec![0, 255, 0xc0, 12]] {
-        let record = update_record(Rtype::from_int(65280), Class::NONE, 0, data.clone());
-        record.validate_update_shape().unwrap();
-        let (rtype, value, priority) = record.to_record_value(&data).unwrap();
-        assert_eq!(rtype, RecordType::Unknown(65280));
-        assert_eq!(priority, None);
-        assert_eq!(
-            crate::dns::record::OpaqueRecordValue::parse(&value)
-                .unwrap()
-                .to_rdata()
-                .unwrap()
-                .as_bytes(),
-            data
-        );
+fn to_record_value_rejects_unsupported_ordinary_types() {
+    for rtype in [Rtype::HINFO, Rtype::from_int(65280)] {
+        let record = update_record(rtype, Class::IN, 300, vec![0, 0]);
+        assert!(record.to_record_value(&record.rdata).is_err());
     }
-    // RP has two compressible domain names, each pointing to offset zero.
-    let message = [1, b'X', 0, 0xc0, 0, 0xc0, 0];
-    let mut record = update_record(Rtype::RP, Class::IN, 300, message[3..].to_vec());
-    record.rdata_start = 3;
-    let (_, value, _) = record.to_record_value(&message).unwrap();
-    assert_eq!(value, r"\# 6 015800015800");
 }

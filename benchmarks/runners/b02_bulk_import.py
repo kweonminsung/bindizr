@@ -1,7 +1,6 @@
-"""Benchmark 2: bulk-import time, records/sec, and peak memory per (system, size, path).
+"""Measure bulk-import time, records/sec and peak memory per system, size and path.
 
-Load fresh zones through each adapter's batch API or fixed create-worker pool.
-Bindizr's zone-file import gets a separate `<label> (zone import)` comparison row.
+Use each adapter's batch API or fixed worker pool; report Bindizr zone-file import separately.
 """
 from __future__ import annotations
 
@@ -23,12 +22,14 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
     await adapter.delete_zone(zone)
     await adapter.create_zone(zone)
 
-    sampler = sampler_for(adapter, adapter.cfg)
-    sampler.start()
-    t0 = time.monotonic()
-    await load()
-    elapsed = time.monotonic() - t0
-    res = sampler.stop()
+    sampler = sampler_for(adapter, adapter.config)
+    with sampler:
+        t0 = time.monotonic()
+
+        await load()
+
+        elapsed = time.monotonic() - t0
+    resource_usage = sampler.summary()
 
     # Adapters count failures instead of raising, so rate off what landed —
     # a fast total failure would otherwise top the chart.
@@ -41,27 +42,29 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
         "import_secs": round(elapsed, 3),
         "records_per_sec": round(imported / elapsed, 1) if elapsed else 0,
         "import_errors": failed,
-        "peak_mem_mb": res.get("peak_mem_mb", 0),
-        "avg_cpu_pct": res.get("avg_cpu_pct", 0),
+        "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
+        "avg_cpu_pct": resource_usage.get("avg_cpu_pct", 0),
     }
 
 
-async def run(adapter, cfg, ctx) -> list:
+async def run(adapter, config, context) -> list:
     """Measure bulk import performance at the configured record counts."""
-    zone = ctx["zone"]
+    zone = context["zone"]
     rows = []
-    for size in cfg["sizes"]:
-        records = generate(size, cfg["seed"], zone)
+
+    for size in config["sizes"]:
+        records = generate(size, config["seed"], zone)
 
         rows.append(await _measure(
-            adapter, zone, size, ctx["label"],
+            adapter, zone, size, context["label"],
             lambda: adapter.import_records(zone, records),
             lambda: getattr(adapter, "bulk_errors", 0)))
 
         # Bindizr also supports importing a BIND zone file; report it alongside.
         if getattr(adapter, "supports_zone_import", False):
             rows.append(await _measure(
-                adapter, zone, size, f'{ctx["label"]} (zone import)',
+                adapter, zone, size, f'{context["label"]} (zone import)',
                 lambda: adapter.import_zone_file(zone, records),
                 lambda: getattr(adapter, "import_errors", 0)))
+
     return rows

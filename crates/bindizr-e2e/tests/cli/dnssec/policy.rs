@@ -31,6 +31,7 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
     let created = &created["dnssec_policy"];
+
     assert_eq!(created["name"], policy_name);
     assert_eq!(created["algorithm"], "ecdsap384sha384");
     assert_eq!(created["split_keys"], true);
@@ -44,6 +45,7 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
         .lines()
         .find(|line| line.contains(&policy_name))
         .expect("list shows the new policy");
+
     assert!(
         row.contains("ecdsap384sha384") && row.contains("KSK/ZSK"),
         "{row}"
@@ -67,7 +69,9 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     let updated = &updated["dnssec_policy"];
+
     assert_eq!(updated["zsk_lifetime_days"], 60);
+
     // The untouched fields keep their values.
     assert_eq!(updated["signature_validity_days"], 21);
     assert_eq!(updated["signature_refresh_days"], 7);
@@ -75,15 +79,18 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
     let got = app
         .run_cli_success(&["dnssec", "policy", "get", &policy_name], None)
         .await;
+
     assert!(got.contains("60d"), "{got}");
 
     let deleted = app
         .run_cli_success(&["dnssec", "policy", "delete", &policy_name], None)
         .await;
+
     assert!(deleted.contains("deleted successfully"), "{deleted}");
 
     let missing = app
         .run_cli(&["dnssec", "policy", "get", &policy_name], None)
         .await;
+
     assert!(!missing.status.success());
 }

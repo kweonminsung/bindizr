@@ -10,7 +10,7 @@ use axum::{
 use bindizr_service::{
     Context,
     notify::NotifyTarget,
-    types::{ErrorResponse, MessageResponse, NotifySerial, build_notify_message},
+    types::{ErrorResponse, MessageResponse, NotifySerial},
     zone,
 };
 use serde::Deserialize;
@@ -60,10 +60,7 @@ pub(crate) async fn notify_all_zones(
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let serial = NotifySerial::from_bump_serial(query.bump_serial.unwrap_or(false));
-    zone::notify(&cx, &caller, NotifyTarget::All, serial).await?;
-    let response = MessageResponse {
-        message: build_notify_message(NotifyTarget::All, serial),
-    };
+    let response = zone::notify(&cx, &caller, NotifyTarget::All, serial).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -93,9 +90,8 @@ pub(crate) async fn notify_zone(
 ) -> Result<Response, ApiError> {
     let serial = NotifySerial::from_bump_serial(query.bump_serial.unwrap_or(false));
     let target = NotifyTarget::Zone(&zone::normalize_name(&params.name)?);
-    zone::notify(&cx, &caller, target, serial).await?;
-    let response = MessageResponse {
-        message: build_notify_message(target, serial),
-    };
+
+    let response = zone::notify(&cx, &caller, target, serial).await?;
+
     Ok((StatusCode::OK, Json(response)).into_response())
 }

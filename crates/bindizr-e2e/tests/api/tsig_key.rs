@@ -16,22 +16,26 @@ async fn tsig_key_supports_create_read_and_delete() {
             Some(json!({ "role_name": "admin", "name": "update-key" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["name"], "update-key");
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha256");
     let generated_secret = body["secret"].as_str().unwrap().to_string();
+
     assert!(!generated_secret.is_empty());
 
     // The generated secret is returned again on a single-key read...
     let (status, body) = app
         .send_request(Method::GET, "/tsig-keys/update-key", None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["secret"], generated_secret.as_str());
 
     // ...but omitted from the list response, which the compose stack's own
     // key may share.
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
+
     assert_eq!(status, StatusCode::OK);
     let listed = body["items"]
         .as_array()
@@ -39,6 +43,7 @@ async fn tsig_key_supports_create_read_and_delete() {
         .iter()
         .find(|key| key["name"] == "update-key")
         .expect("the key is listed");
+
     assert!(listed.get("secret").is_none());
 
     let (status, _) = app
@@ -48,16 +53,19 @@ async fn tsig_key_supports_create_read_and_delete() {
             Some(json!({ "role_name": "admin", "name": "update-key" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/update-key", None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
         .send_request(Method::GET, "/tsig-keys/update-key", None)
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -79,6 +87,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
                        })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha512");
     assert_eq!(
@@ -93,6 +102,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
             Some(json!({ "role_name": "admin", "name": "bad-secret", "secret": "not base64!!" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // Secrets under 16 decoded bytes are refused.
@@ -103,6 +113,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
             Some(json!({ "role_name": "admin", "name": "short-secret", "secret": "c2VjcmV0" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // hmac-md5 is a valid TSIG algorithm on the wire (RFC 8945) but is
@@ -114,6 +125,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
             Some(json!({ "role_name": "admin", "name": "bad-alg", "algorithm": "hmac-md5" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -130,6 +142,7 @@ async fn tsig_key_names_its_role() {
             Some(json!({ "name": "roleless-key", "role_name": "no-such-role" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, body) = app
@@ -139,17 +152,21 @@ async fn tsig_key_names_its_role() {
             Some(json!({ "name": "admin-key", "role_name": "admin" })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["tsig_key"]["role_name"], "admin");
 
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
+
     assert_eq!(status, StatusCode::OK);
     let keys = body["items"].as_array().unwrap();
-    let key = keys.iter().find(|k| k["name"] == "admin-key").unwrap();
+    let key = keys.iter().find(|key| key["name"] == "admin-key").unwrap();
+
     assert_eq!(key["role_name"], "admin");
 
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/admin-key", None)
         .await;
+
     assert_eq!(status, StatusCode::OK);
 }

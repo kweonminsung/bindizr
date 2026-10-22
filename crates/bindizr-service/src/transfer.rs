@@ -1,6 +1,4 @@
-//! What Bindizr served each client: the latest transfer per client address
-//! and zone, refusals and failures included, kept in the database so a
-//! secondary's transfers read back across restarts and instances.
+//! Persist each client's latest transfer, refusal or failure per zone across restarts and instances.
 
 use std::net::IpAddr;
 
@@ -41,8 +39,9 @@ pub async fn save_ok(
         },
     )
     .await;
-    if let Err(e) = saved {
-        log::warn!("Failed to save a transfer: {}", e);
+
+    if let Err(error) = saved {
+        log::warn!("Failed to save a transfer: {}", error);
     }
 }
 
@@ -103,11 +102,12 @@ async fn save_unserved(
     let Ok(zone_name) = ZoneName::parse(zone_name) else {
         return;
     };
+
     let zone = match bindizr_db::zone::get_by_name(cx.db(), &zone_name).await {
         Ok(Some(zone)) => zone,
         Ok(None) => return,
-        Err(e) => {
-            log::warn!("Failed to save a transfer of {}: {}", zone_name, e);
+        Err(error) => {
+            log::warn!("Failed to save a transfer of {}: {}", zone_name, error);
             return;
         }
     };
@@ -126,8 +126,9 @@ async fn save_unserved(
         },
     )
     .await;
-    if let Err(e) = saved {
-        log::warn!("Failed to save a transfer of {}: {}", zone_name, e);
+
+    if let Err(error) = saved {
+        log::warn!("Failed to save a transfer of {}: {}", zone_name, error);
     }
 }
 
@@ -137,13 +138,16 @@ pub(crate) async fn list_by_clients(
     clients: &[IpAddr],
 ) -> Result<Vec<TransferWithZone>, ServiceError> {
     let mut transfers = Vec::new();
+
     for client in clients {
         transfers.extend(
             bindizr_db::transfer::list_by_client_addr_with_zone(cx.db(), &client.to_string())
                 .await?,
         );
     }
+
     transfers.sort_by_key(|transfer| std::cmp::Reverse(transfer.served_at));
+
     Ok(transfers)
 }
 
@@ -154,6 +158,7 @@ pub(crate) async fn find_by_clients_and_zone_name(
     zone_name: &ZoneName,
 ) -> Result<Option<TransferWithZone>, ServiceError> {
     let mut latest: Option<TransferWithZone> = None;
+
     for client in clients {
         if let Some(transfer) = bindizr_db::transfer::get_by_client_addr_and_zone_name_with_zone(
             cx.db(),
@@ -168,5 +173,6 @@ pub(crate) async fn find_by_clients_and_zone_name(
             latest = Some(transfer);
         }
     }
+
     Ok(latest)
 }

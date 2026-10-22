@@ -23,6 +23,7 @@ impl TestApp {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         let config_path = temp_dir.path().join("bindizr.conf.toml");
+
         // One certificate serves both TLS listeners; none is written otherwise.
         let tls_cert =
             (options.tls || options.dns_tls).then(|| write_test_certificate(temp_dir.path()));
@@ -34,6 +35,7 @@ impl TestApp {
         // A reserved port is released before the daemon binds it, so another
         // socket can take it in between; fresh ports and a retry cover that.
         let mut failures = Vec::new();
+
         for _ in 0..3 {
             let api_port = reserve_tcp_port();
             let dns_port = reserve_dns_port();
@@ -58,6 +60,7 @@ impl TestApp {
                 .expect("failed to start bindizr binary");
 
             let base_url = format!("{scheme}://127.0.0.1:{api_port}");
+
             match wait_for_api(&client, &base_url, &mut child).await {
                 Ok(()) => {
                     return Self {
@@ -166,12 +169,14 @@ url = ""
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
+catalog_zone_name = {catalog_zone_name}
 {dns_tls}
 {dns_transfer}
 
 [dns.notify]
+batch_ms = {notify_batch_ms}
 retries = 0
-timeout_secs = 1
+timeout_secs = {notify_timeout_secs}
 
 [dns.nsupdate]
 tsig_required = {nsupdate_tsig_required}
@@ -180,10 +185,13 @@ tsig_required = {nsupdate_tsig_required}
 level = "error"
 "#,
         db_path.display(),
+        notify_batch_ms = options.notify_batch_ms,
+        notify_timeout_secs = options.notify_timeout_secs,
         authentication_required = options.authentication_required,
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,
+        catalog_zone_name = serde_json::to_string(&options.catalog_zone_name).unwrap(),
         tls = match options.tls {
             true => {
                 format!(
@@ -214,6 +222,7 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
     // authentication_required.
     let health_url = format!("{base_url}/health");
     let mut attempts = 0;
+
     let failure = loop {
         if let Some(status) = child.try_wait().expect("failed to check child status") {
             break format!("bindizr exited before API was ready: {status}");
@@ -226,18 +235,22 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
         }
 
         attempts += 1;
+
         if attempts == 100 {
             let _ = child.kill();
             let _ = child.wait();
             break "bindizr API did not become ready".to_string();
         }
+
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
 
     let mut stderr = String::new();
+
     if let Some(mut pipe) = child.stderr.take() {
         let _ = pipe.read_to_string(&mut stderr);
     }
+
     Err(format!("{failure}\n{stderr}"))
 }
 

@@ -10,7 +10,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::dns::{
     address::{AddressTarget, DEFAULT_DNS_PORT},
-    message::encode_tcp_message,
+    message::{Keepalive, QueryMetadata, encode_tcp_message},
     query::{is_truncated, matches_response_to_request},
 };
 use thiserror::Error;
@@ -19,10 +19,11 @@ use tokio::{
     net::{TcpStream, UdpSocket, lookup_host},
 };
 
-/// Why one exchange with a server produced no response. `what` names the
-/// operation (`"NOTIFY"`, `"SOA probe"`) so the message stands on its own.
+/// A failed DNS exchange; `what` identifies the operation in timeout and send errors.
 #[derive(Debug, Error)]
 pub enum ExchangeMessageError {
+    #[error("invalid outbound DNS request: {0}")]
+    InvalidRequest(#[from] bindizr_core::dns::message::ParseQueryError),
     #[error(transparent)]
     Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
     #[error(transparent)]
@@ -58,9 +59,8 @@ pub enum ResolveAddressError {
     TimedOut { secs: u64 },
 }
 
-/// Maximum size of a UDP DNS response we accept: room for the
-/// `EDNS_UDP_PAYLOAD_SIZE` the parent DS questions advertise.
-const UDP_RESPONSE_BUF: usize = 4096;
+/// One byte beyond the largest supported advertisement detects truncated datagrams.
+const UDP_RESPONSE_BUF: usize = bindizr_core::dns::query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
 
 /// Ask over UDP and, when the answer comes back truncated, again over TCP
 /// (RFC 1035, Section 4.2.1).
@@ -86,11 +86,13 @@ pub(crate) async fn exchange_over_tcp(
     what: &'static str,
 ) -> Result<Vec<u8>, ExchangeMessageError> {
     let frame = encode_tcp_message(request)?;
+
     let exchange = async {
         let mut stream = TcpStream::connect(server_addr).await?;
         stream.write_all(&frame).await?;
         Ok(read_tcp_message(&mut stream).await?)
     };
+
     tokio::time::timeout(timeout, exchange)
         .await
         .map_err(|_| ExchangeMessageError::TcpTimedOut { what })?
@@ -115,6 +117,7 @@ pub(crate) async fn exchange_over_udp(
     request: &[u8],
     what: &'static str,
 ) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeMessageError> {
+    let limit = QueryMetadata::parse(request, Keepalive::None)?.response_limit();
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
     } else {
@@ -127,6 +130,7 @@ pub(crate) async fn exchange_over_udp(
     let sent = tokio::time::timeout(timeout, socket.send(request))
         .await
         .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
+
     if sent != request.len() {
         return Err(ExchangeMessageError::IncompleteSend {
             what,
@@ -137,11 +141,15 @@ pub(crate) async fn exchange_over_udp(
     }
 
     let mut response = [0u8; UDP_RESPONSE_BUF];
-    // A stray or malformed datagram does not end the request or renew its deadline.
+
     let receive = async {
         loop {
-            let received = socket.recv(&mut response).await?;
-            if matches_response_to_request(request, &response[..received]) {
+            let received = socket.recv(&mut response[..=limit.max_len()]).await?;
+
+            // Ignore unmatched datagrams without extending the exchange's deadline.
+            if limit.validate_len(received).is_ok()
+                && matches_response_to_request(request, &response[..received])
+            {
                 return Ok::<_, std::io::Error>(received);
             }
         }
@@ -166,10 +174,13 @@ pub(crate) async fn resolve_address_entries(
 
     for item in raw.split(',') {
         let trimmed = item.trim();
+
         if trimmed.is_empty() {
             continue;
         }
+
         let target = AddressTarget::parse(trimmed, DEFAULT_DNS_PORT);
+
         let result = resolve_address_entry(&target, resolve_timeout).await;
         entries.push((trimmed.to_string(), result));
     }
@@ -194,9 +205,9 @@ pub async fn resolve_address_entry(
                         Ok(addrs)
                     }
                 }
-                Ok(Err(e)) => {
-                    log::error!("Invalid server address '{}': {}", entry, e);
-                    Err(ResolveAddressError::Lookup(e))
+                Ok(Err(error)) => {
+                    log::error!("Invalid server address '{}': {}", entry, error);
+                    Err(ResolveAddressError::Lookup(error))
                 }
                 Err(_) => {
                     log::error!(
@@ -217,3 +228,63 @@ pub async fn resolve_address_entry(
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct ReadTcpMessageError(#[from] std::io::Error);
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use bindizr_core::dns::{
+        message::{Name, Opcode, OptRcode, ParsedQuery, Rtype},
+        query::build_question,
+    };
+
+    use super::*;
+
+    /// Ignore over-advertisement replies without resetting the deadline or sending again.
+    #[tokio::test]
+    async fn udp_exchange_ignores_oversized_matching_responses() {
+        for (advertised, limit) in [(None, 512), (Some(1232), 1232)] {
+            let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let address = server.local_addr().unwrap();
+            let (_, request) = build_question(
+                Opcode::QUERY,
+                false,
+                false,
+                &Name::from_str("example.com").unwrap(),
+                Rtype::SOA,
+                advertised,
+            );
+            let request = request.finish();
+
+            let mut exchange = tokio::spawn(async move {
+                exchange_over_udp(address, Duration::from_secs(1), &request, "test").await
+            });
+
+            let mut buffer = [0; 1232];
+
+            let (len, peer) = server.recv_from(&mut buffer).await.unwrap();
+            let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
+            let valid = query
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
+                .unwrap();
+
+            for size in [limit + 1, 4096] {
+                let mut oversized = valid.clone();
+                oversized.resize(size, 0);
+
+                server.send_to(&oversized, peer).await.unwrap();
+
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(20), &mut exchange)
+                        .await
+                        .is_err()
+                );
+            }
+
+            server.send_to(&valid, peer).await.unwrap();
+            let (len, response) = exchange.await.unwrap().unwrap();
+
+            assert_eq!(&response[..len], valid);
+        }
+    }
+}

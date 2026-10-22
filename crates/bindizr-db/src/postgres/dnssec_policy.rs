@@ -10,6 +10,7 @@ pub(crate) async fn create_tx(
     mut policy: DnssecPolicy,
 ) -> Result<DnssecPolicy, DatabaseError> {
     let now = Utc::now();
+
     let result = sqlx::query(
         r#"
         INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at)
@@ -30,6 +31,7 @@ pub(crate) async fn create_tx(
 
     policy.id = PolicyId::from(result.get::<i32, _>(0));
     policy.created_at = now;
+
     Ok(policy)
 }
 
@@ -55,13 +57,13 @@ pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &str,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let policy = sqlx::query_as::<_, DnssecPolicy>(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1",
     )
     .bind(name)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(policy)
@@ -86,12 +88,12 @@ pub(crate) async fn get_by_name_tx(
 
 /// List all DNSSEC policies.
 pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<DnssecPolicy>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let policies = sqlx::query_as::<_, DnssecPolicy>(
         "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies ORDER BY name",
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(policies)

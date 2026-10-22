@@ -1,15 +1,14 @@
-"""Background sampler for container CPU / memory / net / block IO.
+"""Sample Docker CPU, memory, network and block I/O for peak and average usage.
 
-Used by Benchmark 9 and as an inline observer during other benchmarks. Parses
-`docker stats` percentage/byte strings into numeric samples and reports peak +
-average.
+Used by Benchmark 9 and as an observer in other runs.
 """
 from __future__ import annotations
 
+import logging
 import re
 import threading
 
-from . import dockerutil
+from . import docker
 
 
 def _to_bytes(s: str) -> float:
@@ -18,8 +17,10 @@ def _to_bytes(s: str) -> float:
     # Docker uses a lowercase SI 'k' for NET/BLOCK IO (e.g. "2.48kB") and binary
     # MiB/GiB for memory; accept both.
     m = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", s)
+
     if not m:
         return 0.0
+
     val, unit = float(m.group(1)), m.group(2)
     scale = {
         "B": 1,
@@ -33,14 +34,15 @@ def _to_bytes(s: str) -> float:
         "GB": 1000**3,
         "TB": 1000**4,
     }
+
     return val * scale.get(unit, 1)
 
 
-def sampler_for(adapter, cfg: dict) -> "ResourceSampler":
+def sampler_for(adapter, config: dict) -> "ResourceSampler":
     """Sampler over the containers an adapter declares measurable."""
     ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
     return ResourceSampler([i for i in ids if i],
-                           cfg["resources"]["sample_interval_secs"])
+                           config["resources"]["sample_interval_secs"])
 
 
 class ResourceSampler:
@@ -50,6 +52,7 @@ class ResourceSampler:
         self.interval = interval
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._error: Exception | None = None
         self.samples: list[dict] = []
 
     def start(self) -> None:
@@ -57,37 +60,58 @@ class ResourceSampler:
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
+    def __enter__(self) -> "ResourceSampler":
+        """Own sampling for one measurement scope, including its exceptional exits."""
+        self.start()
+        return self
+
+    def __exit__(self, exception_type, exception, traceback) -> None:
+        """Drain observation without replacing an existing workload failure or cancellation."""
+        try:
+            self.stop()
+        except Exception:
+            if exception is None:
+                raise
+            logging.getLogger(__name__).error("resource sampling also failed during cleanup", exc_info=True)
+
     def _loop(self) -> None:
-        """Poll container resource usage until sampling is stopped."""
+        """Poll bounded Docker snapshots and retain an observation failure for stop()."""
         tick = 0
-        while not self._stop.is_set():
-            # One snapshot covers every container; stamp samples with their tick
-            # so summary() can total the stack for that interval.
-            for row in dockerutil.read_stats(self.ids):
-                cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
-                mem_use = _to_bytes(row.get("MemUsage", "0B").split("/")[0])
-                net = row.get("NetIO", "0B / 0B").split("/")
-                blk = row.get("BlockIO", "0B / 0B").split("/")
-                self.samples.append(
-                    {
-                        "tick": tick,
-                        "name": row.get("Name", ""),
-                        "cpu_pct": cpu,
-                        "mem_bytes": mem_use,
-                        "net_rx": _to_bytes(net[0]),
-                        "net_tx": _to_bytes(net[1]) if len(net) > 1 else 0,
-                        "blk_r": _to_bytes(blk[0]),
-                        "blk_w": _to_bytes(blk[1]) if len(blk) > 1 else 0,
-                    }
-                )
-            tick += 1
-            self._stop.wait(self.interval)
+
+        try:
+            while not self._stop.is_set():
+                # One snapshot covers every container; stamp samples with their tick
+                # so summary() can total the stack for that interval.
+                for row in docker.read_stats(self.ids):
+                    cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
+                    mem_use = _to_bytes(row.get("MemUsage", "0B").split("/")[0])
+                    net = row.get("NetIO", "0B / 0B").split("/")
+                    blk = row.get("BlockIO", "0B / 0B").split("/")
+                    self.samples.append(
+                        {
+                            "tick": tick,
+                            "name": row.get("Name", ""),
+                            "cpu_pct": cpu,
+                            "mem_bytes": mem_use,
+                            "net_rx": _to_bytes(net[0]),
+                            "net_tx": _to_bytes(net[1]) if len(net) > 1 else 0,
+                            "blk_r": _to_bytes(blk[0]),
+                            "blk_w": _to_bytes(blk[1]) if len(blk) > 1 else 0,
+                        }
+                    )
+
+                tick += 1
+                self._stop.wait(self.interval)
+        except Exception as error:
+            self._error = error
 
     def stop(self) -> dict:
         """Stop the sampling thread and return the collected resource summary."""
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=5)
+            self._thread.join()
+        if self._error is not None:
+            raise self._error
         return self.summary()
 
     def _by_tick(self, field: str) -> list[float]:

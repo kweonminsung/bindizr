@@ -1,6 +1,5 @@
-//! The grammar a grant's name pattern and type list share: `*` for every
-//! name or type, `@` for the apex, `*.sub` for a subtree, an exact relative
-//! name, and types as a comma-separated list.
+//! Grant patterns: `*` for all, `@` for apex, `*.sub` for a subtree, exact names,
+//! and comma-separated record types.
 
 use crate::{dns::name::OwnerName, model::record::RecordType};
 
@@ -14,6 +13,7 @@ pub fn matches_name(pattern: &str, name: &OwnerName) -> bool {
     if pattern == MATCH_ANY {
         return true;
     }
+
     // Patterns are stored in presentation form, where the apex is `@`.
     if pattern == OwnerName::APEX {
         return name.is_apex();
@@ -28,13 +28,14 @@ pub fn matches_name(pattern: &str, name: &OwnerName) -> bool {
 }
 
 /// Whether every name `inner` matches, `outer` matches too.
-pub fn pattern_covers(outer: &str, inner: &str) -> bool {
+pub fn has_pattern_coverage(outer: &str, inner: &str) -> bool {
     if outer == MATCH_ANY {
         return true;
     }
     if inner == MATCH_ANY {
         return false;
     }
+
     match inner.strip_prefix("*.") {
         // Only a subtree at or above it covers a subtree.
         Some(root) => outer.strip_prefix("*.").is_some_and(|outer_root| {
@@ -56,7 +57,7 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
         // grant cannot cover it.
         None => false,
         Some(record_type) => {
-            let record_type = record_type.to_text();
+            let record_type = record_type.as_str();
             types.split(',').any(|t| t == record_type)
         }
     }
@@ -64,7 +65,7 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_name, pattern_covers};
+    use super::{has_pattern_coverage, matches_name};
     use crate::dns::name::OwnerName;
 
     /// Verify that pattern matching covers all forms.
@@ -98,16 +99,16 @@ mod tests {
     /// Verify that a pattern covers another only when every name of the
     /// inner one matches the outer, compared by label.
     #[test]
-    fn pattern_covers_compares_by_label() {
-        assert!(pattern_covers("*", "*.apps"));
-        assert!(pattern_covers("*.apps", "api.apps"));
-        assert!(pattern_covers("*.apps", "*.k8s.apps"));
-        assert!(pattern_covers("*.apps", "apps"));
-        assert!(pattern_covers("api.apps", "api.apps"));
-        assert!(!pattern_covers("api.apps", "*.api.apps"));
-        assert!(!pattern_covers("*.apps", "xapps"));
-        assert!(!pattern_covers("*.apps", "*"));
-        assert!(!pattern_covers("@", "www"));
-        assert!(pattern_covers("@", "@"));
+    fn has_pattern_coverage_compares_by_label() {
+        assert!(has_pattern_coverage("*", "*.apps"));
+        assert!(has_pattern_coverage("*.apps", "api.apps"));
+        assert!(has_pattern_coverage("*.apps", "*.k8s.apps"));
+        assert!(has_pattern_coverage("*.apps", "apps"));
+        assert!(has_pattern_coverage("api.apps", "api.apps"));
+        assert!(!has_pattern_coverage("api.apps", "*.api.apps"));
+        assert!(!has_pattern_coverage("*.apps", "xapps"));
+        assert!(!has_pattern_coverage("*.apps", "*"));
+        assert!(!has_pattern_coverage("@", "www"));
+        assert!(has_pattern_coverage("@", "@"));
     }
 }

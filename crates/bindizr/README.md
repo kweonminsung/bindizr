@@ -18,8 +18,8 @@ there.
 - **nsupdate** — RFC 2136 updates with TSIG-signed requests and managed keys.
 - **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
 - **Audit Log** — every change to a token, role, grant, TSIG key, secondary, or policy, and every zone deletion, is logged with who made it and when; a zone's own changes are its versions.
-- **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
-- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
+- **DNSSEC** — named signing policies, automatic signing and re-signing, ZSK rollovers the scheduler starts and completes on a policy's key lifetime, operator-started CSK/KSK rollovers that complete once the parent serves the new DS, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
+- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in the zones and subtrees its token's role is granted, through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, text or JSON logs, and `bindizr status` / `bindizr doctor` diagnostics.
 
@@ -104,7 +104,7 @@ file_path = "/var/lib/bindizr/bindizr.db"
 
 [history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
 # zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
-# audit_max_days = 365          # Audit log entries: who changed a token, role, key, secondary, or policy
+# audit_max_days = 365          # Audit log entries: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace
@@ -145,10 +145,14 @@ This workspace is split into several crates:
 - `bindizr`: CLI, HTTP API, DNS server, daemon socket, and application entry point.
 - `bindizr-core`: shared configuration, models, logging, and the DNS library
   (record types, wire format, DNSSEC signing, TSIG, zone files).
-- `bindizr-db`: database repositories and schema helpers.
-- `bindizr-service`: zone, record, token, serial, DNSSEC, and notification workflows.
+- `bindizr-db`: database access over MySQL, PostgreSQL, and SQLite, and the schema.
+- `bindizr-service`: business logic and authorization (zones, records, roles, tokens
+  and TSIG keys, secondaries, the audit log, DNSSEC, notifications), RFC 2136 apply,
+  the shared `Context`, and the outbound DNS calls (NOTIFY, SOA and parent-DS probes,
+  inbound AXFR).
 - `bindizr-external-dns`: the ExternalDNS webhook provider adapter, shipped as a
   second binary.
+- `bindizr-e2e`: API, CLI, and DNS end-to-end tests; not published.
 
 ## Documentation
 

@@ -16,7 +16,47 @@ use crate::{
 
 /// TTL of every [`test_record`], so adds under test share their record set's TTL
 /// instead of tripping the record set TTL rule.
-const RRSET_TTL: i32 = 3600;
+const RECORD_SET_TTL: i64 = 3600;
+
+/// WKS values may coexist only when their IPv4 address or protocol differs.
+#[test]
+fn add_rejects_duplicate_wks_address_and_protocol() {
+    let existing = [test_record(
+        1,
+        "host",
+        RecordType::Wks,
+        "192.0.2.1 TCP 22",
+        None,
+    )];
+
+    assert_eq!(
+        validate_add(
+            &existing,
+            "host",
+            &RecordType::Wks,
+            "192.0.2.1 6 80",
+            RECORD_SET_TTL,
+            None
+        )
+        .unwrap_err()
+        .code(),
+        ErrorCode::RecordConflict
+    );
+
+    for value in ["192.0.2.2 TCP 22", "192.0.2.1 UDP 22"] {
+        assert!(
+            validate_add(
+                &existing,
+                "host",
+                &RecordType::Wks,
+                value,
+                RECORD_SET_TTL,
+                None
+            )
+            .is_ok()
+        );
+    }
+}
 
 /// Verify that `normalize_record_owner_name` maps parse failures to record name errors.
 #[test]
@@ -25,11 +65,13 @@ fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     let zone = ZoneName::from_row("test.example.com");
 
     let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
+
     assert_eq!(outside.code(), ErrorCode::InvalidRecordName);
     assert!(outside.to_string().contains("a1.other.com."));
     assert!(outside.to_string().contains(zone.as_str()));
 
     let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
+
     assert_eq!(empty.code(), ErrorCode::InvalidRecordName);
     assert!(empty.to_string().starts_with("record name "));
 }
@@ -40,7 +82,7 @@ fn validate_add(
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
-    ttl: i32,
+    ttl: i64,
     priority: Option<i32>,
 ) -> Result<(), ServiceError> {
     validate_record_constraints(
@@ -60,12 +102,14 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     const DS_VALUE: &str =
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
-    let at_apex = validate_add(&[], "", &RecordType::Ds, DS_VALUE, RRSET_TTL, None);
+    let at_apex = validate_add(&[], "", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+
     assert_eq!(at_apex.unwrap_err().code(), ErrorCode::InvalidRecordName);
 
     // The NS coupling is a final-state rule, enforced when the zone is
     // versioned — a lone DS passes the per-add shape checks.
-    let without_ns = validate_add(&[], "sub", &RecordType::Ds, DS_VALUE, RRSET_TTL, None);
+    let without_ns = validate_add(&[], "sub", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+
     assert!(without_ns.is_ok());
 }
 
@@ -77,9 +121,10 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         "",
         &RecordType::Cname,
         "target.example.com",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     );
+
     assert_eq!(
         cname_at_apex.unwrap_err().code(),
         ErrorCode::InvalidRecordName
@@ -90,9 +135,10 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         "child",
         &RecordType::Ns,
         "ns.example.com",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     );
+
     assert!(delegation_ns.is_ok());
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
@@ -101,9 +147,10 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         "www",
         &RecordType::Cname,
         "target.example.com",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     );
+
     assert_eq!(
         cname_conflict.unwrap_err().code(),
         ErrorCode::RecordConflict
@@ -120,9 +167,10 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
         "",
         &RecordType::Mx,
         "Mail.Example.Com.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let existing_srv = test_record(
@@ -137,9 +185,10 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
         "_sip._tcp",
         &RecordType::Srv,
         "5 5060 Sip.Example.Com.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(duplicate_srv.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
@@ -154,9 +203,10 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
         "",
         &RecordType::Mx,
         "mail.example.com.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
@@ -164,8 +214,15 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
 #[test]
 fn add_rejects_null_mx_alongside_other_mx_records() {
     let existing_mx = test_record(1, "", RecordType::Mx, "mail.example.com", Some(10));
-    let null_mx_with_existing_mx =
-        validate_add(&[existing_mx], "", &RecordType::Mx, ".", RRSET_TTL, Some(0));
+    let null_mx_with_existing_mx = validate_add(
+        &[existing_mx],
+        "",
+        &RecordType::Mx,
+        ".",
+        RECORD_SET_TTL,
+        Some(0),
+    );
+
     assert_eq!(
         null_mx_with_existing_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
@@ -177,9 +234,10 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
         "",
         &RecordType::Mx,
         "mail.example.com",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         Some(10),
     );
+
     assert_eq!(
         mx_with_existing_null_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
@@ -199,6 +257,7 @@ fn add_enforces_one_ttl_per_record_set() {
         600,
         None,
     );
+
     assert_eq!(differing_ttl.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
@@ -206,9 +265,10 @@ fn add_enforces_one_ttl_per_record_set() {
         "www",
         &RecordType::A,
         "192.0.2.11",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     );
+
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different record set.
@@ -221,6 +281,7 @@ fn add_enforces_one_ttl_per_record_set() {
         600,
         None,
     );
+
     assert!(other_record_set.is_ok());
 }
 
@@ -237,7 +298,7 @@ fn test_record(
         name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
-        ttl: Ttl::try_from(RRSET_TTL).unwrap(),
+        ttl: Ttl::try_from(RECORD_SET_TTL).unwrap(),
         priority,
         zone_id: ZoneId::from(1),
         created_at: Utc::now(),
@@ -260,28 +321,31 @@ fn add_enforces_the_dname_rules() {
         "sub",
         &RecordType::Dname,
         "two.example.net.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     )
     .unwrap_err();
+
     assert_eq!(second.code(), ErrorCode::RecordConflict);
     let ns_beside = validate_add(
         &dname_at_sub,
         "sub",
         &RecordType::Ns,
         "ns.example.net.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     )
     .unwrap_err();
+
     assert_eq!(ns_beside.code(), ErrorCode::RecordConflict);
+
     // Other data at the DNAME's own name is allowed; only names below it are not.
     validate_add(
         &dname_at_sub,
         "sub",
         &RecordType::A,
         "192.0.2.1",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     )
     .unwrap();
@@ -298,10 +362,11 @@ fn add_enforces_the_dname_rules() {
         "del",
         &RecordType::Dname,
         "one.example.net.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     )
     .unwrap_err();
+
     assert_eq!(dname_beside.code(), ErrorCode::RecordConflict);
 
     // The apex NS set is the zone's own, not a delegation.
@@ -311,7 +376,7 @@ fn add_enforces_the_dname_rules() {
         "",
         &RecordType::Dname,
         "one.example.net.",
-        RRSET_TTL,
+        RECORD_SET_TTL,
         None,
     )
     .unwrap();

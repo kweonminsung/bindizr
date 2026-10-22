@@ -22,6 +22,7 @@ impl TestApp {
                 })),
             )
             .await;
+
         assert_eq!(status, StatusCode::CREATED);
     }
 }

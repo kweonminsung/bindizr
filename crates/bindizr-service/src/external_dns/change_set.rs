@@ -75,7 +75,7 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 }
 
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
-fn normalize_ttl(ttl: Option<i32>) -> Result<Option<Ttl>, ServiceError> {
+fn normalize_ttl(ttl: Option<i64>) -> Result<Option<Ttl>, ServiceError> {
     match ttl {
         Some(0) | None => Ok(None),
         Some(ttl) => Ok(Some(validate_record_ttl(ttl)?)),
@@ -99,6 +99,7 @@ fn validate_record_set_shape(
             record.name
         )));
     }
+
     Ok(())
 }
 
@@ -112,6 +113,7 @@ pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, 
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
     let mut seen = HashSet::new();
     let mut values: Vec<String> = Vec::new();
+
     for value in &record.values {
         let encoded = record_type
             .encoded_value(value, None)
@@ -146,6 +148,7 @@ pub(crate) fn adjust_record_set(
             Err(_) => value.clone(),
         })
         .collect();
+
     // The answer is sorted anyway, which puts duplicates side by side.
     values.sort();
     values.dedup();
@@ -153,7 +156,7 @@ pub(crate) fn adjust_record_set(
     Ok(ExternalDnsRecord {
         name: record.name.clone(),
         record_type: record_type.to_string(),
-        ttl: ttl.map(i32::from),
+        ttl: ttl.map(i64::from),
         values,
     })
 }
@@ -164,12 +167,14 @@ pub(crate) fn parse_changes_request(
     request: &ApplyExternalDnsChangesRequest,
 ) -> Result<Vec<RecordSetOperation>, ServiceError> {
     let mut operations = Vec::new();
+
     for record_set in &request.deletes {
         operations.push(RecordSetOperation {
             record_set: parse_record_set(record_set)?,
             is_delete: true,
         });
     }
+
     for update in &request.updates {
         operations.push(RecordSetOperation {
             record_set: parse_record_set(&update.old)?,
@@ -180,12 +185,14 @@ pub(crate) fn parse_changes_request(
             is_delete: false,
         });
     }
+
     for record_set in &request.creates {
         operations.push(RecordSetOperation {
             record_set: parse_record_set(record_set)?,
             is_delete: false,
         });
     }
+
     Ok(operations)
 }
 
@@ -216,6 +223,7 @@ pub(crate) fn group_operations_by_zone(
             values: pending.record_set.values,
         };
         let entry = grouped.entry(zone.name.clone()).or_default();
+
         if pending.is_delete {
             entry.deletes.push(record_set);
         } else {
@@ -235,6 +243,7 @@ impl ZoneChangeSet {
         existing: &[Record],
     ) -> Result<Self, ServiceError> {
         let mut existing_by_key: HashMap<RecordKey, Vec<&Record>> = HashMap::new();
+
         for row in existing {
             existing_by_key
                 .entry(row.match_key())
@@ -245,9 +254,11 @@ impl ZoneChangeSet {
         // A cancelled delete leaves a hole, so a later add sees its row as surviving.
         let mut deletes: Vec<Option<Record>> = Vec::new();
         let mut delete_slots: HashMap<RecordId, usize> = HashMap::new();
+
         for del in &operations.deletes {
             for value in &del.values {
                 let key = RecordKey::new(&del.name, del.record_type, value, None);
+
                 for row in existing_by_key.get(&key).into_iter().flatten() {
                     if let Entry::Vacant(slot) = delete_slots.entry(row.id) {
                         slot.insert(deletes.len());
@@ -259,8 +270,10 @@ impl ZoneChangeSet {
 
         let mut creates: Vec<Record> = Vec::new();
         let mut created: HashSet<(RecordKey, Ttl)> = HashSet::new();
+
         for add in &operations.adds {
             let ttl = add.ttl.unwrap_or(zone.default_ttl);
+
             for value in &add.values {
                 let key = RecordKey::new(&add.name, add.record_type, value, None);
                 let rows: &[&Record] = existing_by_key.get(&key).map_or(&[], Vec::as_slice);
@@ -275,6 +288,7 @@ impl ZoneChangeSet {
                     deletes[slot] = None;
                     continue;
                 }
+
                 // Idempotent create: a surviving row already holds this rdata. TTL
                 // is excluded to match the duplicate check behind this one, which
                 // would otherwise reject the create as a conflict.
@@ -297,12 +311,14 @@ impl ZoneChangeSet {
                 });
             }
         }
+
         let deletes: Vec<Record> = deletes.into_iter().flatten().collect();
 
         // Validate each insert against the post-delete state plus earlier inserts,
         // so CNAME exclusivity and record set TTL rules see the state they will land in.
-        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|d| d.id).collect();
+        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
+
         for row in existing {
             if !deleted_ids.contains(&row.id) {
                 simulated_by_name
@@ -311,6 +327,7 @@ impl ZoneChangeSet {
                     .push(row.clone());
             }
         }
+
         for create in &creates {
             let records_at_name = simulated_by_name.entry(create.name.clone()).or_default();
             validate_record_constraints(

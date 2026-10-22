@@ -18,8 +18,10 @@ async fn metrics_reports_zone_totals_and_database_up() {
     app.create_test_zone().await;
 
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
+
     assert_eq!(status, StatusCode::OK);
     let text = body.as_str().expect("metrics body is prometheus text");
+
     assert!(text.contains("bindizr_build_info"));
     assert_eq!(metric_value(text, "bindizr_database_up"), 1.0);
     assert!(metric_value(text, "bindizr_zones_total") >= 1.0);
@@ -35,8 +37,10 @@ async fn metrics_counts_http_requests_by_route() {
     app.send_request(Method::GET, "/health", None).await;
 
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
+
     assert_eq!(status, StatusCode::OK);
     let text = body.as_str().expect("metrics body is prometheus text");
+
     assert!(
         text.contains(r#"bindizr_http_requests_total{method="GET",route="/health",status="200"}"#)
     );
@@ -57,11 +61,14 @@ async fn serial_bumps_count_only_committed_versions() {
     .await;
     let first = app.zone_name("a-metrics.example");
     let second = app.zone_name("z-metrics.example");
+
     app.create_zone_cli(&first, "3600").await;
     app.create_zone_cli(&second, "3600").await;
     let (_, before) = app.send_request(Method::GET, "/metrics", None).await;
     let before = metric_value(before.as_str().unwrap(), "bindizr_zone_serial_bumps_total");
+
     assert_eq!(before, 2.0);
+
     let serial = app.read_zone_serial(&first).await;
     let (status, body) = app
         .send_request(
@@ -76,13 +83,16 @@ async fn serial_bumps_count_only_committed_versions() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(app.read_zone_serial(&first).await, serial);
     let import_path = format!("/zones/{}/import", app.zone_name("preview-metrics.example"));
     let content = concat!(
         "@ IN SOA ns.example.net. admin.example.net. 42 300 60 86400 300\n",
+        "@ IN NS ns.example.net.\n",
         "www IN A 192.0.2.1\n",
     );
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -90,13 +100,17 @@ async fn serial_bumps_count_only_committed_versions() {
             Some(json!({"create": true, "dry_run": true, "content": content})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], false);
+
     let (_, after) = app.send_request(Method::GET, "/metrics", None).await;
+
     assert_eq!(
         metric_value(after.as_str().unwrap(), "bindizr_zone_serial_bumps_total"),
         before
     );
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -109,12 +123,16 @@ async fn serial_bumps_count_only_committed_versions() {
             })),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
+
     let (_, after) = app.send_request(Method::GET, "/metrics", None).await;
+
     assert_eq!(
         metric_value(after.as_str().unwrap(), "bindizr_zone_serial_bumps_total"),
         before + 2.0
     );
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -122,9 +140,12 @@ async fn serial_bumps_count_only_committed_versions() {
             Some(json!({"create": true, "content": content})),
         )
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
+
     let (_, after) = app.send_request(Method::GET, "/metrics", None).await;
+
     assert_eq!(
         metric_value(after.as_str().unwrap(), "bindizr_zone_serial_bumps_total"),
         before + 4.0

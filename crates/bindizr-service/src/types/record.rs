@@ -87,6 +87,7 @@ pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> Reco
     if *record_type != RecordType::Txt {
         return RecordValue::Text(record_type.display_value(value));
     }
+
     match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
         Some(TxtContent::Single(value)) => RecordValue::Text(value),
         Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
@@ -107,8 +108,8 @@ pub struct CreateRecordRequest {
     pub record_type: String,
     pub value: RecordValue,
     /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-    #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
+    pub ttl: Option<i64>,
     /// MX and SRV priority, set here rather than inline in the value; other
     /// record types reject it. Omitted, it is served and compared as 10.
     #[schema(example = 10)]
@@ -133,8 +134,8 @@ pub struct BulkRecordItem {
     pub record_type: String,
     pub value: RecordValue,
     /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-    #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
+    pub ttl: Option<i64>,
     /// MX and SRV priority, set here rather than inline in the value; other
     /// record types reject it. Omitted, it is served and compared as 10.
     #[schema(example = 10)]
@@ -169,8 +170,8 @@ pub struct UpdateRecordRequest {
     pub value: Option<RecordValue>,
     /// Records sharing a name and type share one TTL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
+    pub ttl: Option<i64>,
     /// MX and SRV priority; other record types reject it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 10)]
@@ -245,14 +246,17 @@ pub struct RecordFilter {
     #[schema(example = "192.168.1.100")]
     pub value: Option<String>,
     /// Filter by TTL.
-    #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    #[schema(example = 3600, value_type = Option<Ttl>, inline)]
+    #[param(value_type = Option<Ttl>, inline)]
+    pub ttl: Option<i64>,
     /// Filter by minimum TTL.
-    #[schema(example = 300)]
-    pub min_ttl: Option<i32>,
+    #[schema(example = 300, value_type = Option<Ttl>, inline)]
+    #[param(value_type = Option<Ttl>, inline)]
+    pub min_ttl: Option<i64>,
     /// Filter by maximum TTL.
-    #[schema(example = 86400)]
-    pub max_ttl: Option<i32>,
+    #[schema(example = 86400, value_type = Option<Ttl>, inline)]
+    #[param(value_type = Option<Ttl>, inline)]
+    pub max_ttl: Option<i64>,
     /// Filter by priority.
     #[schema(example = 10)]
     pub priority: Option<i32>,
@@ -300,7 +304,7 @@ pub struct RecordResponse {
     pub record_type: ServedRecordType,
     #[schema(example = "192.168.1.100")]
     pub value: RecordValue,
-    #[schema(example = 3600, value_type = i32)]
+    #[schema(example = 3600, inline)]
     pub ttl: Ttl,
     #[schema(example = 10)]
     pub priority: Option<i32>,
@@ -374,10 +378,10 @@ pub enum ServedRecordType {
 }
 
 impl ServedRecordType {
-    /// Render the API mnemonic or RFC 3597 `TYPE<number>` form.
+    /// Render the canonical API mnemonic.
     pub fn to_text(self) -> String {
         match self {
-            Self::User(value) => value.to_text(),
+            Self::User(value) => value.as_str().to_owned(),
             Self::Derived(value) => value.as_str().to_owned(),
         }
     }
@@ -426,10 +430,7 @@ mod tests {
             (ServedRecordType::from(RecordType::Ptr), "PTR"),
             (ServedRecordType::from(RecordType::Sshfp), "SSHFP"),
             (ServedRecordType::from(RecordType::Tlsa), "TLSA"),
-            (
-                ServedRecordType::from(RecordType::Unknown(65280)),
-                "TYPE65280",
-            ),
+            (ServedRecordType::from(RecordType::Wks), "WKS"),
             (ServedRecordType::from(DnssecRecordType::Rrsig), "RRSIG"),
             (ServedRecordType::from(DnssecRecordType::Nsec), "NSEC"),
             (ServedRecordType::from(DnssecRecordType::Dnskey), "DNSKEY"),
@@ -452,6 +453,7 @@ mod tests {
                 value
             );
         }
+
         for invalid in ["SOA", "ANY", "AAAAA"] {
             assert!(
                 serde_json::from_value::<ServedRecordType>(serde_json::json!(invalid)).is_err()

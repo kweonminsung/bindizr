@@ -28,9 +28,8 @@ pub enum ParseRdataError {
 }
 
 impl Rdata {
-    /// Parse `len` RDATA bytes at `start`, resolving compression in `message`.
-    /// Canonicalize names and preserve opaque bytes
-    /// (RFC 2136, Section 1.1; RFC 3597, Sections 6–7).
+    /// Parse `len` RDATA bytes at `start`, resolving compressed names in `message`.
+    /// Canonicalize names but preserve opaque bytes (RFC 2136, Section 1.1; RFC 3597, Sections 6–7).
     pub fn parse_canonical(
         record_type: Rtype,
         message: &[u8],
@@ -41,11 +40,14 @@ impl Rdata {
         parser.advance(start)?;
         let mut rdata = parser.parse_parser(len)?;
         let data = AllRecordData::<_, ParsedName<_>>::parse_any_rdata(record_type, &mut rdata)?;
+
         if rdata.remaining() != 0 {
             return Err(ParseRdataError::TrailingBytes);
         }
+
         let mut bytes = Vec::new();
         let Ok(()) = data.compose_canonical_rdata(&mut bytes);
+
         Ok(Self::new(bytes)?)
     }
 

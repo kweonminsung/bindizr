@@ -87,19 +87,28 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                     private.len()
                 )));
             }
+
             let mut keys = Vec::with_capacity(key.len());
+
             for (key, private) in key.iter().zip(&private) {
-                let dnskey = std::fs::read_to_string(key).map_err(|e| {
-                    CliError::request_with_source(format!("failed to read '{}': {}", key, e), e)
+                let dnskey = std::fs::read_to_string(key).map_err(|error| {
+                    CliError::request_with_source(
+                        format!("failed to read '{}': {}", key, error),
+                        error,
+                    )
                 })?;
-                let private_key = std::fs::read_to_string(private).map_err(|e| {
-                    CliError::request_with_source(format!("failed to read '{}': {}", private, e), e)
+                let private_key = std::fs::read_to_string(private).map_err(|error| {
+                    CliError::request_with_source(
+                        format!("failed to read '{}': {}", private, error),
+                        error,
+                    )
                 })?;
                 keys.push(ImportDnssecKeyPair {
                     dnskey,
                     private_key,
                 });
             }
+
             let response =
                 client::send_command::<DnssecStatusResponse>(DaemonCommand::ImportDnssecKeys {
                     zone_name: name,
@@ -112,6 +121,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             print_status(&response.data, output)?;
         }
     }
+
     Ok(())
 }
 
@@ -123,14 +133,19 @@ fn print_key_material(exported: &ExportDnssecKeysResponse) {
             "K{}.+{:03}+{:05}",
             exported.zone_name, key.algorithm, key.key_tag
         );
+
         // Distinct keys may share (algorithm, tag); the suffix keeps names unique.
         let dup = exported.keys[..i]
             .iter()
-            .filter(|k| k.algorithm == key.algorithm && k.key_tag == key.key_tag)
+            .filter(|candidate_key| {
+                candidate_key.algorithm == key.algorithm && candidate_key.key_tag == key.key_tag
+            })
             .count();
+
         if dup > 0 {
             base.push_str(&format!(".{}", dup + 1));
         }
+
         outln!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
         outln!("{}", key.dnskey_record);
         outln!("; {}.private", base);

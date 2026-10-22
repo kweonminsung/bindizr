@@ -141,12 +141,12 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 })
                 .await?;
             let detail = &response.data;
-            match output {
-                OutputFormat::Table => {
-                    print_table(vec![VersionRow::from(&detail.version)]);
-                    print_table(detail.records.iter().map(VersionRecordRow::from).collect());
-                }
-                _ => print_payload(detail, output)?,
+
+            if output == OutputFormat::Table {
+                print_table(vec![VersionRow::from(&detail.version)]);
+                print_table(detail.records.iter().map(VersionRecordRow::from).collect());
+            } else {
+                print_payload(detail, output)?
             }
         }
         ZoneVersionCommand::Diff {
@@ -162,9 +162,11 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                     to_serial: to_serial.map(Serial::from),
                 })
                 .await?;
-            match output {
-                OutputFormat::Table => out!("{}", render_version_diff(&response.data)),
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                out!("{}", render_version_diff(&response.data))
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         ZoneVersionCommand::Rollback {
@@ -180,14 +182,15 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                     run: Run::from_dry_run(dry_run),
                 })
                 .await?;
-            match output {
-                OutputFormat::Table => {
-                    outln!("{}", response.message);
-                    print_table(vec![RollbackSummaryRow::from(&response.data)]);
-                }
-                _ => print_payload(&response.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message);
+                print_table(vec![RollbackSummaryRow::from(&response.data)]);
+            } else {
+                print_payload(&response.data, output)?
             }
         }
     }
+
     Ok(())
 }

@@ -7,7 +7,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 0.1.0-rc.2
+  version: 0.1.0-rc.3
 paths:
   /audit:
     get:
@@ -705,21 +705,33 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: min_ttl
         in: query
         description: Filter by minimum TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: max_ttl
         in: query
         description: Filter by maximum TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: priority
         in: query
         description: Filter by priority.
@@ -2066,7 +2078,7 @@ paths:
       tags:
       - Token
       summary: Describe the API token making the request
-      description: The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.
+      description: The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 404.
       operationId: get_self_token
       responses:
         '200':
@@ -2076,7 +2088,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/SingleTokenResponse'
         '401':
-          description: Unauthorized, or no token presented
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'No token presented: authentication is disabled'
           content:
             application/json:
               schema:
@@ -2092,7 +2110,7 @@ paths:
       tags:
       - Token
       summary: List the grants of the calling API token's role
-      description: The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 401.
+      description: The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 404.
       operationId: list_self_token_grants
       parameters:
       - name: limit
@@ -2123,7 +2141,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedResponse_RoleGrantResponse'
         '401':
-          description: Unauthorized, or no token presented
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 'No token presented: authentication is disabled'
           content:
             application/json:
               schema:
@@ -2422,21 +2446,33 @@ paths:
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: min_default_ttl
         in: query
         description: Filter by minimum default TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: max_default_ttl
         in: query
         description: Filter by maximum default TTL.
         required: false
         schema:
           type: integer
-          format: int32
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
       - name: serial
         in: query
         description: Filter by serial.
@@ -3415,7 +3451,7 @@ paths:
       tags:
       - Zone
       summary: Import records into a zone
-      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. An unsupported record type rejects the whole import; no records are skipped to bypass validation. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
       operationId: import_zone
       parameters:
       - name: name
@@ -3838,8 +3874,9 @@ components:
           export the zone and read its versions and diffs
         - `record:create` — add records, including by import, nsupdate and ExternalDNS
         - `record:update` — change a record in place; without `record:read` on it,
-          every field must be given
-        - `record:delete` — delete records, including by nsupdate and ExternalDNS
+          every field must be given; also required when nsupdate changes existing records' TTL
+        - `record:delete` — delete records, including by nsupdate and ExternalDNS; also required
+          when nsupdate replaces a CNAME, DNAME, or matching WKS record
         - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
           also read signing policies
         - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
@@ -4016,12 +4053,15 @@ components:
             record types reject it. Omitted, it is served and compared as 10.
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-          example: 3600
         type:
           type: string
           example: A
@@ -4055,7 +4095,7 @@ components:
       description: The named credential behind a change, copied so deleting it preserves the history.
     ChangeSource:
       type: string
-      description: The request path or background process that produced a zone version.
+      description: The request path or background process that produced a managed change.
       enum:
       - api
       - socket
@@ -4266,12 +4306,15 @@ components:
             record types reject it. Omitted, it is served and compared as 10.
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-          example: 3600
         type:
           type: string
           example: A
@@ -4413,7 +4456,7 @@ components:
           type:
           - string
           - 'null'
-          description: Defaults to `hmac-sha256`; also accepts `hmac-sha384` and `hmac-sha512`.
+          description: Defaults to `hmac-sha256`; also accepts `hmac-sha384`, `hmac-sha512`, and legacy `hmac-sha1` (RFC 8945).
           example: hmac-sha256
         name:
           type: string
@@ -4442,19 +4485,21 @@ components:
         apex_ns:
           type: boolean
           description: |-
-            Start the zone with an apex NS record naming the SOA MNAME; false
-            leaves every NS record to the caller.
+            Start with apex NS naming MNAME; false creates a disabled zone.
+            Add apex NS before explicitly enabling a zone created without it.
           default: true
           example: true
         default_ttl:
           type:
           - integer
           - 'null'
-          format: int32
+          format: int64
           description: |-
             Record TTL the zone hands out when a record names none; defaults to
             `dns.zone_defaults.ttl`.
           example: 3600
+          maximum: 604800
+          minimum: 60
         description:
           type:
           - string
@@ -4475,8 +4520,11 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         mname:
           type: string
           example: ns1.example.com
@@ -5053,12 +5101,15 @@ components:
           type: string
           example: app.example.com
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Optional on writes; an omitted or zero TTL resolves to the zone TTL.
-          example: 300
         type:
           type: string
           example: A
@@ -5159,11 +5210,6 @@ components:
           $ref: '#/components/schemas/ImportMode'
           description: 'Reconciliation mode: `append` (default), `upsert`, or `replace`.'
           default: append
-        skip_unsupported:
-          type: boolean
-          description: |-
-            Pass over records bindizr has no type for instead of failing the whole
-            file; they are counted as skipped and listed in `skipped_records`.
       additionalProperties: false
     ImportZoneResponse:
       type: object
@@ -5189,11 +5235,6 @@ components:
           items:
             type: string
           description: Per-record validation errors. When non-empty nothing is applied.
-        skipped_records:
-          type: array
-          items:
-            type: string
-          description: Records passed over under `skip_unsupported`.
         summary:
           $ref: '#/components/schemas/ImportZoneSummaryResponse'
     ImportZoneSummaryResponse:
@@ -5290,9 +5331,6 @@ components:
           $ref: '#/components/schemas/ImportMode'
           description: 'Reconciliation mode for every zone: `append` (default), `upsert`, or `replace`.'
           default: append
-        skip_unsupported:
-          type: boolean
-          description: Pass over records bindizr has no type for instead of rejecting the zone.
         zone_names:
           type:
           - array
@@ -5552,8 +5590,11 @@ components:
                 example: 10
               ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               type:
                 $ref: '#/components/schemas/ServedRecordType'
               value:
@@ -5828,8 +5869,11 @@ components:
             properties:
               default_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               description:
                 type:
                 - string
@@ -5853,8 +5897,11 @@ components:
                 example: 1
               minimum_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               mname:
                 type: string
                 example: ns1.example.com
@@ -5922,16 +5969,22 @@ components:
                 format: date-time
               default_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               expire:
                 type: integer
                 format: int32
                 example: 604800
               minimum_ttl:
                 type: integer
-                format: int32
-                example: 3600
+                format: int64
+                examples:
+                - 3600
+                maximum: 4294967295
+                minimum: 0
               mname:
                 type: string
                 example: ns1.example.com
@@ -6100,8 +6153,11 @@ components:
           example: 10
         ttl:
           type: integer
-          format: int32
-          example: 300
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         value:
           $ref: '#/components/schemas/RecordValue'
     RecordResponse:
@@ -6143,8 +6199,11 @@ components:
           example: 10
         ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         type:
           $ref: '#/components/schemas/ServedRecordType'
         value:
@@ -6158,7 +6217,23 @@ components:
           example: example.com
     RecordType:
       type: string
-      description: 'Ordinary DNS record type: a supported mnemonic or TYPE<number> (RFC 3597). Other ordinary types use generic \# <length> <hex> values; SOA, managed DNSSEC, query and meta types have separate contracts.'
+      description: Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts.
+      enum:
+      - A
+      - AAAA
+      - CAA
+      - CNAME
+      - DNAME
+      - DS
+      - MX
+      - NAPTR
+      - TXT
+      - NS
+      - SRV
+      - PTR
+      - SSHFP
+      - TLSA
+      - WKS
     RecordValue:
       oneOf:
       - type: string
@@ -6685,6 +6760,7 @@ components:
       type: string
       description: TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
       enum:
+      - hmac-sha1
       - hmac-sha256
       - hmac-sha384
       - hmac-sha512
@@ -6794,12 +6870,15 @@ components:
           description: MX and SRV priority; other record types reject it.
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
+          oneOf:
+          - type: integer
+            format: int64
+            examples:
+            - 3600
+            maximum: 4294967295
+            minimum: 0
+          - type: 'null'
           description: Records sharing a name and type share one TTL.
-          example: 3600
         type:
           type:
           - string
@@ -6844,8 +6923,10 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
+          format: int64
           example: 3600
+          maximum: 604800
+          minimum: 60
         description:
           type:
           - string
@@ -6872,8 +6953,11 @@ components:
           type:
           - integer
           - 'null'
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         mname:
           type:
           - string
@@ -6925,8 +7009,11 @@ components:
           example: 10
         ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         type:
           $ref: '#/components/schemas/RecordType'
         value:
@@ -7009,8 +7096,11 @@ components:
       properties:
         default_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         description:
           type:
           - string
@@ -7034,8 +7124,11 @@ components:
           example: 1
         minimum_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         mname:
           type: string
           example: ns1.example.com
@@ -7116,16 +7209,22 @@ components:
           format: date-time
         default_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         expire:
           type: integer
           format: int32
           example: 604800
         minimum_ttl:
           type: integer
-          format: int32
-          example: 3600
+          format: int64
+          examples:
+          - 3600
+          maximum: 4294967295
+          minimum: 0
         mname:
           type: string
           example: ns1.example.com

@@ -8,24 +8,12 @@ use bindizr_core::{
         name::{OwnerName, ZoneName},
         nsupdate::parser::UpdateRecord,
     },
-    model::record::RecordType,
+    model::{dnssec_record::DnssecRecordType, record::RecordType},
 };
 
 use super::{
     NsupdateError, Prerequisite, UpdateOperation, operation::RecordOperation, parse_update_owner,
 };
-
-/// Decode every prerequisite against the request's zone before it is evaluated.
-pub(crate) fn decode_prerequisites(
-    records: &[UpdateRecord],
-    zone_name: &ZoneName,
-    message: &[u8],
-) -> Result<Vec<Prerequisite>, NsupdateError> {
-    records
-        .iter()
-        .map(|record| decode_prerequisite(record, zone_name, message))
-        .collect()
-}
 
 /// Prescan the entire update section before selecting any operations
 /// (RFC 2136, Section 3.4.1), retaining checked owners through execution.
@@ -39,6 +27,7 @@ pub(crate) fn decode_updates(
         .map(|record| {
             let owner = parse_update_owner(&record.name, zone_name)?;
             record.validate_update_shape()?;
+            validate_supported_type(record.record_type)?;
             Ok((record, owner))
         })
         .collect::<Result<Vec<_>, NsupdateError>>()?;
@@ -49,8 +38,20 @@ pub(crate) fn decode_updates(
         .collect()
 }
 
+/// The prescan's type check: unrecognized types are FORMERR (RFC 2136, Section 3.4.1.2).
+fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
+    if matches!(record_type, Rtype::SOA | Rtype::ANY)
+        || RecordType::try_from(record_type).is_ok()
+        || DnssecRecordType::try_from(i32::from(record_type.to_int())).is_ok()
+    {
+        Ok(())
+    } else {
+        Err(NsupdateError::UnsupportedType(record_type))
+    }
+}
+
 /// Check and decode a prerequisite (RFC 2136, Section 3.2).
-fn decode_prerequisite(
+pub(crate) fn decode_prerequisite(
     record: &UpdateRecord,
     zone_name: &ZoneName,
     query_data: &[u8],
@@ -61,10 +62,13 @@ fn decode_prerequisite(
         ));
     }
 
+    // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
     let name = parse_update_owner(&record.name, zone_name)?;
+
     match record.class {
         Class::ANY | Class::NONE => {
             let is_any_class = record.class == Class::ANY;
+
             if !record.rdata.is_empty() {
                 return Err(NsupdateError::FormErr(format!(
                     "{}-class prerequisite must have empty rdata",
@@ -85,6 +89,7 @@ fn decode_prerequisite(
                     "IN-class prerequisite must specify a record type".to_string(),
                 ));
             }
+
             Ok(Prerequisite::RecordValueMatches {
                 name,
                 record_type: record.record_type,
@@ -98,18 +103,26 @@ fn decode_prerequisite(
     }
 }
 
-/// Decode a prescanned record into a service operation, or
-/// `None` for a record RFC 2136 has the server pass over: a SOA delete
-/// (Sections 3.4.2.3 and 3.4.2.4) or a delete of a type bindizr never stores.
+/// Decode updates; refuse signer-managed changes.
+/// SOA deletes are ignored per RFC 2136, Sections 3.4.2.3 and 3.4.2.4.
 fn decode_update(
     record: &UpdateRecord,
     name: OwnerName,
     query_data: &[u8],
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
+    if DnssecRecordType::try_from(i32::from(record.record_type.to_int())).is_ok() {
+        // Malformed RDATA must remain FORMERR, ahead of policy refusal.
+        if record.class != Class::ANY {
+            record.to_rdata(query_data)?;
+        }
+        return Err(NsupdateError::ManagedType(record.record_type));
+    }
+
     match record.class {
         Class::IN => {
-            // RFC 2181, Section 8: a TTL with its top bit set reads as zero.
-            let ttl = Ttl::try_from(record.ttl).unwrap_or(Ttl::from_secs(0));
+            // RFC 8767, Section 4: every bit belongs to the positive TTL value.
+            let ttl = Ttl::from_secs(record.ttl);
+
             if record.record_type == Rtype::SOA {
                 return Ok(Some(UpdateOperation::ReplaceSoa {
                     name,
@@ -117,7 +130,9 @@ fn decode_update(
                     value: record.to_soa_value(query_data)?,
                 }));
             }
+
             let (record_type, value, priority) = record.to_record_value(query_data)?;
+
             Ok(Some(UpdateOperation::Record(RecordOperation::AddRecord {
                 name,
                 record_type,
@@ -144,7 +159,9 @@ fn decode_update(
             if RecordType::try_from(record.record_type).is_err() {
                 return Ok(None);
             }
+
             let (record_type, value, priority) = record.to_record_value(query_data)?;
+
             Ok(Some(UpdateOperation::Record(
                 RecordOperation::DeleteRecord {
                     name,

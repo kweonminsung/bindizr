@@ -123,7 +123,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             notify_key,
             output,
         } => {
-            let res = client::send_command::<SingleSecondaryResponse>(
+            let response = client::send_command::<SingleSecondaryResponse>(
                 DaemonCommand::CreateSecondary(CreateSecondaryRequest {
                     name,
                     address,
@@ -131,29 +131,29 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 }),
             )
             .await?;
-            log::debug!("Secondary creation result: {:?}", res);
-            print_secondary(&res.data, output)?;
+            log::debug!("Secondary creation result: {:?}", response);
+            print_secondary(&response.data, output)?;
         }
         SecondaryCommand::List {
             limit,
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<SecondaryResponse>>(
+            let response = client::send_command::<PaginatedResponse<SecondaryResponse>>(
                 DaemonCommand::ListSecondaries(PageRequest { limit, offset }),
             )
             .await?;
-            log::debug!("Secondary list result: {:?}", res);
-            print_page(&res.data, output, |item| SecondaryRow::from(item))?;
+            log::debug!("Secondary list result: {:?}", response);
+            print_page(&response.data, output, |item| SecondaryRow::from(item))?;
         }
         SecondaryCommand::Get { name, output } => {
-            let res =
+            let response =
                 client::send_command::<SingleSecondaryResponse>(DaemonCommand::GetSecondary {
                     name,
                 })
                 .await?;
-            log::debug!("Secondary get result: {:?}", res);
-            print_secondary(&res.data, output)?;
+            log::debug!("Secondary get result: {:?}", response);
+            print_secondary(&response.data, output)?;
         }
         SecondaryCommand::Update {
             name,
@@ -162,7 +162,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             notify_key,
             output,
         } => {
-            let res =
+            let response =
                 client::send_command::<SingleSecondaryResponse>(DaemonCommand::UpdateSecondary {
                     name,
                     request: UpdateSecondaryRequest {
@@ -172,8 +172,8 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     },
                 })
                 .await?;
-            log::debug!("Secondary update result: {:?}", res);
-            print_secondary(&res.data, output)?;
+            log::debug!("Secondary update result: {:?}", response);
+            print_secondary(&response.data, output)?;
         }
         SecondaryCommand::Transfers {
             name,
@@ -181,7 +181,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             zone,
             output,
         } => {
-            let res = client::send_command::<SecondaryTransfersResponse>(
+            let response = client::send_command::<SecondaryTransfersResponse>(
                 DaemonCommand::ListSecondaryTransfers {
                     name,
                     filter: SecondaryTransferFilter {
@@ -191,28 +191,31 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 },
             )
             .await?;
-            log::debug!("Secondary transfers result: {:?}", res);
-            let transfers = &res.data;
-            match output {
-                OutputFormat::Table => {
-                    print_table(transfers.transfers.iter().map(TransferRow::from).collect());
-                    outln!("{}", display_transfer_summary(&transfers.summary));
-                }
-                _ => print_payload(transfers, output)?,
+            log::debug!("Secondary transfers result: {:?}", response);
+            let transfers = &response.data;
+
+            if output == OutputFormat::Table {
+                print_table(transfers.transfers.iter().map(TransferRow::from).collect());
+                outln!("{}", display_transfer_summary(&transfers.summary));
+            } else {
+                print_payload(transfers, output)?
             }
         }
         SecondaryCommand::Check { name, output } => {
-            let res =
+            let response =
                 client::send_command::<CheckSecondaryResponse>(DaemonCommand::CheckSecondary {
                     name: name.clone(),
                 })
                 .await?;
-            log::debug!("Secondary check result: {:?}", res);
-            let check = &res.data;
-            match output {
-                OutputFormat::Table => print_check(check),
-                _ => print_payload(check, output)?,
+            log::debug!("Secondary check result: {:?}", response);
+            let check = &response.data;
+
+            if output == OutputFormat::Table {
+                print_check(check)
+            } else {
+                print_payload(check, output)?
             }
+
             // A failed part exits non-zero, so a script can branch on it.
             if !check.is_healthy() {
                 return Err(CliError::request(format!(
@@ -222,16 +225,19 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             }
         }
         SecondaryCommand::Delete { name, output } => {
-            let res =
+            let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteSecondary { name })
                     .await?;
-            log::debug!("Secondary deletion result: {:?}", res);
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
+            log::debug!("Secondary deletion result: {:?}", response);
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
     }
+
     Ok(())
 }
 
@@ -252,14 +258,18 @@ fn print_check(check: &CheckSecondaryResponse) {
             None => String::new(),
         }
     );
+
     match &check.resolve_error {
         Some(error) => outln!("Resolution failed: {}", error),
         None => outln!("Resolves to: {}", check.addresses.join(", ")),
     }
+
     if let Some(error) = &check.listener_error {
         outln!("Bindizr's own listener did not answer: {}", error);
     }
+
     let catalog = &check.catalog;
+
     match (catalog.visible_serial, catalog.status) {
         (Some(serial), SecondaryStatus::InSync | SecondaryStatus::Reachable) => outln!(
             "Catalog zone {}: {} at serial {}",
@@ -281,12 +291,14 @@ fn print_check(check: &CheckSecondaryResponse) {
             catalog.error.as_deref().unwrap_or("unknown error")
         ),
     }
+
     for notify in &check.notifies {
         match &notify.error {
             None => outln!("NOTIFY to {}: accepted", notify.address),
             Some(error) => outln!("NOTIFY to {}: rejected ({})", notify.address, error),
         }
     }
+
     outln!("Transfers: {}", display_transfer_summary(&check.transfers));
 }
 

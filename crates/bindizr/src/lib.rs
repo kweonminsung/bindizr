@@ -1,6 +1,4 @@
-//! The bindizr executable's internals: the CLI, the daemon runtime, and the
-//! front ends it serves — HTTP API, DNS server, and the Unix-socket control
-//! channel.
+//! CLI, daemon runtime and HTTP, DNS and Unix-socket front ends.
 
 mod api;
 mod cli;

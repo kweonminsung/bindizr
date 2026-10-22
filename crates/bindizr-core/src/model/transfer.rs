@@ -64,11 +64,11 @@ impl std::str::FromStr for TransferKind {
     type Err = ParseTransferError;
 
     /// Parse a transfer kind from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "axfr" => Ok(TransferKind::Axfr),
             "ixfr" => Ok(TransferKind::Ixfr),
-            _ => Err(ParseTransferError::Kind(s.to_string())),
+            _ => Err(ParseTransferError::Kind(value.to_string())),
         }
     }
 }
@@ -77,8 +77,8 @@ impl TryFrom<String> for TransferKind {
     type Error = ParseTransferError;
 
     /// Validate and convert the stored value into a transfer kind.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -116,12 +116,12 @@ impl std::str::FromStr for TransferResult {
     type Err = ParseTransferError;
 
     /// Parse a transfer result from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "ok" => Ok(TransferResult::Ok),
             "refused" => Ok(TransferResult::Refused),
             "failed" => Ok(TransferResult::Failed),
-            _ => Err(ParseTransferError::Result(s.to_string())),
+            _ => Err(ParseTransferError::Result(value.to_string())),
         }
     }
 }
@@ -130,8 +130,8 @@ impl TryFrom<String> for TransferResult {
     type Error = ParseTransferError;
 
     /// Validate and convert the stored value into a transfer result.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -176,12 +176,12 @@ impl std::str::FromStr for TransferTransport {
     type Err = ParseTransferError;
 
     /// Parse a transport from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "udp" => Ok(TransferTransport::Udp),
             "tcp" => Ok(TransferTransport::Tcp),
             "tls" => Ok(TransferTransport::Tls),
-            _ => Err(ParseTransferError::Transport(s.to_string())),
+            _ => Err(ParseTransferError::Transport(value.to_string())),
         }
     }
 }
@@ -190,8 +190,8 @@ impl TryFrom<String> for TransferTransport {
     type Error = ParseTransferError;
 
     /// Validate and convert the stored value into a transport.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 

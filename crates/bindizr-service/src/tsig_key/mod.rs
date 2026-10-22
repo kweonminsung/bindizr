@@ -20,7 +20,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     role,
     text::MAX_COLUMN_TEXT_LEN,
     transaction,
@@ -29,10 +29,6 @@ use crate::{
         TsigKeyResponse,
     },
 };
-
-/// Byte length of generated secrets; matches `tsig-keygen`'s default for
-/// HMAC-SHA256 and is sufficient entropy for the larger algorithms too.
-const GENERATED_SECRET_LEN: usize = 32;
 
 /// Create a TSIG key in the request's role. An omitted `secret` is generated;
 /// a given one must be valid, non-empty base64 (an imported key).
@@ -44,7 +40,9 @@ pub async fn create(
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_key_name(&request.name)?;
+
     let role = role::lookup_by_name(cx, &request.role_name).await?;
+
     let algorithm = request
         .algorithm
         .as_deref()
@@ -54,7 +52,7 @@ pub async fn create(
         .unwrap_or_default();
     let secret = match request.secret.as_deref() {
         Some(secret) => normalize_secret(secret)?,
-        None => generate_secret(),
+        None => generate_secret(&algorithm),
     };
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
@@ -83,15 +81,15 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // A create that raced past the pre-check trips UNIQUE(name); the
             // backstop reads as the same conflict.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::tsig_key_conflict(&name)
-            } else if e.is_foreign_key_violation() {
+            } else if error.is_foreign_key_violation() {
                 ServiceError::role_not_found(&role.name)
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -103,9 +101,10 @@ pub async fn create(
                 "role_name {}, algorithm {}",
                 role.name, tsig_key.algorithm
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
+
         Ok(tsig_key)
     }
     .await;
@@ -121,6 +120,7 @@ pub async fn list(
     filter: &TsigKeyFilter,
 ) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
+    validate_page_limit(filter.limit)?;
 
     let keys = match &filter.role_name {
         Some(role_name) => {
@@ -134,7 +134,8 @@ pub async fn list(
         .into_iter()
         .map(|role| (role.id, role.name))
         .collect();
-    build_page(
+
+    Ok(build_page(
         keys.iter()
             .map(|tsig_key| {
                 let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
@@ -143,7 +144,7 @@ pub async fn list(
             .collect(),
         filter.limit,
         filter.offset,
-    )
+    ))
 }
 
 /// Fetch one TSIG key by name, including its secret.
@@ -158,6 +159,7 @@ pub async fn get(
     let role = bindizr_db::role::get(cx.db(), tsig_key.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(tsig_key.role_id))?;
+
     Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
 }
 
@@ -188,6 +190,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let secondary_count =
         bindizr_db::secondary::count_by_notify_tsig_key_id(cx.db(), tsig_key.id).await?;
+
     if secondary_count > 0 {
         return Err(ServiceError::TsigKeyInUse(format!(
             "TSIG key '{}' still signs NOTIFY for {} secondar{}",
@@ -205,32 +208,35 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .authorize_action(Action::AccessManage)?;
         let deleted = bindizr_db::tsig_key::delete_tx(&mut tx, tsig_key.id)
             .await
-            .map_err(|e| {
+            .map_err(|error| {
                 // A secondary that took the key between the count above and this
                 // delete trips the FK: the same in-use conflict.
-                if e.is_foreign_key_violation() {
+                if error.is_foreign_key_violation() {
                     ServiceError::TsigKeyInUse(
                         "TSIG key still signs NOTIFY for a secondary".to_string(),
                     )
                 } else {
-                    e.into()
+                    error.into()
                 }
             })?;
+
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !deleted {
             return Err(ServiceError::tsig_key_not_found(&tsig_key.name));
         }
+
         audit::save_tx(
             &mut tx,
             AuditEntity::TsigKey,
             &tsig_key.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to delete TSIG key").await
 }
 
@@ -238,17 +244,21 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     let name = parse_lookup_name(value)
-        .map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))?;
+        .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {}", error)))?;
+
     if name.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "TSIG key name must be {} characters or fewer in its canonical spelling",
             MAX_COLUMN_TEXT_LEN
         )));
     }
+
     Ok(name)
 }
 
-/// HMAC security degrades to the key length, so refuse imports under 128 bits.
+/// Imported secrets must contain at least 128 bits.
+// RFC 8945, Section 8 recommends output-sized keys; shorter imports preserve
+// secrets already shared with other servers.
 const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 
 /// Validate and normalize a base64-encoded TSIG secret.
@@ -264,8 +274,8 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(trimmed)
-        .map_err(|e| {
-            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", e))
+        .map_err(|error| {
+            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", error))
         })?;
 
     if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
@@ -279,10 +289,10 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     Ok(trimmed.to_string())
 }
 
-/// Generate a base64-encoded random TSIG secret.
-fn generate_secret() -> String {
-    let bytes: [u8; GENERATED_SECRET_LEN] = rand::rng().random();
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+/// Generate a base64 secret as long as the HMAC output (RFC 8945, Section 8).
+fn generate_secret(algorithm: &TsigAlgorithm) -> String {
+    let bytes: [u8; 64] = rand::rng().random();
+    base64::engine::general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
 }
 
 #[cfg(test)]
@@ -306,8 +316,14 @@ mod tests {
     #[test]
     fn normalize_key_name_rejects_invalid_names() {
         for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
-            let err = normalize_key_name(invalid).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
+            let error = normalize_key_name(invalid).unwrap_err();
+
+            assert_eq!(
+                error.code(),
+                ErrorCode::InvalidInput,
+                "input: {:?}",
+                invalid
+            );
         }
     }
 
@@ -336,9 +352,11 @@ mod tests {
         );
 
         let invalid = normalize_secret("not base64!!").unwrap_err();
+
         assert_eq!(invalid.code(), ErrorCode::InvalidInput);
 
         let empty = normalize_secret("").unwrap_err();
+
         assert_eq!(empty.code(), ErrorCode::InvalidInput);
     }
 
@@ -347,6 +365,7 @@ mod tests {
     fn normalize_secret_enforces_length_bounds() {
         // 6 decoded bytes: far below the 128-bit minimum.
         let short = normalize_secret("c2VjcmV0").unwrap_err();
+
         assert_eq!(short.code(), ErrorCode::InvalidInput);
         assert!(short.to_string().contains("at least 16 bytes"));
 
@@ -356,8 +375,10 @@ mod tests {
 
         // The base64 form must fit the VARCHAR(255) column.
         let oversized = base64::engine::general_purpose::STANDARD.encode([0x42u8; 200]);
+
         assert!(oversized.len() > 255);
         let too_long = normalize_secret(&oversized).unwrap_err();
+
         assert_eq!(too_long.code(), ErrorCode::InvalidInput);
         assert!(too_long.to_string().contains("at most 255"));
     }

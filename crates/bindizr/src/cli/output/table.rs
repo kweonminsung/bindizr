@@ -34,7 +34,7 @@ pub(crate) struct ZoneRow {
     #[tabled(rename = "RNAME")]
     pub(crate) rname: String,
     #[tabled(rename = "DEFAULT-TTL")]
-    pub(crate) default_ttl: i32,
+    pub(crate) default_ttl: i64,
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: Serial,
     #[tabled(rename = "REFRESH")]
@@ -44,7 +44,7 @@ pub(crate) struct ZoneRow {
     #[tabled(rename = "EXPIRE")]
     pub(crate) expire: SoaInterval,
     #[tabled(rename = "MINIMUM-TTL")]
-    pub(crate) minimum_ttl: i32,
+    pub(crate) minimum_ttl: i64,
     #[tabled(rename = "SERVED")]
     pub(crate) served: String,
     #[tabled(rename = "DESCRIPTION")]
@@ -59,12 +59,12 @@ impl From<&ZoneResponse> for ZoneRow {
             name: zone.name.clone(),
             mname: zone.mname.clone(),
             rname: zone.rname.clone(),
-            default_ttl: i32::from(zone.default_ttl),
+            default_ttl: i64::from(zone.default_ttl),
             serial: zone.serial,
             refresh: zone.refresh,
             retry: zone.retry,
             expire: zone.expire,
-            minimum_ttl: i32::from(zone.minimum_ttl),
+            minimum_ttl: i64::from(zone.minimum_ttl),
             served: display_yes_no(&zone.enabled),
             description: display_option(&zone.description),
         }
@@ -239,7 +239,7 @@ pub(crate) struct VersionRow {
     #[tabled(rename = "RNAME")]
     pub(crate) rname: String,
     #[tabled(rename = "DEFAULT-TTL")]
-    pub(crate) default_ttl: i32,
+    pub(crate) default_ttl: i64,
     #[tabled(rename = "REFRESH")]
     pub(crate) refresh: SoaInterval,
     #[tabled(rename = "RETRY")]
@@ -247,7 +247,7 @@ pub(crate) struct VersionRow {
     #[tabled(rename = "EXPIRE")]
     pub(crate) expire: SoaInterval,
     #[tabled(rename = "MINIMUM-TTL")]
-    pub(crate) minimum_ttl: i32,
+    pub(crate) minimum_ttl: i64,
     #[tabled(rename = "SOURCE")]
     pub(crate) change_source: String,
     #[tabled(rename = "CHANGED-BY")]
@@ -263,11 +263,11 @@ impl From<&ZoneVersionResponse> for VersionRow {
             serial: version.serial,
             mname: version.mname.clone(),
             rname: version.rname.clone(),
-            default_ttl: i32::from(version.default_ttl),
+            default_ttl: i64::from(version.default_ttl),
             refresh: version.refresh,
             retry: version.retry,
             expire: version.expire,
-            minimum_ttl: i32::from(version.minimum_ttl),
+            minimum_ttl: i64::from(version.minimum_ttl),
             change_source: version.change_source.to_string(),
             changed_by: display_option(&version.changed_by),
             created_at: display_time(version.created_at),
@@ -451,15 +451,16 @@ impl From<&ImportZonesItemResponse> for ImportZonesRow {
     fn from(item: &ImportZonesItemResponse) -> Self {
         let summary = item.import.as_ref().map(|import| import.summary);
         let count = |value: Option<u64>| display_option(&value);
+
         ImportZonesRow {
             zone_name: item.zone_name.clone(),
             result: item.result.to_string(),
-            parsed: count(summary.map(|s| s.parsed)),
-            added: count(summary.map(|s| s.added)),
-            deleted: count(summary.map(|s| s.deleted)),
-            updated: count(summary.map(|s| s.updated)),
-            unchanged: count(summary.map(|s| s.unchanged)),
-            skipped: count(summary.map(|s| s.skipped)),
+            parsed: count(summary.map(|summary| summary.parsed)),
+            added: count(summary.map(|summary| summary.added)),
+            deleted: count(summary.map(|summary| summary.deleted)),
+            updated: count(summary.map(|summary| summary.updated)),
+            unchanged: count(summary.map(|summary| summary.unchanged)),
+            skipped: count(summary.map(|summary| summary.skipped)),
             error: display_option(&item.error.as_ref().map(|error| &error.error)),
         }
     }
@@ -621,7 +622,7 @@ impl From<&RoleGrantResponse> for RoleGrantRow {
             actions: grant
                 .actions
                 .iter()
-                .map(|action| action.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
             record_name_pattern: grant.record_name_pattern.clone(),
@@ -706,6 +707,7 @@ mod tests {
 
     use super::*;
 
+    /// Display serial lag using wraparound-aware secondary status.
     #[test]
     fn secondary_status_row_displays_serial_lag_across_wraparound() {
         use SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};
@@ -730,6 +732,7 @@ mod tests {
                 last_transfer: None,
             };
             let row = SecondaryStatusRow::from_secondary(&secondary, Serial::from(zone_serial));
+
             assert_eq!(
                 row.lag, lag,
                 "{zone_serial} vs {visible_serial:?}: {status}"

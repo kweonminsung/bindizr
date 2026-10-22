@@ -17,7 +17,7 @@ use crate::{
     Context, audit,
     authorization::Caller,
     model::api_token::ApiToken,
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     role,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     transaction,
@@ -41,7 +41,9 @@ pub async fn create(
     caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_token_name(&request.name)?;
+
     let role = role::lookup_by_name(cx, &request.role_name).await?;
+
     let description =
         normalize_description(request.description.as_deref(), ServiceError::invalid_input)?;
     let expires_at = normalize_expires_at(request.expires_in_days)?;
@@ -82,15 +84,15 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // A create that raced past the pre-check trips UNIQUE(name); the
             // backstop reads as the same conflict.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::token_conflict(&name)
-            } else if e.is_foreign_key_violation() {
+            } else if error.is_foreign_key_violation() {
                 ServiceError::role_not_found(&role.name)
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -105,9 +107,10 @@ pub async fn create(
                     .expires_at
                     .map_or("never".to_string(), |at| at.format("%Y-%m-%d").to_string())
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
+
         Ok(token)
     }
     .await;
@@ -123,6 +126,7 @@ pub async fn list(
     filter: &TokenFilter,
 ) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
+    validate_page_limit(filter.limit)?;
 
     let tokens = match &filter.role_name {
         Some(role_name) => {
@@ -136,7 +140,8 @@ pub async fn list(
         .into_iter()
         .map(|role| (role.id, role.name))
         .collect();
-    build_page(
+
+    Ok(build_page(
         tokens
             .iter()
             .map(|token| {
@@ -146,7 +151,7 @@ pub async fn list(
             .collect(),
         filter.limit,
         filter.offset,
-    )
+    ))
 }
 
 /// Describe `token` with its role's name; any token may read itself.
@@ -175,21 +180,24 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
+
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !bindizr_db::api_token::delete_tx(&mut tx, token.id).await? {
             return Err(ServiceError::token_not_found(&token.name));
         }
+
         audit::save_tx(
             &mut tx,
             AuditEntity::Token,
             &token.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to delete token").await
 }
 
@@ -204,12 +212,14 @@ async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceErr
 /// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
 pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
     let name = normalize_identifier(name, "token name", MAX_COLUMN_TEXT_LEN)?;
+
     // Dot segments get normalized away; `self` is the lookup route.
     if name == "." || name == ".." || name == "self" {
         return Err(ServiceError::invalid_input(format!(
             "token name must not be '{name}'"
         )));
     }
+
     Ok(name)
 }
 
@@ -220,11 +230,13 @@ fn normalize_expires_at(
     let Some(days) = expires_in_days else {
         return Ok(None);
     };
+
     if !(1..=MAX_EXPIRES_IN_DAYS).contains(&days) {
         return Err(ServiceError::invalid_input(format!(
             "expires_in_days must be between 1 and {MAX_EXPIRES_IN_DAYS}"
         )));
     }
+
     // Within the cap neither the duration nor the date can overflow.
     Ok(Some(Utc::now() + Duration::days(days)))
 }
@@ -252,8 +264,8 @@ mod tests {
     #[test]
     fn normalize_token_name_rejects_empty_and_whitespace_names() {
         for name in ["", "   ", "bad name", "bad\tname"] {
-            let err = normalize_token_name(name).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput);
+            let error = normalize_token_name(name).unwrap_err();
+            assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }
 
@@ -263,9 +275,10 @@ mod tests {
     #[test]
     fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
         for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
-            let err = normalize_token_name(name).unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput, "{name}");
+            let error = normalize_token_name(name).unwrap_err();
+            assert_eq!(error.code(), ErrorCode::InvalidInput, "{name}");
         }
+
         assert_eq!(
             normalize_token_name("ci.prod_v2-x").unwrap(),
             "ci.prod_v2-x"

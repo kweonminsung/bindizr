@@ -3,7 +3,11 @@
 use super::ParseRecordValueError;
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
-    name::{MAX_DOMAIN_LEN, decode_name_labels},
+    message::{
+        DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN,
+        query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN},
+    },
+    name::{MAX_WIRE_NAME_LEN, decode_name_labels},
     tsig::MAX_TSIG_RECORD,
 };
 
@@ -11,10 +15,50 @@ use crate::dns::{
 /// and compared as this value, so both types must agree on it.
 pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 
-/// RDATA limit after reserving the TCP envelope, worst-case question, and TSIG.
-/// A record must fit one transfer message even when the secondary uses a key.
-pub(crate) const MAX_RECORD_RDATA: usize =
-    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10) - MAX_TSIG_RECORD;
+/// DNS character-string contents use a one-octet length (RFC 1035, Section 3.3).
+pub(crate) const MAX_CHARACTER_STRING_LEN: usize = u8::MAX as usize;
+
+/// RDATA limit reserving worst-case question, owner, TSIG, OPT and keepalive.
+/// Every stored record must fit one signed EDNS transfer message.
+pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
+    - DNS_HEADER_LEN
+    - (MAX_WIRE_NAME_LEN + QUESTION_FIELDS_LEN)
+    - (MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN)
+    - MAX_TSIG_RECORD
+    - OPT_RECORD_LEN
+    - KEEPALIVE_OPTION_LEN;
+
+/// Split bare fields on unescaped whitespace, preserving DNS presentation escapes.
+pub(super) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
+    let mut rest = value;
+    std::iter::from_fn(move || {
+        rest = rest.trim_start();
+
+        if rest.is_empty() {
+            return None;
+        }
+
+        let mut escaped = false;
+        let end = rest
+            .char_indices()
+            .find_map(|(index, ch)| {
+                if escaped {
+                    escaped = false;
+                    None
+                } else if ch == '\\' {
+                    escaped = true;
+                    None
+                } else {
+                    ch.is_whitespace().then_some(index)
+                }
+            })
+            .unwrap_or(rest.len());
+        let (field, remaining) = rest.split_at(end);
+        rest = remaining;
+
+        Some(field)
+    })
+}
 
 /// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(
@@ -50,12 +94,14 @@ pub(crate) fn parse_hex_record_field<'a>(
         .filter(|group| !matches!(*group, "(" | ")"))
         .collect();
     let hex = hex.as_str();
+
     if hex.is_empty() {
         return Err(ParseRecordValueError::Empty { field });
     }
     if !hex.len().is_multiple_of(2) {
         return Err(ParseRecordValueError::OddHexLength { field });
     }
+
     // Decoded from bytes, not `&str` slices: a multi-byte character must fail
     // as non-hex instead of panicking on a char boundary.
     hex.as_bytes()
@@ -96,11 +142,13 @@ pub(crate) fn parse_string_octets<'a>(
     if input.is_empty() {
         return Err(ParseRecordValueError::Empty { field });
     }
+
     let quoted = input.starts_with('"');
     let rest = input.strip_prefix('"').unwrap_or(input);
 
     let mut out = Vec::new();
     let mut bytes = rest.bytes().enumerate();
+
     while let Some((index, byte)) = bytes.next() {
         match byte {
             b'"' if quoted => {
@@ -155,9 +203,11 @@ pub(crate) fn parse_char_string<'a>(
             input: input.to_string(),
         });
     }
+
     let (octets, rest) = parse_string_octets(field, input)?;
     let text = String::from_utf8(octets).map_err(|_| ParseRecordValueError::NotUtf8 { field })?;
-    if text.len() > 255 {
+
+    if text.len() > MAX_CHARACTER_STRING_LEN {
         return Err(ParseRecordValueError::CharStringTooLong { field });
     }
 
@@ -171,6 +221,7 @@ pub(crate) fn validate_domain_record_value(
     value: &str,
 ) -> Result<(), ParseRecordValueError> {
     let trimmed = value.trim();
+
     if trimmed.is_empty() {
         return Err(ParseRecordValueError::Empty { field });
     }
@@ -178,6 +229,7 @@ pub(crate) fn validate_domain_record_value(
     if trimmed == "." {
         return Err(ParseRecordValueError::RootZone { field });
     }
+
     decode_name_labels(value).map_err(|source| ParseRecordValueError::Name { field, source })?;
 
     Ok(())
@@ -200,7 +252,7 @@ mod tests {
             "host-name.example.com",
         ] {
             validate_domain_record_value("CNAME record value", value)
-                .unwrap_or_else(|e| panic!("{value} was rejected: {e}"));
+                .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
         }
     }
 

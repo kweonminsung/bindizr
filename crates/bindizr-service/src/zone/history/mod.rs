@@ -1,6 +1,7 @@
 //! Zone serial history: version listing, rewinding the records to a serial,
 //! and serial-based rollback.
 
+mod retention;
 mod rewind;
 
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,7 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
+pub(crate) use retention::prune_by_zone_id;
 use rewind::{list_records_at_serial_tx, rewind_records_to_serial_tx};
 
 use super::{diff::build_record_diff, update::soa_replacement_changes};
@@ -27,7 +29,7 @@ use crate::{
         record::{Record, RecordData, RecordKey},
         zone::Zone,
     },
-    pagination::{build_paginated_response, normalize_page_limit},
+    pagination::{build_paginated_response, validate_page_limit},
     record::{self, validate_record_constraints, validate_record_name_in_zone},
     serial::generate_serial,
     transaction,
@@ -46,9 +48,11 @@ async fn validate_serial_diffable_tx(
     if serial == zone.serial {
         return Ok(());
     }
+
     bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+
     Ok(())
 }
 
@@ -61,16 +65,17 @@ pub async fn list_versions(
     offset: Option<u64>,
     filter: VersionFilter,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
+    validate_page_limit(limit)?;
+
     let zone = super::get_by_name(cx, caller, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
-    let effective_limit = normalize_page_limit(limit)?;
     let versions = bindizr_db::zone_version::list_by_filter(
         cx.db(),
         zone.id,
         filter,
-        effective_limit,
+        limit,
         offset.unwrap_or(0),
     )
     .await?;
@@ -79,12 +84,7 @@ pub async fn list_versions(
         .map(ZoneVersionResponse::try_from)
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(build_paginated_response(
-        items,
-        Some(effective_limit),
-        offset,
-        total,
-    ))
+    Ok(build_paginated_response(items, limit, offset, total))
 }
 
 /// Fetch the version at `serial` together with the records rewound to it.
@@ -121,6 +121,7 @@ pub async fn get_version(
 
     let (zone, version, records) =
         transaction::finish_tx(tx, result, "failed to load version").await?;
+
     Ok(GetZoneVersionResponse {
         version: ZoneVersionResponse::try_from(&version)?,
         records: records
@@ -141,6 +142,7 @@ pub async fn diff_versions(
 ) -> Result<DiffZoneVersionsResponse, ServiceError> {
     let from = from_serial;
     let to = to_serial;
+
     let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
     let result = async {
@@ -149,6 +151,7 @@ pub async fn diff_versions(
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_whole_zone_read(&zone)?;
+
         let to = to.unwrap_or(zone.serial);
 
         validate_serial_diffable_tx(&mut tx, &zone, from).await?;
@@ -188,6 +191,7 @@ pub async fn rollback(
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
         // A rollback rewrites the zone's SOA and its records whole, from the
         // stored version it reads.
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
@@ -201,6 +205,7 @@ pub async fn rollback(
                 target, zone.serial
             )));
         }
+
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
             zone.id,
@@ -211,14 +216,15 @@ pub async fn rollback(
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
         let new_serial = generate_serial(Some(zone.serial));
+
         // SOA metadata comes back from the version; identity and creation
         // time are not part of one and stay.
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
-            .map_err(|e| {
+            .map_err(|error| {
                 ServiceError::internal_with_source(
-                    format!("failed to decode version rname: {}", e),
-                    e,
+                    format!("failed to decode version rname: {}", error),
+                    error,
                 )
             })?;
         let restored_zone = Zone {
@@ -247,6 +253,7 @@ pub async fn rollback(
 
         // Diff current vs target, import-Replace style.
         let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
+
         for target in target_records {
             target_by_key
                 .entry(target.match_key())
@@ -260,6 +267,7 @@ pub async fn rollback(
 
         for record in &current_records {
             let key = record.match_key();
+
             match target_by_key.get_mut(&key).and_then(Vec::pop) {
                 Some(target) => {
                     // A TTL change is a DEL + ADD pair, which RFC 2181,
@@ -274,6 +282,7 @@ pub async fn rollback(
                 None => dels.push(record.clone()),
             }
         }
+
         to_add.extend(target_by_key.into_values().flatten());
 
         let deleted_ids: HashSet<RecordId> = dels.iter().map(|del| del.id).collect();
@@ -281,16 +290,20 @@ pub async fn rollback(
         // Validate the adds in-memory against the records left after the deletes
         // (mirrors the import reconcile).
         let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
+
         for record in &current_records {
             if deleted_ids.contains(&record.id) {
                 continue;
             }
+
             records_by_name
                 .entry(record.name.clone())
                 .or_default()
                 .push(record.clone());
         }
+
         let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
+
         for target in &to_add {
             // The history predates the zone's current name, which may no
             // longer fit the names it restores.
@@ -353,16 +366,11 @@ pub async fn rollback(
 
         record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
         record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+
         // The restored user plane gets fresh signatures; old RRSIGs are
         // never restored (derived journal rows are skipped on rewind).
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
-        super::save_version_tx(
-            &mut tx,
-            &restored_zone,
-            new_serial,
-            caller.change_attribution(),
-        )
-        .await?;
+        super::save_version_tx(&mut tx, &restored_zone, new_serial, caller.change_origin()).await?;
 
         Ok((
             RollbackZoneResponse {
@@ -392,6 +400,7 @@ pub async fn rollback(
             response.summary.added,
             response.summary.deleted
         );
+
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 

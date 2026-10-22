@@ -1,18 +1,18 @@
-//! nsupdate (RFC 2136) on the wire: decoding an UPDATE message, TSIG
-//! authentication, and building the response. Applying the changes is the
-//! service layer's.
+//! Decode, authenticate and answer DNS UPDATEs (RFC 2136); the service applies them.
 
 pub mod parser;
 
 use domain::{
     base::{
-        Message, MessageBuilder,
+        Message,
         iana::{Opcode, OptRcode},
     },
     rdata::tsig::Time48,
 };
 
-use crate::dns::message::{Edns, ExtendedErrorCode};
+use crate::dns::message::{
+    Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit, has_readable_sections,
+};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945, Section 10 suggested default).
@@ -23,30 +23,74 @@ pub fn is_nsupdate(message: &[u8]) -> bool {
     Message::from_octets(message).is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
 }
 
-/// Build the response: request ID/opcode/question echoed, RCODE set, an OPT
-/// when the request carried one (RFC 6891, Section 6.1.1), and a TSIG once
-/// the request's was validated (RFC 8945, Section 5.3).
+/// Why an UPDATE response could not be encoded.
+#[derive(Debug, thiserror::Error)]
+pub enum BuildResponseError {
+    #[error("invalid UPDATE message: {0}")]
+    Malformed(#[source] crate::dns::LibraryError),
+    #[error(transparent)]
+    Encode(#[from] EncodeMessageError),
+}
+
+/// Build an UPDATE response with request OPT (RFC 6891, Section 6.1.1) and validated TSIG (RFC 8945, Section 5.3).
+/// Echo only the zone section, a BIND-compatible exception to RFC 2136, Section 3.8.
 pub fn build_response(
     query_data: &[u8],
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
     signer: Option<crate::dns::tsig::ResponseSigner>,
     fudge: u16,
-) -> Option<Vec<u8>> {
-    let msg = Message::from_octets(query_data).ok()?;
-    let answer = MessageBuilder::new_vec()
-        .start_answer(&msg, rcode.rcode())
-        .ok()?;
-    let mut additional = answer.additional();
-    Edns::from_message(&msg).push_response(&mut additional, rcode, ede, None);
+    limit: ResponseLimit,
+) -> Result<Vec<u8>, BuildResponseError> {
+    let message = Message::from_octets(query_data)
+        .map_err(|error| BuildResponseError::Malformed(Box::new(error)))?;
+    let readable = has_readable_sections(query_data);
 
-    if let Some(signer) = signer {
-        signer
-            .answer_with_fudge(&mut additional, Time48::now(), fudge)
-            .ok()?;
+    for minimal in [false, true] {
+        let rcode = if minimal { OptRcode::NOERROR } else { rcode };
+        let mut builder = crate::dns::message::build_response();
+        let mut answer = if readable {
+            builder
+                .start_answer(&message, rcode.rcode())
+                .map_err(|error| BuildResponseError::Malformed(Box::new(error)))?
+        } else {
+            let header = builder.header_mut();
+            header.set_id(message.header().id());
+            header.set_qr(true);
+            header.set_opcode(message.header().opcode());
+            header.set_rd(message.header().rd());
+            header.set_rcode(rcode.rcode());
+
+            builder.answer()
+        };
+        answer.header_mut().set_tc(minimal);
+        let mut additional = answer.additional();
+
+        if readable {
+            Edns::from_message(&message).push_response_opt(
+                &mut additional,
+                rcode,
+                if minimal { None } else { ede },
+                None,
+            );
+        }
+
+        if let Some(signer) = signer.clone() {
+            signer
+                .sign_response_with_fudge(&mut additional, Time48::now(), fudge)
+                .map_err(|error| EncodeMessageError::Sign(Box::new(error)))?;
+        }
+
+        let response = additional.finish().into_target();
+
+        match limit.validate_len(response.len()) {
+            Ok(()) => return Ok(response),
+            Err(error) if minimal || !limit.is_udp() => return Err(error.into()),
+            Err(_) => {}
+        }
     }
 
-    Some(additional.finish())
+    unreachable!()
 }
 
 #[cfg(test)]

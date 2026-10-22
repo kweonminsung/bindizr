@@ -27,12 +27,12 @@ enum ServerBehavior {
 }
 
 /// Write `name` in wire form; the other client test modules borrow it.
-pub(crate) fn encode_name(name: &str, buf: &mut Vec<u8>) {
+pub(crate) fn encode_name(name: &str, buffer: &mut Vec<u8>) {
     for label in name.split('.').filter(|label| !label.is_empty()) {
-        buf.push(label.len() as u8);
-        buf.extend_from_slice(label.as_bytes());
+        buffer.push(label.len() as u8);
+        buffer.extend_from_slice(label.as_bytes());
     }
-    buf.push(0);
+    buffer.push(0);
 }
 
 /// The question's name in presentation form and the offset just past the
@@ -40,15 +40,19 @@ pub(crate) fn encode_name(name: &str, buf: &mut Vec<u8>) {
 fn decode_question(query: &[u8]) -> (String, usize) {
     let mut pos = 12;
     let mut labels = Vec::new();
+
     loop {
         let len = usize::from(query[pos]);
         pos += 1;
+
         if len == 0 {
             break;
         }
+
         labels.push(String::from_utf8_lossy(&query[pos..pos + len]).into_owned());
         pos += len;
     }
+
     (labels.join("."), pos + 4)
 }
 
@@ -62,23 +66,25 @@ fn build_response(
     authority: &[Vec<u8>],
 ) -> Vec<u8> {
     let (_, question_end) = decode_question(query);
-    let mut buf = Vec::new();
-    buf.extend_from_slice(&query[0..2]);
-    buf.extend_from_slice(&(0x8000 | flags | rcode).to_be_bytes());
-    buf.extend_from_slice(&1u16.to_be_bytes());
-    buf.extend_from_slice(&(answers.len() as u16).to_be_bytes());
-    buf.extend_from_slice(&(authority.len() as u16).to_be_bytes());
-    buf.extend_from_slice(&0u16.to_be_bytes());
-    buf.extend_from_slice(&query[12..question_end]);
+    let mut buffer = Vec::new();
+    buffer.extend_from_slice(&query[0..2]);
+    buffer.extend_from_slice(&(0x8000 | flags | rcode).to_be_bytes());
+    buffer.extend_from_slice(&1u16.to_be_bytes());
+    buffer.extend_from_slice(&(answers.len() as u16).to_be_bytes());
+    buffer.extend_from_slice(&(authority.len() as u16).to_be_bytes());
+    buffer.extend_from_slice(&0u16.to_be_bytes());
+    buffer.extend_from_slice(&query[12..question_end]);
+
     for record in answers.iter().chain(authority) {
-        buf.extend_from_slice(record);
+        buffer.extend_from_slice(record);
     }
-    buf
+
+    buffer
 }
 
 /// The SOA of the queried name's parent zone, as a negative response's
 /// authority section carries it.
-fn parent_soa_record(query: &[u8]) -> Vec<u8> {
+fn build_parent_soa_record(query: &[u8]) -> Vec<u8> {
     let (qname, _) = decode_question(query);
     let parent = qname.split_once('.').map_or("", |(_, rest)| rest);
     let mut record = Vec::new();
@@ -89,38 +95,43 @@ fn parent_soa_record(query: &[u8]) -> Vec<u8> {
     let mut rdata = Vec::new();
     encode_name("ns.parent.example", &mut rdata);
     encode_name("hostmaster.parent.example", &mut rdata);
+
     for field in [1u32, 3600, 600, 86400, 300] {
         rdata.extend_from_slice(&field.to_be_bytes());
     }
+
     record.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
     record.extend_from_slice(&rdata);
+
     record
 }
 
 /// One answer record owned by the question name (a pointer to offset 12).
 fn build_record(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
-    let mut buf = vec![0xC0, 0x0C];
-    buf.extend_from_slice(&rtype.to_be_bytes());
-    buf.extend_from_slice(&1u16.to_be_bytes());
-    buf.extend_from_slice(&ttl.to_be_bytes());
-    buf.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
-    buf.extend_from_slice(rdata);
-    buf
+    let mut buffer = vec![0xC0, 0x0C];
+    buffer.extend_from_slice(&rtype.to_be_bytes());
+    buffer.extend_from_slice(&1u16.to_be_bytes());
+    buffer.extend_from_slice(&ttl.to_be_bytes());
+    buffer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+    buffer.extend_from_slice(rdata);
+
+    buffer
 }
 
 /// Encode a DS record fixture with the requested key tag and TTL.
-fn ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
+fn build_ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     build_record(RTYPE_DS, ttl, &rdata)
 }
 
-/// The record `ds_record` serves for `key_tag`, as the probe parses it.
+/// The record `build_ds_record` serves for `key_tag`, as the probe parses it.
 fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
+
     DsRecord {
         key_tag: KeyTag::from(key_tag),
         digest_type: 2,
@@ -130,7 +141,8 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
 
 /// Build the complete response selected by the fake server behavior.
 fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8>> {
-    let authority = [parent_soa_record(query)];
+    let authority = [build_parent_soa_record(query)];
+
     match behavior {
         ServerBehavior::Silence => None,
         ServerBehavior::Nxdomain => Some(build_response(
@@ -143,7 +155,7 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
         ServerBehavior::Ds { aa, records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
-                .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
+                .map(|(key_tag, ttl)| build_ds_record(*key_tag, *ttl))
                 .collect();
             Some(build_response(
                 query,
@@ -156,7 +168,7 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
         ServerBehavior::DsTruncatedOverUdp { records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
-                .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
+                .map(|(key_tag, ttl)| build_ds_record(*key_tag, *ttl))
                 .collect();
             Some(build_response(query, FLAG_AA, 0, &answers, &authority))
         }
@@ -172,19 +184,21 @@ async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         match TcpListener::bind(socket.local_addr().unwrap()).await {
             Ok(listener) => break (Arc::new(socket), listener),
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => continue,
-            Err(e) => panic!("failed to bind the fake server's TCP side: {e}"),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(error) => panic!("failed to bind the fake server's TCP side: {error}"),
         }
     };
     let addr = socket.local_addr().unwrap();
     let udp_behavior = behavior.clone();
+
     tokio::spawn(async move {
-        let mut buf = [0u8; 4096];
+        let mut buffer = [0u8; 4096];
+
         loop {
-            let Ok((len, peer)) = socket.recv_from(&mut buf).await else {
+            let Ok((len, peer)) = socket.recv_from(&mut buffer).await else {
                 return;
             };
-            let query = &buf[..len];
+            let query = &buffer[..len];
             let response = match &udp_behavior {
                 ServerBehavior::DsTruncatedOverUdp { .. } => {
                     build_response(query, FLAG_AA | FLAG_TC, 0, &[], &[])
@@ -194,6 +208,7 @@ async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
                     None => continue,
                 },
             };
+
             let _ = socket.send_to(&response, peer).await;
         }
     });
@@ -202,22 +217,29 @@ async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
             let Ok((mut stream, _)) = listener.accept().await else {
                 return;
             };
+
             let mut prefix = [0u8; 2];
+
             if stream.read_exact(&mut prefix).await.is_err() {
                 continue;
             }
+
             let mut query = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+
             if stream.read_exact(&mut query).await.is_err() {
                 continue;
             }
+
             let Some(response) = build_full_response(&query, &behavior) else {
                 continue;
             };
             let mut frame = (response.len() as u16).to_be_bytes().to_vec();
             frame.extend_from_slice(&response);
+
             let _ = stream.write_all(&frame).await;
         }
     });
+
     addr
 }
 
@@ -234,9 +256,9 @@ fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
         .collect()
 }
 
-/// Verify that `query_ds` reports each server apart.
+/// Verify that the explicit targets retain their order and separate DS answers.
 #[tokio::test]
-async fn query_ds_reports_each_server_apart() {
+async fn probe_parent_ds_reports_each_server_apart() {
     let a = fake_server(ServerBehavior::Ds {
         aa: true,
         records: vec![(34217, 3600)],
@@ -248,11 +270,13 @@ async fn query_ds_reports_each_server_apart() {
     })
     .await;
 
-    let answers = query_ds(&zone_name("example.com"), &servers(&[a, b]), TIMEOUT)
+    let parent = probe_parent_ds(&zone_name("example.com"), &format!("{a}, {b}"), TIMEOUT)
         .await
         .unwrap();
+
+    assert_eq!(parent.ns_addrs, vec![a.to_string(), b.to_string()]);
     assert_eq!(
-        answers,
+        parent.answers,
         vec![
             Some(DsRecordSet {
                 records: vec![parsed_ds_record(34217)],
@@ -266,6 +290,15 @@ async fn query_ds_reports_each_server_apart() {
     );
 }
 
+/// An empty target list cannot establish that the parent serves no DS.
+#[tokio::test]
+async fn probe_parent_ds_rejects_an_empty_target_list() {
+    let error = probe_parent_ds(&zone_name("example.com"), " , ", TIMEOUT)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProbeParentDsError::NoServers));
+}
+
 /// Verify that query DS retries a truncated response over TCP.
 #[tokio::test]
 async fn query_ds_retries_a_truncated_response_over_tcp() {
@@ -277,6 +310,7 @@ async fn query_ds_retries_a_truncated_response_over_tcp() {
     let answers = query_ds(&zone_name("example.com"), &servers(&[server]), TIMEOUT)
         .await
         .unwrap();
+
     assert_eq!(
         answers,
         vec![Some(DsRecordSet {
@@ -308,6 +342,7 @@ async fn query_ds_reports_absence_per_server() {
     )
     .await
     .unwrap();
+
     assert_eq!(answers, vec![None, None]);
 
     // A lagging server still serving the DS stays visible to the caller.
@@ -318,6 +353,7 @@ async fn query_ds_reports_absence_per_server() {
     )
     .await
     .unwrap();
+
     assert_eq!(
         answers
             .iter()
@@ -336,25 +372,27 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     })
     .await;
     let silent = fake_server(ServerBehavior::Silence).await;
-    let err = query_ds(
+    let error = query_ds(
         &zone_name("example.com"),
         &servers(&[absent, silent]),
         Duration::from_millis(200),
     )
     .await
     .unwrap_err();
-    assert!(err.to_string().contains(&silent.to_string()), "{err}");
-    assert!(err.to_string().contains("timeout"), "{err}");
+
+    assert!(error.to_string().contains(&silent.to_string()), "{error}");
+    assert!(error.to_string().contains("timeout"), "{error}");
 
     let cache = fake_server(ServerBehavior::Ds {
         aa: false,
         records: vec![],
     })
     .await;
-    let err = query_ds(&zone_name("example.com"), &servers(&[cache]), TIMEOUT)
+    let error = query_ds(&zone_name("example.com"), &servers(&[cache]), TIMEOUT)
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("not authoritative"), "{err}");
+
+    assert!(error.to_string().contains("not authoritative"), "{error}");
 }
 
 /// Verify that `query_ds` falls through to the next address of a server.
@@ -367,6 +405,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     })
     .await;
     let servers = vec![("ns1.parent.example".to_string(), vec![silent, present])];
+
     let answers = query_ds(
         &zone_name("example.com"),
         &servers,
@@ -374,6 +413,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     )
     .await
     .unwrap();
+
     assert_eq!(
         answers
             .iter()
@@ -386,14 +426,16 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
 /// Verify that `resolve_parent_ns_addrs` rejects an unresolvable entry.
 #[tokio::test]
 async fn resolve_parent_ns_addrs_rejects_an_unresolvable_entry() {
-    let err = resolve_parent_ns_addrs("127.0.0.1:5353,nx.invalid", TIMEOUT)
+    let error = resolve_parent_ns_addrs("127.0.0.1:5353,nx.invalid", TIMEOUT)
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("nx.invalid"), "{err}");
+
+    assert!(error.to_string().contains("nx.invalid"), "{error}");
 
     let servers = resolve_parent_ns_addrs("127.0.0.1:5353, 192.0.2.1", TIMEOUT)
         .await
         .unwrap();
+
     assert_eq!(servers.len(), 2);
     assert_eq!(servers[1].0, "192.0.2.1");
     assert_eq!(

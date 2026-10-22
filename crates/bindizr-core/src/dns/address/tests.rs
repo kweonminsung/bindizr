@@ -72,6 +72,7 @@ fn is_address_target_accepts_host_port_forms_and_rejects_the_rest() {
     ] {
         assert!(is_address_target(value), "{value}");
     }
+
     for value in [
         "",
         "bad/name",

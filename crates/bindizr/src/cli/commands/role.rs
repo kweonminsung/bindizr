@@ -86,8 +86,9 @@ Actions:
                     export the zone and read its versions and diffs
   record:create     add records, including by import, nsupdate and ExternalDNS
   record:update     change a record in place; without record:read on it, every
-                    field must be given
-  record:delete     delete records, including by nsupdate and ExternalDNS
+                    field must be given; also needed when nsupdate changes existing records' TTL
+  record:delete     delete records, including by nsupdate and ExternalDNS; also needed for
+                    nsupdate CNAME, DNAME, or matching WKS replacement
   dnssec:read       read DNSSEC status and check the parent DS; in all zones,
                     also read signing policies
   dnssec:manage     enable, disable and re-sign, manage keys and rollovers; in
@@ -157,11 +158,11 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             description,
             output,
         } => {
-            let res = client::send_command::<SingleRoleResponse>(DaemonCommand::CreateRole(
+            let response = client::send_command::<SingleRoleResponse>(DaemonCommand::CreateRole(
                 CreateRoleRequest { name, description },
             ))
             .await?;
-            print_response(&res.data, output, |response| {
+            print_response(&response.data, output, |response| {
                 vec![RoleRow::from(&response.role)]
             })?;
         }
@@ -170,25 +171,27 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<RoleResponse>>(
+            let response = client::send_command::<PaginatedResponse<RoleResponse>>(
                 DaemonCommand::ListRoles(PageRequest { limit, offset }),
             )
             .await?;
-            print_page(&res.data, output, |item| RoleRow::from(item))?;
+            print_page(&response.data, output, |item| RoleRow::from(item))?;
         }
         RoleCommand::Get { name, output } => {
-            let res =
+            let response =
                 client::send_command::<SingleRoleResponse>(DaemonCommand::GetRole { name }).await?;
-            print_response(&res.data, output, |response| {
+            print_response(&response.data, output, |response| {
                 vec![RoleRow::from(&response.role)]
             })?;
         }
         RoleCommand::Delete { name, output } => {
-            let res =
+            let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteRole { name }).await?;
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
         RoleCommand::Grant {
@@ -199,7 +202,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             types,
             output,
         } => {
-            let res =
+            let response =
                 client::send_command::<SingleRoleGrantResponse>(DaemonCommand::CreateRoleGrant {
                     role_name: name,
                     request: CreateRoleGrantRequest {
@@ -210,7 +213,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                     },
                 })
                 .await?;
-            print_response(&res.data, output, |response| {
+            print_response(&response.data, output, |response| {
                 vec![RoleGrantRow::from(&response.role_grant)]
             })?;
         }
@@ -220,26 +223,30 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let res = client::send_command::<PaginatedResponse<RoleGrantResponse>>(
+            let response = client::send_command::<PaginatedResponse<RoleGrantResponse>>(
                 DaemonCommand::ListRoleGrants {
                     role_name: name,
                     page: PageRequest { limit, offset },
                 },
             )
             .await?;
-            print_page(&res.data, output, |item| RoleGrantRow::from(item))?;
+            print_page(&response.data, output, |item| RoleGrantRow::from(item))?;
         }
         RoleCommand::Revoke { name, id, output } => {
-            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteRoleGrant {
-                role_name: name,
-                id: RoleGrantId::from(id),
-            })
-            .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
+            let response =
+                client::send_command::<MessageResponse>(DaemonCommand::DeleteRoleGrant {
+                    role_name: name,
+                    id: RoleGrantId::from(id),
+                })
+                .await?;
+
+            if output == OutputFormat::Table {
+                outln!("{}", response.message)
+            } else {
+                print_payload(&response.data, output)?
             }
         }
     }
+
     Ok(())
 }

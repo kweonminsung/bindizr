@@ -4,7 +4,10 @@ use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 use crate::{
     audit_log::AuditLogFilter,
     error::DatabaseError,
-    model::{audit_log::AuditLog, zone_version::ChangeActor},
+    model::{
+        audit_log::{AuditEntity, AuditLog},
+        change::ChangeActor,
+    },
 };
 
 /// Insert an audit log row in the current transaction.
@@ -14,6 +17,7 @@ pub(crate) async fn create_tx(
 ) -> Result<(), DatabaseError> {
     let (changed_by_kind, changed_by_name) =
         log.changed_by.as_ref().map(ChangeActor::as_columns).unzip();
+
     sqlx::query(
         r#"
         INSERT INTO audit_log (entity, entity_name, operation, detail, change_source, changed_by_kind, changed_by_name, created_at)
@@ -30,6 +34,7 @@ pub(crate) async fn create_tx(
     .bind(log.created_at)
     .execute(&mut **tx)
     .await?;
+
     Ok(())
 }
 
@@ -38,9 +43,11 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<MySql>,
     filter: &AuditLogFilter,
 ) -> Result<Vec<AuditLog>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-    let entity = filter.entity.map(|entity| entity.as_str());
+    let mut connection = pool.acquire().await?;
+
+    let entity = filter.entity.map(AuditEntity::as_str);
     let order_by = filter.sort.order_by_sql(filter.order);
+
     let rows = sqlx::query_as::<_, AuditLog>(AssertSqlSafe(format!(
         r#"
         SELECT id, entity, entity_name, operation, detail, change_source, changed_by_kind, changed_by_name, created_at
@@ -68,8 +75,9 @@ pub(crate) async fn list_by_filter(
             .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
             .unwrap_or(0),
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
+
     Ok(rows)
 }
 
@@ -78,8 +86,10 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,
     filter: &AuditLogFilter,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-    let entity = filter.entity.map(|entity| entity.as_str());
+    let mut connection = pool.acquire().await?;
+
+    let entity = filter.entity.map(AuditEntity::as_str);
+
     let count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
@@ -98,8 +108,9 @@ pub(crate) async fn count_by_filter(
     .bind(filter.since)
     .bind(filter.until)
     .bind(filter.until)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
+
     Ok(count as u64)
 }
 
@@ -108,10 +119,10 @@ pub(crate) async fn prune_older_than(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
     let result = sqlx::query("DELETE FROM audit_log WHERE created_at < ?")
         .bind(cutoff)
-        .execute(&mut *conn)
+        .execute(&mut *connection)
         .await?;
     Ok(result.rows_affected())
 }

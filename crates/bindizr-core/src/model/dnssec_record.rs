@@ -164,8 +164,8 @@ impl std::str::FromStr for DnssecRecordType {
     type Err = ParseDnssecRecordTypeError;
 
     /// Parse a DNSSEC record type from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "RRSIG" => Ok(DnssecRecordType::Rrsig),
             "NSEC" => Ok(DnssecRecordType::Nsec),
             "DNSKEY" => Ok(DnssecRecordType::Dnskey),
@@ -200,8 +200,8 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i32::from(self.wire_type()).encode_by_ref(buf)
+        i32::from(self.wire_type()).encode_by_ref(buffer)
     }
 }

@@ -11,14 +11,14 @@ pub(crate) async fn upsert_tx(
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, DatabaseError> {
-    // Advance the catalog serial only when the digest changes, kept
-    // monotonic, so secondaries re-transfer the catalog zone only on real changes.
+    // Advance the catalog serial only when the digest changes, so secondaries
+    // re-transfer on real changes; past the maximum it wraps to one (RFC 2136, Section 7.11).
     sqlx::query(
         r#"
         INSERT INTO catalog_zones (name, digest, serial)
         VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE
-            serial = IF(digest = VALUES(digest), serial, MOD(serial + 1, 4294967296)),
+            serial = IF(digest = VALUES(digest), serial, IF(serial = 4294967295, 1, serial + 1)),
             digest = VALUES(digest)
         "#,
     )

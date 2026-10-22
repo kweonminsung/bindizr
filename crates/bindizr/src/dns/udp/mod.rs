@@ -12,8 +12,9 @@ use std::{
     sync::Arc,
 };
 
-use bindizr_core::dns::message::{
-    self, Class, ExtendedErrorCode, Keepalive, Opcode, OptRcode, Rtype,
+use bindizr_core::{
+    dns::message::{self, Keepalive, ResponseLimit, Rtype},
+    model::transfer::TransferTransport,
 };
 use nix::{
     libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo},
@@ -23,9 +24,12 @@ use nix::{
     },
 };
 use thiserror::Error;
-use tokio::{io::Interest, sync::Semaphore};
+use tokio::{io::Interest, task::JoinSet};
 
-use super::server::{self, DnsContext};
+use super::{
+    error::DnsError,
+    server::{self, DnsContext},
+};
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;
@@ -69,11 +73,11 @@ impl UdpSocket {
     }
 
     /// Receive a complete datagram together with its peer and local destination.
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, ReplyTarget), UdpError> {
+    async fn recv_from(&self, buffer: &mut [u8]) -> Result<(usize, ReplyTarget), UdpError> {
         let (len, flags, peer, destination) = self
             .socket
             .async_io(Interest::READABLE, || {
-                let mut iov = [IoSliceMut::new(buf)];
+                let mut iov = [IoSliceMut::new(buffer)];
                 let mut control = nix::cmsg_space!(in_pktinfo, in6_pktinfo);
                 let message = recvmsg::<SockaddrStorage>(
                     self.socket.as_raw_fd(),
@@ -82,6 +86,7 @@ impl UdpSocket {
                     MsgFlags::empty(),
                 )?;
                 let mut destination = None;
+
                 if !message
                     .flags
                     .intersects(MsgFlags::MSG_TRUNC | MsgFlags::MSG_CTRUNC)
@@ -104,12 +109,15 @@ impl UdpSocket {
                         }
                     }
                 }
+
                 Ok((message.bytes, message.flags, message.address, destination))
             })
             .await?;
+
         if flags.intersects(MsgFlags::MSG_TRUNC | MsgFlags::MSG_CTRUNC) {
             return Err(UdpError::Truncated);
         }
+
         let client_addr = peer
             .and_then(|peer| {
                 peer.as_sockaddr_in()
@@ -118,6 +126,7 @@ impl UdpSocket {
             })
             .ok_or(UdpError::MissingPeer)?;
         let (local_ip, interface_index) = destination.ok_or(UdpError::MissingDestination)?;
+
         Ok((
             len,
             ReplyTarget {
@@ -129,12 +138,21 @@ impl UdpSocket {
     }
 
     /// Reply from the query's destination IP and the listener's bound port.
-    pub(crate) async fn send_to(&self, response: &[u8], target: ReplyTarget) -> io::Result<usize> {
+    pub(crate) async fn send_to(
+        &self,
+        response: &[u8],
+        target: ReplyTarget,
+        limit: ResponseLimit,
+    ) -> Result<usize, DnsError> {
+        limit.validate_len(response.len())?;
         let peer = SockaddrStorage::from(target.client_addr);
-        self.socket
+
+        Ok(self
+            .socket
             .async_io(Interest::WRITABLE, || {
                 let ipv4;
                 let ipv6;
+
                 // IPv4-mapped peers need IPv4 source selection on macOS too.
                 let control = match target.local_ip.to_canonical() {
                     IpAddr::V4(ip) => {
@@ -158,6 +176,7 @@ impl UdpSocket {
                         ControlMessage::Ipv6PacketInfo(&ipv6)
                     }
                 };
+
                 sendmsg(
                     self.socket.as_raw_fd(),
                     &[IoSlice::new(response)],
@@ -167,7 +186,7 @@ impl UdpSocket {
                 )
                 .map_err(io::Error::from)
             })
-            .await
+            .await?)
     }
 }
 
@@ -178,44 +197,61 @@ pub(crate) async fn run_udp_server(
     stop: impl Future<Output = ()>,
 ) {
     let socket = Arc::new(socket);
-    let in_flight = Arc::new(Semaphore::new(MAX_UDP_IN_FLIGHT));
+    let mut in_flight = JoinSet::new();
+
     // The extra byte distinguishes an oversized/truncated datagram from a full DNS message.
-    let mut buf = vec![0u8; usize::from(u16::MAX) + 1];
+    let mut buffer = vec![0u8; usize::from(u16::MAX) + 1];
     tokio::pin!(stop);
 
     loop {
         let received = tokio::select! {
-            received = socket.recv_from(&mut buf) => received,
+            biased;
             () = &mut stop => {
                 log::info!("DNS UDP server stopping");
-                return;
+                break;
             }
+
+            Some(result) = in_flight.join_next(), if !in_flight.is_empty() => {
+                if let Err(error) = result {
+                    log::warn!("DNS UDP query task failed: {}", error);
+                }
+                continue;
+            }
+
+            received = socket.recv_from(&mut buffer) => received,
         };
 
         let (len, target) = match received {
-            Ok(v) => v,
-            Err(e) => {
-                log::error!("Failed to receive DNS UDP packet: {}", e);
+            Ok(received) => received,
+            Err(error) => {
+                log::error!("Failed to receive DNS UDP packet: {}", error);
                 continue;
             }
         };
         let client_addr = target.client_addr;
 
-        if len == buf.len() {
+        if len == buffer.len() {
             log::warn!("Dropping oversized DNS UDP query from {}", client_addr);
             continue;
         }
-        let Ok(permit) = in_flight.clone().try_acquire_owned() else {
+        if in_flight.len() >= MAX_UDP_IN_FLIGHT {
             log::warn!("Dropping excess DNS UDP query from {}", client_addr);
             continue;
-        };
-        let query_data = buf[..len].to_vec();
+        }
+
+        let query_data = buffer[..len].to_vec();
         let socket = socket.clone();
         let dns_cx = dns_cx.clone();
-        tokio::spawn(async move {
+
+        in_flight.spawn(async move {
             handle_udp_query(&dns_cx, &socket, target, &query_data).await;
-            drop(permit);
         });
+    }
+
+    while let Some(result) = in_flight.join_next().await {
+        if let Err(error) = result {
+            log::warn!("DNS UDP query task failed: {}", error);
+        }
     }
 }
 
@@ -227,124 +263,142 @@ async fn handle_udp_query(
     query_data: &[u8],
 ) {
     let client_addr = target.client_addr;
+
     if message::is_response(query_data) {
         log::warn!("Ignoring a DNS UDP response from {}", client_addr);
         return;
     }
 
     if server::nsupdate::is_nsupdate(query_data) {
-        if let Err(e) =
+        if let Err(error) =
             server::nsupdate::handle_udp_nsupdate(dns_cx, socket, query_data, target).await
         {
-            log::error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
+            log::error!("NSUPDATE UDP handler failed for {}: {}", client_addr, error);
         }
         return;
+    }
+
+    match server::refuse_unsupported_opcode(
+        dns_cx,
+        query_data,
+        Keepalive::None,
+        TransferTransport::Udp,
+    )
+    .await
+    {
+        Ok(Some((response, limit))) => {
+            send_udp_response(socket, target, &response, limit).await;
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log::warn!(
+                "Failed to refuse DNS UDP opcode from {}: {}",
+                client_addr,
+                error
+            );
+            return;
+        }
     }
 
     let query = match message::ParsedQuery::parse(query_data, Keepalive::None) {
         Ok(query) => query,
         Err(error) => {
-            if let Some(response) = error.to_response() {
-                send_udp_response(socket, target, &response).await;
+            if let Some(metadata) = error.query_metadata() {
+                let rcode = metadata
+                    .format_error()
+                    .unwrap_or(message::OptRcode::FORMERR);
+
+                match server::refuse_query(dns_cx, metadata, query_data, rcode, None).await {
+                    Ok(response) => {
+                        send_udp_response(socket, target, &response, metadata.response_limit())
+                            .await
+                    }
+                    Err(error) => log::warn!(
+                        "Failed to answer malformed DNS UDP query from {}: {}",
+                        client_addr,
+                        error
+                    ),
+                }
             }
+
             return;
         }
     };
 
-    // Each refusal below is answered under the query's key when it has one.
-    let refusal = if let Some(rcode) = query.format_error() {
-        log::info!(
-            "Refusing DNS UDP query format from {}: {}",
-            client_addr,
-            rcode
-        );
-        Some((rcode, None))
-    } else if query.qclass != Class::IN {
-        // RFC 5936, Section 2.2.2 echoes the class asked; only IN is served.
-        log::info!(
-            "Refusing DNS UDP class {} from {}",
-            query.qclass,
-            client_addr
-        );
-        Some((
-            OptRcode::NOTAUTH,
-            Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-        ))
-    } else if query.opcode != Opcode::QUERY {
-        log::info!(
-            "Refusing DNS UDP opcode {:?} from {}",
-            query.opcode,
-            client_addr
-        );
-        Some((OptRcode::NOTIMP, Some(ExtendedErrorCode::NOT_SUPPORTED)))
-    } else {
-        None
-    };
-    if let Some((rcode, ede)) = refusal {
-        match server::refuse_query(dns_cx, &query, query_data, rcode, ede).await {
-            Ok(response) => send_udp_response(socket, target, &response).await,
-            Err(e) => log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e),
+    if let Some((rcode, ede)) = server::query_refusal(&query, TransferTransport::Udp, client_addr) {
+        match server::refuse_query(
+            dns_cx,
+            &message::QueryMetadata::from(&query),
+            query_data,
+            rcode,
+            ede,
+        )
+        .await
+        {
+            Ok(response) => {
+                send_udp_response(socket, target, &response, query.response_limit()).await
+            }
+            Err(error) => log::warn!(
+                "Failed to refuse DNS UDP query from {}: {}",
+                client_addr,
+                error
+            ),
         }
+
         return;
     }
 
     if query.qtype == Rtype::SOA {
-        if let Err(e) =
+        if let Err(error) =
             server::soa::handle_udp_soa(dns_cx, socket, target, &query, query_data).await
         {
-            log::warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
+            log::warn!(
+                "Failed to handle SOA UDP query from {}: {}",
+                client_addr,
+                error
+            );
         }
+
         return;
     }
 
     // RFC 1995, Section 2: return only the current SOA; lagging clients retry over TCP.
     if query.qtype == Rtype::IXFR {
-        if let Err(e) =
+        if let Err(error) =
             server::soa::handle_udp_ixfr(dns_cx, socket, target, &query, query_data).await
         {
             log::warn!(
                 "Failed to handle IXFR UDP query from {}: {}",
                 client_addr,
-                e
+                error
             );
         }
+
         return;
     }
 
-    let response = if server::is_xfr_query_type(query.qtype) {
-        server::handle_udp_xfr(dns_cx, client_addr, &query, query_data).await
-    } else {
-        log::info!(
-            "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",
+    if let Err(error) = server::handle_udp_xfr(dns_cx, socket, target, &query, query_data).await {
+        log::warn!(
+            "Failed to answer DNS UDP transfer from {}: {}",
             client_addr,
-            query.qtype
+            error
         );
-        match server::refuse_query(
-            dns_cx,
-            &query,
-            query_data,
-            OptRcode::REFUSED,
-            Some(ExtendedErrorCode::NOT_SUPPORTED),
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                log::warn!("Failed to refuse DNS UDP query from {}: {}", client_addr, e);
-                return;
-            }
-        }
-    };
-    send_udp_response(socket, target, &response).await;
+    }
 }
 
 /// Send a DNS response datagram to the requesting peer.
-async fn send_udp_response(socket: &UdpSocket, target: ReplyTarget, response: &[u8]) {
-    if let Err(e) = socket.send_to(response, target).await {
+async fn send_udp_response(
+    socket: &UdpSocket,
+    target: ReplyTarget,
+    response: &[u8],
+    limit: ResponseLimit,
+) {
+    if let Err(error) = socket.send_to(response, target, limit).await {
         log::warn!(
             "Failed to answer DNS UDP query from {}: {}",
             target.client_addr,
-            e
+            error
         );
     }
 }

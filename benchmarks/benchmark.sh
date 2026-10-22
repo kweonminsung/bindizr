@@ -23,7 +23,7 @@ SYSTEMS=""
 BENCHES=""
 
 # Print benchmark usage information and exit.
-usage() { sed -n '2,20p' "$0"; exit 0; }
+print_usage() { sed -n '2,20p' "$0"; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     -s|--systems)    SYSTEMS="$2"; shift 2 ;;
     --ci)            export BENCH_CI=1; shift ;;
     --list)          "$PYTHON" orchestrator.py --list; exit 0 ;;
-    -h|--help)       usage ;;
+    -h|--help)       print_usage ;;
     *)               echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -68,7 +68,6 @@ trap cleanup EXIT INT TERM
 [[ -n "$SYSTEMS" ]] && ARGS+=(-s ${SYSTEMS//,/ })
 
 echo ">>> starting benchmark run"
-# ${ARGS[@]+...} because bash 3.2 (macOS) treats an empty array as unset under
-# `set -u`, which made a plain `./benchmark.sh` fail before it ran anything.
+# Guard empty arrays for macOS bash 3.2, which treats them as unset under `set -u`.
 "$PYTHON" orchestrator.py ${ARGS[@]+"${ARGS[@]}"}
 echo ">>> done. Results written under results_<timestamp>/ (exact path printed above)."

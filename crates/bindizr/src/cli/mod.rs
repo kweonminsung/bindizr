@@ -1,6 +1,5 @@
-//! Command-line grammar and dispatch. Every subcommand either talks to the
-//! running daemon over its Unix socket or starts one; the daemon runtime
-//! itself lives in [`crate::daemon`].
+//! CLI grammar and dispatch: start the daemon or send it a Unix-socket command.
+//! Runtime implementation lives in [`crate::daemon`].
 
 mod commands;
 pub(crate) mod error;
@@ -166,11 +165,11 @@ pub async fn execute() {
         None => Ok(()),
     });
 
-    if let Err(e) = result {
-        errln!("Error: {}", e.message);
-        if let Some(hint) = e.hint() {
+    if let Err(error) = result {
+        errln!("Error: {}", error.message);
+        if let Some(hint) = error.hint() {
             errln!("Hint: {}", hint);
         }
-        std::process::exit(e.exit_code());
+        std::process::exit(error.exit_code());
     }
 }

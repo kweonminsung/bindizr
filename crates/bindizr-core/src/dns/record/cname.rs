@@ -9,7 +9,10 @@ pub struct CnameRecordValue<'a> {
 impl<'a> CnameRecordValue<'a> {
     /// Parse and validate a CNAME record value.
     pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
-        validate_domain_record_value("CNAME record value", value)?;
+        // RFC 2181, Section 11 allows root targets.
+        if value != "." {
+            validate_domain_record_value("CNAME record value", value)?;
+        }
         Ok(Self { target: value })
     }
 
@@ -22,6 +25,21 @@ impl<'a> CnameRecordValue<'a> {
 #[cfg(test)]
 mod tests {
     use super::CnameRecordValue;
+
+    /// Keep root targets distinct from literal dot labels.
+    #[test]
+    fn cname_accepts_root_target_and_preserves_literal_dot() {
+        use crate::dns::name::encode_name;
+
+        for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {
+            let value = CnameRecordValue::parse(input).unwrap();
+            assert_eq!(encode_name(&value.canonical()).unwrap(), expected);
+        }
+
+        for invalid in ["", ".."] {
+            assert!(CnameRecordValue::parse(invalid).is_err(), "{invalid:?}");
+        }
+    }
 
     /// Render a CNAME target in canonical text form.
     fn canonical(value: &str) -> String {

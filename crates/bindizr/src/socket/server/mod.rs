@@ -1,6 +1,4 @@
-//! Unix-socket daemon API for the CLI. Every command runs with global access
-//! (no token scoping), so a connection is admitted only from the daemon's own
-//! user or root, by the peer credentials the kernel reports.
+//! Serve globally authorized CLI commands over Unix sockets, restricted to the daemon user or root.
 
 mod audit;
 pub(crate) mod control;
@@ -17,6 +15,7 @@ mod tsig_key;
 mod zone;
 
 use std::{
+    future::Future,
     io,
     os::unix::fs::{FileTypeExt, MetadataExt},
     path::Path,
@@ -31,7 +30,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
     sync::mpsc,
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 
 use crate::{
@@ -43,9 +42,7 @@ use crate::{
     tls::TlsCertificates,
 };
 
-/// Upper bound on a single command line, so a buggy or malicious client cannot
-/// force unbounded allocation. Sized above the HTTP upload cap (32 MB) because
-/// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
+/// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Why the control socket could not be bound.
@@ -55,7 +52,7 @@ pub(crate) enum BindSocketError {
     #[error("Bindizr is already running")]
     InUse,
     /// Every candidate path failed, each with its reason.
-    #[error("failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
+    #[error("failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, error)| format!("'{path}': {error}")).collect::<Vec<_>>().join("; "))]
     Unavailable {
         failures: Vec<(String, BindSocketPathError)>,
     },
@@ -90,9 +87,7 @@ pub(crate) enum ServeSocketError {
     ReadUid(#[source] io::Error),
 }
 
-/// The socket front end's context: the daemon's, plus the control channel
-/// the lifecycle loop awaits. A command handler takes the daemon's context;
-/// only a control command needs this one.
+/// Daemon context and lifecycle control channel; only control commands need the latter.
 #[derive(Debug, Clone)]
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,
@@ -116,7 +111,7 @@ impl SocketContext {
     }
 
     /// The daemon's context.
-    pub(crate) fn daemon(&self) -> &Context {
+    pub(crate) fn daemon(&self) -> &Arc<Context> {
         &self.daemon
     }
 
@@ -132,11 +127,23 @@ impl SocketContext {
 }
 
 /// Dispatch a control request and send its JSON response.
-async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
+async fn handle_client(
+    socket_cx: &SocketContext,
+    stream: UnixStream,
+    stop: impl Future<Output = ()>,
+) {
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
-    if reader.read_line(&mut line).await.is_ok() {
+    tokio::pin!(stop);
+    let read = tokio::select! {
+        biased;
+        () = &mut stop => return,
+
+        read = reader.read_line(&mut line) => read,
+    };
+
+    if read.is_ok() {
         // A connect-and-close is another `bindizr start` probing whether this
         // daemon is alive (`prepare_socket_path`), not a command.
         if line.is_empty() {
@@ -145,16 +152,17 @@ async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
 
         let response = match serde_json::from_str::<DaemonCommand>(&line) {
             Ok(command) => handle_command(socket_cx, command).await,
-            Err(e) => {
-                log::error!("Failed to parse command: {}", e);
+            Err(error) => {
+                log::error!("Failed to parse command: {}", error);
                 encode_error(&ServiceError::invalid_input(format!(
                     "failed to parse command: {}",
-                    e
+                    error
                 )))
             }
         };
 
         let mut stream = reader.into_inner().into_inner();
+
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.write_all(b"\n").await;
     }
@@ -169,13 +177,25 @@ pub(crate) fn serve(
 ) -> Result<JoinHandle<()>, ServeSocketError> {
     let own_uid = read_own_uid().map_err(ServeSocketError::ReadUid)?;
     let stop = shutdown.waiter();
+    let client_shutdown = shutdown.clone();
+
     Ok(tokio::spawn(async move {
         tokio::pin!(stop);
+        let mut clients = JoinSet::new();
 
         loop {
             let accepted = tokio::select! {
-                accepted = listener.accept() => accepted,
+                biased;
                 () = &mut stop => break,
+
+                Some(result) = clients.join_next(), if !clients.is_empty() => {
+                    if let Err(error) = result {
+                        log::warn!("Daemon socket client task failed: {}", error);
+                    }
+                    continue;
+                }
+
+                accepted = listener.accept() => accepted,
             };
 
             match accepted {
@@ -183,8 +203,9 @@ pub(crate) fn serve(
                 Ok((stream, _)) => match stream.peer_cred() {
                     Ok(peer) if is_trusted_peer(peer.uid(), own_uid) => {
                         let socket_cx = socket_cx.clone();
-                        tokio::spawn(async move {
-                            handle_client(&socket_cx, stream).await;
+                        let stop = client_shutdown.waiter();
+                        clients.spawn(async move {
+                            handle_client(&socket_cx, stream, stop).await;
                         });
                     }
                     Ok(peer) => {
@@ -192,29 +213,40 @@ pub(crate) fn serve(
                     }
                     // Another `bindizr start` probing whether this daemon is alive
                     // has hung up already, and macOS keeps no credentials past that.
-                    Err(e) if e.kind() == io::ErrorKind::NotConnected => {}
-                    Err(e) => {
+                    Err(error) if error.kind() == io::ErrorKind::NotConnected => {}
+                    Err(error) => {
                         log::warn!(
                             "Refused a daemon socket connection with no peer credentials: {}",
-                            e
+                            error
                         );
                     }
                 },
-                Err(e) => {
-                    log::error!("Error accepting connection: {}", e);
+                Err(error) => {
+                    log::error!("Error accepting connection: {}", error);
                 }
             }
         }
 
         drop(listener);
+
+        while let Some(result) = clients.join_next().await {
+            if let Err(error) = result {
+                log::warn!("Daemon socket client task failed: {}", error);
+            }
+        }
+
         log::info!("Daemon socket server stopped");
     }))
 }
 
 /// Remove the daemon's socket file, once nothing is serving on it.
 pub(crate) async fn remove_socket_file(socket_path: &str) {
-    if let Err(e) = fs::remove_file(socket_path).await {
-        log::warn!("Failed to remove the daemon socket {}: {}", socket_path, e);
+    if let Err(error) = fs::remove_file(socket_path).await {
+        log::warn!(
+            "Failed to remove the daemon socket {}: {}",
+            socket_path,
+            error
+        );
     }
 }
 
@@ -227,35 +259,38 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
     let mut failures = Vec::new();
 
     for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
-        let err = match bind_socket(path).await {
+        let error = match bind_socket(path).await {
             Ok(listener) => return Ok(((*path).to_string(), listener)),
             // Another daemon already owns this socket. Trying the next candidate
             // would start a second daemon instead of reporting the conflict.
             Err(BindSocketPathError::AlreadyRunning) => return Err(BindSocketError::InUse),
-            Err(err) => err,
+            Err(error) => error,
         };
 
         if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
             log::warn!(
                 "Cannot use Unix socket path '{}': {}. Falling back to '{}'.",
                 path,
-                err,
+                error,
                 next
             );
         }
-        failures.push((path.to_string(), err));
+
+        failures.push((path.to_string(), error));
     }
+
     Err(BindSocketError::Unavailable { failures })
 }
 
 /// Bind a Unix listener at the requested path.
 async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathError> {
     prepare_socket_path(socket_path).await?;
+
     // A daemon that bound this path after the check above answers EADDRINUSE
     // here: the same conflict, not a path to fall back from.
-    UnixListener::bind(socket_path).map_err(|e| match e.kind() {
+    UnixListener::bind(socket_path).map_err(|error| match error.kind() {
         io::ErrorKind::AddrInUse => BindSocketPathError::AlreadyRunning,
-        _ => BindSocketPathError::Io(e),
+        _ => BindSocketPathError::Io(error),
     })
 }
 
@@ -270,12 +305,15 @@ async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathErro
             .create(parent)
             .await?;
         let metadata = fs::symlink_metadata(parent).await?;
+
         if !metadata.is_dir() {
             return Err(BindSocketPathError::NotADirectory {
                 path: parent.display().to_string(),
             });
         }
+
         let own_uid = read_own_uid()?;
+
         if metadata.uid() != own_uid && metadata.uid() != 0 {
             return Err(BindSocketPathError::ForeignDirectory {
                 path: parent.display().to_string(),
@@ -295,22 +333,23 @@ async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathErro
             match UnixStream::connect(socket_path).await {
                 Ok(_) => Err(BindSocketPathError::AlreadyRunning),
                 // Socket file exists but no process is listening, so it is safe to remove.
-                Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
+                Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
                     Ok(fs::remove_file(socket_path).await?)
                 }
                 // Socket disappeared after metadata lookup, so there is nothing to remove.
-                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(e.into()),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.into()),
             }
         }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e.into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 
 /// Run one command and encode its answer as the line the client reads.
 async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> String {
     let cx = socket_cx.daemon();
+
     match command {
         DaemonCommand::Status => encode_response(status::get_daemon_status(cx).await),
         DaemonCommand::Config => encode_response(Ok(status::get_config(cx))),
@@ -508,19 +547,19 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
 /// Encode a handler's response, or the error it failed with, as one JSON line.
 fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
     match result {
-        Ok(response) => serde_json::to_string(&response).unwrap_or_else(|e| {
+        Ok(response) => serde_json::to_string(&response).unwrap_or_else(|error| {
             encode_error(&ServiceError::internal_with_source(
                 "failed to serialize response",
-                e,
+                error,
             ))
         }),
-        Err(e) => encode_error(&e),
+        Err(error) => encode_error(&error),
     }
 }
 
 /// Encode a service error as one JSON line.
-fn encode_error(err: &ServiceError) -> String {
-    serde_json::to_string(&ErrorResponse::from(err)).unwrap_or_else(|_| {
+fn encode_error(error: &ServiceError) -> String {
+    serde_json::to_string(&ErrorResponse::from(error)).unwrap_or_else(|_| {
         r#"{"error":"failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })
 }

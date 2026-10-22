@@ -2,7 +2,7 @@ use super::{
     EncodeRdataError, ParseRecordValueError, Rdata,
     value::{
         DEFAULT_PRIORITY, parse_optional_u16_record_field, parse_u16_record_field,
-        validate_domain_record_value,
+        split_record_fields, validate_domain_record_value,
     },
 };
 use crate::dns::name::{encode_name, to_fqdn};
@@ -22,7 +22,7 @@ impl<'a> SrvRecordValue<'a> {
         value: &'a str,
         fallback_priority: Option<i32>,
     ) -> Result<Self, ParseRecordValueError> {
-        match value.split_whitespace().collect::<Vec<_>>().as_slice() {
+        match split_record_fields(value).collect::<Vec<_>>().as_slice() {
             [weight, port, target] => Ok(Self {
                 priority: parse_optional_u16_record_field(
                     "SRV priority",

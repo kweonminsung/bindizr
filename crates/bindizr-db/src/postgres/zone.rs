@@ -15,6 +15,7 @@ pub(crate) async fn create_tx(
     mut zone: Zone,
 ) -> Result<Zone, DatabaseError> {
     let now = Utc::now();
+
     let result = sqlx::query(
         r#"
         INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
@@ -40,6 +41,7 @@ pub(crate) async fn create_tx(
 
     zone.id = ZoneId::from(result.get::<i32, _>(0));
     zone.created_at = now;
+
     Ok(zone)
 }
 
@@ -62,11 +64,11 @@ pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &ZoneName,
 ) -> Result<Option<Zone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1")
         .bind(name)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *connection)
         .await?;
 
     Ok(zone)
@@ -91,10 +93,10 @@ pub(crate) async fn get_by_name_tx(
 
 /// List all zones.
 pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<Zone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *connection)
         .await?;
 
     Ok(zones)
@@ -117,10 +119,12 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<Postgres>,
     filter: ZoneFilter,
 ) -> Result<Vec<Zone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let search = like_pattern(filter.search.as_deref());
 
     let order_by = filter.sort.order_by_sql(filter.order);
+
     let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
         r#"
         SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at
@@ -129,9 +133,9 @@ pub(crate) async fn list_by_filter(
           AND ($3::INT4 IS NULL OR id = $4)
           AND ($5::TEXT IS NULL OR LOWER(mname) = LOWER($6))
           AND ($7::TEXT IS NULL OR LOWER(rname) = LOWER($8))
-          AND ($9::INT4 IS NULL OR default_ttl = $10)
-          AND ($11::INT4 IS NULL OR default_ttl >= $12)
-          AND ($13::INT4 IS NULL OR default_ttl <= $14)
+          AND ($9::INT8 IS NULL OR default_ttl = $10)
+          AND ($11::INT8 IS NULL OR default_ttl >= $12)
+          AND ($13::INT8 IS NULL OR default_ttl <= $14)
           AND ($15::INT8 IS NULL OR serial = $16)
           AND ($17::INT8 IS NULL OR serial >= $18)
           AND ($19::INT8 IS NULL OR serial <= $20)
@@ -194,7 +198,7 @@ pub(crate) async fn list_by_filter(
             .unwrap_or(0),
     )
     .bind(filter.scope_role_id)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(zones)
@@ -202,9 +206,9 @@ pub(crate) async fn list_by_filter(
 
 /// Probe the zones table to check database connectivity.
 pub(crate) async fn ping(pool: &Pool<Postgres>) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
     sqlx::query("SELECT 1 FROM zones LIMIT 1")
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *connection)
         .await?;
     Ok(())
 }
@@ -214,7 +218,8 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
     filter: ZoneFilter,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let search = like_pattern(filter.search.as_deref());
 
     let count = sqlx::query_scalar::<_, i64>(
@@ -225,9 +230,9 @@ pub(crate) async fn count_by_filter(
           AND ($3::INT4 IS NULL OR id = $4)
           AND ($5::TEXT IS NULL OR LOWER(mname) = LOWER($6))
           AND ($7::TEXT IS NULL OR LOWER(rname) = LOWER($8))
-          AND ($9::INT4 IS NULL OR default_ttl = $10)
-          AND ($11::INT4 IS NULL OR default_ttl >= $12)
-          AND ($13::INT4 IS NULL OR default_ttl <= $14)
+          AND ($9::INT8 IS NULL OR default_ttl = $10)
+          AND ($11::INT8 IS NULL OR default_ttl >= $12)
+          AND ($13::INT8 IS NULL OR default_ttl <= $14)
           AND ($15::INT8 IS NULL OR serial = $16)
           AND ($17::INT8 IS NULL OR serial >= $18)
           AND ($19::INT8 IS NULL OR serial <= $20)
@@ -281,7 +286,7 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(filter.scope_role_id)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)
@@ -354,12 +359,12 @@ pub(crate) async fn count_by_dnssec_policy_id(
     pool: &Pool<Postgres>,
     dnssec_policy_id: PolicyId,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let count =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM zones WHERE dnssec_policy_id = $1")
             .bind(dnssec_policy_id)
-            .fetch_one(&mut *conn)
+            .fetch_one(&mut *connection)
             .await?;
 
     Ok(count as u64)

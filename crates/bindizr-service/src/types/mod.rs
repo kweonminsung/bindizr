@@ -52,9 +52,10 @@ pub use role::{
     SingleRoleGrantResponse, SingleRoleResponse,
 };
 pub use secondary::{
-    CheckNotifyResponse, CheckSecondaryResponse, CreateSecondaryRequest, SecondaryResponse,
-    SecondaryTransferFilter, SecondaryTransferSummaryResponse, SecondaryTransfersResponse,
-    SingleSecondaryResponse, TransferResponse, TransferSummaryResponse, UpdateSecondaryRequest,
+    CheckNotifyResponse, CheckSecondariesResponse, CheckSecondaryResponse, CreateSecondaryRequest,
+    SecondaryResponse, SecondaryTransferFilter, SecondaryTransferSummaryResponse,
+    SecondaryTransfersResponse, SingleSecondaryResponse, TransferResponse, TransferSummaryResponse,
+    UpdateSecondaryRequest,
 };
 pub use token::{
     CreateTokenRequest, CreateTokenResponse, SingleTokenResponse, TokenFilter, TokenResponse,
@@ -68,5 +69,5 @@ pub use version::{
 pub use zone::{
     CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, NotifySerial, SecondaryStatus,
     SecondaryStatusResponse, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter,
-    ZoneResponse, ZoneStatusResponse, ZoneView, build_notify_message,
+    ZoneResponse, ZoneStatusResponse, ZoneView,
 };

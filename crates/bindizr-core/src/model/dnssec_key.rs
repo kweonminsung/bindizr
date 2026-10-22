@@ -20,8 +20,8 @@ pub enum ParseDnssecKeyError {
     State { value: String },
 }
 
-/// The digest of every DS and CDS bindizr publishes: SHA-256, the one a
-/// delegation MUST carry (RFC 8624, Section 3.3); SHA-384 is only a MAY.
+/// Digest for DS/CDS generated from bindizr's keys: SHA-256, recommended by
+/// the IANA registry under RFC 9904. Raw user-supplied DS records are separate.
 pub const DS_DIGEST_TYPE: u8 = 2;
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
@@ -107,8 +107,8 @@ impl std::str::FromStr for DnssecAlgorithm {
     type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC algorithm from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "rsasha256" => Ok(DnssecAlgorithm::RsaSha256),
             "rsasha512" => Ok(DnssecAlgorithm::RsaSha512),
             "ecdsap256sha256" => Ok(DnssecAlgorithm::EcdsaP256Sha256),
@@ -116,7 +116,7 @@ impl std::str::FromStr for DnssecAlgorithm {
             "ed25519" => Ok(DnssecAlgorithm::Ed25519),
             "ed448" => Ok(DnssecAlgorithm::Ed448),
             _ => Err(ParseDnssecKeyError::Algorithm {
-                value: s.to_string(),
+                value: value.to_string(),
             }),
         }
     }
@@ -177,13 +177,13 @@ impl std::str::FromStr for DnssecKeyRole {
     type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC key role from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "csk" => Ok(DnssecKeyRole::Csk),
             "ksk" => Ok(DnssecKeyRole::Ksk),
             "zsk" => Ok(DnssecKeyRole::Zsk),
             _ => Err(ParseDnssecKeyError::Role {
-                value: s.to_string(),
+                value: value.to_string(),
             }),
         }
     }
@@ -193,8 +193,8 @@ impl TryFrom<String> for DnssecKeyRole {
     type Error = ParseDnssecKeyError;
 
     /// Validate and convert the stored value into a DNSSEC key role.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -237,13 +237,13 @@ impl std::str::FromStr for DnssecKeyState {
     type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC key state from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
             "published" => Ok(DnssecKeyState::Published),
             "active" => Ok(DnssecKeyState::Active),
             "retired" => Ok(DnssecKeyState::Retired),
             _ => Err(ParseDnssecKeyError::State {
-                value: s.to_string(),
+                value: value.to_string(),
             }),
         }
     }
@@ -253,8 +253,8 @@ impl TryFrom<String> for DnssecKeyState {
     type Error = ParseDnssecKeyError;
 
     /// Validate and convert the stored value into a DNSSEC key state.
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -303,6 +303,7 @@ impl DnssecKey {
         if self.state == DnssecKeyState::Active {
             return true;
         }
+
         !keys.iter().any(|key| {
             key.id != self.id
                 && matches!(key.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
@@ -343,6 +344,7 @@ impl DnssecKey {
         } else {
             signatures
         };
+
         cached + i64::from(propagation_secs)
     }
 }

@@ -18,9 +18,8 @@ pub(crate) fn is_trusted_peer(peer_uid: u32, own_uid: u32) -> bool {
     peer_uid == own_uid || peer_uid == 0
 }
 
-/// Whether the CLI may drive the daemon behind `socket_path`: a trusted peer,
-/// or any daemon on the primary socket when the CLI runs as root, since only
-/// root prepares `/run/bindizr` while anyone can plant a socket under `/tmp`.
+/// Trust the CLI's daemon peer, allowing root's primary path because only root prepares `/run/bindizr`.
+/// The `/tmp` fallback always requires trusted peer credentials.
 pub(crate) fn is_trusted_daemon(peer_uid: u32, own_uid: u32, socket_path: &str) -> bool {
     is_trusted_peer(peer_uid, own_uid) || (own_uid == 0 && socket_path == SOCKET_FILE_PATH)
 }

@@ -24,7 +24,10 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{ChangeActor, VersionFilter, ZoneVersion},
+    model::{
+        change::ChangeActor,
+        zone_version::{VersionFilter, ZoneVersion},
+    },
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -101,7 +104,7 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<Postgres>,
     zone_id: ZoneId,
     filter: VersionFilter,
-    limit: u32,
+    limit: Option<u32>,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     let predicate = match filter {
@@ -118,7 +121,7 @@ pub(crate) async fn list_by_filter(
         "#
     )))
     .bind(zone_id)
-    .bind(i64::from(limit))
+    .bind(limit.map(i64::from).unwrap_or(i64::MAX))
     .bind(i64::try_from(offset).unwrap_or(i64::MAX))
     .fetch_all(pool)
     .await
@@ -135,12 +138,14 @@ pub(crate) async fn count_by_filter(
         VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
         VersionFilter::All => "",
     };
+
     let count: i64 = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = $1{predicate}"
     )))
     .bind(zone_id)
     .fetch_one(pool)
     .await?;
+
     Ok(count as u64)
 }
 

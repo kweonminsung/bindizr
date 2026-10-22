@@ -17,7 +17,12 @@ bindizr zone get example.com
 `--serial` is given, and includes an apex `NS` record naming `--mname`. Serials
 accept 0–4294967295 and advance modulo 2^32. Zone and record names accept DNS
 octets with RFC 1035 escapes, including `\DDD` for arbitrary bytes.
-Use `--no-apex-ns` to supply the NS records yourself.
+The SOA primary name (`--mname`) accepts the root name `.`; the managed zone
+name must still be a non-root name.
+Use `--no-apex-ns` to create a disabled preparation zone. Add an apex NS record,
+then explicitly enable it with `bindizr zone update example.com --enabled true`.
+An enabled zone must retain at least one apex NS record; deletion, replace
+imports, and rollbacks validate their final records before applying.
 
 Add any other name servers and address records for names inside the zone.
 Public delegation also needs matching glue at the parent for those names:
@@ -39,7 +44,8 @@ bindizr record get example.com www
 bindizr record update example.com www --value 192.0.2.2
 ```
 
-TTL defaults to the zone's TTL. Records sharing a name and type must share
+Record TTLs accept 0–4294967295 seconds (RFC 8767, Section 4); an omitted
+TTL defaults to the zone's TTL. The zone default remains 60–604800 seconds. Records sharing a name and type must share
 one TTL. `record get` returns all records at a name; `record update` by name
 requires exactly one. Use an ID from `record list` to select a specific record:
 
@@ -47,6 +53,11 @@ requires exactly one. Use an ID from `record list` to select a specific record:
 bindizr record get --id 42
 bindizr record update --id 42 --value 192.0.2.2
 ```
+
+Use the same TTL for a delegation's NS and DS sets, as recommended by
+[RFC 4035, Section 2.4](https://www.rfc-editor.org/rfc/rfc4035.html#section-2.4).
+Bindizr preserves different explicit TTLs so independently edited or imported
+sets keep the operator's values; it enforces one TTL within each set.
 
 Use `--new-name` to rename a record. A TXT value over 255 bytes is split into
 segments automatically; repeat `--value` to choose the segments yourself.
@@ -62,9 +73,25 @@ binary octets use DNS decimal escapes such as `\000` and `\255`. Tags contain
 flags `0` or `128`; imports and DNS UPDATE preserve unknown flag bits
 (RFC 8659, Section 4.1).
 
-Other ordinary DNS types use `TYPE<number>` with RFC 3597 generic values,
-for example `--type TYPE65280 --value '\# 2 CAFe'`. The declared length
-must match the hex octets; `\# 0` represents empty RDATA.
+Supported user types are A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, TXT,
+NS, SRV, PTR, SSHFP, TLSA, and WKS. Other types are rejected, including numeric
+`TYPE<number>` values that do not resolve to a supported type.
+
+NS, CNAME, PTR and DNAME targets accept the root name `.`; a literal dot label
+uses a DNS escape. NS, MX, PTR and SRV targets cannot name a CNAME or a name
+below an authoritative DNAME in the same zone. A DNAME's own name is allowed;
+stored DNAME data below a delegation does not apply to the parent zone.
+
+Supplied DS records store the child's digest; Bindizr does not generate it or
+restrict its algorithm to the local signing policy. DS/CDS generated from
+Bindizr's own keys use SHA-256. Variable-size record values are limited to
+64,618 bytes of wire RDATA so they fit a signed EDNS transfer even with
+maximum-length names and TCP keepalive.
+
+WKS values use `<IPv4> <protocol> [ports...]`, for example
+`--type WKS --value '192.0.2.1 TCP 22 80 443'`. Protocols accept an 8-bit number
+or TCP/UDP; ports are numbers from 0 to 65535. An empty port list is allowed.
+Imports and DNS UPDATE reject WKS bitmaps ending in a zero byte, as BIND does.
 
 NAPTR flags may be empty or contain ASCII letters and digits. Their meaning
 depends on the application; letter case is preserved (RFC 3403, Section 4.1).
@@ -128,28 +155,37 @@ Choose an import mode explicitly when replacing existing data:
 | `replace` | Make the zone's records match the input, removing records absent from it |
 
 `--from-server` imports over AXFR instead of reading a file. With `--create`,
-a missing zone is created from the source SOA, preserving its timers and
-using its serial as the starting value across the full unsigned 32-bit range.
-Applying record changes advances it once modulo 2^32. `[dns.import]` bounds the
-pull, 30 seconds and 200,000 records by default. See
+a missing zone is created from the source SOA, preserving its timers, zero
+values included, and using its serial as the starting value across the full
+unsigned 32-bit range. Applying record changes advances it once modulo 2^32,
+passing over zero (RFC 2136, Section 7.11). `[dns.import]` bounds the pull,
+30 seconds and 200,000 records by default; a bulk import reuses one TCP
+connection for every zone it pulls (RFC 9103, Section 6.3.1). See
 [Migrating an Existing Primary](../deployment/migrating.md).
 
 ```bash
 bindizr zone import example.com --from-server 192.0.2.1:53 --mode replace --create --dry-run
 ```
 
-Validation errors reject the whole import. `--skip-unsupported` skips record
-types Bindizr does not store and reports each one; review that list before
-applying. Zone-file TTLs must be decimal seconds. Convert BIND time units such
+Validation errors and unsupported record types reject the whole import;
+no records or serial changes are applied. Zone-file TTLs must be decimal seconds. Convert BIND time units such
 as `1h` with `named-compilezone -o zone.txt example.com source.zone` first.
+A `$TTL` directive governs the records after it (RFC 2308, Section 4); in a
+file without one, every record that omits its TTL takes the zone's default
+TTL, where BIND would repeat the last explicit TTL (RFC 1035, Section 5.1).
+`$INCLUDE` is refused, since the file arrives over HTTP with nothing to
+include. A known type spelled as generic `\#` RDATA (RFC 3597, Section 5) is
+read as that type. A DS algorithm is written as a number or a mnemonic such
+as `ECDSAP256SHA256` through the API; a zone file must spell the number.
 
 Over HTTP, `POST /zones/{name}/import` accepts either `content` (zone-file text)
-or `from_server`, with the same `mode`, `dry_run`, and `skip_unsupported` options.
+or `from_server`, with the same `mode` and `dry_run` options.
 
 Several zones move from one server in one run. `--zones` names them in a
 file (one per line, `-` for stdin), and `--from-catalog` takes every member
 of a catalog zone (RFC 9432) the server serves, which needs the mode's record
-actions in all zones. Each zone is imported as the single form above would,
+actions in all zones. The catalog must contain its apex NS and schema-2
+version before any member is fetched or changed. Each zone is imported as the single form above would,
 in its own transaction, so one that is rejected or fails leaves the others
 standing; the table lists each zone's result, and the command exits non-zero
 when any was not imported.

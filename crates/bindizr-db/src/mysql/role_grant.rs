@@ -10,6 +10,7 @@ pub(crate) async fn create_tx(
     mut grant: RoleGrant,
 ) -> Result<RoleGrant, DatabaseError> {
     let now = Utc::now();
+
     let result = sqlx::query(
         r#"
         INSERT INTO role_grants (role_id, zone_id, actions, record_name_pattern, record_types, created_at)
@@ -27,6 +28,7 @@ pub(crate) async fn create_tx(
 
     grant.id = RoleGrantId::from(result.last_insert_id() as i32);
     grant.created_at = now;
+
     Ok(grant)
 }
 
@@ -35,13 +37,13 @@ pub(crate) async fn get(
     pool: &Pool<MySql>,
     id: RoleGrantId,
 ) -> Result<Option<RoleGrant>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let grant = sqlx::query_as::<_, RoleGrant>(
         "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE id = ?",
     )
     .bind(id)
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *connection)
     .await?;
 
     Ok(grant)
@@ -49,12 +51,12 @@ pub(crate) async fn get(
 
 /// List every role's grants.
 pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<RoleGrant>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let grants = sqlx::query_as::<_, RoleGrant>(
         "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants ORDER BY id",
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(grants)
@@ -65,13 +67,13 @@ pub(crate) async fn list_by_role_id(
     pool: &Pool<MySql>,
     role_id: RoleId,
 ) -> Result<Vec<RoleGrant>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let grants = sqlx::query_as::<_, RoleGrant>(
         "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants WHERE role_id = ? ORDER BY id",
     )
     .bind(role_id)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(grants)

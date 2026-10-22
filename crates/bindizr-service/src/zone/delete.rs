@@ -51,16 +51,18 @@ pub async fn delete(
             records_deleted: records,
             versions_deleted: versions,
         };
+
         if run.is_dry_run() {
             return Ok(response);
         }
 
         bindizr_db::zone::delete_tx(&mut tx, zone.id)
             .await
-            .map_err(|e| {
-                log::error!("Failed to delete zone: {}", e);
-                ServiceError::internal_with_source("failed to delete zone", e)
+            .map_err(|error| {
+                log::error!("Failed to delete zone: {}", error);
+                ServiceError::internal_with_source("failed to delete zone", error)
             })?;
+
         // The zone's versions went with it, so the deletion is the audit log's.
         audit::save_tx(
             &mut tx,
@@ -70,9 +72,10 @@ pub async fn delete(
             Some(format!(
                 "records_deleted {records}, versions_deleted {versions}"
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
+
         Ok(response)
     }
     .await;
@@ -87,6 +90,7 @@ pub async fn delete(
 
     // Send catalog NOTIFY so secondaries drop the removed zone
     let config = cx.config();
+
     if response.applied {
         crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }

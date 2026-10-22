@@ -1,27 +1,20 @@
-//! Asking a zone's parent whether it still delegates trust to the zone: the
-//! DS record set the zone's `parent_ns_addrs` serve for the child.
+//! Querying the supplied parent servers for a child zone's DS records.
 
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::{
-    dns::{
-        dnssec::EncodeWireNameError,
-        message::{Name, Opcode, Rtype},
-        name::ZoneName,
-        query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
-    },
-    model::zone::Zone,
+use bindizr_core::dns::{
+    dnssec::EncodeWireNameError,
+    message::{Name, Opcode, Rtype},
+    name::ZoneName,
+    query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
 };
 use thiserror::Error;
 
 use super::{ExchangeMessageError, ResolveAddressError};
-use crate::Context;
 
 /// Why the parent could not be asked, or what it failed to answer.
 #[derive(Debug, Error)]
 pub(crate) enum ProbeParentDsError {
-    #[error("the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'")]
-    NoParentNameservers,
     #[error("parent server '{entry}' did not resolve: {source}")]
     Unresolved {
         entry: String,
@@ -58,28 +51,21 @@ pub(crate) struct ParentDs {
     /// The nameservers asked, as `host[:port]` entries from the zone's
     /// `parent_ns_addrs`.
     pub(crate) ns_addrs: Vec<String>,
-    /// Each server's answer in `ns_addrs` order: its DS record set, or `None` when
-    /// it serves none. Kept apart because dropping trust is unsafe while any
-    /// server still serves a DS, and promoting a key until every server does.
+    /// Per-server DS sets in `ns_addrs` order; `None` means no DS.
+    /// Removal needs all servers empty; promotion needs a match at each.
     pub(crate) answers: Vec<Option<DsRecordSet>>,
 }
 
-/// Ask every parent server for the zone's DS record set. `Err` when the zone
-/// names no parent or any server fails to answer: silence never reads as
-/// absence.
+/// Query every supplied parent for DS; unanswered servers are errors, not absence.
 pub(crate) async fn probe_parent_ds(
-    cx: &Context,
-    zone: &Zone,
+    zone_name: &ZoneName,
+    parent_ns_addrs: &str,
+    timeout: Duration,
 ) -> Result<ParentDs, ProbeParentDsError> {
-    let dns_config = &cx.config().dns;
-    let timeout = dns_config.notify.timeout();
-    let raw = zone
-        .parent_ns_addrs
-        .as_deref()
-        .ok_or(ProbeParentDsError::NoParentNameservers)?;
-    let servers = resolve_parent_ns_addrs(raw, timeout).await?;
+    let servers = resolve_parent_ns_addrs(parent_ns_addrs, timeout).await?;
 
-    let answers = query_ds(&zone.name, &servers, timeout).await?;
+    let answers = query_ds(zone_name, &servers, timeout).await?;
+
     Ok(ParentDs {
         ns_addrs: servers.into_iter().map(|(entry, _)| entry).collect(),
         answers,
@@ -93,21 +79,22 @@ async fn resolve_parent_ns_addrs(
     timeout: Duration,
 ) -> Result<Vec<(String, Vec<SocketAddr>)>, ProbeParentDsError> {
     let mut servers = Vec::new();
+
     for (entry, result) in super::resolve_address_entries(raw, timeout).await {
         match result {
             Ok(addrs) => servers.push((entry, addrs)),
             Err(source) => return Err(ProbeParentDsError::Unresolved { entry, source }),
         }
     }
+
     if servers.is_empty() {
         return Err(ProbeParentDsError::NoServers);
     }
+
     Ok(servers)
 }
 
-/// Ask every server for the zone's DS record set in parallel, reporting each
-/// answer in `servers` order; a server none of whose addresses answers
-/// fails the probe.
+/// Query parent DS sets in parallel, preserving server order; each server must answer.
 async fn query_ds(
     zone_name: &ZoneName,
     servers: &[(String, Vec<SocketAddr>)],
@@ -116,6 +103,7 @@ async fn query_ds(
     let qname = zone_name.to_wire_name()?;
 
     let mut tasks = Vec::with_capacity(servers.len());
+
     for (entry, addrs) in servers {
         let qname = qname.clone();
         let addrs = addrs.clone();
@@ -127,16 +115,19 @@ async fn query_ds(
 
     let mut failures = Vec::new();
     let mut answers = Vec::with_capacity(tasks.len());
+
     for (entry, task) in tasks {
         match task.await {
             Ok(Ok(answer)) => answers.push(answer),
-            Ok(Err(e)) => failures.push((entry, e)),
-            Err(e) => failures.push((entry, QueryDsError::TaskFailed(e))),
+            Ok(Err(error)) => failures.push((entry, error)),
+            Err(error) => failures.push((entry, QueryDsError::TaskFailed(error))),
         }
     }
+
     if !failures.is_empty() {
         return Err(ProbeParentDsError::Unanswered { failures });
     }
+
     Ok(answers)
 }
 
@@ -148,6 +139,7 @@ async fn query_ds_at(
     timeout: Duration,
 ) -> Result<Option<DsRecordSet>, QueryDsError> {
     let mut last_error = None;
+
     for addr in addrs {
         let (query_id, builder) = build_question(
             Opcode::QUERY,
@@ -158,17 +150,20 @@ async fn query_ds_at(
             Some(EDNS_UDP_PAYLOAD_SIZE),
         );
         let query = builder.finish();
+
         let result = match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
         {
             Ok(response) => extract_ds_record_set(query_id, qname, &response).map_err(Into::into),
-            Err(e) => Err(e.into()),
+            Err(error) => Err(error.into()),
         };
+
         match result {
             Ok(record_set) => return Ok(record_set),
-            Err(e) => last_error = Some(e),
+            Err(error) => last_error = Some(error),
         }
     }
+
     Err(last_error.unwrap_or(QueryDsError::NoAddress))
 }
 

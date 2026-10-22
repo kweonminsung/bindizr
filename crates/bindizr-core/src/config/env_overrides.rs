@@ -1,6 +1,5 @@
-//! Environment overrides, applied before validation. A variable is `BINDIZR_`
-//! plus the key's TOML path upper-cased with `_` for `.`; `BINDIZR_DATABASE_URL`
-//! is the one convenience outside that rule.
+//! Apply `BINDIZR_<UPPERCASE_TOML_PATH>` overrides before validation, replacing dots with `_`.
+//! `BINDIZR_DATABASE_URL` is the one convenience outside that mapping.
 
 use super::{Config, ConfigError, DatabaseType};
 use crate::dns::name::ZoneName;
@@ -31,24 +30,30 @@ impl Config {
         if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED") {
             self.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_API_TLS_CERT_FILE") {
             self.api.tls.cert_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_API_TLS_KEY_FILE") {
             self.api.tls.key_file = to_optional_setting(value);
         }
+
         if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
             self.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DATABASE_MYSQL_URL") {
             self.database.mysql.url = value;
         }
+
         if let Some(value) = get_env("BINDIZR_DATABASE_POSTGRESQL_URL") {
             self.database.postgresql.url = value;
         }
+
         if let Some(value) = get_env("BINDIZR_DATABASE_SQLITE_FILE_PATH") {
             self.database.sqlite.file_path = value;
         }
+
         if let Some(value) = get_env("BINDIZR_DATABASE_TLS_MODE") {
             self.database.tls.mode = match to_optional_setting(value) {
                 Some(value) => Some(parse_env_value("BINDIZR_DATABASE_TLS_MODE", &value)?),
@@ -58,6 +63,7 @@ impl Config {
         if let Some(value) = get_env("BINDIZR_DATABASE_TLS_CA_FILE") {
             self.database.tls.ca_file = to_optional_setting(value);
         }
+
         // The generic URL overrides the selected backend's URL above; SQLite
         // continues to use its file path.
         if let Some(value) = get_env("BINDIZR_DATABASE_URL") {
@@ -67,6 +73,7 @@ impl Config {
                 DatabaseType::Sqlite => {}
             }
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_LISTEN_ADDR") {
             self.dns.listen_addr = parse_env_value("BINDIZR_DNS_LISTEN_ADDR", &value)?;
         }
@@ -77,14 +84,17 @@ impl Config {
             self.dns.catalog_zone_name =
                 ZoneName::parse(&value).map_err(ConfigError::CatalogZoneName)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
             self.dns.nsupdate.tsig_required =
                 parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS") {
             self.dns.scheduler_interval_secs =
                 parse_env_value("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_BATCH_MS") {
             self.dns.notify.batch_ms = parse_env_value("BINDIZR_DNS_NOTIFY_BATCH_MS", &value)?;
         }
@@ -95,6 +105,7 @@ impl Config {
             self.dns.notify.timeout_secs =
                 parse_env_value("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_TLS_LISTEN_PORT") {
             self.dns.tls.listen_port = parse_env_value("BINDIZR_DNS_TLS_LISTEN_PORT", &value)?;
         }
@@ -104,6 +115,7 @@ impl Config {
         if let Some(value) = get_env("BINDIZR_DNS_TLS_KEY_FILE") {
             self.dns.tls.key_file = to_optional_setting(value);
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS") {
             self.dns.transfer.cache_max_records =
                 parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS", &value)?;
@@ -112,6 +124,7 @@ impl Config {
             self.dns.transfer.require_tls =
                 parse_env_value("BINDIZR_DNS_TRANSFER_REQUIRE_TLS", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS") {
             self.dns.tcp_idle_timeout_secs =
                 parse_env_value("BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS", &value)?;
@@ -120,6 +133,7 @@ impl Config {
             self.dns.tcp_max_connections =
                 parse_env_value("BINDIZR_DNS_TCP_MAX_CONNECTIONS", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_IMPORT_TIMEOUT_SECS") {
             self.dns.import.timeout_secs =
                 parse_env_value("BINDIZR_DNS_IMPORT_TIMEOUT_SECS", &value)?;
@@ -128,6 +142,7 @@ impl Config {
             self.dns.import.max_records =
                 parse_env_value("BINDIZR_DNS_IMPORT_MAX_RECORDS", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL") {
             self.dns.zone_defaults.ttl = parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;
         }
@@ -147,6 +162,7 @@ impl Config {
             self.dns.zone_defaults.minimum_ttl =
                 parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_HISTORY_ZONE_MAX_DAYS") {
             self.history.zone_max_days = parse_env_value("BINDIZR_HISTORY_ZONE_MAX_DAYS", &value)?;
         }
@@ -154,6 +170,7 @@ impl Config {
             self.history.audit_max_days =
                 parse_env_value("BINDIZR_HISTORY_AUDIT_MAX_DAYS", &value)?;
         }
+
         if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {
             self.logging.level = parse_env_value("BINDIZR_LOGGING_LEVEL", &value)?;
         }
@@ -178,10 +195,10 @@ where
     T::Error: std::error::Error + Send + Sync + 'static,
 {
     let secs: u32 = parse_env_value(name, value)?;
-    T::try_from(secs).map_err(|e| ConfigError::Env {
+    T::try_from(secs).map_err(|error| ConfigError::Env {
         name,
         value: value.to_string(),
-        source: Box::new(e),
+        source: Box::new(error),
     })
 }
 
@@ -191,9 +208,9 @@ where
     T: std::str::FromStr,
     T::Err: std::error::Error + Send + Sync + 'static,
 {
-    value.parse::<T>().map_err(|e| ConfigError::Env {
+    value.parse::<T>().map_err(|error| ConfigError::Env {
         name,
         value: value.to_string(),
-        source: Box::new(e),
+        source: Box::new(error),
     })
 }

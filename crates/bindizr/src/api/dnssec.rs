@@ -154,9 +154,11 @@ pub(crate) async fn disable_dnssec(
         DsCheck::from_skip_ds_check(query.skip_ds_check.unwrap_or(false)),
     )
     .await?;
+
     let response = MessageResponse {
         message: "DNSSEC disabled successfully".to_string(),
     };
+
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -270,6 +272,7 @@ pub(crate) async fn advance_dnssec_rollover(
         Holddown::from_skip_holddown(query.skip_holddown.unwrap_or(false)),
     )
     .await?;
+
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 

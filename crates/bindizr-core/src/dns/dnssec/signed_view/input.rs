@@ -52,14 +52,15 @@ impl SignedViewParams<'_> {
                 Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Dnskey(signer.dnskey.clone()),
             ));
+
             if signer.key.wants_parent_ds() && !self.withdraw_parent_ds {
                 let cds = UnknownRecordData::from_octets(
                     Rtype::CDS,
                     signer.key.ds_rdata(apex, DS_DIGEST_TYPE)?.into_bytes(),
                 )
-                .map_err(|e| SignZoneError::Rdata {
+                .map_err(|error| SignZoneError::Rdata {
                     rtype: "CDS",
-                    source: Box::new(e),
+                    source: Box::new(error),
                 })?;
                 input.push(WireRecord::new(
                     apex.clone(),
@@ -71,9 +72,9 @@ impl SignedViewParams<'_> {
                     Rtype::CDNSKEY,
                     to_rdata(&signer.dnskey)?.into_bytes(),
                 )
-                .map_err(|e| SignZoneError::Rdata {
+                .map_err(|error| SignZoneError::Rdata {
                     rtype: "CDNSKEY",
-                    source: Box::new(e),
+                    source: Box::new(error),
                 })?;
                 input.push(WireRecord::new(
                     apex.clone(),
@@ -87,13 +88,12 @@ impl SignedViewParams<'_> {
         // RFC 8078, Section 4: the 0-algorithm pair asks the parent to delete
         // the DS record set entirely.
         if self.withdraw_parent_ds && !signers.is_empty() {
-            let cds =
-                UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0]).map_err(|e| {
-                    SignZoneError::Rdata {
-                        rtype: "CDS",
-                        source: Box::new(e),
-                    }
-                })?;
+            let cds = UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0]).map_err(
+                |error| SignZoneError::Rdata {
+                    rtype: "CDS",
+                    source: Box::new(error),
+                },
+            )?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
@@ -101,9 +101,9 @@ impl SignedViewParams<'_> {
                 ZoneRecordData::Unknown(cds),
             ));
             let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
-                .map_err(|e| SignZoneError::Rdata {
+                .map_err(|error| SignZoneError::Rdata {
                     rtype: "CDNSKEY",
-                    source: Box::new(e),
+                    source: Box::new(error),
                 })?;
             input.push(WireRecord::new(
                 apex.clone(),
@@ -118,20 +118,20 @@ impl SignedViewParams<'_> {
             let EncodedRdata { record_type, rdata } =
                 EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
             let record_type = Rtype::from_int(record_type);
+
             // UnknownRecordData cannot canonicalize embedded names for signing.
             let rdata = rdata
                 .to_canonical(record_type)
-                .map_err(|e| SignZoneError::Rdata {
+                .map_err(|error| SignZoneError::Rdata {
                     rtype: "record",
-                    source: Box::new(e),
+                    source: Box::new(error),
                 })?;
-            let data =
-                UnknownRecordData::from_octets(record_type, rdata.into_bytes()).map_err(|e| {
-                    SignZoneError::Rdata {
-                        rtype: "record",
-                        source: Box::new(e),
-                    }
-                })?;
+            let data = UnknownRecordData::from_octets(record_type, rdata.into_bytes()).map_err(
+                |error| SignZoneError::Rdata {
+                    rtype: "record",
+                    source: Box::new(error),
+                },
+            )?;
             let owner = record.name.to_wire_name(&zone.name)?;
             input.push(WireRecord::new(
                 owner,
@@ -144,11 +144,13 @@ impl SignedViewParams<'_> {
         // A record set shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
         // the set's minimum so record set construction and Original TTL are well-defined.
         let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
+
         for record in &input {
             let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
             let entry = record_set_ttls.entry(key).or_insert_with(|| record.ttl());
             *entry = (*entry).min(record.ttl());
         }
+
         for record in &mut input {
             let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
             record.set_ttl(record_set_ttls[&key]);
@@ -169,9 +171,9 @@ impl SignedViewParams<'_> {
 fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, SignZoneError> {
     let mut parser = Parser::from_ref(rdata);
     domain::rdata::Soa::parse(&mut parser)
-        .map_err(|e| SignZoneError::Soa(Box::new(e)))?
+        .map_err(|error| SignZoneError::Soa(Box::new(error)))?
         .try_flatten_into()
-        .map_err(|e| SignZoneError::Soa(Box::new(e)))
+        .map_err(|error| SignZoneError::Soa(Box::new(error)))
 }
 
 /// Build the full NSEC or NSEC3/NSEC3PARAM chain in canonical order.
@@ -193,6 +195,7 @@ pub(crate) fn denial_records(
     }
 
     let mut records = Vec::new();
+
     if denial == DnssecDenial::Nsec3 {
         // GenerateNsec3Config::default() is the RFC 9276 profile: SHA-1, zero
         // iterations, no salt, no opt-out.
@@ -201,13 +204,14 @@ pub(crate) fn denial_records(
             RecordsIter::new_from_owned(input),
             &GenerateNsec3Config::<Vec<u8>, DefaultSorter>::default(),
         )
-        .map_err(|e| SignZoneError::Nsec3 {
-            reason: e.to_string(),
+        .map_err(|error| SignZoneError::Nsec3 {
+            reason: error.to_string(),
         })?;
 
         for nsec3 in nsec3s {
             records.push(into_sign_record(nsec3, ZoneRecordData::Nsec3));
         }
+
         records.push(into_sign_record(nsec3param, ZoneRecordData::Nsec3param));
     } else {
         let nsecs = generate_nsecs(
@@ -215,12 +219,14 @@ pub(crate) fn denial_records(
             RecordsIter::new_from_owned(input),
             &GenerateNsecConfig::new(),
         )
-        .map_err(|e| SignZoneError::Nsec {
-            reason: e.to_string(),
+        .map_err(|error| SignZoneError::Nsec {
+            reason: error.to_string(),
         })?;
+
         for nsec in nsecs {
             records.push(into_sign_record(nsec, ZoneRecordData::Nsec));
         }
     }
+
     Ok(records)
 }

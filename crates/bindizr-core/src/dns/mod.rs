@@ -12,11 +12,14 @@ pub mod tsig;
 mod ttl;
 pub mod zonefile;
 
-pub(crate) use catalog_zone::zone_name_to_member_id;
 pub use catalog_zone::{ExtractMemberZonesError, extract_member_zones};
+pub(crate) use catalog_zone::{MAX_CATALOG_ZONE_WIRE_LEN, catalog_member_owner_name};
 pub use serial::{ConvertSerialError, Serial};
 pub use soa_interval::{ConvertSoaIntervalError, SoaInterval};
 pub use ttl::{ConvertTtlError, Ttl};
+
+/// SOA REFRESH of the generated catalog, also bounding its NOTIFY batching delay.
+pub const CATALOG_SOA_REFRESH: SoaInterval = SoaInterval::from_secs(3_600);
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix,
 /// RFC 1035, Section 4.2.2). The record-value size caps derive from it.

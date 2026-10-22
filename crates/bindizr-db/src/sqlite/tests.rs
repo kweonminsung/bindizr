@@ -42,9 +42,11 @@ async fn fixture() -> Pool<Sqlite> {
         .connect("sqlite::memory:")
         .await
         .unwrap();
+
     for query in crate::schema::sqlite::table_creation_queries() {
         sqlx::query(query).execute(&pool).await.unwrap();
     }
+
     for (id, zone) in [(1, "example.com"), (2, "other.com")] {
         sqlx::query(
             "INSERT INTO zones (id, name, mname, rname, default_ttl, serial, created_at)
@@ -56,22 +58,26 @@ async fn fixture() -> Pool<Sqlite> {
         .execute(&pool)
         .await
         .unwrap();
+
         let zone_name = ZoneName::parse(zone).unwrap();
+
         for name in NAMES {
             let owner = OwnerName::parse_in_zone(name, &zone_name).unwrap();
+
             for record_type in TYPES {
                 sqlx::query(
                     "INSERT INTO records (name, record_type, value, display_value, ttl, created_at, zone_id)
                      VALUES (?, ?, 'v', 'v', 300, ?, ?)",
                 )
                 .bind(&owner)
-                .bind(record_type.to_text())
+                .bind(record_type.as_str())
                 .bind(Utc::now())
                 .bind(id)
                 .execute(&pool)
                 .await
                 .unwrap();
             }
+
             if id == 1 {
                 sqlx::query(
                     "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata)
@@ -84,6 +90,7 @@ async fn fixture() -> Pool<Sqlite> {
             }
         }
     }
+
     pool
 }
 
@@ -109,6 +116,7 @@ async fn create_role(pool: &Pool<Sqlite>, index: usize, grants: &[RoleGrant]) ->
             .fetch_one(pool)
             .await
             .unwrap();
+
     for grant in grants {
         sqlx::query(
             "INSERT INTO role_grants (role_id, zone_id, actions, record_name_pattern, record_types, created_at)
@@ -124,6 +132,7 @@ async fn create_role(pool: &Pool<Sqlite>, index: usize, grants: &[RoleGrant]) ->
         .await
         .unwrap();
     }
+
     RoleId::from(role_id)
 }
 
@@ -166,11 +175,13 @@ async fn listings_match_role_grants_visibility() {
     let all_zones = super::zone::list_by_filter(&pool, ZoneFilter::default())
         .await
         .unwrap();
+
     assert_eq!(all_records.len(), 2 * NAMES.len() * TYPES.len());
     assert_eq!(all_dnssec.len(), NAMES.len());
 
     for (index, grants) in roles().into_iter().enumerate() {
         let role_id = create_role(&pool, index, &grants).await;
+
         let rules = RoleGrants::from(grants.clone());
         let case = format!("role {index}: {grants:?}");
 
@@ -186,6 +197,7 @@ async fn listings_match_role_grants_visibility() {
         .into_iter()
         .map(|row| (row.zone_id, row.name.to_string(), row.record_type))
         .collect();
+
         let expected: BTreeSet<_> = all_records
             .iter()
             .filter(|row| {
@@ -198,11 +210,14 @@ async fn listings_match_role_grants_visibility() {
             })
             .map(|row| (row.zone_id, row.name.to_string(), row.record_type))
             .collect();
+
         assert_eq!(listed, expected, "records, {case}");
+
         // Equal empty sets would prove nothing, so a reading role must reach rows.
         let reads = grants
             .iter()
             .any(|grant| grant.actions.contains(Action::RecordRead));
+
         assert_eq!(!expected.is_empty(), reads, "records reached, {case}");
 
         // A derived row carries no type of the grant's vocabulary.
@@ -218,11 +233,13 @@ async fn listings_match_role_grants_visibility() {
         .into_iter()
         .map(|row| row.name.to_string())
         .collect();
+
         let expected: BTreeSet<_> = all_dnssec
             .iter()
             .filter(|row| rules.covers_record(Action::RecordRead, row.zone_id, &row.name, None))
             .map(|row| row.name.to_string())
             .collect();
+
         assert_eq!(listed, expected, "DNSSEC records, {case}");
 
         let listed: BTreeSet<_> = super::zone::list_by_filter(
@@ -237,11 +254,13 @@ async fn listings_match_role_grants_visibility() {
         .into_iter()
         .map(|zone| zone.id)
         .collect();
+
         let expected: BTreeSet<_> = all_zones
             .iter()
             .filter(|zone| rules.reaches_zone(zone.id))
             .map(|zone| zone.id)
             .collect();
+
         assert_eq!(listed, expected, "zones, {case}");
     }
 }
@@ -274,6 +293,7 @@ async fn delete_tx_reports_whether_a_row_went() {
             .await
             .unwrap()
     );
+
     tx.rollback().await.unwrap();
 }
 
@@ -281,6 +301,7 @@ async fn delete_tx_reports_whether_a_row_went() {
 #[tokio::test]
 async fn create_tx_refuses_a_rowid_past_the_32_bit_range() {
     let pool = fixture().await;
+
     // AUTOINCREMENT continues past the largest id the table has held.
     sqlx::query("INSERT INTO roles (id, name, created_at) VALUES (?, 'far', ?)")
         .bind(i64::from(i32::MAX))
@@ -290,7 +311,7 @@ async fn create_tx_refuses_a_rowid_past_the_32_bit_range() {
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
 
-    let err = super::role::create_tx(
+    let error = super::role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,
@@ -303,7 +324,7 @@ async fn create_tx_refuses_a_rowid_past_the_32_bit_range() {
     .unwrap_err();
 
     assert!(
-        matches!(err, DatabaseError::IdOutOfRange { id } if id == i64::from(i32::MAX) + 1),
-        "{err}"
+        matches!(error, DatabaseError::IdOutOfRange { id } if id == i64::from(i32::MAX) + 1),
+        "{error}"
     );
 }

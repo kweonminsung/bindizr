@@ -9,8 +9,9 @@ use super::record::{RecordValue, build_display_value};
 use crate::{
     error::ServiceError,
     model::{
+        change::{ChangeActor, ChangeSource},
         record::{RecordData, RecordType},
-        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
+        zone_version::ZoneVersion,
     },
 };
 
@@ -24,7 +25,7 @@ pub struct ZoneVersionResponse {
     pub mname: String,
     #[schema(example = "admin@example.com")]
     pub rname: String,
-    #[schema(example = 3600, value_type = i32)]
+    #[schema(example = 3600, inline)]
     pub default_ttl: Ttl,
     #[schema(example = 7200, value_type = i32)]
     pub refresh: SoaInterval,
@@ -32,7 +33,7 @@ pub struct ZoneVersionResponse {
     pub retry: SoaInterval,
     #[schema(example = 604800, value_type = i32)]
     pub expire: SoaInterval,
-    #[schema(example = 3600, value_type = i32)]
+    #[schema(example = 3600, inline)]
     pub minimum_ttl: Ttl,
     /// The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
     pub change_source: ChangeSource,
@@ -49,10 +50,10 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
     fn try_from(version: &ZoneVersion) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
-            .map_err(|e| {
+            .map_err(|error| {
                 ServiceError::internal_with_source(
-                    format!("failed to decode version rname: {}", e),
-                    e,
+                    format!("failed to decode version rname: {}", error),
+                    error,
                 )
             })?;
         Ok(ZoneVersionResponse {
@@ -81,7 +82,7 @@ pub struct VersionRecordResponse {
     #[schema(example = "A")]
     pub record_type: RecordType,
     pub value: RecordValue,
-    #[schema(example = 3600, value_type = i32)]
+    #[schema(example = 3600, inline)]
     pub ttl: Ttl,
     #[schema(example = 10)]
     pub priority: Option<i32>,
@@ -113,7 +114,7 @@ pub struct GetZoneVersionResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordDiffValueResponse {
     pub value: RecordValue,
-    #[schema(example = 300, value_type = i32)]
+    #[schema(example = 300, inline)]
     pub ttl: Ttl,
     #[schema(example = 10)]
     pub priority: Option<i32>,

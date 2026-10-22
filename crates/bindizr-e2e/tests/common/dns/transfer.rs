@@ -12,7 +12,7 @@ use rustls::ClientConfig;
 use super::{
     parse_name,
     transport::{connect_tcp, connect_tls, read_frame, write_frame},
-    tsig::{SigningKey, is_signed},
+    tsig::{SigningKey, parse_tsig_presence},
 };
 
 /// Transferred record count or refusal details.
@@ -80,14 +80,14 @@ fn transfer<S: Read + Write>(
     let mut question = builder.question();
     question
         .push((&parse_name(zone)?, Rtype::AXFR))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     let mut additional = question.additional();
 
     // A signed request seeds MAC verification across the response frames.
     let mut client = match key {
         Some(key) => Some(
             ClientSequence::request(key.to_tsig_key()?, &mut additional, Time48::now())
-                .map_err(|e| e.to_string())?,
+                .map_err(|error| error.to_string())?,
         ),
         None => None,
     };
@@ -98,37 +98,43 @@ fn transfer<S: Read + Write>(
     // Keep reading frames until both boundary SOAs arrive; EOF alone is incomplete.
     let mut records = 0usize;
     let mut soa_seen = 0usize;
+
     while soa_seen < 2 {
         let Some(frame) = read_frame(stream)? else {
             return Err(format!(
                 "the transfer ended after {records} record(s) without its closing SOA"
             ));
         };
-        let mut message = Message::from_octets(frame).map_err(|e| e.to_string())?;
+        let mut message = Message::from_octets(frame).map_err(|error| error.to_string())?;
+
         if message.header().rcode() != Rcode::NOERROR {
             return Ok(TransferResult::Refused {
                 rcode: message.header().rcode(),
-                signed: is_signed(&message)?,
+                signed: parse_tsig_presence(&message)?,
             });
         }
+
         if let Some(client) = client.as_mut() {
             client
                 .answer(&mut message, Time48::now())
-                .map_err(|e| format!("envelope did not verify: {e}"))?;
+                .map_err(|error| format!("envelope did not verify: {error}"))?;
         }
-        for record in message.answer().map_err(|e| e.to_string())? {
-            let record = record.map_err(|e| e.to_string())?;
+
+        for record in message.answer().map_err(|error| error.to_string())? {
+            let record = record.map_err(|error| error.to_string())?;
             if record.rtype() == Rtype::SOA {
                 soa_seen += 1;
             }
             records += 1;
         }
     }
+
     // The closing SOA must also leave the TSIG sequence complete.
     if let Some(client) = client {
         client
             .done()
-            .map_err(|e| format!("the signed transfer did not close cleanly: {e}"))?;
+            .map_err(|error| format!("the signed transfer did not close cleanly: {error}"))?;
     }
+
     Ok(TransferResult::Records(records))
 }

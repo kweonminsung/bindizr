@@ -55,9 +55,11 @@ fn stamp(offset_hours: i64) -> String {
 /// Import a key-file fixture with the supplied timing metadata.
 fn import(timing: &[(&str, String)]) -> Result<DnssecKey, ImportKeyError> {
     let mut private = BIND_PRIVATE.to_string();
+
     for (field, at) in timing {
         private.push_str(&format!("{}: {}\n", field, at));
     }
+
     DnssecKey::import(
         &test_zone(),
         DnssecKeyLayout::Split,
@@ -82,12 +84,14 @@ fn key_import_defaults_missing_timing_to_active() {
 fn key_import_restores_rollover_from_bind_timing() {
     // Activate sets the earliest promotion time for a pre-published key.
     let key = import(&[("Publish", stamp(-1)), ("Activate", stamp(2))]).unwrap();
+
     assert_eq!(key.state, DnssecKeyState::Published);
     assert_eq!(key.state_changed_at, now() - Duration::hours(1));
     assert_eq!(key.eligible_at, now() + Duration::hours(2));
 
     // Active since Activate, which is what the ZSK lifetime counts from.
     let key = import(&[("Publish", stamp(-48)), ("Activate", stamp(-24))]).unwrap();
+
     assert_eq!(key.state, DnssecKeyState::Active);
     assert_eq!(key.state_changed_at, now() - Duration::hours(24));
 
@@ -99,6 +103,7 @@ fn key_import_restores_rollover_from_bind_timing() {
         ("Delete", stamp(6)),
     ])
     .unwrap();
+
     assert_eq!(key.state, DnssecKeyState::Retired);
     assert_eq!(key.state_changed_at, now() - Duration::hours(2));
     assert_eq!(key.eligible_at, now() + Duration::hours(6));
@@ -110,10 +115,12 @@ fn key_import_defaults_open_schedule_to_dnskey_ttl() {
     let ttl = Duration::seconds(i64::from(test_zone().default_ttl.as_secs()));
 
     let key = import(&[("Publish", stamp(-1))]).unwrap();
+
     assert_eq!(key.state, DnssecKeyState::Published);
     assert_eq!(key.eligible_at, now() + ttl);
 
     let key = import(&[("Activate", stamp(-24)), ("Inactive", stamp(-2))]).unwrap();
+
     assert_eq!(key.state, DnssecKeyState::Retired);
     assert_eq!(key.eligible_at, now() + ttl);
 }
@@ -122,6 +129,7 @@ fn key_import_defaults_open_schedule_to_dnskey_ttl() {
 #[test]
 fn key_import_rejects_keys_outside_serving_window() {
     let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]).unwrap_err();
+
     assert!(
         matches!(not_yet, ImportKeyError::NotYetPublished { .. }),
         "{not_yet}"
@@ -133,9 +141,11 @@ fn key_import_rejects_keys_outside_serving_window() {
         ("Delete", stamp(-1)),
     ])
     .unwrap_err();
+
     assert!(matches!(gone, ImportKeyError::Deleted { .. }), "{gone}");
 
     let malformed = import(&[("Publish", "not-a-time".to_string())]).unwrap_err();
+
     assert!(
         matches!(malformed, ImportKeyError::InvalidTime { .. }),
         "{malformed}"
@@ -212,6 +222,7 @@ fn import_derives_the_role_from_the_key_layout() {
         now(),
     )
     .unwrap();
+
     assert_eq!(imported.role, DnssecKeyRole::Csk);
     let imported = DnssecKey::import(
         &zone,
@@ -221,6 +232,7 @@ fn import_derives_the_role_from_the_key_layout() {
         now(),
     )
     .unwrap();
+
     assert_eq!(imported.role, DnssecKeyRole::Ksk);
 
     let zsk = test_key(&zone, 2, DnssecKeyRole::Zsk, DnssecKeyState::Active);
@@ -233,6 +245,7 @@ fn import_derives_the_role_from_the_key_layout() {
         now(),
     )
     .unwrap();
+
     assert_eq!(imported.role, DnssecKeyRole::Zsk);
     assert!(
         DnssecKey::import(
@@ -278,5 +291,6 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
     )
     .unwrap();
     key.id = DnssecKeyId::from(id);
+
     key
 }

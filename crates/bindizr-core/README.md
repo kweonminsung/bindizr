@@ -4,8 +4,9 @@ Shared core types and the DNS library for the `bindizr` DNS control plane.
 
 This crate contains the configuration loader, data models, logging, and the Prometheus metrics
 registry, plus the DNS library itself: record value types, wire encoding and decoding, DNSSEC
-signing, TSIG, and zone-file parsing. It owns the whole `domain` dependency, so no crate above it depends on
-`domain` directly.
+signing, TSIG, and zone-file parsing. It owns the production `domain` dependency, so no product crate above
+it depends on `domain` directly; the end-to-end test crate uses it as a dev-dependency for independent
+protocol checks.
 
 ## Documentation
 

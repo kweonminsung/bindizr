@@ -1,8 +1,6 @@
-"""Bindizr adapter — drives the HTTP control-plane API.
+"""Write through Bindizr's HTTP API and query its catalog-configured BIND9 secondary.
 
-Key point for the benchmark story: writes go to Bindizr's API, but DNS queries
-are answered by the BIND9 secondary (`dns_endpoint`), which auto-configures
-zones via the catalog zone. Bindizr is never in the query path.
+Bindizr stays outside the DNS query path.
 """
 from __future__ import annotations
 
@@ -16,7 +14,7 @@ import aiohttp
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import docker  # noqa: E402
 
 API_PORT = 18000
 DNS_PORT = 15353
@@ -38,13 +36,13 @@ class BindizrAdapter(DnsAdapter):
     bulk_chunk = 2000
     import_chunk = 5000
 
-    def __init__(self, cfg: dict, project: str, db_type: str | None = None,
+    def __init__(self, config: dict, project: str, db_type: str | None = None,
                  notify_after_update: bool = True,
                  notify_batch_ms: int | None = None,
                  transfer_cache: bool | None = None,
                  log_level: str | None = None):
         """Initialize the adapter with its benchmark configuration and project."""
-        super().__init__(cfg, project)
+        super().__init__(config, project)
         # b07 passes db_type; every other benchmark takes the env knob so it can
         # be pointed at any backend.
         db_type = db_type or os.environ.get("BENCH_BINDIZR_DB_TYPE", "sqlite")
@@ -52,10 +50,12 @@ class BindizrAdapter(DnsAdapter):
         # mysql/postgres run as their own containers, so b07's per-backend
         # CPU/mem columns only cover the backend if it is sampled too.
         self.resource_services = ["bindizr", self.secondary_service]
+
         if db_type == "mysql":
             self.resource_services.append("mysql")
         elif db_type == "postgresql":
             self.resource_services.append("postgres")
+
         self.notify_after_update = notify_after_update
         # None => Bindizr's own defaults (0 / true); see compose.yml.
         self.notify_batch_ms = notify_batch_ms if notify_batch_ms is not None else int(
@@ -74,20 +74,26 @@ class BindizrAdapter(DnsAdapter):
         env = {"BINDIZR_DB_TYPE": db_type,
                "BINDIZR_NOTIFY_BATCH_MS": str(self.notify_batch_ms),
                "BINDIZR_LOG_LEVEL": self.log_level}
+
         # A zero record budget is how the transfer cache is turned off.
         if not self.transfer_cache:
             env["BINDIZR_TRANSFER_CACHE_MAX_RECORDS"] = "0"
+
         # bind9 carries no profile, so the default system starts as it always has.
         profiles = []
+
         if db_type == "mysql":
             profiles.append("mysql")
         elif db_type == "postgresql":
             profiles.append("postgres")
+
         if self.secondary_service != "bind9":
             profiles.append(self.secondary_service)
+
         if profiles:
             env["COMPOSE_PROFILES"] = ",".join(profiles)
-        self.compose = dockerutil.Compose(HERE / "compose.yml", project, env=env)
+
+        self.compose = docker.Compose(HERE / "compose.yml", project, env=env)
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
@@ -95,11 +101,15 @@ class BindizrAdapter(DnsAdapter):
         # A networked backend waits on its own: bindizr exits when the DB host
         # does not resolve yet, and that exit alone fails a shared `up --wait`.
         db_service = {"mysql": "mysql", "postgresql": "postgres"}.get(self.db_type)
+
         if db_service:
             self.compose.up(db_service, wait=True)
+
         self.compose.up("bindizr", self.secondary_service, wait=True)
         self.session = aiohttp.ClientSession()
+
         await self._wait_api()
+
         # A registered secondary receives every NOTIFY, so a write-path run
         # registers none.
         if self.notify_after_update:
@@ -108,20 +118,21 @@ class BindizrAdapter(DnsAdapter):
     async def _register_secondary(self) -> None:
         """Register the secondary service so it receives NOTIFY and may transfer."""
         body = {"name": self.secondary_service, "address": f"{self.secondary_service}:53"}
-        async with self.session.post(self.base + "/secondaries", json=body) as r:
-            if r.status != 201:
-                raise RuntimeError(f"registering the secondary failed: {r.status} {await r.text()}")
+        async with self.session.post(self.base + "/secondaries", json=body) as response:
+            if response.status != 201:
+                raise RuntimeError(f"registering the secondary failed: {response.status} {await response.text()}")
 
     async def _wait_api(self, timeout: int = 60) -> None:
         """Wait until the system API is ready."""
         for _ in range(timeout * 2):
             try:
-                async with self.session.get(self.base + "/", timeout=aiohttp.ClientTimeout(total=2)) as r:
-                    if r.status == 200:
+                async with self.session.get(self.base + "/", timeout=aiohttp.ClientTimeout(total=2)) as response:
+                    if response.status == 200:
                         return
             except Exception:
                 pass
             await asyncio.sleep(0.5)
+
         raise RuntimeError("Bindizr API did not become ready")
 
     async def teardown(self) -> None:
@@ -139,83 +150,90 @@ class BindizrAdapter(DnsAdapter):
             "rname": f"admin@{z}",
             "default_ttl": 3600,
         }
-        async with self.session.post(self.base + "/zones", json=body) as r:
-            if r.status not in (200, 201, 409):
-                raise RuntimeError(f"create_zone failed: {r.status} {await r.text()}")
+
+        async with self.session.post(self.base + "/zones", json=body) as response:
+            if response.status not in (200, 201, 409):
+                raise RuntimeError(f"create_zone failed: {response.status} {await response.text()}")
+
         # Bindizr leaves NS records to the operator, and BIND9 loads no zone
         # whose apex has no NS or whose in-zone NS has no address. The other
         # systems' zone files carry these same two.
-        for rec in ({"name": "@", "type": "NS", "value": f"ns1.{z}."},
+        for record in ({"name": "@", "type": "NS", "value": f"ns1.{z}."},
                     {"name": "ns1", "type": "A", "value": "127.0.0.1"}):
-            body = {**rec, "zone_name": z, "ttl": 3600}
-            async with self.session.post(self.base + "/records", json=body) as r:
-                if r.status not in (200, 201, 409):
+            body = {**record, "zone_name": z, "ttl": 3600}
+            async with self.session.post(self.base + "/records", json=body) as response:
+                if response.status not in (200, 201, 409):
                     raise RuntimeError(
-                        f"create_zone {rec['type']} failed: {r.status} {await r.text()}")
+                        f"create_zone {record['type']} failed: {response.status} {await response.text()}")
 
     async def delete_zone(self, zone: str) -> None:
         """Remove the benchmark zone and its records."""
-        async with self.session.delete(self.base + f"/zones/{zone.rstrip('.')}") as r:
-            await r.read()
+        async with self.session.delete(self.base + f"/zones/{zone.rstrip('.')}") as response:
+            await response.read()
 
-    def _build_record_request(self, zone: str, rec: dict) -> dict:
+    def _build_record_request(self, zone: str, record: dict) -> dict:
         """Build a bindizr record request from a benchmark record."""
-        return {**self._build_record_fields(rec), "zone_name": zone.rstrip(".")}
+        return {**self._build_record_fields(record), "zone_name": zone.rstrip(".")}
 
-    async def create_record(self, zone: str, rec: dict) -> str:
+    async def create_record(self, zone: str, record: dict) -> str:
         """Create a record and return its adapter-specific handle."""
-        async with self.session.post(self.base + "/records", json=self._build_record_request(zone, rec)) as r:
-            if r.status not in (200, 201):
-                raise RuntimeError(f"create_record {r.status}: {await r.text()}")
-            data = await r.json()
+        async with self.session.post(self.base + "/records", json=self._build_record_request(zone, record)) as response:
+            if response.status not in (200, 201):
+                raise RuntimeError(f"create_record {response.status}: {await response.text()}")
+            data = await response.json()
             return str(data["record"]["id"])
 
     async def get_record(self, zone: str, handle: str) -> bool:
         """Check whether the record identified by the handle is present."""
-        async with self.session.get(self.base + f"/records/{handle}") as r:
-            await r.read()
-            return r.status == 200
+        async with self.session.get(self.base + f"/records/{handle}") as response:
+            await response.read()
+            return response.status == 200
 
-    async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
-        body = self._build_record_fields(rec)
-        async with self.session.put(self.base + f"/records/{handle}", json=body) as r:
-            await r.read()
-            return r.status == 200
+        body = self._build_record_fields(record)
+        async with self.session.put(self.base + f"/records/{handle}", json=body) as response:
+            await response.read()
+            return response.status == 200
 
     async def delete_record(self, zone: str, handle: str) -> bool:
         """Delete the record identified by the handle."""
-        async with self.session.delete(self.base + f"/records/{handle}") as r:
-            await r.read()
-            return r.status == 200
+        async with self.session.delete(self.base + f"/records/{handle}") as response:
+            await response.read()
+            return response.status == 200
 
-    def _build_record_fields(self, rec: dict) -> dict:
+    def _build_record_fields(self, record: dict) -> dict:
         """Build one record entry for the bindizr bulk API."""
         item = {
-            "name": rec["name"],
-            "type": rec["type"],
-            "value": rec["value"],
-            "ttl": rec.get("ttl", 3600),
+            "name": record["name"],
+            "type": record["type"],
+            "value": record["value"],
+            "ttl": record.get("ttl", 3600),
         }
-        if "priority" in rec:
-            item["priority"] = rec["priority"]
+
+        if "priority" in record:
+            item["priority"] = record["priority"]
+
         return item
 
     async def _post_json_with_retry(self, url: str, body: dict) -> dict | None:
         """Return the JSON response object, or None after exhausting retries."""
         delay = 0.05
+
         for attempt in range(POST_ATTEMPTS):
             try:
-                async with self.session.post(url, json=body) as r:
-                    if r.status in (200, 201):
-                        data = await r.json()
+                async with self.session.post(url, json=body) as response:
+                    if response.status in (200, 201):
+                        data = await response.json()
                         if isinstance(data, dict):
                             return data
             except Exception:
                 pass
+
             if attempt < POST_ATTEMPTS - 1:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 1.0)
+
         return None
 
     async def import_records(self, zone: str, records: list[dict]) -> None:
@@ -223,31 +241,35 @@ class BindizrAdapter(DnsAdapter):
         chunks (each chunk bumps the serial once and sends one NOTIFY)."""
         self.bulk_errors = 0
         url = self.base + "/records/bulk"
+
         for start in range(0, len(records), self.bulk_chunk):
             chunk = records[start:start + self.bulk_chunk]
             body = {"zone_name": zone.rstrip("."),
-                    "records": [self._build_record_fields(r) for r in chunk]}
+                    "records": [self._build_record_fields(record) for record in chunk]}
             if await self._post_json_with_retry(url, body) is None:
                 self.bulk_errors += len(chunk)
 
-    def _to_zone_file_record(self, rec: dict) -> str:
+    def _to_zone_file_record(self, record: dict) -> str:
         """Render a benchmark record as a zone-file line."""
-        ttl = rec.get("ttl", 3600)
-        rdata = rec["value"]
-        if rec["type"] == "TXT":
-            rdata = '"{}"'.format(rec["value"].replace("\\", "\\\\").replace('"', '\\"'))
-        elif rec["type"] == "MX":
-            rdata = f'{rec.get("priority", 10)} {rec["value"]}'
-        return f'{rec["name"]} {ttl} IN {rec["type"]} {rdata}'
+        ttl = record.get("ttl", 3600)
+        rdata = record["value"]
+
+        if record["type"] == "TXT":
+            rdata = '"{}"'.format(record["value"].replace("\\", "\\\\").replace('"', '\\"'))
+        elif record["type"] == "MX":
+            rdata = f'{record.get("priority", 10)} {record["value"]}'
+
+        return f'{record["name"]} {ttl} IN {record["type"]} {rdata}'
 
     async def import_zone_file(self, zone: str, records: list[dict]) -> None:
         """Import records as BIND zone-file text via `/zones/{name}/import`
         (append mode), chunked so large sets don't build one giant request."""
         self.import_errors = 0
         url = self.base + f"/zones/{zone.rstrip('.')}/import"
+
         for start in range(0, len(records), self.import_chunk):
             chunk = records[start:start + self.import_chunk]
-            content = "\n".join(self._to_zone_file_record(r) for r in chunk) + "\n"
+            content = "\n".join(self._to_zone_file_record(record) for record in chunk) + "\n"
             body = {"content": content, "mode": "append"}
             data = await self._post_json_with_retry(url, body)
             if data is None or not data.get("applied"):

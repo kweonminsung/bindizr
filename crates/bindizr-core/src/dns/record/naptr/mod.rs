@@ -5,7 +5,10 @@ use regexp::validate_naptr_regexp;
 
 use super::{
     EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
-    value::{parse_char_string, parse_u16_record_field, validate_domain_record_value},
+    value::{
+        parse_char_string, parse_u16_record_field, split_record_fields,
+        validate_domain_record_value,
+    },
 };
 use crate::dns::name::{encode_name, to_fqdn};
 
@@ -31,12 +34,12 @@ impl<'a> NaptrRecordValue<'a> {
         let (services, rest) = parse_char_string("NAPTR services", rest)?;
         let (regexp, rest) = parse_char_string("NAPTR regexp", rest)?;
 
-        let replacement = rest.trim();
-        if replacement.is_empty() || replacement.split_whitespace().count() != 1 {
+        let mut fields = split_record_fields(rest);
+        let (Some(replacement), None) = (fields.next(), fields.next()) else {
             return Err(ParseRecordValueError::NaptrShape {
                 value: value.to_string(),
             });
-        }
+        };
 
         Ok(Self {
             order: parse_u16_record_field("NAPTR order", order)?,
@@ -53,6 +56,7 @@ impl<'a> NaptrRecordValue<'a> {
         let mut rdata = Vec::with_capacity(4);
         rdata.extend_from_slice(&self.order.to_be_bytes());
         rdata.extend_from_slice(&self.preference.to_be_bytes());
+
         for (field, text) in [
             ("NAPTR flags", &self.flags),
             ("NAPTR services", &self.services),
@@ -63,7 +67,9 @@ impl<'a> NaptrRecordValue<'a> {
             rdata.push(len);
             rdata.extend_from_slice(text.as_bytes());
         }
+
         rdata.extend_from_slice(&encode_name(self.replacement)?);
+
         Rdata::new(rdata)
     }
 
@@ -73,12 +79,14 @@ impl<'a> NaptrRecordValue<'a> {
         if !self.flags.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
             return Err(ParseRecordValueError::NaptrFlags);
         }
+
         validate_naptr_regexp(&self.regexp)?;
 
         // The replacement is a name or the root, which ends the rewrite chain.
         if self.replacement == "." {
             return Ok(());
         }
+
         // RFC 3403, Section 4.1: the two are mutually exclusive.
         if !self.regexp.is_empty() {
             return Err(ParseRecordValueError::NaptrReplacementWithRegexp);

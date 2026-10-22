@@ -36,35 +36,35 @@ enum Failure {
 /// Output that could not be rendered fails the command it was for.
 impl From<RenderOutputError> for CliError {
     /// Report the rendering failure as a failed request.
-    fn from(err: RenderOutputError) -> Self {
-        CliError::request_with_source(err.to_string(), err)
+    fn from(error: RenderOutputError) -> Self {
+        CliError::request_with_source(error.to_string(), error)
     }
 }
 
 /// Input that could not be read fails the command it was for.
 impl From<ReadInputError> for CliError {
     /// Report the read failure as a failed request.
-    fn from(err: ReadInputError) -> Self {
-        CliError::request_with_source(err.to_string(), err)
+    fn from(error: ReadInputError) -> Self {
+        CliError::request_with_source(error.to_string(), error)
     }
 }
 
 /// A configuration the CLI itself loaded and refused.
 impl From<ConfigError> for CliError {
     /// Report the configuration failure with its exit class.
-    fn from(err: ConfigError) -> Self {
-        CliError::configuration(err)
+    fn from(error: ConfigError) -> Self {
+        CliError::configuration(error)
     }
 }
 
 /// The daemon's own failure, classed so a supervisor knows whether to retry.
 impl From<DaemonError> for CliError {
     /// A configuration or TLS failure is permanent; anything else may pass.
-    fn from(err: DaemonError) -> Self {
-        if err.is_configuration() {
-            CliError::configuration(err)
+    fn from(error: DaemonError) -> Self {
+        if error.is_configuration() {
+            CliError::configuration(error)
         } else {
-            CliError::request_with_source(err.to_string(), err)
+            CliError::request_with_source(error.to_string(), error)
         }
     }
 }
@@ -145,6 +145,7 @@ impl CliError {
             Failure::Configuration => return EXIT_CONFIG,
             Failure::Request => {}
         }
+
         match self.code {
             Some(
                 ErrorCode::ZoneNotFound
@@ -299,6 +300,7 @@ mod tests {
         assert_eq!(code(ErrorCode::RecordConflict), EXIT_CONFLICT);
         assert_eq!(code(ErrorCode::Forbidden), EXIT_DENIED);
         assert_eq!(code(ErrorCode::InvalidInput), EXIT_FAILURE);
+
         // LSB reserves 7 for NOTRUNNING and 6 for NOTCONFIGURED;
         // the systemd unit also depends on RestartPreventExitStatus=6.
         assert_eq!(
@@ -323,12 +325,14 @@ mod tests {
             "failed to read the response",
             std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "socket closed"),
         );
+
         assert_eq!(error.exit_code(), EXIT_FAILURE);
         let source = error
             .source()
             .unwrap()
             .downcast_ref::<std::io::Error>()
             .unwrap();
+
         assert_eq!(source.kind(), std::io::ErrorKind::UnexpectedEof);
     }
 }

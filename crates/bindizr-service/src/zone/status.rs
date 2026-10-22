@@ -3,8 +3,7 @@
 use bindizr_core::{dns::name::ZoneName, model::role_grant::Action};
 
 use crate::{
-    Context, authorization::Caller, dns_client::probe, error::ServiceError,
-    types::ZoneStatusResponse,
+    Context, authorization::Caller, error::ServiceError, probe, types::ZoneStatusResponse,
 };
 
 /// Probe every enabled secondary for the zone and classify each
@@ -20,6 +19,7 @@ pub async fn get_status(
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let serial = zone.serial;
+
     let secondaries = probe::probe_secondaries(cx, &zone.name, Some(serial)).await?;
 
     Ok(ZoneStatusResponse {

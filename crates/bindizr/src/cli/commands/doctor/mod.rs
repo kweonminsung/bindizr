@@ -1,6 +1,4 @@
-//! `bindizr doctor`: installation checks reported as OK, FAIL, or SKIP. A
-//! running daemon answers for itself; without one, the checks a failed start
-//! would have hit run here.
+//! Report installation checks as OK, FAIL or SKIP, using daemon state or local startup checks.
 
 mod daemon;
 mod offline;
@@ -68,6 +66,7 @@ impl Report {
         if check.status == DoctorCheckStatus::Failed {
             self.failures += 1;
         }
+
         if self.format == OutputFormat::Table {
             let text = check.status.to_string();
             let label = match check.status {
@@ -77,6 +76,7 @@ impl Report {
             };
             outln!("[{}] {}", label, check.message);
         }
+
         self.checks.push(check);
     }
 }
@@ -103,19 +103,22 @@ pub(crate) async fn handle_command(
             report.ok(format!("Config valid: {}", path));
             Some(config)
         }
-        Err(e) => {
-            report.fail(format!("Config invalid: {}", e));
+        Err(error) => {
+            report.fail(format!("Config invalid: {}", error));
             None
         }
     };
+
     if daemon::check_running(&mut report).await {
         let daemon_config = client::send_control_command::<Config>(DaemonCommand::Config)
             .await
             .map(|response| response.data);
+
         match daemon_config {
             Ok(config) => daemon::check_api(&config, &mut report).await,
-            Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
+            Err(error) => report.fail(format!("Daemon config not readable: {}", error.message)),
         }
+
         daemon::check_services(&mut report).await;
     } else if let Some(config) = &file_config {
         // What a daemon that failed to start most likely hit.

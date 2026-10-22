@@ -55,6 +55,7 @@ pub async fn start_rollover(
             LockLevel::Exclusive,
         )
         .await?;
+
         if signed
             .keys
             .iter()
@@ -96,7 +97,7 @@ pub async fn start_rollover(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -109,11 +110,13 @@ pub async fn start_rollover(
             new_serial,
         )
         .await?;
+
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
     let (response, changed) =
         transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+
     if changed {
         cx.metrics().track_serial_bumps(1);
     }
@@ -124,12 +127,11 @@ pub async fn start_rollover(
     if changed {
         crate::notify::notify_after_update(cx, zone_name).await;
     }
+
     Ok(response)
 }
 
-/// Pre-publish a replacement for every key with `policy`'s algorithm,
-/// double-signing the zone through the transition (RFC 6840, Section
-/// 5.11). Returns the key set with the replacements appended.
+/// Append replacement keys under `policy`, double-signing through rollover (RFC 6840, Section 5.11).
 pub(crate) async fn start_algorithm_rollover_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -146,10 +148,12 @@ pub(crate) async fn start_algorithm_rollover_tx(
     // set through the transition.
     let mut keys = keys;
     let templates = keys.clone();
+
     for template in &templates {
         let new_key = publish_replacement_key_tx(tx, zone, template, policy.algorithm).await?;
         keys.push(new_key);
     }
+
     Ok(keys)
 }
 
@@ -173,9 +177,11 @@ pub async fn advance_rollover(
         )
         .await?;
         let awaiting = promotable_sep_key_ids(&signed, holddown)?;
+
         // The answer that confirms the DS also says how long resolvers
         // cache it — the wait the key it replaces must outlive.
         let mut parent_ds_ttl = None;
+
         if ds_check == DsCheck::Probe {
             let delegation = super::probe_delegation(cx, &signed).await?;
             parent_ds_ttl = delegation.ds_ttl;
@@ -189,13 +195,16 @@ pub async fn advance_rollover(
                 .filter(|key| key.ds_digest_unsupported)
                 .map(|key| key.key_tag)
                 .collect();
+
             if !unsupported.is_empty() {
                 return Err(ServiceError::dnssec_ds_digest_unsupported(
                     signed.zone.name.as_str(),
                     &unsupported,
                 ));
             }
+
             let missing: Vec<KeyTag> = unconfirmed.iter().map(|key| key.key_tag).collect();
+
             if !missing.is_empty() {
                 return Err(ServiceError::dnssec_ds_not_published(
                     signed.zone.name.as_str(),
@@ -203,6 +212,8 @@ pub async fn advance_rollover(
                 ));
             }
         }
+
+        // Promote only after all required parent DS checks have passed.
         signed.keys =
             promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &awaiting, parent_ds_ttl)
                 .await?;
@@ -211,7 +222,7 @@ pub async fn advance_rollover(
             &mut tx,
             &signed,
             SigningPass::Refresh,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -224,11 +235,13 @@ pub async fn advance_rollover(
             new_serial,
         )
         .await?;
+
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
     let (response, changed) =
         transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+
     if changed {
         cx.metrics().track_serial_bumps(1);
     }
@@ -239,16 +252,20 @@ pub async fn advance_rollover(
             response.zone_name
         );
     }
+
     if holddown == Holddown::Skip {
         log::warn!(
             "event=dnssec_rollover_ds_seen_holddown_skipped zone={}",
             response.zone_name
         );
     }
+
     log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
+
     if changed {
         crate::notify::notify_after_update(cx, zone_name).await;
     }
+
     Ok(response)
 }
 
@@ -261,6 +278,7 @@ pub(crate) async fn publish_replacement_key_tx(
     algorithm: DnssecAlgorithm,
 ) -> Result<DnssecKey, ServiceError> {
     let now = Utc::now();
+
     // The SOA refresh is the propagation delay: how long a secondary that
     // missed the NOTIFY takes to catch up.
     let publish_wait = Duration::seconds(
@@ -275,6 +293,7 @@ pub(crate) async fn publish_replacement_key_tx(
         now + publish_wait,
     )
     .map_err(ServiceError::dnssec_signing_failed)?;
+
     Ok(bindizr_db::dnssec_key::create_tx(tx, new_key).await?)
 }
 
@@ -293,6 +312,7 @@ pub(crate) async fn promote_published_keys_tx(
         .filter(|key| promoted.contains(&key.id))
         .map(|key| key.role)
         .collect();
+
     // One deadline for the whole retiring batch: an algorithm rollover
     // must drop the old DNSKEYs and their signatures together.
     let retire_wait = keys
@@ -303,6 +323,7 @@ pub(crate) async fn promote_published_keys_tx(
         .unwrap_or(0);
 
     let mut updated = Vec::with_capacity(keys.len());
+
     for mut key in keys {
         if promoted.contains(&key.id) {
             bindizr_db::dnssec_key::update_state_tx(tx, key.id, DnssecKeyState::Active, now, now)
@@ -312,6 +333,7 @@ pub(crate) async fn promote_published_keys_tx(
             key.eligible_at = now;
         } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
             let eligible_at = now + Duration::seconds(retire_wait);
+
             bindizr_db::dnssec_key::update_state_tx(
                 tx,
                 key.id,
@@ -320,10 +342,12 @@ pub(crate) async fn promote_published_keys_tx(
                 eligible_at,
             )
             .await?;
+
             key.state = DnssecKeyState::Retired;
             key.state_changed_at = now;
             key.eligible_at = eligible_at;
         }
+
         updated.push(key);
     }
 
@@ -345,12 +369,14 @@ pub(crate) fn promotable_sep_key_ids(
             signed.zone.name.as_str(),
         ));
     }
+
     // ZSKs have no parent DS to confirm; their own step promotes them.
     let awaiting: Vec<&DnssecKey> = signed
         .keys
         .iter()
         .filter(|key| key.awaits_parent_ds())
         .collect();
+
     // The deadline stamped at publication is authoritative: a later TTL
     // change cannot shorten it (status reports it).
     let Some(promotable_at) = awaiting.iter().map(|key| key.eligible_at).max() else {
@@ -360,6 +386,7 @@ pub(crate) fn promotable_sep_key_ids(
         ));
     };
     let ds_published: Vec<DnssecKeyId> = awaiting.iter().map(|key| key.id).collect();
+
     if holddown == Holddown::Wait && promotable_at > Utc::now() {
         return Err(ServiceError::invalid_input(format!(
             "the replacement key must stay published so resolvers holding the previous \
@@ -368,6 +395,7 @@ pub(crate) fn promotable_sep_key_ids(
             promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
         )));
     }
+
     Ok(ds_published)
 }
 

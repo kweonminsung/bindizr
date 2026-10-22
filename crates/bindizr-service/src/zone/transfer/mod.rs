@@ -47,6 +47,34 @@ pub struct TransferContent {
     pub dnssec_records: Vec<DnssecRecord>,
 }
 
+/// Read SOA and its signatures under the same authorization and zone snapshot.
+pub async fn authorize_soa_content_by_name(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    include_signatures: bool,
+) -> Result<TransferAccess<(Zone, Vec<DnssecRecord>)>, ServiceError> {
+    let mut tx = transaction::begin_read_tx(cx, "failed to load SOA content").await?;
+    let result = async {
+        let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
+            TransferAccess::Granted(zone) => zone,
+            TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
+            TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
+        };
+        let signatures = if include_signatures {
+            bindizr_db::dnssec_record::list_signatures_covering_apex_soa_tx(&mut tx, zone.id)
+                .await?
+        } else {
+            Vec::new()
+        };
+
+        Ok(TransferAccess::Granted((zone, signatures)))
+    }
+    .await;
+
+    transaction::finish_tx(tx, result, "failed to load SOA content").await
+}
+
 /// The enabled zone `zone_name` names, if `caller` may transfer it. Decided
 /// on the row this transaction share-locks, with the grants re-read beside it.
 pub async fn authorize_transfer_by_name(
@@ -66,32 +94,43 @@ pub async fn authorize_transfer_by_name(
         }
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
-/// Authorize a catalog transfer and load its member zones in one read
-/// transaction; the caller needs `zone:transfer` in all zones.
-pub async fn authorize_catalog_content(
+/// Refresh catalog content from one member snapshot after authorizing
+/// `zone:transfer` in all zones, including its persisted serial.
+pub async fn refresh_catalog_content(
     cx: &Context,
     caller: &Caller,
-) -> Result<TransferAccess<Vec<Zone>>, ServiceError> {
+) -> Result<TransferAccess<(Zone, Vec<String>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {
             TransferAccess::Granted(caller) => caller,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        if let Err(e) = caller.authorize_action(Action::ZoneTransfer) {
-            return Ok(TransferAccess::Refused(e.to_string()));
+
+        if let Err(error) = caller.authorize_action(Action::ZoneTransfer) {
+            return Ok(TransferAccess::Refused(error.to_string()));
         }
+
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
+
         Ok(TransferAccess::Granted(
             zones.into_iter().filter(|zone| zone.enabled).collect(),
         ))
     }
     .await;
-    transaction::finish_tx(tx, result, "failed to load catalog content").await
+
+    match transaction::finish_tx(tx, result, "failed to load catalog content").await? {
+        TransferAccess::Granted(zones) => Ok(TransferAccess::Granted(
+            super::refresh_catalog_from_zones(cx, zones).await?,
+        )),
+        TransferAccess::NotAuth => Ok(TransferAccess::NotAuth),
+        TransferAccess::Refused(reason) => Ok(TransferAccess::Refused(reason)),
+    }
 }
 
 /// Authorize the caller and read both record planes in one shared-lock snapshot.
@@ -111,6 +150,7 @@ pub async fn authorize_transfer_content_by_name(
         let dnssec_records =
             bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
+
         Ok(TransferAccess::Granted(TransferContent {
             zone,
             version_id,
@@ -119,6 +159,7 @@ pub async fn authorize_transfer_content_by_name(
         }))
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
@@ -148,16 +189,19 @@ async fn authorize_transfer_tx(
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
+
     // A zone the role does not reach is refused rather than hidden: NOTAUTH
     // would claim the zone is not served, and its name is no secret here.
     match caller.authorize_zone_action(Action::ZoneTransfer, &zone) {
         Ok(()) => Ok(TransferAccess::Granted(zone)),
-        Err(e) if e.code() == ErrorCode::ZoneNotFound => Ok(TransferAccess::Refused(format!(
-            "role does not permit '{}' in zone '{}'",
-            Action::ZoneTransfer,
-            zone.name
-        ))),
-        Err(e) => Ok(TransferAccess::Refused(e.to_string())),
+        Err(error) if error.code() == ErrorCode::ZoneNotFound => {
+            Ok(TransferAccess::Refused(format!(
+                "role does not permit '{}' in zone '{}'",
+                Action::ZoneTransfer,
+                zone.name
+            )))
+        }
+        Err(error) => Ok(TransferAccess::Refused(error.to_string())),
     }
 }
 
@@ -169,7 +213,9 @@ async fn reauthenticate_transfer_tx(
 ) -> Result<TransferAccess<Caller>, ServiceError> {
     match caller.reauthenticate_tx(tx).await {
         Ok(caller) => Ok(TransferAccess::Granted(caller)),
-        Err(e) if e.code() == ErrorCode::InvalidToken => Ok(TransferAccess::Refused(e.to_string())),
-        Err(e) => Err(e),
+        Err(error) if error.code() == ErrorCode::InvalidToken => {
+            Ok(TransferAccess::Refused(error.to_string()))
+        }
+        Err(error) => Err(error),
     }
 }

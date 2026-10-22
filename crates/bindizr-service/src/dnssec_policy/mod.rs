@@ -18,7 +18,7 @@ use crate::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
-    pagination::build_page,
+    pagination::{build_page, validate_page_limit},
     text::normalize_identifier,
     transaction,
     types::{
@@ -53,8 +53,8 @@ pub async fn create(
         Some(raw) => raw
             .parse::<DnssecDenial>()
             .map_err(ServiceError::invalid_input)?,
-        // NSEC leaves the zone walkable, so a policy that did not
-        // choose is not opted into it.
+        // RFC 9276, Section 3.1 prefers NSEC, but NSEC leaves the zone
+        // walkable; a policy that did not choose is not opted into that.
         None => DnssecDenial::Nsec3,
     };
     let signature_validity_days = request.signature_validity_days.unwrap_or(14);
@@ -95,13 +95,13 @@ pub async fn create(
             },
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             // A create that raced past the pre-check trips UNIQUE(name); the
             // backstop reads as the same conflict.
-            if e.is_unique_violation() {
+            if error.is_unique_violation() {
                 ServiceError::dnssec_policy_conflict(&name)
             } else {
-                e.into()
+                error.into()
             }
         })?;
         audit::save_tx(
@@ -118,12 +118,14 @@ pub async fn create(
                 policy.signature_refresh_days,
                 policy.zsk_lifetime_days
             )),
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
+
         Ok(policy)
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to create DNSSEC policy").await
 }
 
@@ -134,13 +136,15 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<DnssecPolicyResponse>, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
+    validate_page_limit(page.limit)?;
 
     let policies = bindizr_db::dnssec_policy::list_all(cx.db()).await?;
-    build_page(
+
+    Ok(build_page(
         policies.iter().map(DnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
-    )
+    ))
 }
 
 /// Load a named DNSSEC policy for an authorized caller.
@@ -214,6 +218,7 @@ pub async fn update(
                 timings.zsk_lifetime_days,
             ),
         ]);
+
         let policy = bindizr_db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
@@ -230,12 +235,14 @@ pub async fn update(
             &policy.name,
             AuditOperation::Update,
             detail,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
+
         Ok(policy)
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to update DNSSEC policy").await
 }
 
@@ -245,6 +252,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     caller.authorize_action(Action::DnssecManage)?;
 
     let policy = lookup_by_name(cx, name).await?;
+
     // `enable` and `keys import` fall back to it by name.
     if policy.is_builtin() {
         return Err(ServiceError::invalid_input(format!(
@@ -254,6 +262,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let zone_count = bindizr_db::zone::count_by_dnssec_policy_id(cx.db(), policy.id).await?;
+
     if zone_count > 0 {
         return Err(ServiceError::dnssec_policy_in_use(&policy.name, zone_count));
     }
@@ -266,32 +275,35 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             .authorize_action(Action::DnssecManage)?;
         let deleted = bindizr_db::dnssec_policy::delete_tx(&mut tx, policy.id)
             .await
-            .map_err(|e| {
+            .map_err(|error| {
                 // A zone enabled between the count above and this delete trips
                 // the FK; it reads as the in-use conflict.
-                if e.is_foreign_key_violation() {
+                if error.is_foreign_key_violation() {
                     ServiceError::DnssecPolicyInUse(
                         "DNSSEC policy is still used by signed zones".to_string(),
                     )
                 } else {
-                    e.into()
+                    error.into()
                 }
             })?;
+
         // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !deleted {
             return Err(ServiceError::dnssec_policy_not_found(&policy.name));
         }
+
         audit::save_tx(
             &mut tx,
             AuditEntity::DnssecPolicy,
             &policy.name,
             AuditOperation::Delete,
             None,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await
     }
     .await;
+
     transaction::finish_tx(tx, result, "failed to delete DNSSEC policy").await
 }
 
@@ -344,7 +356,9 @@ fn validate_timings(
             MAX_ZSK_LIFETIME_DAYS
         )));
     }
+
     let days = |value: u32| Days::try_from(value).map_err(ServiceError::invalid_input);
+
     Ok(SigningTimings {
         signature_validity_days: days(signature_validity_days)?,
         signature_refresh_days: days(signature_refresh_days)?,
@@ -378,6 +392,7 @@ mod tests {
         assert!(validate_timings(5, 5, 0).is_err());
         assert!(validate_timings(0, 1, 0).is_err());
         assert!(validate_timings(14, 0, 0).is_err());
+
         // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
         assert!(validate_timings(24_856, 5, 0).is_err());
         assert!(validate_timings(24_855, 5, 0).is_ok());

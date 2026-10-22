@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{
     dns::name::OwnerName,
     model::{
-        grant_pattern::{MATCH_ANY, matches_name, matches_types, pattern_covers},
+        grant_pattern::{MATCH_ANY, has_pattern_coverage, matches_name, matches_types},
         record::RecordType,
         role::RoleId,
         zone::ZoneId,
@@ -38,8 +38,9 @@ pub struct ParseActionError {
 ///   export the zone and read its versions and diffs
 /// - `record:create` — add records, including by import, nsupdate and ExternalDNS
 /// - `record:update` — change a record in place; without `record:read` on it,
-///   every field must be given
-/// - `record:delete` — delete records, including by nsupdate and ExternalDNS
+///   every field must be given; also required when nsupdate changes existing records' TTL
+/// - `record:delete` — delete records, including by nsupdate and ExternalDNS; also required
+///   when nsupdate replaces a CNAME, DNAME, or matching WKS record
 /// - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
 ///   also read signing policies
 /// - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
@@ -222,6 +223,7 @@ impl fmt::Display for ActionSet {
             }
             f.write_str(action.as_str())?;
         }
+
         Ok(())
     }
 }
@@ -261,9 +263,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_string().encode_by_ref(buf)
+        self.to_string().encode_by_ref(buffer)
     }
 }
 
@@ -300,9 +302,8 @@ impl From<Option<ZoneId>> for RoleZoneScope {
     }
 }
 
-/// One grant of a role: the actions it permits in its zone scope. The name
-/// pattern and type list, in [`super::grant_pattern`] syntax, narrow its
-/// `record:*` actions only.
+/// A role's actions and zone scope; name/type patterns narrow only `record:*`.
+/// Pattern syntax is defined by [`super::grant_pattern`].
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RoleGrant {
     pub id: RoleGrantId,
@@ -332,7 +333,7 @@ impl RoleGrant {
 
     /// Whether this grant covers every name `pattern` matches, for `record_type`.
     fn covers_pattern(&self, pattern: &str, record_type: &RecordType) -> bool {
-        pattern_covers(&self.record_name_pattern, pattern)
+        has_pattern_coverage(&self.record_name_pattern, pattern)
             && matches_types(&self.record_types, Some(record_type))
     }
 

@@ -32,9 +32,13 @@ impl Serial {
         matches!(self.0.wrapping_sub(other.0), 1..=0x7fff_ffff)
     }
 
-    /// Advance modulo 2^32 (RFC 1982, Section 3.1), including MAX to zero.
+    /// Advance modulo 2^32 (RFC 1982, Section 3.1), passing over zero (RFC 2136,
+    /// Section 7.11: older secondaries read it as a zone to fetch afresh).
     pub fn next(self) -> Serial {
-        Serial(self.0.wrapping_add(1))
+        match self.0.wrapping_add(1) {
+            0 => Serial(1),
+            next => Serial(next),
+        }
     }
 }
 
@@ -125,9 +129,9 @@ where
     /// Bind every wire serial in the signed 64-bit row form.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        i64::from(*self).encode_by_ref(buf)
+        i64::from(*self).encode_by_ref(buffer)
     }
 }
 
@@ -148,6 +152,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::Serial;
+
+    /// Advance wraps past the maximum to one, never zero (RFC 2136, Section 7.11).
+    #[test]
+    fn next_skips_zero_when_wrapping() {
+        for (serial, next) in [(0, 1), (1, 2), (u32::MAX - 1, u32::MAX), (u32::MAX, 1)] {
+            assert_eq!(Serial::from(serial).next(), Serial::from(next));
+        }
+    }
 
     /// Check ordinary, wrapped, equal, and undefined serial comparisons.
     #[test]

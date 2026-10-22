@@ -11,6 +11,7 @@ mod rollover;
 async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("dnssec-cli.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     let enabled = app
@@ -25,13 +26,17 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
             None,
         )
         .await;
+
     assert!(enabled.contains("DNSSEC enabled"), "{enabled}");
 
     let status = app
         .run_cli_success(&["dnssec", "status", &zone_name], None)
         .await;
+
     assert!(status.contains("DNSSEC enabled"));
+
     let key_tag = read_signing_key_tag(&app, &zone_name).await;
+
     assert!(key_tag > 0);
 
     assert!(status.contains(&format!("IN DS {key_tag} ")), "{status}");
@@ -39,6 +44,7 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     // Same algorithm, denial, and key layout as `default`: the move only
     // changes the timing, so no rollover starts.
     let policy_name = format!("{}-long", app.namespace());
+
     app.run_cli_success(
         &[
             "dnssec",
@@ -59,6 +65,7 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
             None,
         )
         .await;
+
     // The policy row of the status output carries the new timing.
     assert!(
         moved.contains(&policy_name) && moved.contains("30d") && moved.contains("90d"),
@@ -69,6 +76,7 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     let signed_export = app
         .run_cli_success(&["zone", "export", &zone_name, "--signed"], None)
         .await;
+
     assert!(
         signed_export.contains("\tIN\tDNSKEY\t257 3 "),
         "{signed_export}"
@@ -81,10 +89,13 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     let withdrawn = app
         .run_cli_success(&["dnssec", "withdraw", "start", &zone_name], None)
         .await;
+
     assert!(withdrawn.contains("DS withdrawal published"), "{withdrawn}");
+
     let cancelled = app
         .run_cli_success(&["dnssec", "withdraw", "cancel", &zone_name], None)
         .await;
+
     assert!(
         !cancelled.contains("DS withdrawal published"),
         "{cancelled}"
@@ -93,15 +104,18 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
     let signed = app
         .run_cli_success(&["dnssec", "sign", &zone_name], None)
         .await;
+
     assert!(signed.contains("Zone signed successfully"));
 
     let disabled = app
         .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;
+
     assert!(disabled.contains("DNSSEC disabled successfully"));
 
     let status = app
         .run_cli_success(&["dnssec", "status", &zone_name], None)
         .await;
+
     assert!(status.contains("DNSSEC disabled"));
 }

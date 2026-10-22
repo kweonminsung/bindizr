@@ -1,9 +1,6 @@
-"""Native BIND9 adapter — a plain authoritative primary, the DNS-query baseline.
+"""Provide the standalone BIND9 primary baseline for Benchmark 8 QPS comparisons.
 
-Used by Benchmark 8 to establish the reference QPS that "Bindizr + BIND9" is
-compared against: if Bindizr adds no query-path overhead, the two should match.
-Records are bulk-loaded by writing the zone file and reloading (same mechanism
-as the rndc adapter); per-record CRUD is not the focus here.
+Bulk-load a zone file and reload as in the rndc adapter; per-record CRUD is secondary.
 """
 from __future__ import annotations
 
@@ -15,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import Endpoint  # noqa: E402
 from adapters.bind9_zonefile import Bind9ZoneFileAdapter  # noqa: E402
-from lib import dockerutil  # noqa: E402
+from lib import docker  # noqa: E402
 
 DNS_PORT = 15358
 ZONE = "bench.example"
@@ -27,10 +24,10 @@ class Bind9NativeAdapter(Bind9ZoneFileAdapter):
     key = "bind9_native"
     resource_services = ["bind9"]
 
-    def __init__(self, cfg: dict, project: str):
+    def __init__(self, config: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
-        super().__init__(cfg, project, Endpoint(SERVER, DNS_PORT), ZONE, ZONE_PATH)
-        self.compose = dockerutil.Compose(HERE / "compose.yml", project)
+        super().__init__(config, project, Endpoint(SERVER, DNS_PORT), ZONE, ZONE_PATH)
+        self.compose = docker.Compose(HERE / "compose.yml", project)
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
@@ -47,9 +44,12 @@ class Bind9NativeAdapter(Bind9ZoneFileAdapter):
                 "+tries=1", "+time=3",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
             out, _ = await proc.communicate()
+
             if out.decode().strip():
                 return
+
             await asyncio.sleep(0.5)
+
         raise RuntimeError("Native BIND9 did not become ready")
 
     async def teardown(self) -> None:

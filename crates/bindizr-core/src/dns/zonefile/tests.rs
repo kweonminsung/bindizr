@@ -16,10 +16,51 @@ fn txt_preserves_non_utf8_octets() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
         ZoneFileValue::Rdata(r#""\255\254""#.into())
+    );
+}
+
+/// Read a known type spelled generically as that type (RFC 3597, Section 5),
+/// and refuse octets that do not encode it.
+#[test]
+fn parse_reads_generic_rdata_of_known_types() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let parsed = ParsedZoneFile::parse(
+        "www IN A \\# 4 c0000201\nmail IN MX \\# 20 000a 046d61696c 076578616d706c65 03636f6d 00\n",
+        &zone,
+        Ttl::try_from(3600).unwrap(),
+    );
+
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert_eq!(
+        parsed.records[0].value,
+        ZoneFileValue::Rdata("192.0.2.1".into())
+    );
+    assert_eq!(parsed.records[0].record_type, RecordType::A);
+    assert_eq!(parsed.records[1].record_type, RecordType::Mx);
+    assert_eq!(
+        parsed.records[1].value,
+        ZoneFileValue::Rdata("mail.example.com.".into())
+    );
+    assert_eq!(parsed.records[1].priority, Some(10));
+
+    let parsed = ParsedZoneFile::parse(
+        "www IN A \\# 3 c00002\n",
+        &zone,
+        Ttl::try_from(3600).unwrap(),
+    );
+
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|error| error.contains("does not encode a A record")),
+        "{:?}",
+        parsed.errors
     );
 }
 
@@ -33,8 +74,9 @@ fn parse_error_names_the_line_of_the_submitted_text() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
-        parsed.errors.iter().any(|e| e.contains(": 2:")),
+        parsed.errors.iter().any(|error| error.contains(": 2:")),
         "expected the error to name line 2, got: {:?}",
         parsed.errors
     );
@@ -48,6 +90,7 @@ fn txt_parser_preserves_utf8_segments() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed.errors.is_empty(),
         "unexpected errors: {:?}",
@@ -58,6 +101,7 @@ fn txt_parser_preserves_utf8_segments() {
         .iter()
         .find(|record| record.record_type == RecordType::Txt)
         .expect("a TXT record");
+
     match &record.value {
         ZoneFileValue::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
         other => panic!("expected segments, got {other:?}"),
@@ -100,6 +144,7 @@ fn zonefile_preserves_naptr_presentation() {
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     let values: Vec<_> = parsed.records.iter().map(|record| &record.value).collect();
+
     assert_eq!(
         values,
         [
@@ -122,6 +167,7 @@ fn zonefile_rejects_non_apex_soa() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed.soa.is_none(),
         "a foreign SOA was read as the zone's own"
@@ -130,7 +176,7 @@ fn zonefile_rejects_non_apex_soa() {
         parsed
             .errors
             .iter()
-            .any(|e| e.contains("does not belong to zone")),
+            .any(|error| error.contains("does not belong to zone")),
         "{:?}",
         parsed.errors
     );
@@ -140,6 +186,7 @@ fn zonefile_rejects_non_apex_soa() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert_eq!(parsed.soa.expect("apex SOA").serial, Serial::from(99));
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
 
@@ -151,11 +198,12 @@ fn zonefile_rejects_non_apex_soa() {
         &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(3600).unwrap(),
     );
+
     assert!(
         parsed
             .errors
             .iter()
-            .any(|e| e.contains("more than one SOA")),
+            .any(|error| error.contains("more than one SOA")),
         "{:?}",
         parsed.errors
     );
@@ -170,11 +218,43 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     };
     let mut bytes = Vec::new();
     let Ok(()) = record.data().compose_rdata(&mut bytes);
+
     TransferRecord {
         name: crate::dns::name::to_fqdn(&record.owner().to_string()),
         rtype,
         ttl: 300,
         rdata: Rdata::new(bytes).unwrap(),
+    }
+}
+
+/// Preserve root, escaped-dot, and mixed-case targets across import sources.
+#[test]
+fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
+    let zone = ZoneName::parse("example.com").unwrap();
+
+    for (kind, rtype) in [
+        ("NS", Rtype::NS),
+        ("CNAME", Rtype::CNAME),
+        ("PTR", Rtype::PTR),
+        ("DNAME", Rtype::DNAME),
+    ] {
+        for target in [".", r"\046.", "Mixed.Example.NET."] {
+            let text = format!("target.example.com. 300 IN {kind} {target}\n");
+            let parsed = ParsedZoneFile::parse(&text, &zone, Ttl::try_from(300).unwrap());
+            let transferred = ParsedZoneFile::from_transfer(
+                &[transfer_record("target.example.com.", rtype, target)],
+                &zone,
+            );
+
+            assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+            assert!(transferred.errors.is_empty(), "{:?}", transferred.errors);
+            assert_eq!(parsed.records, transferred.records, "{kind} {target}");
+            assert_eq!(
+                parsed.records[0].value,
+                ZoneFileValue::Rdata(crate::dns::name::to_fqdn(target)),
+                "{kind} {target}",
+            );
+        }
     }
 }
 
@@ -193,13 +273,14 @@ fn transfer_keeps_one_soa_for_creation() {
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(parsed.soa.expect("the opening SOA").serial, Serial::from(7));
+
     // The SOA is the zone's own, never one of its records.
     assert_eq!(parsed.records.len(), 1);
 }
 
-/// Store ordinary types without a typed editor in RFC 3597 presentation form.
+/// Unsupported ordinary types reject the transferred zone.
 #[test]
-fn transfer_preserves_other_ordinary_types() {
+fn transfer_rejects_unsupported_ordinary_types() {
     let records = [
         transfer_record("www.example.com.", Rtype::A, "192.0.2.1"),
         transfer_record("example.com.", Rtype::HINFO, r#""rfc" "8482""#),
@@ -207,13 +288,8 @@ fn transfer_preserves_other_ordinary_types() {
 
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
-    assert_eq!(parsed.records.len(), 2);
-    assert!(parsed.unsupported.is_empty());
-    assert_eq!(parsed.records[1].record_type, RecordType::Unknown(13));
-    assert_eq!(
-        parsed.records[1].value,
-        ZoneFileValue::Rdata(r"\# 9 037266630438343832".into())
-    );
+    assert_eq!(parsed.records.len(), 1);
+    assert!(parsed.errors.iter().any(|error| error.contains("HINFO")));
 }
 
 /// Wire conversion preserves label boundaries.
@@ -234,12 +310,12 @@ fn transfer_preserves_escaped_names() {
     let parsed = ParsedZoneFile::from_transfer(&records, &ZoneName::parse("example.com").unwrap());
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-    assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);
     let carried: Vec<_> = parsed
         .records
         .iter()
         .map(|record| (record.owner_fqdn.as_str(), &record.value))
         .collect();
+
     assert_eq!(
         carried,
         [
@@ -282,6 +358,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         transfer_record("example.com.", Rtype::MX, "0 ."),
     ];
     let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
@@ -298,6 +375,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
     assert_eq!(parsed.records[3].value, ZoneFileValue::Rdata(".".into()));
     assert_eq!(parsed.records[3].priority, Some(0));
     let text = ParsedZoneFile::parse("@ 300 IN MX 0 .\n", &zone, Ttl::try_from(300).unwrap());
+
     assert_eq!(text.records, parsed.records[3..]);
 
     let invalid = TransferRecord {
@@ -307,9 +385,38 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         rdata: Rdata::new(vec![1, 255]).unwrap(),
     };
     let parsed = ParsedZoneFile::from_transfer(&[invalid], &zone);
+
     assert!(parsed.errors.is_empty());
     assert_eq!(
         parsed.records[0].value,
         ZoneFileValue::Rdata(r#""\255""#.into())
     );
+}
+
+/// Match closing SOA case-insensitively without changing received RDATA.
+#[test]
+fn transfer_import_accepts_case_varied_closing_soa() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let opening = transfer_record(
+        "example.com.",
+        Rtype::SOA,
+        "NS1.Example.COM. Hostmaster.Example.COM. 42 7200 3600 604800 300",
+    );
+    let closing = transfer_record(
+        "EXAMPLE.COM.",
+        Rtype::SOA,
+        "ns1.example.com. hostmaster.example.com. 42 7200 3600 604800 300",
+    );
+    let original = opening.rdata.clone();
+    let records = [
+        opening,
+        transfer_record("example.com.", Rtype::NS, "ns1.example.com."),
+        closing,
+    ];
+    let parsed = ParsedZoneFile::from_transfer(&records, &zone);
+
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    assert!(parsed.soa.is_some());
+    assert_eq!(parsed.records.len(), 1);
+    assert_eq!(records[0].rdata, original);
 }

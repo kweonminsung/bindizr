@@ -31,6 +31,7 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
+
     assert_eq!(zone["zone"]["serial"].as_i64().unwrap(), 1);
 
     app.run_cli_success(
@@ -47,7 +48,9 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
         None,
     )
     .await;
+
     let target_serial = "2"; // zone create = 1, record create = 2
+
     app.run_cli_success(
         &[
             "record",
@@ -77,6 +80,7 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
         .iter()
         .map(|item| item["serial"].as_i64().unwrap())
         .collect();
+
     assert_eq!(serials, [3, 2, 1]);
 
     let detail = app
@@ -101,14 +105,17 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
         .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
+
     assert_eq!(a_records, [format!("www.{zone_name}.")]);
 
     // Serial 1 -> 2 added the www A record; 2 -> 3 added extra.
     let diff = app
         .run_cli_success(&["zone", "version", "diff", &zone_name, "1", "2"], None)
         .await;
+
     assert!(diff.contains("SOA serial: 1 -> 2"), "{diff}");
     assert!(diff.contains("By name and type: +1 -0 ~0"), "{diff}");
+
     // The added record set renders as a zone-file line under a `+`.
     assert!(diff.contains(&format!("+ www.{zone_name}.")), "{diff}");
     assert!(
@@ -120,6 +127,7 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     let diff_to_current = app
         .run_cli_success(&["zone", "version", "diff", &zone_name, "1"], None)
         .await;
+
     assert!(
         diff_to_current.contains("SOA serial: 1 -> 3"),
         "{diff_to_current}"
@@ -143,6 +151,7 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
             None,
         )
         .await;
+
     assert!(dry_run.contains("Dry run"));
     assert!(dry_run.contains("nothing applied"));
 
@@ -153,6 +162,7 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
             None,
         )
         .await;
+
     assert!(rolled_back.contains("Zone rolled back to serial 2 (new serial 4)"));
 
     let records = app
@@ -170,11 +180,13 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
         .iter()
         .map(|record| record["name"].as_str().unwrap())
         .collect();
+
     assert_eq!(names.len(), 1);
     assert!(names[0].starts_with("www."));
 
     // Rolling back to the current serial is rejected with a hint.
     let args = ["zone", "version", "rollback", &zone_name, "4"];
+
     let output = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &output, "must be less than the current serial");
 }

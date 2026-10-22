@@ -18,9 +18,11 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
             { "name": "sub", "type": "NS", "value": "ns1.example.net." }
         ]
     });
+
     let (status, body) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
+
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["added"], 2);
     assert_eq!(body["records"][0]["type"], "DS");
@@ -42,9 +44,11 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
         ],
         "dry_run": true
     });
+
     let (status, body) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
+
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert!(
         body["error"].as_str().unwrap().contains("delegation NS"),
@@ -68,9 +72,11 @@ async fn record_bulk_insert_rejects_invalid_batch_atomically() {
             { "name": "bad", "type": "NOPE", "value": "192.0.2.6" }
         ]
     });
+
     let (status, _) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
+
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, body) = app
@@ -80,6 +86,7 @@ async fn record_bulk_insert_rejects_invalid_batch_atomically() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 }
@@ -95,9 +102,11 @@ async fn record_bulk_insert_returns_not_found_when_zone_is_unknown() {
         "zone_name": missing_zone,
         "records": [ { "name": "a", "type": "A", "value": "192.0.2.1" } ]
     });
+
     let (status, _) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -120,9 +129,11 @@ async fn record_bulk_insert_previews_changes_before_apply() {
         ],
         "dry_run": true
     });
+
     let (status, body) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
@@ -136,6 +147,7 @@ async fn record_bulk_insert_previews_changes_before_apply() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
@@ -149,9 +161,11 @@ async fn record_bulk_insert_previews_changes_before_apply() {
             { "name": "@", "type": "MX", "value": "mail", "priority": 10 }
         ]
     });
+
     let (status, body) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
+
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["applied"], true);
     assert_eq!(body["dry_run"], false);
@@ -165,6 +179,7 @@ async fn record_bulk_insert_previews_changes_before_apply() {
             None,
         )
         .await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }

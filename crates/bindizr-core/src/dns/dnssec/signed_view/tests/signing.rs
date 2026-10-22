@@ -28,7 +28,7 @@ fn test_zone() -> Zone {
 }
 
 /// Build a record fixture with the requested fields.
-fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
+fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
@@ -78,6 +78,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
         1
     );
+
     // The CSK wants a parent DS, so it is advertised via CDS/CDNSKEY (RFC 7344).
     assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
@@ -87,28 +88,34 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
 
     // One NSEC per authoritative name, chained apex → www → apex.
     let nsecs = records_of_type(&diff.added, DnssecRecordType::Nsec);
+
     assert_eq!(nsecs.len(), 2);
     let apex_nsec = nsecs.iter().find(|row| row.name.is_apex()).unwrap();
     let www_wire = b"\x03www\x07example\x03com\x00";
     let apex_rdata = apex_nsec.rdata.as_bytes();
+
     assert!(
         apex_rdata.starts_with(www_wire),
         "apex NSEC must point at www"
     );
     let www_nsec = nsecs.iter().find(|row| !row.name.is_apex()).unwrap();
     let apex_wire = b"\x07example\x03com\x00";
+
     assert!(
         www_nsec.rdata.as_bytes().starts_with(apex_wire),
         "last NSEC must wrap around to the apex"
     );
+
     // NSEC TTL is min(SOA TTL, SOA MINIMUM) per RFC 9077.
     assert!(nsecs.iter().all(|row| row.ttl == Ttl::from_secs(900)));
 
     // RRSIGs: SOA, DNSKEY, CDS, CDNSKEY, apex NS, apex NSEC, www A, www NSEC.
     let rrsigs = records_of_type(&diff.added, DnssecRecordType::Rrsig);
+
     assert_eq!(rrsigs.len(), 8);
     let apex = OwnerName::apex();
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
+
     assert_eq!(
         rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
         1
@@ -137,6 +144,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     assert!(rrsigs.iter().all(|row| row.record_set_digest.is_some()));
 }
 
+/// Verify signatures while serving the original case of name-bearing RDATA.
 #[test]
 fn signatures_validate_case_preserving_rdata() {
     let zone = test_zone();
@@ -170,13 +178,13 @@ fn signatures_validate_case_preserving_rdata() {
             None,
         ),
         (
-            RecordType::Unknown(65280),
-            r"\# 4 41FF5A00",
-            r"\# 4 41FF5A00",
+            RecordType::Wks,
+            "192.0.2.1 6 0 7 8",
+            "192.0.2.1 6 0 7 8",
             None,
         ),
     ] {
-        let mut record = test_record("target", record_type, value, 300);
+        let mut record = test_record("target", record_type, value, i64::from(u32::MAX));
         record.priority = priority;
         let records = [record];
         let diff = compute(ComputeArgs {
@@ -195,9 +203,13 @@ fn signatures_validate_case_preserving_rdata() {
             &records[0].name,
             i32::from(record_type.wire_type()),
         );
+
         assert_eq!(rows.len(), 1);
         let wire = rows[0].rdata.as_bytes();
         let signature = Rrsig::parse(&mut Parser::from_ref(wire)).unwrap();
+
+        assert_eq!(signature.original_ttl().as_secs(), u32::MAX);
+        assert_eq!(rows[0].ttl.as_secs(), u32::MAX);
         let rdata = EncodedRdata::from_columns(&record_type, canonical_value, priority)
             .unwrap()
             .rdata;
@@ -210,6 +222,7 @@ fn signatures_validate_case_preserving_rdata() {
         signed_data.extend_from_slice(&signature.original_ttl().as_secs().to_be_bytes());
         signed_data.extend_from_slice(&(rdata.as_bytes().len() as u16).to_be_bytes());
         signed_data.extend_from_slice(rdata.as_bytes());
+
         assert!(
             public_key
                 .verify(&signed_data, signature.signature())
@@ -249,13 +262,16 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
 
     assert!(records_of_type(&diff.added, DnssecRecordType::Nsec).is_empty());
     let params = records_of_type(&diff.added, DnssecRecordType::Nsec3param);
+
     assert_eq!(params.len(), 1);
     assert!(params[0].name.is_apex());
+
     // RFC 9276 parameters: SHA-1 (1), flags 0, iterations 0, empty salt.
     assert_eq!(params[0].rdata.as_bytes(), [1, 0, 0, 0, 0]);
 
     // One NSEC3 per authoritative name, at a hashed (base32) owner label.
     let nsec3s = records_of_type(&diff.added, DnssecRecordType::Nsec3);
+
     assert_eq!(nsec3s.len(), 2);
     assert!(nsec3s.iter().all(|row| !row.name.is_apex()));
 
@@ -271,6 +287,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
             1
         );
     }
+
     assert_eq!(
         rrsigs_covering(
             &diff.added,
@@ -321,12 +338,12 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
     let sub = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
     let glue = OwnerName::parse_in_zone("ns.sub", &zone.name).unwrap();
 
-    // RFC 4035, Section 2.2: the delegation NS record set and glue — the A at the
-    // cut owner included — are not signed, and glue owns no NSEC; the
-    // delegation point itself stays in the chain.
+    // RFC 4035, Section 2.2: delegation NS and glue, including A at the cut,
+    // are unsigned. NSEC covers the delegation point, not glue.
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_A).is_empty());
     assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());
+
     // The DS record set at the cut is the parent's authoritative data (RFC 4035,
     // Section 2.4), unlike the NS beside it.
     assert_eq!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_DS).len(), 1);
@@ -341,6 +358,53 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
             .iter()
             .any(|row| row.record_type == DnssecRecordType::Nsec && row.name == sub)
     );
+}
+
+/// A stored NS/DS pair below a zone cut belongs to the delegated child,
+/// so it must not acquire signatures from this zone (RFC 4035, Section 2.2).
+#[test]
+fn signing_excludes_ds_below_an_existing_delegation() {
+    let zone = test_zone();
+    let keys = [test_key(
+        &zone,
+        1,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+    )];
+    let digest = format!("12345 13 2 {}", "AB".repeat(32));
+    let records = [
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
+        test_record("sub", RecordType::Ns, "ns.sub.example.com", 3600),
+        test_record("sub", RecordType::Ds, &digest, 3600),
+        test_record("deep.sub", RecordType::Ns, "ns.deep.sub.example.com", 3600),
+        test_record("deep.sub", RecordType::Ds, &digest, 3600),
+    ];
+    let delegation = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
+    let below_cut = OwnerName::parse_in_zone("deep.sub", &zone.name).unwrap();
+
+    for denial in [DnssecDenial::Nsec, DnssecDenial::Nsec3] {
+        let diff = compute(ComputeArgs {
+            zone: &zone,
+            records: &records,
+            keys: &keys,
+            prev: &[],
+            denial,
+            new_serial: 6,
+            expiration: default_expiration(),
+            expiration_jitter_secs: 0,
+            pass: SigningPass::Refresh,
+        });
+
+        assert_eq!(
+            rrsigs_covering(&diff.added, &delegation, RECORD_TYPE_DS).len(),
+            1
+        );
+        assert!(
+            rrsigs_covering(&diff.added, &below_cut, RECORD_TYPE_DS).is_empty(),
+            "{denial:?}"
+        );
+        assert!(!diff.added.iter().any(|row| row.name == below_cut));
+    }
 }
 
 /// Verify that mixed TTL RRSET signs at the minimum.
@@ -373,6 +437,7 @@ fn mixed_ttl_record_set_signs_at_the_minimum() {
 
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
     let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
+
     assert_eq!(rrsig.len(), 1);
     assert_eq!(rrsig[0].ttl, Ttl::from_secs(300));
 }
@@ -411,9 +476,11 @@ fn withdrawal_publishes_the_delete_cds_pair() {
     // RFC 8078, Section 4: a single 0-algorithm CDS/CDNSKEY pair replaces the
     // per-key set and asks the parent to delete the DS record set.
     let cds = records_of_type(&diff.added, DnssecRecordType::Cds);
+
     assert_eq!(cds.len(), 1);
     assert_eq!(cds[0].rdata.as_bytes(), &[0, 0, 0, 0, 0]);
     let cdnskey = records_of_type(&diff.added, DnssecRecordType::Cdnskey);
+
     assert_eq!(cdnskey.len(), 1);
     assert_eq!(cdnskey[0].rdata.as_bytes(), &[0, 0, 3, 0, 0]);
 }

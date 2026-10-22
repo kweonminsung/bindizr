@@ -12,6 +12,7 @@ use thiserror::Error;
 use super::{
     CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, ParseMailboxError,
     ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
+    WksRecordValue,
 };
 use crate::{
     dns::name::{EncodeNameError, encode_name},
@@ -54,6 +55,7 @@ impl Rdata {
         };
 
         let mut parser = Parser::from_ref(self.as_bytes());
+
         AllRecordData::<_, ParsedName<_>>::parse_rdata(
             Rtype::from_int(record_type.wire_type()),
             &mut parser,
@@ -113,9 +115,9 @@ where
     /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.0.encode_by_ref(buf)
+        self.0.encode_by_ref(buffer)
     }
 }
 
@@ -152,7 +154,7 @@ impl EncodedRdata {
             value: value.to_string(),
         };
         let rdata = match record_type {
-            RecordType::Unknown(_) => super::OpaqueRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
                 let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?

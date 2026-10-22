@@ -41,7 +41,7 @@ pub(crate) async fn handle_ixfr(
     }
 
     let client_serial = match query.client_serial {
-        Some(s) => Serial::from(s),
+        Some(serial) => Serial::from(serial),
         None => {
             log::warn!("IXFR: No client serial provided, falling back to AXFR");
             return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
@@ -52,8 +52,12 @@ pub(crate) async fn handle_ixfr(
     // Authorize and select a response atomically; invalid names receive NOTAUTH.
     let access = match zone::normalize_name(zone_name_str) {
         Ok(zone_name) => {
-            zone::authorize_ixfr_plan_by_name(cx, &identity.caller, &zone_name, client_serial)
-                .await?
+            tokio::select! {
+                biased;
+                () = writer.failed() => return Err(DnsError::PeerClosed),
+
+                access = zone::authorize_ixfr_plan_by_name(cx, &identity.caller, &zone_name, client_serial) => access?,
+            }
         }
         Err(_) => TransferAccess::NotAuth,
     };
@@ -123,7 +127,8 @@ pub(crate) async fn handle_ixfr(
                 "IXFR: Failed to build incremental response ({}), falling back to AXFR",
                 error
             );
-            identity.signer = signer_back.map(|s| *s);
+            identity.signer = signer_back.map(|signer| *signer);
+
             return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
                 .await;
         }
@@ -133,12 +138,13 @@ pub(crate) async fn handle_ixfr(
                 "IXFR: aborting after partial send, not falling back: {}",
                 error
             );
-            identity.signer = signer.map(|s| *s);
+            identity.signer = signer.map(|signer| *signer);
             return Err(error);
         }
     }
 
     log::info!("IXFR completed for zone {}", zone_name_str);
+
     transfer::save_ok(
         cx,
         client_ip,

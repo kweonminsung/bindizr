@@ -20,7 +20,7 @@ use crate::{
     serial::generate_serial,
     text::normalize_description,
     transaction,
-    ttl::{validate_default_ttl, validate_soa_interval},
+    ttl::{validate_default_ttl, validate_minimum_ttl, validate_soa_interval},
     types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse},
     zone::validation::{
         normalize_mname, normalize_name, normalize_rname, reject_catalog_zone_name,
@@ -107,10 +107,8 @@ pub async fn update(
         .expire
         .map(|value| validate_soa_interval(value, "expire"))
         .transpose();
-    let minimum_ttl = request
-        .minimum_ttl
-        .map(|value| validate_soa_interval(value, "minimum_ttl"))
-        .transpose();
+    let minimum_ttl = request.minimum_ttl.map(validate_minimum_ttl).transpose();
+
     let mut tx = transaction::begin_tx(cx, "failed to update zone").await?;
 
     let apply_result: Result<UpdateZoneResult, ServiceError> = async {
@@ -136,6 +134,7 @@ pub async fn update(
             enabled: request.enabled.unwrap_or(existing_zone.enabled),
             ..existing_zone.clone()
         };
+
         // A new name is `zone:create`'s to give, and its all-zones grant sees
         // all zones, so the conflict below reveals nothing.
         if candidate.name != existing_zone.name {
@@ -147,10 +146,11 @@ pub async fn update(
         if candidate.name != existing_zone.name {
             let records =
                 bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
+
             for record in &records {
-                validate_record_name_in_zone(&record.name, &candidate.name).map_err(|e| {
+                validate_record_name_in_zone(&record.name, &candidate.name).map_err(|error| {
                     if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
-                        e
+                        error
                     } else {
                         ServiceError::invalid_record_name(format!(
                             "a record of the zone would not fit under zone '{}'",
@@ -173,17 +173,18 @@ pub async fn update(
                     )));
                 }
                 Ok(_) => {}
-                Err(e) => {
-                    log::error!("Failed to check existing zone: {}", e);
+                Err(error) => {
+                    log::error!("Failed to check existing zone: {}", error);
                     return Err(ServiceError::internal_with_source(
                         "failed to update zone",
-                        e,
+                        error,
                     ));
                 }
             }
         }
 
         let new_serial = candidate.serial;
+
         super::validate_record_changes_tx(&mut tx, &candidate, &[], &[]).await?;
 
         // The change is validated, so a dry run stops here.
@@ -195,16 +196,17 @@ pub async fn update(
         }
 
         let name = candidate.name.clone();
+
         let updated_zone = bindizr_db::zone::update_tx(&mut tx, candidate)
             .await
-            .map_err(|e| {
+            .map_err(|error| {
                 // A rename that raced past the pre-check above trips
                 // UNIQUE(name); the backstop reads as the same conflict.
-                if e.is_unique_violation() {
+                if error.is_unique_violation() {
                     ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
                 } else {
-                    log::error!("Failed to update zone: {}", e);
-                    ServiceError::internal_with_source("failed to update zone", e)
+                    log::error!("Failed to update zone: {}", error);
+                    ServiceError::internal_with_source("failed to update zone", error)
                 }
             })?;
 
@@ -214,19 +216,13 @@ pub async fn update(
 
         bindizr_db::zone_change::create_many_tx(&mut tx, &changes)
             .await
-            .map_err(|e| {
-                log::error!("Failed to create zone changes: {}", e);
-                ServiceError::internal_with_source("failed to create zone change", e)
+            .map_err(|error| {
+                log::error!("Failed to create zone changes: {}", error);
+                ServiceError::internal_with_source("failed to create zone change", error)
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(
-            &mut tx,
-            &updated_zone,
-            new_serial,
-            caller.change_attribution(),
-        )
-        .await?;
+        super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
 
         Ok(UpdateZoneResult {
             catalog_changed: existing_zone.name != updated_zone.name
@@ -258,6 +254,7 @@ pub async fn update(
 
     // Renaming or toggling a zone also changes the catalog seen by secondaries.
     let config = cx.config();
+
     if !request.dry_run && catalog_changed {
         crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }

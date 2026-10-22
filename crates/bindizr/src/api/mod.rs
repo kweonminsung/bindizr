@@ -57,7 +57,7 @@ where
 }
 
 /// The token a request authenticated with, attached by the auth middleware;
-/// absent (so a 401) when authentication is disabled.
+/// absent when authentication is disabled, so a self-reading route answers 404.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
 
@@ -73,7 +73,11 @@ where
             .extensions
             .get::<AuthenticatedToken>()
             .cloned()
-            .ok_or_else(|| ApiError(ServiceError::unauthorized("request carries no API token")))
+            .ok_or_else(|| {
+                ApiError(ServiceError::TokenNotFound(
+                    "the request presents no API token: authentication is disabled".to_string(),
+                ))
+            })
     }
 }
 
@@ -123,12 +127,13 @@ pub(crate) async fn start(
     let Some(certificate) = certificate else {
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
+
         return Ok(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, router::routes(cx))
+            if let Err(error) = axum::serve(listener, router::routes(cx))
                 .with_graceful_shutdown(stop)
                 .await
             {
-                log::error!("API server error: {:?}", e);
+                log::error!("API server error: {:?}", error);
             }
         }));
     };
@@ -148,17 +153,19 @@ pub(crate) async fn start(
     let handle = Handle::new();
     let stop = shutdown.waiter();
     let stopping = handle.clone();
+
     tokio::spawn(async move {
         stop.await;
         stopping.graceful_shutdown(Some(TLS_SHUTDOWN_GRACE));
     });
+
     Ok(tokio::spawn(async move {
-        if let Err(e) = server
+        if let Err(error) = server
             .handle(handle)
             .serve(router::routes(cx).into_make_service())
             .await
         {
-            log::error!("API server error: {:?}", e);
+            log::error!("API server error: {:?}", error);
         }
     }))
 }

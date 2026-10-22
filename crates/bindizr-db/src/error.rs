@@ -9,9 +9,7 @@ pub enum DatabaseError {
     #[error("query failed: {0}")]
     QueryFailed(#[source] sqlx::Error),
 
-    /// A UNIQUE constraint rejected the statement. Kept distinct so callers
-    /// can map lost check-then-insert races to a conflict instead of a
-    /// generic internal error.
+    /// A UNIQUE violation, kept distinct so lost insert races can report conflicts.
     #[error("unique constraint violation: {0}")]
     UniqueViolation(#[source] sqlx::Error),
 
@@ -69,17 +67,17 @@ impl DatabaseError {
 impl From<sqlx::Error> for DatabaseError {
     /// Classify a sqlx error by the constraint it reports, keeping it as the
     /// source.
-    fn from(err: sqlx::Error) -> Self {
-        match &err {
+    fn from(error: sqlx::Error) -> Self {
+        match &error {
             sqlx::Error::PoolTimedOut => DatabaseError::PoolTimedOut,
             sqlx::Error::Database(db_err) => match db_err.kind() {
-                sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(err),
+                sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(error),
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
-                    DatabaseError::ForeignKeyViolation(err)
+                    DatabaseError::ForeignKeyViolation(error)
                 }
-                _ => DatabaseError::QueryFailed(err),
+                _ => DatabaseError::QueryFailed(error),
             },
-            _ => DatabaseError::QueryFailed(err),
+            _ => DatabaseError::QueryFailed(error),
         }
     }
 }

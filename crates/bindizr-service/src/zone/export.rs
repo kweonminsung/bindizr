@@ -37,6 +37,7 @@ pub async fn export(
         } else {
             Vec::new()
         };
+
         Ok::<(Zone, Vec<Record>, Vec<DnssecRecord>), ServiceError>((zone, records, derived))
     }
     .await;
@@ -50,8 +51,8 @@ pub async fn export(
 
     // SOA carries names as absolute FQDNs so they are not read as relative
     // to $ORIGIN. `soa_mailbox` already escapes the local part per RFC 1035.
-    let mailbox = zone.soa_mailbox().map_err(|e| {
-        ServiceError::internal_with_source(format!("failed to render SOA mailbox: {e}"), e)
+    let mailbox = zone.soa_mailbox().map_err(|error| {
+        ServiceError::internal_with_source(format!("failed to render SOA mailbox: {error}"), error)
     })?;
     out.push_str(&format!(
         "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
@@ -67,11 +68,13 @@ pub async fn export(
 
     // Deterministic order: owner name, then type, then rdata. Keyed up front
     // because a comparator would re-render the rdata on every comparison.
-    records.sort_by_cached_key(|r| {
+    records.sort_by_cached_key(|record| {
         (
-            r.name.clone(),
-            r.record_type.to_text(),
-            r.record_type.presentation_rdata(&r.value, r.priority),
+            record.name.clone(),
+            record.record_type.as_str(),
+            record
+                .record_type
+                .presentation_rdata(&record.value, record.priority),
         )
     });
 
@@ -98,6 +101,7 @@ pub async fn export(
             row.rdata.to_presentation(row.record_type),
         )
     });
+
     for row in &derived {
         let _ = writeln!(
             out,

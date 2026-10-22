@@ -22,6 +22,9 @@ pub(crate) enum DnsError {
     #[error("DNS protocol error: {0}")]
     Protocol(#[from] EncodeMessageError),
 
+    #[error("TSIG error: {0}")]
+    Tsig(#[from] bindizr_core::dns::tsig::TsigError),
+
     #[error("DNS protocol error: {0}")]
     Serial(#[from] ConvertSerialError),
 
@@ -51,6 +54,6 @@ pub(crate) enum DnsError {
     #[error("invalid query: {0}")]
     InvalidQuery(String),
 
-    #[error("failed to build NSUPDATE response")]
-    BuildNsupdateResponse,
+    #[error("failed to build NSUPDATE response: {0}")]
+    BuildNsupdateResponse(#[from] bindizr_core::dns::nsupdate::BuildResponseError),
 }

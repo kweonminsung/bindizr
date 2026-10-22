@@ -1,5 +1,7 @@
 //! Convert BIND master files and AXFR records into import data.
 
+mod wks;
+
 use domain::{
     base::{
         ToName,
@@ -15,9 +17,9 @@ use domain::{
 use crate::{
     dns::{
         Serial, SoaInterval, Ttl,
-        name::{ZoneName, to_fqdn_lowercase},
+        name::{ZoneName, to_fqdn, to_fqdn_lowercase},
         query::TransferRecord,
-        record::NaptrRecordValue,
+        record::{NaptrRecordValue, WksRecordValue},
     },
     model::record::RecordType,
 };
@@ -64,21 +66,30 @@ pub struct ParsedZoneFile {
     /// Human-readable problems (parse failure, out-of-range TTL, unsupported
     /// directive).
     pub errors: Vec<String>,
-    /// Records bindizr has no type or class for, apart from `errors` so an
-    /// import can pass over them.
-    pub unsupported: Vec<String>,
 }
 
 impl ParsedZoneFile {
     /// Parse a BIND zone file using its origin and `default_ttl` for omitted TTLs.
     /// Keep the SOA separately: the zone stores its fields, not an SOA record.
     pub fn parse(content: &str, zone_name: &ZoneName, default_ttl: Ttl) -> Self {
+        let content = match wks::rewrite_native_records(content) {
+            Ok(content) => content,
+            Err(error) => {
+                return Self {
+                    records: Vec::new(),
+                    soa: None,
+                    errors: vec![error.to_string()],
+                };
+            }
+        };
         let origin_fqdn = zone_name.to_fqdn();
 
         // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
-        // TTLs. PRELUDE_LINES counts them.
+        // TTLs. PRELUDE_LINES counts them. Without a `$TTL` of its own, every omitted
+        // TTL is the zone's default (RFC 2308, Section 4), not the last explicit one.
         let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
-        buffer.push_str(content);
+        buffer.push_str(&content);
+
         if !buffer.ends_with('\n') {
             buffer.push('\n');
         }
@@ -91,14 +102,13 @@ impl ParsedZoneFile {
             records: Vec::new(),
             soa: None,
             errors: Vec::new(),
-            unsupported: Vec::new(),
         };
 
         loop {
             match zonefile.next_entry() {
                 Ok(Some(Entry::Record(record))) => {
                     if record.class() != Class::IN {
-                        parsed.unsupported.push(format!(
+                        parsed.errors.push(format!(
                             "unsupported record class '{}' for '{}'",
                             record.class(),
                             record.owner()
@@ -120,10 +130,10 @@ impl ParsedZoneFile {
                         .push("$INCLUDE directives are not supported".to_string());
                 }
                 Ok(None) => break,
-                Err(e) => {
+                Err(error) => {
                     parsed.errors.push(format!(
                         "failed to parse zone file: {}",
-                        to_input_line_message(&e)
+                        to_input_line_message(&error)
                     ));
                     // domain documents the scanner as invalid once an entry fails.
                     break;
@@ -140,9 +150,9 @@ impl ParsedZoneFile {
             records: Vec::new(),
             soa: None,
             errors: Vec::new(),
-            unsupported: Vec::new(),
         };
         let origin = zone_name.to_fqdn();
+
         for (index, record) in records.iter().enumerate() {
             if matches!(
                 record.rtype,
@@ -159,11 +169,19 @@ impl ParsedZoneFile {
             if index > 0
                 && index + 1 == records.len()
                 && record.rtype == Rtype::SOA
-                && record.rdata == records[0].rdata
+                && to_fqdn_lowercase(&record.name) == to_fqdn_lowercase(&records[0].name)
+                && record.rdata.to_canonical(Rtype::SOA).is_ok_and(|closing| {
+                    records[0]
+                        .rdata
+                        .to_canonical(Rtype::SOA)
+                        .is_ok_and(|opening| closing == opening)
+                })
             {
                 continue;
             }
+
             let mut parser = Parser::from_ref(record.rdata.as_bytes());
+
             match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {
                 Ok(Some(data)) if parser.remaining() == 0 => parsed.push_record(
                     &origin,
@@ -178,6 +196,7 @@ impl ParsedZoneFile {
                 Err(error) => parsed.errors.push(format!("{}: {}", record.name, error)),
             }
         }
+
         parsed
     }
 
@@ -190,6 +209,24 @@ impl ParsedZoneFile {
         ttl_secs: u32,
         data: &ZoneRecordData<Octs, N>,
     ) {
+        // RFC 3597, Section 5: generic `\#` RDATA of a known type is that type, so
+        // decode the octets `domain` kept; WKS, which `domain` never types, reads them below.
+        if let ZoneRecordData::Unknown(unknown) = data
+            && rtype != Rtype::WKS
+            && (rtype == Rtype::SOA || RecordType::try_from(rtype).is_ok())
+        {
+            let mut parser = Parser::from_ref(unknown.data().as_ref());
+            return match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(rtype, &mut parser) {
+                Ok(Some(typed)) if parser.remaining() == 0 => {
+                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed)
+                }
+                _ => self.errors.push(format!(
+                    "generic RDATA for '{}' does not encode a {} record",
+                    owner, rtype
+                )),
+            };
+        }
+
         let record_type = match rtype {
             // Only the apex SOA supplies this zone's serial and timers.
             Rtype::SOA => {
@@ -202,14 +239,22 @@ impl ParsedZoneFile {
                     self.errors
                         .push(format!("zone '{}' carries more than one SOA", origin_fqdn));
                 } else {
-                    self.soa = to_zone_file_soa(data);
+                    match to_zone_file_soa(data) {
+                        Some(soa) => self.soa = Some(soa),
+                        None => self.errors.push(format!(
+                            "SOA for '{}' has a refresh, retry or expire past {} seconds",
+                            owner,
+                            SoaInterval::MAX
+                        )),
+                    }
                 }
+
                 return;
             }
             other => match RecordType::try_from(other) {
                 Ok(record_type) => record_type,
                 Err(_) => {
-                    self.unsupported.push(format!(
+                    self.errors.push(format!(
                         "unsupported record type '{}' for '{}'",
                         other, owner
                     ));
@@ -218,27 +263,39 @@ impl ParsedZoneFile {
             },
         };
 
-        // Reject TTLs outside the stored range, as JSON and nsupdate do.
-        let Ok(ttl) = Ttl::try_from(ttl_secs) else {
-            self.errors.push(format!(
-                "TTL {} for '{}' exceeds the maximum of {}",
-                ttl_secs,
-                owner,
-                i32::MAX
-            ));
-            return;
-        };
+        let ttl = Ttl::from_secs(ttl_secs);
 
-        let (value, priority) = if matches!(record_type, RecordType::Unknown(_)) {
+        let (value, priority) = if record_type == RecordType::Wks {
             let mut bytes = Vec::new();
             let Ok(()) = data.compose_rdata(&mut bytes);
-            (
-                ZoneFileValue::Rdata(format!(r"\# {} {}", bytes.len(), hex::encode_upper(bytes))),
-                None,
-            )
+
+            match WksRecordValue::from_rdata(&bytes) {
+                Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
+                Err(error) => {
+                    self.errors
+                        .push(format!("WKS value for '{}': {}", owner, error));
+                    return;
+                }
+            }
         } else {
+            // Read name fields because `domain` RDATA Display can render the root as `..`.
             match data {
-                // Use parsed NAPTR fields because `domain` renders a root replacement as `..`.
+                ZoneRecordData::Ns(ns) => (
+                    ZoneFileValue::Rdata(to_fqdn(&ns.nsdname().to_string())),
+                    None,
+                ),
+                ZoneRecordData::Cname(cname) => (
+                    ZoneFileValue::Rdata(to_fqdn(&cname.cname().to_string())),
+                    None,
+                ),
+                ZoneRecordData::Ptr(ptr) => (
+                    ZoneFileValue::Rdata(to_fqdn(&ptr.ptrdname().to_string())),
+                    None,
+                ),
+                ZoneRecordData::Dname(dname) => (
+                    ZoneFileValue::Rdata(to_fqdn(&dname.dname().to_string())),
+                    None,
+                ),
                 ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
                     naptr.order(),
                     naptr.preference(),
@@ -250,9 +307,9 @@ impl ParsedZoneFile {
                 .map(|value| value.canonical())
                 {
                     Ok(text) => (ZoneFileValue::Rdata(text), None),
-                    Err(e) => {
+                    Err(error) => {
                         self.errors
-                            .push(format!("NAPTR value for '{}': {}", owner, e));
+                            .push(format!("NAPTR value for '{}': {}", owner, error));
                         return;
                     }
                 },
@@ -261,12 +318,12 @@ impl ParsedZoneFile {
                         "{} {} {}",
                         srv.weight(),
                         srv.port(),
-                        crate::dns::name::to_fqdn(&srv.target().to_string())
+                        to_fqdn(&srv.target().to_string())
                     )),
                     Some(i32::from(srv.priority())),
                 ),
                 ZoneRecordData::Mx(mx) => (
-                    ZoneFileValue::Rdata(crate::dns::name::to_fqdn(&mx.exchange().to_string())),
+                    ZoneFileValue::Rdata(to_fqdn(&mx.exchange().to_string())),
                     Some(i32::from(mx.preference())),
                 ),
                 ZoneRecordData::Txt(txt) => {
@@ -316,6 +373,7 @@ fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
         return None;
     };
     let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs()).ok();
+
     Some(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
@@ -325,7 +383,7 @@ fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
         refresh: interval(soa.refresh())?,
         retry: interval(soa.retry())?,
         expire: interval(soa.expire())?,
-        minimum_ttl: Ttl::try_from(soa.minimum().as_secs()).ok()?,
+        minimum_ttl: Ttl::from_secs(soa.minimum().as_secs()),
     })
 }
 
@@ -334,8 +392,9 @@ const PRELUDE_LINES: usize = 2;
 
 /// Restate a parser error in the submitted text's line numbering. `Error` keeps
 /// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
-fn to_input_line_message(err: &inplace::Error) -> String {
-    let message = err.to_string();
+fn to_input_line_message(error: &inplace::Error) -> String {
+    let message = error.to_string();
+
     match message.split_once(':') {
         Some((line, rest)) => match line.parse::<usize>() {
             Ok(line) if line > PRELUDE_LINES => format!("{}:{}", line - PRELUDE_LINES, rest),

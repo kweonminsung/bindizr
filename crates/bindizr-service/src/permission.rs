@@ -33,6 +33,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
             .filter(|&action| grants.covers_all_whole_zones(action))
             .collect(),
     };
+
     let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
@@ -53,6 +54,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
             let whole_zone: Vec<Action> = record_actions()
                 .filter(|&action| grants.covers_whole_zone(action, zone.id))
                 .collect();
+
             (actions != all_zones.actions || whole_zone != all_zones.whole_zone).then(|| {
                 ZonePermissionsResponse {
                     zone_name: zone.name.to_string(),
@@ -62,6 +64,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
             })
         })
         .collect();
+
     Ok(PermissionsResponse { all_zones, zones })
 }
 

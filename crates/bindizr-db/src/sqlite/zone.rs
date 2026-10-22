@@ -15,6 +15,7 @@ pub(crate) async fn create_tx(
     mut zone: Zone,
 ) -> Result<Zone, DatabaseError> {
     let now = Utc::now();
+
     let result = sqlx::query(
         r#"
         INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
@@ -39,6 +40,7 @@ pub(crate) async fn create_tx(
 
     zone.id = ZoneId::from(super::last_insert_id(&result)?);
     zone.created_at = now;
+
     Ok(zone)
 }
 
@@ -61,11 +63,11 @@ pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
     name: &ZoneName,
 ) -> Result<Option<Zone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")
         .bind(name)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *connection)
         .await?;
 
     Ok(zone)
@@ -87,10 +89,10 @@ pub(crate) async fn get_by_name_tx(
 
 /// List all zones.
 pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<Zone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *connection)
         .await?;
 
     Ok(zones)
@@ -113,10 +115,12 @@ pub(crate) async fn list_by_filter(
     pool: &Pool<Sqlite>,
     filter: ZoneFilter,
 ) -> Result<Vec<Zone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let search = like_pattern(filter.search.as_deref());
 
     let order_by = filter.sort.order_by_sql(filter.order);
+
     let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
         r#"
         SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at
@@ -191,7 +195,7 @@ pub(crate) async fn list_by_filter(
             .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
             .unwrap_or(0),
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(zones)
@@ -199,9 +203,9 @@ pub(crate) async fn list_by_filter(
 
 /// Probe the zones table to check database connectivity.
 pub(crate) async fn ping(pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
     sqlx::query("SELECT 1 FROM zones LIMIT 1")
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *connection)
         .await?;
     Ok(())
 }
@@ -211,7 +215,8 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<Sqlite>,
     filter: ZoneFilter,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let search = like_pattern(filter.search.as_deref());
 
     let count = sqlx::query_scalar::<_, i64>(
@@ -279,7 +284,7 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(filter.scope_role_id)
     .bind(filter.scope_role_id)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)
@@ -352,12 +357,12 @@ pub(crate) async fn count_by_dnssec_policy_id(
     pool: &Pool<Sqlite>,
     dnssec_policy_id: PolicyId,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let count =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM zones WHERE dnssec_policy_id = ?")
             .bind(dnssec_policy_id)
-            .fetch_one(&mut *conn)
+            .fetch_one(&mut *connection)
             .await?;
 
     Ok(count as u64)

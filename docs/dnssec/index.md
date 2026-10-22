@@ -49,6 +49,10 @@ Use the DS from your own zone, then check the parent:
 bindizr dnssec check-ds example.com
 ```
 
+Generated DS/CDS use SHA-256 (digest type 2), recommended by the
+[IANA DS registry](https://www.iana.org/assignments/ds-rr-types/).
+This generation policy does not restrict supplied delegation DS records.
+
 Signed zones also publish `CDS`/`CDNSKEY` for parents that support automatic
 DS updates. Until a matching DS is published, resolvers treat a newly signed
 zone with no previous DS as insecure.

@@ -17,6 +17,7 @@ async fn tsig_key_supports_create_list_get_and_delete_via_cli() {
         )
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+
     assert_eq!(created["tsig_key"]["name"], "cli-key");
     assert_eq!(created["tsig_key"]["algorithm"], "hmac-sha256");
     let secret = created["secret"]
@@ -26,23 +27,27 @@ async fn tsig_key_supports_create_list_get_and_delete_via_cli() {
 
     // The listing carries every column but the secret.
     let listed = app.run_cli_success(&["tsig-key", "list"], None).await;
+
     assert!(listed.contains("cli-key"));
     assert!(!listed.contains(&secret));
 
     let fetched = app
         .run_cli_success(&["tsig-key", "get", "cli-key"], None)
         .await;
+
     assert!(fetched.contains(&secret));
 
     let deleted = app
         .run_cli_success(&["tsig-key", "delete", "cli-key"], None)
         .await;
+
     assert!(
         deleted.contains("TSIG key 'cli-key' deleted successfully"),
         "{deleted}"
     );
 
     let args = ["tsig-key", "get", "cli-key"];
+
     let missing = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &missing, "TSIG key with name 'cli-key' not found");
 }
@@ -60,6 +65,7 @@ async fn tsig_key_names_its_role() {
         "--role",
         "no-such-role",
     ];
+
     let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "not found");
 
@@ -77,7 +83,9 @@ async fn tsig_key_names_its_role() {
     )
     .await;
     let listed = app.run_cli_success(&["tsig-key", "list"], None).await;
+
     assert!(listed.contains("cli-key-role"), "{listed}");
+
     let fetched = app
         .run_cli_success(
             &["tsig-key", "get", "cli-role-key", "--output", "json"],
@@ -85,12 +93,15 @@ async fn tsig_key_names_its_role() {
         )
         .await;
     let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
+
     assert_eq!(fetched["tsig_key"]["role_name"], "cli-key-role");
 
     // A key holds its role, not the other way round.
     let args = ["role", "delete", "cli-key-role"];
+
     let refused = app.run_cli(&args, None).await;
     assert_cli_failure_contains(&args, &refused, "still held");
+
     app.run_cli_success(&["tsig-key", "delete", "cli-role-key"], None)
         .await;
     app.run_cli_success(&["role", "delete", "cli-key-role"], None)

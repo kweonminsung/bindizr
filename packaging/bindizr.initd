@@ -1,0 +1,42 @@
+#!/sbin/openrc-run
+# Bindizr under OpenRC, after packaging/bindizr.service: the daemon runs as
+# bindizr from its state directory under supervise-daemon, which restarts it
+# on failure and relays SIGHUP for a configuration reload.
+
+description="Bindizr DNS Control Plane"
+extra_started_commands="reload"
+description_reload="Re-read the configuration and the TLS certificates"
+
+supervisor=supervise-daemon
+command="/usr/bin/bindizr"
+command_args="start"
+command_user="bindizr:bindizr"
+directory="/var/lib/bindizr"
+# Nothing the daemon writes is another local user's business.
+umask=0077
+# The DNS listener may be put on port 53; nothing else here needs privilege.
+capabilities="^cap_net_bind_service"
+output_log="/var/log/bindizr.log"
+error_log="/var/log/bindizr.log"
+# Exit status 6 means the configuration file is unusable, which no restart
+# fixes; systemd stops there, supervise-daemon retries every 5 seconds.
+respawn_delay=5
+
+depend() {
+    need net
+    after named
+}
+
+start_pre() {
+    # The socket's primary path, owner-only, as systemd's RuntimeDirectory
+    # makes it; the state directory holds a relative database path.
+    checkpath --directory --mode 0700 --owner bindizr:bindizr /run/bindizr
+    checkpath --directory --mode 0750 --owner bindizr:bindizr /var/lib/bindizr
+    checkpath --file --mode 0640 --owner bindizr:bindizr /var/log/bindizr.log
+}
+
+reload() {
+    ebegin "Reloading ${RC_SVCNAME}"
+    supervise-daemon "${RC_SVCNAME}" --signal HUP
+    eend $?
+}

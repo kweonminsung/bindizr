@@ -1,17 +1,13 @@
-//! DNSSEC keys, rollover, scheduling, and the signing hook run before each serial bump.
-//! Key rows indicate signing state; `zones.dnssec_policy_id` selects its parameters.
-//! Every transition journals its delta for IXFR.
-//!
-//! Promotion waits for publish TTL and SEP parent-DS confirmation (scheduler or `ds-seen`);
-//! retired keys stay until cache expiry. Parent probes run under the acting transaction's
-//! zone lock to keep their inputs current; `dns.notify.timeout_secs` bounds each exchange.
+//! Manage DNSSEC keys and rollovers; sign and journal changes before each serial bump.
+//! Promotion waits for publication and SEP parent-DS confirmation; retirement waits for caches.
+//! Parent probes hold the transaction's zone lock, bounded by `dns.notify.timeout_secs`.
 
 mod delegation;
 mod keys;
 mod lifecycle;
+pub(crate) mod maintenance;
 mod parent_ns_addrs;
 mod rollover;
-pub mod scheduler;
 mod status;
 mod withdraw;
 
@@ -42,6 +38,7 @@ pub use withdraw::{cancel_withdrawal, withdraw};
 use crate::{
     Transaction,
     authorization::Caller,
+    change::ChangeOrigin,
     error::ServiceError,
     model::{
         dnssec_key::DnssecKey,
@@ -49,7 +46,7 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    zone::{self, version::ChangeAttribution},
+    zone,
 };
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
@@ -73,11 +70,14 @@ pub(crate) async fn sign_zone_tx(
     new_serial: Serial,
 ) -> Result<(), ServiceError> {
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+
     if keys.is_empty() {
         return Ok(());
     }
+
     let policy = lookup_zone_policy_tx(tx, zone).await?;
     apply_signed_view_tx(tx, zone, &policy, new_serial, &keys, SigningPass::Refresh).await?;
+
     Ok(())
 }
 
@@ -87,9 +87,10 @@ async fn resign_zone_tx(
     tx: &mut Transaction<'_>,
     signed: &SignedZone,
     pass: SigningPass,
-    attribution: &ChangeAttribution,
+    origin: &ChangeOrigin,
 ) -> Result<Option<Serial>, ServiceError> {
     let new_serial = crate::serial::generate_serial(Some(signed.zone.serial));
+
     if !apply_signed_view_tx(
         tx,
         &signed.zone,
@@ -102,7 +103,9 @@ async fn resign_zone_tx(
     {
         return Ok(None);
     }
-    zone::advance_serial_tx(tx, &signed.zone, new_serial, attribution).await?;
+
+    zone::advance_serial_tx(tx, &signed.zone, new_serial, origin).await?;
+
     Ok(Some(new_serial))
 }
 
@@ -155,10 +158,13 @@ async fn get_signed_zone_tx(
         .await?
         .authorize_zone_action(action, &zone)?;
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
     }
+
     let policy = lookup_zone_policy_tx(tx, &zone).await?;
+
     Ok(SignedZone { zone, policy, keys })
 }
 
@@ -173,10 +179,13 @@ async fn find_signed_zone_by_id_tx(
         return Ok(None);
     };
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+
     if keys.is_empty() {
         return Ok(None);
     }
+
     let policy = lookup_zone_policy_tx(tx, &zone).await?;
+
     Ok(Some(SignedZone { zone, policy, keys }))
 }
 
@@ -229,6 +238,7 @@ async fn apply_signed_view_tx(
         .chain([zone.default_ttl, zone.minimum_ttl])
         .max()
         .unwrap_or(zone.default_ttl);
+
     for key in keys {
         let signed_ttl = if key.signs_zone_data(keys) {
             data_ttl
@@ -237,6 +247,7 @@ async fn apply_signed_view_tx(
         } else {
             continue;
         };
+
         if signed_ttl > key.max_signed_ttl {
             bindizr_db::dnssec_key::update_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
         }
@@ -244,6 +255,7 @@ async fn apply_signed_view_tx(
 
     // DELs before ADDs; derived rows journal their wire RDATA, not a value.
     let mut changes = Vec::with_capacity(diff.removed.len() + diff.added.len());
+
     for row in &diff.removed {
         changes.push(ZoneChange {
             zone_id: zone.id,
@@ -258,6 +270,7 @@ async fn apply_signed_view_tx(
             derived: true,
         });
     }
+
     for row in &diff.added {
         changes.push(ZoneChange {
             zone_id: zone.id,
@@ -275,9 +288,12 @@ async fn apply_signed_view_tx(
 
     // The derived rows and their IXFR journal commit in the caller's transaction.
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
+
     let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|row| row.id).collect();
+
     bindizr_db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
     bindizr_db::dnssec_record::create_many_tx(tx, &diff.added).await?;
+
     Ok(true)
 }
 

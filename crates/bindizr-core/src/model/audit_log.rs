@@ -1,12 +1,10 @@
-//! One management change, kept so who changed what, and when, can be read
-//! back: the trace a zone version leaves for zone data, for everything a
-//! version does not record.
+//! Management-change history: who changed what and when, beyond zone-version history.
 
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::model::zone_version::{ChangeActor, ChangeActorColumns, ChangeSource};
+use crate::model::change::{ChangeActor, ChangeActorColumns, ChangeSource};
 
 id_newtype!(
     /// The id of an audit log row.
@@ -156,7 +154,7 @@ impl TryFrom<String> for AuditOperation {
 }
 
 /// One management change: what was changed, how, by whom, and when. The
-/// attribution columns are the ones a zone version carries.
+/// origin columns are the ones a zone version carries.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct AuditLog {
     pub id: AuditLogId,
@@ -195,6 +193,7 @@ mod tests {
             );
             assert_eq!(value.as_str().parse::<AuditEntity>().unwrap(), value);
         }
+
         assert!("record".parse::<AuditEntity>().is_err());
     }
 
@@ -213,6 +212,7 @@ mod tests {
             );
             assert_eq!(value.as_str().parse::<AuditOperation>().unwrap(), value);
         }
+
         assert!("revoke".parse::<AuditOperation>().is_err());
     }
 }

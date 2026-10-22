@@ -21,9 +21,16 @@ fn normalize_pattern_defaults_to_match_any() {
 fn normalize_pattern_rejects_invalid_patterns() {
     // The last three are refused by name decoding, not re-checked here.
     let long_label = "x".repeat(64);
+
     for invalid in ["*.", "a*b", "*.a*", "bad name", "a..b", "*.**", &long_label] {
-        let err = normalize_pattern(Some(invalid)).unwrap_err();
-        assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
+        let error = normalize_pattern(Some(invalid)).unwrap_err();
+
+        assert_eq!(
+            error.code(),
+            ErrorCode::InvalidInput,
+            "input: {:?}",
+            invalid
+        );
     }
 }
 
@@ -37,8 +44,9 @@ fn normalize_types_parses_and_dedupes() {
         "A,TXT".to_string()
     );
 
-    let err = normalize_types(Some("A,BOGUS")).unwrap_err();
-    assert_eq!(err.code(), ErrorCode::InvalidInput);
+    let error = normalize_types(Some("A,BOGUS")).unwrap_err();
+
+    assert_eq!(error.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `normalize_pattern` canonicalizes escapes and rejects malformed ones.
@@ -50,8 +58,14 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
     assert_eq!(normalize_pattern(Some(r"*.a\.b")).unwrap(), r"*.a\046b");
 
     for invalid in [r"a\", "www.", "*.sub."] {
-        let err = normalize_pattern(Some(invalid)).unwrap_err();
-        assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
+        let error = normalize_pattern(Some(invalid)).unwrap_err();
+
+        assert_eq!(
+            error.code(),
+            ErrorCode::InvalidInput,
+            "input: {:?}",
+            invalid
+        );
     }
 }
 
@@ -60,9 +74,9 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
 #[test]
 fn normalize_pattern_rejects_escaped_wildcard_labels() {
     for pattern in [r"\042", r"\042.sub", r"\042x", r"a\042b", "a*b", "*x"] {
-        let err = normalize_pattern(Some(pattern)).unwrap_err();
+        let error = normalize_pattern(Some(pattern)).unwrap_err();
         assert_eq!(
-            err.code(),
+            error.code(),
             ErrorCode::InvalidInput,
             "{pattern} was accepted"
         );

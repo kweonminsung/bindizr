@@ -16,7 +16,7 @@ use crate::{
     serial::generate_serial,
     text::normalize_description,
     transaction,
-    ttl::normalize_soa_interval,
+    ttl::{normalize_minimum_ttl, normalize_soa_interval},
     types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse},
     zone::validation::{normalize_name, normalize_soa, reject_catalog_zone_name},
 };
@@ -26,14 +26,15 @@ use crate::{
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    create_zone_request: &CreateZoneRequest,
+    request: &CreateZoneRequest,
 ) -> Result<WriteZoneResponse, ServiceError> {
     caller.authorize_action(Action::ZoneCreate)?;
 
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
-    let candidate = prepare_create(cx, create_zone_request)?;
+    let candidate = prepare_create(cx, request)?;
     let name = &candidate.name;
+
     match bindizr_db::zone::get_by_name(cx.db(), name).await {
         Ok(Some(_)) => {
             log::error!("Zone with name {} already exists", name);
@@ -43,11 +44,11 @@ pub async fn create(
             )));
         }
         Ok(None) => {}
-        Err(e) => {
-            log::error!("Failed to check existing zone: {}", e);
+        Err(error) => {
+            log::error!("Failed to check existing zone: {}", error);
             return Err(ServiceError::internal_with_source(
                 "failed to create zone",
-                e,
+                error,
             ));
         }
     };
@@ -56,11 +57,14 @@ pub async fn create(
     let apply_result: Result<_, ServiceError> = async {
         let caller = caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_action(Action::ZoneCreate)?;
-        if create_zone_request.dry_run {
+
+        if request.dry_run {
             return Ok(candidate);
         }
+
         let created_zone = create_tx(&mut tx, candidate).await?;
-        if create_zone_request.apex_ns {
+
+        if request.apex_ns {
             let apex_ns = Record {
                 id: RecordId::UNWRITTEN,
                 name: OwnerName::apex(),
@@ -71,15 +75,18 @@ pub async fn create(
                 zone_id: created_zone.id,
                 created_at: Utc::now(),
             };
+
             bindizr_db::record::create_many_tx(&mut tx, &[apex_ns]).await?;
         }
+
         super::save_version_tx(
             &mut tx,
             &created_zone,
             created_zone.serial,
-            caller.change_attribution(),
+            caller.change_origin(),
         )
         .await?;
+
         Ok(created_zone)
     }
     .await;
@@ -91,19 +98,22 @@ pub async fn create(
         created_zone.mname,
         created_zone.serial,
         created_zone.id,
-        create_zone_request.dry_run
+        request.dry_run
     );
 
     // Send catalog NOTIFY so secondaries pick up the new zone
     let config = cx.config();
-    if !create_zone_request.dry_run {
+
+    if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        if created_zone.enabled {
+            crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        }
     }
 
     Ok(WriteZoneResponse {
-        applied: !create_zone_request.dry_run,
-        dry_run: create_zone_request.dry_run,
+        applied: !request.dry_run,
+        dry_run: request.dry_run,
         zone: ZoneResponse::from(&created_zone),
     })
 }
@@ -116,8 +126,9 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
     let soa = normalize_soa(
         &request.mname,
         &request.rname,
-        request.default_ttl.unwrap_or(i32::from(defaults.ttl)),
+        request.default_ttl.unwrap_or(i64::from(defaults.ttl)),
     )?;
+
     Ok(Zone {
         id: ZoneId::UNWRITTEN,
         name,
@@ -125,7 +136,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
         rname: soa.rname,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
-        enabled: true,
+        enabled: request.apex_ns,
         description: normalize_description(
             request.description.as_deref(),
             ServiceError::invalid_zone_field,
@@ -138,11 +149,7 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
         refresh: normalize_soa_interval(request.refresh, defaults.refresh, "refresh")?,
         retry: normalize_soa_interval(request.retry, defaults.retry, "retry")?,
         expire: normalize_soa_interval(request.expire, defaults.expire, "expire")?,
-        minimum_ttl: normalize_soa_interval(
-            request.minimum_ttl,
-            defaults.minimum_ttl,
-            "minimum_ttl",
-        )?,
+        minimum_ttl: normalize_minimum_ttl(request.minimum_ttl, defaults.minimum_ttl)?,
         created_at: Utc::now(),
     })
 }
@@ -155,11 +162,11 @@ pub(crate) async fn create_tx(
     let name = candidate.name.clone();
     bindizr_db::zone::create_tx(tx, candidate)
         .await
-        .map_err(|e| {
-            if e.is_unique_violation() {
+        .map_err(|error| {
+            if error.is_unique_violation() {
                 ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
             } else {
-                ServiceError::internal_with_source("failed to create zone", e)
+                ServiceError::internal_with_source("failed to create zone", error)
             }
         })
 }

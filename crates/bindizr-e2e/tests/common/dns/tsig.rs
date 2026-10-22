@@ -17,30 +17,31 @@ use crate::common::TestApp;
 pub(crate) struct SigningKey {
     pub(crate) name: String,
     pub(crate) secret: String,
+    pub(crate) algorithm: Algorithm,
 }
 
 impl SigningKey {
     /// Convert into the TSIG key `domain` signs and verifies with.
     pub(crate) fn to_tsig_key(&self) -> Result<Key, String> {
-        self.to_tsig_key_with_mac_len(Algorithm::Sha256.native_len())
+        self.to_tsig_key_with_mac_len(self.algorithm.native_len())
     }
 
     /// Construct a client key that emits the requested MAC length.
     pub(crate) fn to_tsig_key_with_mac_len(&self, mac_len: usize) -> Result<Key, String> {
         let secret = base64::engine::general_purpose::STANDARD
             .decode(&self.secret)
-            .map_err(|e| format!("TSIG secret is not base64: {e}"))?;
-        let key_name = KeyName::from_str(&self.name).map_err(|e| e.to_string())?;
-        Key::new(Algorithm::Sha256, &secret, key_name, None, Some(mac_len))
-            .map_err(|e| e.to_string())
+            .map_err(|error| format!("TSIG secret is not base64: {error}"))?;
+        let key_name = KeyName::from_str(&self.name).map_err(|error| error.to_string())?;
+        Key::new(self.algorithm, &secret, key_name, None, Some(mac_len))
+            .map_err(|error| error.to_string())
     }
 }
 
 /// Whether the response carries a TSIG record.
-pub(crate) fn is_signed(response: &Message<Vec<u8>>) -> Result<bool, String> {
+pub(crate) fn parse_tsig_presence(response: &Message<Vec<u8>>) -> Result<bool, String> {
     Ok(response
         .additional()
-        .map_err(|e| e.to_string())?
+        .map_err(|error| error.to_string())?
         .any(|record| record.is_ok_and(|record| record.rtype() == Rtype::TSIG)))
 }
 
@@ -50,7 +51,7 @@ pub(crate) fn sign(
     key: &SigningKey,
 ) -> Result<(), String> {
     ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -60,22 +61,23 @@ pub(crate) fn verify_response_mac(
     response: &Message<Vec<u8>>,
     key: &SigningKey,
 ) -> Result<(), String> {
-    let request = Message::from_octets(request).map_err(|e| e.to_string())?;
+    let request = Message::from_octets(request).map_err(|error| error.to_string())?;
     let request_tsig = request
         .additional()
-        .map_err(|e| e.to_string())?
+        .map_err(|error| error.to_string())?
         .limit_to::<Tsig<_, _>>()
         .last()
         .ok_or("request has no TSIG")?
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     let tsig = response
         .additional()
-        .map_err(|e| e.to_string())?
+        .map_err(|error| error.to_string())?
         .limit_to::<Tsig<_, _>>()
         .last()
         .ok_or("response has no TSIG")?
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())?;
     let expected_key = key.to_tsig_key()?;
+
     if !tsig.owner().name_eq(expected_key.name())
         || !tsig
             .data()
@@ -84,27 +86,31 @@ pub(crate) fn verify_response_mac(
     {
         return Err("response uses a different TSIG key or algorithm".to_string());
     }
-    let mut records = response.additional().map_err(|e| e.to_string())?;
+
+    let mut records = response.additional().map_err(|error| error.to_string())?;
     let tsig_start = loop {
         let start = records.pos();
         let record = records
             .next()
             .ok_or("response has no TSIG")?
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
+
         if record.rtype() == Rtype::TSIG {
             break start;
         }
     };
+
     if records.next().is_some() {
         return Err("TSIG must be the last record".to_string());
     }
+
     let data = tsig.data();
     let mut unsigned = response.as_slice()[..tsig_start].to_vec();
     unsigned[..2].copy_from_slice(&data.original_id().to_be_bytes());
     unsigned[10..12].copy_from_slice(&(response.header_counts().arcount() - 1).to_be_bytes());
     let request_mac = request_tsig.data().mac();
     let mut digest = u16::try_from(request_mac.len())
-        .map_err(|e| e.to_string())?
+        .map_err(|error| error.to_string())?
         .to_be_bytes()
         .to_vec();
     digest.extend_from_slice(request_mac);
@@ -118,14 +124,21 @@ pub(crate) fn verify_response_mac(
     digest.extend_from_slice(&data.error().to_int().to_be_bytes());
     digest.extend_from_slice(
         &u16::try_from(data.other().len())
-            .map_err(|e| e.to_string())?
+            .map_err(|error| error.to_string())?
             .to_be_bytes(),
     );
     digest.extend_from_slice(data.other());
     let secret = base64::engine::general_purpose::STANDARD
         .decode(&key.secret)
-        .map_err(|e| e.to_string())?;
-    let key = hmac::Key::new(hmac::HMAC_SHA256, &secret);
+        .map_err(|error| error.to_string())?;
+    let algorithm = match key.algorithm {
+        Algorithm::Sha1 => hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
+        Algorithm::Sha256 => hmac::HMAC_SHA256,
+        Algorithm::Sha384 => hmac::HMAC_SHA384,
+        Algorithm::Sha512 => hmac::HMAC_SHA512,
+    };
+    let key = hmac::Key::new(algorithm, &secret);
+
     hmac::verify(&key, &digest, data.mac()).map_err(|_| "response MAC did not verify".to_string())
 }
 
@@ -154,8 +167,10 @@ pub(crate) async fn create_tsig_key(app: &TestApp, name: &str, role: KeyRole) ->
         .await;
     let fetched: serde_json::Value =
         serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
+
     SigningKey {
         name: name.to_string(),
+        algorithm: Algorithm::Sha256,
         secret: fetched["secret"]
             .as_str()
             .expect("tsig-key get prints the secret")

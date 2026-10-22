@@ -15,8 +15,10 @@ use crate::common::{TestApp, dns::parse_name};
 /// Read one series of a counter from `/metrics`, picked by its labels.
 pub(crate) async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
+
     assert_eq!(status, StatusCode::OK);
     let text = body.as_str().expect("metrics body is prometheus text");
+
     text.lines()
         .filter(|line| line.starts_with(&format!("{name}{{")))
         .find(|line| labels.iter().all(|label| line.contains(label)))
@@ -32,6 +34,7 @@ pub(crate) fn build_ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec
     let mut question = builder.question();
     question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
     let mut authority = question.authority();
+
     // RFC 1995, Section 3: the client's SOA belongs in the authority section.
     authority
         .push((
@@ -49,6 +52,7 @@ pub(crate) fn build_ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec
             ),
         ))
         .unwrap();
+
     authority.additional()
 }
 
@@ -70,6 +74,7 @@ pub(crate) fn build_multi_question_query(
         .push((&parse_name("other.example").unwrap(), Rtype::A, Class::IN))
         .unwrap();
     let mut additional = question.additional();
+
     if let Some(version) = opt_version {
         additional
             .opt(|opt| {
@@ -80,6 +85,7 @@ pub(crate) fn build_multi_question_query(
             })
             .unwrap();
     }
+
     additional
 }
 
@@ -94,6 +100,7 @@ pub(crate) fn build_edns_query(
     let mut question = builder.question();
     question.push((&parse_name(zone).unwrap(), qtype)).unwrap();
     let mut additional = question.additional();
+
     for (version, dnssec_ok) in opts {
         additional
             .opt(|opt| {
@@ -104,5 +111,6 @@ pub(crate) fn build_edns_query(
             })
             .unwrap();
     }
+
     additional
 }

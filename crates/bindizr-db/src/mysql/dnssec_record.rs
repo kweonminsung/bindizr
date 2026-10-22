@@ -17,10 +17,12 @@ pub(crate) async fn create_many_tx(
 ) -> Result<(), DatabaseError> {
     const CHUNK: usize = 500;
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
+
     for chunk in records.chunks(CHUNK) {
         let mut sql = String::from(
             "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ",
         );
+
         for i in 0..chunk.len() {
             if i > 0 {
                 sql.push(',');
@@ -29,20 +31,37 @@ pub(crate) async fn create_many_tx(
         }
 
         let mut query = sqlx::query(AssertSqlSafe(sql));
-        for r in chunk {
+
+        for record in chunk {
             query = query
-                .bind(r.zone_id)
-                .bind(&r.name)
-                .bind(r.record_type)
-                .bind(r.covered_record_type)
-                .bind(r.ttl)
-                .bind(r.rdata.clone())
-                .bind(r.expires_at)
-                .bind(r.record_set_digest.clone());
+                .bind(record.zone_id)
+                .bind(&record.name)
+                .bind(record.record_type)
+                .bind(record.covered_record_type)
+                .bind(record.ttl)
+                .bind(record.rdata.clone())
+                .bind(record.expires_at)
+                .bind(record.record_set_digest.clone());
         }
+
         query.execute(&mut **tx).await?;
     }
+
     Ok(())
+}
+
+/// Read apex SOA signatures under the caller's zone lock.
+pub(crate) async fn list_signatures_covering_apex_soa_tx(
+    tx: &mut Transaction<'_, MySql>,
+    zone_id: ZoneId,
+) -> Result<Vec<DnssecRecord>, DatabaseError> {
+    Ok(sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
+        "SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest FROM dnssec_records WHERE zone_id = ? AND name = {} AND record_type = 46 AND covered_record_type = 6 ORDER BY id",
+        apex_owner_sql()
+    )))
+    .bind(zone_id)
+    .fetch_all(&mut **tx)
+    .await?)
 }
 
 /// List derived DNSSEC records for a zone in the current transaction.
@@ -76,20 +95,27 @@ pub(crate) async fn delete_many_tx(
     if ids.is_empty() {
         return Ok(());
     }
+
     const CHUNK: usize = 2000;
+
     for chunk in ids.chunks(CHUNK) {
         let mut sql = String::from("DELETE FROM dnssec_records WHERE id IN (");
+
         for i in 0..chunk.len() {
             sql.push_str(if i == 0 { "?" } else { ",?" });
         }
+
         sql.push(')');
 
         let mut query = sqlx::query(AssertSqlSafe(sql));
+
         for id in chunk {
             query = query.bind(id);
         }
+
         query.execute(&mut **tx).await?;
     }
+
     Ok(())
 }
 
@@ -108,10 +134,10 @@ pub(crate) async fn delete_by_zone_id_tx(
 
 /// Count zones with stored derived DNSSEC records.
 pub(crate) async fn count_zone_ids(pool: &Pool<MySql>) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT zone_id) FROM dnssec_records")
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *connection)
         .await?;
 
     Ok(count as u64)
@@ -122,14 +148,14 @@ pub(crate) async fn list_zone_ids_expiring_within_refresh(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
 ) -> Result<Vec<ZoneId>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     // The per-policy threshold is no constant, so nothing can seek the
     // index; this widest-window bound is, and the comparison below refines it.
     let Some(max_refresh_days) = sqlx::query_scalar::<_, Option<i32>>(
         "SELECT MAX(signature_refresh_days) FROM dnssec_policies",
     )
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?
     else {
         return Ok(Vec::new());
@@ -151,7 +177,7 @@ pub(crate) async fn list_zone_ids_expiring_within_refresh(
     )
     .bind(bound)
     .bind(cutoff)
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(zone_ids)
@@ -162,14 +188,14 @@ pub(crate) async fn count_expiring_within_refresh(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     // The per-policy threshold is no constant, so nothing can seek the
     // index; this widest-window bound is, and the comparison below refines it.
     let Some(max_refresh_days) = sqlx::query_scalar::<_, Option<i32>>(
         "SELECT MAX(signature_refresh_days) FROM dnssec_policies",
     )
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?
     else {
         return Ok(0);
@@ -191,7 +217,7 @@ pub(crate) async fn count_expiring_within_refresh(
     )
     .bind(bound)
     .bind(cutoff)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)
@@ -202,7 +228,7 @@ pub(crate) async fn count_expired_before(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
 
     let count = sqlx::query_scalar::<_, i64>(
         r#"
@@ -213,7 +239,7 @@ pub(crate) async fn count_expired_before(
         "#,
     )
     .bind(cutoff)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)
@@ -224,10 +250,12 @@ pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<MySql>,
     filter: DnssecRecordFilter,
 ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let apex_owner = apex_owner_sql();
     let search = like_pattern(filter.search.as_deref());
     let grant_match = grant_record_match_sql("d", None, concat_fn);
+
     let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
@@ -287,7 +315,7 @@ pub(crate) async fn list_by_filter_with_zone(
             .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
             .unwrap_or(0),
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *connection)
     .await?;
 
     Ok(records)
@@ -312,10 +340,12 @@ pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,
     filter: DnssecRecordFilter,
 ) -> Result<u64, DatabaseError> {
-    let mut conn = pool.acquire().await?;
+    let mut connection = pool.acquire().await?;
+
     let apex_owner = apex_owner_sql();
     let search = like_pattern(filter.search.as_deref());
     let grant_match = grant_record_match_sql("d", None, concat_fn);
+
     let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         r#"
         SELECT COUNT(*)
@@ -364,7 +394,7 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(filter.scope_role_id)
     .bind(filter.scope_role_id)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *connection)
     .await?;
 
     Ok(count as u64)

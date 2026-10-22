@@ -1,6 +1,4 @@
-//! The audit log: one row per management change, saved in the change's
-//! own transaction so the two commit or roll back together, and read back
-//! under `audit:read`.
+//! Record management changes in their transaction; reads require `audit:read`.
 
 use std::fmt;
 
@@ -14,22 +12,20 @@ use chrono::Utc;
 use crate::{
     Context, Transaction,
     authorization::Caller,
+    change::ChangeOrigin,
     error::ServiceError,
-    pagination::{build_paginated_response, normalize_page_limit, parse_setting},
+    pagination::{build_paginated_response, parse_setting, validate_page_limit},
     types::{AuditLogFilter, AuditLogResponse, PaginatedResponse},
-    zone::version::ChangeAttribution,
 };
 
-/// Save the audit log row of a management change in its transaction, after
-/// the change's own row write and before commit; `detail` says what the
-/// change set or moved, never a secret.
+/// Audit a management write before commit; `detail` describes changes without secrets.
 pub(crate) async fn save_tx(
     tx: &mut Transaction<'_>,
     entity: AuditEntity,
     entity_name: &str,
     operation: AuditOperation,
     detail: Option<String>,
-    attribution: &ChangeAttribution,
+    origin: &ChangeOrigin,
 ) -> Result<(), ServiceError> {
     Ok(bindizr_db::audit_log::create_tx(
         tx,
@@ -39,8 +35,8 @@ pub(crate) async fn save_tx(
             entity_name: entity_name.to_string(),
             operation,
             detail,
-            change_source: attribution.source,
-            changed_by: attribution.actor.clone(),
+            change_source: origin.source,
+            changed_by: origin.actor.clone(),
             created_at: Utc::now(),
         },
     )
@@ -68,8 +64,10 @@ pub async fn list(
     caller.authorize_action(Action::AuditRead)?;
 
     let filter = normalize_filter(filter)?;
+
     let total = bindizr_db::audit_log::count_by_filter(cx.db(), &filter).await?;
     let rows = bindizr_db::audit_log::list_by_filter(cx.db(), &filter).await?;
+
     Ok(build_paginated_response(
         rows.iter().map(AuditLogResponse::from).collect(),
         filter.limit,
@@ -97,16 +95,20 @@ fn normalize_filter(
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_ascii_lowercase);
+
     if let (Some(since), Some(until)) = (filter.since, filter.until)
         && since >= until
     {
         return Err(ServiceError::invalid_input("since must be before until"));
     }
+
     // Newest first is the log's natural order, whatever the field.
     let order = match filter.order.as_deref() {
         None => SortOrder::Desc,
         Some(order) => order.parse().map_err(ServiceError::invalid_input)?,
     };
+    validate_page_limit(filter.limit)?;
+
     Ok(bindizr_db::audit_log::AuditLogFilter {
         entity,
         entity_name,
@@ -114,7 +116,7 @@ fn normalize_filter(
         until: filter.until,
         sort: parse_setting::<AuditLogSortField>(filter.sort.as_deref())?,
         order,
-        limit: Some(normalize_page_limit(filter.limit)?),
+        limit: filter.limit,
         offset: filter.offset,
     })
 }
@@ -155,21 +157,23 @@ mod tests {
             ..AuditLogFilter::default()
         })
         .unwrap();
+
         assert_eq!(filter.sort, AuditLogSortField::EntityName);
         assert_eq!(filter.order, SortOrder::Asc);
 
         for (sort, order) in [(Some("name"), None), (None, Some("newest"))] {
-            let err = normalize_filter(AuditLogFilter {
+            let error = normalize_filter(AuditLogFilter {
                 sort: sort.map(str::to_string),
                 order: order.map(str::to_string),
                 ..AuditLogFilter::default()
             })
             .unwrap_err();
-            assert_eq!(err.code(), ErrorCode::InvalidInput);
+
+            assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }
 
-    /// Verify that `normalize_filter` reads blank selectors as absent and defaults the page.
+    /// Blank selectors normalize to absent without supplying a page limit.
     #[test]
     fn normalize_filter_reads_blank_selectors_as_absent() {
         let filter = normalize_filter(AuditLogFilter {
@@ -181,7 +185,7 @@ mod tests {
 
         assert_eq!(filter.entity, None);
         assert_eq!(filter.entity_name, None);
-        assert_eq!(filter.limit, Some(1000));
+        assert_eq!(filter.limit, None);
     }
 
     /// Verify that `normalize_filter` rejects an unknown entity and an empty time window.
@@ -192,6 +196,7 @@ mod tests {
             ..AuditLogFilter::default()
         })
         .unwrap_err();
+
         assert_eq!(unknown.code(), ErrorCode::InvalidInput);
         assert!(unknown.to_string().contains("tsig_key"), "{unknown}");
 
@@ -202,6 +207,7 @@ mod tests {
             ..AuditLogFilter::default()
         })
         .unwrap_err();
+
         assert_eq!(inverted.code(), ErrorCode::InvalidInput);
     }
 }

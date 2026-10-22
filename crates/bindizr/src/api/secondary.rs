@@ -234,8 +234,8 @@ pub(crate) async fn list_secondary_transfers(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(query): Query<SecondaryTransferFilter>,
+    Query(filter): Query<SecondaryTransferFilter>,
 ) -> Result<Response, ApiError> {
-    let transfers = secondary::list_transfers(&cx, &caller, &params.name, query).await?;
+    let transfers = secondary::list_transfers(&cx, &caller, &params.name, filter).await?;
     Ok((StatusCode::OK, Json(transfers)).into_response())
 }

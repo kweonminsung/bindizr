@@ -69,6 +69,7 @@ pub async fn list_managed_domains(
 
     // Deduplicate grant domains and require sync actions for every writable type.
     let mut domains = BTreeSet::new();
+
     for zone in &zones {
         for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, EXTERNAL_DNS_RECORD_TYPES) {
             domains.insert(policy::normalize_lookup_name(&pattern_domain(
@@ -76,6 +77,7 @@ pub async fn list_managed_domains(
             ))?);
         }
     }
+
     Ok(domains.into_iter().collect())
 }
 
@@ -107,9 +109,11 @@ pub async fn list_records(
 
         for row in rows {
             let record = row.record();
+
             if !record.record_type.is_external_dns_supported() {
                 continue;
             }
+
             let name = policy::normalize_lookup_name(&record.name.to_fqdn(&row.zone_name))?;
             let value = record
                 .record_type
@@ -128,6 +132,7 @@ pub async fn list_records(
         if read < RECORD_READ_PAGE as usize {
             break;
         }
+
         offset += read as u64;
     }
 
@@ -139,8 +144,8 @@ pub async fn list_records(
                 values.sort();
                 ExternalDnsRecord {
                     name: key.name.clone(),
-                    record_type: key.record_type.to_text(),
-                    ttl: Some(i32::from(ttl)),
+                    record_type: key.record_type.as_str().to_owned(),
+                    ttl: Some(i64::from(ttl)),
                     values,
                 }
             })

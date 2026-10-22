@@ -44,6 +44,7 @@ async fn doctor_reports_healthy_installation() {
     // Secondaries transfer asynchronously after NOTIFY, so behind a burst of
     // zone writes doctor can catch them one catalog serial short.
     let mut result = app.run_cli(&args, None).await;
+
     for _ in 0..30 {
         if result.status.success() {
             break;
@@ -51,6 +52,7 @@ async fn doctor_reports_healthy_installation() {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         result = app.run_cli(&args, None).await;
     }
+
     assert_cli_success(&args, &result);
     let output = String::from_utf8(result.stdout).expect("CLI stdout was not UTF-8");
 
@@ -106,7 +108,9 @@ fn doctor_without_a_daemon_runs_the_offline_checks() {
 
     assert_cli_failure_contains(&args, &output, "failing check");
     let stdout = String::from_utf8_lossy(&output.stdout);
+
     assert!(stdout.contains("Daemon not reachable"), "{stdout}");
+
     // The fixture's SQLite path is relative, which only the service can resolve.
     assert!(stdout.contains("Database check skipped"), "{stdout}");
     assert!(stdout.contains("DNS port free"), "{stdout}");

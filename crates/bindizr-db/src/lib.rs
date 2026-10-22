@@ -31,7 +31,6 @@ mod sqlite;
 pub mod transfer;
 pub mod tsig_key;
 mod tx;
-mod utils;
 pub mod zone;
 pub mod zone_change;
 pub mod zone_version;
@@ -78,16 +77,18 @@ impl Db {
             }
             config::DatabaseType::Sqlite => {
                 // The file is created on a clean install, so its directory is too.
-                utils::create_parent_dir(&database.sqlite.file_path)?;
-                let url = utils::to_sqlite_url(&database.sqlite.file_path)?;
+                sqlite::path::create_parent_dir(&database.sqlite.file_path)?;
+                let url = sqlite::path::to_url(&database.sqlite.file_path)?;
                 Backend::connect_sqlite(&url).await?
             }
         };
 
         let db = Db(backend);
+
         db.create_tables().await?;
 
         log::info!("Database pool initialized");
+
         Ok(db)
     }
 
@@ -118,6 +119,7 @@ impl Db {
                 .map(TransactionKind::Sqlite),
         }
         .map_err(DatabaseError::TransactionFailed)?;
+
         Ok(Transaction(kind))
     }
 
@@ -163,10 +165,11 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
         }
         config::DatabaseType::Sqlite => {
             // Creating the file here would leave it owned by whoever ran doctor.
-            let url = utils::to_sqlite_url(&database.sqlite.file_path)?;
+            let url = sqlite::path::to_url(&database.sqlite.file_path)?;
             let connect_options = sqlite_connect_options(&url)?
                 .create_if_missing(false)
                 .read_only(true);
+
             let pool = SqlitePoolOptions::new()
                 .max_connections(1)
                 .connect_with(connect_options)
@@ -175,6 +178,7 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
             sqlx::query("SELECT 1").execute(&pool).await?;
         }
     }
+
     Ok(())
 }
 
@@ -190,6 +194,7 @@ fn mysql_connect_options(
     tls: &config::DatabaseTlsConfig,
 ) -> Result<MySqlConnectOptions, DatabaseError> {
     let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
+
     if let Some(mode) = tls.mode {
         options = options.ssl_mode(match mode {
             config::DatabaseTlsMode::Disable => MySqlSslMode::Disabled,
@@ -202,6 +207,7 @@ fn mysql_connect_options(
     if let Some(ca_file) = &tls.ca_file {
         options = options.ssl_ca(ca_file);
     }
+
     Ok(options)
 }
 
@@ -212,6 +218,7 @@ fn postgres_connect_options(
     tls: &config::DatabaseTlsConfig,
 ) -> Result<PgConnectOptions, DatabaseError> {
     let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
+
     if let Some(mode) = tls.mode {
         options = options.ssl_mode(match mode {
             config::DatabaseTlsMode::Disable => PgSslMode::Disable,
@@ -224,6 +231,7 @@ fn postgres_connect_options(
     if let Some(ca_file) = &tls.ca_file {
         options = options.ssl_root_cert(ca_file);
     }
+
     Ok(options)
 }
 
@@ -241,7 +249,7 @@ pub struct PoolStats {
 /// SQLite shares it: under WAL the pool bounds readers, not the one writer.
 fn pool_max_connections() -> u32 {
     let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
+        .map(std::num::NonZero::get)
         .unwrap_or(4);
     ((cores * 4) as u32).clamp(8, 64)
 }
@@ -254,12 +262,12 @@ impl Backend {
     ) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(pool_max_connections())
-            .after_connect(|conn, _| {
+            .after_connect(|connection, _| {
                 Box::pin(async move {
                     // Row locks, not version isolation, carry correctness:
                     // READ COMMITTED matches PostgreSQL and sheds gap locking.
                     sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
-                        .execute(conn)
+                        .execute(connection)
                         .await
                         .map(|_| ())
                 })
@@ -278,13 +286,13 @@ impl Backend {
     ) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(pool_max_connections())
-            .after_connect(|conn, _| {
+            .after_connect(|connection, _| {
                 Box::pin(async move {
                     // Already the default; pinned so all backends state one contract.
                     sqlx::query(
                         "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED",
                     )
-                    .execute(conn)
+                    .execute(connection)
                     .await
                     .map(|_| ())
                 })
@@ -303,28 +311,32 @@ impl Backend {
 
         let pool = SqlitePoolOptions::new()
             .max_connections(pool_max_connections())
-            .after_connect(|conn, _| {
+            .after_connect(|connection, _| {
                 Box::pin(async move {
                     // SQLite enforces foreign keys only when enabled per connection.
                     sqlx::query("PRAGMA foreign_keys = ON")
-                        .execute(&mut *conn)
+                        .execute(&mut *connection)
                         .await?;
+
                     // Set the busy timeout before WAL locks too; short timeouts starve
                     // BEGIN IMMEDIATE waiters into SQLITE_BUSY.
                     sqlx::query("PRAGMA busy_timeout = 15000")
-                        .execute(&mut *conn)
+                        .execute(&mut *connection)
                         .await?;
+
                     // Reassert WAL on each connection to separate reader/writer locks.
                     // SQLite reports the active mode rather than failing if WAL cannot apply.
                     let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
-                        .fetch_one(&mut *conn)
+                        .fetch_one(&mut *connection)
                         .await?;
+
                     if !mode.eq_ignore_ascii_case("wal") {
                         log::warn!(
                             "SQLite journal_mode is '{}', not WAL: readers will queue behind writes",
                             mode
                         );
                     }
+
                     Ok(())
                 })
             })
@@ -341,129 +353,160 @@ impl Db {
     async fn create_tables(&self) -> Result<(), DatabaseError> {
         match &self.0 {
             Backend::MySql(pool) => {
-                let mut conn = pool.acquire().await?;
+                let mut connection = pool.acquire().await?;
+
                 for query in schema::mysql::table_creation_queries() {
-                    sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", query, e);
-                        DatabaseError::from(e)
-                    })?;
+                    sqlx::query(query)
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|error| {
+                            log::error!("Failed to execute query '{}': {}", query, error);
+                            DatabaseError::from(error)
+                        })?;
                 }
+
                 let seed = schema::mysql::default_policy_seed();
+
                 sqlx::query(seed)
                     .bind(Utc::now())
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
+
                 let seed = schema::mysql::admin_role_seed();
+
                 sqlx::query(seed)
                     .bind(Role::ADMIN)
                     .bind(ADMIN_ROLE_DESCRIPTION)
                     .bind(Utc::now())
                     .bind(Role::ADMIN)
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
+
                 let seed = schema::mysql::admin_grant_seed();
+
                 sqlx::query(seed)
                     .bind(ActionSet::from_iter(Action::ALL))
                     .bind(Utc::now())
                     .bind(Role::ADMIN)
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
             }
             Backend::Postgres(pool) => {
-                let mut conn = pool.acquire().await?;
+                let mut connection = pool.acquire().await?;
+
                 for query in schema::postgres::table_creation_queries() {
-                    sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", query, e);
-                        DatabaseError::from(e)
-                    })?;
+                    sqlx::query(query)
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|error| {
+                            log::error!("Failed to execute query '{}': {}", query, error);
+                            DatabaseError::from(error)
+                        })?;
                 }
+
                 let seed = schema::postgres::default_policy_seed();
+
                 sqlx::query(seed)
                     .bind(Utc::now())
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
+
                 let seed = schema::postgres::admin_role_seed();
+
                 sqlx::query(seed)
                     .bind(Role::ADMIN)
                     .bind(ADMIN_ROLE_DESCRIPTION)
                     .bind(Utc::now())
                     .bind(Role::ADMIN)
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
+
                 let seed = schema::postgres::admin_grant_seed();
+
                 sqlx::query(seed)
                     .bind(ActionSet::from_iter(Action::ALL))
                     .bind(Utc::now())
                     .bind(Role::ADMIN)
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
             }
             Backend::Sqlite(pool) => {
-                let mut conn = pool.acquire().await?;
+                let mut connection = pool.acquire().await?;
+
                 for query in schema::sqlite::table_creation_queries() {
-                    sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", query, e);
-                        DatabaseError::from(e)
-                    })?;
+                    sqlx::query(query)
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|error| {
+                            log::error!("Failed to execute query '{}': {}", query, error);
+                            DatabaseError::from(error)
+                        })?;
                 }
+
                 let seed = schema::sqlite::default_policy_seed();
+
                 sqlx::query(seed)
                     .bind(Utc::now())
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
+
                 let seed = schema::sqlite::admin_role_seed();
+
                 sqlx::query(seed)
                     .bind(Role::ADMIN)
                     .bind(ADMIN_ROLE_DESCRIPTION)
                     .bind(Utc::now())
                     .bind(Role::ADMIN)
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
+
                 let seed = schema::sqlite::admin_grant_seed();
+
                 sqlx::query(seed)
                     .bind(ActionSet::from_iter(Action::ALL))
                     .bind(Utc::now())
                     .bind(Role::ADMIN)
-                    .execute(&mut *conn)
+                    .execute(&mut *connection)
                     .await
-                    .map_err(|e| {
-                        log::error!("Failed to execute query '{}': {}", seed, e);
-                        DatabaseError::from(e)
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        DatabaseError::from(error)
                     })?;
             }
         }
+
         Ok(())
     }
 }

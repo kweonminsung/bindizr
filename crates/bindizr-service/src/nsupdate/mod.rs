@@ -1,7 +1,5 @@
-//! nsupdate (RFC 2136), from the point the wire message is decoded.
-//! Prerequisite evaluation, per-key authorization, and the transactional apply
-//! live here; core reads the wire format, and the DNS front end owns TSIG.
-//! The service prescans the complete sections before choosing operations.
+//! Prescan and apply nsupdate (RFC 2136) with prerequisite checks and role grants.
+//! Core decodes the wire format; the DNS front end authenticates TSIG.
 
 mod decode;
 mod operation;
@@ -11,7 +9,7 @@ mod prerequisite;
 use bindizr_core::{
     dns::{
         Serial,
-        message::{Class, Rcode},
+        message::{Class, Rcode, Rtype},
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
         nsupdate::parser::{ParseUpdateError, UpdateRecord, ValidateUpdateShapeError},
         record::ParseRecordValueError,
@@ -19,10 +17,13 @@ use bindizr_core::{
     model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
-use decode::{decode_prerequisites, decode_updates};
+use decode::{decode_prerequisite, decode_updates};
 use operation::apply_record_operation_tx;
 use plan::UpdateOperation;
-use prerequisite::{Prerequisite, evaluate_prerequisites_tx};
+use prerequisite::{
+    Prerequisite, RecordSets, evaluate_prerequisite, evaluate_record_set_prerequisites,
+    list_served_record_sets_tx,
+};
 use thiserror::Error;
 
 use crate::{
@@ -37,6 +38,10 @@ use crate::{
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
 pub enum NsupdateError {
+    #[error("record type {0} is managed by the DNSSEC signer")]
+    ManagedType(Rtype),
+    #[error("unsupported record type: {0}")]
+    UnsupportedType(Rtype),
     #[error("{0}")]
     FormErr(String),
     #[error("{0}")]
@@ -68,6 +73,10 @@ pub enum NsupdateError {
     NotAuth(String),
     #[error("{0}")]
     NotZone(String),
+    /// A policy refusal (RFC 2136, Section 3.3): an unsigned request where a
+    /// signature is required.
+    #[error("{0}")]
+    Refused(String),
     #[error("{0}")]
     Service(#[from] ServiceError),
 }
@@ -76,8 +85,11 @@ impl NsupdateError {
     /// Classify an UPDATE failure without consuming its original cause.
     pub fn rcode(&self) -> Rcode {
         match self {
-            Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) => Rcode::FORMERR,
-            Self::RecordValue { .. } => Rcode::REFUSED,
+            // RFC 2136, Section 3.4.1.2: an unrecognized type is a prescan failure.
+            Self::FormErr(_) | Self::Shape(_) | Self::Parse(_) | Self::UnsupportedType(_) => {
+                Rcode::FORMERR
+            }
+            Self::RecordValue { .. } | Self::ManagedType(_) => Rcode::REFUSED,
             Self::Owner {
                 source: ParseNameError::OutsideZone,
                 ..
@@ -89,7 +101,8 @@ impl NsupdateError {
             Self::NxDomain(_) => Rcode::NXDOMAIN,
             Self::NxRrset(_) => Rcode::NXRRSET,
             Self::NotAuth(_) => Rcode::NOTAUTH,
-            Self::Service(err) if err.code().is_internal() => Rcode::SERVFAIL,
+            Self::Refused(_) => Rcode::REFUSED,
+            Self::Service(error) if error.code().is_internal() => Rcode::SERVFAIL,
             Self::Service(_) => Rcode::REFUSED,
         }
     }
@@ -98,14 +111,13 @@ impl NsupdateError {
 /// A database failure is a backend fault, classified through the service error.
 impl From<bindizr_db::error::DatabaseError> for NsupdateError {
     /// Map a database failure to SERVFAIL.
-    fn from(err: bindizr_db::error::DatabaseError) -> Self {
-        NsupdateError::from(ServiceError::from(err))
+    fn from(error: bindizr_db::error::DatabaseError) -> Self {
+        NsupdateError::from(ServiceError::from(error))
     }
 }
 
-/// The complete wire sections of an UPDATE, retained until the service has
-/// checked the zone and prescanned every record. RDATA compression addresses
-/// `message`, the original packet.
+/// Keep complete UPDATE sections for zone checks and prescanning;
+/// RDATA compression offsets refer to the original `message`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Update<'a> {
     pub zone_name: ZoneName,
@@ -130,6 +142,7 @@ pub async fn apply(
             update.zone_name, update.zone_class
         )));
     }
+
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
     let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {
@@ -141,15 +154,29 @@ pub async fn apply(
 
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        // Keep the wire sections through the zone lookup. Every owner and
-        // shape is checked before decoding can omit an ineffective delete.
-        let prerequisites = decode_prerequisites(update.prerequisites, &zone.name, update.message)?;
-        let updates = decode_updates(update.updates, &zone.name, update.message)?;
+        // RFC 2136, Section 3 order: authority (NOTAUTH, above) precedes the policy
+        // on unsigned requests, which is refused before anything is read.
+        if caller.is_unsigned_dns() && cx.config().dns.nsupdate.tsig_required {
+            return Err(NsupdateError::Refused(
+                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+            ));
+        }
 
-        // A prerequisite reads what it names, so its grant is checked with
-        // the updates', ahead of where RFC 2136, Section 3.3 puts permissions.
-        for prerequisite in &prerequisites {
-            // SOA and DNSSEC need a read grant without a type restriction.
+        // Prerequisites are decoded and evaluated in wire order (Section 3.2.5);
+        // value-dependent sets are compared whole after the section (Section 3.2.3).
+        let served = if update.prerequisites.is_empty() {
+            RecordSets::new()
+        } else {
+            list_served_record_sets_tx(&mut tx, &zone).await?
+        };
+
+        let mut wanted = RecordSets::new();
+
+        for record in update.prerequisites {
+            let prerequisite = decode_prerequisite(record, &zone.name, update.message)?;
+
+            // A prerequisite reads what it names, so its read grant precedes its
+            // evaluation (Section 3.3.1); SOA and DNSSEC need one without a type restriction.
             let record_type = prerequisite
                 .record_type()
                 .and_then(|rtype| RecordType::try_from(rtype).ok());
@@ -161,8 +188,15 @@ pub async fn apply(
                     record_type: record_type.as_ref(),
                 }],
             )?;
+            evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;
         }
+
+        evaluate_record_set_prerequisites(&served, &wanted)?;
+
+        // The prescan parses the owners the update grants are checked on.
+        let updates = decode_updates(update.updates, &zone.name, update.message)?;
         let mut accesses = Vec::new();
+
         for op in &updates {
             match op {
                 UpdateOperation::Record(op) => accesses.push(RecordAccess {
@@ -175,10 +209,10 @@ pub async fn apply(
                 }
             }
         }
-        caller.authorize_record_access(&zone, &accesses)?;
-        evaluate_prerequisites_tx(&mut tx, &zone, &prerequisites).await?;
 
-        let plan = plan::prepare(&zone, updates)?;
+        caller.authorize_record_access(&zone, &accesses)?;
+
+        let plan = plan::UpdatePlan::compute(&zone, updates)?;
         let new_serial = plan.zone.serial;
         let mut changed = plan.soa_changed;
 
@@ -189,14 +223,15 @@ pub async fn apply(
 
         if changed {
             zone::validate_record_changes_tx(&mut tx, &plan.zone, &[], &[]).await?;
+
             if plan.soa_changed {
                 let changes = zone::soa_replacement_changes(&zone, &plan.zone, new_serial)?;
                 bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
             }
+
             let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
             dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
-            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_attribution())
-                .await?;
+            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_origin()).await?;
         }
 
         Ok((changed, zone, new_serial))

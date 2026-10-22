@@ -51,6 +51,17 @@ To build the binary yourself instead, see [Building from Source](source.md).
     bindizr --version
     ```
 
+=== "Alpine Packages (APK)"
+
+    ```bash
+    # Install the .apk package (bindizr-*.aarch64.apk on arm64); its build key
+    # is not one apk knows, so apk must be told to trust it. OpenRC runs the service.
+    sudo apk add --allow-untrusted bindizr-*.x86_64.apk
+
+    # Verify installation
+    bindizr --version
+    ```
+
 ## 3. Configure Bindizr
 
 The package installs `/etc/bindizr/bindizr.conf.toml` ready to run: SQLite at
@@ -65,7 +76,7 @@ ownership and permissions (`0640 root:bindizr`) when editing it.
 
 ```bash
 # Start Bindizr service (the package already enabled it at boot)
-sudo systemctl start bindizr
+sudo systemctl start bindizr          # Alpine: sudo rc-service bindizr start
 
 # Create and save an admin API token; its secret is shown once.
 sudo bindizr token create admin --role admin
@@ -94,8 +105,8 @@ the fix for the common ones.
 ## 6. Create a zone and query it
 
 ```bash
-# The zone starts with an apex NS record naming ns1.example.com, which a
-# secondary needs before it will load the zone; --no-apex-ns leaves that to you.
+# Apex NS names ns1.example.com so secondaries can load the zone.
+# --no-apex-ns starts disabled; add apex NS, then enable the zone explicitly.
 sudo bindizr zone create example.com --mname ns1.example.com --rname admin@example.com
 sudo bindizr record create example.com www --type A --value 192.0.2.1
 

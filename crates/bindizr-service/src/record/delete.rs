@@ -35,11 +35,11 @@ pub async fn delete(
         Ok(None) => {
             return Err(ServiceError::record_not_found(record_id));
         }
-        Err(e) => {
-            log::error!("Failed to fetch record: {}", e);
+        Err(error) => {
+            log::error!("Failed to fetch record: {}", error);
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
-                e,
+                error,
             ));
         }
     };
@@ -55,11 +55,11 @@ pub async fn delete(
                     zone_id
                 )));
             }
-            Err(e) => {
-                log::error!("Failed to fetch zone: {}", e);
+            Err(error) => {
+                log::error!("Failed to fetch zone: {}", error);
                 return Err(ServiceError::internal_with_source(
                     "failed to fetch zone",
-                    e,
+                    error,
                 ));
             }
         };
@@ -72,11 +72,11 @@ pub async fn delete(
                 Ok(Some(_)) | Ok(None) => {
                     return Err(ServiceError::record_not_found(record_id));
                 }
-                Err(e) => {
-                    log::error!("Failed to fetch record: {}", e);
+                Err(error) => {
+                    log::error!("Failed to fetch record: {}", error);
                     return Err(ServiceError::internal_with_source(
                         "failed to fetch record",
-                        e,
+                        error,
                     ));
                 }
             };
@@ -91,6 +91,7 @@ pub async fn delete(
         ) {
             return Err(ServiceError::record_not_found(record_id));
         }
+
         caller.authorize_record_access(
             &zone,
             &[RecordAccess {
@@ -140,6 +141,7 @@ pub async fn delete(
                 .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
+
         zone::validate_record_changes_tx(
             &mut tx,
             &zone,
@@ -147,7 +149,9 @@ pub async fn delete(
             &[],
         )
         .await?;
+
         let new_serial = generate_serial(Some(zone.serial));
+
         if run.is_dry_run() {
             return Ok((response, zone.name));
         }
@@ -161,8 +165,9 @@ pub async fn delete(
         .await?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
         Ok((response, zone.name))
     }
@@ -199,11 +204,13 @@ pub async fn delete_matching(
         .as_deref()
         .map(parse_record_type)
         .transpose()?;
+
     if request.value.is_some() && record_type.is_none() {
         return Err(ServiceError::invalid_input(
             "value narrows a record within one type, so record_type is required with it",
         ));
     }
+
     // Encoded the way a create encodes it, so a value finds the row it made.
     let match_value = match (&request.value, record_type.as_ref()) {
         (Some(value), Some(record_type)) => Some(
@@ -220,6 +227,7 @@ pub async fn delete_matching(
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
         let owner = normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
@@ -282,12 +290,15 @@ pub async fn delete_matching(
                 .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
+
         zone::validate_record_changes_tx(&mut tx, &zone, &matched, &[]).await?;
+
         let new_serial = if matched.is_empty() {
             zone.serial
         } else {
             generate_serial(Some(zone.serial))
         };
+
         if !response.applied || matched.is_empty() {
             return Ok((response, owner));
         }
@@ -295,8 +306,9 @@ pub async fn delete_matching(
         // Apply the complete deletion and refresh signatures in the same transaction.
         super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+
         // Once for the whole set, so IXFR consumers see one step.
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_attribution()).await?;
+        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
         Ok((response, owner))
     }

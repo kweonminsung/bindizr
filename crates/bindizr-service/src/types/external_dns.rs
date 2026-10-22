@@ -1,5 +1,6 @@
 //! ExternalDNS webhook payloads, mirroring the provider protocol.
 
+use bindizr_core::dns::Ttl;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -14,8 +15,8 @@ pub struct ExternalDnsRecord {
     #[schema(example = "A")]
     pub record_type: String,
     /// Optional on writes; an omitted or zero TTL resolves to the zone TTL.
-    #[schema(example = 300)]
-    pub ttl: Option<i32>,
+    #[schema(example = 300, value_type = Option<Ttl>, inline)]
+    pub ttl: Option<i64>,
     #[schema(example = json!(["192.0.2.10"]))]
     pub values: Vec<String>,
 }

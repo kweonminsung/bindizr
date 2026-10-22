@@ -63,16 +63,20 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
 /// Ask the daemon to reload its configuration.
 async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_command::<MessageResponse>(DaemonCommand::ReloadConfig).await?;
-    match output {
-        OutputFormat::Table => outln!("{}", response.message),
-        _ => print_payload(&response.data, output)?,
+
+    if output == OutputFormat::Table {
+        outln!("{}", response.message)
+    } else {
+        print_payload(&response.data, output)?
     }
+
     Ok(())
 }
 
 /// Validate the local configuration file.
 fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
+
     if output == OutputFormat::Table {
         outln!("Checking configuration file: {}", path);
     }
@@ -80,11 +84,13 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
     Config::load(&path).map_err(CliError::configuration)?;
 
     let message = format!("Configuration file '{}' is valid", path);
+
     match output {
         OutputFormat::Table => outln!("Configuration is {}.", color::green("valid")),
         // Built here rather than by the daemon: the check never reaches one.
         _ => print_payload(&MessageResponse { message }, output)?,
     }
+
     Ok(())
 }
 
@@ -92,10 +98,12 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
 async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_control_command::<Config>(DaemonCommand::Config).await?;
 
-    match output {
-        OutputFormat::Table => print_config(&response.data),
-        _ => print_payload(&response.data, output)?,
+    if output == OutputFormat::Table {
+        print_config(&response.data)
+    } else {
+        print_payload(&response.data, output)?
     }
+
     Ok(())
 }
 
@@ -110,20 +118,24 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
         .try_fold(&config, |value, part| value.get(part))
         .ok_or_else(|| CliError::request(format!("unknown configuration key: {}", key)))?;
 
-    match output {
-        OutputFormat::Table => match found {
+    if output == OutputFormat::Table {
+        match found {
             serde_json::Value::String(value) => outln!("{}", value),
             serde_json::Value::Object(_) => outln!(
                 "{}",
-                serde_json::to_string_pretty(found).map_err(|e| CliError::request_with_source(
-                    format!("failed to render configuration value: {}", e),
-                    e
-                ))?
+                serde_json::to_string_pretty(found).map_err(|error| {
+                    CliError::request_with_source(
+                        format!("failed to render configuration value: {}", error),
+                        error,
+                    )
+                })?
             ),
             value => outln!("{}", value),
-        },
-        _ => print_payload(found, output)?,
+        }
+    } else {
+        print_payload(found, output)?
     }
+
     Ok(())
 }
 
@@ -162,7 +174,14 @@ fn print_config(config: &Config) {
     print_value("url", &config.database.postgresql.url);
 
     print_section("database.tls");
-    print_optional("mode", config.database.tls.mode.map(|mode| mode.as_str()));
+    print_optional(
+        "mode",
+        config
+            .database
+            .tls
+            .mode
+            .map(config::DatabaseTlsMode::as_str),
+    );
     print_optional("ca_file", config.database.tls.ca_file.as_deref());
     outln!();
 

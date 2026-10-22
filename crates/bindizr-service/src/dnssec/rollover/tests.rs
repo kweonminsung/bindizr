@@ -168,6 +168,7 @@ fn retiring_key_waits_for_signature_expiration() {
 
     // A ZSK has no DS at the parent, so only its signatures hold it back.
     assert_eq!(zsk.retirement_interval_secs(Some(86_400), 0), 900);
+
     // Propagation is added whole: a secondary may need the SOA refresh to catch up.
     assert_eq!(zsk.retirement_interval_secs(Some(86_400), 300), 1_200);
 }
@@ -184,9 +185,11 @@ fn retiring_sep_key_waits_for_parent_ds_expiration() {
 
     // A zone signed with a longer TTL than the parent's outlasts it.
     csk.max_signed_ttl = Ttl::try_from(604_800).unwrap();
+
     assert_eq!(csk.retirement_interval_secs(Some(86_400), 0), 604_800);
 
     // Nothing observed the parent, so only the signatures are known.
     csk.max_signed_ttl = Ttl::try_from(900).unwrap();
+
     assert_eq!(csk.retirement_interval_secs(None, 0), 900);
 }

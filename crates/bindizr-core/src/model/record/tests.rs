@@ -10,6 +10,80 @@ use crate::{
     model::{record::RecordId, zone::ZoneId},
 };
 
+/// Preserve equivalent escaped whitespace through every name-bearing value encoder.
+#[test]
+fn encoded_name_values_preserve_escaped_whitespace() {
+    for byte in [9u8, 10, 11, 12, 13, 32] {
+        for suffix in ["", ".Example.COM"] {
+            let simple = format!("Tar\\{}{suffix}", char::from(byte));
+            let decimal = format!("Tar\\{byte:03}{suffix}");
+
+            for (kind, prefix) in [
+                (RecordType::Cname, ""),
+                (RecordType::Dname, ""),
+                (RecordType::Ns, ""),
+                (RecordType::Ptr, ""),
+                (RecordType::Mx, ""),
+                (RecordType::Srv, "0 443 "),
+                (RecordType::Naptr, "10 10 \"S\" \"SIP D2U\" \"\" "),
+            ] {
+                let priority = matches!(kind, RecordType::Mx | RecordType::Srv).then_some(10);
+                let input = format!(" {prefix}{simple} \t");
+                let expected = kind
+                    .encoded_value(&format!("{prefix}{decimal}"), priority)
+                    .unwrap();
+                let stored = kind
+                    .encoded_value(&input, priority)
+                    .unwrap_or_else(|error| panic!("{kind} {input:?}: {error}"));
+
+                assert_eq!(stored, expected, "{kind} {input:?}");
+                kind.validate_value(&stored, priority).unwrap();
+            }
+        }
+    }
+}
+
+/// Distinguish an escaped final space from padding after a literal backslash.
+#[test]
+fn encoded_name_values_keep_backslashes_before_whitespace() {
+    for (input, expected) in [
+        ("tail\\\\ ", r"tail\\."),
+        ("tail\\\\\\ ", r"tail\\\032."),
+        ("tail\\ \t", r"tail\032."),
+    ] {
+        for kind in [RecordType::Cname, RecordType::Mx] {
+            assert_eq!(kind.encoded_value(input, None).unwrap(), expected);
+        }
+    }
+}
+
+/// The stored model admits exactly the implemented wire types and canonicalizes numeric aliases.
+#[test]
+fn record_type_rejects_unimplemented_wire_types() {
+    let supported = [1, 2, 5, 11, 12, 15, 16, 28, 33, 35, 39, 43, 44, 52, 257];
+
+    for code in 0..=u16::MAX {
+        let parsed = RecordType::try_from(Rtype::from_int(code));
+
+        assert_eq!(parsed.is_ok(), supported.contains(&code), "TYPE{code}");
+
+        if let Ok(record_type) = parsed {
+            assert_eq!(
+                format!("TYPE{code}").parse::<RecordType>().unwrap(),
+                record_type
+            );
+            let json = serde_json::to_string(&record_type).unwrap();
+
+            assert_eq!(
+                serde_json::from_str::<RecordType>(&json).unwrap(),
+                record_type
+            );
+        }
+    }
+
+    assert_eq!("WKS".parse::<RecordType>().unwrap(), RecordType::Wks);
+}
+
 /// Verify that `values_equal` normalizes name like values.
 #[test]
 fn values_equal_normalizes_name_like_values() {
@@ -49,6 +123,7 @@ fn txt_values_compare_across_content_and_presentation_spellings() {
     // while the row holds the presentation form.
     assert!(RecordType::Txt.values_equal("\"hello world\"", None, "hello world", None));
     assert!(RecordType::Txt.values_equal("\"v=spf1\" \"~all\"", None, "\"v=spf1\" \"~all\"", None));
+
     // Segments are joined for display only: two different records read the
     // same way there, so that spelling must not name either of them.
     assert!(!RecordType::Txt.values_equal("\"v=spf1\" \"~all\"", None, "v=spf1~all", None));
@@ -182,13 +257,18 @@ fn display_value_leaves_wrong_field_count_unchanged() {
     }
 }
 
-/// Reject malformed CNAME, NS and PTR names while permitting non-hostname labels.
+/// Reject malformed targets while preserving each type's root policy.
 #[test]
-fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
-    for record_type in [RecordType::Cname, RecordType::Ns, RecordType::Ptr] {
+fn domain_record_values_reject_malformed_names_and_preserve_root_policy() {
+    for record_type in [
+        RecordType::Cname,
+        RecordType::Ns,
+        RecordType::Ptr,
+        RecordType::Dname,
+    ] {
         for value in [
             "",
-            ".",
+            "..",
             "bad target.example.com",
             " leading.example.com",
             "trailing.example.com ",
@@ -200,6 +280,17 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
             );
         }
     }
+
+    for record_type in [
+        RecordType::Ns,
+        RecordType::Cname,
+        RecordType::Ptr,
+        RecordType::Dname,
+    ] {
+        assert!(record_type.validate_value(".", None).is_ok());
+        assert_eq!(record_type.encoded_value(".", None).unwrap(), ".");
+        assert_eq!(record_type.canonical_value(".", None), "00");
+    }
 }
 
 /// Verify that validate MX value accepts a target with a field priority.
@@ -210,6 +301,7 @@ fn validate_mx_value_accepts_a_target_with_a_field_priority() {
             .validate_value("mail.example.com", Some(10))
             .is_ok()
     );
+
     // An omitted priority defaults to 10.
     assert!(
         RecordType::Mx
@@ -250,6 +342,7 @@ fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
             .validate_value("5 5060 sip.example.com", Some(10))
             .is_ok()
     );
+
     // An omitted priority defaults to 10.
     assert!(
         RecordType::Srv
@@ -289,6 +382,7 @@ fn validate_srv_value_rejects_invalid_forms() {
 #[test]
 fn validate_value_rejects_priority_on_types_without_one() {
     let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
+
     for (record_type, value) in [
         (RecordType::A, "192.0.2.1"),
         (RecordType::Aaaa, "2001:db8::1"),

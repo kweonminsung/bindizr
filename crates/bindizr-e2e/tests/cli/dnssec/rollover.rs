@@ -6,9 +6,11 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("dnssec-roll-cli.example");
+
     app.create_zone_cli(&zone_name, "3600").await;
 
     let policy_name = format!("{}-nsec3", app.namespace());
+
     app.run_cli_success(
         &[
             "dnssec",
@@ -35,17 +37,20 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
             None,
         )
         .await;
+
     assert!(enabled.contains("NSEC3 denial"), "{enabled}");
 
     let started = app
         .run_cli_success(&["dnssec", "rollover", "start", &zone_name], None)
         .await;
+
     // The pre-published replacement key joins the key table.
     assert!(started.contains("published"), "{started}");
 
     let status = app
         .run_cli_success(&["dnssec", "status", &zone_name], None)
         .await;
+
     assert!(status.contains("NSEC3 denial"));
     assert!(status.contains("published"), "{status}");
     assert!(status.contains("active"), "{status}");
@@ -55,6 +60,7 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
     let ds_seen = app
         .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name], None)
         .await;
+
     assert!(!ds_seen.status.success());
     let unchecked = [
         "dnssec",
@@ -63,6 +69,7 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
         &zone_name,
         "--skip-ds-check",
     ];
+
     let ds_seen = app.run_cli(&unchecked, None).await;
     assert_cli_failure_contains(&unchecked, &ds_seen, "must stay published");
 
@@ -80,6 +87,7 @@ async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
             None,
         )
         .await;
+
     assert!(promoted.contains("retired"), "{promoted}");
     assert!(!promoted.contains("published"), "{promoted}");
 }

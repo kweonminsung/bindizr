@@ -245,7 +245,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bindizr"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "axum",
  "axum-server",
@@ -256,14 +256,13 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
- "hex",
  "log",
  "nix",
- "ring",
  "rustls",
  "serde",
  "serde_json",
  "serde_norway",
+ "sqlx",
  "tabled",
  "tempfile",
  "thiserror",
@@ -275,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-core"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "base64 0.23.0",
  "chrono",
@@ -289,6 +288,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "subtle",
  "thiserror",
  "toml",
  "utoipa",
@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-db"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "bindizr-core",
  "chrono",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-e2e"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "base64 0.23.0",
  "bindizr",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-external-dns"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "axum",
  "bindizr-core",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-service"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "base64 0.23.0",
  "bindizr-core",

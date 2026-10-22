@@ -65,6 +65,7 @@ pub(crate) fn display_record_value(value: &RecordValue) -> String {
     let text = value.to_text();
     let mut chars = text.chars();
     let head: String = chars.by_ref().take(MAX_CELL_CHARS).collect();
+
     if chars.next().is_none() {
         head
     } else {
@@ -78,6 +79,7 @@ pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     if started_at_ms == 0 {
         return "starting".to_string();
     }
+
     let now_ms = Utc::now().timestamp_millis().max(0) as u64;
     let secs = now_ms.saturating_sub(started_at_ms) / 1000;
     let (days, hours, minutes, seconds) = (
@@ -86,6 +88,7 @@ pub(crate) fn display_uptime(started_at_ms: u64) -> String {
         secs % 3_600 / 60,
         secs % 60,
     );
+
     match (days, hours, minutes) {
         (0, 0, 0) => format!("{}s", seconds),
         (0, 0, _) => format!("{}m {}s", minutes, seconds),
@@ -126,6 +129,7 @@ pub(crate) fn display_transfer_summary(summary: &TransferSummaryResponse) -> Str
     if summary.zones == 0 {
         return "no transfers".to_string();
     }
+
     format!(
         "{} zones: {} {ixfr} delta, {} {ixfr} full, {} {axfr}, {} {refused}, {} {failed}",
         summary.zones,
