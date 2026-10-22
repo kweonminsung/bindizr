@@ -8,7 +8,7 @@
     "develop"
   ],
   "automerge": true,
-  "rangeStrategy": "bumpMinor",
+  "rangeStrategy": "bump",
   "packageRules": [
     {
       "description": "A major bump can pass build and tests while changing behaviour, so it waits for a human.",
