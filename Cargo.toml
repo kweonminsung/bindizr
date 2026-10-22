@@ -36,7 +36,7 @@ redundant_closure_for_method_calls = "warn"
 [workspace.dependencies]
 axum = "0.8.9"
 axum-server = { version = "0.8.0", features = ["tls-rustls-no-provider"] }
-base64 = "0.23"
+base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = "4.6.11"
