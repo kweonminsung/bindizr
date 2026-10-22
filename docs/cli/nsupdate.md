@@ -118,10 +118,12 @@ incrementing applies only when records change without an SOA advance
 Prerequisites are decoded and evaluated one by one in wire order (RFC 2136,
 Section 3.2.5), so the first one that fails names the response code; the
 value-dependent ones (Section 3.2.3) are compared whole once the section has
-been read. SOA replacements accept serials 0–4294967295, with wraparound comparison and
-automatic incrementing under RFC 1982. The zone-write policy requires SOA TTL 60–604800 seconds, refresh/retry/expire from 1–2147483647 seconds, minimum TTL from
-1–4294967295 seconds, a supported MNAME and an email-convertible RNAME. A newer SOA
-outside that policy refuses the whole request with `REFUSED`.
+been read. SOA replacements accept serials 0–4294967295, with wraparound
+comparison and automatic incrementing under RFC 1982. The zone-write policy
+requires SOA TTL 60–604800 seconds, refresh/retry/expire from 0–2147483647
+seconds, minimum TTL from 0–4294967295 seconds, a supported MNAME and an
+email-convertible RNAME. A newer SOA outside that policy refuses the whole
+request with `REFUSED`.
 
 Record TTLs accept 0–4294967295 and retain the high bit as part of the value
 ([RFC 8767, Section 4](https://www.rfc-editor.org/rfc/rfc8767.html#section-4)).

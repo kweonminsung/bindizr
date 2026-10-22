@@ -31,11 +31,10 @@ contact, timers, and **serial** — so the zone does not have to exist first.
 Carrying the serial over matters: a secondary that already holds the old
 primary's higher serial would ignore a zone that started from 1.
 
-The source serial must be between **1 and 2,137,483,647** when creating the
-zone. A serial outside that range rejects both the dry run and the import
-without creating anything. Keep the old primary serving if the import is
-rejected. Applying record changes advances the carried-over serial once;
-for example, `2026091601` becomes `2026091602`.
+The source serial may be any value from **0 to 4,294,967,295**. Applying
+record changes advances the carried-over serial once modulo 2^32, skipping
+zero (RFC 2136, Section 7.11): `2026091601` becomes `2026091602`, and
+`4294967295` becomes `1`.
 
 `--from-server` pulls over AXFR instead of reading a file, and `--mode
 replace` makes the zone match the source exactly. `--dry-run` reports what

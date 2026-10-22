@@ -129,7 +129,7 @@ The package runs on SQLite out of the box and serves zone transfers on port
 has the configuration for each supported server — then start.
 
 ```bash
-$ sudo systemctl start bindizr
+$ sudo systemctl start bindizr    # Alpine: sudo rc-service bindizr start
 $ sudo bindizr doctor
 $ sudo bindizr token create admin --role admin
 ```

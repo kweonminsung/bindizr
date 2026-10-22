@@ -65,9 +65,13 @@ To build the binary yourself instead, see [Building from Source](source.md).
 ## 3. Configure Bindizr
 
 The package installs `/etc/bindizr/bindizr.conf.toml` ready to run: SQLite at
-`/var/lib/bindizr/bindizr.db` and DNS on `127.0.0.1:5300`, leaving port 53
-to the secondary. For MySQL or PostgreSQL, set `database.type` and that
-backend's `url`; see [Configuration](../configuration.md).
+`/var/lib/bindizr/bindizr.db`, DNS on `0.0.0.0:5300`, and the HTTP API on
+`0.0.0.0:3000`, leaving port 53 to the secondary. Both listeners accept
+connections on all local IPv4 addresses. Set `api.listen_addr` and
+`dns.listen_addr` to `"127.0.0.1"` for access from this host only.
+
+For MySQL or PostgreSQL, set `database.type` and that backend's `url`; see
+[Configuration](../configuration.md).
 
 The service reads the configuration as the `bindizr` user. Keep its installed
 ownership and permissions (`0640 root:bindizr`) when editing it.
