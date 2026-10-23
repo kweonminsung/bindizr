@@ -3,7 +3,7 @@
 use super::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::{
     dns::{
-        Serial, Ttl,
+        CatalogZone, Serial, Ttl,
         dnssec::EncodeWireNameError,
         name::{OwnerName, ZoneName, encode_name, to_fqdn},
         record::{EncodedRdata, SoaRecordValue, TxtRecordValue},
@@ -70,15 +70,11 @@ impl DnsMessageBuilder {
     }
 
     /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub fn add_catalog_soa(
-        &mut self,
-        zone: &Zone,
-        serial: Serial,
-    ) -> Result<(), EncodeMessageError> {
+    pub fn add_catalog_soa(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
-            serial: serial.as_u32(),
+            serial: zone.serial.as_u32(),
             refresh: zone.refresh.as_secs(),
             retry: zone.retry.as_secs(),
             expire: zone.expire.as_secs(),
@@ -133,7 +129,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
-    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), EncodeMessageError> {
+    pub fn add_catalog_ns(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
@@ -145,7 +141,10 @@ impl DnsMessageBuilder {
     }
 
     /// Adds the catalog-zone version TXT record.
-    pub fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), EncodeMessageError> {
+    pub fn add_catalog_schema_version(
+        &mut self,
+        zone: &CatalogZone,
+    ) -> Result<(), EncodeMessageError> {
         let version_name = format!("version.{}.", zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
@@ -160,7 +159,7 @@ impl DnsMessageBuilder {
     /// Append a catalog membership PTR answer.
     pub fn add_catalog_ptr(
         &mut self,
-        zone: &Zone,
+        zone: &CatalogZone,
         member_zone: &str,
     ) -> Result<(), EncodeMessageError> {
         let ptr_name = crate::dns::catalog_member_owner_name(&zone.name, member_zone);

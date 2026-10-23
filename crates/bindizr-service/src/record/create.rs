@@ -114,11 +114,12 @@ pub async fn create(
         let diff = build_record_diff(&zone, &before, &after);
 
         let new_serial = generate_serial(Some(zone.serial));
+        let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
 
         // The record is validated and authorized, so a dry run stops here.
         if request.dry_run {
-            return Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
-                candidate, zone.name, diff,
+            return Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
+                candidate, zone.name, diff, actions,
             ));
         }
 
@@ -141,15 +142,16 @@ pub async fn create(
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
+        Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
             created_record,
             zone.name,
             diff,
+            actions,
         ))
     }
     .await;
 
-    let (created_record, zone_name, diff) =
+    let (created_record, zone_name, diff, actions) =
         transaction::finish_tx(tx, apply_result, "failed to create record").await?;
 
     log::info!(
@@ -174,15 +176,7 @@ pub async fn create(
     Ok(WriteRecordResponse {
         applied: !request.dry_run,
         dry_run: request.dry_run,
-        record: RecordResponse::from_record(
-            &created_record,
-            &zone_name,
-            caller.record_actions(
-                created_record.zone_id,
-                &created_record.name,
-                &created_record.record_type,
-            ),
-        ),
+        record: RecordResponse::from_record(&created_record, &zone_name, actions),
         diff,
     })
 }

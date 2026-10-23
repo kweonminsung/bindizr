@@ -15,6 +15,61 @@ use crate::{
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
+/// Virtual catalog metadata retains its SOA, schema version and member wire records.
+#[test]
+fn catalog_response_preserves_metadata_and_member_records() {
+    use crate::dns::{
+        CatalogZone, Serial, SoaInterval, Ttl, extract_member_zones,
+        name::ZoneName,
+        query::{TransferMessagePosition, extract_transfer_records},
+    };
+
+    let catalog = CatalogZone {
+        name: ZoneName::parse("catalog.example").unwrap(),
+        serial: Serial::from(42),
+        default_ttl: Ttl::from_secs(3600),
+        refresh: SoaInterval::from_secs(3600),
+        retry: SoaInterval::from_secs(600),
+        expire: SoaInterval::from_secs(86400),
+        minimum_ttl: Ttl::from_secs(60),
+    };
+    let qname = catalog.name.to_wire_name().unwrap();
+    let mut question = build_response().question();
+    question.push((qname.clone(), Rtype::AXFR)).unwrap();
+    let request = question.finish().into_target();
+    let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
+    let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR);
+    builder.add_catalog_soa(&catalog).unwrap();
+    builder.add_catalog_ns(&catalog).unwrap();
+    builder.add_catalog_schema_version(&catalog).unwrap();
+    builder.add_catalog_ptr(&catalog, "member.example").unwrap();
+    builder.add_catalog_soa(&catalog).unwrap();
+    let response = builder.build().unwrap();
+    let records = extract_transfer_records(
+        query.query_id,
+        &qname,
+        TransferMessagePosition::First,
+        &response,
+    )
+    .unwrap();
+
+    assert_eq!(records.len(), 5);
+    assert!(records.iter().all(|record| record.ttl == 3600));
+    assert_eq!(records[0], records[4]);
+    // Both catalog names remain the protocol placeholder "invalid.".
+    let mut soa = b"\x07invalid\0\x07invalid\0".to_vec();
+    for field in [42u32, 3600, 600, 86400, 60] {
+        soa.extend_from_slice(&field.to_be_bytes());
+    }
+    assert_eq!(records[0].rdata.as_bytes(), soa);
+    assert_eq!(records[1].rdata.as_bytes(), b"\x07invalid\0");
+    assert_eq!(records[2].rdata.as_bytes(), b"\x012");
+    assert_eq!(
+        extract_member_zones(&records, &catalog.name).unwrap(),
+        vec![ZoneName::parse("member.example").unwrap()]
+    );
+}
+
 /// Signed replies with long keys fit the UDP limit without breaking their MAC.
 #[test]
 fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {

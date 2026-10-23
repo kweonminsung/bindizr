@@ -1,15 +1,11 @@
 use bindizr_core::{
+    config::Config,
     dns::{
         Serial, SoaInterval, Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{
-        api_token::{ApiToken, TokenId},
-        record::RecordId,
-        role::RoleId,
-        role_grant::{Action, RoleGrant, RoleGrantId, RoleZoneScope},
-        zone::ZoneId,
-    },
+    metrics::Metrics,
+    model::{record::RecordId, zone::ZoneId},
 };
 use change_set::{
     ZoneChangeSet, ZoneOperations, adjust_record_set, group_operations_by_zone,
@@ -17,6 +13,8 @@ use change_set::{
 };
 use chrono::Utc;
 use policy::{authoritative_zone, normalize_lookup_name};
+use serde_json::json;
+use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::{
@@ -26,8 +24,175 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord, ExternalDnsRecordUpdate},
+    record, role, token,
+    types::{
+        ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest,
+        CreateTokenRequest, ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,
+    },
+    zone,
 };
+
+/// Build isolated SQLite service state without listeners or workers.
+async fn context() -> Context {
+    let config: Config = serde_json::from_value(json!({
+        "database":{"sqlite":{"file_path":"sqlite::memory:"}},
+    }))
+    .unwrap();
+    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let (jobs, _rx) = mpsc::unbounded_channel();
+    let (period, _rx) = watch::channel(0);
+    Context::new(
+        config,
+        String::new(),
+        db,
+        Metrics::new().unwrap(),
+        jobs,
+        period,
+    )
+}
+
+/// Create a zone with no ordinary records for authorization and rollback checks.
+async fn create_zone(cx: &Context, name: &str) {
+    zone::create(cx, &Caller::socket(), &serde_json::from_value(json!({
+        "name":name, "mname":format!("ns.{name}"), "rname":format!("hostmaster@{name}"), "apex_ns":false,
+    })).unwrap()).await.unwrap();
+}
+
+/// Issue a credential in a role that starts without any grant.
+async fn credential(cx: &Context) -> String {
+    let caller = Caller::socket();
+    role::create(
+        cx,
+        &caller,
+        &CreateRoleRequest {
+            name: "external-dns".into(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    token::create(
+        cx,
+        &caller,
+        &CreateTokenRequest {
+            name: "external-dns".into(),
+            description: None,
+            expires_in_days: None,
+            role_name: "external-dns".into(),
+        },
+    )
+    .await
+    .unwrap()
+    .1
+}
+
+/// Grant the fixture role the supplied actions on a named zone.
+async fn grant(cx: &Context, name: &str, actions: &[&str]) -> RoleGrantResponse {
+    role::grant::create(
+        cx,
+        &Caller::socket(),
+        "external-dns",
+        &CreateRoleGrantRequest {
+            zone_name: Some(name.into()),
+            actions: actions.iter().map(ToString::to_string).collect(),
+            record_name_pattern: None,
+            record_types: None,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+/// Zone visibility changes after request authentication are decided under the zone lock.
+#[tokio::test]
+async fn apply_changes_uses_transactional_zone_visibility() {
+    let cx = context().await;
+    create_zone(&cx, "example.test").await;
+    let secret = credential(&cx).await;
+    let before_grant = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+    let permission = grant(&cx, "example.test", &["record:create"]).await;
+    let request = ApplyExternalDnsChangesRequest {
+        creates: vec![record_set("app.example.test", "A", None, &["192.0.2.1"])],
+        updates: Vec::new(),
+        deletes: Vec::new(),
+    };
+    assert_eq!(
+        apply_changes(&cx, &before_grant, &request)
+            .await
+            .unwrap()
+            .added,
+        1
+    );
+
+    let before_revoke = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+    role::grant::revoke(&cx, &Caller::socket(), "external-dns", permission.id)
+        .await
+        .unwrap();
+    let name = zone::normalize_name("example.test").unwrap();
+    let serial = zone::get_by_name(&cx, &Caller::socket(), &name)
+        .await
+        .unwrap()
+        .serial;
+
+    // Even an idempotent request must not pass after its grant is gone.
+    let error = apply_changes(&cx, &before_revoke, &request)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::ZoneNotFound);
+    assert_eq!(
+        error.to_string(),
+        "no zone is authoritative for 'app.example.test'"
+    );
+    assert_eq!(record::count_all(&cx).await.unwrap(), 1);
+    assert_eq!(
+        zone::get_by_name(&cx, &Caller::socket(), &name)
+            .await
+            .unwrap()
+            .serial,
+        serial
+    );
+}
+
+/// A hidden child shadows its granted parent and a later refusal rolls earlier zones back.
+#[tokio::test]
+async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
+    let cx = context().await;
+    create_zone(&cx, "a.example.test").await;
+    create_zone(&cx, "example.test").await;
+    create_zone(&cx, "internal.example.test").await;
+    let secret = credential(&cx).await;
+    grant(&cx, "a.example.test", &["record:create"]).await;
+    grant(&cx, "example.test", &["record:create"]).await;
+    let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
+    let first = zone::normalize_name("a.example.test").unwrap();
+    let serial = zone::get_by_name(&cx, &Caller::socket(), &first)
+        .await
+        .unwrap()
+        .serial;
+    let request = ApplyExternalDnsChangesRequest {
+        creates: vec![
+            record_set("app.a.example.test", "A", None, &["192.0.2.1"]),
+            record_set("app.internal.example.test", "A", None, &["192.0.2.2"]),
+        ],
+        updates: Vec::new(),
+        deletes: Vec::new(),
+    };
+
+    let error = apply_changes(&cx, &caller, &request).await.unwrap_err();
+    assert_eq!(error.code(), ErrorCode::ZoneNotFound);
+    assert_eq!(
+        error.to_string(),
+        "no zone is authoritative for 'app.internal.example.test'"
+    );
+    assert_eq!(record::count_all(&cx).await.unwrap(), 0);
+    assert_eq!(
+        zone::get_by_name(&cx, &Caller::socket(), &first)
+            .await
+            .unwrap()
+            .serial,
+        serial
+    );
+}
 
 /// Build a zone fixture for the test.
 fn test_zone(id: i32, name: &str) -> Zone {
@@ -313,10 +478,13 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
     };
     let operations = parse_changes_request(&request).unwrap();
 
-    let grouped =
-        group_operations_by_zone(&Caller::unauthenticated_api(), &zones, operations).unwrap();
+    let grouped = group_operations_by_zone(&zones, operations).unwrap();
 
     assert_eq!(grouped.len(), 1);
+    assert_eq!(
+        grouped[&ZoneName::from_row("internal.example.com")].request_name,
+        "api.internal.example.com"
+    );
     assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
         grouped[&ZoneName::from_row("internal.example.com")].adds[0].name,
@@ -335,72 +503,15 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     };
     let operations = parse_changes_request(&request).unwrap();
 
-    let error =
-        group_operations_by_zone(&Caller::unauthenticated_api(), &zones, operations).unwrap_err();
+    let error = group_operations_by_zone(&zones, operations).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::ZoneNotFound);
-}
-
-/// Verify that group operations reads a hidden zone as absent instead of its granted parent.
-#[test]
-fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
-    let zones = vec![
-        test_zone(1, "example.com"),
-        test_zone(2, "internal.example.com"),
-    ];
-    let caller = Caller::from_token(
-        &ApiToken {
-            id: TokenId::from(7),
-            name: "scoped".into(),
-            token: String::new(),
-            description: None,
-            role_id: RoleId::from(7),
-            created_at: Utc::now(),
-            expires_at: None,
-            last_used_at: None,
-        },
-        vec![RoleGrant {
-            id: RoleGrantId::from(1),
-            role_id: RoleId::from(7),
-            zone_scope: RoleZoneScope::Zone(ZoneId::from(1)),
-            actions: [Action::RecordCreate].into_iter().collect(),
-            record_name_pattern: "*".to_string(),
-            record_types: "*".to_string(),
-            created_at: Utc::now(),
-        }],
-    );
-    let request = ApplyExternalDnsChangesRequest {
-        creates: vec![record_set(
-            "api.internal.example.com",
-            "A",
-            None,
-            &["192.0.2.1"],
-        )],
-        updates: vec![],
-        deletes: vec![],
-    };
-    let operations = parse_changes_request(&request).unwrap();
-
-    let error = group_operations_by_zone(&caller, &zones, operations).unwrap_err();
-
-    assert_eq!(error.code(), ErrorCode::ZoneNotFound);
-    assert!(
-        error
-            .to_string()
-            .contains("no zone is authoritative for 'api.internal.example.com'"),
-        "{error}"
-    );
 }
 
 /// Resolve an external-dns change request into operations for the test zone.
 fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOperations {
     let operations = parse_changes_request(request).unwrap();
-    let grouped = group_operations_by_zone(
-        &Caller::unauthenticated_api(),
-        std::slice::from_ref(zone),
-        operations,
-    )
-    .unwrap();
+    let grouped = group_operations_by_zone(std::slice::from_ref(zone), operations).unwrap();
 
     grouped.into_values().next().unwrap_or_default()
 }

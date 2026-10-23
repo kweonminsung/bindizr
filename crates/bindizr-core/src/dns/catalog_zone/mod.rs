@@ -6,10 +6,23 @@ use ring::digest::{SHA256, digest};
 use thiserror::Error;
 
 use crate::dns::{
+    Serial, SoaInterval, Ttl,
     message::{Name, Rtype},
     name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName},
     query::TransferRecord,
 };
+
+/// The virtual catalog's SOA metadata, without a managed-zone row or signing settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogZone {
+    pub name: ZoneName,
+    pub serial: Serial,
+    pub default_ttl: Ttl,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
+    pub minimum_ttl: Ttl,
+}
 
 /// Digest octets retained in stable catalog member IDs.
 const MEMBER_ID_DIGEST_LEN: usize = 16;

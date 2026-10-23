@@ -1,7 +1,8 @@
 //! Secondary SOA status and transfer history.
-use std::net::IpAddr;
+use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::dns::{Serial, name::ZoneName};
+use tokio::task::JoinSet;
 
 use crate::{
     Context,
@@ -70,39 +71,47 @@ pub async fn probe_secondaries(
 
     let timeout = cx.config().dns.notify.timeout();
 
-    let mut tasks = Vec::new();
+    let mut tasks = JoinSet::new();
+    let mut targets = HashMap::new();
 
-    for secondary in secondaries {
+    for (index, secondary) in secondaries.into_iter().enumerate() {
         let zone_name = zone_name.clone();
+        let address = secondary.address.to_string();
 
-        tasks.push((
-            secondary.address.to_string(),
-            tokio::spawn(
-                async move { probe_addresses(&zone_name, &secondary.address, timeout).await },
-            ),
-        ));
+        let task = tasks
+            .spawn(async move { probe_addresses(&zone_name, &secondary.address, timeout).await });
+        targets.insert(task.id(), (index, address));
     }
 
     let mut probes = Vec::new();
 
-    for (address, task) in tasks {
-        match task.await {
-            Ok(Ok(probe)) => {
+    // The set owns every exchange, including when this request is cancelled.
+    while let Some(result) = tasks.join_next_with_id().await {
+        let id = match &result {
+            Ok((id, _)) => *id,
+            Err(error) => error.id(),
+        };
+        // Every id belongs to this set and was registered before joining.
+        let (index, address) = &targets[&id];
+        let status = match result {
+            Ok((_, Ok(probe))) => {
                 let status = build_secondary_status(probe.address, expected_serial, probe.serial);
-                probes.push(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
+                attach_last_transfer(cx, zone_name, status, &probe.clients).await
             }
-            Ok(Err(error)) => return Err(error.into()),
-            Err(error) => probes.push(SecondaryStatusResponse {
-                address,
+            Ok((_, Err(error))) => return Err(error.into()),
+            Err(error) => SecondaryStatusResponse {
+                address: address.clone(),
                 status: SecondaryStatus::Unreachable,
                 visible_serial: None,
                 error: Some(format!("probe task failed: {error}")),
                 last_transfer: None,
-            }),
-        }
+            },
+        };
+        probes.push((*index, status));
     }
 
-    Ok(probes)
+    probes.sort_unstable_by_key(|(index, _)| *index);
+    Ok(probes.into_iter().map(|(_, probe)| probe).collect())
 }
 
 /// Probe one secondary and attach its serial status and transfer history.
@@ -142,26 +151,4 @@ async fn attach_last_transfer(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    /// Serial ordering survives wraparound; half-range differences remain unordered.
-    #[test]
-    fn secondary_status_uses_rfc1982_order() {
-        for (expected, visible, status) in [
-            (0, u32::MAX, SecondaryStatus::Lagging),
-            (u32::MAX, 0, SecondaryStatus::Ahead),
-            (0, 0, SecondaryStatus::InSync),
-            (0, 0x8000_0000, SecondaryStatus::Reachable),
-        ] {
-            assert_eq!(
-                build_secondary_status(
-                    "server".into(),
-                    Some(Serial::from(expected)),
-                    Ok(Serial::from(visible))
-                )
-                .status,
-                status
-            );
-        }
-    }
-}
+mod tests;

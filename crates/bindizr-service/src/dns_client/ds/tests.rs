@@ -15,6 +15,43 @@ const RCODE_NXDOMAIN: u16 = 3;
 const RTYPE_DS: u16 = 43;
 const RTYPE_SOA: u16 = 6;
 
+/// Canceling a DS fan-out prevents its child from starting TCP after a late TC reply.
+#[tokio::test]
+async fn query_ds_cancels_child_exchanges_with_the_request() {
+    let (udp, tcp) = loop {
+        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        match TcpListener::bind(udp.local_addr().unwrap()).await {
+            Ok(tcp) => break (udp, tcp),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(error) => panic!("binding TCP listener failed: {error}"),
+        }
+    };
+    let address = udp.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        query_ds(
+            &ZoneName::parse("example.test").unwrap(),
+            &[(address.to_string(), vec![address])],
+            TIMEOUT,
+        )
+        .await
+    });
+    let mut query = [0u8; 4096];
+    let (len, client) = tokio::time::timeout(TIMEOUT, udp.recv_from(&mut query))
+        .await
+        .unwrap()
+        .unwrap();
+
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    let response = build_response(&query[..len], FLAG_TC, 0, &[], &[]);
+    udp.send_to(&response, client).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), tcp.accept())
+            .await
+            .is_err()
+    );
+}
+
 /// What a fake server answers to every question: DS records at the qname,
 /// the same but truncated over UDP so only TCP carries them, NXDOMAIN, or
 /// nothing at all.
