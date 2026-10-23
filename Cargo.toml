@@ -48,7 +48,7 @@ log = { version = "0.4.34", features = ["std"] }
 nix = { version = "0.31.3", default-features = false, features = ["net", "uio"] }
 openssl = "0.10.81"
 prometheus = { version = "0.14", default-features = false }
-rand = "0.10"
+rand = "0.10.3"
 rcgen = "0.14.10"
 # Hashing and HMAC; domain links it for TSIG in any case.
 ring = "0.17"
