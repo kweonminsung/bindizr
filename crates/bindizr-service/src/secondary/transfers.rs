@@ -1,8 +1,14 @@
 //! Read the transfer history matching a secondary's current addresses.
 
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+};
 
-use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::{
+    role_grant::Action,
+    transfer::{TransferKind, TransferResult, TransferWithZone},
+};
 
 use super::lookup_by_name;
 use crate::{
@@ -41,7 +47,7 @@ pub async fn list_transfers(
         .transpose()?;
 
     let served = transfer::list_by_clients(cx, &resolve_ips(cx, &secondary).await).await?;
-    let summary = TransferSummaryResponse::from(served.as_slice());
+    let summary = build_transfer_summary(&served);
     let transfers = served
         .iter()
         .filter(|transfer| {
@@ -67,7 +73,42 @@ pub(crate) async fn summarize_transfers(
     secondary: &Secondary,
 ) -> Result<TransferSummaryResponse, ServiceError> {
     let served = transfer::list_by_clients(cx, &resolve_ips(cx, secondary).await).await?;
-    Ok(TransferSummaryResponse::from(served.as_slice()))
+    Ok(build_transfer_summary(&served))
+}
+
+/// Count each zone by its latest transfer among `transfers`.
+fn build_transfer_summary(transfers: &[TransferWithZone]) -> TransferSummaryResponse {
+    let mut latest: HashMap<&str, &TransferWithZone> = HashMap::new();
+
+    for transfer in transfers {
+        let entry = latest
+            .entry(transfer.zone_name.as_str())
+            .or_insert(transfer);
+        if transfer.served_at > entry.served_at {
+            *entry = transfer;
+        }
+    }
+
+    let mut summary = TransferSummaryResponse {
+        zones: latest.len() as u64,
+        axfr: 0,
+        ixfr_full: 0,
+        ixfr_delta: 0,
+        refused: 0,
+        failed: 0,
+    };
+
+    for transfer in latest.values() {
+        match (transfer.result, transfer.kind, transfer.incremental) {
+            (TransferResult::Refused, _, _) => summary.refused += 1,
+            (TransferResult::Failed, _, _) => summary.failed += 1,
+            (TransferResult::Ok, TransferKind::Axfr, _) => summary.axfr += 1,
+            (TransferResult::Ok, TransferKind::Ixfr, true) => summary.ixfr_delta += 1,
+            (TransferResult::Ok, TransferKind::Ixfr, false) => summary.ixfr_full += 1,
+        }
+    }
+
+    summary
 }
 
 /// The addresses the secondary resolves to now, which key the transfer

@@ -41,7 +41,7 @@ use crate::{
     types::{
         ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
     },
-    zone,
+    zone::{self, diff::build_record_diff},
 };
 
 /// Resolve a new zone from the imported SOA and configured creation defaults.
@@ -337,7 +337,31 @@ pub(crate) async fn apply_import(
         // Only a valid dry run needs a diff; failed validation must not preview
         // changes that cannot be applied.
         let diff = if run.is_dry_run() && errors.is_empty() {
-            plan.diff(caller, &zone, &existing_records)
+            let deleted_ids: HashSet<RecordId> = plan
+                .dels
+                .iter()
+                .chain(&plan.ttl_dels)
+                .map(|record| record.id)
+                .collect();
+
+            let before = caller.readable_records(
+                zone.id,
+                existing_records.iter().cloned().map(RecordData::from),
+            );
+            let mut after = caller.readable_records(
+                zone.id,
+                existing_records
+                    .iter()
+                    .filter(|record| !deleted_ids.contains(&record.id))
+                    .cloned()
+                    .map(RecordData::from),
+            );
+
+            for add in &plan.adds {
+                after.push_written(add.data.clone());
+            }
+
+            build_record_diff(&zone, &before, &after)
         } else {
             RecordDiffResponse::default()
         };

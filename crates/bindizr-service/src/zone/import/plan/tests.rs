@@ -1,6 +1,9 @@
 use bindizr_core::{
     dns::{Serial, SoaInterval, Ttl, name::ZoneName},
-    model::zone::ZoneId,
+    model::{
+        record::RecordId,
+        zone::{Zone, ZoneId},
+    },
 };
 use chrono::Utc;
 

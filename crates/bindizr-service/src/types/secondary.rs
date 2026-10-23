@@ -1,7 +1,5 @@
 //! Secondary server payloads.
 
-use std::collections::HashMap;
-
 use bindizr_core::{
     dns::Serial,
     model::{
@@ -180,43 +178,6 @@ pub struct TransferSummaryResponse {
     /// Allowed, then broken off by a failure.
     #[schema(example = 0)]
     pub failed: u64,
-}
-
-impl From<&[TransferWithZone]> for TransferSummaryResponse {
-    /// Count each zone by its latest transfer among `transfers`.
-    fn from(transfers: &[TransferWithZone]) -> Self {
-        let mut latest: HashMap<&str, &TransferWithZone> = HashMap::new();
-
-        for transfer in transfers {
-            let entry = latest
-                .entry(transfer.zone_name.as_str())
-                .or_insert(transfer);
-            if transfer.served_at > entry.served_at {
-                *entry = transfer;
-            }
-        }
-
-        let mut summary = TransferSummaryResponse {
-            zones: latest.len() as u64,
-            axfr: 0,
-            ixfr_full: 0,
-            ixfr_delta: 0,
-            refused: 0,
-            failed: 0,
-        };
-
-        for transfer in latest.values() {
-            match (transfer.result, transfer.kind, transfer.incremental) {
-                (TransferResult::Refused, _, _) => summary.refused += 1,
-                (TransferResult::Failed, _, _) => summary.failed += 1,
-                (TransferResult::Ok, TransferKind::Axfr, _) => summary.axfr += 1,
-                (TransferResult::Ok, TransferKind::Ixfr, true) => summary.ixfr_delta += 1,
-                (TransferResult::Ok, TransferKind::Ixfr, false) => summary.ixfr_full += 1,
-            }
-        }
-
-        summary
-    }
 }
 
 /// The transfers Bindizr served one secondary.
