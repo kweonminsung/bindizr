@@ -12,12 +12,20 @@ def build_record_data(record: dict) -> str:
         return f'{record.get("priority", 10)} {value if value.endswith(".") else value + "."}'
 
     if record_type == "TXT":
+        value = value.replace("\\", "\\\\").replace('"', '\\"')
+        value = value.replace("\n", "\\010").replace("\r", "\\013")
         return f'"{value}"'
 
     if record_type == "CNAME":
         return value if value.endswith(".") else value + "."
 
     return value
+
+
+def build_record_line(record: dict) -> str:
+    """Render one record line for a full zone file or a records-only import."""
+    return (f'{record["name"]} {record.get("ttl", 3600)} IN {record["type"]} '
+            f'{build_record_data(record)}')
 
 
 def build_zone_file(zone: str, serial: int, records: Iterable[dict]) -> str:
@@ -30,8 +38,6 @@ def build_zone_file(zone: str, serial: int, records: Iterable[dict]) -> str:
     ]
 
     for record in records:
-        lines.append(
-            f'{record["name"]} {record.get("ttl", 3600)} IN {record["type"]} '
-            f'{build_record_data(record)}')
+        lines.append(build_record_line(record))
 
     return "\n".join(lines) + "\n"

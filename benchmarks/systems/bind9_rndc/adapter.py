@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import Endpoint  # noqa: E402
 from adapters.bind9_zonefile import Bind9ZoneFileAdapter  # noqa: E402
-from lib import docker  # noqa: E402
+from lib import docker, process  # noqa: E402
 
 DNS_PORT = 15357
 ZONE = "bench.example"
@@ -32,7 +32,7 @@ class Bind9RndcAdapter(Bind9ZoneFileAdapter):
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()  # clean slate: remove any leftovers from a prior run
+        self.compose.down()
         self.compose.up("bind9", wait=False)
         self.cid = self.compose.resolve_container_id("bind9")
         await self._wait_dns()
@@ -40,13 +40,12 @@ class Bind9RndcAdapter(Bind9ZoneFileAdapter):
     async def _wait_dns(self, timeout: int = 60) -> None:
         """Wait until the system answers DNS queries."""
         for _ in range(timeout * 2):
-            proc = await asyncio.create_subprocess_exec(
+            proc = await process.run(
                 "dig", f"@{SERVER}", "-p", str(DNS_PORT), ZONE, "SOA", "+short",
                 "+tries=1", "+time=3",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await proc.communicate()
+                timeout=5, stderr=asyncio.subprocess.DEVNULL)
 
-            if out.decode().strip():
+            if proc.stdout.decode().strip():
                 return
 
             await asyncio.sleep(0.5)
@@ -60,8 +59,3 @@ class Bind9RndcAdapter(Bind9ZoneFileAdapter):
     async def create_zone(self, zone: str) -> None:
         """Create the zone used by the benchmark."""
         return
-
-    async def delete_zone(self, zone: str) -> None:
-        """Remove the benchmark zone and its records."""
-        self.records.clear()
-        await self._flush_and_reload()

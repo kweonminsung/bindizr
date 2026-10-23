@@ -55,7 +55,7 @@ class DnsAdapter(abc.ABC):
 
     @abc.abstractmethod
     async def create_record(self, zone: str, record: dict) -> str:
-        """Create a record; return a handle for later get/update/delete."""
+        """Create a record; return its handle on success and raise on failure."""
 
     @abc.abstractmethod
     async def get_record(self, zone: str, handle: str) -> bool:

@@ -13,7 +13,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import Endpoint  # noqa: E402
 from adapters.nsupdate import NsupdateAdapter  # noqa: E402
-from lib import docker, zonefile  # noqa: E402
+from lib import docker, process, zonefile  # noqa: E402
 
 DNS_PORT = 15360
 ZONE = "bench.example"
@@ -36,7 +36,7 @@ class KnotAdapter(NsupdateAdapter):
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()  # clean slate: remove any leftovers from a prior run
+        self.compose.down()
         self.compose.up("knot", wait=False)
         self.cid = self.compose.resolve_container_id("knot")
         await self._wait_dns()
@@ -63,13 +63,12 @@ class KnotAdapter(NsupdateAdapter):
 
     async def _knotc(self, *args: str) -> bool:
         """Run a Knot control command in the benchmark container."""
-        proc = await asyncio.create_subprocess_exec(
+        proc = await process.run(
             "docker", "exec", self.cid, "knotc", *args,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-        _, stderr = await proc.communicate()
 
         if proc.returncode != 0:
-            self._last_err = (stderr or b"").decode(errors="replace").strip()
+            self._last_err = (proc.stderr or b"").decode(errors="replace").strip()
 
         return proc.returncode == 0
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 
 from .base import DnsAdapter, Endpoint
-from lib import zonefile
+from lib import process, zonefile
 
 
 class NsupdateAdapter(DnsAdapter):
@@ -19,13 +19,12 @@ class NsupdateAdapter(DnsAdapter):
 
     async def _dig(self, name: str, rtype: str) -> tuple[bool, str]:
         """Query a record through the primary's DNS endpoint."""
-        proc = await asyncio.create_subprocess_exec(
+        proc = await process.run(
             "dig", f"@{self._endpoint.host}", "-p", str(self._endpoint.port),
             name, rtype, "+short", "+tries=1", "+time=3",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await proc.communicate()
+            timeout=5, stderr=asyncio.subprocess.DEVNULL)
 
-        text = out.decode().strip()
+        text = proc.stdout.decode().strip()
 
         return (bool(text), text)
 
@@ -36,15 +35,13 @@ class NsupdateAdapter(DnsAdapter):
         delay = 0.05
 
         for attempt in range(retries + 1):
-            proc = await asyncio.create_subprocess_exec(
-                "nsupdate", stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-            _, stderr = await proc.communicate(payload)
+            proc = await process.run("nsupdate", input=payload,
+                                     stdout=asyncio.subprocess.DEVNULL)
 
             if proc.returncode == 0:
                 return True
 
-            self._last_err = (stderr or b"").decode(errors="replace").strip()
+            self._last_err = (proc.stderr or b"").decode(errors="replace").strip()
 
             # A primary can refuse updates while flushing its journal.
             if attempt < retries:
