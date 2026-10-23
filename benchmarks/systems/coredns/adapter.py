@@ -5,9 +5,10 @@ No management API or RFC 2136 updates; per-record CRUD would measure polling del
 from __future__ import annotations
 
 import asyncio
-import os
+import io
 import sys
-import tempfile
+import tarfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -83,17 +84,20 @@ class CoreDnsAdapter(DnsAdapter):
         """Publish a candidate locally after CoreDNS serves its new SOA serial."""
         self.serial += 1
 
-        with tempfile.NamedTemporaryFile("w", suffix=".zone", delete=False) as fh:
-            fh.write(zonefile.build_zone_file(ZONE, self.serial, records.values()))
-            tmp = fh.name
+        data = zonefile.build_zone_file(ZONE, self.serial, records.values()).encode("utf-8")
+        with io.BytesIO() as stream:
+            with tarfile.open(fileobj=stream, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                # CoreDNS needs read access and a fresh mtime for reloads.
+                member = tarfile.TarInfo(Path(ZONE_PATH).name)
+                member.mode = 0o644
+                member.mtime = time.time()
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+            payload = stream.getvalue()
 
-        try:
-            os.chmod(tmp, 0o644)  # docker cp preserves perms; CoreDNS must be able to read it
-            proc = await process.run(
-                "docker", "cp", tmp, f"{self.cid}:{ZONE_PATH}", timeout=60,
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-        finally:
-            Path(tmp).unlink(missing_ok=True)
+        proc = await process.run(
+            "docker", "cp", "-", f"{self.cid}:{Path(ZONE_PATH).parent}", input=payload,
+            timeout=60, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
 
         if proc.returncode != 0:
             return False

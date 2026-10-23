@@ -1,9 +1,12 @@
 """Adapter failures must reach workload results without committing candidate state."""
 import asyncio
 from contextlib import nullcontext
+import io
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
+import time
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -97,19 +100,20 @@ class AdapterTests(IsolatedAsyncioTestCase):
             await asyncio.gather(first, second)
         self.assertEqual(set(adapter.records), {"old|A", "new|A"})
 
-    async def test_coredns_copy_failure_and_cancel_remove_temporary_files(self):
-        """Failed or cancelled copies must remove temporary files and preserve state."""
+    async def test_coredns_copy_failure_and_cancel_preserve_state(self):
+        """Failed or cancelled copies preserve the published snapshot."""
         adapter = self.adapters()[2]
         adapter.records = {"old|A": self.old}
         from lib import process
 
         for failure in (None, asyncio.CancelledError()):
-            paths = []
+            copies = []
 
             async def copy(*command, **kwargs):
-                """Expose the temporary path and fail the copy."""
-                paths.append(Path(command[2]))
-                self.assertTrue(paths[-1].exists())
+                """Simulate a failed or cancelled copy."""
+                copies.append(command)
+                self.assertEqual(command[2], "-")
+                self.assertIsInstance(kwargs["input"], bytes)
                 if failure is not None:
                     raise failure
                 return subprocess.CompletedProcess(command, 1)
@@ -121,9 +125,33 @@ class AdapterTests(IsolatedAsyncioTestCase):
                 else:
                     with self.assertRaises(asyncio.CancelledError):
                         await adapter.create_record("bench.example", self.record)
-            self.assertTrue(paths)
-            self.assertFalse(paths[0].exists())
+            self.assertTrue(copies)
             self.assertEqual(adapter.records, {"old|A": self.old})
+
+    async def test_coredns_stream_preserves_zone_content_permissions_and_reload_time(self):
+        """Preserve UTF-8 zone data, container read access and reload timestamps."""
+        adapter = self.adapters()[2]
+        adapter.cid = "unit-coredns"
+        record = {"name": "txt", "type": "TXT", "value": '한글 "quote"', "ttl": 60}
+        from lib import process, zonefile
+
+        before = time.time()
+        with patch.object(process, "run", AsyncMock(return_value=subprocess.CompletedProcess([], 0))) as copy, \
+                patch.object(adapter, "_query_soa_serial", AsyncMock(return_value=2)):
+            await adapter.create_record("bench.example", record)
+
+        self.assertEqual(copy.call_args.args, ("docker", "cp", "-", "unit-coredns:/zones"))
+        with tarfile.open(fileobj=io.BytesIO(copy.call_args.kwargs["input"])) as archive:
+            self.assertEqual(archive.getnames(), ["bench.example.zone"])
+            member = archive.getmember("bench.example.zone")
+            self.assertTrue(member.isfile())
+            self.assertEqual(member.mode, 0o644)
+            self.assertGreaterEqual(member.mtime, before)
+            self.assertLessEqual(member.mtime, time.time())
+            expected = zonefile.build_zone_file("bench.example", 2, [record]).encode("utf-8")
+            self.assertEqual(member.size, len(expected))
+            self.assertEqual(archive.extractfile(member).read(), expected)
+        self.assertEqual(adapter.records, {"txt|TXT": record})
 
     async def test_coredns_publishes_only_after_observing_the_new_serial(self):
         """Publish CoreDNS candidates only once the new serial is visible."""
