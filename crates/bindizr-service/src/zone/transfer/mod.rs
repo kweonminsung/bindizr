@@ -1,7 +1,10 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
 //! to the caller its key became, decided on the locked row it will serve.
 
-use bindizr_core::{dns::name::ZoneName, model::role_grant::Action};
+use bindizr_core::{
+    dns::{CatalogZone, name::ZoneName},
+    model::role_grant::Action,
+};
 use bindizr_db::LockLevel;
 
 mod ixfr;
@@ -103,7 +106,7 @@ pub async fn authorize_transfer_by_name(
 pub async fn refresh_catalog_content(
     cx: &Context,
     caller: &Caller,
-) -> Result<TransferAccess<(Zone, Vec<String>)>, ServiceError> {
+) -> Result<TransferAccess<(CatalogZone, Vec<String>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
     let result: Result<_, ServiceError> = async {
         let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {

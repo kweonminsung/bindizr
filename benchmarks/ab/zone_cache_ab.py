@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Compare cold and warm AXFR times with Bindizr's zone-and-serial cache off and on.
+"""Compare cold and warm AXFR with Bindizr's transfer cache disabled and enabled.
 
 Query Bindizr directly from the bind9 container; Benchmark 4 queries the secondary.
-A global TSIG key avoids registering a secondary that would warm the cache on NOTIFY.
-At a fixed serial, the first transfer misses and subsequent transfers should hit.
+A zone-scoped key avoids secondary registration and cache warming by NOTIFY.
 """
 from __future__ import annotations
 
@@ -25,9 +24,19 @@ AXFRS = 8
 QUERY_TIME = re.compile(r";; Query time: (\d+) msec")
 
 
-async def create_transfer_key(adapter) -> str:
-    """Create a global TSIG key and return it in dig's `-y` form."""
-    body = {"name": "bench-axfr", "global": True}
+async def create_transfer_key(adapter, zone: str) -> str:
+    """Create this zone's transfer role and key, returned in dig's `-y` form."""
+    role_name = "bench-axfr"
+    async with adapter.session.post(adapter.base + "/roles", json={"name": role_name}) as response:
+        if response.status != 201:
+            raise RuntimeError(f"creating the transfer role failed: {response.status} {await response.text()}")
+
+    grant = {"zone_name": zone.rstrip("."), "actions": ["zone:transfer"]}
+    async with adapter.session.post(adapter.base + f"/roles/{role_name}/grants", json=grant) as response:
+        if response.status != 201:
+            raise RuntimeError(f"granting zone transfer failed: {response.status} {await response.text()}")
+
+    body = {"name": "bench-axfr", "role_name": role_name}
 
     async with adapter.session.post(adapter.base + "/tsig-keys", json=body) as response:
         if response.status != 201:
@@ -69,20 +78,20 @@ async def run_variant(transfer_cache: bool) -> dict:
         print(f"[transfer_cache={label}] setup...", flush=True)
 
         await adapter.setup()
-        transfer_key = await create_transfer_key(adapter)
         await adapter.create_zone(ZONE)
+        transfer_key = await create_transfer_key(adapter, ZONE)
 
         print(f"[transfer_cache={label}] importing {RECORDS} records...", flush=True)
 
         await adapter.import_records(ZONE, generate(RECORDS, 1337, ZONE))
+        if adapter.bulk_errors:
+            raise RuntimeError(f"importing the cache workload failed for {adapter.bulk_errors} records")
 
         bind9_cid = adapter.compose.resolve_container_id("bind9")
 
         if not bind9_cid:
             raise RuntimeError("bind9 container not found")
 
-        # Run consecutive transfers against the same populated zone to compare
-        # the first request with later requests that can reuse the cache.
         samples: list[float] = []
         counts: list[int] = []
 
@@ -94,7 +103,6 @@ async def run_variant(transfer_cache: bool) -> dict:
             counts.append(n)
             print(f"  axfr #{i + 1}: {ms:.0f} ms ({n} lines)", flush=True)
 
-        # Report the first transfer separately from the subsequent warm samples.
         cold, warm = samples[0], samples[1:]
 
         return {

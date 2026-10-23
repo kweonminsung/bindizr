@@ -189,7 +189,7 @@ pub async fn create_bulk(
 
         zone::validate_record_changes_tx(&mut tx, &zone, &[], &to_insert).await?;
 
-        if run.is_dry_run() {
+        let (created_records, diff) = if run.is_dry_run() {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
             let before =
@@ -202,29 +202,39 @@ pub async fn create_bulk(
 
             let diff = build_record_diff(&zone, &before, &after);
 
-            return Ok((to_insert, zone.name, diff));
-        }
+            (to_insert, diff)
+        } else {
+            let t = Instant::now();
 
-        let t = Instant::now();
+            let created_records =
+                super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
-        let created_records =
-            super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+            timings.db_write_ms = elapsed_ms(t);
 
-        timings.db_write_ms = elapsed_ms(t);
+            let t = Instant::now();
 
-        let t = Instant::now();
+            dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
-        dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+            // Advance the serial once so IXFR consumers detect the batch.
+            zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        // Advance the serial once so IXFR consumers detect the batch.
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
+            timings.serial_ms = elapsed_ms(t);
 
-        timings.serial_ms = elapsed_ms(t);
+            (created_records, RecordDiffResponse::default())
+        };
 
-        Ok::<(Vec<Record>, ZoneName, RecordDiffResponse), ServiceError>((
-            created_records,
-            zone.name,
-            RecordDiffResponse::default(),
+        // Carry grants out of the locked snapshot; render values after commit.
+        let records = created_records
+            .into_iter()
+            .map(|record| {
+                let actions =
+                    caller.record_actions(record.zone_id, &record.name, &record.record_type);
+                (record, actions)
+            })
+            .collect();
+
+        Ok::<(Vec<(Record, Vec<Action>)>, ZoneName, RecordDiffResponse), ServiceError>((
+            records, zone.name, diff,
         ))
     }
     .await;
@@ -268,15 +278,9 @@ pub async fn create_bulk(
     );
 
     let records = created_records
-        .iter()
-        .map(|record| {
-            RecordResponse::from_record(
-                record,
-                &zone_name,
-                caller.record_actions(record.zone_id, &record.name, &record.record_type),
-            )
-        })
-        .collect();
+        .into_iter()
+        .map(|(record, actions)| RecordResponse::from_record(&record, &zone_name, actions))
+        .collect::<Vec<_>>();
 
     Ok(CreateBulkRecordsResponse {
         applied: !run.is_dry_run(),
@@ -284,7 +288,7 @@ pub async fn create_bulk(
         added: if run.is_dry_run() {
             0
         } else {
-            created_records.len() as u64
+            records.len() as u64
         },
         records,
         diff,

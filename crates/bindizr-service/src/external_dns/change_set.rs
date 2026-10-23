@@ -14,7 +14,6 @@ use chrono::Utc;
 
 use super::policy::{authoritative_zone, normalize_lookup_name};
 use crate::{
-    authorization::Caller,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -35,10 +34,11 @@ pub(crate) struct RecordSet {
     pub(crate) values: Vec<String>,
 }
 
+/// An ordered addition or deletion before its authoritative zone is resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordSetOperation {
-    pub(crate) record_set: RecordSet,
-    pub(crate) is_delete: bool,
+pub(crate) enum RecordSetOperation {
+    Add(RecordSet),
+    Delete(RecordSet),
 }
 
 /// Desired records whose owner is relative to their resolved zone.
@@ -53,6 +53,8 @@ pub(crate) struct ZoneRecordSet {
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ZoneOperations {
+    /// The first requested absolute name, for refusals that must not name a hidden zone.
+    pub(crate) request_name: String,
     pub(crate) adds: Vec<ZoneRecordSet>,
     pub(crate) deletes: Vec<ZoneRecordSet>,
 }
@@ -169,66 +171,56 @@ pub(crate) fn parse_changes_request(
     let mut operations = Vec::new();
 
     for record_set in &request.deletes {
-        operations.push(RecordSetOperation {
-            record_set: parse_record_set(record_set)?,
-            is_delete: true,
-        });
+        operations.push(RecordSetOperation::Delete(parse_record_set(record_set)?));
     }
 
     for update in &request.updates {
-        operations.push(RecordSetOperation {
-            record_set: parse_record_set(&update.old)?,
-            is_delete: true,
-        });
-        operations.push(RecordSetOperation {
-            record_set: parse_record_set(&update.new)?,
-            is_delete: false,
-        });
+        operations.push(RecordSetOperation::Delete(parse_record_set(&update.old)?));
+        operations.push(RecordSetOperation::Add(parse_record_set(&update.new)?));
     }
 
     for record_set in &request.creates {
-        operations.push(RecordSetOperation {
-            record_set: parse_record_set(record_set)?,
-            is_delete: false,
-        });
+        operations.push(RecordSetOperation::Add(parse_record_set(record_set)?));
     }
 
     Ok(operations)
 }
 
-/// Resolve every operation to its most-specific authoritative zone; the
-/// caller's write authorization is checked per zone inside the transaction.
+/// Group operations by their most-specific authoritative zone, independently of grants.
 pub(crate) fn group_operations_by_zone(
-    caller: &Caller,
     zones: &[Zone],
     operations: Vec<RecordSetOperation>,
 ) -> Result<BTreeMap<ZoneName, ZoneOperations>, ServiceError> {
     let mut grouped: BTreeMap<ZoneName, ZoneOperations> = BTreeMap::new();
 
     for pending in operations {
+        let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
+            &pending;
         // From all zones, so a hidden subzone still shadows a granted parent.
-        let (zone, name) = authoritative_zone(zones, &pending.record_set.name)
-            .filter(|(zone, _)| caller.sees_zone(zone.id))
-            .ok_or_else(|| {
-                ServiceError::ZoneNotFound(format!(
-                    "no zone is authoritative for '{}'",
-                    pending.record_set.name
-                ))
-            })?;
+        let (zone, name) = authoritative_zone(zones, &record_set.name).ok_or_else(|| {
+            ServiceError::ZoneNotFound(format!(
+                "no zone is authoritative for '{}'",
+                record_set.name
+            ))
+        })?;
 
-        let record_set = ZoneRecordSet {
-            name,
-            record_type: pending.record_set.record_type,
-            ttl: pending.record_set.ttl,
-            values: pending.record_set.values,
+        let entry = grouped
+            .entry(zone.name.clone())
+            .or_insert_with(|| ZoneOperations {
+                request_name: record_set.name.clone(),
+                ..Default::default()
+            });
+
+        let (destination, record_set) = match pending {
+            RecordSetOperation::Delete(record_set) => (&mut entry.deletes, record_set),
+            RecordSetOperation::Add(record_set) => (&mut entry.adds, record_set),
         };
-        let entry = grouped.entry(zone.name.clone()).or_default();
-
-        if pending.is_delete {
-            entry.deletes.push(record_set);
-        } else {
-            entry.adds.push(record_set);
-        }
+        destination.push(ZoneRecordSet {
+            name,
+            record_type: record_set.record_type,
+            ttl: record_set.ttl,
+            values: record_set.values,
+        });
     }
 
     Ok(grouped)

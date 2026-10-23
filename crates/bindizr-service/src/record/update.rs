@@ -379,11 +379,12 @@ async fn update_locked(
         .await?;
 
         let new_serial = generate_serial(Some(zone.serial));
+        let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
 
         // The merge is resolved and validated, so a dry run stops here.
         if request.dry_run {
-            return Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
-                candidate, zone.name, diff,
+            return Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
+                candidate, zone.name, diff, actions,
             ));
         }
 
@@ -398,15 +399,16 @@ async fn update_locked(
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiffResponse), ServiceError>((
+        Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
             updated_record,
             zone_name,
             diff,
+            actions,
         ))
     }
     .await;
 
-    let (updated_record, zone_name, diff) =
+    let (updated_record, zone_name, diff, actions) =
         transaction::finish_tx(tx, apply_result, "failed to update record").await?;
 
     log::info!(
@@ -431,15 +433,7 @@ async fn update_locked(
     Ok(WriteRecordResponse {
         applied: !request.dry_run,
         dry_run: request.dry_run,
-        record: RecordResponse::from_record(
-            &updated_record,
-            &zone_name,
-            caller.record_actions(
-                updated_record.zone_id,
-                &updated_record.name,
-                &updated_record.record_type,
-            ),
-        ),
+        record: RecordResponse::from_record(&updated_record, &zone_name, actions),
         diff,
     })
 }

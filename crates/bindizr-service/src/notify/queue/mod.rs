@@ -15,17 +15,24 @@ use crate::Context;
 /// A queued propagation job: send NOTIFY for one zone, or for all zones.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotifyJob {
-    zone_name: Option<ZoneName>,
+    target: NotifyJobTarget,
     enqueued_at: Instant,
+}
+
+/// An owned propagation target retained by a queued job.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NotifyJobTarget {
+    All,
+    Zone(ZoneName),
 }
 
 impl NotifyJob {
     /// A job for the zones `target` names.
     pub(crate) fn new(target: NotifyTarget<'_>) -> Self {
         NotifyJob {
-            zone_name: match target {
-                NotifyTarget::Zone(zone_name) => Some(zone_name.clone()),
-                NotifyTarget::All => None,
+            target: match target {
+                NotifyTarget::Zone(zone_name) => NotifyJobTarget::Zone(zone_name.clone()),
+                NotifyTarget::All => NotifyJobTarget::All,
             },
             enqueued_at: Instant::now(),
         }
@@ -123,11 +130,11 @@ struct NotifyBatch {
 impl NotifyBatch {
     /// Add a zone to the pending NOTIFY batch.
     fn add(&mut self, job: NotifyJob) {
-        match job.zone_name {
-            Some(name) => {
-                self.zones.insert(name);
+        match job.target {
+            NotifyJobTarget::Zone(zone_name) => {
+                self.zones.insert(zone_name);
             }
-            None => self.all_zones = true,
+            NotifyJobTarget::All => self.all_zones = true,
         }
     }
 }
@@ -142,12 +149,14 @@ async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
         return job.enqueued_at;
     }
 
-    let refresh = match &job.zone_name {
-        Some(name) if name == &config.dns.catalog_zone_name => Ok(CATALOG_SOA_REFRESH),
-        Some(name) => crate::zone::lookup_by_name(cx, name)
+    let refresh = match &job.target {
+        NotifyJobTarget::Zone(zone_name) if zone_name == &config.dns.catalog_zone_name => {
+            Ok(CATALOG_SOA_REFRESH)
+        }
+        NotifyJobTarget::Zone(zone_name) => crate::zone::lookup_by_name(cx, zone_name)
             .await
             .map(|zone| zone.refresh),
-        None => crate::zone::list(cx).await.map(|zones| {
+        NotifyJobTarget::All => crate::zone::list(cx).await.map(|zones| {
             zones
                 .into_iter()
                 .map(|zone| zone.refresh)

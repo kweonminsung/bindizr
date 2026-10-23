@@ -1,6 +1,6 @@
 //! Querying the supplied parent servers for a child zone's DS records.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use bindizr_core::dns::{
     dnssec::EncodeWireNameError,
@@ -9,6 +9,7 @@ use bindizr_core::dns::{
     query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
 };
 use thiserror::Error;
+use tokio::task::JoinSet;
 
 use super::{ExchangeMessageError, ResolveAddressError};
 
@@ -102,25 +103,36 @@ async fn query_ds(
 ) -> Result<Vec<Option<DsRecordSet>>, ProbeParentDsError> {
     let qname = zone_name.to_wire_name()?;
 
-    let mut tasks = Vec::with_capacity(servers.len());
+    let mut tasks = JoinSet::new();
+    let mut targets = HashMap::with_capacity(servers.len());
 
-    for (entry, addrs) in servers {
+    for (index, (entry, addrs)) in servers.iter().enumerate() {
         let qname = qname.clone();
         let addrs = addrs.clone();
-        tasks.push((
-            entry.clone(),
-            tokio::spawn(async move { query_ds_at(&qname, &addrs, timeout).await }),
-        ));
+        let task = tasks.spawn(async move { query_ds_at(&qname, &addrs, timeout).await });
+        targets.insert(task.id(), (index, entry));
     }
 
-    let mut failures = Vec::new();
-    let mut answers = Vec::with_capacity(tasks.len());
+    let mut results = Vec::with_capacity(servers.len());
+    // Dropping the request also cancels every parent exchange it started.
+    while let Some(result) = tasks.join_next_with_id().await {
+        let (id, answer) = match result {
+            Ok((id, answer)) => (id, answer),
+            Err(error) => (error.id(), Err(QueryDsError::TaskFailed(error))),
+        };
+        // Every id belongs to this set and was registered before joining.
+        let (index, entry) = targets[&id];
+        results.push((index, entry, answer));
+    }
+    results.sort_unstable_by_key(|(index, _, _)| *index);
 
-    for (entry, task) in tasks {
-        match task.await {
-            Ok(Ok(answer)) => answers.push(answer),
-            Ok(Err(error)) => failures.push((entry, error)),
-            Err(error) => failures.push((entry, QueryDsError::TaskFailed(error))),
+    let mut failures = Vec::new();
+    let mut answers = Vec::with_capacity(servers.len());
+
+    for (_, entry, answer) in results {
+        match answer {
+            Ok(answer) => answers.push(answer),
+            Err(error) => failures.push((entry.clone(), error)),
         }
     }
 

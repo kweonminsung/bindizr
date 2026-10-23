@@ -14,7 +14,7 @@ import aiohttp
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
 from adapters.base import DnsAdapter, Endpoint  # noqa: E402
-from lib import docker  # noqa: E402
+from lib import docker, zonefile  # noqa: E402
 
 API_PORT = 18000
 DNS_PORT = 15353
@@ -25,14 +25,12 @@ POST_ATTEMPTS = 4
 
 class BindizrAdapter(DnsAdapter):
     key = "bindizr"
-    #: Compose service that answers queries. Bindizr drives every secondary
-    #: the same way, so a subclass swaps the implementation and nothing else.
+    #: Secondary implementation selected by subclasses.
     secondary_service = "bind9"
     supports_ixfr = True
     supports_zone_import = True
-    # Records per request. Each chunk is one server-side transaction — a single
-    # serial bump and NOTIFY — so the chunk size bounds both memory and how much
-    # NOTIFY/XFR traffic a bulk load generates.
+    # Each chunk is one transaction with one serial bump and NOTIFY;
+    # bound its size to limit memory and transfer traffic.
     bulk_chunk = 2000
     import_chunk = 5000
 
@@ -43,12 +41,10 @@ class BindizrAdapter(DnsAdapter):
                  log_level: str | None = None):
         """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(config, project)
-        # b07 passes db_type; every other benchmark takes the env knob so it can
-        # be pointed at any backend.
+        # B07 selects each backend explicitly; other runs use the environment.
         db_type = db_type or os.environ.get("BENCH_BINDIZR_DB_TYPE", "sqlite")
         self.db_type = db_type
-        # mysql/postgres run as their own containers, so b07's per-backend
-        # CPU/mem columns only cover the backend if it is sampled too.
+        # Include networked DB containers in B07's resource measurements.
         self.resource_services = ["bindizr", self.secondary_service]
 
         if db_type == "mysql":
@@ -79,7 +75,6 @@ class BindizrAdapter(DnsAdapter):
         if not self.transfer_cache:
             env["BINDIZR_TRANSFER_CACHE_MAX_RECORDS"] = "0"
 
-        # bind9 carries no profile, so the default system starts as it always has.
         profiles = []
 
         if db_type == "mysql":
@@ -97,7 +92,7 @@ class BindizrAdapter(DnsAdapter):
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
-        self.compose.down()  # clean slate: remove any leftovers from a prior run
+        self.compose.down()
         # A networked backend waits on its own: bindizr exits when the DB host
         # does not resolve yet, and that exit alone fails a shared `up --wait`.
         db_service = {"mysql": "mysql", "postgresql": "postgres"}.get(self.db_type)
@@ -110,8 +105,7 @@ class BindizrAdapter(DnsAdapter):
 
         await self._wait_api()
 
-        # A registered secondary receives every NOTIFY, so a write-path run
-        # registers none.
+        # Write-throughput runs omit secondary registration to suppress NOTIFY.
         if self.notify_after_update:
             await self._register_secondary()
 
@@ -155,9 +149,7 @@ class BindizrAdapter(DnsAdapter):
             if response.status not in (200, 201, 409):
                 raise RuntimeError(f"create_zone failed: {response.status} {await response.text()}")
 
-        # Bindizr leaves NS records to the operator, and BIND9 loads no zone
-        # whose apex has no NS or whose in-zone NS has no address. The other
-        # systems' zone files carry these same two.
+        # Ensure the apex NS and glue BIND9 needs, matching other seed zones.
         for record in ({"name": "@", "type": "NS", "value": f"ns1.{z}."},
                     {"name": "ns1", "type": "A", "value": "127.0.0.1"}):
             body = {**record, "zone_name": z, "ttl": 3600}
@@ -249,18 +241,6 @@ class BindizrAdapter(DnsAdapter):
             if await self._post_json_with_retry(url, body) is None:
                 self.bulk_errors += len(chunk)
 
-    def _to_zone_file_record(self, record: dict) -> str:
-        """Render a benchmark record as a zone-file line."""
-        ttl = record.get("ttl", 3600)
-        rdata = record["value"]
-
-        if record["type"] == "TXT":
-            rdata = '"{}"'.format(record["value"].replace("\\", "\\\\").replace('"', '\\"'))
-        elif record["type"] == "MX":
-            rdata = f'{record.get("priority", 10)} {record["value"]}'
-
-        return f'{record["name"]} {ttl} IN {record["type"]} {rdata}'
-
     async def import_zone_file(self, zone: str, records: list[dict]) -> None:
         """Import records as BIND zone-file text via `/zones/{name}/import`
         (append mode), chunked so large sets don't build one giant request."""
@@ -269,7 +249,7 @@ class BindizrAdapter(DnsAdapter):
 
         for start in range(0, len(records), self.import_chunk):
             chunk = records[start:start + self.import_chunk]
-            content = "\n".join(self._to_zone_file_record(record) for record in chunk) + "\n"
+            content = "\n".join(zonefile.build_record_line(record) for record in chunk) + "\n"
             body = {"content": content, "mode": "append"}
             data = await self._post_json_with_retry(url, body)
             if data is None or not data.get("applied"):

@@ -245,7 +245,7 @@ async fn handle_soa_request(
             }
         };
         let mut builder = build(identity.signer);
-        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial)?;
+        builder.add_catalog_soa(&catalog_zone)?;
 
         return Ok((builder.build()?, SoaResult::Ok));
     }

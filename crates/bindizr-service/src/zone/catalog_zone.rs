@@ -1,10 +1,9 @@
 //! Virtual catalog membership and its persisted serial.
 
 use bindizr_core::{
-    dns::{CATALOG_SOA_REFRESH, Serial, SoaInterval, Ttl, name::ZoneName},
-    model::zone::{Zone, ZoneId},
+    dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl, name::ZoneName},
+    model::zone::Zone,
 };
-use chrono::Utc;
 use ring::digest::{self, SHA256};
 
 use crate::{Context, error::ServiceError, transaction};
@@ -57,7 +56,7 @@ const SOA_EXPIRE: SoaInterval = SoaInterval::from_secs(86_400);
 const MINIMUM_TTL: Ttl = Ttl::from_secs(60);
 
 /// Refresh the catalog at startup from every enabled managed zone.
-pub async fn refresh_catalog(cx: &Context) -> Result<(Zone, Vec<String>), ServiceError> {
+pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<String>), ServiceError> {
     refresh_catalog_from_zones(cx, super::list(cx).await?).await
 }
 
@@ -65,7 +64,7 @@ pub async fn refresh_catalog(cx: &Context) -> Result<(Zone, Vec<String>), Servic
 pub(crate) async fn refresh_catalog_from_zones(
     cx: &Context,
     zones: Vec<Zone>,
-) -> Result<(Zone, Vec<String>), ServiceError> {
+) -> Result<(CatalogZone, Vec<String>), ServiceError> {
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {}", catalog_zone_name);
@@ -92,22 +91,14 @@ pub(crate) async fn refresh_catalog_from_zones(
 
     let serial = advance_catalog_serial(cx, catalog_zone_name, &digest, base_serial).await?;
 
-    let catalog_zone = Zone {
-        id: ZoneId::from(0),
+    let catalog_zone = CatalogZone {
         name: catalog_zone_name.clone(),
-        mname: "invalid".to_string(),
-        rname: "invalid".to_string(),
         default_ttl: DEFAULT_TTL,
         serial,
         refresh: CATALOG_SOA_REFRESH,
         retry: SOA_RETRY,
         expire: SOA_EXPIRE,
         minimum_ttl: MINIMUM_TTL,
-        dnssec_policy_id: None,
-        parent_ns_addrs: None,
-        enabled: true,
-        description: None,
-        created_at: Utc::now(),
     };
 
     Ok((catalog_zone, member_zones))

@@ -52,3 +52,6 @@ fn build_record_response(caller: &Caller, record: &ServedRecord) -> RecordRespon
         },
     }
 }
+
+#[cfg(test)]
+mod tests;

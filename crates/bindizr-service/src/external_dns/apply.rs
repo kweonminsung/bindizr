@@ -45,7 +45,7 @@ pub async fn apply_changes(
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
-        let zone_operations = group_operations_by_zone(caller, &zones, operations)?;
+        let zone_operations = group_operations_by_zone(&zones, operations)?;
 
         let mut changed_zones = Vec::new();
         let mut added = 0u64;
@@ -57,6 +57,14 @@ pub async fn apply_changes(
             let zone = bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+            let caller = &caller.reauthenticate_tx(&mut tx).await?;
+
+            if !caller.sees_zone(zone.id) {
+                return Err(ServiceError::ZoneNotFound(format!(
+                    "no zone is authoritative for '{}'",
+                    operations.request_name
+                )));
+            }
 
             // Authorize the requested operations before idempotent pairs cancel;
             // a no-op must not bypass grants or reveal existing records.
@@ -74,10 +82,7 @@ pub async fn apply_changes(
                 })
                 .collect();
 
-            caller
-                .reauthenticate_tx(&mut tx)
-                .await?
-                .authorize_record_access(&zone, &writes)?;
+            caller.authorize_record_access(&zone, &writes)?;
 
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.

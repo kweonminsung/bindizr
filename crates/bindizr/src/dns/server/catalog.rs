@@ -1,9 +1,6 @@
 //! Encode and stream the service's virtual catalog as AXFR or IXFR.
 
-use bindizr_core::{
-    dns::{Serial, message, message::Rtype, tsig::TransferSigner},
-    model::zone::Zone,
-};
+use bindizr_core::dns::{CatalogZone, Serial, message, message::Rtype, tsig::TransferSigner};
 
 use crate::dns::{error::DnsError, stream::ResponseWriter};
 
@@ -13,7 +10,7 @@ pub(crate) async fn send_catalog_response(
     query: &message::ParsedQuery,
     response_qtype: Rtype,
     signer: &mut Option<TransferSigner>,
-    content: (Zone, Vec<String>),
+    content: (CatalogZone, Vec<String>),
 ) -> Result<(), DnsError> {
     let (catalog_zone, member_zones) = content;
     log::info!(
@@ -35,7 +32,7 @@ pub(crate) async fn send_catalog_response(
 
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-                builder.add_catalog_soa(&catalog_zone, serial)
+                builder.add_catalog_soa(&catalog_zone)
             })
             .await?;
 
@@ -72,7 +69,7 @@ pub(crate) async fn send_catalog_response(
         // Close the catalog snapshot before flushing its final envelope.
         writer
             .add_answer_and_flush_if_needed(&mut builder, &mut messages_sent, |builder| {
-                builder.add_catalog_soa(&catalog_zone, serial)
+                builder.add_catalog_soa(&catalog_zone)
             })
             .await?;
         messages_sent += writer.flush_if_not_empty(&mut builder).await?;
