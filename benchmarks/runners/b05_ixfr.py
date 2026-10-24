@@ -42,6 +42,8 @@ async def run(adapter, config, context) -> list:
     await adapter.delete_zone(zone)
     await adapter.create_zone(zone)
     await adapter.import_records(zone, generate(baseline, config["seed"], zone))
+    if adapter.bulk_errors:
+        raise RuntimeError(f"preparing the IXFR baseline failed for {adapter.bulk_errors} records")
 
     # Wait for the baseline to reach the secondary before reading serials:
     # reading a pre-baseline serial would request IXFR from a serial with no
@@ -96,6 +98,8 @@ async def run(adapter, config, context) -> list:
             ci += 1
 
         await adapter.import_records(zone, batch)
+        if adapter.bulk_errors:
+            raise RuntimeError(f"preparing the IXFR change batch failed for {adapter.bulk_errors} records")
 
         # Hold until the serial and the record count both stop moving: an
         # unchanged serial answers IXFR with a tiny "up-to-date" SOA, and the

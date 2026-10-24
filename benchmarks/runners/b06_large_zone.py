@@ -70,6 +70,8 @@ async def run(adapter, config, context) -> list:
             t = time.monotonic()
 
             await adapter.import_records(zone, recs)
+            if adapter.bulk_errors:
+                raise RuntimeError(f"populating the large zone failed for {adapter.bulk_errors} records")
 
             populate_secs = time.monotonic() - t
 

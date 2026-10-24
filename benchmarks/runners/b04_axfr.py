@@ -57,6 +57,8 @@ async def run(adapter, config, context) -> list:
 
         await adapter.create_zone(zone)
         await adapter.import_records(zone, generate(size, config["seed"], zone))
+        if adapter.bulk_errors:
+            raise RuntimeError(f"preparing the AXFR zone failed for {adapter.bulk_errors} records")
 
         # Wait until the zone is fully transferable — Bindizr's secondary pulls
         # asynchronously. Poll until the AXFR count stops growing and covers the

@@ -25,6 +25,8 @@ async def run(adapter, config, context) -> dict:
                if record["type"] == "A"][:size]
 
     await adapter.import_records(zone, records)
+    if adapter.bulk_errors:
+        raise RuntimeError(f"preparing the resource workload failed for {adapter.bulk_errors} records")
 
     names = [f'{record["name"]}.{zone.rstrip(".")}' for record in records]
     endpoint = adapter.dns_endpoint()

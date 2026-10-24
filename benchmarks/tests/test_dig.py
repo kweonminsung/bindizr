@@ -190,6 +190,7 @@ class DigTests(IsolatedAsyncioTestCase):
     async def test_final_transfer_failure_never_returns_a_success_row(self):
         """Keep failed final AXFR/IXFR/export results out of all three runners' metrics."""
         adapter = SimpleNamespace(delete_zone=AsyncMock(), create_zone=AsyncMock(), import_records=AsyncMock(),
+                                  bulk_errors=0,
                                   xfr_endpoint=lambda: SimpleNamespace(host="127.0.0.1", port=1))
         error = dig.TransferError("bench.example", "127.0.0.1", 1, "AXFR", "incomplete")
         sampler = nullcontext()

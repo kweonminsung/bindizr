@@ -85,7 +85,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         context = {"zone": "test.example.", "label": "test"}
         adapter = SimpleNamespace(
             config=config, create_zone=AsyncMock(), delete_zone=AsyncMock(),
-            import_records=AsyncMock(), create_record=AsyncMock(return_value="record"),
+            import_records=AsyncMock(), bulk_errors=0, create_record=AsyncMock(return_value="record"),
             xfr_endpoint=lambda: SimpleNamespace(host="127.0.0.1", port=1),
             dns_endpoint=lambda: SimpleNamespace(host="127.0.0.1", port=1),
         )
