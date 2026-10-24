@@ -27,7 +27,6 @@ async def run(adapter, config, context) -> list:
     """Measure large-zone creation, import, transfer, deletion, and resource use."""
     zone = context["zone"]
     xe = adapter.xfr_endpoint()
-    loop = asyncio.get_event_loop()
     rows = []
 
     for size in config["sizes"]:
@@ -42,9 +41,7 @@ async def run(adapter, config, context) -> list:
             dropped = False
 
             while time.monotonic() < drop_deadline:
-                _, count, _ = await loop.run_in_executor(
-                    None, dig.axfr, zone, xe.host, xe.port, 300)
-                if count <= APEX_LINES:
+                if await dig.zone_is_cleared(zone, xe.host, xe.port, APEX_LINES):
                     dropped = True
                     break
                 await asyncio.sleep(1.0)
@@ -84,9 +81,8 @@ async def run(adapter, config, context) -> list:
             propagated = False
 
             while time.monotonic() < deadline:
-                _, count, _ = await loop.run_in_executor(
-                    None, dig.axfr, zone, xe.host, xe.port, 300)
-                if count >= size and count == prev:
+                count = await dig.count_axfr_records(zone, xe.host, xe.port)
+                if count is not None and count >= size and count == prev:
                     propagated = True
                     break
                 prev = count
@@ -106,8 +102,7 @@ async def run(adapter, config, context) -> list:
 
                 continue
 
-            export_secs, _, export_bytes = await loop.run_in_executor(
-                None, dig.axfr, zone, xe.host, xe.port, 300)
+            export_secs, _, export_bytes = await dig.axfr(zone, xe.host, xe.port)
 
             t = time.monotonic()
 

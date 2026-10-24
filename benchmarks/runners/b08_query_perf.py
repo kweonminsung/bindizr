@@ -5,7 +5,6 @@ their measured QPS difference determines the report's query-overhead conclusion.
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -34,8 +33,8 @@ async def run(adapter, config, context) -> dict:
     # Exclude propagation wait from the query workload's warmup and measurements.
     propagation_config = config["propagation"]
 
-    missing = await asyncio.get_event_loop().run_in_executor(
-        None, dig.first_unqueryable, records, zone, endpoint.host, endpoint.port,
+    missing = await dig.first_unqueryable(
+        records, zone, endpoint.host, endpoint.port,
         propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
 
     if missing is not None:

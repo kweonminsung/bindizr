@@ -33,6 +33,9 @@ async def measure(adapter, prepop: int) -> dict:
         record["name"] = f"pool{i:07d}"
 
     await adapter.import_records(ZONE, pool)
+    if adapter.bulk_errors:
+        raise RuntimeError(
+            f"prepopulating {prepop} records failed for {adapter.bulk_errors} records")
 
     create_records = generate(300_000, 4242)
 

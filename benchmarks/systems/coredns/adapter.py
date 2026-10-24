@@ -13,7 +13,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent))
-from adapters.base import DnsAdapter, Endpoint  # noqa: E402
+from adapters.base import Endpoint  # noqa: E402
+from adapters.zonefile import ZoneFileAdapter  # noqa: E402
 from lib import docker, process, zonefile  # noqa: E402
 
 DNS_PORT = 15359
@@ -22,8 +23,9 @@ SERVER = "127.0.0.1"
 ZONE_PATH = "/zones/bench.example.zone"
 
 
-class CoreDnsAdapter(DnsAdapter):
+class CoreDnsAdapter(ZoneFileAdapter):
     key = "coredns"
+    server_name = "CoreDNS"
     resource_services = ["coredns"]
     # The `transfer` plugin serves AXFR but CoreDNS keeps no journal, so an IXFR
     # request is answered with a full transfer.
@@ -31,12 +33,8 @@ class CoreDnsAdapter(DnsAdapter):
 
     def __init__(self, config: dict, project: str):
         """Initialize the adapter with its benchmark configuration and project."""
-        super().__init__(config, project)
+        super().__init__(config, project, Endpoint(SERVER, DNS_PORT), ZONE)
         self.compose = docker.Compose(HERE / "compose.yml", project)
-        # Last snapshot confirmed by its served SOA serial.
-        self.records: dict[str, dict] = {}
-        self._write_lock = asyncio.Lock()
-        self.serial = 1
         self.cid: str | None = None
 
     async def setup(self) -> None:
@@ -81,7 +79,7 @@ class CoreDnsAdapter(DnsAdapter):
         return None
 
     async def _flush_and_reload(self, records: dict[str, dict], timeout: float = 30.0) -> bool:
-        """Publish a candidate locally after CoreDNS serves its new SOA serial."""
+        """Accept a candidate only after CoreDNS serves its new SOA serial."""
         self.serial += 1
 
         data = zonefile.build_zone_file(ZONE, self.serial, records.values()).encode("utf-8")
@@ -108,7 +106,6 @@ class CoreDnsAdapter(DnsAdapter):
         while loop.time() < deadline:
             got = await self._query_soa_serial()
             if got is not None and got >= self.serial:
-                self.records = records
                 return True
             await asyncio.sleep(0.1)
 
@@ -117,51 +114,3 @@ class CoreDnsAdapter(DnsAdapter):
     async def create_zone(self, zone: str) -> None:
         """Create the zone used by the benchmark."""
         return  # the zone is declared in the Corefile
-
-    async def delete_zone(self, zone: str) -> None:
-        """Clear the zone's records and reload its zone file."""
-
-        # Rewrite the file so CoreDNS stops serving the previous records.
-        async with self._write_lock:
-            if not await self._flush_and_reload({}):
-                raise RuntimeError("clearing the CoreDNS zone failed")
-
-    async def import_records(self, zone: str, records: list[dict]) -> None:
-        """Write the whole set in one rewrite so the reload cost is paid once."""
-        async with self._write_lock:
-            self.bulk_errors = 0
-            candidate = dict(self.records)
-            for record in records:
-                candidate[f'{record["name"]}|{record["type"]}'] = record
-            if not await self._flush_and_reload(candidate):
-                self.bulk_errors = len(records)
-
-    async def create_record(self, zone: str, record: dict) -> str:
-        """Create a record and return its adapter-specific handle."""
-        handle = f'{record["name"]}|{record["type"]}'
-        async with self._write_lock:
-            if not await self._flush_and_reload({**self.records, handle: record}):
-                raise RuntimeError(f"creating CoreDNS record {handle} failed")
-        return handle
-
-    async def get_record(self, zone: str, handle: str) -> bool:
-        """Check whether the record identified by the handle is present."""
-        name, rtype = handle.rsplit("|", 1)
-        return bool(await self._dig(f"{name}.{ZONE}", rtype))
-
-    async def update_record(self, zone: str, handle: str, record: dict) -> bool:
-        """Replace the record identified by the handle with the supplied value."""
-        async with self._write_lock:
-            candidate = {**self.records, handle: {**self.records.get(handle, {}), **record}}
-            return await self._flush_and_reload(candidate)
-
-    async def delete_record(self, zone: str, handle: str) -> bool:
-        """Delete the record identified by the handle."""
-        async with self._write_lock:
-            candidate = dict(self.records)
-            candidate.pop(handle, None)
-            return await self._flush_and_reload(candidate)
-
-    def dns_endpoint(self) -> Endpoint:
-        """Return the DNS endpoint that serves the managed zone."""
-        return Endpoint(SERVER, DNS_PORT)
