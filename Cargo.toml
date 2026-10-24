@@ -63,7 +63,7 @@ serial_test = "4"
 sqlx = { version = "0.9", default-features = false }
 tabled = { version = "0.22", default-features = false, features = ["derive"] }
 tempfile = "3.27.0"
-thiserror = "2.0.18"
+thiserror = "2.0.21"
 tokio = { version = "1", features = [
     "fs",
     "io-util",
