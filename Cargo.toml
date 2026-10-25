@@ -76,7 +76,7 @@ tokio = { version = "1", features = [
 ] }
 # Over the same ring-backed rustls; the default aws-lc-rs provider stays out.
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "logging"] }
-tower-http = { version = "0.7.0", features = ["cors"] }
+tower-http = { version = "0.7.1", features = ["cors"] }
 utoipa = { version = "6.0", features = ["axum_extras", "chrono"] }
 
 [profile.dev]
