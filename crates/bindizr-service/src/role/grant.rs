@@ -2,30 +2,20 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::{
-    dns::name::ZoneName,
-    model::{
-        api_token::ApiToken,
-        audit_log::{AuditEntity, AuditOperation},
-        grant_pattern::MATCH_ANY,
-        role::Role,
-        role_grant::{Action, ActionSet, RoleGrant, RoleGrantId, RoleZoneScope},
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::api_token::ApiToken;
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::grant_pattern::MATCH_ANY;
+use bindizr_core::model::role::Role;
+use bindizr_core::model::role_grant::{Action, ActionSet, RoleGrant, RoleGrantId, RoleZoneScope};
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    grant_pattern::{normalize_pattern, normalize_types},
-    pagination::{build_page, validate_page_limit},
-    transaction,
-    types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse},
-    zone,
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse};
+use crate::{Context, audit, grant_pattern, pagination, transaction, zone};
 
 /// Grant `role_name` the request's actions in its zone, or in all zones
 /// when it names none.
@@ -53,8 +43,9 @@ pub async fn create(
         ));
     }
 
-    let record_name_pattern = normalize_pattern(request.record_name_pattern.as_deref())?;
-    let record_types = normalize_types(request.record_types.as_deref())?;
+    let record_name_pattern =
+        grant_pattern::normalize_pattern(request.record_name_pattern.as_deref())?;
+    let record_types = grant_pattern::normalize_types(request.record_types.as_deref())?;
     let constrained = record_name_pattern != MATCH_ANY || record_types != MATCH_ANY;
 
     if constrained && !actions.iter().any(Action::is_record_action) {
@@ -140,7 +131,7 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
-    validate_page_limit(page.limit)?;
+    pagination::validate_page_limit(page.limit)?;
 
     let role = super::lookup_by_name(cx, role_name).await?;
     list_by_role(cx, &role, page).await
@@ -152,7 +143,7 @@ pub async fn list_self(
     token: &ApiToken,
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
-    validate_page_limit(page.limit)?;
+    pagination::validate_page_limit(page.limit)?;
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
@@ -238,7 +229,7 @@ async fn list_by_role(
         .map(|zone| (zone.id, zone.name))
         .collect();
 
-    Ok(build_page(
+    Ok(pagination::build_page(
         grants
             .iter()
             .map(|grant| {

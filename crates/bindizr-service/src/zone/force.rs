@@ -1,10 +1,11 @@
-use bindizr_core::{dns::name::ZoneName, model::role_grant::Action};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use crate::{
-    Context, authorization::Caller, dnssec, error::ServiceError, model::zone::Zone,
-    serial::generate_serial, transaction,
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::{Context, dnssec, serial, transaction};
 
 /// Advance a named zone's serial and save its signed version atomically.
 pub(crate) async fn force_increment_serial(
@@ -21,7 +22,7 @@ pub(crate) async fn force_increment_serial(
             .await?
             .authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
-        let new_serial = generate_serial(Some(zone.serial));
+        let new_serial = serial::generate_serial(Some(zone.serial));
 
         let updated_zone = bindizr_db::zone::update_tx(
             &mut tx,

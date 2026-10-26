@@ -1,10 +1,12 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
-use bindizr_core::dns::{dnssec::KeyTag, name::ZoneName, query::DsRecord};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, UdpSocket},
-};
+use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::query::DsRecord;
+use tokio::io::AsyncReadExt;
+use tokio::net::{TcpListener, UdpSocket};
 
 use super::*;
 
@@ -215,6 +217,8 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
 /// Start a fake server with the selected behavior over UDP and TCP on one
 /// port, until dropped.
 async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
+    use tokio::io::AsyncWriteExt;
+
     // A port the kernel hands out for UDP may be taken for TCP, so the pair
     // is retried until both sides bind.
     let (socket, listener) = loop {

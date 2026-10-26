@@ -3,11 +3,10 @@
 use std::str::FromStr;
 
 use base64::Engine;
-use domain::{
-    base::{Message, Rtype, ToName, message_builder::AdditionalBuilder},
-    rdata::tsig::{Time48, Tsig},
-    tsig::{Algorithm, ClientTransaction, Key, KeyName},
-};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::{Message, Rtype};
+use domain::rdata::tsig::{Time48, Tsig};
+use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName};
 use ring::hmac;
 
 use crate::common::TestApp;
@@ -61,6 +60,8 @@ pub(crate) fn verify_response_mac(
     response: &Message<Vec<u8>>,
     key: &SigningKey,
 ) -> Result<(), String> {
+    use domain::base::ToName;
+
     let request = Message::from_octets(request).map_err(|error| error.to_string())?;
     let request_tsig = request
         .additional()

@@ -1,9 +1,7 @@
 //! DNSSEC policy payloads.
 
-use bindizr_core::model::{
-    dnssec_key::DnssecAlgorithm,
-    dnssec_policy::{Days, PolicyId},
-};
+use bindizr_core::model::dnssec_key::DnssecAlgorithm;
+use bindizr_core::model::dnssec_policy::{Days, PolicyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

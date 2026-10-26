@@ -5,10 +5,10 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{
-    dns::{Serial, message::Rtype, name::ZoneName},
-    model::zone::ZoneId,
-};
+use crate::dns::Serial;
+use crate::dns::message::Rtype;
+use crate::dns::name::ZoneName;
+use crate::model::zone::ZoneId;
 
 /// A transfer column holding a kind or result bindizr does not record.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

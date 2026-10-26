@@ -3,13 +3,11 @@ use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
 use clap::Subcommand;
 use thiserror::Error;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{AuditLogRow, OutputFormat, print_page},
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{AuditLogRow, OutputFormat};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for reading the audit log.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -134,7 +132,7 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
             )
             .await?;
             log::debug!("Audit list result: {:?}", response);
-            print_page(&response.data, output, |item| AuditLogRow::from(item))?;
+            output::print_page(&response.data, output, |item| AuditLogRow::from(item))?;
         }
     }
 

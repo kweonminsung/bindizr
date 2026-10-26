@@ -1,15 +1,14 @@
 //! Access control for zone transfers: matches client addresses against the
 //! enabled secondaries.
 
-use std::{
-    collections::HashMap,
-    net::IpAddr,
-    sync::{Mutex, MutexGuard},
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_service::{dns_client::resolve_address_entry, error::ServiceError, secondary};
+use bindizr_service::error::ServiceError;
+use bindizr_service::{dns_client, secondary};
 
 use super::DnsContext;
 
@@ -94,13 +93,14 @@ async fn matches_client_address<'a>(
         let addrs = match cache.cached_addrs(host_port) {
             Some(addrs) => addrs,
             None => {
-                let (addrs, ttl) = match resolve_address_entry(address, RESOLVE_TIMEOUT).await {
-                    Ok(addrs) => (
-                        addrs.into_iter().map(|addr| addr.ip()).collect::<Vec<_>>(),
-                        RESOLVED_TTL,
-                    ),
-                    Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
-                };
+                let (addrs, ttl) =
+                    match dns_client::resolve_address_entry(address, RESOLVE_TIMEOUT).await {
+                        Ok(addrs) => (
+                            addrs.into_iter().map(|addr| addr.ip()).collect::<Vec<_>>(),
+                            RESOLVED_TTL,
+                        ),
+                        Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
+                    };
                 cache.locked().insert(
                     host_port.clone(),
                     CachedAddrs {

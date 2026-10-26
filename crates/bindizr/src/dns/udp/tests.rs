@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use tokio::{task::JoinSet, time::timeout};
+use tokio::task::JoinSet;
+use tokio::time;
 
 use super::*;
 
@@ -30,7 +31,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     for _ in destinations {
         let mut buffer = [0; 128];
 
-        let (len, target) = timeout(Duration::from_secs(2), server.recv_from(&mut buffer))
+        let (len, target) = time::timeout(Duration::from_secs(2), server.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -70,7 +71,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     for (index, client) in clients.into_iter().enumerate() {
         let mut buffer = [0; 128];
 
-        let (len, peer) = timeout(Duration::from_secs(2), client.recv_from(&mut buffer))
+        let (len, peer) = time::timeout(Duration::from_secs(2), client.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -135,7 +136,7 @@ async fn recv_from_rejects_truncated_datagram() {
 
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client.send_to(&[0; 32], addr).await.unwrap();
-    let result = timeout(Duration::from_secs(2), server.recv_from(&mut [0; 4]))
+    let result = time::timeout(Duration::from_secs(2), server.recv_from(&mut [0; 4]))
         .await
         .unwrap();
 
@@ -154,7 +155,7 @@ async fn recv_from_rejects_missing_destination() {
         .send_to(&[0; 32], (Ipv4Addr::LOCALHOST, port))
         .await
         .unwrap();
-    let result = timeout(Duration::from_secs(2), server.recv_from(&mut [0; 128]))
+    let result = time::timeout(Duration::from_secs(2), server.recv_from(&mut [0; 128]))
         .await
         .unwrap();
 
@@ -195,7 +196,7 @@ async fn udp_send_enforces_the_response_budget() {
     let mut response = [0; 1024];
 
     assert_eq!(
-        timeout(Duration::from_secs(1), client.recv(&mut response))
+        time::timeout(Duration::from_secs(1), client.recv(&mut response))
             .await
             .unwrap()
             .unwrap(),

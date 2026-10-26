@@ -1,30 +1,20 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{
+    CheckSecondaryResponse, CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
+    MessageResponse, PageRequest, PaginatedResponse, SecondaryResponse, SecondaryTransferFilter,
+    SecondaryTransfersResponse, SingleSecondaryResponse, UpdateSecondaryRequest,
 };
-use bindizr_service::{
-    Context, secondary,
-    types::{
-        CheckSecondaryResponse, CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        MessageResponse, PageRequest, PaginatedResponse, SecondaryResponse,
-        SecondaryTransferFilter, SecondaryTransfersResponse, SingleSecondaryResponse,
-        UpdateSecondaryRequest,
-    },
-};
+use bindizr_service::{Context, secondary};
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-        middleware::body_parser::JsonBody,
-    },
-    params::NameParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::middleware::body_parser::JsonBody;
+use crate::params::NameParams;
 
 /// Build the secondary API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

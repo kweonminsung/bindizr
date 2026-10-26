@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_failure_contains};
+use crate::common;
+use crate::common::TestApp;
 
 /// Verify that `audit list` shows socket changes without an actor and
 /// narrows by entity and name.
@@ -106,7 +107,7 @@ async fn audit_list_shows_socket_changes_via_cli() {
     let args = ["audit", "list", "--entity", "record"];
 
     let refused = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &refused, "unsupported audit entity");
+    common::assert_cli_failure_contains(&args, &refused, "unsupported audit entity");
 
     let args = ["audit", "list", "--since", "yesterday"];
 

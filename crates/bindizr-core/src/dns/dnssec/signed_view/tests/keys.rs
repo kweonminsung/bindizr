@@ -1,12 +1,8 @@
 use super::*;
-use crate::{
-    dns::SoaInterval,
-    model::{
-        dnssec_key::{DS_DIGEST_TYPE, DnssecKeyId},
-        record::RecordId,
-        zone::ZoneId,
-    },
-};
+use crate::dns::SoaInterval;
+use crate::model::dnssec_key::{DS_DIGEST_TYPE, DnssecKeyId};
+use crate::model::record::RecordId;
+use crate::model::zone::ZoneId;
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {

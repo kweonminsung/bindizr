@@ -2,25 +2,20 @@
 
 mod media_type;
 
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
+use std::time::Instant;
 
-use axum::{
-    Router,
-    extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{HeaderMap, Method, StatusCode, header},
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing,
-};
+use axum::extract::{DefaultBodyLimit, MatchedPath, Request, State};
+use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
+use axum::{Router, routing};
 use bindizr_core::metrics::TEXT_CONTENT_TYPE;
 
-use crate::{
-    metrics::AdapterMetrics,
-    upstream::{UpstreamClient, UpstreamError},
-    wire::{
-        Changes, DomainFilter, Endpoint, MEDIA_TYPE, build_adjusted_endpoints, to_bindizr_records,
-    },
-};
+use crate::metrics::AdapterMetrics;
+use crate::upstream::{UpstreamClient, UpstreamError};
+use crate::wire;
+use crate::wire::{Changes, DomainFilter, Endpoint, MEDIA_TYPE};
 
 /// State shared by both routers: the bindizr client every handler forwards to.
 #[derive(Debug)]
@@ -258,7 +253,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
         }
     };
 
-    let records = match to_bindizr_records(&endpoints) {
+    let records = match wire::to_bindizr_records(&endpoints) {
         Ok(records) => records,
         Err(message) => {
             log::warn!("event=adjust_endpoints rejected={}", message);
@@ -279,7 +274,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
             .into_response(),
         Ok(adjusted) => {
             log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
-            build_json_response(&build_adjusted_endpoints(endpoints, adjusted))
+            build_json_response(&wire::build_adjusted_endpoints(endpoints, adjusted))
         }
         Err(error) => error.into_response(),
     }

@@ -22,7 +22,7 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
 async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomically() {
     use domain::base::Rtype;
 
-    use crate::common::dns::fetch_exported_record_sets;
+    use crate::common::dns;
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -40,7 +40,7 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 4);
 
-    let sets = fetch_exported_record_sets(&app, name).await;
+    let sets = dns::fetch_exported_record_sets(&app, name).await;
 
     for (owner, rtype) in [
         ("ns", Rtype::NS),
@@ -1395,12 +1395,10 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
 
 /// Serve a case-varied AXFR with TC set, AA clear, and optional trailing data.
 fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::JoinHandle<()>) {
-    use domain::{
-        base::{Message, MessageBuilder, Serial, Ttl},
-        rdata::{A, Cname, Dname, Ns, Ptr, Soa},
-    };
+    use domain::base::{Message, MessageBuilder, Serial, Ttl};
+    use domain::rdata::{A, Cname, Dname, Ns, Ptr, Soa};
 
-    use crate::common::dns::{parse_name, read_frame, write_frame};
+    use crate::common::dns;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let server = std::thread::spawn(move || {
@@ -1408,11 +1406,11 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(5)))
             .unwrap();
-        let query = read_frame(&mut stream).unwrap().unwrap();
+        let query = dns::read_frame(&mut stream).unwrap().unwrap();
         let message = Message::from_octets(query.as_slice()).unwrap();
-        let owner = parse_name(&zone).unwrap();
-        let primary = parse_name(&format!("NS1.{zone}.")).unwrap();
-        let mailbox = parse_name(&format!("Hostmaster.{zone}.")).unwrap();
+        let owner = dns::parse_name(&zone).unwrap();
+        let primary = dns::parse_name(&format!("NS1.{zone}.")).unwrap();
+        let mailbox = dns::parse_name(&format!("Hostmaster.{zone}.")).unwrap();
         let soa = Soa::new(
             primary.clone(),
             mailbox,
@@ -1423,8 +1421,8 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
             Ttl::from_secs(300),
         );
         let closing = Soa::new(
-            parse_name(&format!("ns1.{zone}.")).unwrap(),
-            parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+            dns::parse_name(&format!("ns1.{zone}.")).unwrap(),
+            dns::parse_name(&format!("hostmaster.{zone}.")).unwrap(),
             Serial::from(42),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
@@ -1444,36 +1442,36 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
             .unwrap();
         answer
             .push((
-                &parse_name(&format!("www.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("www.{zone}.")).unwrap(),
                 Ttl::from_secs(u32::MAX),
                 A::new("192.0.2.50".parse().unwrap()),
             ))
             .unwrap();
-        let root = parse_name(".").unwrap();
+        let root = dns::parse_name(".").unwrap();
         answer
             .push((
-                &parse_name(&format!("rootns.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("rootns.{zone}.")).unwrap(),
                 Ttl::from_secs(300),
                 Ns::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &parse_name(&format!("cname.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("cname.{zone}.")).unwrap(),
                 Ttl::from_secs(300),
                 Cname::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &parse_name(&format!("ptr.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("ptr.{zone}.")).unwrap(),
                 Ttl::from_secs(300),
                 Ptr::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &parse_name(&format!("dname.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("dname.{zone}.")).unwrap(),
                 Ttl::from_secs(300),
                 Dname::new(root),
             ))
@@ -1490,7 +1488,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
                 .unwrap();
         }
 
-        write_frame(&mut stream, &answer.finish()).unwrap();
+        dns::write_frame(&mut stream, &answer.finish()).unwrap();
     });
 
     (address, server)
@@ -1503,12 +1501,10 @@ fn serve_catalog(
     apex_ns: bool,
     member_transfers: usize,
 ) -> (String, std::thread::JoinHandle<Vec<String>>) {
-    use domain::{
-        base::{Message, MessageBuilder, Serial, Ttl},
-        rdata::{A, Ns, Ptr, Soa, Txt},
-    };
+    use domain::base::{Message, MessageBuilder, Serial, Ttl};
+    use domain::rdata::{A, Ns, Ptr, Soa, Txt};
 
-    use crate::common::dns::{parse_name, read_frame, write_frame};
+    use crate::common::dns;
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
@@ -1525,14 +1521,14 @@ fn serve_catalog(
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                 .unwrap();
-            let query = read_frame(&mut stream).unwrap().unwrap();
+            let query = dns::read_frame(&mut stream).unwrap().unwrap();
             let message = Message::from_octets(query.as_slice()).unwrap();
             queries.push(message.sole_question().unwrap().qname().to_string());
-            let owner = parse_name(&zone).unwrap();
-            let primary = parse_name(&format!("ns1.{zone}.")).unwrap();
+            let owner = dns::parse_name(&zone).unwrap();
+            let primary = dns::parse_name(&format!("ns1.{zone}.")).unwrap();
             let soa = Soa::new(
                 primary.clone(),
-                parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+                dns::parse_name(&format!("hostmaster.{zone}.")).unwrap(),
                 Serial::from(42),
                 Ttl::from_secs(7200),
                 Ttl::from_secs(3600),
@@ -1558,7 +1554,7 @@ fn serve_catalog(
             if catalog {
                 answer
                     .push((
-                        &parse_name("version.catalog.example").unwrap(),
+                        &dns::parse_name("version.catalog.example").unwrap(),
                         Ttl::from_secs(0),
                         Txt::from_octets(vec![1, b'2']).unwrap(),
                     ))
@@ -1567,15 +1563,16 @@ fn serve_catalog(
                 for (index, member) in members.iter().enumerate() {
                     answer
                         .push((
-                            &parse_name(&format!("member-{index}.zones.catalog.example")).unwrap(),
+                            &dns::parse_name(&format!("member-{index}.zones.catalog.example"))
+                                .unwrap(),
                             Ttl::from_secs(0),
-                            Ptr::new(parse_name(member).unwrap()),
+                            Ptr::new(dns::parse_name(member).unwrap()),
                         ))
                         .unwrap();
                 }
 
                 if split {
-                    write_frame(&mut stream, &answer.finish()).unwrap();
+                    dns::write_frame(&mut stream, &answer.finish()).unwrap();
                     let mut builder = MessageBuilder::new_vec();
                     builder.header_mut().set_id(message.header().id());
                     builder.header_mut().set_qr(true);
@@ -1584,7 +1581,7 @@ fn serve_catalog(
 
                 answer
                     .push((
-                        &parse_name("VERSION.CATALOG.example").unwrap(),
+                        &dns::parse_name("VERSION.CATALOG.example").unwrap(),
                         Ttl::from_secs(120),
                         Txt::from_octets(vec![1, b'2']).unwrap(),
                     ))
@@ -1593,16 +1590,17 @@ fn serve_catalog(
                 for (index, member) in members.iter().enumerate() {
                     answer
                         .push((
-                            &parse_name(&format!("MEMBER-{index}.ZONES.CATALOG.example")).unwrap(),
+                            &dns::parse_name(&format!("MEMBER-{index}.ZONES.CATALOG.example"))
+                                .unwrap(),
                             Ttl::from_secs(120),
-                            Ptr::new(parse_name(&member.to_ascii_uppercase()).unwrap()),
+                            Ptr::new(dns::parse_name(&member.to_ascii_uppercase()).unwrap()),
                         ))
                         .unwrap();
                 }
             } else {
                 answer
                     .push((
-                        &parse_name(&format!("www.{zone}")).unwrap(),
+                        &dns::parse_name(&format!("www.{zone}")).unwrap(),
                         Ttl::from_secs(300),
                         A::new("192.0.2.50".parse().unwrap()),
                     ))
@@ -1610,7 +1608,7 @@ fn serve_catalog(
             }
 
             answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
-            write_frame(&mut stream, &answer.finish()).unwrap();
+            dns::write_frame(&mut stream, &answer.finish()).unwrap();
         }
 
         if member_transfers == 0 {
@@ -1625,7 +1623,7 @@ fn serve_catalog(
                             .set_read_timeout(Some(std::time::Duration::from_secs(1)))
                             .unwrap();
 
-                        if let Some(query) = read_frame(&mut stream).unwrap() {
+                        if let Some(query) = dns::read_frame(&mut stream).unwrap() {
                             queries.push(
                                 Message::from_octets(query.as_slice())
                                     .unwrap()
@@ -1724,7 +1722,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
 async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
     use domain::base::Rtype;
 
-    use crate::common::dns::fetch_exported_record_sets;
+    use crate::common::dns;
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -1762,7 +1760,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
 
         server.join().unwrap();
 
-        let sets = fetch_exported_record_sets(&app, zone_name).await;
+        let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
 
         for (owner, rtype) in [
             ("rootns", Rtype::NS),
@@ -1880,9 +1878,10 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
 async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     use std::time::Duration;
 
-    use domain::{base::Message, rdata::Soa};
+    use domain::base::Message;
+    use domain::rdata::Soa;
 
-    use crate::common::dns::exchange_dns_query;
+    use crate::common::dns;
 
     let app = TestApp::start_local().await;
 
@@ -1897,7 +1896,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     let versions = app.send_request(Method::GET, &versions_path, None).await;
 
     let catalog_serial = || {
-        let (_, wire) = exchange_dns_query(app.dns_port(), "catalog.bindizr", 6).unwrap();
+        let (_, wire) = dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", 6).unwrap();
         let message = Message::from_octets(wire.as_slice()).unwrap();
 
         message
@@ -1995,7 +1994,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_import_preserves_valid_members_and_escaped_octets() {
-    use crate::common::dns::parse_name;
+    use crate::common::dns;
 
     let app = TestApp::start_local().await;
 
@@ -2056,8 +2055,8 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
 
             for (index, member) in members.iter().enumerate() {
                 assert_eq!(
-                    parse_name(&queries[index + 1]).unwrap(),
-                    parse_name(member).unwrap()
+                    dns::parse_name(&queries[index + 1]).unwrap(),
+                    dns::parse_name(member).unwrap()
                 );
                 assert_eq!(
                     body["zones"][index]["import"]["applied"], !dry_run,

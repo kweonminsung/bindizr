@@ -1,19 +1,16 @@
 //! Normalize secondary identifiers and network addresses before storage.
 
-use bindizr_core::dns::{
-    address::{AddressTarget, DEFAULT_DNS_PORT, is_address_target},
-    name::has_whitespace_or_control,
-};
+use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
+use bindizr_core::dns::{address, name};
 
-use crate::{
-    error::ServiceError,
-    text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
-};
+use crate::error::ServiceError;
+use crate::text;
+use crate::text::MAX_COLUMN_TEXT_LEN;
 
 /// Lowercased so one name means one secondary on every backend; a plain
 /// identifier, since it travels in URL paths.
 pub(crate) fn normalize_secondary_name(value: &str) -> Result<String, ServiceError> {
-    normalize_identifier(value, "secondary name", MAX_COLUMN_TEXT_LEN)
+    text::normalize_identifier(value, "secondary name", MAX_COLUMN_TEXT_LEN)
 }
 
 /// Canonicalize `host[:port]` with an explicit port and a lowercase host without a trailing dot
@@ -26,7 +23,7 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<AddressTarget, 
             "secondary address must not be empty",
         ));
     }
-    if has_whitespace_or_control(address) || !is_address_target(address) {
+    if name::has_whitespace_or_control(address) || !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(format!(
             "secondary address '{}' must be host[:port] with a numeric port",
             address

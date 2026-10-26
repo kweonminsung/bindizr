@@ -1,22 +1,16 @@
 //! Applying an ExternalDNS change set atomically and idempotently; the change
 //! set itself is computed in `change_set`.
 
-use bindizr_core::{dns::name::OwnerName, model::role_grant::Action};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::change_set::{ZoneChangeSet, group_operations_by_zone, parse_changes_request};
-use crate::{
-    Context,
-    authorization::{Caller, RecordAccess},
-    dnssec,
-    error::ServiceError,
-    record,
-    serial::generate_serial,
-    time::elapsed_ms,
-    transaction,
-    types::{ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse},
-    zone,
-};
+use super::change_set;
+use super::change_set::ZoneChangeSet;
+use crate::authorization::{Caller, RecordAccess};
+use crate::error::ServiceError;
+use crate::types::{ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse};
+use crate::{Context, dnssec, record, serial, time, transaction, zone};
 
 /// Apply all zones' ExternalDNS changes atomically, advancing serial/history
 /// once per changed zone.
@@ -27,7 +21,7 @@ pub async fn apply_changes(
 ) -> Result<ApplyExternalDnsChangesResponse, ServiceError> {
     let started = std::time::Instant::now();
 
-    let operations = parse_changes_request(request)?;
+    let operations = change_set::parse_changes_request(request)?;
     let requested_ops = operations.len();
 
     if operations.is_empty() {
@@ -45,7 +39,7 @@ pub async fn apply_changes(
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
-        let zone_operations = group_operations_by_zone(&zones, operations)?;
+        let zone_operations = change_set::group_operations_by_zone(&zones, operations)?;
 
         let mut changed_zones = Vec::new();
         let mut added = 0u64;
@@ -118,7 +112,7 @@ pub async fn apply_changes(
             .await?;
 
             // Apply the remaining delta and its signatures under one zone serial.
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = serial::generate_serial(Some(zone.serial));
 
             record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &change_set.deletes)
                 .await?;
@@ -156,7 +150,7 @@ pub async fn apply_changes(
         added,
         deleted,
         changed_zones.is_empty(),
-        elapsed_ms(started),
+        time::elapsed_ms(started),
     );
 
     Ok(ApplyExternalDnsChangesResponse {

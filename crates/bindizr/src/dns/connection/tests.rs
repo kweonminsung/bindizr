@@ -1,25 +1,19 @@
 use std::str::FromStr;
 
-use bindizr_core::{
-    config::Config,
-    dns::{
-        message::{Name, Opcode, OptRcode, encode_tcp_message},
-        query::build_question,
-    },
-    metrics::Metrics,
-};
-use bindizr_service::{Context, authorization::Caller, secondary, zone};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream, UdpSocket},
-    sync::{mpsc, watch},
-};
+use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Name, Opcode, OptRcode};
+use bindizr_core::dns::{message, query};
+use bindizr_core::metrics::Metrics;
+use bindizr_service::authorization::Caller;
+use bindizr_service::{Context, secondary, zone};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::{mpsc, watch};
+use tokio::time;
 
 use super::*;
-use crate::{
-    dns::{tcp::run_tcp_server, tls::run_tls_server, udp},
-    shutdown::Shutdown,
-};
+use crate::dns::{tcp, tls, udp};
+use crate::shutdown::Shutdown;
 
 /// Build real service state with unsigned UPDATE and synchronous NOTIFY enabled.
 async fn context() -> Arc<Context> {
@@ -78,7 +72,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
                     .unwrap(),
             );
 
-            tokio::spawn(async move { run_tcp_server(dns_cx, listener, stop).await.unwrap() })
+            tokio::spawn(async move { tcp::run_tcp_server(dns_cx, listener, stop).await.unwrap() })
         } else {
             let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let address = socket.local_addr().unwrap();
@@ -92,7 +86,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             tokio::spawn(udp::run_udp_server(dns_cx, socket, stop))
         };
 
-        let (_, question) = build_question(
+        let (_, question) = query::build_question(
             Opcode::UPDATE,
             false,
             false,
@@ -111,7 +105,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
         if let Some(client) = &mut tcp_client {
             client
-                .write_all(&encode_tcp_message(&update).unwrap())
+                .write_all(&message::encode_tcp_message(&update).unwrap())
                 .await
                 .unwrap();
         } else {
@@ -120,7 +114,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
         let mut notify = [0; 4096];
 
-        let (len, peer) = timeout(
+        let (len, peer) = time::timeout(
             Duration::from_secs(2),
             secondary_socket.recv_from(&mut notify),
         )
@@ -131,7 +125,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         shutdown.trigger();
 
         assert!(
-            timeout(Duration::from_millis(50), &mut server)
+            time::timeout(Duration::from_millis(50), &mut server)
                 .await
                 .is_err()
         );
@@ -142,7 +136,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
         secondary_socket.send_to(&response, peer).await.unwrap();
         let response = if let Some(client) = &mut tcp_client {
-            let len = timeout(Duration::from_secs(2), client.read_u16())
+            let len = time::timeout(Duration::from_secs(2), client.read_u16())
                 .await
                 .unwrap()
                 .unwrap();
@@ -154,7 +148,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         } else {
             let mut response = vec![0; 4096];
 
-            let len = timeout(
+            let len = time::timeout(
                 Duration::from_secs(2),
                 udp_client.as_ref().unwrap().recv(&mut response),
             )
@@ -168,7 +162,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
 
         assert_eq!(response[3] & 15, 0, "tcp={tcp}");
 
-        timeout(Duration::from_secs(2), server)
+        time::timeout(Duration::from_secs(2), server)
             .await
             .unwrap()
             .unwrap();
@@ -212,14 +206,16 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
                 .with_no_client_auth()
                 .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
 
-                run_tls_server(server_cx, listener, Arc::new(config), stop)
+                tls::run_tls_server(server_cx, listener, Arc::new(config), stop)
                     .await
                     .unwrap();
             } else {
-                run_tcp_server(server_cx, listener, stop).await.unwrap();
+                tcp::run_tcp_server(server_cx, listener, stop)
+                    .await
+                    .unwrap();
             }
         });
-        timeout(Duration::from_secs(2), async {
+        time::timeout(Duration::from_secs(2), async {
             while Arc::strong_count(&dns_cx) < 3 {
                 tokio::task::yield_now().await;
             }
@@ -229,7 +225,7 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
 
         shutdown.trigger();
 
-        timeout(Duration::from_secs(2), server)
+        time::timeout(Duration::from_secs(2), server)
             .await
             .unwrap()
             .unwrap();

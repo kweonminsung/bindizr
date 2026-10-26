@@ -8,22 +8,18 @@ mod single;
 use std::collections::HashSet;
 
 use apply::apply_import;
-use bindizr_core::{
-    dns::{name::ZoneName, zonefile::ParsedZoneFile},
-    model::role_grant::Action,
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::zonefile::ParsedZoneFile;
+use bindizr_core::model::role_grant::Action;
 pub use multiple::import_many;
 pub use single::import;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    dns_client::axfr::AxfrClient,
-    error::ServiceError,
-    model::zone::Zone,
-    types::{ImportMode, ImportZoneResponse, Run},
-    zone,
-};
+use crate::authorization::Caller;
+use crate::dns_client::axfr::AxfrClient;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::types::{ImportMode, ImportZoneResponse, Run};
+use crate::{Context, zone};
 
 /// Text needs the locked zone's default TTL; AXFR carries every TTL explicitly.
 #[derive(Debug)]
@@ -76,7 +72,7 @@ async fn import_transfer(
         })?;
     let source = ImportSource::Transfer(ParsedZoneFile::from_transfer(&records, zone_name));
 
-    apply_import(cx, caller, zone_name, source, options).await
+    apply::apply_import(cx, caller, zone_name, source, options).await
 }
 
 /// The zones a bulk import names, in request order without repeats.

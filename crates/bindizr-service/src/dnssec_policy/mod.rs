@@ -2,30 +2,21 @@
 //! Partial updates lock the policy row; creates and deletes rely on constraints.
 //! Zone signing consumes these policies in `dnssec`.
 
-use bindizr_core::model::{
-    audit_log::{AuditEntity, AuditOperation},
-    dnssec_policy::{Days, PolicyId},
-    role_grant::Action,
-};
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    model::{
-        dnssec_key::DnssecAlgorithm,
-        dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
-    },
-    pagination::{build_page, validate_page_limit},
-    text::normalize_identifier,
-    transaction,
-    types::{
-        CreateDnssecPolicyRequest, DnssecPolicyResponse, PageRequest, PaginatedResponse,
-        UpdateDnssecPolicyRequest,
-    },
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::dnssec_key::DnssecAlgorithm;
+use crate::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy};
+use crate::types::{
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, PageRequest, PaginatedResponse,
+    UpdateDnssecPolicyRequest,
 };
+use crate::{Context, audit, pagination, text, transaction};
 
 /// RFC 1982 serial arithmetic is only unambiguous while expiration -
 /// inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
@@ -136,11 +127,11 @@ pub async fn list(
     page: PageRequest,
 ) -> Result<PaginatedResponse<DnssecPolicyResponse>, ServiceError> {
     caller.authorize_action(Action::DnssecRead)?;
-    validate_page_limit(page.limit)?;
+    pagination::validate_page_limit(page.limit)?;
 
     let policies = bindizr_db::dnssec_policy::list_all(cx.db()).await?;
 
-    Ok(build_page(
+    Ok(pagination::build_page(
         policies.iter().map(DnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
@@ -310,7 +301,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 /// Lowercased so one name means one policy on every backend (MySQL compares
 /// case-insensitively); a plain identifier, since it travels in URL paths.
 pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError> {
-    normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
+    text::normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
 /// A policy's validated timers, in the columns they are stored as.
@@ -368,34 +359,36 @@ fn validate_timings(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_policy_name, validate_timings};
 
     /// Verify that `normalize_policy_name` lowercases and trims.
     #[test]
     fn normalize_policy_name_lowercases_and_trims() {
-        assert_eq!(normalize_policy_name("  Strict-1 ").unwrap(), "strict-1");
+        assert_eq!(
+            super::normalize_policy_name("  Strict-1 ").unwrap(),
+            "strict-1"
+        );
     }
 
     /// Verify that `normalize_policy_name` rejects empty and odd characters.
     #[test]
     fn normalize_policy_name_rejects_empty_and_odd_characters() {
-        assert!(normalize_policy_name("   ").is_err());
-        assert!(normalize_policy_name("a b").is_err());
-        assert!(normalize_policy_name("a/b").is_err());
-        assert!(normalize_policy_name(&"x".repeat(65)).is_err());
+        assert!(super::normalize_policy_name("   ").is_err());
+        assert!(super::normalize_policy_name("a b").is_err());
+        assert!(super::normalize_policy_name("a/b").is_err());
+        assert!(super::normalize_policy_name(&"x".repeat(65)).is_err());
     }
 
     /// Verify that `validate_timings` requires refresh below validity.
     #[test]
     fn validate_timings_requires_refresh_below_validity() {
-        assert!(validate_timings(14, 5, 0).is_ok());
-        assert!(validate_timings(5, 5, 0).is_err());
-        assert!(validate_timings(0, 1, 0).is_err());
-        assert!(validate_timings(14, 0, 0).is_err());
+        assert!(super::validate_timings(14, 5, 0).is_ok());
+        assert!(super::validate_timings(5, 5, 0).is_err());
+        assert!(super::validate_timings(0, 1, 0).is_err());
+        assert!(super::validate_timings(14, 0, 0).is_err());
 
         // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
-        assert!(validate_timings(24_856, 5, 0).is_err());
-        assert!(validate_timings(24_855, 5, 0).is_ok());
-        assert!(validate_timings(14, 5, 3651).is_err());
+        assert!(super::validate_timings(24_856, 5, 0).is_err());
+        assert!(super::validate_timings(24_855, 5, 0).is_ok());
+        assert!(super::validate_timings(14, 5, 3651).is_err());
     }
 }

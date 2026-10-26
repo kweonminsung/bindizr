@@ -1,12 +1,8 @@
 //! Role and role grant payloads.
 
-use bindizr_core::{
-    dns::name::ZoneName,
-    model::{
-        role::RoleId,
-        role_grant::{Action, RoleGrant, RoleGrantId},
-    },
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrantId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

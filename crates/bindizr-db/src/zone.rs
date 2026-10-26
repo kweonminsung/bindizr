@@ -1,18 +1,15 @@
-use bindizr_core::{
-    dns::{Serial, name::ZoneName},
-    model::{dnssec_policy::PolicyId, role::RoleId, zone::ZoneId},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    Backend, Db, LockLevel, Transaction,
-    error::DatabaseError,
-    model::zone::Zone,
-    mysql, postgres,
-    sql::{SortOrder, ZoneSortField},
-    sqlite,
-    tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::zone::Zone;
+use crate::sql::{SortOrder, ZoneSortField};
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ZoneFilter {

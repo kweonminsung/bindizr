@@ -5,16 +5,13 @@ use std::collections::BTreeMap;
 
 use bindizr_core::dns::Ttl;
 
-use crate::{
-    authorization::ReadableRecords,
-    model::{
-        record::{RecordData, RecordSetKey},
-        zone::Zone,
-    },
-    types::{
-        RecordChange, RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,
-        RecordDiffValueResponse, build_display_value,
-    },
+use crate::authorization::ReadableRecords;
+use crate::model::record::{RecordData, RecordSetKey};
+use crate::model::zone::Zone;
+use crate::types;
+use crate::types::{
+    RecordChange, RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,
+    RecordDiffValueResponse,
 };
 
 /// What makes two records of one record set the same: canonical rdata and TTL.
@@ -54,7 +51,7 @@ fn group_record_sets(
                 ttl: record.ttl,
             },
             value: RecordDiffValueResponse {
-                value: build_display_value(&record.value, &record.record_type),
+                value: types::build_display_value(&record.value, &record.record_type),
                 ttl: record.ttl,
                 priority: record.priority,
             },

@@ -1,26 +1,19 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::{DefaultBodyLimit, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{
+    AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
+    ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, ErrorResponse,
+    ListExternalDnsDomainsResponse, ListExternalDnsRecordsResponse,
 };
-use bindizr_service::{
-    Context, external_dns,
-    types::{
-        AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
-        ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, ErrorResponse,
-        ListExternalDnsDomainsResponse, ListExternalDnsRecordsResponse,
-    },
-};
+use bindizr_service::{Context, external_dns};
 
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-};
+use crate::api::RequestCaller;
+use crate::api::error::ApiError;
+use crate::api::middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES};
 
 /// Build ExternalDNS routes, registered only when `api.external_dns_enabled` is set.
 pub(crate) fn routes() -> Router<Arc<Context>> {

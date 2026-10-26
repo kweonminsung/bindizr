@@ -2,17 +2,12 @@
 
 pub mod parser;
 
-use domain::{
-    base::{
-        Message,
-        iana::{Opcode, OptRcode},
-    },
-    rdata::tsig::Time48,
-};
+use domain::base::Message;
+use domain::base::iana::{Opcode, OptRcode};
+use domain::rdata::tsig::Time48;
 
-use crate::dns::message::{
-    Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit, has_readable_sections,
-};
+use crate::dns::message;
+use crate::dns::message::{Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945, Section 10 suggested default).
@@ -44,7 +39,7 @@ pub fn build_response(
 ) -> Result<Vec<u8>, BuildResponseError> {
     let message = Message::from_octets(query_data)
         .map_err(|error| BuildResponseError::Malformed(Box::new(error)))?;
-    let readable = has_readable_sections(query_data);
+    let readable = message::has_readable_sections(query_data);
 
     for minimal in [false, true] {
         let rcode = if minimal { OptRcode::NOERROR } else { rcode };

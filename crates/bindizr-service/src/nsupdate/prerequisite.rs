@@ -2,15 +2,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use bindizr_core::dns::{message::Rtype, name::OwnerName, record::Rdata};
+use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::record::Rdata;
 use bindizr_db::LockLevel;
 
 use super::NsupdateError;
-use crate::{
-    Transaction,
-    error::ServiceError,
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
-};
+use crate::Transaction;
+use crate::error::ServiceError;
+use crate::model::dnssec_record::DnssecRecord;
+use crate::model::record::Record;
+use crate::model::zone::Zone;
 
 /// An UPDATE prerequisite with a checked owner and wire type.
 #[derive(Debug, Clone, PartialEq, Eq)]

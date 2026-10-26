@@ -1,11 +1,8 @@
 use bindizr_core::dns::name::ZoneName;
 
-use crate::{
-    Backend, Db,
-    error::DatabaseError,
-    model::transfer::{Transfer, TransferWithZone},
-    mysql, postgres, sqlite,
-};
+use crate::error::DatabaseError;
+use crate::model::transfer::{Transfer, TransferWithZone};
+use crate::{Backend, Db, mysql, postgres, sqlite};
 
 /// Insert the transfer, or replace the row for its client address and zone.
 pub async fn upsert(db: &Db, transfer: Transfer) -> Result<(), DatabaseError> {

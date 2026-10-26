@@ -4,10 +4,9 @@ use bindizr_core::config::ConfigError;
 use bindizr_service::error::ErrorCode;
 use thiserror::Error;
 
-use crate::{
-    cli::{commands::ReadInputError, output::RenderOutputError},
-    daemon::DaemonError,
-};
+use crate::cli::commands::ReadInputError;
+use crate::cli::output::RenderOutputError;
+use crate::daemon::DaemonError;
 
 /// Error surfaced to the CLI user: the daemon's message plus, when the daemon
 /// sent a machine-readable code, an actionable hint derived from it.

@@ -1,17 +1,17 @@
 //! Secondary SOA status and transfer history.
-use std::{collections::HashMap, net::IpAddr};
+use std::collections::HashMap;
+use std::net::IpAddr;
 
-use bindizr_core::dns::{Serial, name::ZoneName};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
 use tokio::task::JoinSet;
 
-use crate::{
-    Context,
-    dns_client::probe::{ProbeSoaError, probe_addresses},
-    error::ServiceError,
-    model::secondary::Secondary,
-    secondary, transfer,
-    types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse},
-};
+use crate::dns_client::probe;
+use crate::dns_client::probe::ProbeSoaError;
+use crate::error::ServiceError;
+use crate::model::secondary::Secondary;
+use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse};
+use crate::{Context, secondary, transfer};
 
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
@@ -78,8 +78,9 @@ pub async fn probe_secondaries(
         let zone_name = zone_name.clone();
         let address = secondary.address.to_string();
 
-        let task = tasks
-            .spawn(async move { probe_addresses(&zone_name, &secondary.address, timeout).await });
+        let task = tasks.spawn(async move {
+            probe::probe_addresses(&zone_name, &secondary.address, timeout).await
+        });
         targets.insert(task.id(), (index, address));
     }
 
@@ -122,7 +123,7 @@ pub async fn probe_secondary(
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
     let timeout = cx.config().dns.notify.timeout();
-    let probe = probe_addresses(zone_name, &secondary.address, timeout).await?;
+    let probe = probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
     let status = build_secondary_status(probe.address, expected_serial, probe.serial);
     Ok(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
 }

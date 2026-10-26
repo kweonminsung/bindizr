@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_failure_contains};
+use crate::common;
+use crate::common::TestApp;
 
 /// Verify zone history inspection and rollback through the CLI.
 #[tokio::test]
@@ -188,5 +189,5 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     let args = ["zone", "version", "rollback", &zone_name, "4"];
 
     let output = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &output, "must be less than the current serial");
+    common::assert_cli_failure_contains(&args, &output, "must be less than the current serial");
 }

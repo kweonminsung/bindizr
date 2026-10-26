@@ -1,17 +1,15 @@
-use bindizr_core::{dns::Serial, model::zone_version::VersionFilter};
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    types::{
-        CreateZoneRequest, DeleteZoneResponse, DiffZoneVersionsResponse, ExportZoneFileResponse,
-        GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse, ImportZonesRequest,
-        ImportZonesResponse, PaginatedResponse, RollbackZoneResponse, Run, SingleZoneResponse,
-        UpdateZoneRequest, WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse,
-        ZoneVersionResponse, ZoneView,
-    },
-    zone,
+use bindizr_core::dns::Serial;
+use bindizr_core::model::zone_version::VersionFilter;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    CreateZoneRequest, DeleteZoneResponse, DiffZoneVersionsResponse, ExportZoneFileResponse,
+    GetZoneVersionResponse, ImportZoneRequest, ImportZoneResponse, ImportZonesRequest,
+    ImportZonesResponse, PaginatedResponse, RollbackZoneResponse, Run, SingleZoneResponse,
+    UpdateZoneRequest, WriteZoneResponse, ZoneFilter, ZoneResponse, ZoneStatusResponse,
+    ZoneVersionResponse, ZoneView,
 };
+use bindizr_service::{Context, zone};
 
 use crate::socket::types::DaemonResponse;
 

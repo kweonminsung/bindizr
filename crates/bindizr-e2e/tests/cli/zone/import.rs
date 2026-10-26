@@ -1,9 +1,7 @@
 use serde_json::Value;
 
-use crate::{
-    cli::common::{summary_cells, summary_row},
-    common::{TestApp, assert_cli_failure_contains},
-};
+use crate::cli::common;
+use crate::common::TestApp;
 
 /// Preserve a high source serial during preview and advance it when applying records.
 #[tokio::test]
@@ -60,7 +58,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
 
     let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
 
-    assert_eq!(summary_cells(&stdout)[0], "no", "{stdout}");
+    assert_eq!(common::summary_cells(&stdout)[0], "no", "{stdout}");
 
     // Nothing landed, including the record that was valid on its own.
     let listed = app
@@ -91,7 +89,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
         "{imported}"
     );
     assert_eq!(
-        summary_row(&imported),
+        common::summary_row(&imported),
         ["2", "2", "0", "0", "0", "0"],
         "{imported}"
     );
@@ -231,7 +229,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
 
     assert!(applied.contains("Zone imported successfully"), "{applied}");
     assert_eq!(
-        summary_row(&applied),
+        common::summary_row(&applied),
         ["9", "0", "0", "0", "9", "0"],
         "{applied}"
     );
@@ -385,5 +383,5 @@ async fn zone_import_pulls_several_zones_from_one_server() {
     ];
 
     let refused = app.run_cli(&args, Some(&zones)).await;
-    assert_cli_failure_contains(&args, &refused, "cannot be used with");
+    crate::common::assert_cli_failure_contains(&args, &refused, "cannot be used with");
 }

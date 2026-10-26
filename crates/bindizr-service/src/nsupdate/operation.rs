@@ -1,23 +1,19 @@
 //! The update section of RFC 2136, Section 2.5: each operation as decoded,
 //! and its application to the locked zone.
 
-use bindizr_core::{
-    dns::{Serial, Ttl, name::OwnerName},
-    model::{record::RecordId, role_grant::Action},
-};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::{Serial, Ttl};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::NsupdateError;
-use crate::{
-    Transaction,
-    authorization::{Caller, RecordAccess},
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
-    record::{self, AddResult},
-};
+use crate::Transaction;
+use crate::authorization::{Caller, RecordAccess};
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::record::{self, AddResult};
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names have passed the zone prescan.
 #[derive(Debug, Clone, PartialEq, Eq)]

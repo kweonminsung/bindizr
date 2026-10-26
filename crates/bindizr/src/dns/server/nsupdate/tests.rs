@@ -1,15 +1,13 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
-use bindizr_core::{
-    config::Config,
-    dns::{
-        message::{Name, Opcode, Rcode, Rtype},
-        query::build_question,
-        tsig::{TsigError, sign_request, verify_response},
-    },
-    metrics::Metrics,
-};
-use bindizr_service::{Context, authorization::Caller, tsig_key, types::CreateTsigKeyRequest};
+use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Name, Opcode, Rcode, Rtype};
+use bindizr_core::dns::tsig::TsigError;
+use bindizr_core::dns::{query, tsig};
+use bindizr_core::metrics::Metrics;
+use bindizr_service::authorization::Caller;
+use bindizr_service::types::CreateTsigKeyRequest;
+use bindizr_service::{Context, tsig_key};
 use sqlx::Connection;
 
 use super::*;
@@ -17,6 +15,8 @@ use super::*;
 /// A malformed UPDATE retains FORMERR, but backend and key failures remain SERVFAIL.
 #[tokio::test]
 async fn questionless_update_does_not_hide_tsig_backend_failures() {
+    use std::str::FromStr;
+
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("fault.sqlite");
     let config: Config = serde_json::from_value(serde_json::json!({
@@ -56,7 +56,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         .to_signing_key()
         .unwrap();
 
-    let (_, request) = build_question(
+    let (_, request) = query::build_question(
         Opcode::UPDATE,
         false,
         false,
@@ -65,7 +65,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         None,
     );
     let mut request = request.builder().additional();
-    let verifier = sign_request(&mut request, key).unwrap();
+    let verifier = tsig::sign_request(&mut request, key).unwrap();
     let request = request.finish();
     let dns_cx = DnsContext::new(cx.clone());
     let client = "127.0.0.1:2136".parse().unwrap();
@@ -81,7 +81,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
     .unwrap();
 
     assert_eq!(response[3] & 15, Rcode::FORMERR.to_int());
-    verify_response(&verifier, &response).unwrap();
+    tsig::verify_response(&verifier, &response).unwrap();
 
     let mut connection = sqlx::SqliteConnection::connect(&format!("sqlite://{}", path.display()))
         .await

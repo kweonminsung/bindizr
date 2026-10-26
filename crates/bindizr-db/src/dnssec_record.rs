@@ -1,16 +1,13 @@
-use bindizr_core::{
-    dns::name::ZoneName,
-    model::{dnssec_record::DnssecRecordId, role::RoleId, zone::ZoneId},
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    Backend, Db, LockLevel, Transaction,
-    error::DatabaseError,
-    model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
-    mysql, postgres, sqlite,
-    tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::dnssec_record::{DnssecRecord, DnssecRecordWithZone};
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// A derived row's rdata is wire bytes and its type a number, so only the
 /// name half of a search reaches it, and value and priority not at all.

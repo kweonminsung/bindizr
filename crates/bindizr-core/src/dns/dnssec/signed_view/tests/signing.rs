@@ -1,10 +1,12 @@
-use domain::{crypto::common::PublicKey, dep::octseq::Parser, rdata::Rrsig};
+use domain::crypto::common::PublicKey;
+use domain::dep::octseq::Parser;
+use domain::rdata::Rrsig;
 
 use super::*;
-use crate::{
-    dns::{SoaInterval, record::EncodedRdata},
-    model::{record::RecordId, zone::ZoneId},
-};
+use crate::dns::SoaInterval;
+use crate::dns::record::EncodedRdata;
+use crate::model::record::RecordId;
+use crate::model::zone::ZoneId;
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {

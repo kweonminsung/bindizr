@@ -1,28 +1,17 @@
-use bindizr_core::{
-    dns::name::ZoneName,
-    model::{record::RecordId, role_grant::Action, zone::ZoneId},
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 
-use super::validation::{
-    normalize_record_owner_name, parse_record_type, validate_management_value,
-    validate_record_constraints,
-};
-use crate::{
-    Context,
-    authorization::{Caller, RecordAccess},
-    dnssec,
-    error::ServiceError,
-    model::{
-        record::{Record, RecordData, RecordType},
-        zone::Zone,
-    },
-    serial::generate_serial,
-    transaction,
-    ttl::validate_record_ttl,
-    types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse},
-    zone::{self, diff::build_record_diff},
-};
+use super::validation;
+use crate::authorization::{Caller, RecordAccess};
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordData, RecordType};
+use crate::model::zone::Zone;
+use crate::types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse};
+use crate::zone::diff;
+use crate::{Context, dnssec, serial, transaction, ttl, zone};
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
@@ -50,7 +39,7 @@ fn resolve_update(
     let record_type = request
         .record_type
         .as_deref()
-        .map(parse_record_type)
+        .map(validation::parse_record_type)
         .transpose();
 
     // Omitted fields would read stored values the caller may not be allowed to see.
@@ -114,20 +103,20 @@ fn resolve_update(
             let encoded = value
                 .to_encoded_value(&record_type, priority)
                 .map_err(ServiceError::invalid_record_value)?;
-            validate_management_value(record_type, &encoded)?;
+            validation::validate_management_value(record_type, &encoded)?;
             encoded
         }
         None => existing.value.clone(),
     };
 
     let ttl = match request.ttl {
-        Some(ttl) => validate_record_ttl(ttl)?,
+        Some(ttl) => ttl::validate_record_ttl(ttl)?,
         None => existing.ttl,
     };
 
     // An omitted name keeps the stored owner, which needs no reparse.
     let owner_name = match &request.name {
-        Some(name) => normalize_record_owner_name(name, &zone.name)?,
+        Some(name) => validation::normalize_record_owner_name(name, &zone.name)?,
         None => existing.name.clone(),
     };
 
@@ -249,7 +238,7 @@ async fn update_locked(
                     zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
                 let caller = caller.reauthenticate_tx(&mut tx).await?;
                 caller.authorize_zone_visible(&zone)?;
-                let owner = normalize_record_owner_name(name, &zone.name)?;
+                let owner = validation::normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.
                 let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
@@ -332,7 +321,7 @@ async fn update_locked(
             }
         };
 
-        validate_record_constraints(
+        validation::validate_record_constraints(
             &records_at_name,
             &candidate.name,
             &candidate.record_type,
@@ -368,7 +357,7 @@ async fn update_locked(
                 .map(RecordData::from),
         );
         after.push_written(RecordData::from(candidate.clone()));
-        let diff = build_record_diff(&zone, &before, &after);
+        let diff = diff::build_record_diff(&zone, &before, &after);
 
         zone::validate_record_changes_tx(
             &mut tx,
@@ -378,7 +367,7 @@ async fn update_locked(
         )
         .await?;
 
-        let new_serial = generate_serial(Some(zone.serial));
+        let new_serial = serial::generate_serial(Some(zone.serial));
         let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
 
         // The merge is resolved and validated, so a dry run stops here.

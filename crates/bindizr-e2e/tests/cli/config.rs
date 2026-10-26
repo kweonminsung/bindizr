@@ -1,6 +1,7 @@
 use std::process::{Command, Stdio};
 
-use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
+use crate::common;
+use crate::common::TestApp;
 
 const VALID_CONFIG: &str = r#"
 [api]
@@ -53,7 +54,7 @@ fn config_check_accepts_a_config_flag() {
     let path = config_path.to_str().expect("config path was not UTF-8");
     let output = run_config_check(Some(path), &[]);
 
-    assert_cli_success(&["config", "check", "--config", path], &output);
+    common::assert_cli_success(&["config", "check", "--config", path], &output);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(stdout.contains(path));
@@ -71,7 +72,7 @@ fn config_check_accepts_wildcard_dns_addresses() {
 
     for addr in ["0.0.0.0", "::"] {
         let output = run_config_check(Some(path), &[("BINDIZR_DNS_LISTEN_ADDR", addr)]);
-        assert_cli_success(&["config", "check"], &output);
+        common::assert_cli_success(&["config", "check"], &output);
     }
 }
 
@@ -88,7 +89,7 @@ fn config_check_defaults_omitted_sections() {
     )
     .unwrap();
     let output = run_config_check(Some(path), &[]);
-    assert_cli_success(&["config", "check"], &output);
+    common::assert_cli_success(&["config", "check"], &output);
 
     // With no sections in the file, the database location can come from the environment.
     std::fs::write(&config_path, "").unwrap();
@@ -96,7 +97,7 @@ fn config_check_defaults_omitted_sections() {
         Some(path),
         &[("BINDIZR_DATABASE_SQLITE_FILE_PATH", "bindizr.sqlite")],
     );
-    assert_cli_success(&["config", "check"], &output);
+    common::assert_cli_success(&["config", "check"], &output);
 }
 
 /// Verify that config check uses config path env without argument.
@@ -110,7 +111,7 @@ fn config_check_uses_config_path_env_without_argument() {
     let path = config_path.to_str().expect("config path was not UTF-8");
     let output = run_config_check(None, &[("BINDIZR_CONFIG_PATH", path)]);
 
-    assert_cli_success(&["config", "check"], &output);
+    common::assert_cli_success(&["config", "check"], &output);
 
     assert!(String::from_utf8_lossy(&output.stdout).contains(path));
 }
@@ -127,7 +128,7 @@ fn config_check_rejects_invalid_config() {
     let path = config_path.to_str().expect("config path was not UTF-8");
     let output = run_config_check(Some(path), &[]);
 
-    assert_cli_failure_contains(
+    common::assert_cli_failure_contains(
         &["config", "check", "--config", path],
         &output,
         "invalid Bindizr configuration",
@@ -140,7 +141,7 @@ fn config_check_rejects_invalid_config() {
 fn config_check_rejects_missing_file() {
     let output = run_config_check(Some("/nonexistent/bindizr.conf.toml"), &[]);
 
-    assert_cli_failure_contains(
+    common::assert_cli_failure_contains(
         &[
             "config",
             "check",
@@ -177,7 +178,7 @@ async fn config_list_and_get_show_loaded_config() {
     let args = ["config", "get", "no.such.key"];
 
     let missing = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &missing, "unknown configuration key");
+    common::assert_cli_failure_contains(&args, &missing, "unknown configuration key");
 }
 
 /// Verify that config reload takes the file again and refuses what it cannot adopt.
@@ -226,7 +227,7 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     let args = ["config", "reload"];
 
     let refused = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &refused, "fixed while bindizr runs");
+    common::assert_cli_failure_contains(&args, &refused, "fixed while bindizr runs");
 
     assert_eq!(
         app.run_cli_success(&["config", "get", "api.listen_port"], None)

@@ -1,15 +1,10 @@
 use bindizr_core::outln;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, color, display_uptime, print_payload},
-    },
-    socket::{
-        client,
-        types::{DaemonCommand, DaemonStatusResponse},
-    },
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, color};
+use crate::socket::client;
+use crate::socket::types::{DaemonCommand, DaemonStatusResponse};
 
 /// Handle the `status` subcommand by querying the daemon and printing its status.
 pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError> {
@@ -26,7 +21,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
         };
         outln!("PID: {}", pid);
         outln!("Version: {}", status.version);
-        outln!("Uptime: {}", display_uptime(status.started_at_ms));
+        outln!("Uptime: {}", output::display_uptime(status.started_at_ms));
         outln!();
         outln!(
             "API: {} (authentication {})",
@@ -60,7 +55,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
             None => {}
         }
     } else {
-        print_payload(&status, output)?
+        output::print_payload(&status, output)?
     }
 
     // A daemon whose database does not answer is not healthy, so the exit code

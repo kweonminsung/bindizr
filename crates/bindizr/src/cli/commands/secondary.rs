@@ -1,4 +1,5 @@
-use bindizr_core::{dns::Serial, outln};
+use bindizr_core::dns::Serial;
+use bindizr_core::outln;
 use bindizr_service::types::{
     CheckSecondaryResponse, CreateSecondaryRequest, MessageResponse, PageRequest,
     PaginatedResponse, SecondaryResponse, SecondaryStatus, SecondaryTransferFilter,
@@ -6,16 +7,11 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{
-            OutputFormat, RenderOutputError, SecondaryRow, TransferRow, display_transfer_summary,
-            print_page, print_payload, print_response, print_table,
-        },
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, RenderOutputError, SecondaryRow, TransferRow};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing the secondary servers.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -144,7 +140,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             )
             .await?;
             log::debug!("Secondary list result: {:?}", response);
-            print_page(&response.data, output, |item| SecondaryRow::from(item))?;
+            output::print_page(&response.data, output, |item| SecondaryRow::from(item))?;
         }
         SecondaryCommand::Get { name, output } => {
             let response =
@@ -195,10 +191,10 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             let transfers = &response.data;
 
             if output == OutputFormat::Table {
-                print_table(transfers.transfers.iter().map(TransferRow::from).collect());
-                outln!("{}", display_transfer_summary(&transfers.summary));
+                output::print_table(transfers.transfers.iter().map(TransferRow::from).collect());
+                outln!("{}", output::display_transfer_summary(&transfers.summary));
             } else {
-                print_payload(transfers, output)?
+                output::print_payload(transfers, output)?
             }
         }
         SecondaryCommand::Check { name, output } => {
@@ -213,7 +209,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             if output == OutputFormat::Table {
                 print_check(check)
             } else {
-                print_payload(check, output)?
+                output::print_payload(check, output)?
             }
 
             // A failed part exits non-zero, so a script can branch on it.
@@ -233,7 +229,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
     }
@@ -299,7 +295,10 @@ fn print_check(check: &CheckSecondaryResponse) {
         }
     }
 
-    outln!("Transfers: {}", display_transfer_summary(&check.transfers));
+    outln!(
+        "Transfers: {}",
+        output::display_transfer_summary(&check.transfers)
+    );
 }
 
 /// Print one secondary in the requested format.
@@ -307,7 +306,7 @@ fn print_secondary(
     response: &SingleSecondaryResponse,
     output: OutputFormat,
 ) -> Result<(), RenderOutputError> {
-    print_response(response, output, |response| {
+    output::print_response(response, output, |response| {
         vec![SecondaryRow::from(&response.secondary)]
     })
 }

@@ -1,31 +1,25 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::{
-    dns::{
-        dnssec::{DS_DIGEST_TYPES, KeyTag},
-        name::ZoneName,
-        query::DsRecordSet,
-    },
-    model::role_grant::Action,
-};
+use bindizr_core::dns::dnssec::{DS_DIGEST_TYPES, KeyTag};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::query::DsRecordSet;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 use thiserror::Error;
 
-use super::status::load_status_tx;
-use crate::{
-    Context,
-    authorization::Caller,
-    dns_client::ds::{ParentDs, probe_parent_ds},
-    dnssec::SignedZone,
-    error::ServiceError,
-    model::{
-        dnssec_key::{DnssecKey, DnssecKeyState},
-        zone::Zone,
-    },
-    transaction,
-    types::{DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState},
+use super::status;
+use crate::authorization::Caller;
+use crate::dns_client::ds;
+use crate::dns_client::ds::ParentDs;
+use crate::dnssec::SignedZone;
+use crate::error::ServiceError;
+use crate::model::dnssec_key::{DnssecKey, DnssecKeyState};
+use crate::model::zone::Zone;
+use crate::types::{
+    DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
 };
+use crate::{Context, transaction};
 
 /// Why the zone's configuration prevents a delegation check.
 #[derive(Debug, Error)]
@@ -51,7 +45,7 @@ pub async fn check_ds(
             LockLevel::Shared,
         )
         .await?;
-        let status = load_status_tx(
+        let status = status::load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -87,7 +81,7 @@ pub(crate) async fn probe_delegation(
     })?;
     let timeout = cx.config().dns.notify.timeout();
 
-    let parent = probe_parent_ds(&signed.zone.name, parent_ns_addrs, timeout)
+    let parent = ds::probe_parent_ds(&signed.zone.name, parent_ns_addrs, timeout)
         .await
         .map_err(|error| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), error))?;
 

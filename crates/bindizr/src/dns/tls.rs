@@ -1,15 +1,22 @@
 //! XoT listener, TLS configuration, and connection negotiation.
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
 
 use rustls::ServerConfig;
-use tokio::{
-    io::AsyncWriteExt as _, net::TcpListener, sync::Semaphore, task::JoinSet, time::timeout,
-};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
+use tokio::time;
 use tokio_rustls::TlsAcceptor;
 
-use super::{connection::serve_connection, error::DnsError, server::DnsContext, stream::DnsStream};
-use crate::{shutdown::Shutdown, tls::TlsCertificate};
+use super::connection;
+use super::error::DnsError;
+use super::server::DnsContext;
+use super::stream::DnsStream;
+use crate::shutdown::Shutdown;
+use crate::tls::TlsCertificate;
 
 /// Bound the time a silent TLS client holds a connection slot.
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -36,6 +43,8 @@ pub(crate) async fn run_tls_server(
     server_config: Arc<ServerConfig>,
     stop: impl Future<Output = ()>,
 ) -> Result<(), DnsError> {
+    use tokio::io::AsyncWriteExt as _;
+
     // The slot covers the handshake and every query on the session.
     let open = Arc::new(Semaphore::new(
         dns_cx.daemon().config().dns.tcp_max_connections,
@@ -89,7 +98,7 @@ pub(crate) async fn run_tls_server(
                         biased;
                         () = &mut stop => return,
 
-                        result = timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)) => result,
+                        result = time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)) => result,
                     };
                     let mut session = match handshake {
                         Ok(Ok(session)) => session,
@@ -121,7 +130,7 @@ pub(crate) async fn run_tls_server(
                         return;
                     }
 
-                    if let Err(error) = serve_connection(
+                    if let Err(error) = connection::serve_connection(
                         dns_cx,
                         DnsStream::Tls(Box::new(session)),
                         client_addr,

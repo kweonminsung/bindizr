@@ -1,14 +1,13 @@
-use bindizr_core::{config, config::Config, outln};
+use bindizr_core::config::Config;
+use bindizr_core::{config, outln};
 use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, RenderOutputError, color, print_payload},
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, RenderOutputError, color};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for inspecting and validating configuration.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -67,7 +66,7 @@ async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
     if output == OutputFormat::Table {
         outln!("{}", response.message)
     } else {
-        print_payload(&response.data, output)?
+        output::print_payload(&response.data, output)?
     }
 
     Ok(())
@@ -88,7 +87,7 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
     match output {
         OutputFormat::Table => outln!("Configuration is {}.", color::green("valid")),
         // Built here rather than by the daemon: the check never reaches one.
-        _ => print_payload(&MessageResponse { message }, output)?,
+        _ => output::print_payload(&MessageResponse { message }, output)?,
     }
 
     Ok(())
@@ -101,7 +100,7 @@ async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
     if output == OutputFormat::Table {
         print_config(&response.data)
     } else {
-        print_payload(&response.data, output)?
+        output::print_payload(&response.data, output)?
     }
 
     Ok(())
@@ -133,7 +132,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
             value => outln!("{}", value),
         }
     } else {
-        print_payload(found, output)?
+        output::print_payload(found, output)?
     }
 
     Ok(())

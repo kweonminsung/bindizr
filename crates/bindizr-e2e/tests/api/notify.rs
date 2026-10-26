@@ -6,9 +6,12 @@ use crate::common::{TestApp, TestAppOptions};
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
-    use std::{collections::HashSet, sync::Arc, time::Duration};
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::time::Duration;
 
-    use domain::base::{Message, MessageBuilder, iana::Rcode};
+    use domain::base::iana::Rcode;
+    use domain::base::{Message, MessageBuilder};
     use serde_json::json;
 
     let app = Arc::new(
@@ -326,7 +329,8 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_reports_completion_when_secondary_does_not_implement_notify() {
-    use domain::base::{Message, MessageBuilder, iana::Rcode};
+    use domain::base::iana::Rcode;
+    use domain::base::{Message, MessageBuilder};
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;

@@ -66,14 +66,14 @@ pub(crate) fn normalize_description(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_description, normalize_identifier};
+
     use crate::error::{ErrorCode, ServiceError};
 
     /// Verify that an identifier is trimmed and lowercased.
     #[test]
     fn normalize_identifier_trims_and_lowercases() {
         assert_eq!(
-            normalize_identifier("  NS2.Example ", "name", 64).unwrap(),
+            super::normalize_identifier("  NS2.Example ", "name", 64).unwrap(),
             "ns2.example"
         );
     }
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn normalize_identifier_rejects_empty_long_and_invalid_names() {
         for value in ["", "  ", "a b", "a/b", &"n".repeat(65)] {
-            let error = normalize_identifier(value, "name", 64).unwrap_err();
+            let error = super::normalize_identifier(value, "name", 64).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput, "{value:?}");
         }
     }
@@ -91,7 +91,7 @@ mod tests {
     /// characters, and refused with NUL.
     #[test]
     fn normalize_description_trims_counts_characters_and_rejects_nul() {
-        let normalize = |value| normalize_description(value, ServiceError::invalid_input);
+        let normalize = |value| super::normalize_description(value, ServiceError::invalid_input);
         let widest = "é".repeat(255);
         let over = "é".repeat(256);
 

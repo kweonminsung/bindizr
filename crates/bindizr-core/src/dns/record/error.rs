@@ -3,7 +3,8 @@
 use thiserror::Error;
 
 use super::naptr::ValidateNaptrRegexpError;
-use crate::{dns::name::ParseNameError, model::record::RecordType};
+use crate::dns::name::ParseNameError;
+use crate::model::record::RecordType;
 
 /// A record value that is not what its type's presentation form spells. The
 /// text names the field, so the message stands on its own beside the value.

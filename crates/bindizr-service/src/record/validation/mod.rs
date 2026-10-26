@@ -1,26 +1,17 @@
 //! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
 //! detection, and owner-name normalization.
 
-use bindizr_core::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ParseNameError, ZoneName},
-        record::{CaaRecordValue, MxRecordValue},
-    },
-    model::record::RecordId,
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
+use bindizr_core::dns::record::{CaaRecordValue, MxRecordValue};
+use bindizr_core::model::record::RecordId;
 use bindizr_db::LockLevel;
 
-use crate::{
-    Transaction,
-    error::ServiceError,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
-    ttl::validate_record_ttl,
-    types::RecordValue,
-};
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::types::RecordValue;
+use crate::{Transaction, ttl};
 
 /// Parsed record fields; an omitted TTL is resolved under the zone lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +30,7 @@ pub(crate) fn parse_record_fields(
     priority: Option<i32>,
 ) -> Result<ParsedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;
-    let ttl = ttl.map(validate_record_ttl).transpose()?;
+    let ttl = ttl.map(ttl::validate_record_ttl).transpose()?;
     let priority = record_type.stored_priority(priority);
     let value = value
         .to_encoded_value(&record_type, priority)

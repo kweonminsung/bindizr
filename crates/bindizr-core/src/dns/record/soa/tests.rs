@@ -1,5 +1,5 @@
 use super::*;
-use crate::dns::name::encode_name;
+use crate::dns::name;
 
 /// Verify that `from_email` escapes local part.
 #[test]
@@ -86,8 +86,8 @@ fn encode_soa_rdata_returns_names_and_five_counters() {
     }
     .to_rdata()
     .unwrap();
-    let mut expected = encode_name("ns1.example.com").unwrap();
-    expected.extend(encode_name("admin.example.com").unwrap());
+    let mut expected = name::encode_name("ns1.example.com").unwrap();
+    expected.extend(name::encode_name("admin.example.com").unwrap());
 
     for field in [42u32, 2, 3, 4, 5] {
         expected.extend(field.to_be_bytes());

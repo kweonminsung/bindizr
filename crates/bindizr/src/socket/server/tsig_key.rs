@@ -1,13 +1,10 @@
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    tsig_key,
-    types::{
-        CreateTsigKeyRequest, MessageResponse, PaginatedResponse, SingleTsigKeyResponse,
-        TsigKeyFilter, TsigKeyResponse,
-    },
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    CreateTsigKeyRequest, MessageResponse, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter,
+    TsigKeyResponse,
 };
+use bindizr_service::{Context, tsig_key};
 
 use crate::socket::types::DaemonResponse;
 

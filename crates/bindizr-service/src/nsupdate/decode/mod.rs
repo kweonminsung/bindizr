@@ -1,19 +1,15 @@
 //! Decode complete UPDATE sections after the service has located the zone.
 //! Wire records survive the prescan even when applying them will do nothing.
 
-use bindizr_core::{
-    dns::{
-        Ttl,
-        message::{Class, Rtype},
-        name::{OwnerName, ZoneName},
-        nsupdate::parser::UpdateRecord,
-    },
-    model::{dnssec_record::DnssecRecordType, record::RecordType},
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::message::{Class, Rtype};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::nsupdate::parser::UpdateRecord;
+use bindizr_core::model::dnssec_record::DnssecRecordType;
+use bindizr_core::model::record::RecordType;
 
-use super::{
-    NsupdateError, Prerequisite, UpdateOperation, operation::RecordOperation, parse_update_owner,
-};
+use super::operation::RecordOperation;
+use super::{NsupdateError, Prerequisite, UpdateOperation};
 
 /// Prescan the entire update section before selecting any operations
 /// (RFC 2136, Section 3.4.1), retaining checked owners through execution.
@@ -25,7 +21,7 @@ pub(crate) fn decode_updates(
     let checked = records
         .iter()
         .map(|record| {
-            let owner = parse_update_owner(&record.name, zone_name)?;
+            let owner = super::parse_update_owner(&record.name, zone_name)?;
             record.validate_update_shape()?;
             validate_supported_type(record.record_type)?;
             Ok((record, owner))
@@ -63,7 +59,7 @@ pub(crate) fn decode_prerequisite(
     }
 
     // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
-    let name = parse_update_owner(&record.name, zone_name)?;
+    let name = super::parse_update_owner(&record.name, zone_name)?;
 
     match record.class {
         Class::ANY | Class::NONE => {

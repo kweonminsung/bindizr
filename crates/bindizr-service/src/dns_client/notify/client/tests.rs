@@ -1,6 +1,8 @@
-use std::{collections::HashSet, str::FromStr};
+use std::collections::HashSet;
+use std::str::FromStr;
 
 use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode};
+use bindizr_core::dns::query;
 
 use super::*;
 
@@ -25,7 +27,7 @@ async fn shared_socket_failure_preserves_original_io_error() {
 
         for id in 0..2 {
             let (reply, response) = oneshot::channel();
-            let (_, builder) = build_notify_query(&name, None);
+            let (_, builder) = query::build_notify_query(&name, None);
             requests.insert(
                 id,
                 PendingNotify {

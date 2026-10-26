@@ -1,12 +1,11 @@
-use std::{
-    process::{Child, Command, Stdio},
-    time::Duration,
-};
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 use reqwest::{Client, Method, StatusCode, header};
 use serde_json::{Value, json};
 
-use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions, reserve_tcp_port};
+use crate::common;
+use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 
 /// A spawned bindizr-external-dns adapter process, killed on drop.
 #[derive(Debug)]
@@ -21,8 +20,8 @@ impl ExternalDnsAdapter {
     /// Spawn the adapter binary against `bindizr_url` on ephemeral localhost
     /// ports and wait until its webhook listener answers.
     async fn spawn(bindizr_url: &str, token: &str) -> Self {
-        let webhook_port = reserve_tcp_port();
-        let health_port = reserve_tcp_port();
+        let webhook_port = common::reserve_tcp_port();
+        let health_port = common::reserve_tcp_port();
 
         let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-external-dns"));
         command

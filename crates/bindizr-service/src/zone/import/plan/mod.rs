@@ -2,12 +2,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::{dns::name::OwnerName, model::record::RecordKey};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::RecordKey;
 
-use crate::{
-    model::record::{Record, RecordData, RecordType},
-    types::ImportMode,
-};
+use crate::model::record::{Record, RecordData, RecordType};
+use crate::types::ImportMode;
 
 /// A record the import wants present, with its owner name already normalized so
 /// it can be compared against existing records.

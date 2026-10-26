@@ -3,7 +3,8 @@
 
 mod version;
 
-use bindizr_core::{dns::Serial, errln, out, outln};
+use bindizr_core::dns::Serial;
+use bindizr_core::{errln, out, outln};
 use bindizr_service::types::{
     self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
     ImportZoneResponse, ImportZonesRequest, ImportZonesResponse, MessageResponse, NotifySerial,
@@ -13,16 +14,13 @@ use bindizr_service::types::{
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{
-            ImportSummaryRow, ImportZonesRow, OutputFormat, SecondaryStatusRow, ZoneRow,
-            print_page, print_payload, print_response, print_table, render_change_preview,
-        },
-    },
-    socket::{client, types::DaemonCommand},
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{
+    ImportSummaryRow, ImportZonesRow, OutputFormat, SecondaryStatusRow, ZoneRow,
 };
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing zones.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -396,7 +394,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             ))
             .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
@@ -447,12 +445,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 }),
             )
             .await?;
-            print_page(&response.data, output, |item| ZoneRow::from(item))?;
+            output::print_page(&response.data, output, |item| ZoneRow::from(item))?;
         }
         ZoneCommand::Get { name, output } => {
             let response =
                 client::send_command::<SingleZoneResponse>(DaemonCommand::GetZone { name }).await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
@@ -489,7 +487,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             })
             .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
@@ -507,7 +505,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         ZoneCommand::Export { name, signed } => {
@@ -569,9 +567,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     }
                 }
 
-                print_table(import.zones.iter().map(ImportZonesRow::from).collect());
+                output::print_table(import.zones.iter().map(ImportZonesRow::from).collect());
             } else {
-                print_payload(import, output)?
+                output::print_payload(import, output)?
             }
 
             // A zone left behind must not exit as a success.
@@ -616,13 +614,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     errln!("  - {}", error);
                 }
 
-                print_table(vec![ImportSummaryRow::from(import)]);
+                output::print_table(vec![ImportSummaryRow::from(import)]);
 
                 if dry_run {
-                    out!("{}", render_change_preview(&import.diff));
+                    out!("{}", output::render_change_preview(&import.diff));
                 }
             } else {
-                print_payload(import, output)?
+                output::print_payload(import, output)?
             }
 
             // A rejected import applied nothing, so it must not exit as a success.
@@ -641,7 +639,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let status = &response.data;
 
             if output != OutputFormat::Table {
-                print_payload(status, output)?;
+                output::print_payload(status, output)?;
                 return Ok(());
             }
 
@@ -652,7 +650,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 return Ok(());
             }
 
-            print_table(SecondaryStatusRow::rows_from_status(status));
+            output::print_table(SecondaryStatusRow::rows_from_status(status));
         }
         ZoneCommand::Notify(args) => {
             // The daemon has a command for each.
@@ -667,7 +665,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             if args.output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, args.output)?
+                output::print_payload(&response.data, args.output)?
             }
         }
     }

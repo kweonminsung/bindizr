@@ -3,21 +3,17 @@
 
 use std::net::IpAddr;
 
-use bindizr_core::{
-    dns::{
-        message::{
-            ExtendedErrorCode, Opcode, OptRcode, QueryMetadata, extract_opcode,
-            has_readable_sections,
-        },
-        tsig::{RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig},
-    },
-    model::transfer::TransferTransport,
-};
-use bindizr_service::{authorization::Caller, tsig_key};
+use bindizr_core::dns::message::{ExtendedErrorCode, Opcode, OptRcode, QueryMetadata};
+use bindizr_core::dns::tsig::{RequestSignature, TransferSigner, TsigError};
+use bindizr_core::dns::{message, tsig};
+use bindizr_core::model::transfer::TransferTransport;
+use bindizr_service::authorization::Caller;
+use bindizr_service::tsig_key;
 use thiserror::Error;
 
 use super::acl;
-use crate::dns::{error::DnsError, server::DnsContext};
+use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
 
 /// A rejected transfer's cause; encoding and response limits belong to the handler.
 #[derive(Debug, Error)]
@@ -164,7 +160,7 @@ pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
     query_data: &[u8],
 ) -> Result<Option<TransferIdentity>, TransferRefusal> {
-    let key_name = match request_signature(query_data) {
+    let key_name = match tsig::request_signature(query_data) {
         RequestSignature::Key { name, .. } => name,
         RequestSignature::Absent => return Ok(None),
         // The address would have allowed this one; a TSIG that does not parse
@@ -181,14 +177,14 @@ pub(crate) async fn authenticate_tsig_key(
         .map_err(|error| TransferRefusal::failed("failed to load TSIG key", error, None))?;
     let Some(tsig_key) = tsig_key else {
         // Verify unknown keys too, so the response encoder receives BADKEY.
-        verify_tsig(query_data, None)?;
+        tsig::verify_tsig(query_data, None)?;
         return Err(TransferRefusal::refused(
             "TSIG verification passed without a key".to_string(),
             None,
         ));
     };
     let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
-    let signer = verify_tsig(query_data, Some(signing_key))?;
+    let signer = tsig::verify_tsig(query_data, Some(signing_key))?;
 
     let caller = match Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key).await {
         Ok(caller) => caller,
@@ -280,8 +276,8 @@ pub(crate) async fn refuse_query(
     ede: Option<ExtendedErrorCode>,
 ) -> Result<Vec<u8>, DnsError> {
     // Unknown opcodes may carry an opaque body; do not interpret it as TSIG.
-    if extract_opcode(query_data).is_some_and(|opcode| opcode != Opcode::QUERY)
-        && !has_readable_sections(query_data)
+    if message::extract_opcode(query_data).is_some_and(|opcode| opcode != Opcode::QUERY)
+        && !message::has_readable_sections(query_data)
     {
         return Ok(metadata.build_signed_error_response(rcode, ede, None)?);
     }
@@ -303,18 +299,15 @@ pub(crate) async fn refuse_query(
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, str::FromStr, sync::Arc};
 
-    use bindizr_core::{
-        config::Config,
-        dns::{
-            message::{Keepalive, Name, Opcode, ParsedQuery, Rtype},
-            query::build_question,
-            tsig::{sign_request, verify_response},
-        },
-        metrics::Metrics,
-    };
-    use bindizr_service::{Context, types::CreateTsigKeyRequest};
+    use std::sync::Arc;
+
+    use bindizr_core::config::Config;
+    use bindizr_core::dns::message::{Keepalive, Name, Opcode, ParsedQuery, Rtype};
+    use bindizr_core::dns::{query, tsig};
+    use bindizr_core::metrics::Metrics;
+    use bindizr_service::Context;
+    use bindizr_service::types::CreateTsigKeyRequest;
     use sqlx::Connection;
 
     use super::*;
@@ -322,6 +315,9 @@ mod tests {
     /// Grant-loading failures return a signed SERVFAIL.
     #[tokio::test]
     async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
+        use std::error::Error;
+        use std::str::FromStr;
+
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("fault.sqlite");
         let config_path = directory.path().join("bindizr.toml");
@@ -367,7 +363,7 @@ mod tests {
             .to_signing_key()
             .unwrap();
 
-        let (_, mut request) = build_question(
+        let (_, mut request) = query::build_question(
             Opcode::QUERY,
             false,
             false,
@@ -375,7 +371,7 @@ mod tests {
             Rtype::SOA,
             None,
         );
-        let verifier = sign_request(&mut request, key).unwrap();
+        let verifier = tsig::sign_request(&mut request, key).unwrap();
         let request = request.finish();
         let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
         let dns_cx = DnsContext::new(cx);
@@ -405,6 +401,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(response[3] & 15, 2);
-        verify_response(&verifier, &response).unwrap();
+        tsig::verify_response(&verifier, &response).unwrap();
     }
 }

@@ -1,4 +1,5 @@
-use crate::{cli::common::summary_row, common::TestApp};
+use crate::cli::common;
+use crate::common::TestApp;
 
 /// Verify zone-file export through the CLI.
 #[tokio::test]
@@ -66,7 +67,11 @@ async fn zone_export_returns_zone_file_via_cli() {
         .run_cli_success(&["zone", "import", &zone_name, "-"], Some(&exported))
         .await;
 
-    assert_eq!(summary_row(&reimport)[1..3], ["0", "0"], "{reimport}");
+    assert_eq!(
+        common::summary_row(&reimport)[1..3],
+        ["0", "0"],
+        "{reimport}"
+    );
 }
 
 /// Verify that zone export orders by name then type then RDATA.

@@ -1,18 +1,18 @@
-use std::{collections::BTreeSet, fmt, str::FromStr, sync::Arc};
+use std::collections::BTreeSet;
+use std::fmt;
+use std::str::FromStr;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{
-    dns::name::OwnerName,
-    model::{
-        grant_pattern::{MATCH_ANY, has_pattern_coverage, matches_name, matches_types},
-        record::RecordType,
-        role::RoleId,
-        zone::ZoneId,
-    },
-};
+use crate::dns::name::OwnerName;
+use crate::model::grant_pattern;
+use crate::model::grant_pattern::MATCH_ANY;
+use crate::model::record::RecordType;
+use crate::model::role::RoleId;
+use crate::model::zone::ZoneId;
 
 id_newtype!(
     /// The id of a role grant row.
@@ -327,14 +327,14 @@ impl RoleGrant {
     /// Whether this grant's record constraints cover `record_type` at the
     /// relative owner name.
     fn matches(&self, name: &OwnerName, record_type: Option<&RecordType>) -> bool {
-        matches_name(&self.record_name_pattern, name)
-            && matches_types(&self.record_types, record_type)
+        grant_pattern::matches_name(&self.record_name_pattern, name)
+            && grant_pattern::matches_types(&self.record_types, record_type)
     }
 
     /// Whether this grant covers every name `pattern` matches, for `record_type`.
     fn covers_pattern(&self, pattern: &str, record_type: &RecordType) -> bool {
-        has_pattern_coverage(&self.record_name_pattern, pattern)
-            && matches_types(&self.record_types, Some(record_type))
+        grant_pattern::has_pattern_coverage(&self.record_name_pattern, pattern)
+            && grant_pattern::matches_types(&self.record_types, Some(record_type))
     }
 
     /// Whether this grant constrains no name or type.

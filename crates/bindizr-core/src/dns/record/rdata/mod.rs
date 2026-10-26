@@ -14,10 +14,10 @@ use super::{
     ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
     WksRecordValue,
 };
-use crate::{
-    dns::name::{EncodeNameError, encode_name},
-    model::{dnssec_record::DnssecRecordType, record::RecordType},
-};
+use crate::dns::name;
+use crate::dns::name::EncodeNameError;
+use crate::model::dnssec_record::DnssecRecordType;
+use crate::model::record::RecordType;
 
 /// Why stored columns did not become wire RDATA: a value or name that does
 /// not encode, or an encoding past the RDLENGTH limit.
@@ -48,11 +48,11 @@ impl Rdata {
     /// The presentation form of a derived row's RDATA of `record_type`, as
     /// `dig` prints it; the base64 row form when it does not parse.
     pub fn to_presentation(&self, record_type: DnssecRecordType) -> String {
-        use domain::{
-            base::{iana::Rtype, name::ParsedName, rdata::ParseRecordData},
-            dep::octseq::parse::Parser,
-            rdata::AllRecordData,
-        };
+        use domain::base::iana::Rtype;
+        use domain::base::name::ParsedName;
+        use domain::base::rdata::ParseRecordData;
+        use domain::dep::octseq::parse::Parser;
+        use domain::rdata::AllRecordData;
 
         let mut parser = Parser::from_ref(self.as_bytes());
 
@@ -165,7 +165,7 @@ impl EncodedRdata {
             }
             RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
             RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
-                Rdata::new(encode_name(value)?)?
+                Rdata::new(name::encode_name(value)?)?
             }
             RecordType::Ds => DsRecordValue::parse(value)?.to_rdata()?,
             RecordType::Mx => MxRecordValue::parse(value, priority)?.to_rdata()?,

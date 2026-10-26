@@ -6,10 +6,8 @@ mod notify;
 mod soa;
 mod transfer;
 
-use domain::base::{
-    Message, Name, ToName,
-    iana::{Class, Opcode, OptRcode, Rtype},
-};
+use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
+use domain::base::{Message, Name, ToName};
 pub use ds::{DsRecord, DsRecordSet, extract_ds_record_set};
 pub use keepalive::extract_tcp_keepalive_timeout;
 pub use notify::validate_notify_response;
@@ -17,7 +15,9 @@ pub use soa::extract_soa_serial;
 use thiserror::Error;
 pub use transfer::{TransferMessagePosition, TransferRecord, extract_transfer_records};
 
-use crate::dns::{LibraryError, message::Edns, record::EncodeRdataError};
+use crate::dns::LibraryError;
+use crate::dns::message::Edns;
+use crate::dns::record::EncodeRdataError;
 
 /// Why a DNS response could not be parsed or matched to its request.
 #[derive(Debug, Error)]

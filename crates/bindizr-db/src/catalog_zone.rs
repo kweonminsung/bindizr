@@ -1,6 +1,9 @@
-use bindizr_core::dns::{Serial, name::ZoneName};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
 
-use crate::{Transaction, error::DatabaseError, mysql, postgres, sqlite, tx::TransactionKind};
+use crate::error::DatabaseError;
+use crate::tx::TransactionKind;
+use crate::{Transaction, mysql, postgres, sqlite};
 
 /// The serial advances only when `digest` changed; returns the serial in
 /// effect after the upsert.

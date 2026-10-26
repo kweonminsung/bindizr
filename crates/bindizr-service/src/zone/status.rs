@@ -1,10 +1,12 @@
 //! A zone's serial next to what each enabled secondary is serving.
 
-use bindizr_core::{dns::name::ZoneName, model::role_grant::Action};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::role_grant::Action;
 
-use crate::{
-    Context, authorization::Caller, error::ServiceError, probe, types::ZoneStatusResponse,
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::types::ZoneStatusResponse;
+use crate::{Context, probe};
 
 /// Probe every enabled secondary for the zone and classify each
 /// against the zone's serial; empty with no enabled secondaries.

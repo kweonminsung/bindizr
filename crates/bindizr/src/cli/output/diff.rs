@@ -1,5 +1,5 @@
 //! Render structured record diffs as zone-file `+`/`-`/`~` patches.
-use bindizr_core::dns::record::to_quoted_charstr;
+use bindizr_core::dns::record;
 use bindizr_service::types::{
     DiffZoneVersionsResponse, RecordChange, RecordDiffEntryResponse, RecordDiffResponse,
     RecordDiffValueResponse, RecordValue,
@@ -19,7 +19,7 @@ fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> Str
             };
             segments
                 .iter()
-                .map(|segment| to_quoted_charstr(segment.as_bytes()))
+                .map(|segment| record::to_quoted_charstr(segment.as_bytes()))
                 .collect::<Vec<_>>()
                 .join(" ")
         }

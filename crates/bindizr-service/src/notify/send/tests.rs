@@ -1,21 +1,17 @@
 use std::error::Error;
 
-use bindizr_core::{
-    config::Config,
-    dns::{
-        message::{Keepalive, OptRcode, ParsedQuery},
-        query::ParseResponseError,
-    },
-    metrics::Metrics,
-};
+use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
+use bindizr_core::dns::query::ParseResponseError;
+use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
-use tokio::{
-    net::UdpSocket,
-    sync::{mpsc, watch},
-};
+use tokio::net::UdpSocket;
+use tokio::sync::{mpsc, watch};
 
 use super::*;
-use crate::{authorization::Caller, dns_client::notify, types::CreateSecondaryRequest};
+use crate::authorization::Caller;
+use crate::dns_client::notify;
+use crate::types::CreateSecondaryRequest;
 
 /// A failed ACK remains typed for propagation while reports render the same error text.
 #[tokio::test]

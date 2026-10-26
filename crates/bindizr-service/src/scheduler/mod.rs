@@ -3,19 +3,16 @@
 
 use std::sync::Arc;
 
-use bindizr_core::{metrics::SchedulerResult, model::zone::ZoneId};
+use bindizr_core::metrics::SchedulerResult;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{Duration, Utc};
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
 
-use crate::{
-    Context,
-    dnssec::maintenance::{
-        promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_retired_keys_by_zone_id,
-        resign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
-    },
-    model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
-    zone::history::prune_by_zone_id,
-};
+use crate::Context;
+use crate::dnssec::maintenance;
+use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
+use crate::zone::history;
 
 /// A scheduler task whose current pass finishes before shutdown returns.
 #[derive(Debug)]
@@ -120,7 +117,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
 
                 for zone in zones {
-                    match prune_by_zone_id(cx, zone.id, cutoff).await {
+                    match history::prune_by_zone_id(cx, zone.id, cutoff).await {
                         Ok(pruned) => {
                             journal_rows += pruned.journal_rows;
                             version_rows += pruned.version_rows;
@@ -179,7 +176,7 @@ async fn run_scheduler_pass(cx: &Context) {
     {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
-                match resign_zone_by_zone_id(cx, zone_id).await {
+                match maintenance::resign_zone_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Re-signed zone {} ahead of signature expiry", zone_name);
                         crate::notify::notify_after_update(cx, &zone_name).await;
@@ -210,7 +207,7 @@ async fn run_scheduler_pass(cx: &Context) {
     {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
-                match start_zsk_rollover_by_zone_id(cx, zone_id).await {
+                match maintenance::start_zsk_rollover_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Started scheduled ZSK rollover for zone {}", zone_name);
                         crate::notify::notify_after_update(cx, &zone_name).await;
@@ -251,7 +248,7 @@ async fn run_scheduler_pass(cx: &Context) {
             zone_ids.dedup();
 
             for zone_id in zone_ids {
-                match promote_zsks_by_zone_id(cx, zone_id).await {
+                match maintenance::promote_zsks_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Promoted pre-published ZSK for zone {}", zone_name);
                         crate::notify::notify_after_update(cx, &zone_name).await;
@@ -274,7 +271,7 @@ async fn run_scheduler_pass(cx: &Context) {
             zone_ids.dedup();
 
             for zone_id in zone_ids {
-                match promote_sep_keys_by_zone_id(cx, zone_id).await {
+                match maintenance::promote_sep_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!(
                             "Promoted pre-published SEP key for zone {}: the parent serves its DS",
@@ -314,7 +311,7 @@ async fn run_scheduler_pass(cx: &Context) {
             zone_ids.dedup();
 
             for zone_id in zone_ids {
-                match prune_retired_keys_by_zone_id(cx, zone_id).await {
+                match maintenance::prune_retired_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
                         crate::notify::notify_after_update(cx, &zone_name).await;

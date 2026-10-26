@@ -2,7 +2,8 @@
 
 use std::time::Duration;
 
-use domain::base::{Message, opt::keepalive::TcpKeepalive};
+use domain::base::Message;
+use domain::base::opt::keepalive::TcpKeepalive;
 
 use super::ParseResponseError;
 use crate::dns::message::Edns;

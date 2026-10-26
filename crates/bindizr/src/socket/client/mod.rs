@@ -1,17 +1,12 @@
 use bindizr_service::types::ErrorResponse;
 use serde::de::DeserializeOwned;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::UnixStream,
-};
+use tokio::io::BufReader;
+use tokio::net::UnixStream;
 
-use crate::{
-    cli::error::CliError,
-    socket::{
-        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_daemon, read_own_uid,
-        types::{DaemonCommand, DaemonResponse},
-    },
-};
+use crate::cli::error::CliError;
+use crate::socket;
+use crate::socket::types::{DaemonCommand, DaemonResponse};
+use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 
 /// True only when nothing listens on either socket path; a timeout or
 /// garbled response may come from a live but wedged daemon.
@@ -70,6 +65,8 @@ pub(crate) async fn send_control_command<T: DeserializeOwned>(
 pub(crate) async fn send_command<T: DeserializeOwned>(
     command: DaemonCommand,
 ) -> Result<DaemonResponse<T>, CliError> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
     let mut stream = connect_to_daemon_socket().await?;
 
     let json = serde_json::to_string(&command).map_err(|error| {
@@ -134,7 +131,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
             )
         })?
         .uid();
-    let own_uid = read_own_uid().map_err(|error| {
+    let own_uid = socket::read_own_uid().map_err(|error| {
         CliError::request_with_source(
             format!("could not read this process's uid: {}", error),
             error,
@@ -142,7 +139,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     })?;
 
     // Root drives another user's daemon on the primary socket only, as `sudo bindizr` does.
-    if !is_trusted_daemon(peer_uid, own_uid, socket_path) {
+    if !socket::is_trusted_daemon(peer_uid, own_uid, socket_path) {
         let message = if own_uid == 0 {
             format!(
                 "the daemon at '{socket_path}' runs as uid {peer_uid}, not root, and anyone can \

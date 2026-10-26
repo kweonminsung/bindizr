@@ -1,7 +1,5 @@
-use bindizr_core::model::{
-    role_grant::Action,
-    transfer::{TransferKind, TransferResult, TransferTransport},
-};
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
 use bindizr_service::types::{
     AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse,
     ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse, AuditLogResponse,
@@ -29,10 +27,8 @@ use bindizr_service::types::{
     WriteZoneResponse, ZonePermissionsResponse, ZoneResponse, ZoneStatusResponse,
     ZoneVersionResponse,
 };
-use utoipa::{
-    Modify, OpenApi,
-    openapi::security::{Http, HttpAuthScheme, SecurityScheme},
-};
+use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 
 /// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, OpenApi)]

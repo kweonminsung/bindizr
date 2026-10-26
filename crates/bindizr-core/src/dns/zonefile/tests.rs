@@ -1,12 +1,11 @@
 //! Master-file and AXFR import parsing, including names, values, and errors.
 
-use domain::{
-    base::rdata::ComposeRecordData,
-    zonefile::inplace::{Entry, Zonefile},
-};
+use domain::zonefile::inplace::{Entry, Zonefile};
 
 use super::*;
-use crate::dns::{name::ZoneName, query::TransferRecord, record::Rdata};
+use crate::dns::name::ZoneName;
+use crate::dns::query::TransferRecord;
+use crate::dns::record::Rdata;
 
 /// Preserve TXT octets that cannot be represented as UTF-8 segments.
 #[test]
@@ -211,6 +210,8 @@ fn zonefile_rejects_non_apex_soa() {
 
 /// Build one transferred record with uncompressed wire RDATA.
 fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
+    use domain::base::rdata::ComposeRecordData;
+
     let mut zonefile = Zonefile::new();
     zonefile.extend_from_slice(format!("{name} 300 IN {rtype} {rdata}\n").as_bytes());
     let Entry::Record(record) = zonefile.next_entry().unwrap().unwrap() else {

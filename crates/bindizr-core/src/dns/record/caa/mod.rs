@@ -1,10 +1,8 @@
 //! CAA record values (RFC 8659): which certificate authorities may issue for
 //! a name.
 
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
-    value::{MAX_RECORD_RDATA, parse_string_octets, parse_u8_record_field},
-};
+use super::value::MAX_RECORD_RDATA;
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaaRecordValue<'a> {
@@ -31,14 +29,14 @@ impl<'a> CaaRecordValue<'a> {
 
         // RFC 8659, Section 4.1: property values are octets, including empty
         // or non-UTF-8 values; the presentation escapes preserve those bytes.
-        let (value, trailing) = parse_string_octets("CAA value", rest)?;
+        let (value, trailing) = value::parse_string_octets("CAA value", rest)?;
 
         if !trailing.is_empty() {
             return Err(error());
         }
 
         Ok(Self {
-            flags: parse_u8_record_field("CAA flags", flags)?,
+            flags: value::parse_u8_record_field("CAA flags", flags)?,
             tag,
             value,
         })
@@ -86,7 +84,7 @@ impl<'a> CaaRecordValue<'a> {
             "{} {} {}",
             self.flags,
             self.tag,
-            to_quoted_charstr(&self.value)
+            super::to_quoted_charstr(&self.value)
         )
     }
 

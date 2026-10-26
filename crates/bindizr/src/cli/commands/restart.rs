@@ -3,16 +3,11 @@ use std::time::Duration;
 use bindizr_core::outln;
 use bindizr_service::types::MessageResponse;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, print_payload},
-    },
-    socket::{
-        client,
-        types::{DaemonCommand, DaemonStatusResponse},
-    },
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::OutputFormat;
+use crate::socket::client;
+use crate::socket::types::{DaemonCommand, DaemonStatusResponse};
 
 /// The stop budget again, plus room for the replacement to open its database
 /// and listeners.
@@ -55,7 +50,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                     status.version
                 )
             } else {
-                print_payload(&status, output)?
+                output::print_payload(&status, output)?
             }
 
             Ok(())

@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use axum::{
-    extract::{Request, State},
-    http::{StatusCode, header},
-    response::{IntoResponse, Response},
-};
+use axum::extract::{Request, State};
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
 use super::*;
-use crate::{metrics::AdapterMetrics, upstream::UpstreamClient, wire::MEDIA_TYPE};
+use crate::metrics::AdapterMetrics;
+use crate::upstream::UpstreamClient;
+use crate::wire::MEDIA_TYPE;
 
 /// One request the mock bindizr server saw: path, Authorization header, body.
 type RecordedRequest = (String, Option<String>, String);
@@ -596,18 +596,16 @@ async fn healthz_reports_unready_without_manageable_names() {
 fn endpoint_label_tracks_head_with_get_and_skips_unrouted_methods() {
     use axum::http::Method;
 
-    use super::endpoint_label;
-
-    assert_eq!(endpoint_label(&Method::HEAD, "/"), Some("negotiate"));
+    assert_eq!(super::endpoint_label(&Method::HEAD, "/"), Some("negotiate"));
     assert_eq!(
-        endpoint_label(&Method::HEAD, "/records"),
+        super::endpoint_label(&Method::HEAD, "/records"),
         Some("records_get")
     );
     assert_eq!(
-        endpoint_label(&Method::POST, "/adjustendpoints"),
+        super::endpoint_label(&Method::POST, "/adjustendpoints"),
         Some("adjustendpoints")
     );
 
     // An unsupported method 405s without a handler; it must not count.
-    assert_eq!(endpoint_label(&Method::DELETE, "/records"), None);
+    assert_eq!(super::endpoint_label(&Method::DELETE, "/records"), None);
 }

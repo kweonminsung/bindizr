@@ -1,15 +1,18 @@
 //! Coalesce committed writes into NOTIFY batches bounded by SOA REFRESH.
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
 
-use bindizr_core::dns::{CATALOG_SOA_REFRESH, name::ZoneName};
-use tokio::{
-    sync::{mpsc::UnboundedReceiver, watch},
-    task::{JoinHandle, JoinSet},
-    time::{Instant, sleep_until},
-};
+use bindizr_core::dns::CATALOG_SOA_REFRESH;
+use bindizr_core::dns::name::ZoneName;
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::watch;
+use tokio::task::{JoinHandle, JoinSet};
+use tokio::time;
+use tokio::time::Instant;
 
-use super::{NotifyTarget, send_notify};
+use super::NotifyTarget;
 use crate::Context;
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones.
@@ -200,7 +203,7 @@ async fn collect_batch(
             biased;
             _ = stop.changed() => break,
 
-            _ = sleep_until(deadline) => break,
+            _ = time::sleep_until(deadline) => break,
 
             job = rx.recv() => match job {
                 Some(job) => {
@@ -235,7 +238,7 @@ async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut Join
     for zone in batch.zones {
         let cx = cx.clone();
         tasks.spawn(async move {
-            if let Err(error) = send_notify(&cx, NotifyTarget::Zone(&zone)).await {
+            if let Err(error) = super::send_notify(&cx, NotifyTarget::Zone(&zone)).await {
                 log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, error);
             }
         });

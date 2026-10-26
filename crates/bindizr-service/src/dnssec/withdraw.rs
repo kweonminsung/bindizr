@@ -1,16 +1,16 @@
 //! The RFC 8078 DS withdrawal: publishing the delete CDS/CDNSKEY pair that
 //! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
-use bindizr_core::{
-    dns::{dnssec::SigningPass, name::ZoneName},
-    model::role_grant::Action,
-};
+use bindizr_core::dns::dnssec::SigningPass;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::status::load_status_tx;
-use crate::{
-    Context, authorization::Caller, error::ServiceError, transaction, types::DnssecStatusResponse,
-};
+use super::status;
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::types::DnssecStatusResponse;
+use crate::{Context, transaction};
 
 /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
 /// parent to drop the zone's DS: the first step of going insecure.
@@ -50,7 +50,7 @@ pub async fn withdraw(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = load_status_tx(
+        let response = status::load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -114,7 +114,7 @@ pub async fn cancel_withdrawal(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = load_status_tx(
+        let response = status::load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),

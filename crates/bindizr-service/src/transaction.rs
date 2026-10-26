@@ -3,7 +3,8 @@
 
 use bindizr_db::Transaction;
 
-use crate::{Context, error::ServiceError};
+use crate::Context;
+use crate::error::ServiceError;
 
 /// Begin a database transaction and translate any startup error.
 pub(crate) async fn begin_tx(

@@ -1,13 +1,12 @@
-use axum::{
-    Json,
-    extract::{FromRequestParts, rejection::JsonRejection},
-    http::{HeaderValue, StatusCode, header::WWW_AUTHENTICATE, request::Parts},
-    response::{IntoResponse, Response},
-};
-use bindizr_service::{
-    error::{ErrorCode, ServiceError},
-    types::ErrorResponse,
-};
+use axum::Json;
+use axum::extract::FromRequestParts;
+use axum::extract::rejection::JsonRejection;
+use axum::http::header::WWW_AUTHENTICATE;
+use axum::http::request::Parts;
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
+use bindizr_service::error::{ErrorCode, ServiceError};
+use bindizr_service::types::ErrorResponse;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -172,7 +171,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::Body, extract::FromRequest, http::Request};
+    use axum::body::Body;
+    use axum::extract::FromRequest;
+    use axum::http::Request;
     use bindizr_service::types::{CreateRecordRequest, DeleteRecordsRequest};
 
     use super::*;

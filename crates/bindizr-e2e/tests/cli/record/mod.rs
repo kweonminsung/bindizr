@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_failure_contains};
+use crate::common;
+use crate::common::TestApp;
 
 mod bulk;
 
@@ -590,7 +591,7 @@ async fn record_update_by_name_refuses_a_name_holding_several_records() {
     ];
 
     let refused = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &refused, "address one by its id");
+    common::assert_cli_failure_contains(&args, &refused, "address one by its id");
 }
 
 /// Verify record filtering by zone and type through the CLI.
@@ -671,7 +672,7 @@ async fn record_rejects_invalid_values_via_cli() {
         ];
 
         let output = app.run_cli(&args, None).await;
-        assert_cli_failure_contains(&args, &output, expected_error);
+        common::assert_cli_failure_contains(&args, &output, expected_error);
     }
 }
 
@@ -714,5 +715,5 @@ async fn record_update_rejects_retype_without_value_via_cli() {
     let args = ["record", "update", "--id", &record_id, "--type", "TXT"];
 
     let output = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &output, "value is required when changing");
+    common::assert_cli_failure_contains(&args, &output, "value is required when changing");
 }

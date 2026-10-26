@@ -1,13 +1,8 @@
-use std::{
-    env,
-    io::Write,
-    net::TcpListener,
-    process::{Child, Command, Stdio},
-    sync::{
-        OnceLock,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::env;
+use std::net::TcpListener;
+use std::process::{Child, Command, Stdio};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use reqwest::{Client, Method, StatusCode};
 use rustls::pki_types::CertificateDer;
@@ -27,7 +22,7 @@ pub(crate) use dns::{
     DsRecord, FakeParent, TransferResult, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
     probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
 };
-use verify::{PreviousRecordKey, to_fqdn};
+use verify::PreviousRecordKey;
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 /// Every record action, the grant a test role needs to read and change a zone's records.
@@ -399,6 +394,8 @@ impl TestApp {
     /// Run the CLI with optional stdin; after selected zone/record writes,
     /// wait for configured secondaries to match the API.
     pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
+        use std::io::Write;
+
         // Remember deleted names before the API can no longer return their identity.
         let previous_record_key = match args {
             ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
@@ -406,8 +403,8 @@ impl TestApp {
                     .await
             }
             ["zone", "delete", zone_name, ..] => Some(PreviousRecordKey {
-                zone_name: to_fqdn(zone_name),
-                name: to_fqdn(zone_name),
+                zone_name: verify::to_fqdn(zone_name),
+                name: verify::to_fqdn(zone_name),
                 record_type: 6,
             }),
             _ => None,

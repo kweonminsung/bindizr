@@ -7,19 +7,16 @@ mod server;
 mod upstream;
 mod wire;
 
-use std::{future::IntoFuture, sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
-use bindizr_core::{
-    config::{LogFormat, LoggingConfig},
-    errln,
-    logger::Logger,
-};
-use clap::Parser;
-use tokio::{
-    signal::unix::{SignalKind, signal},
-    sync::watch,
-    task::{JoinError, JoinHandle, JoinSet},
-};
+use bindizr_core::config::{LogFormat, LoggingConfig};
+use bindizr_core::errln;
+use bindizr_core::logger::Logger;
+use tokio::signal::unix;
+use tokio::signal::unix::SignalKind;
+use tokio::sync::watch;
+use tokio::task::{JoinError, JoinHandle, JoinSet};
 
 /// How long in-flight requests get once the adapter is asked to stop, bounded
 /// well inside the grace period Kubernetes allows before SIGKILL.
@@ -40,6 +37,10 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Re
 
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
+    use std::future::IntoFuture;
+
+    use clap::Parser;
+
     let cli = config::Cli::parse();
     let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|error| {
         errln!("Error: {}", error);
@@ -161,7 +162,7 @@ async fn wait_for_stop(mut stop: watch::Receiver<bool>) {
 /// Wait for SIGTERM or SIGINT; a container's PID 1 needs explicit handlers
 /// to stop before its grace period expires.
 async fn wait_for_signal() {
-    let mut terminate = match signal(SignalKind::terminate()) {
+    let mut terminate = match unix::signal(SignalKind::terminate()) {
         Ok(terminate) => terminate,
         Err(error) => {
             log::error!("Failed to listen for SIGTERM: {}", error);

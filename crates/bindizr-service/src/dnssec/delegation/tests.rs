@@ -1,11 +1,9 @@
-use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, name::ZoneName, query::DsRecord},
-    model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
-        dnssec_policy::PolicyId,
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::query::DsRecord;
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole};
+use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::zone::ZoneId;
 
 use super::*;
 use crate::types::DsState;

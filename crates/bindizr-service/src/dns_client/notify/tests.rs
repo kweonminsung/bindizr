@@ -1,13 +1,12 @@
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::net::SocketAddr;
+use std::str::FromStr;
+use std::time::Duration;
 
-use bindizr_core::dns::{
-    message::{Name, OptRcode},
-    query::validate_notify_response,
-    tsig::TsigSigningKey,
-};
+use bindizr_core::dns::message::{Name, OptRcode};
+use bindizr_core::dns::query;
+use bindizr_core::dns::tsig::TsigSigningKey;
 
 use super::*;
-use crate::dns_client::ds::tests::encode_name;
 
 /// Drive the production transaction lifecycle with an isolated client.
 async fn send_notify_to_server(
@@ -29,16 +28,11 @@ async fn send_notify_to_server(
 #[tokio::test]
 async fn signed_notify_advertises_edns_for_long_names() {
     use base64::Engine;
-    use bindizr_core::{
-        dns::{
-            message::{Edns, Keepalive, ParsedQuery},
-            tsig::{TransferSigner, verify_tsig},
-        },
-        model::{
-            role::RoleId,
-            tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId},
-        },
-    };
+    use bindizr_core::dns::message::{Edns, Keepalive, ParsedQuery};
+    use bindizr_core::dns::tsig;
+    use bindizr_core::dns::tsig::TransferSigner;
+    use bindizr_core::model::role::RoleId;
+    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
     let long_name = |c: &str| {
         format!(
             "{}.{}.{}.{}",
@@ -86,9 +80,10 @@ async fn signed_notify_advertises_edns_for_long_names() {
 
                 let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
                 let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
-                let mut signer: TransferSigner = verify_tsig(&buffer[..len], Some(server_key))
-                    .unwrap()
-                    .into();
+                let mut signer: TransferSigner =
+                    tsig::verify_tsig(&buffer[..len], Some(server_key))
+                        .unwrap()
+                        .into();
                 let response = query
                     .build_signed_error_response(OptRcode::NOERROR, None, Some(&mut signer))
                     .unwrap();
@@ -128,7 +123,7 @@ fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     response.extend_from_slice(&0u16.to_be_bytes());
     response.extend_from_slice(&0u16.to_be_bytes());
     response.extend_from_slice(&0u16.to_be_bytes());
-    encode_name(qname, &mut response);
+    crate::dns_client::ds::tests::encode_name(qname, &mut response);
     response.extend_from_slice(&6u16.to_be_bytes());
     response.extend_from_slice(&1u16.to_be_bytes());
 
@@ -299,9 +294,9 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
         "example.com",
     );
     let mut owner = Vec::new();
-    encode_name("notify-key", &mut owner);
+    crate::dns_client::ds::tests::encode_name("notify-key", &mut owner);
     let mut algorithm = Vec::new();
-    encode_name("hmac-sha256", &mut algorithm);
+    crate::dns_client::ds::tests::encode_name("hmac-sha256", &mut algorithm);
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -345,10 +340,8 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
 #[tokio::test]
 async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
     use base64::Engine;
-    use bindizr_core::model::{
-        role::RoleId,
-        tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId},
-    };
+    use bindizr_core::model::role::RoleId;
+    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
     use tokio::net::UdpSocket;
     let key = TsigKey {
         id: TsigKeyId::from(1),
@@ -432,10 +425,8 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
 /// Sections 3.6 and 4.8); only silence retains the configured retries.
 #[tokio::test]
 async fn notify_completes_on_any_reply_and_retries_silence() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use tokio::net::UdpSocket;
 
@@ -491,16 +482,12 @@ async fn notify_completes_on_any_reply_and_retries_silence() {
 /// Only a valid signature can make NOTIMP complete a signed transaction.
 #[tokio::test]
 async fn signed_notify_requires_authenticated_notimp_before_completing() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use base64::Engine;
-    use bindizr_core::model::{
-        role::RoleId,
-        tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId},
-    };
+    use bindizr_core::model::role::RoleId;
+    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
     use tokio::net::UdpSocket;
 
     let key = TsigKey {
@@ -566,10 +553,8 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
 #[tokio::test]
 async fn signed_notify_times_out_under_unsigned_response_flood() {
     use base64::Engine;
-    use bindizr_core::model::{
-        role::RoleId,
-        tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId},
-    };
+    use bindizr_core::model::role::RoleId;
+    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
     use tokio::net::UdpSocket;
     let key = TsigKey {
         id: TsigKeyId::from(1),
@@ -630,7 +615,7 @@ fn validate_notify_response_accepts_matching_noerror_response() {
     // 0xa000 = QR set + opcode NOTIFY, NOERROR.
     let response = build_notify_response(1234, 0xa000, "example.com");
 
-    assert!(validate_notify_response(1234, &zone(), &response).is_ok());
+    assert!(query::validate_notify_response(1234, &zone(), &response).is_ok());
 }
 
 /// Verify that `validate_notify_response` rejects id mismatch.
@@ -638,7 +623,7 @@ fn validate_notify_response_accepts_matching_noerror_response() {
 fn validate_notify_response_rejects_id_mismatch() {
     let response = build_notify_response(1234, 0xa000, "example.com");
 
-    let error = validate_notify_response(5678, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(5678, &zone(), &response).unwrap_err();
 
     assert!(error.to_string().contains("ID mismatch"));
 }
@@ -649,7 +634,7 @@ fn validate_notify_response_rejects_error_rcode() {
     // 0xa005 adds RCODE 5 (REFUSED).
     let response = build_notify_response(1234, 0xa005, "example.com");
 
-    let error = validate_notify_response(1234, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(1234, &zone(), &response).unwrap_err();
 
     assert!(error.to_string().contains("RCODE 5"));
 }
@@ -664,7 +649,7 @@ fn validate_notify_response_reports_rcode_without_question() {
     response.truncate(12);
     response[4..6].copy_from_slice(&0u16.to_be_bytes());
 
-    let error = validate_notify_response(1234, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(1234, &zone(), &response).unwrap_err();
 
     assert!(error.to_string().contains("RCODE 9"), "{error}");
 }
@@ -674,7 +659,7 @@ fn validate_notify_response_reports_rcode_without_question() {
 fn validate_notify_response_rejects_another_question() {
     let response = build_notify_response(1234, 0xa000, "other.com");
 
-    let error = validate_notify_response(1234, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(1234, &zone(), &response).unwrap_err();
 
     assert!(error.to_string().contains("another question"), "{error}");
 }

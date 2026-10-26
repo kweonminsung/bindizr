@@ -1,23 +1,17 @@
 use std::collections::HashSet;
 
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    model::{record::RecordId, role_grant::Action},
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::validation::{normalize_record_owner_name, parse_record_type};
-use crate::{
-    Context,
-    authorization::{Caller, RecordAccess},
-    dnssec,
-    error::ServiceError,
-    model::record::{Record, RecordData},
-    serial::generate_serial,
-    transaction,
-    types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run},
-    zone::{self, diff::build_record_diff, validation::normalize_name},
-};
+use super::validation;
+use crate::authorization::{Caller, RecordAccess};
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordData};
+use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
+use crate::zone::diff;
+use crate::{Context, dnssec, serial, transaction, zone};
 
 /// Delete a record by id, bumping the zone serial and recording a DEL
 /// change for IXFR. `caller` is authorized against the row this tx locked.
@@ -139,7 +133,7 @@ pub async fn delete(
                     )
                 })
                 .collect(),
-            diff: build_record_diff(&zone, &before, &after),
+            diff: diff::build_record_diff(&zone, &before, &after),
         };
 
         zone::validate_record_changes_tx(
@@ -150,7 +144,7 @@ pub async fn delete(
         )
         .await?;
 
-        let new_serial = generate_serial(Some(zone.serial));
+        let new_serial = serial::generate_serial(Some(zone.serial));
 
         if run.is_dry_run() {
             return Ok((response, zone.name));
@@ -198,11 +192,11 @@ pub async fn delete_matching(
     caller: &Caller,
     request: &DeleteRecordsRequest,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
-    let zone_name = normalize_name(&request.zone_name)?;
+    let zone_name = zone::normalize_name(&request.zone_name)?;
     let record_type = request
         .record_type
         .as_deref()
-        .map(parse_record_type)
+        .map(validation::parse_record_type)
         .transpose()?;
 
     if request.value.is_some() && record_type.is_none() {
@@ -228,7 +222,7 @@ pub async fn delete_matching(
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        let owner = normalize_record_owner_name(&request.name, &zone.name)?;
+        let owner = validation::normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
         // depended on the match would reveal what lies outside the grant.
@@ -288,7 +282,7 @@ pub async fn delete_matching(
                     )
                 })
                 .collect(),
-            diff: build_record_diff(&zone, &before, &after),
+            diff: diff::build_record_diff(&zone, &before, &after),
         };
 
         zone::validate_record_changes_tx(&mut tx, &zone, &matched, &[]).await?;
@@ -296,7 +290,7 @@ pub async fn delete_matching(
         let new_serial = if matched.is_empty() {
             zone.serial
         } else {
-            generate_serial(Some(zone.serial))
+            serial::generate_serial(Some(zone.serial))
         };
 
         if !response.applied || matched.is_empty() {

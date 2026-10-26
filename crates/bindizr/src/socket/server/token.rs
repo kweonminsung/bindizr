@@ -1,13 +1,10 @@
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    token,
-    types::{
-        CreateTokenRequest, CreateTokenResponse, MessageResponse, PaginatedResponse, TokenFilter,
-        TokenResponse,
-    },
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    CreateTokenRequest, CreateTokenResponse, MessageResponse, PaginatedResponse, TokenFilter,
+    TokenResponse,
 };
+use bindizr_service::{Context, token};
 
 use crate::socket::types::DaemonResponse;
 

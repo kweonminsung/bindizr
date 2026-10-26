@@ -2,15 +2,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ring::digest::{SHA256, digest};
+use ring::digest::{self, SHA256};
 use thiserror::Error;
 
-use crate::dns::{
-    Serial, SoaInterval, Ttl,
-    message::{Name, Rtype},
-    name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName},
-    query::TransferRecord,
-};
+use crate::dns::message::{Name, Rtype};
+use crate::dns::name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName};
+use crate::dns::query::TransferRecord;
+use crate::dns::{Serial, SoaInterval, Ttl};
 
 /// The virtual catalog's SOA metadata, without a managed-zone row or signing settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +43,7 @@ pub(crate) fn catalog_member_owner_name(catalog: &ZoneName, member_zone: &str) -
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).
 pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
     // Case-insensitive per RFC 4343, matching the catalog digest.
-    let digest = digest(&SHA256, zone_name.to_ascii_lowercase().as_bytes());
+    let digest = digest::digest(&SHA256, zone_name.to_ascii_lowercase().as_bytes());
     hex::encode(&digest.as_ref()[..MEMBER_ID_DIGEST_LEN])
 }
 

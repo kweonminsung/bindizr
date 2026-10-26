@@ -1,9 +1,7 @@
 //! Audit log payloads.
 
-use bindizr_core::model::{
-    audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation},
-    change::{ChangeActor, ChangeSource},
-};
+use bindizr_core::model::audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation};
+use bindizr_core::model::change::{ChangeActor, ChangeSource};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};

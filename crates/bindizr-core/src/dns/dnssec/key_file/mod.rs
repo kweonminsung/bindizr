@@ -7,14 +7,13 @@ use base64::Engine;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use domain::base::iana::SecurityAlgorithm;
 
-use crate::{
-    dns::{LibraryError, Ttl, dnssec::KeyTag},
-    model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
-        dnssec_policy::DnssecKeyLayout,
-        zone::Zone,
-    },
+use crate::dns::dnssec::KeyTag;
+use crate::dns::{LibraryError, Ttl};
+use crate::model::dnssec_key::{
+    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
+use crate::model::dnssec_policy::DnssecKeyLayout;
+use crate::model::zone::Zone;
 
 /// A BIND key pair bindizr cannot take over as it stands.
 #[derive(Debug, Error)]

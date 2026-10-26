@@ -3,32 +3,22 @@
 use std::collections::HashMap;
 
 use base64::Engine;
-use bindizr_core::{
-    dns::name::parse_lookup_name,
-    model::{
-        audit_log::{AuditEntity, AuditOperation},
-        role::RoleId,
-        role_grant::Action,
-        tsig_key::TsigKeyId,
-    },
-};
+use bindizr_core::dns::name;
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use rand::RngExt;
 
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    model::tsig_key::{TsigAlgorithm, TsigKey},
-    pagination::{build_page, validate_page_limit},
-    role,
-    text::MAX_COLUMN_TEXT_LEN,
-    transaction,
-    types::{
-        CreateTsigKeyRequest, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter,
-        TsigKeyResponse,
-    },
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
+use crate::text::MAX_COLUMN_TEXT_LEN;
+use crate::types::{
+    CreateTsigKeyRequest, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse,
 };
+use crate::{Context, audit, pagination, role, transaction};
 
 /// Create a TSIG key in the request's role. An omitted `secret` is generated;
 /// a given one must be valid, non-empty base64 (an imported key).
@@ -120,7 +110,7 @@ pub async fn list(
     filter: &TsigKeyFilter,
 ) -> Result<PaginatedResponse<TsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
-    validate_page_limit(filter.limit)?;
+    pagination::validate_page_limit(filter.limit)?;
 
     let keys = match &filter.role_name {
         Some(role_name) => {
@@ -135,7 +125,7 @@ pub async fn list(
         .map(|role| (role.id, role.name))
         .collect();
 
-    Ok(build_page(
+    Ok(pagination::build_page(
         keys.iter()
             .map(|tsig_key| {
                 let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
@@ -243,7 +233,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
-    let name = parse_lookup_name(value)
+    let name = name::parse_lookup_name(value)
         .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {}", error)))?;
 
     if name.len() > MAX_COLUMN_TEXT_LEN {

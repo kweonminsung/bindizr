@@ -2,10 +2,7 @@
 
 use std::net::Ipv4Addr;
 
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata,
-    value::{parse_u8_record_field, parse_u16_record_field},
-};
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 const WKS_PREFIX_LEN: usize = 5;
 const MAX_SERVICE_BITMAP_LEN: usize = (u16::MAX as usize + 1) / 8;
@@ -31,12 +28,12 @@ impl WksRecordValue {
         let protocol = match protocol.to_ascii_uppercase().as_str() {
             "TCP" => 6,
             "UDP" => 17,
-            _ => parse_u8_record_field("WKS protocol", protocol)?,
+            _ => value::parse_u8_record_field("WKS protocol", protocol)?,
         };
         let mut services = Vec::new();
 
         for port in words.filter(|word| !matches!(*word, "(" | ")")) {
-            let port = usize::from(parse_u16_record_field("WKS port", port)?);
+            let port = usize::from(value::parse_u16_record_field("WKS port", port)?);
             let index = port / 8;
             if services.len() <= index {
                 services.resize(index + 1, 0);

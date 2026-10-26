@@ -1,27 +1,23 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
-use bindizr_core::{
-    dns::{Serial, name::ZoneName},
-    model::{dnssec_key::DS_DIGEST_TYPE, role_grant::Action},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_key::DS_DIGEST_TYPE;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
-use super::parent_ns_addrs::parent_ns_addr_entries;
-use crate::{
-    Context, Transaction,
-    authorization::Caller,
-    error::ServiceError,
-    model::{
-        dnssec_key::{DnssecKey, DnssecKeyState},
-        dnssec_policy::DnssecPolicy,
-        zone::Zone,
-    },
-    transaction,
-    types::{DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse, DnssecStatusResponse},
-    zone,
+use super::parent_ns_addrs;
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::dnssec_key::{DnssecKey, DnssecKeyState};
+use crate::model::dnssec_policy::DnssecPolicy;
+use crate::model::zone::Zone;
+use crate::types::{
+    DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse, DnssecStatusResponse,
 };
+use crate::{Context, Transaction, transaction, zone};
 
 /// DNSSEC signing state of a zone; `enabled: false` with no policy and
 /// empty key and DS lists for an unsigned zone.
@@ -142,7 +138,10 @@ pub(crate) async fn load_status_tx(
         next_resign_at,
         serial,
         withdrawing,
-        parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addr_entries),
+        parent_ns_addrs: zone
+            .parent_ns_addrs
+            .as_deref()
+            .map(parent_ns_addrs::parent_ns_addr_entries),
         delegation: None,
     })
 }

@@ -1,14 +1,10 @@
 //! Decode the authoritative SOA serial answering a probe.
 
-use domain::{
-    base::{
-        Name, ToName,
-        iana::{Class, OptRcode, Rtype},
-    },
-    rdata::Soa,
-};
+use domain::base::Name;
+use domain::base::iana::{Class, OptRcode, Rtype};
+use domain::rdata::Soa;
 
-use super::{ParseResponseError, parse_authoritative_response, response_rcode};
+use super::ParseResponseError;
 
 /// Read the serial served authoritatively for `qname`.
 pub fn extract_soa_serial(
@@ -16,8 +12,10 @@ pub fn extract_soa_serial(
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<u32, ParseResponseError> {
-    let message = parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
-    let rcode = response_rcode(&message)?;
+    use domain::base::ToName;
+
+    let message = super::parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
+    let rcode = super::response_rcode(&message)?;
 
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::Rcode(rcode));

@@ -5,13 +5,11 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, TokenRow, print_page, print_payload, print_response},
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, TokenRow};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing API tokens.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -86,7 +84,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             ))
             .await?;
             log::debug!("Token creation result: {:?}", response);
-            print_response(&response.data, output, |created| {
+            output::print_response(&response.data, output, |created| {
                 vec![TokenRow::from(created)]
             })?;
         }
@@ -105,7 +103,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             )
             .await?;
             log::debug!("Token list result: {:?}", response);
-            print_page(&response.data, output, |item| TokenRow::from(item))?;
+            output::print_page(&response.data, output, |item| TokenRow::from(item))?;
         }
         TokenCommand::Delete { name, output } => {
             let response =
@@ -116,7 +114,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
     }

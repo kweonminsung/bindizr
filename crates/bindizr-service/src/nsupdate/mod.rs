@@ -6,34 +6,24 @@ mod operation;
 mod plan;
 mod prerequisite;
 
-use bindizr_core::{
-    dns::{
-        Serial,
-        message::{Class, Rcode, Rtype},
-        name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
-        nsupdate::parser::{ParseUpdateError, UpdateRecord, ValidateUpdateShapeError},
-        record::ParseRecordValueError,
-    },
-    model::role_grant::Action,
+use bindizr_core::dns::message::{Class, Rcode, Rtype};
+use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
+use bindizr_core::dns::nsupdate::parser::{
+    ParseUpdateError, UpdateRecord, ValidateUpdateShapeError,
 };
+use bindizr_core::dns::record::ParseRecordValueError;
+use bindizr_core::dns::{Serial, name};
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
-use decode::{decode_prerequisite, decode_updates};
-use operation::apply_record_operation_tx;
 use plan::UpdateOperation;
-use prerequisite::{
-    Prerequisite, RecordSets, evaluate_prerequisite, evaluate_record_set_prerequisites,
-    list_served_record_sets_tx,
-};
+use prerequisite::{Prerequisite, RecordSets};
 use thiserror::Error;
 
-use crate::{
-    Context,
-    authorization::{Caller, RecordAccess},
-    dnssec,
-    error::ServiceError,
-    model::{record::RecordType, zone::Zone},
-    transaction, zone,
-};
+use crate::authorization::{Caller, RecordAccess};
+use crate::error::ServiceError;
+use crate::model::record::RecordType;
+use crate::model::zone::Zone;
+use crate::{Context, dnssec, transaction, zone};
 
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
@@ -167,13 +157,13 @@ pub async fn apply(
         let served = if update.prerequisites.is_empty() {
             RecordSets::new()
         } else {
-            list_served_record_sets_tx(&mut tx, &zone).await?
+            prerequisite::list_served_record_sets_tx(&mut tx, &zone).await?
         };
 
         let mut wanted = RecordSets::new();
 
         for record in update.prerequisites {
-            let prerequisite = decode_prerequisite(record, &zone.name, update.message)?;
+            let prerequisite = decode::decode_prerequisite(record, &zone.name, update.message)?;
 
             // A prerequisite reads what it names, so its read grant precedes its
             // evaluation (Section 3.3.1); SOA and DNSSEC need one without a type restriction.
@@ -188,13 +178,13 @@ pub async fn apply(
                     record_type: record_type.as_ref(),
                 }],
             )?;
-            evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;
+            prerequisite::evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;
         }
 
-        evaluate_record_set_prerequisites(&served, &wanted)?;
+        prerequisite::evaluate_record_set_prerequisites(&served, &wanted)?;
 
         // The prescan parses the owners the update grants are checked on.
-        let updates = decode_updates(update.updates, &zone.name, update.message)?;
+        let updates = decode::decode_updates(update.updates, &zone.name, update.message)?;
         let mut accesses = Vec::new();
 
         for op in &updates {
@@ -218,7 +208,8 @@ pub async fn apply(
 
         for op in &plan.records {
             changed |=
-                apply_record_operation_tx(&mut tx, &plan.zone, op, new_serial, caller).await?;
+                operation::apply_record_operation_tx(&mut tx, &plan.zone, op, new_serial, caller)
+                    .await?;
         }
 
         if changed {
@@ -267,7 +258,7 @@ fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, Nsu
     }
 
     OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|source| NsupdateError::Owner {
-        name: to_fqdn(name),
+        name: name::to_fqdn(name),
         zone_name: zone_name.clone(),
         source,
     })

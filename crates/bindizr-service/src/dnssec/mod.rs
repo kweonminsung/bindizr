@@ -11,14 +11,12 @@ mod rollover;
 mod status;
 mod withdraw;
 
-use bindizr_core::{
-    dns::{
-        Serial,
-        dnssec::{SignedViewParams, SigningPass},
-        name::ZoneName,
-    },
-    model::{dnssec_record::DnssecRecordId, role_grant::Action, zone::ZoneId},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::dnssec::{SignedViewParams, SigningPass};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 pub use delegation::check_ds;
@@ -35,19 +33,14 @@ pub use status::{
 };
 pub use withdraw::{cancel_withdrawal, withdraw};
 
-use crate::{
-    Transaction,
-    authorization::Caller,
-    change::ChangeOrigin,
-    error::ServiceError,
-    model::{
-        dnssec_key::DnssecKey,
-        dnssec_policy::DnssecPolicy,
-        zone::Zone,
-        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
-    },
-    zone,
-};
+use crate::authorization::Caller;
+use crate::change::ChangeOrigin;
+use crate::error::ServiceError;
+use crate::model::dnssec_key::DnssecKey;
+use crate::model::dnssec_policy::DnssecPolicy;
+use crate::model::zone::Zone;
+use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
+use crate::{Transaction, zone};
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
 /// sane offset.
@@ -299,10 +292,8 @@ async fn apply_signed_view_tx(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::model::{
-        dnssec_key::DnssecAlgorithm,
-        dnssec_policy::{Days, DnssecDenial, PolicyId},
-    };
+    use bindizr_core::model::dnssec_key::DnssecAlgorithm;
+    use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
     use chrono::Utc;
 
     use super::DnssecPolicy;

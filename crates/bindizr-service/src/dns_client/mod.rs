@@ -6,18 +6,15 @@ pub(crate) mod ds;
 pub mod notify;
 pub mod probe;
 
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
-use bindizr_core::dns::{
-    address::{AddressTarget, DEFAULT_DNS_PORT},
-    message::{Keepalive, QueryMetadata, encode_tcp_message},
-    query::{is_truncated, matches_response_to_request},
-};
+use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
+use bindizr_core::dns::message::{Keepalive, QueryMetadata};
+use bindizr_core::dns::{message, query};
 use thiserror::Error;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream, UdpSocket, lookup_host},
-};
+use tokio::net;
+use tokio::net::{TcpStream, UdpSocket};
 
 /// A failed DNS exchange; `what` identifies the operation in timeout and send errors.
 #[derive(Debug, Error)]
@@ -71,7 +68,7 @@ pub(crate) async fn exchange_with_tcp_fallback(
     what: &'static str,
 ) -> Result<Vec<u8>, ExchangeMessageError> {
     let (received, response) = exchange_over_udp(server_addr, timeout, request, what).await?;
-    if !is_truncated(&response[..received]) {
+    if !query::is_truncated(&response[..received]) {
         return Ok(response[..received].to_vec());
     }
     exchange_over_tcp(server_addr, timeout, request, what).await
@@ -85,7 +82,9 @@ pub(crate) async fn exchange_over_tcp(
     request: &[u8],
     what: &'static str,
 ) -> Result<Vec<u8>, ExchangeMessageError> {
-    let frame = encode_tcp_message(request)?;
+    use tokio::io::AsyncWriteExt;
+
+    let frame = message::encode_tcp_message(request)?;
 
     let exchange = async {
         let mut stream = TcpStream::connect(server_addr).await?;
@@ -102,6 +101,8 @@ pub(crate) async fn exchange_over_tcp(
 pub(crate) async fn read_tcp_message(
     stream: &mut TcpStream,
 ) -> Result<Vec<u8>, ReadTcpMessageError> {
+    use tokio::io::AsyncReadExt;
+
     let mut prefix = [0u8; 2];
     stream.read_exact(&mut prefix).await?;
     let mut message = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
@@ -148,7 +149,7 @@ pub(crate) async fn exchange_over_udp(
 
             // Ignore unmatched datagrams without extending the exchange's deadline.
             if limit.validate_len(received).is_ok()
-                && matches_response_to_request(request, &response[..received])
+                && query::matches_response_to_request(request, &response[..received])
             {
                 return Ok::<_, std::io::Error>(received);
             }
@@ -196,7 +197,7 @@ pub async fn resolve_address_entry(
     match entry {
         AddressTarget::Socket(addr) => Ok(vec![*addr]),
         AddressTarget::HostPort(host_port) => {
-            match tokio::time::timeout(resolve_timeout, lookup_host(host_port)).await {
+            match tokio::time::timeout(resolve_timeout, net::lookup_host(host_port)).await {
                 Ok(Ok(resolved)) => {
                     let addrs: Vec<SocketAddr> = resolved.collect();
                     if addrs.is_empty() {
@@ -231,22 +232,21 @@ pub struct ReadTcpMessageError(#[from] std::io::Error);
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
 
-    use bindizr_core::dns::{
-        message::{Name, Opcode, OptRcode, ParsedQuery, Rtype},
-        query::build_question,
-    };
+    use bindizr_core::dns::message::{Name, Opcode, OptRcode, ParsedQuery, Rtype};
+    use bindizr_core::dns::query;
 
     use super::*;
 
     /// Ignore over-advertisement replies without resetting the deadline or sending again.
     #[tokio::test]
     async fn udp_exchange_ignores_oversized_matching_responses() {
+        use std::str::FromStr;
+
         for (advertised, limit) in [(None, 512), (Some(1232), 1232)] {
             let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let address = server.local_addr().unwrap();
-            let (_, request) = build_question(
+            let (_, request) = query::build_question(
                 Opcode::QUERY,
                 false,
                 false,

@@ -1,30 +1,21 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
-};
-use bindizr_service::{
-    Context,
-    role::{self, grant},
-    types::{
-        CreateRoleGrantRequest, CreateRoleRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse,
-        SingleRoleGrantResponse, SingleRoleResponse,
-    },
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::Context;
+use bindizr_service::role::{self, grant};
+use bindizr_service::types::{
+    CreateRoleGrantRequest, CreateRoleRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, MessageResponse,
+    PageRequest, PaginatedResponse, RoleGrantResponse, RoleResponse, SingleRoleGrantResponse,
+    SingleRoleResponse,
 };
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-        middleware::body_parser::JsonBody,
-    },
-    params::{NameIdParams, NameParams},
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::middleware::body_parser::JsonBody;
+use crate::params::{NameIdParams, NameParams};
 
 /// Build the role API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

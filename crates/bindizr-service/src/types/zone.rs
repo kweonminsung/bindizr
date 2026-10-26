@@ -1,9 +1,7 @@
 //! Zone request, patch, filter, and response payloads.
 
-use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl},
-    model::zone::ZoneId,
-};
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};

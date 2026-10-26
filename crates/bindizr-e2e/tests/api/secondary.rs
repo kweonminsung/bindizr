@@ -1,13 +1,11 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{
-    TestApp, assert_cli_failure_contains,
-    dns::{
-        notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL},
-        tsig::{KeyRole, create_tsig_key},
-    },
-};
+use crate::common;
+use crate::common::TestApp;
+use crate::common::dns::notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL};
+use crate::common::dns::tsig;
+use crate::common::dns::tsig::KeyRole;
 
 /// Verify secondary registration, retrieval, update, and deletion.
 #[tokio::test]
@@ -169,7 +167,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     // `domain` renders a name without its root dot.
     let expected_zone = zone_name.to_string();
 
-    let key = create_tsig_key(&app, "notify-key", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "notify-key", KeyRole::Own).await;
     let signed_receiver = FakeSecondary::start(Some(&key));
     let plain_receiver = FakeSecondary::start(None);
 
@@ -220,7 +218,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(body["code"], "TSIG_KEY_IN_USE");
 
     // Ignore unsigned BADKEY until timeout (RFC 8945, Section 5.4).
-    let other = create_tsig_key(&app, "other-key", KeyRole::Own).await;
+    let other = tsig::create_tsig_key(&app, "other-key", KeyRole::Own).await;
     let wrong_receiver = FakeSecondary::start(Some(&other));
 
     let (status, body) = app
@@ -319,5 +317,5 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
     let args = ["secondary", "check", "dead"];
 
     let failed = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &failed, "secondary 'dead' failed the check");
+    common::assert_cli_failure_contains(&args, &failed, "secondary 'dead' failed the check");
 }

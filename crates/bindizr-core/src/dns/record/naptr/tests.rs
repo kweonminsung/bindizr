@@ -1,5 +1,6 @@
 use super::*;
-use crate::dns::record::{ParseRecordValueError, to_quoted_charstr};
+use crate::dns::record;
+use crate::dns::record::ParseRecordValueError;
 
 /// Reject invalid flags with either replacement form.
 #[test]
@@ -13,7 +14,7 @@ fn naptr_flags_reject_non_alphanumeric_characters() {
         for replacement in [".", "next.example."] {
             let text = format!(
                 "1 1 {} \"app\" \"\" {replacement}",
-                to_quoted_charstr(flags.as_bytes()),
+                record::to_quoted_charstr(flags.as_bytes()),
             );
             let parsed = NaptrRecordValue::parse(&text).unwrap();
 

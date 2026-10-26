@@ -1,15 +1,11 @@
 //! Canonical wire RDATA for comparison and DNSSEC signing.
 
-use domain::{
-    base::{
-        Rtype,
-        name::ParsedName,
-        rdata::{ComposeRecordData, ParseAnyRecordData},
-        wire::ParseError,
-    },
-    dep::octseq::parse::{Parser, ShortInput},
-    rdata::AllRecordData,
-};
+use domain::base::Rtype;
+use domain::base::name::ParsedName;
+use domain::base::rdata::ParseAnyRecordData;
+use domain::base::wire::ParseError;
+use domain::dep::octseq::parse::{Parser, ShortInput};
+use domain::rdata::AllRecordData;
 use thiserror::Error;
 
 use super::{EncodeRdataError, Rdata};
@@ -36,6 +32,8 @@ impl Rdata {
         start: usize,
         len: usize,
     ) -> Result<Self, ParseRdataError> {
+        use domain::base::rdata::ComposeRecordData;
+
         let mut parser = Parser::from_ref(message);
         parser.advance(start)?;
         let mut rdata = parser.parse_parser(len)?;

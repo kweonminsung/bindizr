@@ -1,6 +1,8 @@
 use bindizr_core::model::zone::ZoneId;
 
-use crate::{Transaction, error::DatabaseError, mysql, postgres, sqlite, tx::TransactionKind};
+use crate::error::DatabaseError;
+use crate::tx::TransactionKind;
+use crate::{Transaction, mysql, postgres, sqlite};
 
 /// Mark a zone for DNSSEC withdrawal in the current transaction.
 pub async fn create_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<(), DatabaseError> {

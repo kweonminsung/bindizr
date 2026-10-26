@@ -2,34 +2,28 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::model::{
-    api_token::TokenId,
-    audit_log::{AuditEntity, AuditOperation},
-    role::RoleId,
-    role_grant::Action,
-};
+use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role_grant::Action;
 use chrono::{DateTime, Duration, Utc};
-use rand::{RngExt, distr::Alphanumeric};
-use ring::digest::{SHA256, digest};
+use rand::RngExt;
+use rand::distr::Alphanumeric;
+use ring::digest::SHA256;
 
 use super::error::ServiceError;
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    model::api_token::ApiToken,
-    pagination::{build_page, validate_page_limit},
-    role,
-    text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    transaction,
-    types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse},
-};
+use crate::authorization::Caller;
+use crate::model::api_token::ApiToken;
+use crate::text::MAX_COLUMN_TEXT_LEN;
+use crate::types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse};
+use crate::{Context, audit, pagination, role, text, transaction};
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
 const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
 
 /// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
-    hex::encode(digest(&SHA256, token.as_bytes()))
+    hex::encode(ring::digest::digest(&SHA256, token.as_bytes()))
 }
 
 /// Create an API token in the request's role; the secret is shown this once.
@@ -45,7 +39,7 @@ pub async fn create(
     let role = role::lookup_by_name(cx, &request.role_name).await?;
 
     let description =
-        normalize_description(request.description.as_deref(), ServiceError::invalid_input)?;
+        text::normalize_description(request.description.as_deref(), ServiceError::invalid_input)?;
     let expires_at = normalize_expires_at(request.expires_in_days)?;
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
@@ -126,7 +120,7 @@ pub async fn list(
     filter: &TokenFilter,
 ) -> Result<PaginatedResponse<TokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
-    validate_page_limit(filter.limit)?;
+    pagination::validate_page_limit(filter.limit)?;
 
     let tokens = match &filter.role_name {
         Some(role_name) => {
@@ -141,7 +135,7 @@ pub async fn list(
         .map(|role| (role.id, role.name))
         .collect();
 
-    Ok(build_page(
+    Ok(pagination::build_page(
         tokens
             .iter()
             .map(|token| {
@@ -211,7 +205,7 @@ async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceErr
 /// Lowercased so one name means one token on every backend (MySQL compares
 /// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
 pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
-    let name = normalize_identifier(name, "token name", MAX_COLUMN_TEXT_LEN)?;
+    let name = text::normalize_identifier(name, "token name", MAX_COLUMN_TEXT_LEN)?;
 
     // Dot segments get normalized away; `self` is the lookup route.
     if name == "." || name == ".." || name == "self" {

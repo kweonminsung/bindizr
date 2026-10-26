@@ -1,10 +1,8 @@
 //! Shared CLI cells for absent values, flags, time, truncation, and combined fields.
 //! Use a type's `Display` where available.
 
-use bindizr_core::{
-    dns::Serial,
-    model::transfer::{TransferKind, TransferResult, TransferTransport},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
 use bindizr_service::types::{
     RecordValue, SecondaryStatus, TransferResponse, TransferSummaryResponse,
 };

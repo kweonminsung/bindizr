@@ -2,20 +2,22 @@
 
 mod send;
 
-use std::{collections::HashMap, net::IpAddr};
+use std::collections::HashMap;
+use std::net::IpAddr;
 
-use bindizr_core::{
-    dns::{Serial, message, message::Rtype},
-    model::{transfer::TransferKind, zone_version::ZoneVersion},
-};
-use bindizr_service::{
-    transfer,
-    zone::{self, IxfrPlan, TransferAccess},
-};
+use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::{Serial, message};
+use bindizr_core::model::transfer::TransferKind;
+use bindizr_core::model::zone_version::ZoneVersion;
+use bindizr_service::transfer;
+use bindizr_service::zone::{self, IxfrPlan, TransferAccess};
 
-use self::send::{SendIxfrError, send_ixfr_response, send_soa_response};
-use super::{auth::TransferIdentity, axfr};
-use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
+use self::send::SendIxfrError;
+use super::auth::TransferIdentity;
+use super::axfr;
+use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
+use crate::dns::stream::ResponseWriter;
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.
 pub(crate) async fn handle_ixfr(
@@ -76,7 +78,8 @@ pub(crate) async fn handle_ixfr(
                 "IXFR: Answering with current SOA (serial={})",
                 current_serial
             );
-            return send_soa_response(writer, query, &zone, identity.signer.take()).await;
+            return self::send::send_soa_response(writer, query, &zone, identity.signer.take())
+                .await;
         }
         IxfrPlan::Full => {
             log::info!(
@@ -106,7 +109,7 @@ pub(crate) async fn handle_ixfr(
 
     // The service checked the delta has no gap; a failure still falls back
     // to AXFR only while no bytes have reached the client.
-    match send_ixfr_response(
+    match self::send::send_ixfr_response(
         writer,
         query,
         &zone,

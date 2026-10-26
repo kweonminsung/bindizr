@@ -1,27 +1,19 @@
 //! Cache zone transfers by immutable version id to distinguish reused serials.
 //! The record budget includes cached content for deleted zones.
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use bindizr_core::{
-    dns::name::ZoneName,
-    metrics::Metrics,
-    model::{
-        dnssec_record::DnssecRecord,
-        record::Record,
-        zone::{Zone, ZoneId},
-        zone_version::ZoneVersionId,
-    },
-};
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    zone::{self, TransferAccess, TransferContent},
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::metrics::Metrics;
+use bindizr_core::model::dnssec_record::DnssecRecord;
+use bindizr_core::model::record::Record;
+use bindizr_core::model::zone::{Zone, ZoneId};
+use bindizr_core::model::zone_version::ZoneVersionId;
+use bindizr_service::Context;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::zone::{self, TransferAccess, TransferContent};
 
 use super::DnsContext;
 

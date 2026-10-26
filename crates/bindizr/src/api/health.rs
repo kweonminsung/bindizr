@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-use bindizr_service::{
-    Context,
-    types::{HealthResponse, HealthStatus},
-    zone,
-};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use bindizr_service::types::{HealthResponse, HealthStatus};
+use bindizr_service::{Context, zone};
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 

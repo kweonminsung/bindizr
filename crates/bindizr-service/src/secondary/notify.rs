@@ -2,11 +2,10 @@
 
 use bindizr_core::dns::tsig::TsigSigningKey;
 
-use crate::{
-    Context,
-    error::ServiceError,
-    model::{secondary::Secondary, tsig_key::TsigKey},
-};
+use crate::Context;
+use crate::error::ServiceError;
+use crate::model::secondary::Secondary;
+use crate::model::tsig_key::TsigKey;
 
 /// The key a secondary's NOTIFY is signed with, ready to sign; `None`
 /// for one notified unsigned. The FK keeps a referenced key present.

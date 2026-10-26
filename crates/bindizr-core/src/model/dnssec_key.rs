@@ -2,10 +2,9 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{
-    dns::{Ttl, dnssec::KeyTag},
-    model::zone::ZoneId,
-};
+use crate::dns::Ttl;
+use crate::dns::dnssec::KeyTag;
+use crate::model::zone::ZoneId;
 
 /// A DNSSEC key column or parameter outside the values bindizr signs with.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

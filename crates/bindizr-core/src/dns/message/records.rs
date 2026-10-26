@@ -1,20 +1,14 @@
 //! Stored records, SOA versions, and catalog members as response answers.
 
 use super::{DnsMessageBuilder, EncodeMessageError, Name};
-use crate::{
-    dns::{
-        CatalogZone, Serial, Ttl,
-        dnssec::EncodeWireNameError,
-        name::{OwnerName, ZoneName, encode_name, to_fqdn},
-        record::{EncodedRdata, SoaRecordValue, TxtRecordValue},
-    },
-    model::{
-        dnssec_record::DnssecRecord,
-        record::{Record, RecordType},
-        zone::Zone,
-        zone_change::{JournalRecordType, ZoneChange},
-    },
-};
+use crate::dns::dnssec::EncodeWireNameError;
+use crate::dns::name::{OwnerName, ZoneName};
+use crate::dns::record::{EncodedRdata, SoaRecordValue, TxtRecordValue};
+use crate::dns::{CatalogZone, Serial, Ttl, name};
+use crate::model::dnssec_record::DnssecRecord;
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::model::zone_change::{JournalRecordType, ZoneChange};
 
 /// SOA is synthesized rather than stored as a user record.
 const SOA_WIRE_TYPE: u16 = 6;
@@ -163,7 +157,7 @@ impl DnsMessageBuilder {
         member_zone: &str,
     ) -> Result<(), EncodeMessageError> {
         let ptr_name = crate::dns::catalog_member_owner_name(&zone.name, member_zone);
-        let ptr_target = to_fqdn(member_zone);
+        let ptr_target = name::to_fqdn(member_zone);
 
         self.add_text_rdata(
             &ptr_name,
@@ -228,6 +222,6 @@ impl DnsMessageBuilder {
 
 /// Parses a presentation-form name through the one core name encoding.
 fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
-    let wire = encode_name(name)?;
+    let wire = name::encode_name(name)?;
     Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)).into())
 }

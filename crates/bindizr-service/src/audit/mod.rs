@@ -2,21 +2,16 @@
 
 use std::fmt;
 
-use bindizr_core::model::{
-    audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation},
-    role_grant::Action,
-};
+use bindizr_core::model::audit_log::{AuditEntity, AuditLog, AuditLogId, AuditOperation};
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::{AuditLogSortField, SortOrder};
 use chrono::Utc;
 
-use crate::{
-    Context, Transaction,
-    authorization::Caller,
-    change::ChangeOrigin,
-    error::ServiceError,
-    pagination::{build_paginated_response, parse_setting, validate_page_limit},
-    types::{AuditLogFilter, AuditLogResponse, PaginatedResponse},
-};
+use crate::authorization::Caller;
+use crate::change::ChangeOrigin;
+use crate::error::ServiceError;
+use crate::types::{AuditLogFilter, AuditLogResponse, PaginatedResponse};
+use crate::{Context, Transaction, pagination};
 
 /// Audit a management write before commit; `detail` describes changes without secrets.
 pub(crate) async fn save_tx(
@@ -68,7 +63,7 @@ pub async fn list(
     let total = bindizr_db::audit_log::count_by_filter(cx.db(), &filter).await?;
     let rows = bindizr_db::audit_log::list_by_filter(cx.db(), &filter).await?;
 
-    Ok(build_paginated_response(
+    Ok(pagination::build_paginated_response(
         rows.iter().map(AuditLogResponse::from).collect(),
         filter.limit,
         filter.offset,
@@ -107,14 +102,14 @@ fn normalize_filter(
         None => SortOrder::Desc,
         Some(order) => order.parse().map_err(ServiceError::invalid_input)?,
     };
-    validate_page_limit(filter.limit)?;
+    pagination::validate_page_limit(filter.limit)?;
 
     Ok(bindizr_db::audit_log::AuditLogFilter {
         entity,
         entity_name,
         since: filter.since,
         until: filter.until,
-        sort: parse_setting::<AuditLogSortField>(filter.sort.as_deref())?,
+        sort: pagination::parse_setting::<AuditLogSortField>(filter.sort.as_deref())?,
         order,
         limit: filter.limit,
         offset: filter.offset,

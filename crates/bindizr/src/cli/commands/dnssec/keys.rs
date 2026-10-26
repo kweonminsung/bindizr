@@ -6,11 +6,10 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use super::print_status;
-use crate::{
-    cli::{error::CliError, output::OutputFormat},
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output::OutputFormat;
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for moving raw key material in and out of bindizr.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -118,7 +117,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                     },
                 })
                 .await?;
-            print_status(&response.data, output)?;
+            super::print_status(&response.data, output)?;
         }
     }
 

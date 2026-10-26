@@ -1,15 +1,10 @@
 //! Decode parent DS answers and validate their negative-answer authority.
 
-use domain::{
-    base::{
-        Message, Name, ToName,
-        iana::{Class, OptRcode, Rtype},
-        rdata::ComposeRecordData,
-    },
-    rdata::{Ds, Soa},
-};
+use domain::base::iana::{Class, OptRcode, Rtype};
+use domain::base::{Message, Name, ToName};
+use domain::rdata::{Ds, Soa};
 
-use super::{ParseResponseError, parse_authoritative_response, response_rcode};
+use super::ParseResponseError;
 use crate::dns::dnssec::KeyTag;
 
 /// The DS record set a parent-zone server holds for a child.
@@ -46,9 +41,11 @@ pub fn extract_ds_record_set(
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
-    let message = parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
+    use domain::base::rdata::ComposeRecordData;
 
-    match response_rcode(&message)? {
+    let message = super::parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
+
+    match super::response_rcode(&message)? {
         OptRcode::NOERROR => {}
         OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
         rcode => return Err(ParseResponseError::Rcode(rcode)),

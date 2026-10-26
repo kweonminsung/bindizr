@@ -1,14 +1,10 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::{
-    dns::{
-        Serial, SoaInterval, Ttl,
-        name::ZoneName,
-        record::{EncodeRdataError, ParseMailboxError, Rdata, SoaMailbox, SoaRecordValue},
-    },
-    model::dnssec_policy::PolicyId,
-};
+use crate::dns::name::ZoneName;
+use crate::dns::record::{EncodeRdataError, ParseMailboxError, Rdata, SoaMailbox, SoaRecordValue};
+use crate::dns::{Serial, SoaInterval, Ttl};
+use crate::model::dnssec_policy::PolicyId;
 
 id_newtype!(
     /// The id of a zone row.

@@ -1,18 +1,14 @@
 //! The wire RDATA a key implies: DNSKEY and its DS digests.
 
 use base64::Engine;
-use domain::base::{iana::SecurityAlgorithm, rdata::ComposeRecordData};
+use domain::base::iana::SecurityAlgorithm;
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
 
 use super::WireName;
-use crate::{
-    dns::{
-        LibraryError,
-        record::{EncodeRdataError, Rdata},
-    },
-    model::dnssec_key::DnssecKey,
-};
+use crate::dns::LibraryError;
+use crate::dns::record::{EncodeRdataError, Rdata};
+use crate::model::dnssec_key::DnssecKey;
 
 /// A stored key whose RDATA could not be rebuilt.
 #[derive(Debug, Error)]
@@ -49,6 +45,8 @@ impl DnssecKey {
     /// The key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
     /// `DS_DIGEST_TYPES`; the zone publishes `DS_DIGEST_TYPE`.
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, EncodeKeyRdataError> {
+        use domain::base::rdata::ComposeRecordData;
+
         let dnskey = self.to_dnskey()?;
         let mut dnskey_rdata = Vec::new();
         let Ok(()) = dnskey.compose_rdata(&mut dnskey_rdata);

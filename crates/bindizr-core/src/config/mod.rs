@@ -3,17 +3,16 @@ mod env_overrides;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    env, fmt,
-    net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
-    time::Duration,
-};
+use std::net::{IpAddr, Ipv4Addr};
+use std::path::PathBuf;
+use std::time::Duration;
+use std::{env, fmt};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::dns::{SoaInterval, Ttl, name::ZoneName};
+use crate::dns::name::ZoneName;
+use crate::dns::{SoaInterval, Ttl};
 
 /// Why the configuration could not be loaded or does not describe a runnable
 /// process. Each message names the setting an operator would fix.

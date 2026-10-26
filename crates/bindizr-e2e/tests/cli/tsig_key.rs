@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_failure_contains};
+use crate::common;
+use crate::common::TestApp;
 
 /// Verify TSIG key creation, listing, retrieval, and deletion through the CLI.
 #[tokio::test]
@@ -49,7 +50,7 @@ async fn tsig_key_supports_create_list_get_and_delete_via_cli() {
     let args = ["tsig-key", "get", "cli-key"];
 
     let missing = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &missing, "TSIG key with name 'cli-key' not found");
+    common::assert_cli_failure_contains(&args, &missing, "TSIG key with name 'cli-key' not found");
 }
 
 /// Verify that a TSIG key names its role, which must exist.
@@ -67,7 +68,7 @@ async fn tsig_key_names_its_role() {
     ];
 
     let refused = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &refused, "not found");
+    common::assert_cli_failure_contains(&args, &refused, "not found");
 
     app.run_cli_success(&["role", "create", "cli-key-role"], None)
         .await;
@@ -100,7 +101,7 @@ async fn tsig_key_names_its_role() {
     let args = ["role", "delete", "cli-key-role"];
 
     let refused = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &refused, "still held");
+    common::assert_cli_failure_contains(&args, &refused, "still held");
 
     app.run_cli_success(&["tsig-key", "delete", "cli-role-key"], None)
         .await;

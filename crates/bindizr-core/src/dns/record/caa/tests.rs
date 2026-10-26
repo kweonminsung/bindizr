@@ -123,7 +123,8 @@ fn property_values_preserve_all_octets() {
 /// Bound the decoded RDATA, including a full-length tag and a value over 255 bytes.
 #[test]
 fn caa_validation_enforces_wire_field_lengths() {
-    use super::super::{ParseRecordValueError, value::MAX_RECORD_RDATA};
+    use super::super::ParseRecordValueError;
+    use super::super::value::MAX_RECORD_RDATA;
 
     for tag_len in [1, 15, 16, 255] {
         let tag = "a".repeat(tag_len);

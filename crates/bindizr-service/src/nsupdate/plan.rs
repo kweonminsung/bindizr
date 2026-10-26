@@ -1,19 +1,15 @@
 //! Resolve ordered SOA replacements before journaling records at the final serial.
 
-use bindizr_core::dns::{
-    Serial, Ttl,
-    name::OwnerName,
-    record::{SoaMailbox, SoaRecordValue},
-};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::record::{SoaMailbox, SoaRecordValue};
+use bindizr_core::dns::{Serial, Ttl};
 
-use super::{NsupdateError, operation::RecordOperation};
-use crate::{
-    error::ServiceError,
-    model::zone::Zone,
-    serial::generate_serial,
-    ttl::{validate_minimum_ttl, validate_soa_interval},
-    zone::validation::normalize_soa,
-};
+use super::NsupdateError;
+use super::operation::RecordOperation;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::zone::validation;
+use crate::{serial, ttl};
 
 /// A wire update targets either ordinary records or the zone's SOA metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +65,7 @@ impl UpdatePlan {
         if (plan.soa_changed && plan.zone.serial == zone.serial)
             || (!plan.soa_changed && !plan.records.is_empty())
         {
-            plan.zone.serial = generate_serial(Some(zone.serial));
+            plan.zone.serial = serial::generate_serial(Some(zone.serial));
         }
 
         Ok(plan)
@@ -83,17 +79,17 @@ fn replace_soa(zone: &Zone, ttl: Ttl, value: SoaRecordValue<String>) -> Result<Z
     let rname = SoaMailbox::from_encoded(value.rname)
         .to_email()
         .map_err(ServiceError::invalid_zone_field)?;
-    let normalized = normalize_soa(&value.mname, &rname, i64::from(ttl))?;
+    let normalized = validation::normalize_soa(&value.mname, &rname, i64::from(ttl))?;
 
     Ok(Zone {
         serial,
         mname: normalized.mname,
         rname: normalized.rname,
         default_ttl: normalized.ttl,
-        refresh: validate_soa_interval(interval(value.refresh)?, "refresh")?,
-        retry: validate_soa_interval(interval(value.retry)?, "retry")?,
-        expire: validate_soa_interval(interval(value.expire)?, "expire")?,
-        minimum_ttl: validate_minimum_ttl(i64::from(value.minimum))?,
+        refresh: ttl::validate_soa_interval(interval(value.refresh)?, "refresh")?,
+        retry: ttl::validate_soa_interval(interval(value.retry)?, "retry")?,
+        expire: ttl::validate_soa_interval(interval(value.expire)?, "expire")?,
+        minimum_ttl: ttl::validate_minimum_ttl(i64::from(value.minimum))?,
         ..zone.clone()
     })
 }

@@ -1,4 +1,5 @@
-use bindizr_core::{model::record::RecordId, out, outln};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::{out, outln};
 use bindizr_service::types::{
     BulkRecordItem, CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
     DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, PaginationResponse,
@@ -7,16 +8,11 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{
-            OutputFormat, RecordRow, print_page, print_payload, print_response, print_table,
-            render_change_preview,
-        },
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, RecordRow};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing records.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -323,7 +319,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 }),
             )
             .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RecordRow::from(&response.record)]
             })?;
         }
@@ -367,7 +363,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 }),
             )
             .await?;
-            print_page(&response.data, output, |item| RecordRow::from(item))?;
+            output::print_page(&response.data, output, |item| RecordRow::from(item))?;
         }
         RecordCommand::BulkCreate {
             file,
@@ -416,12 +412,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             if output == OutputFormat::Table {
                 outln!("{}", response.message);
                 if dry_run {
-                    out!("{}", render_change_preview(&bulk.diff));
+                    out!("{}", output::render_change_preview(&bulk.diff));
                 } else {
-                    print_table(bulk.records.iter().map(RecordRow::from).collect());
+                    output::print_table(bulk.records.iter().map(RecordRow::from).collect());
                 }
             } else {
-                print_payload(bulk, output)?
+                output::print_payload(bulk, output)?
             }
         }
         // clap holds the two selectors apart.
@@ -434,7 +430,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 id: RecordId::from(id),
             })
             .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RecordRow::whole(&response.record)]
             })?;
         }
@@ -475,7 +471,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     total,
                 },
             };
-            print_page(&page, output, RecordRow::whole)?;
+            output::print_page(&page, output, RecordRow::whole)?;
         }
         RecordCommand::Get { .. } => {
             return Err(CliError::request(
@@ -506,7 +502,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     },
                 })
                 .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RecordRow::from(&response.record)]
             })?;
         }
@@ -536,7 +532,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     },
                 })
                 .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RecordRow::from(&response.record)]
             })?;
         }
@@ -561,7 +557,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         RecordCommand::Delete {
@@ -589,7 +585,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         RecordCommand::Delete { .. } => {

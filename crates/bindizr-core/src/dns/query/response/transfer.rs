@@ -1,12 +1,9 @@
 //! Decode AXFR answer records with the transfer's question and flag rules.
 
-use domain::base::{
-    Name,
-    iana::{Class, Opcode, OptRcode, Rtype},
-    rdata::ComposeRecordData,
-};
+use domain::base::Name;
+use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 
-use super::{ParseResponseError, parse_response_header, response_rcode, validate_question};
+use super::ParseResponseError;
 use crate::dns::record::Rdata;
 
 /// One answer record with uncompressed RDATA preserving received case.
@@ -27,15 +24,16 @@ pub fn extract_transfer_records(
     position: TransferMessagePosition,
     response: &[u8],
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {
+    use domain::base::rdata::ComposeRecordData;
     use domain::rdata::AllRecordData;
 
-    let message = parse_response_header(query_id, Opcode::QUERY, response)?;
+    let message = super::parse_response_header(query_id, Opcode::QUERY, response)?;
 
     if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {
-        validate_question(&message, qname, Rtype::AXFR)?;
+        super::validate_question(&message, qname, Rtype::AXFR)?;
     }
 
-    let rcode = response_rcode(&message)?;
+    let rcode = super::response_rcode(&message)?;
 
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::Rcode(rcode));

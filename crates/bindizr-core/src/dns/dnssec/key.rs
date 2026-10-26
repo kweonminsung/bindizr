@@ -5,13 +5,11 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use super::KeyTag;
-use crate::{
-    dns::{LibraryError, Ttl},
-    model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
-        zone::Zone,
-    },
+use crate::dns::{LibraryError, Ttl};
+use crate::model::dnssec_key::{
+    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
+use crate::model::zone::Zone;
 
 /// The `domain` crate could not produce key material for the algorithm.
 #[derive(Debug, Error)]

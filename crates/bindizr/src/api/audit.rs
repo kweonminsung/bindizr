@@ -2,24 +2,17 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{
+    AuditLogFilter, AuditLogResponse, DEFAULT_PAGE_LIMIT, ErrorResponse, PaginatedResponse,
 };
-use bindizr_service::{
-    Context, audit,
-    types::{
-        AuditLogFilter, AuditLogResponse, DEFAULT_PAGE_LIMIT, ErrorResponse, PaginatedResponse,
-    },
-};
+use bindizr_service::{Context, audit};
 
-use crate::api::{
-    RequestCaller,
-    error::{ApiError, Query},
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Query};
 
 /// Build the audit log routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

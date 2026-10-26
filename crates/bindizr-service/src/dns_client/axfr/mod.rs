@@ -1,22 +1,18 @@
 //! Client-side AXFR: pull a whole zone from another server, the fetch half
 //! of `zone import --from-server`.
 
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
-use bindizr_core::{
-    config::ImportConfig,
-    dns::{
-        dnssec::EncodeWireNameError,
-        message::{Name, Rtype, encode_tcp_message},
-        name::{ZoneName, decode_name_labels, to_fqdn},
-        query::{
-            TransferMessagePosition, TransferRecord, build_axfr_query,
-            extract_tcp_keepalive_timeout, extract_transfer_records,
-        },
-    },
-};
+use bindizr_core::config::ImportConfig;
+use bindizr_core::dns::dnssec::EncodeWireNameError;
+use bindizr_core::dns::message::{Name, Rtype};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::query::{TransferMessagePosition, TransferRecord};
+use bindizr_core::dns::{message, name, query};
 use thiserror::Error;
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::oneshot};
+use tokio::net::TcpStream;
+use tokio::sync::oneshot;
 
 use super::{ReadTcpMessageError, ResolveAddressError};
 
@@ -249,14 +245,16 @@ async fn fetch_zone_on_stream(
     qname: &Name<Vec<u8>>,
     max_records: usize,
 ) -> Result<(Vec<TransferRecord>, Option<Duration>), FetchZoneError> {
-    let (query_id, query) = build_axfr_query(qname);
+    use tokio::io::AsyncWriteExt;
+
+    let (query_id, query) = query::build_axfr_query(qname);
 
     stream
-        .write_all(&encode_tcp_message(&query)?)
+        .write_all(&message::encode_tcp_message(&query)?)
         .await
         .map_err(FetchZoneError::Send)?;
 
-    let expected_owner = to_fqdn(&qname.to_string());
+    let expected_owner = name::to_fqdn(&qname.to_string());
     let expected_labels = owner_labels(&expected_owner)?;
     let mut records: Vec<TransferRecord> = Vec::new();
     let mut idle_timeout = None;
@@ -271,9 +269,9 @@ async fn fetch_zone_on_stream(
         } else {
             TransferMessagePosition::Following
         };
-        let batch = extract_transfer_records(query_id, qname, position, &response)?;
+        let batch = query::extract_transfer_records(query_id, qname, position, &response)?;
 
-        if let Some(timeout) = extract_tcp_keepalive_timeout(&response)?
+        if let Some(timeout) = query::extract_tcp_keepalive_timeout(&response)?
             && idle_timeout != Some(Duration::ZERO)
         {
             idle_timeout = Some(timeout);
@@ -323,7 +321,7 @@ async fn fetch_zone_on_stream(
 
 /// Owner names compare as labels, never as text (RFC 4343 case, escapes).
 fn owner_labels(name: &str) -> Result<Vec<Vec<u8>>, FetchZoneError> {
-    decode_name_labels(name)
+    name::decode_name_labels(name)
         .map(|(labels, _)| labels)
         .map_err(|source| FetchZoneError::OwnerName {
             name: name.to_string(),

@@ -6,10 +6,7 @@ use std::collections::{HashMap, HashSet};
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
-use crate::common::{
-    RECORD_PAGE_LIMIT, TestApp,
-    dns::{build_dns_expected_value, dns_record_type, extract_record_key, wait_for_dns_records},
-};
+use crate::common::{RECORD_PAGE_LIMIT, TestApp, dns};
 
 /// Render a name with the trailing dot record payloads carry, so a zone taken
 /// from a request path compares against the one a record names.
@@ -42,7 +39,7 @@ impl TestApp {
 
             return status.is_success().then(|| {
                 let record = &body["record"];
-                let (name, record_type) = extract_record_key(record);
+                let (name, record_type) = dns::extract_record_key(record);
 
                 PreviousRecordKey {
                     zone_name: record["zone_name"]
@@ -143,18 +140,18 @@ impl TestApp {
                 .to_string();
             let record_type = record["type"]
                 .as_str()
-                .and_then(dns_record_type)
+                .and_then(dns::dns_record_type)
                 .expect("record contained an unsupported DNS type");
             expected
                 .entry((name, record_type))
                 .or_default()
-                .push(build_dns_expected_value(record, record_type));
+                .push(dns::build_dns_expected_value(record, record_type));
         }
 
         // Wait for each name and type to converge on every configured secondary.
         for ((name, record_type), values) in &expected {
             for port in &self.dns_secondary_ports {
-                wait_for_dns_records(*port, name, *record_type, values).await;
+                dns::wait_for_dns_records(*port, name, *record_type, values).await;
             }
         }
 
@@ -164,7 +161,7 @@ impl TestApp {
             && !expected.contains_key(&(previous.name.clone(), previous.record_type))
         {
             for port in &self.dns_secondary_ports {
-                wait_for_dns_records(*port, &previous.name, previous.record_type, &[]).await;
+                dns::wait_for_dns_records(*port, &previous.name, previous.record_type, &[]).await;
             }
         }
     }

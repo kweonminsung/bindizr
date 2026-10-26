@@ -1,13 +1,12 @@
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
+use std::time::Duration;
 
-use domain::{
-    base::{
-        Message, MessageBuilder, Name, Serial, Ttl,
-        iana::{Class, DigestAlgorithm, Opcode, OptRcode, Rcode, Rtype, SecurityAlgorithm},
-        opt::AllOptData,
-    },
-    rdata::{A, Ds, Soa},
+use domain::base::iana::{
+    Class, DigestAlgorithm, Opcode, OptRcode, Rcode, Rtype, SecurityAlgorithm,
 };
+use domain::base::opt::AllOptData;
+use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
+use domain::rdata::{A, Ds, Soa};
 
 use super::*;
 use crate::dns::dnssec::KeyTag;

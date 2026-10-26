@@ -1,13 +1,10 @@
 //! Entries eviction and the record accounting it evicts on.
 
-use bindizr_core::{
-    dns::{Ttl, name::OwnerName},
-    model::{
-        record::{Record, RecordId, RecordType},
-        zone::ZoneId,
-        zone_version::ZoneVersionId,
-    },
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
+use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_version::ZoneVersionId;
 use chrono::Utc;
 
 use super::*;

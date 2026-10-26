@@ -2,27 +2,19 @@
 
 mod wks;
 
-use domain::{
-    base::{
-        ToName,
-        iana::{Class, Rtype},
-        name::ParsedName,
-        rdata::{ComposeRecordData, ParseRecordData},
-    },
-    dep::octseq::parse::Parser,
-    rdata::ZoneRecordData,
-    zonefile::inplace::{self, Entry, Zonefile},
-};
+use domain::base::ToName;
+use domain::base::iana::{Class, Rtype};
+use domain::base::name::ParsedName;
+use domain::base::rdata::ParseRecordData;
+use domain::dep::octseq::parse::Parser;
+use domain::rdata::ZoneRecordData;
+use domain::zonefile::inplace::{self, Entry, Zonefile};
 
-use crate::{
-    dns::{
-        Serial, SoaInterval, Ttl,
-        name::{ZoneName, to_fqdn, to_fqdn_lowercase},
-        query::TransferRecord,
-        record::{NaptrRecordValue, WksRecordValue},
-    },
-    model::record::RecordType,
-};
+use crate::dns::name::ZoneName;
+use crate::dns::query::TransferRecord;
+use crate::dns::record::{NaptrRecordValue, WksRecordValue};
+use crate::dns::{Serial, SoaInterval, Ttl, name};
+use crate::model::record::RecordType;
 
 /// A record's value as the zone file spells it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,7 +161,8 @@ impl ParsedZoneFile {
             if index > 0
                 && index + 1 == records.len()
                 && record.rtype == Rtype::SOA
-                && to_fqdn_lowercase(&record.name) == to_fqdn_lowercase(&records[0].name)
+                && name::to_fqdn_lowercase(&record.name)
+                    == name::to_fqdn_lowercase(&records[0].name)
                 && record.rdata.to_canonical(Rtype::SOA).is_ok_and(|closing| {
                     records[0]
                         .rdata
@@ -209,6 +202,8 @@ impl ParsedZoneFile {
         ttl_secs: u32,
         data: &ZoneRecordData<Octs, N>,
     ) {
+        use domain::base::rdata::ComposeRecordData;
+
         // RFC 3597, Section 5: generic `\#` RDATA of a known type is that type, so
         // decode the octets `domain` kept; WKS, which `domain` never types, reads them below.
         if let ZoneRecordData::Unknown(unknown) = data
@@ -230,7 +225,7 @@ impl ParsedZoneFile {
         let record_type = match rtype {
             // Only the apex SOA supplies this zone's serial and timers.
             Rtype::SOA => {
-                if to_fqdn_lowercase(&owner) != origin_fqdn {
+                if name::to_fqdn_lowercase(&owner) != origin_fqdn {
                     self.errors.push(format!(
                         "SOA for '{}' does not belong to zone '{}'",
                         owner, origin_fqdn
@@ -281,19 +276,19 @@ impl ParsedZoneFile {
             // Read name fields because `domain` RDATA Display can render the root as `..`.
             match data {
                 ZoneRecordData::Ns(ns) => (
-                    ZoneFileValue::Rdata(to_fqdn(&ns.nsdname().to_string())),
+                    ZoneFileValue::Rdata(name::to_fqdn(&ns.nsdname().to_string())),
                     None,
                 ),
                 ZoneRecordData::Cname(cname) => (
-                    ZoneFileValue::Rdata(to_fqdn(&cname.cname().to_string())),
+                    ZoneFileValue::Rdata(name::to_fqdn(&cname.cname().to_string())),
                     None,
                 ),
                 ZoneRecordData::Ptr(ptr) => (
-                    ZoneFileValue::Rdata(to_fqdn(&ptr.ptrdname().to_string())),
+                    ZoneFileValue::Rdata(name::to_fqdn(&ptr.ptrdname().to_string())),
                     None,
                 ),
                 ZoneRecordData::Dname(dname) => (
-                    ZoneFileValue::Rdata(to_fqdn(&dname.dname().to_string())),
+                    ZoneFileValue::Rdata(name::to_fqdn(&dname.dname().to_string())),
                     None,
                 ),
                 ZoneRecordData::Naptr(naptr) => match NaptrRecordValue::from_wire(
@@ -318,12 +313,12 @@ impl ParsedZoneFile {
                         "{} {} {}",
                         srv.weight(),
                         srv.port(),
-                        to_fqdn(&srv.target().to_string())
+                        name::to_fqdn(&srv.target().to_string())
                     )),
                     Some(i32::from(srv.priority())),
                 ),
                 ZoneRecordData::Mx(mx) => (
-                    ZoneFileValue::Rdata(to_fqdn(&mx.exchange().to_string())),
+                    ZoneFileValue::Rdata(name::to_fqdn(&mx.exchange().to_string())),
                     Some(i32::from(mx.preference())),
                 ),
                 ZoneRecordData::Txt(txt) => {
@@ -355,7 +350,7 @@ impl ParsedZoneFile {
         };
 
         self.records.push(ZoneFileRecord {
-            owner_fqdn: to_fqdn_lowercase(&owner),
+            owner_fqdn: name::to_fqdn_lowercase(&owner),
             record_type,
             value,
             ttl,

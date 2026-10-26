@@ -3,7 +3,8 @@
 use bindizr_core::model::dnssec_key::DnssecKeyState;
 use chrono::Utc;
 
-use crate::{Context, dnssec, error::ServiceError, record, zone};
+use crate::error::ServiceError;
+use crate::{Context, dnssec, record, zone};
 
 /// Set database count and pool gauges using direct counts to avoid sorting a listing.
 pub async fn refresh_db_gauges(cx: &Context) -> Result<(), ServiceError> {

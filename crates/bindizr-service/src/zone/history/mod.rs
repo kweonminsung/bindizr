@@ -6,38 +6,26 @@ mod rewind;
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::{
-    dns::{
-        Serial,
-        name::{OwnerName, ZoneName},
-        record::SoaMailbox,
-    },
-    model::{record::RecordId, role_grant::Action, zone_version::VersionFilter},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::record::SoaMailbox;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 pub(crate) use retention::prune_by_zone_id;
-use rewind::{list_records_at_serial_tx, rewind_records_to_serial_tx};
 
-use super::{diff::build_record_diff, update::soa_replacement_changes};
-use crate::{
-    Context, Transaction,
-    authorization::Caller,
-    dnssec,
-    error::ServiceError,
-    model::{
-        record::{Record, RecordData, RecordKey},
-        zone::Zone,
-    },
-    pagination::{build_paginated_response, validate_page_limit},
-    record::{self, validate_record_constraints, validate_record_name_in_zone},
-    serial::generate_serial,
-    transaction,
-    types::{
-        DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
-        RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,
-    },
+use super::{diff, update};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordData, RecordKey};
+use crate::model::zone::Zone;
+use crate::types::{
+    DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
+    RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,
 };
+use crate::{Context, Transaction, dnssec, pagination, record, serial, transaction};
 
 /// A serial is diffable only if it is the current serial or has a version.
 async fn validate_serial_diffable_tx(
@@ -65,7 +53,7 @@ pub async fn list_versions(
     offset: Option<u64>,
     filter: VersionFilter,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
-    validate_page_limit(limit)?;
+    pagination::validate_page_limit(limit)?;
 
     let zone = super::get_by_name(cx, caller, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
@@ -84,7 +72,9 @@ pub async fn list_versions(
         .map(ZoneVersionResponse::try_from)
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(build_paginated_response(items, limit, offset, total))
+    Ok(pagination::build_paginated_response(
+        items, limit, offset, total,
+    ))
 }
 
 /// Fetch the version at `serial` together with the records rewound to it.
@@ -112,7 +102,7 @@ pub async fn get_version(
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
         let records = read.readable_records(
-            list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
+            rewind::list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
         );
 
         Ok::<_, ServiceError>((zone, version, records))
@@ -157,13 +147,15 @@ pub async fn diff_versions(
         validate_serial_diffable_tx(&mut tx, &zone, from).await?;
         validate_serial_diffable_tx(&mut tx, &zone, to).await?;
 
-        let from_records = list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
-        let to_records = list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
+        let from_records =
+            rewind::list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
+        let to_records =
+            rewind::list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
 
         Ok::<_, ServiceError>(DiffZoneVersionsResponse {
             from_serial,
             to_serial: to,
-            diff: build_record_diff(
+            diff: diff::build_record_diff(
                 &zone,
                 &read.readable_records(from_records),
                 &read.readable_records(to_records),
@@ -215,7 +207,7 @@ pub async fn rollback(
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
-        let new_serial = generate_serial(Some(zone.serial));
+        let new_serial = serial::generate_serial(Some(zone.serial));
 
         // SOA metadata comes back from the version; identity and creation
         // time are not part of one and stay.
@@ -249,7 +241,7 @@ pub async fn rollback(
         let current_records =
             bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
         let target_records =
-            rewind_records_to_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
+            rewind::rewind_records_to_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
 
         // Diff current vs target, import-Replace style.
         let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
@@ -307,9 +299,9 @@ pub async fn rollback(
         for target in &to_add {
             // The history predates the zone's current name, which may no
             // longer fit the names it restores.
-            validate_record_name_in_zone(&target.name, &zone.name)?;
+            record::validate_record_name_in_zone(&target.name, &zone.name)?;
             let records_at_name = records_by_name.entry(target.name.clone()).or_default();
-            validate_record_constraints(
+            record::validate_record_constraints(
                 records_at_name,
                 &target.name,
                 &target.record_type,
@@ -360,7 +352,7 @@ pub async fn rollback(
         bindizr_db::zone::update_tx(&mut tx, restored_zone.clone()).await?;
 
         if soa_changed {
-            let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
+            let changes = update::soa_replacement_changes(&zone, &restored_zone, new_serial)?;
             bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
         }
 

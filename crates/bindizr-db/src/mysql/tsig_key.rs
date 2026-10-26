@@ -1,8 +1,11 @@
-use bindizr_core::model::{role::RoleId, tsig_key::TsigKeyId};
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-use crate::{LockLevel, error::DatabaseError, model::tsig_key::TsigKey};
+use crate::LockLevel;
+use crate::error::DatabaseError;
+use crate::model::tsig_key::TsigKey;
 
 /// Insert a TSIG key.
 pub(crate) async fn create_tx(

@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_failure_contains};
+use crate::common;
+use crate::common::TestApp;
 
 /// Verify secondary management through the CLI.
 #[tokio::test]
@@ -108,7 +109,7 @@ async fn secondary_supports_create_update_and_delete_via_cli() {
     let args = ["secondary", "update", &name];
 
     let nothing = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &nothing, "nothing to update");
+    common::assert_cli_failure_contains(&args, &nothing, "nothing to update");
 
     let deleted = app
         .run_cli_success(&["secondary", "delete", &name], None)
@@ -122,7 +123,7 @@ async fn secondary_supports_create_update_and_delete_via_cli() {
     let args = ["secondary", "get", &name];
 
     let missing = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(
+    common::assert_cli_failure_contains(
         &args,
         &missing,
         &format!("secondary with name '{name}' not found"),

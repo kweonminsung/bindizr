@@ -2,20 +2,18 @@
 
 use std::sync::{Arc, OnceLock, RwLock};
 
-use bindizr_core::{
-    config::{Config, ConfigError},
-    metrics::Metrics,
-};
+use bindizr_core::config::{Config, ConfigError};
+use bindizr_core::metrics::Metrics;
 use bindizr_db::{Db, PoolStats};
 use chrono::{DateTime, Utc};
 use thiserror::Error;
-use tokio::sync::{Semaphore, mpsc::UnboundedSender, watch};
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{Semaphore, watch};
 
-use crate::{
-    dns_client::notify::NotifyClient,
-    error::ServiceError,
-    notify::{NotifyTarget, queue::NotifyJob},
-};
+use crate::dns_client::notify::NotifyClient;
+use crate::error::ServiceError;
+use crate::notify::NotifyTarget;
+use crate::notify::queue::NotifyJob;
 
 /// Why a reload left the configuration as it was.
 #[derive(Debug, Error)]

@@ -1,7 +1,6 @@
-use bindizr_core::{
-    dns::{Ttl, dnssec::KeyTag},
-    model::dnssec_key::DnssecAlgorithm,
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::model::dnssec_key::DnssecAlgorithm;
 use chrono::Duration;
 
 use super::*;

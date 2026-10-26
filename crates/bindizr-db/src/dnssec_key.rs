@@ -1,16 +1,12 @@
-use bindizr_core::{
-    dns::Ttl,
-    model::{dnssec_key::DnssecKeyId, zone::ZoneId},
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::model::dnssec_key::DnssecKeyId;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    Backend, Db, LockLevel, Transaction,
-    error::DatabaseError,
-    model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
-    mysql, postgres, sqlite,
-    tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert a DNSSEC key in the current transaction.
 pub async fn create_tx(

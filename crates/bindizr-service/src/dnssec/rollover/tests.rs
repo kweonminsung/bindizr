@@ -1,16 +1,12 @@
-use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, dnssec::KeyTag, name::ZoneName},
-    model::{
-        dnssec_policy::{Days, PolicyId},
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_core::model::zone::ZoneId;
 
 use super::*;
-use crate::{
-    error::ErrorCode,
-    model::dnssec_policy::{DnssecDenial, DnssecPolicy},
-};
+use crate::error::ErrorCode;
+use crate::model::dnssec_policy::{DnssecDenial, DnssecPolicy};
 
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {

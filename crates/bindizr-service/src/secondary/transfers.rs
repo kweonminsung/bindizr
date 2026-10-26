@@ -1,30 +1,18 @@
 //! Read the transfer history matching a secondary's current addresses.
 
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-};
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::model::{
-    role_grant::Action,
-    transfer::{TransferKind, TransferResult, TransferWithZone},
-};
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferWithZone};
 
-use super::lookup_by_name;
-use crate::{
-    Context,
-    authorization::Caller,
-    dns_client::resolve_address_entry,
-    error::ServiceError,
-    model::secondary::Secondary,
-    pagination::validate_page_limit,
-    transfer,
-    types::{
-        SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse,
-        TransferSummaryResponse,
-    },
-    zone,
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::secondary::Secondary;
+use crate::types::{
+    SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse, TransferSummaryResponse,
 };
+use crate::{Context, dns_client, pagination, transfer, zone};
 
 /// The transfers Bindizr served `name`, newest first, with how each zone
 /// was last served.
@@ -36,9 +24,9 @@ pub async fn list_transfers(
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let limit = filter.limit.unwrap_or(1000);
-    validate_page_limit(Some(limit))?;
+    pagination::validate_page_limit(Some(limit))?;
 
-    let secondary = lookup_by_name(cx, name).await?;
+    let secondary = super::lookup_by_name(cx, name).await?;
 
     let zone_filter = filter
         .zone_name
@@ -115,7 +103,7 @@ fn build_transfer_summary(transfers: &[TransferWithZone]) -> TransferSummaryResp
 /// rows; none when it does not resolve.
 async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();
-    match resolve_address_entry(&secondary.address, timeout).await {
+    match dns_client::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs.iter().map(SocketAddr::ip).collect(),
         Err(_) => Vec::new(),
     }

@@ -1,11 +1,9 @@
-use crate::{
-    cli::common::{read_dnssec_status, read_signing_key_tag},
-    common::TestApp,
-};
+use crate::cli::common;
+use crate::common::TestApp;
 
 /// Each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
 async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
-    let mut states: Vec<(u64, String)> = read_dnssec_status(app, zone_name).await["keys"]
+    let mut states: Vec<(u64, String)> = common::read_dnssec_status(app, zone_name).await["keys"]
         .as_array()
         .expect("status lists the keys")
         .iter()
@@ -79,7 +77,7 @@ async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
     )
     .await;
 
-    let key_tag = read_signing_key_tag(&app, &zone_name).await;
+    let key_tag = common::read_signing_key_tag(&app, &zone_name).await;
 
     let exported = app
         .run_cli_success(&["dnssec", "keys", "export", &zone_name], None)

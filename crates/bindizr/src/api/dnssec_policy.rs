@@ -1,29 +1,20 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{
+    CreateDnssecPolicyRequest, DEFAULT_PAGE_LIMIT, DnssecPolicyResponse, ErrorResponse,
+    MessageResponse, PageRequest, PaginatedResponse, SingleDnssecPolicyResponse,
+    UpdateDnssecPolicyRequest,
 };
-use bindizr_service::{
-    Context, dnssec_policy,
-    types::{
-        CreateDnssecPolicyRequest, DEFAULT_PAGE_LIMIT, DnssecPolicyResponse, ErrorResponse,
-        MessageResponse, PageRequest, PaginatedResponse, SingleDnssecPolicyResponse,
-        UpdateDnssecPolicyRequest,
-    },
-};
+use bindizr_service::{Context, dnssec_policy};
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-        middleware::body_parser::JsonBody,
-    },
-    params::NameParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::middleware::body_parser::JsonBody;
+use crate::params::NameParams;
 
 /// Build the DNSSEC policy API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

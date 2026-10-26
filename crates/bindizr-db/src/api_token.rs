@@ -1,10 +1,11 @@
-use bindizr_core::model::{api_token::TokenId, role::RoleId};
+use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    Backend, Db, LockLevel, Transaction, error::DatabaseError, model::api_token::ApiToken, mysql,
-    postgres, sqlite, tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::api_token::ApiToken;
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert an API token.
 pub async fn create_tx(

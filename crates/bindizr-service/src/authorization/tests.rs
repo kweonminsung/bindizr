@@ -1,22 +1,15 @@
-use bindizr_core::{
-    dns::{
-        Serial, SoaInterval, Ttl,
-        name::{OwnerName, ZoneName},
-    },
-    model::{
-        api_token::{ApiToken, TokenId},
-        role::RoleId,
-        role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope},
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope};
+use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 
 use super::*;
-use crate::{
-    error::ErrorCode,
-    model::{record::RecordType, zone::Zone},
-};
+use crate::error::ErrorCode;
+use crate::model::record::RecordType;
+use crate::model::zone::Zone;
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {

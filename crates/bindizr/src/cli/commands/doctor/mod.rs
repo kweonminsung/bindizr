@@ -5,19 +5,15 @@ mod offline;
 
 use std::fmt;
 
-use bindizr_core::{config, config::Config, outln};
+use bindizr_core::config::Config;
+use bindizr_core::{config, outln};
 use serde::Serialize;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, color, print_payload},
-    },
-    socket::{
-        client,
-        types::{DaemonCommand, DoctorCheckResponse, DoctorCheckStatus},
-    },
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, color};
+use crate::socket::client;
+use crate::socket::types::{DaemonCommand, DoctorCheckResponse, DoctorCheckStatus};
 
 /// The whole run, as `--output json` reports it.
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
@@ -140,7 +136,7 @@ pub(crate) async fn handle_command(
             failures: report.failures,
             checks: report.checks,
         };
-        print_payload(&document, format)?;
+        output::print_payload(&document, format)?;
     }
 
     if report.failures == 0 {

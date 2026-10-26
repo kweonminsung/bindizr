@@ -1,19 +1,18 @@
 //! Zone version, diff, and rollback payloads.
 
-use bindizr_core::dns::{Serial, SoaInterval, Ttl, name::ZoneName, record::SoaMailbox};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::record::SoaMailbox;
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record::{RecordValue, build_display_value};
-use crate::{
-    error::ServiceError,
-    model::{
-        change::{ChangeActor, ChangeSource},
-        record::{RecordData, RecordType},
-        zone_version::ZoneVersion,
-    },
-};
+use super::record;
+use super::record::RecordValue;
+use crate::error::ServiceError;
+use crate::model::change::{ChangeActor, ChangeSource};
+use crate::model::record::{RecordData, RecordType};
+use crate::model::zone_version::ZoneVersion;
 
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`rname` converted back from SOA mailbox form).
@@ -95,7 +94,7 @@ impl VersionRecordResponse {
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type,
             // Decode TXT out of its stored form, as the record endpoints do.
-            value: build_display_value(&record.value, &record.record_type),
+            value: record::build_display_value(&record.value, &record.record_type),
             ttl: record.ttl,
             priority: record.priority,
         }

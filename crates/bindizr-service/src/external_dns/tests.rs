@@ -1,36 +1,25 @@
-use bindizr_core::{
-    config::Config,
-    dns::{
-        Serial, SoaInterval, Ttl,
-        name::{OwnerName, ZoneName},
-    },
-    metrics::Metrics,
-    model::{record::RecordId, zone::ZoneId},
-};
-use change_set::{
-    ZoneChangeSet, ZoneOperations, adjust_record_set, group_operations_by_zone,
-    parse_changes_request, parse_record_set,
-};
+use bindizr_core::config::Config;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::metrics::Metrics;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::zone::ZoneId;
+use change_set::{self, ZoneChangeSet, ZoneOperations};
 use chrono::Utc;
-use policy::{authoritative_zone, normalize_lookup_name};
+use policy;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
-use crate::{
-    authorization::Caller,
-    error::ErrorCode,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
-    record, role, token,
-    types::{
-        ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest,
-        CreateTokenRequest, ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,
-    },
-    zone,
+use crate::authorization::Caller;
+use crate::error::ErrorCode;
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::types::{
+    ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
+    ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,
 };
+use crate::{record, role, token, zone};
 
 /// Build isolated SQLite service state without listeners or workers.
 async fn context() -> Context {
@@ -253,15 +242,15 @@ fn authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        authoritative_zone(&zones, "api.internal.example.com").map(|(z, _)| z.id),
+        policy::authoritative_zone(&zones, "api.internal.example.com").map(|(z, _)| z.id),
         Some(ZoneId::from(2))
     );
     assert_eq!(
-        authoritative_zone(&zones, "www.example.com").map(|(z, _)| z.id),
+        policy::authoritative_zone(&zones, "www.example.com").map(|(z, _)| z.id),
         Some(ZoneId::from(1))
     );
     assert_eq!(
-        authoritative_zone(&zones, "internal.example.com").map(|(z, _)| z.id),
+        policy::authoritative_zone(&zones, "internal.example.com").map(|(z, _)| z.id),
         Some(ZoneId::from(2))
     );
 }
@@ -271,8 +260,8 @@ fn authoritative_zone_picks_most_specific_match() {
 fn authoritative_zone_requires_label_boundary() {
     let zones = vec![test_zone(1, "example.com")];
 
-    assert!(authoritative_zone(&zones, "notexample.com").is_none());
-    assert!(authoritative_zone(&zones, "example.org").is_none());
+    assert!(policy::authoritative_zone(&zones, "notexample.com").is_none());
+    assert!(policy::authoritative_zone(&zones, "example.org").is_none());
 }
 
 /// Verify that an escaped dot does not put a name inside the zone it spells.
@@ -281,21 +270,21 @@ fn authoritative_zone_rejects_escaped_label_boundary() {
     // `evil\.example.com` is the two labels [evil.example, com], so no zone
     // named example.com is authoritative for it.
     let zones = vec![test_zone(1, "example.com")];
-    let name = normalize_lookup_name(r"evil\.example.com").unwrap();
+    let name = policy::normalize_lookup_name(r"evil\.example.com").unwrap();
 
     assert_eq!(name, r"evil\046example.com");
-    assert!(authoritative_zone(&zones, &name).is_none());
+    assert!(policy::authoritative_zone(&zones, &name).is_none());
 }
 
 /// Verify that `normalize_lookup_name` lowercases and strips trailing dot.
 #[test]
 fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
     assert_eq!(
-        normalize_lookup_name("App.Example.COM.").unwrap(),
+        policy::normalize_lookup_name("App.Example.COM.").unwrap(),
         "app.example.com"
     );
-    assert!(normalize_lookup_name("").is_err());
-    assert!(normalize_lookup_name("bad name.example.com").is_err());
+    assert!(policy::normalize_lookup_name("").is_err());
+    assert!(policy::normalize_lookup_name("bad name.example.com").is_err());
 }
 
 /// Verify that `parse_record_set` rejects unsupported types.
@@ -303,16 +292,19 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
 fn parse_record_set_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
         let error =
-            parse_record_set(&record_set("a.example.com", record_type, None, &["x"])).unwrap_err();
+            change_set::parse_record_set(&record_set("a.example.com", record_type, None, &["x"]))
+                .unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidInput);
     }
-    assert!(parse_record_set(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
+    assert!(
+        change_set::parse_record_set(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err()
+    );
 }
 
 /// Verify that `parse_record_set` rejects multi value CNAME and empty values.
 #[test]
 fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
-    let error = parse_record_set(&record_set(
+    let error = change_set::parse_record_set(&record_set(
         "a.example.com",
         "CNAME",
         None,
@@ -322,7 +314,8 @@ fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
 
     assert_eq!(error.code(), ErrorCode::InvalidRecordValue);
 
-    let error = parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
+    let error =
+        change_set::parse_record_set(&record_set("a.example.com", "A", None, &[])).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
 }
@@ -331,24 +324,27 @@ fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
 #[test]
 fn parse_record_set_op_normalizes_ttl() {
     assert_eq!(
-        parse_record_set(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
+        change_set::parse_record_set(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         None
     );
     assert_eq!(
-        parse_record_set(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
+        change_set::parse_record_set(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         Some(Ttl::from_secs(300))
     );
-    assert!(parse_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
+    assert!(
+        change_set::parse_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"]))
+            .is_err()
+    );
 }
 
 /// Verify that `parse_record_set` deduplicates equivalent ipv6 spellings.
 #[test]
 fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
-    let op = parse_record_set(&record_set(
+    let op = change_set::parse_record_set(&record_set(
         "a.example.com",
         "AAAA",
         None,
@@ -362,7 +358,7 @@ fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
 /// Verify that parse RRSET op parses quoted TXT values.
 #[test]
 fn parse_record_set_op_parses_quoted_txt_values() {
-    let op = parse_record_set(&record_set(
+    let op = change_set::parse_record_set(&record_set(
         "a.example.com",
         "TXT",
         None,
@@ -376,7 +372,7 @@ fn parse_record_set_op_parses_quoted_txt_values() {
         "\"heritage=external-dns,external-dns/owner=default\""
     );
     assert!(
-        parse_record_set(&record_set(
+        change_set::parse_record_set(&record_set(
             "a.example.com",
             "TXT",
             None,
@@ -389,7 +385,7 @@ fn parse_record_set_op_parses_quoted_txt_values() {
 /// Verify that `adjust_record_set` canonicalizes type and values.
 #[test]
 fn adjust_record_set_canonicalizes_type_and_values() {
-    let adjusted = adjust_record_set(&record_set(
+    let adjusted = change_set::adjust_record_set(&record_set(
         "v6.example.com",
         "aaaa",
         None,
@@ -400,7 +396,7 @@ fn adjust_record_set_canonicalizes_type_and_values() {
     assert_eq!(adjusted.record_type, "AAAA");
     assert_eq!(adjusted.values, vec!["2001:db8::1", "2001:db8::2"]);
 
-    let adjusted = adjust_record_set(&record_set(
+    let adjusted = change_set::adjust_record_set(&record_set(
         "c.example.com",
         "CNAME",
         Some(300),
@@ -415,7 +411,7 @@ fn adjust_record_set_canonicalizes_type_and_values() {
 /// Verify that `adjust_record_set` returns TXT values in presentation form.
 #[test]
 fn adjust_record_set_returns_txt_values_in_presentation_form() {
-    let adjusted = adjust_record_set(&record_set(
+    let adjusted = change_set::adjust_record_set(&record_set(
         "t.example.com",
         "TXT",
         Some(0),
@@ -431,11 +427,13 @@ fn adjust_record_set_returns_txt_values_in_presentation_form() {
     // Already-canonical ownership records pass through byte-identical.
     let canonical = "\"heritage=external-dns,external-dns/owner=default\"";
     let adjusted =
-        adjust_record_set(&record_set("t.example.com", "TXT", None, &[canonical])).unwrap();
+        change_set::adjust_record_set(&record_set("t.example.com", "TXT", None, &[canonical]))
+            .unwrap();
 
     assert_eq!(adjusted.values, vec![canonical]);
 
-    let adjusted = adjust_record_set(&record_set("t.example.com", "TXT", None, &["   "])).unwrap();
+    let adjusted =
+        change_set::adjust_record_set(&record_set("t.example.com", "TXT", None, &["   "])).unwrap();
 
     assert_eq!(adjusted.values, vec![r#""   ""#]);
 }
@@ -444,19 +442,26 @@ fn adjust_record_set_returns_txt_values_in_presentation_form() {
 #[test]
 fn adjust_record_set_passes_unparseable_values_through() {
     let adjusted =
-        adjust_record_set(&record_set("bad.example.com", "A", None, &["not-an-ip"])).unwrap();
+        change_set::adjust_record_set(&record_set("bad.example.com", "A", None, &["not-an-ip"]))
+            .unwrap();
     assert_eq!(adjusted.values, vec!["not-an-ip"]);
 }
 
 /// Verify that `adjust_record_set` rejects unsupported shapes.
 #[test]
 fn adjust_record_set_rejects_unsupported_shapes() {
-    assert!(adjust_record_set(&record_set("a.example.com", "MX", None, &["x"])).is_err());
     assert!(
-        adjust_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err()
+        change_set::adjust_record_set(&record_set("a.example.com", "MX", None, &["x"])).is_err()
     );
-    assert!(adjust_record_set(&record_set("a.example.com", "A", None, &[])).is_err());
-    assert!(adjust_record_set(&record_set("a.example.com", "CNAME", None, &["a.", "b."])).is_err());
+    assert!(
+        change_set::adjust_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"]))
+            .is_err()
+    );
+    assert!(change_set::adjust_record_set(&record_set("a.example.com", "A", None, &[])).is_err());
+    assert!(
+        change_set::adjust_record_set(&record_set("a.example.com", "CNAME", None, &["a.", "b."]))
+            .is_err()
+    );
 }
 
 /// Verify that group operations resolves subzone without parent fallback.
@@ -476,9 +481,9 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
         updates: vec![],
         deletes: vec![],
     };
-    let operations = parse_changes_request(&request).unwrap();
+    let operations = change_set::parse_changes_request(&request).unwrap();
 
-    let grouped = group_operations_by_zone(&zones, operations).unwrap();
+    let grouped = change_set::group_operations_by_zone(&zones, operations).unwrap();
 
     assert_eq!(grouped.len(), 1);
     assert_eq!(
@@ -501,17 +506,18 @@ fn group_ops_rejects_names_without_authoritative_zone() {
         updates: vec![],
         deletes: vec![],
     };
-    let operations = parse_changes_request(&request).unwrap();
+    let operations = change_set::parse_changes_request(&request).unwrap();
 
-    let error = group_operations_by_zone(&zones, operations).unwrap_err();
+    let error = change_set::group_operations_by_zone(&zones, operations).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::ZoneNotFound);
 }
 
 /// Resolve an external-dns change request into operations for the test zone.
 fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOperations {
-    let operations = parse_changes_request(request).unwrap();
-    let grouped = group_operations_by_zone(std::slice::from_ref(zone), operations).unwrap();
+    let operations = change_set::parse_changes_request(request).unwrap();
+    let grouped =
+        change_set::group_operations_by_zone(std::slice::from_ref(zone), operations).unwrap();
 
     grouped.into_values().next().unwrap_or_default()
 }

@@ -1,15 +1,15 @@
 use std::net::SocketAddr;
 
-use bindizr_core::dns::address::loopback_if_unspecified;
-use bindizr_service::{
-    Context, authorization::Caller, dns_client, error::ServiceError, secondary,
-    types::CheckSecondariesResponse, zone,
-};
+use bindizr_core::dns::address;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::CheckSecondariesResponse;
+use bindizr_service::{Context, dns_client, secondary, zone};
 use tokio::net::TcpStream;
 
-use crate::{
-    daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResponse, DoctorCheckStatus},
+use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
+use crate::socket::types::{
+    DaemonDoctorResponse, DaemonResponse, DoctorCheckResponse, DoctorCheckStatus,
 };
 
 /// The daemon-side installation checks. The catalog zone is the one probed
@@ -46,7 +46,7 @@ pub(crate) async fn check_installation(
 
     // Probe the local catalog SOA to supply the reference serial for diagnosis.
     let dns_addr = SocketAddr::new(
-        loopback_if_unspecified(config.dns.listen_addr),
+        address::loopback_if_unspecified(config.dns.listen_addr),
         config.dns.listen_port,
     );
     let timeout = config.dns.notify.timeout();
@@ -79,7 +79,7 @@ pub(crate) async fn check_installation(
     let dns_tls_server = match config.dns.tls.tls_files() {
         Some(_) => {
             let dns_tls_addr = SocketAddr::new(
-                loopback_if_unspecified(config.dns.listen_addr),
+                address::loopback_if_unspecified(config.dns.listen_addr),
                 config.dns.tls.listen_port,
             );
             Some(

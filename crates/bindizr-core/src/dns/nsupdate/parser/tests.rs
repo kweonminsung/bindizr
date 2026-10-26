@@ -1,8 +1,6 @@
 use super::*;
-use crate::{
-    dns::message::{Class, Edns, Rtype},
-    model::record::RecordType,
-};
+use crate::dns::message::{Class, Edns, Rtype};
+use crate::model::record::RecordType;
 
 /// Decode compressed SOA names and unsigned fields without crossing RDLENGTH.
 #[test]

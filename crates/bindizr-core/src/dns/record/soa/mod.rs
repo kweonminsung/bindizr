@@ -2,13 +2,12 @@
 
 use std::str::{FromStr, Utf8Error};
 
-use domain::base::{Name, name::FromStrError};
+use domain::base::Name;
+use domain::base::name::FromStrError;
 use thiserror::Error;
 
-use crate::dns::{
-    name::{encode_name, labels_to_presentation},
-    record::{EncodeRdataError, Rdata},
-};
+use crate::dns::name;
+use crate::dns::record::{EncodeRdataError, Rdata};
 
 /// An email that does not encode as an SOA mailbox, or a mailbox that does
 /// not decode back.
@@ -40,8 +39,8 @@ pub struct SoaRecordValue<N> {
 impl<N: AsRef<str>> SoaRecordValue<N> {
     /// Encode the SOA value into wire-format record data.
     pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
-        let mut rdata = encode_name(self.mname.as_ref())?;
-        rdata.extend_from_slice(&encode_name(self.rname.as_ref())?);
+        let mut rdata = name::encode_name(self.mname.as_ref())?;
+        rdata.extend_from_slice(&name::encode_name(self.rname.as_ref())?);
 
         for field in [
             self.serial,
@@ -103,7 +102,7 @@ impl SoaMailbox {
         Ok(format!(
             "{}@{}",
             std::str::from_utf8(labels[0])?,
-            labels_to_presentation(&labels[1..])
+            name::labels_to_presentation(&labels[1..])
         ))
     }
 

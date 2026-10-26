@@ -1,20 +1,15 @@
 //! Apply a partial secondary update against its locked row.
 
-use bindizr_core::model::{
-    audit_log::{AuditEntity, AuditOperation},
-    role_grant::Action,
-};
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::{load_response, normalize_secondary_address, normalize_secondary_name};
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    model::{secondary::Secondary, tsig_key::TsigKey},
-    transaction, tsig_key,
-    types::{SecondaryResponse, UpdateSecondaryRequest},
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::secondary::Secondary;
+use crate::model::tsig_key::TsigKey;
+use crate::types::{SecondaryResponse, UpdateSecondaryRequest};
+use crate::{Context, audit, transaction, tsig_key};
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
 /// key name sends NOTIFY unsigned again.
@@ -26,11 +21,11 @@ pub async fn update(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = normalize_secondary_name(name)?;
+    let name = super::normalize_secondary_name(name)?;
     let address = request
         .address
         .as_deref()
-        .map(normalize_secondary_address)
+        .map(super::normalize_secondary_address)
         .transpose()?;
 
     if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
@@ -137,5 +132,5 @@ pub async fn update(
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
 
-    load_response(cx, secondary).await
+    super::load_response(cx, secondary).await
 }

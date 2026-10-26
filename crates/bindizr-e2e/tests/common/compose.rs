@@ -1,16 +1,14 @@
 //! Lifecycle of the shared BIND9 Compose stack.
 
-use std::{
-    net::{SocketAddr, TcpStream},
-    path::PathBuf,
-    process::{Command, Stdio},
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use reqwest::{Client, StatusCode};
 
-use super::{TestApp, TestRuntime, read_env_flag, test_namespace};
+use super::{TestApp, TestRuntime};
 
 const COMPOSE_FILE: &str = "docker-compose.yml";
 const ARM_COMPOSE_FILE: &str = "docker-compose.arm.yml";
@@ -41,7 +39,7 @@ impl TestApp {
             dns_tls_port: None,
             tls_cert: None,
             dns_secondary_ports: SECONDARY_PORTS.to_vec(),
-            namespace: test_namespace(),
+            namespace: super::test_namespace(),
             auth_token: None,
         }
     }
@@ -238,7 +236,7 @@ fn is_compose_stack_reachable() -> bool {
 
 /// The ARM override swaps the amd64-only ISC bind9 image for a multi-arch one.
 fn compose_files() -> Vec<&'static str> {
-    if read_env_flag(ARM_STACK_ENV) {
+    if super::read_env_flag(ARM_STACK_ENV) {
         vec![COMPOSE_FILE, ARM_COMPOSE_FILE]
     } else {
         vec![COMPOSE_FILE]

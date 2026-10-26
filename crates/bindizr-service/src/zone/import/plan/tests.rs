@@ -1,10 +1,7 @@
-use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, name::ZoneName},
-    model::{
-        record::RecordId,
-        zone::{Zone, ZoneId},
-    },
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::Utc;
 
 use super::*;

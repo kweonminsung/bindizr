@@ -1,10 +1,8 @@
 //! TLSA record values (RFC 6698): DANE certificate associations, verifiable
 //! only from a signed zone.
 
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata,
-    value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
-};
+use super::value::MAX_RECORD_RDATA;
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsaRecordValue {
@@ -28,10 +26,10 @@ impl TlsaRecordValue {
         };
 
         Ok(Self {
-            cert_usage: parse_u8_record_field("TLSA certificate usage", cert_usage)?,
-            selector: parse_u8_record_field("TLSA selector", selector)?,
-            matching_type: parse_u8_record_field("TLSA matching type", matching_type)?,
-            cert_data: parse_hex_record_field("TLSA certificate data", fields)?,
+            cert_usage: value::parse_u8_record_field("TLSA certificate usage", cert_usage)?,
+            selector: value::parse_u8_record_field("TLSA selector", selector)?,
+            matching_type: value::parse_u8_record_field("TLSA matching type", matching_type)?,
+            cert_data: value::parse_hex_record_field("TLSA certificate data", fields)?,
         })
     }
 
@@ -76,7 +74,7 @@ impl TlsaRecordValue {
             self.cert_usage,
             self.selector,
             self.matching_type,
-            hex_upper(&self.cert_data)
+            value::hex_upper(&self.cert_data)
         )
     }
 

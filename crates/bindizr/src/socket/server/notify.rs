@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    notify::NotifyTarget,
-    types::{MessageResponse, NotifySerial},
-    zone,
-};
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::notify::NotifyTarget;
+use bindizr_service::types::{MessageResponse, NotifySerial};
+use bindizr_service::{Context, zone};
 
 use crate::socket::types::DaemonResponse;
 

@@ -1,7 +1,8 @@
 //! The path parameters that address one entity, shared by the HTTP API's
 //! handlers.
 
-use bindizr_core::model::{record::RecordId, role_grant::RoleGrantId};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::RoleGrantId;
 use serde::{Deserialize, Serialize};
 
 /// The name of the zone, secondary, token, key, or policy addressed.

@@ -3,8 +3,6 @@
 
 use bindizr_core::model::role_grant::Action;
 
-use super::apex_owner_sql;
-
 /// String concatenation for the backends that spell it `||`.
 pub(crate) fn concat_pipes(parts: &[&str]) -> String {
     parts.join(" || ")
@@ -38,7 +36,7 @@ pub(crate) fn grant_record_match_sql(
 ) -> String {
     let actions = concat(&["','", "p.actions", "','"]);
     let read = format!("{actions} LIKE '%,{},%'", Action::RecordRead.as_str());
-    let apex = apex_owner_sql();
+    let apex = super::apex_owner_sql();
     let suffix = "SUBSTR(p.record_name_pattern, 3)";
     let under = concat(&["'%.'", &like_escaped_sql(suffix)]);
     let name = format!(

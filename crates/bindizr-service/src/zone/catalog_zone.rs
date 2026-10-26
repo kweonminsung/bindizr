@@ -1,12 +1,12 @@
 //! Virtual catalog membership and its persisted serial.
 
-use bindizr_core::{
-    dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl, name::ZoneName},
-    model::zone::Zone,
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{CATALOG_SOA_REFRESH, CatalogZone, Serial, SoaInterval, Ttl};
+use bindizr_core::model::zone::Zone;
 use ring::digest::{self, SHA256};
 
-use crate::{Context, error::ServiceError, transaction};
+use crate::error::ServiceError;
+use crate::{Context, transaction};
 
 /// Refuse to start while a stored zone holds the configured catalog zone
 /// name, which a write would be rejected for taking.

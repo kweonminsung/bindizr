@@ -1,22 +1,19 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
-use bindizr_core::{dns::Serial, model::zone_version::VersionFilter, out, outln};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::zone_version::VersionFilter;
+use bindizr_core::{out, outln};
 use bindizr_service::types::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse, Run,
     ZoneVersionResponse,
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{
-            OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, print_page,
-            print_payload, print_table, render_version_diff,
-        },
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for inspecting a zone's versions.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -127,7 +124,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 },
             )
             .await?;
-            print_page(&response.data, output, |item| VersionRow::from(item))?;
+            output::print_page(&response.data, output, |item| VersionRow::from(item))?;
         }
         ZoneVersionCommand::Get {
             name,
@@ -143,10 +140,10 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             let detail = &response.data;
 
             if output == OutputFormat::Table {
-                print_table(vec![VersionRow::from(&detail.version)]);
-                print_table(detail.records.iter().map(VersionRecordRow::from).collect());
+                output::print_table(vec![VersionRow::from(&detail.version)]);
+                output::print_table(detail.records.iter().map(VersionRecordRow::from).collect());
             } else {
-                print_payload(detail, output)?
+                output::print_payload(detail, output)?
             }
         }
         ZoneVersionCommand::Diff {
@@ -164,9 +161,9 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 .await?;
 
             if output == OutputFormat::Table {
-                out!("{}", render_version_diff(&response.data))
+                out!("{}", output::render_version_diff(&response.data))
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         ZoneVersionCommand::Rollback {
@@ -185,9 +182,9 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
 
             if output == OutputFormat::Table {
                 outln!("{}", response.message);
-                print_table(vec![RollbackSummaryRow::from(&response.data)]);
+                output::print_table(vec![RollbackSummaryRow::from(&response.data)]);
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
     }

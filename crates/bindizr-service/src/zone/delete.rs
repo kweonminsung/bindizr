@@ -1,20 +1,14 @@
-use bindizr_core::{
-    dns::name::ZoneName,
-    model::{
-        audit_log::{AuditEntity, AuditOperation},
-        role_grant::Action,
-        zone_version::VersionFilter,
-    },
-};
-use bindizr_db::{LockLevel, record::RecordFilter};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone_version::VersionFilter;
+use bindizr_db::LockLevel;
+use bindizr_db::record::RecordFilter;
 
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    transaction,
-    types::{DeleteZoneResponse, Run, ZoneResponse},
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::types::{DeleteZoneResponse, Run, ZoneResponse};
+use crate::{Context, audit, transaction};
 
 /// Delete a zone, records, and rollback history; NOTIFY the catalog after commit.
 /// A dry run reports the contents without removing them.

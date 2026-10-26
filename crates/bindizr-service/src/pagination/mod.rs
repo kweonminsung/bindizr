@@ -2,10 +2,8 @@
 
 use bindizr_db::ParseSortError;
 
-use crate::{
-    error::ServiceError,
-    types::{PaginatedResponse, PaginationResponse},
-};
+use crate::error::ServiceError;
+use crate::types::{PaginatedResponse, PaginationResponse};
 
 /// Maximum explicitly requested page size. An omitted limit remains unbounded.
 const MAX_PAGE_LIMIT: u32 = 1000;

@@ -1,7 +1,6 @@
-use bindizr_core::{
-    dns::{SoaInterval, Ttl},
-    model::{change::ChangeSource, zone_version::ZoneVersionId},
-};
+use bindizr_core::dns::{SoaInterval, Ttl};
+use bindizr_core::model::change::ChangeSource;
+use bindizr_core::model::zone_version::ZoneVersionId;
 use sqlx::sqlite::SqlitePoolOptions;
 
 use super::*;

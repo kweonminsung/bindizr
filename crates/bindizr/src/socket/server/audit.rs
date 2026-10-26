@@ -1,9 +1,7 @@
-use bindizr_service::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    types::{AuditLogFilter, AuditLogResponse, PaginatedResponse},
-};
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{AuditLogFilter, AuditLogResponse, PaginatedResponse};
+use bindizr_service::{Context, audit};
 
 use crate::socket::types::DaemonResponse;
 

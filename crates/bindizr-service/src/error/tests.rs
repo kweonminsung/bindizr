@@ -28,7 +28,8 @@ fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
 fn ds_check_failure_preserves_source_and_wire_message() {
     use std::error::Error;
 
-    use crate::dns_client::{ResolveAddressError, ds::ProbeParentDsError};
+    use crate::dns_client::ResolveAddressError;
+    use crate::dns_client::ds::ProbeParentDsError;
 
     let error = ServiceError::dnssec_ds_unverified(
         "example.com",

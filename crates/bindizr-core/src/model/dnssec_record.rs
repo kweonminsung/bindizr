@@ -2,14 +2,10 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName},
-        record::Rdata,
-    },
-    model::zone::ZoneId,
-};
+use crate::dns::Ttl;
+use crate::dns::name::{OwnerName, ZoneName};
+use crate::dns::record::Rdata;
+use crate::model::zone::ZoneId;
 
 id_newtype!(
     /// The id of a derived DNSSEC record row.

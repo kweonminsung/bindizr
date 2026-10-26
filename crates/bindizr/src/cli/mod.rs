@@ -9,17 +9,17 @@ use bindizr_core::errln;
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
-use crate::{
-    cli::{
-        commands::{
-            audit::AuditCommand, config::ConfigCommand, dnssec::DnssecCommand,
-            record::RecordCommand, role::RoleCommand, secondary::SecondaryCommand,
-            token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
-        },
-        output::OutputFormat,
-    },
-    daemon,
-};
+use crate::cli::commands::audit::AuditCommand;
+use crate::cli::commands::config::ConfigCommand;
+use crate::cli::commands::dnssec::DnssecCommand;
+use crate::cli::commands::record::RecordCommand;
+use crate::cli::commands::role::RoleCommand;
+use crate::cli::commands::secondary::SecondaryCommand;
+use crate::cli::commands::token::TokenCommand;
+use crate::cli::commands::tsig_key::TsigKeyCommand;
+use crate::cli::commands::zone::ZoneCommand;
+use crate::cli::output::OutputFormat;
+use crate::daemon;
 
 /// Top-level CLI argument parser.
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]

@@ -2,35 +2,32 @@
 
 pub(crate) mod db_probe;
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
-use bindizr_core::{
-    config::{self, Config, ConfigError},
-    logger::{self, Logger},
-    metrics::{Metrics, RegisterMetricsError},
-};
-use bindizr_db::{Db, error::DatabaseError};
-use bindizr_service::{
-    Context, context::ReloadConfigError, error::ServiceError, notify::queue, scheduler, token, zone,
-};
+use bindizr_core::config::{self, Config, ConfigError};
+use bindizr_core::logger::{self, Logger};
+use bindizr_core::metrics::{Metrics, RegisterMetricsError};
+use bindizr_db::Db;
+use bindizr_db::error::DatabaseError;
+use bindizr_service::context::ReloadConfigError;
+use bindizr_service::error::ServiceError;
+use bindizr_service::notify::queue;
+use bindizr_service::{Context, scheduler, token, zone};
 use chrono::Utc;
 use thiserror::Error;
-use tokio::{
-    signal::unix::{SignalKind, signal},
-    sync,
-    task::{JoinError, JoinHandle, JoinSet},
-};
+use tokio::signal::unix;
+use tokio::signal::unix::SignalKind;
+use tokio::sync;
+use tokio::task::{JoinError, JoinHandle, JoinSet};
 
-use crate::{
-    api,
-    api::StartApiError,
-    dns,
-    dns::StartDnsError,
-    shutdown::Shutdown,
-    socket,
-    socket::server::{BindSocketError, ServeSocketError},
-    tls::{LoadCertificateError, TlsCertificates},
-};
+use crate::api::StartApiError;
+use crate::dns::StartDnsError;
+use crate::shutdown::Shutdown;
+use crate::socket::server::{BindSocketError, ServeSocketError};
+use crate::tls::{LoadCertificateError, TlsCertificates};
+use crate::{api, dns, socket};
 
 /// How long the servers that can finish on their own get before the daemon
 /// exits anyway.
@@ -231,11 +228,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     cx.set_started_at(Utc::now());
     log::info!("Bindizr is running.");
 
-    let mut terminate = signal(SignalKind::terminate()).map_err(|source| DaemonError::Signal {
-        signal: "SIGTERM",
-        source,
-    })?;
-    let mut hangup = signal(SignalKind::hangup()).map_err(|source| DaemonError::Signal {
+    let mut terminate =
+        unix::signal(SignalKind::terminate()).map_err(|source| DaemonError::Signal {
+            signal: "SIGTERM",
+            source,
+        })?;
+    let mut hangup = unix::signal(SignalKind::hangup()).map_err(|source| DaemonError::Signal {
         signal: "SIGHUP",
         source,
     })?;

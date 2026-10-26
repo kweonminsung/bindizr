@@ -4,15 +4,11 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
 use bindizr_core::config::{Config, TlsFiles};
-use rustls::{
-    crypto::ring,
-    pki_types::{
-        CertificateDer, PrivateKeyDer,
-        pem::{self, PemObject},
-    },
-    server::{ClientHello, ResolvesServerCert},
-    sign::CertifiedKey,
-};
+use rustls::crypto::ring;
+use rustls::pki_types::pem::{self, PemObject};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::server::{ClientHello, ResolvesServerCert};
+use rustls::sign::CertifiedKey;
 use thiserror::Error;
 
 /// Why the configured PEM pair presents no certificate.

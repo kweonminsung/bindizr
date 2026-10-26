@@ -2,16 +2,16 @@
 
 use std::net::IpAddr;
 
-use bindizr_core::{
-    dns::{Serial, name::ZoneName},
-    model::{
-        transfer::{Transfer, TransferKind, TransferResult, TransferTransport, TransferWithZone},
-        zone::ZoneId,
-    },
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::transfer::{
+    Transfer, TransferKind, TransferResult, TransferTransport, TransferWithZone,
 };
+use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 
-use crate::{Context, error::ServiceError};
+use crate::Context;
+use crate::error::ServiceError;
 
 /// Save a transfer answered for `zone_id` up to `serial`. A failure to
 /// save is logged; the transfer already went out.

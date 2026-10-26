@@ -12,25 +12,19 @@ pub(crate) mod nsupdate;
 pub(crate) mod soa;
 pub(crate) mod transfer_cache;
 
-use std::{
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 
+use auth::TransferRefusal;
 pub(crate) use auth::refuse_query;
-use auth::{TransferRefusal, authenticate_transfer, authorize_transport};
-use bindizr_core::{
-    dns::message::{Class, ExtendedErrorCode, Opcode, OptRcode, Rtype},
-    metrics::XfrResult,
-    model::transfer::{TransferKind, TransferTransport},
-};
+use bindizr_core::dns::message::{Class, ExtendedErrorCode, Opcode, OptRcode, Rtype};
+use bindizr_core::metrics::XfrResult;
+use bindizr_core::model::transfer::{TransferKind, TransferTransport};
 use bindizr_service::{Context, transfer};
 
-use crate::dns::{
-    error::DnsError,
-    stream::ResponseWriter,
-    udp::{ReplyTarget, UdpSocket},
-};
+use crate::dns::error::DnsError;
+use crate::dns::stream::ResponseWriter;
+use crate::dns::udp::{ReplyTarget, UdpSocket};
 
 /// DNS-specific caches and daemon context; handlers take `dns_cx` and derive `cx`.
 #[derive(Debug)]
@@ -167,9 +161,9 @@ pub(crate) async fn handle_tcp_xfr(
         biased;
         () = writer.failed() => return Err(DnsError::PeerClosed),
 
-        result = authenticate_transfer(dns_cx, query_data, client_ip, transport) => result,
+        result = auth::authenticate_transfer(dns_cx, query_data, client_ip, transport) => result,
     }
-    .and_then(|identity| authorize_transport(dns_cx, transport, identity));
+    .and_then(|identity| auth::authorize_transport(dns_cx, transport, identity));
 
     let mut identity = match identity {
         Ok(identity) => identity,
@@ -357,9 +351,11 @@ pub(crate) async fn handle_udp_xfr(
     let client_addr = target.client_addr;
 
     let identity =
-        authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
+        auth::authenticate_transfer(dns_cx, query_data, client_addr.ip(), TransferTransport::Udp)
             .await
-            .and_then(|identity| authorize_transport(dns_cx, TransferTransport::Udp, identity));
+            .and_then(|identity| {
+                auth::authorize_transport(dns_cx, TransferTransport::Udp, identity)
+            });
     let (response, outcome) = match identity {
         Ok(mut identity) => (
             query

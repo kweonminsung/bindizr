@@ -4,13 +4,11 @@ use std::sync::Arc;
 
 use bindizr_core::model::role_grant::Action;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    notify::NotifyTarget,
-    types::{MessageResponse, NotifySerial},
-};
+use crate::Context;
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::notify::NotifyTarget;
+use crate::types::{MessageResponse, NotifySerial};
 
 /// Send a manual NOTIFY for one zone or all zones, bumping the serial
 /// first when `serial` says to; an all-zones round runs the zones concurrently.
@@ -67,7 +65,8 @@ pub async fn notify(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::{config::Config, metrics::Metrics};
+    use bindizr_core::config::Config;
+    use bindizr_core::metrics::Metrics;
 
     use super::*;
 

@@ -1,31 +1,25 @@
 //! Turning signing on and off, moving a zone between policies, and the
 //! operator's force re-sign.
 
-use bindizr_core::{
-    dns::{dnssec::SigningPass, name::ZoneName},
-    model::{dnssec_key::DnssecKey, role_grant::Action},
-};
+use bindizr_core::dns::dnssec::SigningPass;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_key::DnssecKey;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{parent_ns_addrs::normalize_parent_ns_addrs, status::load_status_tx};
-use crate::{
-    Context,
-    authorization::Caller,
-    dnssec::SignedZone,
-    dnssec_policy::normalize_policy_name,
-    error::ServiceError,
-    model::{
-        dnssec_key::{DnssecKeyRole, DnssecKeyState},
-        dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecPolicy},
-        zone::Zone,
-        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
-    },
-    serial::generate_serial,
-    transaction,
-    types::{DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest},
-    zone,
+use super::{parent_ns_addrs, status};
+use crate::authorization::Caller;
+use crate::dnssec::SignedZone;
+use crate::error::ServiceError;
+use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
+use crate::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecPolicy};
+use crate::model::zone::Zone;
+use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
+use crate::types::{
+    DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
 };
+use crate::{Context, dnssec_policy, serial, transaction, zone};
 
 /// Validate a policy move: layout changes require disabling DNSSEC first; algorithms use rollover.
 /// Denial changes are atomic because all supported algorithms sign NSEC3 (RFC 5702, Section 2; RFC 6605, Section 2; RFC 8080, Section 2).
@@ -56,13 +50,13 @@ pub async fn enable(
     zone_name: &ZoneName,
     request: &EnableDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let policy_name = normalize_policy_name(
+    let policy_name = dnssec_policy::normalize_policy_name(
         request
             .policy_name
             .as_deref()
             .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
     )?;
-    let parent_ns_addrs = normalize_parent_ns_addrs(&request.parent_ns_addrs)?;
+    let parent_ns_addrs = parent_ns_addrs::normalize_parent_ns_addrs(&request.parent_ns_addrs)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to enable DNSSEC").await?;
     let result = async {
@@ -142,7 +136,7 @@ pub async fn enable(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = load_status_tx(
+        let response = status::load_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -188,12 +182,12 @@ pub async fn update_settings(
     let policy_name = request
         .policy_name
         .as_deref()
-        .map(normalize_policy_name)
+        .map(dnssec_policy::normalize_policy_name)
         .transpose()?;
     let parent_ns_addrs = request
         .parent_ns_addrs
         .as_deref()
-        .map(normalize_parent_ns_addrs)
+        .map(parent_ns_addrs::normalize_parent_ns_addrs)
         .transpose()?;
 
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
@@ -269,7 +263,7 @@ pub async fn update_settings(
         }
 
         let response =
-            load_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial).await?;
+            status::load_status_tx(&mut tx, &candidate, policy.as_ref(), &keys, new_serial).await?;
 
         Ok((response, new_serial != candidate.serial))
     }
@@ -325,7 +319,7 @@ pub async fn disable(
             bindizr_db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::Unlocked)
                 .await?;
 
-        let new_serial = generate_serial(Some(signed.zone.serial));
+        let new_serial = serial::generate_serial(Some(signed.zone.serial));
 
         // Journal a DEL for every derived row; they carry wire RDATA, not
         // a value.

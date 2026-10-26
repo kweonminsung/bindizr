@@ -1,12 +1,11 @@
-use bindizr_core::{
-    dns::address::AddressTarget,
-    model::{secondary::SecondaryId, tsig_key::TsigKeyId},
-};
+use bindizr_core::dns::address::AddressTarget;
+use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::tsig_key::TsigKeyId;
 
-use crate::{
-    Backend, Db, LockLevel, Transaction, error::DatabaseError, model::secondary::Secondary, mysql,
-    postgres, sqlite, tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::secondary::Secondary;
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert a secondary.
 pub async fn create_tx(

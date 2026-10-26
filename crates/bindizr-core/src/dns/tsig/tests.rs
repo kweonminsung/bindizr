@@ -1,23 +1,18 @@
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use chrono::Utc;
-use domain::{
-    base::{
-        MessageBuilder, Name,
-        iana::{Class, Opcode, Rtype},
-        name::ParsedName,
-    },
-    dep::octseq::parse::Parser,
-    tsig::ServerTransaction,
-};
+use domain::base::iana::{Class, Opcode, Rtype};
+use domain::base::name::ParsedName;
+use domain::base::{MessageBuilder, Name};
+use domain::dep::octseq::parse::Parser;
+use domain::tsig::ServerTransaction;
 use ring::hmac;
 
 use super::*;
-use crate::{
-    dns::nsupdate::parser::tests::build_minimal_update_with_ztype,
-    model::{role::RoleId, tsig_key::TsigKeyId},
-};
+use crate::model::role::RoleId;
+use crate::model::tsig_key::TsigKeyId;
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
@@ -537,7 +532,7 @@ fn build_signed_update_with_tsig_fields(
     error: TsigRcode,
     other: &[u8],
 ) -> Vec<u8> {
-    let base = build_minimal_update_with_ztype(6);
+    let base = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");
     let algorithm_name = encode_name(algorithm.as_str());
     let mut digest = base.clone();
@@ -1147,7 +1142,7 @@ fn tsig_parser_rejects_unparseable_signature() {
     ));
 
     // Malformed TSIG must not fall through to address-based authorization.
-    let mut empty_rdata = build_minimal_update_with_ztype(6);
+    let mut empty_rdata = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
     empty_rdata[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     empty_rdata.extend_from_slice(&encode_name("update-key"));
     empty_rdata.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
@@ -1171,7 +1166,7 @@ fn tsig_parser_rejects_unparseable_signature() {
     ));
 
     assert!(matches!(
-        request_signature(&build_minimal_update_with_ztype(6)),
+        request_signature(&crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6)),
         RequestSignature::Absent
     ));
 }
@@ -1183,7 +1178,7 @@ fn build_update_with_mac_len(mac_len: usize) -> Vec<u8> {
     let algorithm_name = encode_name(TsigAlgorithm::HmacSha256.as_str());
     let mac = vec![0u8; mac_len];
 
-    let mut message = build_minimal_update_with_ztype(6);
+    let mut message = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6);
     message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     message.extend_from_slice(&key_name);
     message.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
@@ -1225,7 +1220,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
     ));
 
     // The TSIG record twice over.
-    let base_len = build_minimal_update_with_ztype(6).len();
+    let base_len = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6).len();
     let mut doubled = signed;
     doubled[10..12].copy_from_slice(&2u16.to_be_bytes());
     doubled.extend_from_within(base_len..);
@@ -1251,7 +1246,7 @@ fn tsig_parser_rejects_invalid_section_5_2_envelopes() {
 #[test]
 fn tsig_envelope_rejects_wrong_class_ttl_and_sections() {
     let wire = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    let start = build_minimal_update_with_ztype(6).len();
+    let start = crate::dns::nsupdate::parser::tests::build_minimal_update_with_ztype(6).len();
     let class = start + encode_name("update-key").len() + 2;
 
     for offset in [class + 1, class + 5] {

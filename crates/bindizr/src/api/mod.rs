@@ -20,18 +20,26 @@ mod token;
 mod tsig_key;
 mod zone;
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
-use axum::{extract::FromRequestParts, http::request::Parts};
-use axum_server::{Handle, tls_rustls::RustlsConfig};
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
+use axum_server::Handle;
+use axum_server::tls_rustls::RustlsConfig;
 use bindizr_core::model::api_token::ApiToken;
-use bindizr_service::{Context, authorization::Caller, error::ServiceError};
+use bindizr_service::Context;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
 use error::ApiError;
 use rustls::ServerConfig;
 use thiserror::Error;
-use tokio::{net::TcpListener, task::JoinHandle};
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 
-use crate::{shutdown::Shutdown, tls::TlsCertificate};
+use crate::shutdown::Shutdown;
+use crate::tls::TlsCertificate;
 
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::unauthenticated_api()` layer when authentication is disabled. A request without

@@ -1,24 +1,15 @@
-use domain::{
-    base::{
-        Message,
-        iana::{Class, Opcode, OptRcode, Rcode, TsigRcode},
-    },
-    rdata::tsig::Tsig,
-};
+use domain::base::Message;
+use domain::base::iana::{Class, Opcode, OptRcode, Rcode, TsigRcode};
+use domain::rdata::tsig::Tsig;
 
-use super::{parser::tests::build_minimal_update_with_ztype, *};
-use crate::{
-    dns::tsig::{
-        self,
-        tests::{build_signed_update, encode_name, encode_u48, hmac_sign, now_secs, test_key},
-    },
-    model::tsig_key::TsigAlgorithm,
-};
+use super::*;
+use crate::dns::tsig;
+use crate::model::tsig_key::TsigAlgorithm;
 
 /// A truncated zone or later section receives only a header, without an invented OPT.
 #[test]
 fn unreadable_update_bodies_receive_header_only_formerr() {
-    let valid = build_minimal_update_with_ztype(6);
+    let valid = super::parser::tests::build_minimal_update_with_ztype(6);
     let mut unreadable_zone = valid[..12].to_vec();
     unreadable_zone.extend_from_slice(&[5, b'x']);
     let mut unreadable_update = valid.clone();
@@ -46,7 +37,7 @@ fn unreadable_update_bodies_receive_header_only_formerr() {
 /// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
-    let query = build_minimal_update_with_ztype(6);
+    let query = super::parser::tests::build_minimal_update_with_ztype(6);
 
     let response = build_response(
         &query,
@@ -73,7 +64,7 @@ fn build_response_echoes_request_header_and_question() {
 /// carrying the extended rcode (RFC 6891, Section 6.1.1).
 #[test]
 fn build_response_echoes_an_opt_with_the_extended_rcode() {
-    let mut query = build_minimal_update_with_ztype(6);
+    let mut query = super::parser::tests::build_minimal_update_with_ztype(6);
     query[10..12].copy_from_slice(&1u16.to_be_bytes());
     query.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -99,8 +90,11 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
 /// Verify that `build_response` signs with request mac chain.
 #[test]
 fn build_response_signs_with_request_mac_chain() {
-    let query = build_signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    let key = test_key(TsigAlgorithm::HmacSha256)
+    let query = crate::dns::tsig::tests::build_signed_update(
+        TsigAlgorithm::HmacSha256,
+        crate::dns::tsig::tests::now_secs(),
+    );
+    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
@@ -150,16 +144,18 @@ fn build_response_signs_with_request_mac_chain() {
     digest.extend_from_slice(&(request_mac.len() as u16).to_be_bytes());
     digest.extend_from_slice(&request_mac);
     digest.extend_from_slice(&unsigned);
-    digest.extend_from_slice(&encode_name("update-key"));
+    digest.extend_from_slice(&crate::dns::tsig::tests::encode_name("update-key"));
     digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
     digest.extend_from_slice(&0u32.to_be_bytes());
-    digest.extend_from_slice(&encode_name("hmac-sha256"));
-    digest.extend_from_slice(&encode_u48(u64::from(data.time_signed())));
+    digest.extend_from_slice(&crate::dns::tsig::tests::encode_name("hmac-sha256"));
+    digest.extend_from_slice(&crate::dns::tsig::tests::encode_u48(u64::from(
+        data.time_signed(),
+    )));
     digest.extend_from_slice(&data.fudge().to_be_bytes());
     digest.extend_from_slice(&0u16.to_be_bytes()); // error
     digest.extend_from_slice(&0u16.to_be_bytes()); // other len
 
-    let expected = hmac_sign(TsigAlgorithm::HmacSha256, &digest);
+    let expected = crate::dns::tsig::tests::hmac_sign(TsigAlgorithm::HmacSha256, &digest);
 
     assert_eq!(*data.mac(), &expected[..]);
 }
@@ -168,21 +164,11 @@ fn build_response_signs_with_request_mac_chain() {
 fn update_responses_fit_udp_with_long_compressed_key_names() {
     use std::str::FromStr;
 
-    use domain::{
-        base::{Name, Rtype},
-        tsig::ClientTransaction,
-    };
+    use domain::base::{Name, Rtype};
+    use domain::tsig::ClientTransaction;
 
-    use crate::{
-        dns::{
-            message,
-            tsig::{
-                tests::{assert_response_mac, test_key},
-                verify_tsig,
-            },
-        },
-        model::tsig_key::{TsigAlgorithm, TsigKey},
-    };
+    use crate::dns::message;
+    use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
     let name = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -192,7 +178,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
     );
     let key = TsigKey {
         name: name.clone(),
-        ..test_key(TsigAlgorithm::HmacSha512)
+        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -218,7 +204,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let request = additional.finish().into_target();
-        let signer = verify_tsig(&request, Some(key.clone())).unwrap();
+        let signer = crate::dns::tsig::verify_tsig(&request, Some(key.clone())).unwrap();
 
         for rcode in [
             OptRcode::NOERROR,
@@ -243,7 +229,11 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+            crate::dns::tsig::tests::assert_response_mac(
+                &request,
+                &response,
+                TsigAlgorithm::HmacSha512,
+            );
         }
     }
 }

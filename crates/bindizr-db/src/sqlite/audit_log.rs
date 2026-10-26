@@ -1,14 +1,10 @@
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
-use crate::{
-    audit_log::AuditLogFilter,
-    error::DatabaseError,
-    model::{
-        audit_log::{AuditEntity, AuditLog},
-        change::ChangeActor,
-    },
-};
+use crate::audit_log::AuditLogFilter;
+use crate::error::DatabaseError;
+use crate::model::audit_log::{AuditEntity, AuditLog};
+use crate::model::change::ChangeActor;
 
 /// Insert an audit log row in the current transaction.
 pub(crate) async fn create_tx(

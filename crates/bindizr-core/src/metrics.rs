@@ -1,16 +1,15 @@
 //! The daemon's Prometheus registry, held by its `Context` and shared by the
 //! HTTP API and DNS layers.
 
+use prometheus::core::Collector;
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
-    Registry, TextEncoder, core::Collector,
+    Registry, TextEncoder,
 };
 use thiserror::Error;
 
-use crate::{
-    dns::message::{Rcode, Rtype},
-    model::transfer::TransferTransport,
-};
+use crate::dns::message::{Rcode, Rtype};
+use crate::model::transfer::TransferTransport;
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";

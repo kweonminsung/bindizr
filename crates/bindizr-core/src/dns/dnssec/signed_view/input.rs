@@ -2,28 +2,20 @@
 
 use std::collections::BTreeMap;
 
-use domain::{
-    base::{
-        Ttl, UnknownRecordData,
-        iana::{Class, Rtype},
-        name::FlattenInto,
-    },
-    dep::octseq::Parser,
-    dnssec::sign::{
-        denial::{
-            nsec::{GenerateNsecConfig, generate_nsecs},
-            nsec3::{GenerateNsec3Config, Nsec3Records, generate_nsec3s},
-        },
-        records::{DefaultSorter, RecordsIter},
-    },
-    rdata::ZoneRecordData,
-};
+use domain::base::iana::{Class, Rtype};
+use domain::base::name::FlattenInto;
+use domain::base::{Ttl, UnknownRecordData};
+use domain::dep::octseq::Parser;
+use domain::dnssec::sign::denial::nsec::GenerateNsecConfig;
+use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3Records};
+use domain::dnssec::sign::denial::{nsec, nsec3};
+use domain::dnssec::sign::records::{DefaultSorter, RecordsIter};
+use domain::rdata::ZoneRecordData;
 
-use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord, to_rdata};
-use crate::{
-    dns::record::EncodedRdata,
-    model::{dnssec_key::DS_DIGEST_TYPE, dnssec_policy::DnssecDenial},
-};
+use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord};
+use crate::dns::record::EncodedRdata;
+use crate::model::dnssec_key::DS_DIGEST_TYPE;
+use crate::model::dnssec_policy::DnssecDenial;
 
 impl SignedViewParams<'_> {
     /// User records, the synthesized SOA, and the apex key record sets in canonical
@@ -70,7 +62,7 @@ impl SignedViewParams<'_> {
                 ));
                 let cdnskey = UnknownRecordData::from_octets(
                     Rtype::CDNSKEY,
-                    to_rdata(&signer.dnskey)?.into_bytes(),
+                    super::to_rdata(&signer.dnskey)?.into_bytes(),
                 )
                 .map_err(|error| SignZoneError::Rdata {
                     rtype: "CDNSKEY",
@@ -199,7 +191,7 @@ pub(crate) fn denial_records(
     if denial == DnssecDenial::Nsec3 {
         // GenerateNsec3Config::default() is the RFC 9276 profile: SHA-1, zero
         // iterations, no salt, no opt-out.
-        let Nsec3Records { nsec3s, nsec3param } = generate_nsec3s(
+        let Nsec3Records { nsec3s, nsec3param } = nsec3::generate_nsec3s(
             apex,
             RecordsIter::new_from_owned(input),
             &GenerateNsec3Config::<Vec<u8>, DefaultSorter>::default(),
@@ -214,7 +206,7 @@ pub(crate) fn denial_records(
 
         records.push(into_sign_record(nsec3param, ZoneRecordData::Nsec3param));
     } else {
-        let nsecs = generate_nsecs(
+        let nsecs = nsec::generate_nsecs(
             apex,
             RecordsIter::new_from_owned(input),
             &GenerateNsecConfig::new(),

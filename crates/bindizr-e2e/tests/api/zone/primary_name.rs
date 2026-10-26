@@ -1,15 +1,10 @@
-use domain::{
-    base::{MessageBuilder, Rtype, UnknownRecordData},
-    rdata::Soa,
-};
+use domain::base::{MessageBuilder, Rtype, UnknownRecordData};
+use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{
-    TestApp,
-    dns::{fetch_exported_record_sets, parse_name},
-    exchange_tcp,
-};
+use crate::common;
+use crate::common::{TestApp, dns};
 
 /// Root MNAME survives creation, preview, update, history and wire/export encoding.
 #[tokio::test]
@@ -43,16 +38,18 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
         assert_eq!(body["zone"]["mname"], ".");
     }
 
-    let sets = fetch_exported_record_sets(&app, &name).await;
+    let sets = dns::fetch_exported_record_sets(&app, &name).await;
 
     assert_eq!(sets[&(format!("{name}."), Rtype::NS)], [vec![0]]);
     assert_eq!(sets[&(format!("{name}."), Rtype::SOA)][0][0], 0);
 
     for rtype in [Rtype::SOA, Rtype::AXFR] {
         let mut question = MessageBuilder::new_vec().question();
-        question.push((parse_name(&name).unwrap(), rtype)).unwrap();
+        question
+            .push((dns::parse_name(&name).unwrap(), rtype))
+            .unwrap();
         let wire = question.finish();
-        let response = exchange_tcp(app.dns_port(), &wire).unwrap();
+        let response = common::exchange_tcp(app.dns_port(), &wire).unwrap();
         let message = domain::base::Message::from_octets(response.as_slice()).unwrap();
         let soa = message
             .answer()

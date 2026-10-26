@@ -1,22 +1,23 @@
 use std::sync::Arc;
 
-use axum::{
-    Extension, Json, Router,
-    extract::DefaultBodyLimit,
-    http::{StatusCode, header::CONTENT_TYPE},
-    response::IntoResponse,
-    routing,
-};
-use bindizr_service::{
-    Context, authorization::Caller, error::ServiceError, types::MessageResponse,
-};
+use axum::extract::DefaultBodyLimit;
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::IntoResponse;
+use axum::{Extension, Json, Router, routing};
+use bindizr_service::Context;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::MessageResponse;
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::OpenApi;
 
+use super::error::ApiError;
+use super::middleware::body_parser::DEFAULT_BODY_BYTES;
+use super::openapi::ApiDoc;
 use super::{
-    audit, dnssec, dnssec_policy, error::ApiError, external_dns,
-    middleware::body_parser::DEFAULT_BODY_BYTES, notify, openapi::ApiDoc, permission, record, role,
-    secondary, token, tsig_key, zone,
+    audit, dnssec, dnssec_policy, external_dns, notify, permission, record, role, secondary, token,
+    tsig_key, zone,
 };
 
 /// Build the full axum router with auth, CORS, and the optional route groups,
