@@ -1,15 +1,16 @@
 use super::*;
-use crate::{
-    error::ErrorCode,
-    types::{ImportZoneRequest, ImportZonesRequest},
-};
+use crate::error::ErrorCode;
+use crate::types::{ImportZoneRequest, ImportZonesRequest};
 
 /// A failed external import keeps its network cause without creating a zone.
 #[tokio::test]
 async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
-    use std::{error::Error, io, net::TcpListener};
+    use std::error::Error;
+    use std::io;
+    use std::net::TcpListener;
 
-    use bindizr_core::{config::Config, metrics::Metrics};
+    use bindizr_core::config::Config;
+    use bindizr_core::metrics::Metrics;
 
     use crate::dns_client::axfr::FetchZoneError;
 

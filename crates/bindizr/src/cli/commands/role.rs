@@ -1,17 +1,16 @@
-use bindizr_core::{model::role_grant::RoleGrantId, outln};
+use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::outln;
 use bindizr_service::types::{
     CreateRoleGrantRequest, CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse,
     RoleGrantResponse, RoleResponse, SingleRoleGrantResponse, SingleRoleResponse,
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, RoleGrantRow, RoleRow, print_page, print_payload, print_response},
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, RoleGrantRow, RoleRow};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing roles and their grants.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -162,7 +161,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 CreateRoleRequest { name, description },
             ))
             .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RoleRow::from(&response.role)]
             })?;
         }
@@ -175,12 +174,12 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 DaemonCommand::ListRoles(PageRequest { limit, offset }),
             )
             .await?;
-            print_page(&response.data, output, |item| RoleRow::from(item))?;
+            output::print_page(&response.data, output, |item| RoleRow::from(item))?;
         }
         RoleCommand::Get { name, output } => {
             let response =
                 client::send_command::<SingleRoleResponse>(DaemonCommand::GetRole { name }).await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RoleRow::from(&response.role)]
             })?;
         }
@@ -191,7 +190,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         RoleCommand::Grant {
@@ -213,7 +212,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                     },
                 })
                 .await?;
-            print_response(&response.data, output, |response| {
+            output::print_response(&response.data, output, |response| {
                 vec![RoleGrantRow::from(&response.role_grant)]
             })?;
         }
@@ -230,7 +229,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 },
             )
             .await?;
-            print_page(&response.data, output, |item| RoleGrantRow::from(item))?;
+            output::print_page(&response.data, output, |item| RoleGrantRow::from(item))?;
         }
         RoleCommand::Revoke { name, id, output } => {
             let response =
@@ -243,7 +242,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
     }

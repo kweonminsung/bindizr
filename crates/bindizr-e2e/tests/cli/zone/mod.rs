@@ -1,6 +1,7 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
+use crate::common;
+use crate::common::TestApp;
 
 mod export;
 mod history;
@@ -54,7 +55,7 @@ async fn escaped_zone_names_follow_the_same_policy_via_cli() {
     ];
 
     let output = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &output, "wildcard");
+    common::assert_cli_failure_contains(&args, &output, "wildcard");
 }
 
 /// Verify that zone create takes SOA timers.
@@ -130,7 +131,7 @@ async fn zone_supports_create_read_and_delete_via_cli() {
     let args = ["zone", "get", &zone_name, "--output", "json"];
 
     let missing = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(
+    common::assert_cli_failure_contains(
         &args,
         &missing,
         &format!("zone with name '{zone_name}' not found"),
@@ -196,11 +197,11 @@ async fn zone_rejects_invalid_name_and_ttl_via_cli() {
         ];
 
         let output = app.run_cli(&args, None).await;
-        assert_cli_failure_contains(&args, &output, expected_error);
+        common::assert_cli_failure_contains(&args, &output, expected_error);
     }
 
     let status = app.run_cli(&["status"], None).await;
-    assert_cli_success(&["status"], &status);
+    common::assert_cli_success(&["status"], &status);
 }
 
 /// Verify zone filtering and pagination.

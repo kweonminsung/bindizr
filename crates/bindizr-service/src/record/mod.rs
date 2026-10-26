@@ -18,11 +18,10 @@ pub(crate) use validation::{
     AddResult, validate_add_tx, validate_record_constraints, validate_record_name_in_zone,
 };
 
-use crate::{
-    authorization::Caller,
-    model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
-    types::{RecordResponse, RecordValue},
-};
+use crate::authorization::Caller;
+use crate::model::dnssec_record::DnssecRecordWithZone;
+use crate::model::record::RecordWithZone;
+use crate::types::{RecordResponse, RecordValue};
 
 /// An API-visible user or derived DNSSEC record; SOA stays in zone metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]

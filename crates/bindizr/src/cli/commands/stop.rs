@@ -3,13 +3,11 @@ use std::time::Duration;
 use bindizr_core::outln;
 use bindizr_service::types::MessageResponse;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, print_payload},
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::OutputFormat;
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Longer than the daemon's own drain budget plus the delay before it acts on
 /// the request, so a maximal drain is not reported as a timeout.
@@ -36,7 +34,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
             if output == OutputFormat::Table {
                 outln!("Bindizr stopped.")
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
             Ok(())
         }

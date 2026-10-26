@@ -1,13 +1,14 @@
 //! Querying the supplied parent servers for a child zone's DS records.
 
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::time::Duration;
 
-use bindizr_core::dns::{
-    dnssec::EncodeWireNameError,
-    message::{Name, Opcode, Rtype},
-    name::ZoneName,
-    query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, build_question, extract_ds_record_set},
-};
+use bindizr_core::dns::dnssec::EncodeWireNameError;
+use bindizr_core::dns::message::{Name, Opcode, Rtype};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::query;
+use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE};
 use thiserror::Error;
 use tokio::task::JoinSet;
 
@@ -153,7 +154,7 @@ async fn query_ds_at(
     let mut last_error = None;
 
     for addr in addrs {
-        let (query_id, builder) = build_question(
+        let (query_id, builder) = query::build_question(
             Opcode::QUERY,
             false,
             false,
@@ -163,12 +164,13 @@ async fn query_ds_at(
         );
         let query = builder.finish();
 
-        let result = match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
-            .await
-        {
-            Ok(response) => extract_ds_record_set(query_id, qname, &response).map_err(Into::into),
-            Err(error) => Err(error.into()),
-        };
+        let result =
+            match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query").await {
+                Ok(response) => {
+                    query::extract_ds_record_set(query_id, qname, &response).map_err(Into::into)
+                }
+                Err(error) => Err(error.into()),
+            };
 
         match result {
             Ok(record_set) => return Ok(record_set),

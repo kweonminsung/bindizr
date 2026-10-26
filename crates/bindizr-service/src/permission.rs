@@ -3,12 +3,10 @@
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::zone::ZoneFilter;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    types::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse},
-};
+use crate::Context;
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::types::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 
 /// The caller's actions across all zones and where zone grants add to them;
 /// reading its own rights needs no grant.

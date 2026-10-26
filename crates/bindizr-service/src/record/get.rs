@@ -1,21 +1,16 @@
-use bindizr_core::{
-    dns::name::{
-        OwnerName, ZoneName, decode_name_labels, labels_to_presentation, trim_presentation_name,
-    },
-    model::record::RecordId,
-};
+use bindizr_core::dns::name;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::record::RecordId;
 use bindizr_db::dnssec_record::DnssecRecordFilter;
 
 use super::ServedRecord;
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    model::{dnssec_record::DnssecRecordType, record::RecordType},
-    pagination::{build_paginated_response, parse_setting, validate_page_limit},
-    types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView},
-    zone::{self, validation::normalize_name},
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::dnssec_record::DnssecRecordType;
+use crate::model::record::RecordType;
+use crate::types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView};
+use crate::zone::validation;
+use crate::{Context, pagination, zone};
 
 /// Which plane a `type` filter names: a user record type, or a derived
 /// DNSSEC type when the signed view is requested.
@@ -72,9 +67,9 @@ pub async fn list_by_filter_with_zone(
     let zone_name = filter
         .zone_name
         .as_deref()
-        .map(normalize_name)
+        .map(validation::normalize_name)
         .transpose()?;
-    validate_page_limit(filter.limit)?;
+    pagination::validate_page_limit(filter.limit)?;
     let limit = filter.limit;
     let offset = filter.offset;
     let view = ZoneView::from_signed(filter.signed.unwrap_or(false));
@@ -124,8 +119,8 @@ pub async fn list_by_filter_with_zone(
         max_priority: filter.max_priority,
         search: filter.search.clone(),
         scope_role_id,
-        sort: parse_setting(filter.sort.as_deref())?,
-        order: parse_setting(filter.order.as_deref())?,
+        sort: pagination::parse_setting(filter.sort.as_deref())?,
+        order: pagination::parse_setting(filter.order.as_deref())?,
         limit,
         offset,
     };
@@ -193,7 +188,7 @@ pub async fn list_by_filter_with_zone(
         .map(|item| super::build_record_response(caller, item))
         .collect();
 
-    Ok(build_paginated_response(
+    Ok(pagination::build_paginated_response(
         items,
         limit,
         offset,
@@ -233,7 +228,7 @@ pub async fn get(
 /// Normalize a name filter for stored-owner and FQDN comparisons.
 fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
     name.and_then(|name| {
-        let trimmed = trim_presentation_name(&name);
+        let trimmed = name::trim_presentation_name(&name);
 
         // An empty value is no filter. Left to fall through it would spell the
         // apex, which rows hold as the empty string, and match every apex row.
@@ -250,9 +245,9 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
 
             // Rendered as rows hold it: a relative name against the owner, an
             // absolute one against the FQDN the query builds.
-            return Some(match decode_name_labels(trimmed) {
+            return Some(match name::decode_name_labels(trimmed) {
                 Ok((labels, absolute)) => {
-                    let rendered = labels_to_presentation(&labels);
+                    let rendered = name::labels_to_presentation(&labels);
                     if absolute {
                         format!("{rendered}.")
                     } else {

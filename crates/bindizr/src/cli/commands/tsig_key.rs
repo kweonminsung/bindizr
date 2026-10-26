@@ -5,13 +5,11 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, TsigKeyRow, print_page, print_payload, print_response},
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{OutputFormat, TsigKeyRow};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing TSIG update and transfer credentials.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -102,7 +100,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )
             .await?;
             log::debug!("TSIG key creation result: {:?}", response);
-            print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::List {
             role,
@@ -119,14 +117,14 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )
             .await?;
             log::debug!("TSIG key list result: {:?}", response);
-            print_page(&response.data, output, |item| TsigKeyRow::from(item))?;
+            output::print_page(&response.data, output, |item| TsigKeyRow::from(item))?;
         }
         TsigKeyCommand::Get { name, output } => {
             let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
             log::debug!("TSIG key get result: {:?}", response);
-            print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::Export { name } => {
             let response =
@@ -143,7 +141,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
     }

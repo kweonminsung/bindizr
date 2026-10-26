@@ -4,12 +4,10 @@
 use std::str::FromStr;
 
 use chrono::Utc;
-use sqlx::{
-    MySql, Pool, Postgres, Sqlite,
-    mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode},
-    postgres::{PgConnectOptions, PgPoolOptions, PgSslMode},
-    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
-};
+use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{MySql, Pool, Postgres, Sqlite};
 
 pub mod api_token;
 pub mod audit_log;
@@ -35,14 +33,10 @@ pub mod zone;
 pub mod zone_change;
 pub mod zone_version;
 
+use bindizr_core::config;
 pub use bindizr_core::model;
-use bindizr_core::{
-    config,
-    model::{
-        role::Role,
-        role_grant::{Action, ActionSet},
-    },
-};
+use bindizr_core::model::role::Role;
+use bindizr_core::model::role_grant::{Action, ActionSet};
 use error::DatabaseError;
 pub use sql::{AuditLogSortField, ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 use tx::TransactionKind;

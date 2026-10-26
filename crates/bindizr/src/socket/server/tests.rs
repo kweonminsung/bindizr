@@ -102,7 +102,7 @@ async fn accepted_connection_returns_peer_uid() {
     let listener = bind_socket(socket_path).await.unwrap();
 
     let metadata = std::fs::metadata(socket_path).unwrap();
-    let own_uid = read_own_uid().unwrap();
+    let own_uid = socket::read_own_uid().unwrap();
 
     assert_eq!(own_uid, metadata.uid());
 
@@ -163,15 +163,18 @@ async fn prepare_socket_path_rejects_non_socket_file() {
 /// Shutdown waits for committed commands and closes clients still waiting for input.
 #[tokio::test]
 async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
+    use std::time::Duration;
 
-    use bindizr_core::{
-        config::Config,
-        dns::message::{Keepalive, OptRcode, ParsedQuery},
-        metrics::Metrics,
-    };
-    use bindizr_service::{Context, authorization::Caller, secondary};
-    use tokio::{net::UdpSocket, sync::watch, time::timeout};
+    use bindizr_core::config::Config;
+    use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
+    use bindizr_core::metrics::Metrics;
+    use bindizr_service::authorization::Caller;
+    use bindizr_service::{Context, secondary};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+    use tokio::net::UdpSocket;
+    use tokio::sync::watch;
+    use tokio::time;
 
     let mut config: Config = serde_json::from_str("{}").unwrap();
     config.database.sqlite.file_path = "sqlite::memory:".into();
@@ -227,14 +230,14 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
 
     let mut notify = [0; 4096];
 
-    let (len, peer) = timeout(
+    let (len, peer) = time::timeout(
         Duration::from_secs(2),
         secondary_socket.recv_from(&mut notify),
     )
     .await
     .unwrap()
     .unwrap();
-    timeout(Duration::from_secs(2), async {
+    time::timeout(Duration::from_secs(2), async {
         while Arc::strong_count(&socket_cx) < 4 {
             tokio::task::yield_now().await;
         }
@@ -245,7 +248,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     shutdown.trigger();
 
     assert!(
-        timeout(Duration::from_millis(50), &mut server)
+        time::timeout(Duration::from_millis(50), &mut server)
             .await
             .is_err()
     );
@@ -258,7 +261,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
 
     let mut response = String::new();
 
-    timeout(
+    time::timeout(
         Duration::from_secs(2),
         BufReader::new(client).read_line(&mut response),
     )
@@ -270,7 +273,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
 
     assert_eq!(response["data"]["zone"]["name"], "example.com");
 
-    timeout(Duration::from_secs(2), server)
+    time::timeout(Duration::from_secs(2), server)
         .await
         .unwrap()
         .unwrap();

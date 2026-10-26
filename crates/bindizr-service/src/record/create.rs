@@ -1,24 +1,17 @@
-use bindizr_core::{
-    dns::name::ZoneName,
-    model::{record::RecordId, role_grant::Action},
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::validation::{
-    ParsedRecord, normalize_record_owner_name, parse_record_fields, validate_record_constraints,
-};
-use crate::{
-    Context,
-    authorization::{Caller, RecordAccess},
-    dnssec,
-    error::ServiceError,
-    model::record::{Record, RecordData},
-    serial::generate_serial,
-    transaction,
-    types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse},
-    zone::{self, diff::build_record_diff},
-};
+use super::validation;
+use super::validation::ParsedRecord;
+use crate::authorization::{Caller, RecordAccess};
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordData};
+use crate::types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse};
+use crate::zone::diff;
+use crate::{Context, dnssec, serial, transaction, zone};
 
 /// Create a record, bumping the zone serial and recording an ADD change
 /// for IXFR. `caller` is authorized against the zone this tx locked.
@@ -32,7 +25,7 @@ pub async fn create(
         value: record_value,
         priority,
         ttl,
-    } = parse_record_fields(
+    } = validation::parse_record_fields(
         &request.record_type,
         &request.value,
         request.ttl,
@@ -40,7 +33,7 @@ pub async fn create(
     )?;
 
     let zone_name = zone::normalize_name(&request.zone_name)?;
-    let owner_name = normalize_record_owner_name(&request.name, &zone_name)?;
+    let owner_name = validation::normalize_record_owner_name(&request.name, &zone_name)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
@@ -80,7 +73,7 @@ pub async fn create(
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);
 
-        validate_record_constraints(
+        validation::validate_record_constraints(
             &records_at_name,
             &owner_name,
             &record_type,
@@ -111,9 +104,9 @@ pub async fn create(
 
         let mut after = before.clone();
         after.push_written(RecordData::from(candidate.clone()));
-        let diff = build_record_diff(&zone, &before, &after);
+        let diff = diff::build_record_diff(&zone, &before, &after);
 
-        let new_serial = generate_serial(Some(zone.serial));
+        let new_serial = serial::generate_serial(Some(zone.serial));
         let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
 
         // The record is validated and authorized, so a dry run stops here.

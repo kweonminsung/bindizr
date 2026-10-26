@@ -3,21 +3,19 @@
 
 use std::collections::BTreeSet;
 
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    model::{
-        record::RecordType,
-        role::{Role, RoleId},
-        role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope},
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::record::RecordType;
+use bindizr_core::model::role::{Role, RoleId};
+use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope};
+use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
-use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::{Pool, Sqlite};
 
-use crate::{
-    dnssec_record::DnssecRecordFilter, error::DatabaseError, record::RecordFilter, zone::ZoneFilter,
-};
+use crate::dnssec_record::DnssecRecordFilter;
+use crate::error::DatabaseError;
+use crate::record::RecordFilter;
+use crate::zone::ZoneFilter;
 
 /// Owner names text matching gets wrong: `evil\.sub` is one label (RFC 1035,
 /// Section 5.1), and `xsub` shares a suffix with `sub` but not a label.

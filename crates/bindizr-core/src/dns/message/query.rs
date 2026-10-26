@@ -3,24 +3,20 @@
 use std::time::Duration;
 
 pub use domain::base::iana::exterr::ExtendedErrorCode;
-use domain::{
-    base::{
-        Message, Name, Rtype, ToName,
-        iana::{Class, Opcode, OptRcode},
-        message_builder::AdditionalBuilder,
-        opt::{
-            Opt, OptRecord,
-            exterr::ExtendedError,
-            keepalive::{IdleTimeout, TcpKeepalive},
-        },
-        wire::Composer,
-    },
-    rdata::Soa,
-};
+use domain::base::iana::{Class, Opcode, OptRcode};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::opt::exterr::ExtendedError;
+use domain::base::opt::keepalive::{IdleTimeout, TcpKeepalive};
+use domain::base::opt::{Opt, OptRecord};
+use domain::base::wire::Composer;
+use domain::base::{Message, Name, Rtype};
+use domain::rdata::Soa;
 use thiserror::Error;
 
 use super::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
-use crate::dns::{LibraryError, query::EDNS_UDP_PAYLOAD_SIZE, tsig::TransferSigner};
+use crate::dns::LibraryError;
+use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
+use crate::dns::tsig::TransferSigner;
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
@@ -249,6 +245,8 @@ pub struct ParsedQuery {
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
     pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<ParsedQuery, ParseQueryError> {
+        use domain::base::ToName;
+
         let message = Message::from_octets(data)
             .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
 

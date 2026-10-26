@@ -1,10 +1,11 @@
-use bindizr_core::{dns::Serial, model::zone::ZoneId};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    LockLevel, Transaction, error::DatabaseError, model::zone_change::ZoneChange, mysql, postgres,
-    sqlite, tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::zone_change::ZoneChange;
+use crate::tx::TransactionKind;
+use crate::{LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert many zone changes in one statement (chunked). Ids are not returned.
 pub async fn create_many_tx(

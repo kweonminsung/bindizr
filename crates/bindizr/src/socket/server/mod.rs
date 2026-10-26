@@ -14,33 +14,28 @@ mod token;
 mod tsig_key;
 mod zone;
 
-use std::{
-    future::Future,
-    io,
-    os::unix::fs::{FileTypeExt, MetadataExt},
-    path::Path,
-    sync::Arc,
-};
+use std::future::Future;
+use std::io;
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
+use std::sync::Arc;
 
-use bindizr_service::{Context, error::ServiceError, types::ErrorResponse};
+use bindizr_service::Context;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::ErrorResponse;
 use control::DaemonControl;
 use thiserror::Error;
-use tokio::{
-    fs,
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::{UnixListener, UnixStream},
-    sync::mpsc,
-    task::{JoinHandle, JoinSet},
-};
+use tokio::fs;
+use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
+use tokio::task::{JoinHandle, JoinSet};
 
-use crate::{
-    shutdown::Shutdown,
-    socket::{
-        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
-        types::{DaemonCommand, DaemonResponse},
-    },
-    tls::TlsCertificates,
-};
+use crate::shutdown::Shutdown;
+use crate::socket;
+use crate::socket::types::{DaemonCommand, DaemonResponse};
+use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
+use crate::tls::TlsCertificates;
 
 /// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
@@ -132,6 +127,8 @@ async fn handle_client(
     stream: UnixStream,
     stop: impl Future<Output = ()>,
 ) {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
@@ -175,7 +172,7 @@ pub(crate) fn serve(
     listener: UnixListener,
     shutdown: &Shutdown,
 ) -> Result<JoinHandle<()>, ServeSocketError> {
-    let own_uid = read_own_uid().map_err(ServeSocketError::ReadUid)?;
+    let own_uid = socket::read_own_uid().map_err(ServeSocketError::ReadUid)?;
     let stop = shutdown.waiter();
     let client_shutdown = shutdown.clone();
 
@@ -201,7 +198,7 @@ pub(crate) fn serve(
             match accepted {
                 // Connecting grants global access, so the peer is checked before a byte is read.
                 Ok((stream, _)) => match stream.peer_cred() {
-                    Ok(peer) if is_trusted_peer(peer.uid(), own_uid) => {
+                    Ok(peer) if socket::is_trusted_peer(peer.uid(), own_uid) => {
                         let socket_cx = socket_cx.clone();
                         let stop = client_shutdown.waiter();
                         clients.spawn(async move {
@@ -296,6 +293,8 @@ async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathEr
 
 /// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
+    use std::os::unix::fs::FileTypeExt;
+
     if let Some(parent) = Path::new(socket_path).parent() {
         // No chmod of the socket by path, which a writable directory would let
         // someone redirect; the peer check in `serve` is the boundary.
@@ -312,7 +311,7 @@ async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathErro
             });
         }
 
-        let own_uid = read_own_uid()?;
+        let own_uid = socket::read_own_uid()?;
 
         if metadata.uid() != own_uid && metadata.uid() != 0 {
             return Err(BindSocketPathError::ForeignDirectory {

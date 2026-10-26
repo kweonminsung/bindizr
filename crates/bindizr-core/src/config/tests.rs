@@ -1,10 +1,8 @@
 use super::*;
-use crate::{
-    config::{
-        BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
-    },
-    dns::{SoaInterval, name::ZoneName},
-};
+use crate::config;
+use crate::config::{BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel};
+use crate::dns::SoaInterval;
+use crate::dns::name::ZoneName;
 
 /// Deviations from the base config TOML; the default renders a minimal valid
 /// sqlite config.
@@ -438,12 +436,15 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
     let env = |name: &str| (name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string());
 
     assert_eq!(
-        resolve_config_path_with_env(Some("/arg/path.toml"), env),
+        config::resolve_config_path_with_env(Some("/arg/path.toml"), env),
         "/arg/path.toml"
     );
-    assert_eq!(resolve_config_path_with_env(None, env), "/env/path.toml");
     assert_eq!(
-        resolve_config_path_with_env(None, |_| None),
+        config::resolve_config_path_with_env(None, env),
+        "/env/path.toml"
+    );
+    assert_eq!(
+        config::resolve_config_path_with_env(None, |_| None),
         BINDIZR_CONF_PATH
     );
 }

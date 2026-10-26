@@ -1,25 +1,17 @@
-use bindizr_core::{
-    dns::name::OwnerName,
-    model::{record::RecordId, role_grant::Action, zone::ZoneId},
-};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::Transaction;
 use chrono::Utc;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
-    serial::generate_serial,
-    text::normalize_description,
-    transaction,
-    ttl::{normalize_minimum_ttl, normalize_soa_interval},
-    types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse},
-    zone::validation::{normalize_name, normalize_soa, reject_catalog_zone_name},
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
+use crate::zone::validation;
+use crate::{Context, serial, text, transaction, ttl};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME
 /// unless opted out. Additional NS records are caller-managed.
@@ -120,10 +112,10 @@ pub async fn create(
 
 /// Resolve creation defaults once, before opening the transaction.
 fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
-    let name = normalize_name(&request.name)?;
-    reject_catalog_zone_name(cx, &name)?;
+    let name = validation::normalize_name(&request.name)?;
+    validation::reject_catalog_zone_name(cx, &name)?;
     let defaults = &cx.config().dns.zone_defaults;
-    let soa = normalize_soa(
+    let soa = validation::normalize_soa(
         &request.mname,
         &request.rname,
         request.default_ttl.unwrap_or(i64::from(defaults.ttl)),
@@ -137,19 +129,19 @@ fn prepare_create(cx: &Context, request: &CreateZoneRequest) -> Result<Zone, Ser
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: request.apex_ns,
-        description: normalize_description(
+        description: text::normalize_description(
             request.description.as_deref(),
             ServiceError::invalid_zone_field,
         )?,
         default_ttl: soa.ttl,
         serial: match request.serial {
             Some(serial) => serial,
-            None => generate_serial(None),
+            None => serial::generate_serial(None),
         },
-        refresh: normalize_soa_interval(request.refresh, defaults.refresh, "refresh")?,
-        retry: normalize_soa_interval(request.retry, defaults.retry, "retry")?,
-        expire: normalize_soa_interval(request.expire, defaults.expire, "expire")?,
-        minimum_ttl: normalize_minimum_ttl(request.minimum_ttl, defaults.minimum_ttl)?,
+        refresh: ttl::normalize_soa_interval(request.refresh, defaults.refresh, "refresh")?,
+        retry: ttl::normalize_soa_interval(request.retry, defaults.retry, "retry")?,
+        expire: ttl::normalize_soa_interval(request.expire, defaults.expire, "expire")?,
+        minimum_ttl: ttl::normalize_minimum_ttl(request.minimum_ttl, defaults.minimum_ttl)?,
         created_at: Utc::now(),
     })
 }

@@ -1,10 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::*;
-use crate::{
-    dns::{Serial, SoaInterval, name::ZoneName},
-    model::zone::{Zone, ZoneId},
-};
+use crate::dns::name::ZoneName;
+use crate::dns::{Serial, SoaInterval};
+use crate::model::zone::{Zone, ZoneId};
 
 /// A real `dnssec-keygen -a ECDSAP256SHA256` pair (BIND 9.20), so the tests
 /// hold the field spelling and order bindizr must read, not a guess at it.

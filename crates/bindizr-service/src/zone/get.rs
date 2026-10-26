@@ -1,14 +1,11 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
-use crate::{
-    Context, Transaction,
-    authorization::Caller,
-    error::ServiceError,
-    model::zone::Zone,
-    pagination::{build_paginated_response, parse_setting, validate_page_limit},
-    types::{PaginatedResponse, ZoneFilter, ZoneResponse},
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::types::{PaginatedResponse, ZoneFilter, ZoneResponse};
+use crate::{Context, Transaction, pagination};
 
 /// The DNS plane's view of a zone: a disabled one is absent rather than
 /// served. The nsupdate apply and the transfer authorization read it.
@@ -83,7 +80,7 @@ pub async fn list_by_filter(
     }
 
     let scope_role_id = caller.scope_role_id();
-    validate_page_limit(filter.limit)?;
+    pagination::validate_page_limit(filter.limit)?;
     let limit = filter.limit;
     let offset = filter.offset;
     let serial = filter.serial;
@@ -107,8 +104,8 @@ pub async fn list_by_filter(
         enabled: filter.enabled,
         search: filter.search,
         scope_role_id,
-        sort: parse_setting(filter.sort.as_deref())?,
-        order: parse_setting(filter.order.as_deref())?,
+        sort: pagination::parse_setting(filter.sort.as_deref())?,
+        order: pagination::parse_setting(filter.order.as_deref())?,
         limit,
         offset,
     };
@@ -117,7 +114,9 @@ pub async fn list_by_filter(
     let zones = bindizr_db::zone::list_by_filter(cx.db(), zone_filter).await?;
     let items = zones.iter().map(ZoneResponse::from).collect();
 
-    Ok(build_paginated_response(items, limit, offset, total))
+    Ok(pagination::build_paginated_response(
+        items, limit, offset, total,
+    ))
 }
 
 /// Fetch a zone by name for `caller`; a zone it cannot see reads as

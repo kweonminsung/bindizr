@@ -1,20 +1,13 @@
-use bindizr_core::{
-    dns::name::OwnerName,
-    model::{record::RecordId, zone::ZoneId},
-};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-use crate::{
-    LockLevel,
-    error::DatabaseError,
-    model::record::{Record, RecordType, RecordWithZone},
-    record::RecordFilter,
-    sql::{
-        apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, name_like_types_sql,
-        partial_term,
-    },
-};
+use crate::error::DatabaseError;
+use crate::model::record::{Record, RecordType, RecordWithZone};
+use crate::record::RecordFilter;
+use crate::{LockLevel, sql};
 
 /// Insert a batch of records in the current transaction.
 pub(crate) async fn create_many_tx(
@@ -258,15 +251,15 @@ pub(crate) async fn list_by_filter_with_zone(
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let value = filter.value.as_deref().map(partial_term);
+    let value = filter.value.as_deref().map(sql::partial_term);
     let value_exact = filter.value.as_deref().map(str::trim);
-    let search = like_pattern(filter.search.as_deref());
-    let name_like_types = name_like_types_sql();
-    let apex_owner = apex_owner_sql();
+    let search = sql::like_pattern(filter.search.as_deref());
+    let name_like_types = sql::name_like_types_sql();
+    let apex_owner = sql::apex_owner_sql();
 
     // Only fixed SQL fragments are interpolated; caller values stay in bindings.
     let order_by = filter.sort.order_by_sql(filter.order);
-    let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
+    let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_fn);
     let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
@@ -373,12 +366,12 @@ pub(crate) async fn count_by_filter(
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let value = filter.value.as_deref().map(partial_term);
+    let value = filter.value.as_deref().map(sql::partial_term);
     let value_exact = filter.value.as_deref().map(str::trim);
-    let search = like_pattern(filter.search.as_deref());
-    let name_like_types = name_like_types_sql();
-    let apex_owner = apex_owner_sql();
-    let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
+    let search = sql::like_pattern(filter.search.as_deref());
+    let name_like_types = sql::name_like_types_sql();
+    let apex_owner = sql::apex_owner_sql();
+    let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_fn);
     let query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         r#"
         SELECT COUNT(*)

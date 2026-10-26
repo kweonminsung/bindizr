@@ -1,14 +1,11 @@
 use chrono::Utc;
 
 use super::*;
-use crate::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName},
-        record::TxtRecordValue,
-    },
-    model::{record::RecordId, zone::ZoneId},
-};
+use crate::dns::Ttl;
+use crate::dns::name::{OwnerName, ZoneName};
+use crate::dns::record::TxtRecordValue;
+use crate::model::record::RecordId;
+use crate::model::zone::ZoneId;
 
 /// Preserve equivalent escaped whitespace through every name-bearing value encoder.
 #[test]

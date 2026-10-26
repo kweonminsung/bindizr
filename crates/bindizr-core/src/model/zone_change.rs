@@ -1,14 +1,12 @@
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{
-    dns::{Serial, Ttl, name::OwnerName, record::Rdata},
-    model::{
-        dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError},
-        record::RecordType,
-        zone::ZoneId,
-    },
-};
+use crate::dns::name::OwnerName;
+use crate::dns::record::Rdata;
+use crate::dns::{Serial, Ttl};
+use crate::model::dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError};
+use crate::model::record::RecordType;
+use crate::model::zone::ZoneId;
 
 /// One IXFR record change; a CHECK constraint requires exactly one of
 /// `record_value` or `record_rdata`, according to `derived`.

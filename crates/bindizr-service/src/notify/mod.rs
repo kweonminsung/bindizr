@@ -11,7 +11,8 @@ pub use send::{
 use thiserror::Error;
 use tokio::task::JoinSet;
 
-use crate::{Context, error::ServiceError};
+use crate::Context;
+use crate::error::ServiceError;
 
 /// Bound key/address preparation without occupying slots while waiting for ACKs.
 pub(crate) const CONCURRENT_PREPARATIONS: usize = 16;

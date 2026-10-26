@@ -1,28 +1,18 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
-};
-use bindizr_service::{
-    Context,
-    notify::NotifyTarget,
-    types::{ErrorResponse, MessageResponse, NotifySerial},
-    zone,
-};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::notify::NotifyTarget;
+use bindizr_service::types::{ErrorResponse, MessageResponse, NotifySerial};
+use bindizr_service::{Context, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-    },
-    params::NameParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::params::NameParams;
 
 /// Build the notify API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

@@ -5,16 +5,11 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{
-            DnssecPolicyRow, OutputFormat, RenderOutputError, print_page, print_payload,
-            print_response,
-        },
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{DnssecPolicyRow, OutputFormat, RenderOutputError};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing DNSSEC policies, the named signing-parameter
 /// bundles zones sign under.
@@ -151,7 +146,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             )
             .await?;
             log::debug!("DNSSEC policy list result: {:?}", response);
-            print_page(&response.data, output, |item| DnssecPolicyRow::from(item))?;
+            output::print_page(&response.data, output, |item| DnssecPolicyRow::from(item))?;
         }
         DnssecPolicyCommand::Get { name, output } => {
             let response = client::send_command::<SingleDnssecPolicyResponse>(
@@ -191,7 +186,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
     }
@@ -204,7 +199,7 @@ fn print_policy(
     response: &SingleDnssecPolicyResponse,
     output: OutputFormat,
 ) -> Result<(), RenderOutputError> {
-    print_response(response, output, |response| {
+    output::print_response(response, output, |response| {
         vec![DnssecPolicyRow::from(&response.dnssec_policy)]
     })
 }

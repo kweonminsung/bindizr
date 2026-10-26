@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::{dns::address::AddressTarget, model::tsig_key::TsigKeyId};
+use crate::dns::address::AddressTarget;
+use crate::model::tsig_key::TsigKeyId;
 
 id_newtype!(
     /// The id of a secondary row.

@@ -6,7 +6,8 @@ mod key_tag;
 mod rdata;
 mod signed_view;
 
-use domain::base::{Name, iana::Rtype};
+use domain::base::Name;
+use domain::base::iana::Rtype;
 pub use key::GenerateKeyError;
 pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
@@ -14,13 +15,9 @@ pub use rdata::{DS_DIGEST_TYPES, EncodeKeyRdataError};
 pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};
 use thiserror::Error;
 
-use crate::{
-    dns::{
-        LibraryError,
-        name::{OwnerName, ParseNameError, ZoneName},
-    },
-    model::dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError},
-};
+use crate::dns::LibraryError;
+use crate::dns::name::{OwnerName, ParseNameError, ZoneName};
+use crate::model::dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError};
 
 /// A typed name whose wire bytes the `domain` crate did not accept.
 #[derive(Debug, Error)]

@@ -1361,6 +1361,12 @@ ordinary conditions explicit; do not turn them into arrays of steps or callbacks
 The workspace's `manual_let_else` and `redundant_closure_for_method_calls` Clippy
 lints enforce the mechanical part of these rules.
 
+Prefer an explicit `for` loop when iteration mixes conditionals with mutations
+of surrounding state, per-item error handling, or early exits. Keep short
+transformations and expressive combinators such as `any` and `find`; chain
+length alone does not justify a rewrite. Use `for_each` only when it makes the
+operation clearer than a loop.
+
 ### Construction names
 
 Choose a name from the responsibility, not the return type's implementation:
@@ -1444,6 +1450,11 @@ formatting inline.
 A module with file submodules is a directory with `mod.rs`, never a sibling
 `message.rs` beside `message/`. Do not change this to the edition-2018 alternative.
 
+An assembly module keeps module declarations and explicit re-exports together,
+with only small amounts of code connecting its children. This does not require
+moving a type's implementation or a sequenced flow out of `mod.rs`; the split
+criteria below still apply. Re-export the intended API by name, not with `*`.
+
 - Unit-test modules stay inline below **100 lines**, including their braces.
   At 100 lines, move to `<module>/tests.rs`, make the parent a directory if needed,
   and declare `#[cfg(test)] mod tests;` in `mod.rs`. Import `use super::*;` with the
@@ -1503,6 +1514,21 @@ This grouping permits consistent visibility for existing, live operations;
 it does not authorize speculative APIs, unused code, or lint suppression.
 
 ### Imports
+
+Use rustfmt's `imports_granularity = "Module"`: one `use` groups items from the
+same module, without mixing paths inside its braces. Prefer importing types and
+traits directly, subject to the collision rules below.
+
+Call a function from another module through that module (`history::prune_by_zone_id`),
+importing the module rather than its individual functions. Use `super::lookup_by_name`
+for a parent's facade, and retain a longer path when short module names collide.
+Functions defined or re-exported by the current module are its local API.
+
+Use explicit imports and re-exports in production; do not introduce project
+preludes. Tests may use `super::*` for the module under test, including its
+fixtures. A trait needed only for method resolution inside one function is
+imported inside that function. Keep it at module scope when several functions
+need it, or when an impl, bound, derive, or signature refers to it there.
 
 A `use` never renames: `use domain::base::Record as WireRecord` hides which
 name a body reads. A foreign name that collides with one of ours is reached
@@ -1582,6 +1608,12 @@ as private helpers in each test file, even when other files have similar
 copies; do not collect them into shared fixture modules. Test assertions and
 fixture setup may use `unwrap`/`expect`; a test helper's error may be a
 `String`, since a failure ends the test instead of entering application logic.
+
+In multi-case, protocol, and regression tests, add assertion context when the
+default failure output cannot identify the failing case or explain the invariant.
+Include the relevant target, response, or observed state, and explain why the
+condition must hold rather than repeating it. Do not require a message on every
+assertion or print unrelated payloads.
 
 Import/export rules for shared helpers (narrowest visibility that compiles,
 never bare `pub`):

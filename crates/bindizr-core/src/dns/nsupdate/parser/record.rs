@@ -1,21 +1,15 @@
 //! The wire fields of a prerequisite or update record, its update-section
 //! shape, and decoding of its RDATA without losing compression offsets.
 
-use domain::{
-    base::{
-        iana::{Class, Rtype},
-        name::ParsedName,
-    },
-    dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Soa, Srv},
-};
+use domain::base::iana::{Class, Rtype};
+use domain::base::name::ParsedName;
+use domain::dep::octseq::parse::Parser;
+use domain::rdata::{A, Aaaa, Mx, Soa, Srv};
 use thiserror::Error;
 
-use super::{ParseUpdateError, to_presentation_name};
-use crate::{
-    dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue},
-    model::record::RecordType,
-};
+use super::ParseUpdateError;
+use crate::dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue};
+use crate::model::record::RecordType;
 
 /// A prerequisite or update record with an RDATA offset into the original message.
 /// The offset lets the update flow decode compressed names lazily.
@@ -89,8 +83,8 @@ impl UpdateRecord {
     pub fn to_soa_value(&self, message: &[u8]) -> Result<SoaRecordValue<String>, ParseUpdateError> {
         let data = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
         Ok(SoaRecordValue {
-            mname: to_presentation_name(data.mname())?,
-            rname: to_presentation_name(data.rname())?,
+            mname: super::to_presentation_name(data.mname())?,
+            rname: super::to_presentation_name(data.rname())?,
             serial: data.serial().into_int(),
             refresh: data.refresh().as_secs(),
             retry: data.retry().as_secs(),
@@ -153,11 +147,12 @@ impl UpdateRecord {
                 let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
-                let value =
-                    to_presentation_name(&name).map_err(|error| ParseUpdateError::RdataName {
+                let value = super::to_presentation_name(&name).map_err(|error| {
+                    ParseUpdateError::RdataName {
                         record_type: record_type.as_str().to_owned(),
                         source: Box::new(error),
-                    })?;
+                    }
+                })?;
 
                 Ok((record_type, value, None))
             }
@@ -183,12 +178,13 @@ impl UpdateRecord {
                 let data = self.parse_rdata(message, "NAPTR", |parser| {
                     domain::rdata::Naptr::parse(parser).ok()
                 })?;
-                let replacement = to_presentation_name(data.replacement()).map_err(|error| {
-                    ParseUpdateError::RdataName {
-                        record_type: "NAPTR".to_string(),
-                        source: Box::new(error),
-                    }
-                })?;
+                let replacement =
+                    super::to_presentation_name(data.replacement()).map_err(|error| {
+                        ParseUpdateError::RdataName {
+                            record_type: "NAPTR".to_string(),
+                            source: Box::new(error),
+                        }
+                    })?;
                 let value = NaptrRecordValue::from_wire(
                     data.order(),
                     data.preference(),
@@ -215,7 +211,7 @@ impl UpdateRecord {
             }
             RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = to_presentation_name(data.exchange()).map_err(|error| {
+                let host = super::to_presentation_name(data.exchange()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "MX".to_string(),
                         source: Box::new(error),
@@ -226,7 +222,7 @@ impl UpdateRecord {
             }
             RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = to_presentation_name(data.target()).map_err(|error| {
+                let target = super::to_presentation_name(data.target()).map_err(|error| {
                     ParseUpdateError::RdataName {
                         record_type: "SRV".to_string(),
                         source: Box::new(error),

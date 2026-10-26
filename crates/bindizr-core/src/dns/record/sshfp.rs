@@ -1,10 +1,8 @@
 //! SSHFP record values (RFC 4255): SSH host-key fingerprints, verifiable
 //! only from a signed zone.
 
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata,
-    value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
-};
+use super::value::MAX_RECORD_RDATA;
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SshfpRecordValue {
@@ -25,9 +23,12 @@ impl SshfpRecordValue {
         };
 
         Ok(Self {
-            algorithm: parse_u8_record_field("SSHFP algorithm", algorithm)?,
-            fingerprint_type: parse_u8_record_field("SSHFP fingerprint type", fingerprint_type)?,
-            fingerprint: parse_hex_record_field("SSHFP fingerprint", fields)?,
+            algorithm: value::parse_u8_record_field("SSHFP algorithm", algorithm)?,
+            fingerprint_type: value::parse_u8_record_field(
+                "SSHFP fingerprint type",
+                fingerprint_type,
+            )?,
+            fingerprint: value::parse_hex_record_field("SSHFP fingerprint", fields)?,
         })
     }
 
@@ -70,7 +71,7 @@ impl SshfpRecordValue {
             "{} {} {}",
             self.algorithm,
             self.fingerprint_type,
-            hex_upper(&self.fingerprint)
+            value::hex_upper(&self.fingerprint)
         )
     }
 

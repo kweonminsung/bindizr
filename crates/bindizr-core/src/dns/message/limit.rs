@@ -1,7 +1,8 @@
 //! Negotiated response budgets, distinct from fixed field and TCP frame lengths.
 
 use super::{EncodeMessageError, UDP_PAYLOAD_SIZE_WITHOUT_EDNS};
-use crate::dns::{DNS_TCP_MAX_SIZE, query::EDNS_UDP_PAYLOAD_SIZE};
+use crate::dns::DNS_TCP_MAX_SIZE;
+use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
 
 /// The transport and final wire-size ceiling of one DNS response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

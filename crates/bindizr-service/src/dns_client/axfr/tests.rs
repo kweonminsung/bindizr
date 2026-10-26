@@ -1,10 +1,9 @@
 use std::time::Duration;
 
-use bindizr_core::dns::{
-    message::Class,
-    name::encode_name,
-    record::{Rdata, SoaRecordValue},
-};
+use bindizr_core::dns::message::Class;
+use bindizr_core::dns::record::{Rdata, SoaRecordValue};
+use bindizr_core::dns::{message, name};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 
 use super::*;
@@ -76,7 +75,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                     }
                 };
 
-                let question_end = 12 + encode_name("example.com.").unwrap().len() + 4;
+                let question_end = 12 + name::encode_name("example.com.").unwrap().len() + 4;
                 let soa = SoaRecordValue {
                     mname: "ns.example.com.",
                     rname: "admin.example.com.",
@@ -94,7 +93,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                     response[2..4].copy_from_slice(&0x8400u16.to_be_bytes());
                     response[6..8].copy_from_slice(&1u16.to_be_bytes());
                     response[10..12].copy_from_slice(&1u16.to_be_bytes());
-                    response.extend_from_slice(&encode_name("example.com.").unwrap());
+                    response.extend_from_slice(&name::encode_name("example.com.").unwrap());
                     response.extend_from_slice(&[0, 6, 0, 1, 0, 0, 1, 44]);
                     response.extend_from_slice(&(soa.as_bytes().len() as u16).to_be_bytes());
                     response.extend_from_slice(soa.as_bytes());
@@ -109,7 +108,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                     }
 
                     stream
-                        .write_all(&encode_tcp_message(&response).unwrap())
+                        .write_all(&message::encode_tcp_message(&response).unwrap())
                         .await
                         .unwrap();
                 }
@@ -171,7 +170,7 @@ async fn fetch_transfer(
 
         // The query carries an OPT; the reply copies its question alone:
         // the header, the name, then QTYPE and QCLASS.
-        let question_end = 12 + encode_name("example.com.").unwrap().len() + 4;
+        let question_end = 12 + name::encode_name("example.com.").unwrap().len() + 4;
 
         for (index, rdata) in [opening, closing].iter().enumerate() {
             let mut response = if index == 0 {
@@ -184,7 +183,7 @@ async fn fetch_transfer(
             response[10..12].copy_from_slice(&0u16.to_be_bytes());
             response[2..4].copy_from_slice(&0x8400u16.to_be_bytes());
             response[6..8].copy_from_slice(&1u16.to_be_bytes());
-            response.extend_from_slice(&encode_name("example.com.").unwrap());
+            response.extend_from_slice(&name::encode_name("example.com.").unwrap());
             response.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
             response.extend_from_slice(&Class::IN.to_int().to_be_bytes());
             response.extend_from_slice(&300u32.to_be_bytes());
@@ -193,7 +192,7 @@ async fn fetch_transfer(
             response.extend_from_slice(rdata.as_bytes());
 
             stream
-                .write_all(&encode_tcp_message(&response).unwrap())
+                .write_all(&message::encode_tcp_message(&response).unwrap())
                 .await
                 .unwrap();
         }

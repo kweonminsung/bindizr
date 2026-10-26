@@ -1,27 +1,21 @@
 //! Checks that go through a running daemon: its socket, its HTTP API, and
 //! what it reports about its database, listener, and secondaries.
 
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
 use axum::http::StatusCode;
-use bindizr_core::{
-    config::Config,
-    dns::{Serial, address::loopback_if_unspecified},
-};
+use bindizr_core::config::Config;
+use bindizr_core::dns::{Serial, address};
 use bindizr_service::types::SecondaryStatus;
 use thiserror::Error;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-};
+use tokio::net::TcpStream;
 
 use super::Report;
-use crate::{
-    cli::output::display_transfer_summary,
-    socket::{
-        client,
-        types::{DaemonCommand, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
-    },
+use crate::cli::output;
+use crate::socket::client;
+use crate::socket::types::{
+    DaemonCommand, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus,
 };
 
 /// Why the API did not answer a probe as a reachable API.
@@ -68,7 +62,7 @@ pub(crate) async fn check_running(report: &mut Report) -> bool {
 /// Check API reachability at the daemon's configured address.
 pub(crate) async fn check_api(config: &Config, report: &mut Report) {
     let addr = SocketAddr::new(
-        loopback_if_unspecified(config.api.listen_addr),
+        address::loopback_if_unspecified(config.api.listen_addr),
         config.api.listen_port,
     );
 
@@ -97,6 +91,8 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
 /// Minimal HTTP GET returning the status line; a plain-HTTP API needs no full
 /// HTTP client dependency here.
 async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiError> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await?;
 
@@ -224,7 +220,7 @@ pub(crate) async fn check_services(report: &mut Report) {
         let line = format!(
             "Transfers to {}: {}",
             transfer.address,
-            display_transfer_summary(&transfer.summary)
+            output::display_transfer_summary(&transfer.summary)
         );
 
         if transfer.summary.zones == 0 {

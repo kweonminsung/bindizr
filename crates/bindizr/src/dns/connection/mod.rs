@@ -1,16 +1,18 @@
 //! Framed queries on an established TCP or TLS connection.
 
-use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::future::Future;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use bindizr_core::dns::message::{self, Keepalive, Rtype};
-use tokio::{task::JoinSet, time::timeout};
+use tokio::task::JoinSet;
+use tokio::time;
 
-use super::{
-    error::DnsError,
-    server::{self, DnsContext},
-    stream::{DnsStream, ResponseWriter},
-    wire,
-};
+use super::error::DnsError;
+use super::server::{self, DnsContext};
+use super::stream::{DnsStream, ResponseWriter};
+use super::wire;
 
 /// Bound concurrent queries on one connection.
 const MAX_QUERIES_IN_FLIGHT: usize = 16;
@@ -44,7 +46,7 @@ pub(crate) async fn serve_connection(
             if busy {
                 read.await
             } else {
-                match timeout(idle_timeout, read).await {
+                match time::timeout(idle_timeout, read).await {
                     Ok(result) => result,
                     Err(_) => {
                         log::info!(

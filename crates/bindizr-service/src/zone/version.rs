@@ -1,12 +1,12 @@
-use bindizr_core::{dns::Serial, model::zone_version::ZoneVersionId};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::zone_version::ZoneVersionId;
 use chrono::Utc;
 
-use crate::{
-    Transaction,
-    change::ChangeOrigin,
-    error::ServiceError,
-    model::{zone::Zone, zone_version::ZoneVersion},
-};
+use crate::Transaction;
+use crate::change::ChangeOrigin;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::model::zone_version::ZoneVersion;
 
 /// Advance the zone serial so IXFR consumers detect the change, and
 /// version it in the same transaction.

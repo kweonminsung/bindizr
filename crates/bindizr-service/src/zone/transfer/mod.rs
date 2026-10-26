@@ -1,23 +1,22 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
 //! to the caller its key became, decided on the locked row it will serve.
 
-use bindizr_core::{
-    dns::{CatalogZone, name::ZoneName},
-    model::role_grant::Action,
-};
+use bindizr_core::dns::CatalogZone;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
 mod ixfr;
 
 pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
-use crate::{
-    Context, Transaction,
-    authorization::Caller,
-    error::{ErrorCode, ServiceError},
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_version::ZoneVersionId},
-    transaction,
-};
+use crate::authorization::Caller;
+use crate::error::{ErrorCode, ServiceError};
+use crate::model::dnssec_record::DnssecRecord;
+use crate::model::record::Record;
+use crate::model::zone::Zone;
+use crate::model::zone_version::ZoneVersionId;
+use crate::{Context, Transaction, transaction};
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
 /// the DNS plane owes instead.

@@ -1,21 +1,16 @@
 //! Authenticate an UPDATE request and hand its complete sections to the
 //! service. Transport policy and response signing stay at this boundary.
 
-use bindizr_core::{
-    dns::{
-        message::OptRcode,
-        name::{ParseNameError, ZoneName},
-        nsupdate::parser::UpdateRequest,
-        tsig::{ResponseSigner, TsigError},
-    },
-    model::{transfer::TransferTransport, tsig_key::TsigKey},
-};
-use bindizr_service::{
-    authorization::Caller,
-    error::ServiceError,
-    nsupdate::{self, NsupdateError, Update},
-    tsig_key,
-};
+use bindizr_core::dns::message::OptRcode;
+use bindizr_core::dns::name::{ParseNameError, ZoneName};
+use bindizr_core::dns::nsupdate::parser::UpdateRequest;
+use bindizr_core::dns::tsig::{ResponseSigner, TsigError};
+use bindizr_core::model::transfer::TransferTransport;
+use bindizr_core::model::tsig_key::TsigKey;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::nsupdate::{self, NsupdateError, Update};
+use bindizr_service::tsig_key;
 use thiserror::Error;
 
 use crate::dns::server::DnsContext;
@@ -136,15 +131,17 @@ pub(crate) async fn authenticate_tsig_key(
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
 
-    use bindizr_core::dns::{message::Rcode, nsupdate::parser::ValidateUpdateShapeError};
+    use bindizr_core::dns::message::Rcode;
+    use bindizr_core::dns::nsupdate::parser::ValidateUpdateShapeError;
 
     use super::*;
 
     /// Preserve the complete parser and backend source chains through the DNS boundary.
     #[test]
     fn update_errors_retain_sources_across_layers() {
+        use std::error::Error;
+
         let error = UpdateError::from(NsupdateError::from(ValidateUpdateShapeError::NonzeroTtl));
         let nsupdate = error
             .source()

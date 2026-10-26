@@ -1,13 +1,9 @@
 //! Error and truncated replies, including requests without a readable question.
 
-use domain::{
-    base::{
-        Message, Name, Question, ToName,
-        iana::{Opcode, OptRcode},
-        message_builder::{AdditionalBuilder, TreeCompressor},
-    },
-    rdata::tsig::Time48,
-};
+use domain::base::iana::{Opcode, OptRcode};
+use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
+use domain::base::{Message, Name, Question};
+use domain::rdata::tsig::Time48;
 
 use super::{
     Edns, EncodeMessageError, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
@@ -36,6 +32,8 @@ impl QueryMetadata {
 
     /// Retain response metadata from sections with readable DNS framing.
     pub(crate) fn from_message(message: &Message<&[u8]>, keepalive: Keepalive) -> Self {
+        use domain::base::ToName;
+
         let readable = has_readable_sections(message.as_slice());
         Self {
             query_id: message.header().id(),

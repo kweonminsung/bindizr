@@ -1,13 +1,11 @@
-use bindizr_core::{dns::Serial, model::zone::ZoneId};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    Backend, Db, LockLevel, Transaction,
-    error::DatabaseError,
-    model::zone_version::{VersionFilter, ZoneVersion},
-    mysql, postgres, sqlite,
-    tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::zone_version::{VersionFilter, ZoneVersion};
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert or update a zone version in the current transaction.
 pub async fn upsert_tx(

@@ -188,13 +188,14 @@ fn append_entry(
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
 
     use super::*;
 
     /// Preserve the WKS parse cause until the zone-file result renders its diagnostic.
     #[test]
     fn rewrite_native_records_preserves_value_error_and_source_line() {
+        use std::error::Error;
+
         let content = "@ IN NS ns.example.com.\nhost IN WKS 192.0.2.1 256 80\n";
         let error = rewrite_native_records(content).unwrap_err();
         let source = error.source().unwrap();

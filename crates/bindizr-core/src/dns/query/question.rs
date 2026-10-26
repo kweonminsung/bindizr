@@ -1,11 +1,9 @@
 //! Compose outbound questions, leaving finalization to the caller when signing is optional.
 
-use domain::base::{
-    MessageBuilder, Name,
-    iana::{Opcode, Rtype},
-    message_builder::AdditionalBuilder,
-    opt::keepalive::TcpKeepalive,
-};
+use domain::base::iana::{Opcode, Rtype};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::opt::keepalive::TcpKeepalive;
+use domain::base::{MessageBuilder, Name};
 
 use super::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TsigSigningKey;

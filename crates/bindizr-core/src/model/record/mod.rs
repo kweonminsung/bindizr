@@ -5,20 +5,15 @@ use domain::base::iana::Rtype;
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName, trim_presentation_name},
-        record::{
-            ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-            DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
-            NaptrRecordValue, NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata,
-            SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
-            WksRecordValue,
-        },
-    },
-    model::zone::ZoneId,
+use crate::dns::name::{OwnerName, ZoneName};
+use crate::dns::record::{
+    ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
+    DnameRecordValue, DsRecordValue, EncodeRdataError, EncodedRdata, MxRecordValue,
+    NaptrRecordValue, NsRecordValue, ParseRecordValueError, PtrRecordValue, Rdata, SrvRecordValue,
+    SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue, WksRecordValue,
 };
+use crate::dns::{Ttl, name};
+use crate::model::zone::ZoneId;
 
 id_newtype!(
     /// The id of a record row.
@@ -456,7 +451,7 @@ impl RecordType {
     ) -> Result<String, ParseRecordValueError> {
         // Names retain escaped whitespace; other grammars trim or parse their own fields.
         let trimmed = value.trim();
-        let name = trim_presentation_name(value);
+        let name = name::trim_presentation_name(value);
 
         match self {
             RecordType::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),

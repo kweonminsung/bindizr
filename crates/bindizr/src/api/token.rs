@@ -1,31 +1,21 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::role::grant;
+use bindizr_service::types::{
+    CreateTokenRequest, CreateTokenResponse, DEFAULT_PAGE_LIMIT, ErrorResponse, MessageResponse,
+    PageRequest, PaginatedResponse, RoleGrantResponse, SingleTokenResponse, TokenFilter,
+    TokenResponse,
 };
-use bindizr_service::{
-    Context,
-    role::grant,
-    token,
-    types::{
-        CreateTokenRequest, CreateTokenResponse, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        MessageResponse, PageRequest, PaginatedResponse, RoleGrantResponse, SingleTokenResponse,
-        TokenFilter, TokenResponse,
-    },
-};
+use bindizr_service::{Context, token};
 
-use crate::{
-    api::{
-        AuthenticatedToken, RequestCaller,
-        error::{ApiError, Path, Query},
-        middleware::body_parser::JsonBody,
-    },
-    params::NameParams,
-};
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::middleware::body_parser::JsonBody;
+use crate::api::{AuthenticatedToken, RequestCaller};
+use crate::params::NameParams;
 
 /// Build the token API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

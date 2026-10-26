@@ -1,14 +1,17 @@
 //! Table rows for CLI output, each built from the typed daemon response so
 //! the column set is all this module decides; the cells come from `display`.
 
-use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, dnssec::KeyTag},
-    model::{
-        api_token::TokenId, dnssec_key::DnssecKeyId, dnssec_policy::PolicyId, record::RecordId,
-        role::RoleId, role_grant::RoleGrantId, secondary::SecondaryId, tsig_key::TsigKeyId,
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::dnssec_key::DnssecKeyId;
+use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::zone::ZoneId;
 use bindizr_service::types::{
     AuditLogResponse, CreateTokenResponse, DnssecKeyResponse, DnssecPolicyResponse,
     ImportZoneResponse, ImportZonesItemResponse, RecordResponse, RoleGrantResponse, RoleResponse,
@@ -18,14 +21,12 @@ use bindizr_service::types::{
 };
 use tabled::Tabled;
 
-use super::display::{
-    MISSING_CELL, display_option, display_option_time, display_record_value, display_serial_lag,
-    display_time, display_transfer, display_transfer_kind, display_yes_no,
-};
+use super::display;
+use super::display::MISSING_CELL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ZoneRow {
-    #[tabled(rename = "ID", display = "display_option")]
+    #[tabled(rename = "ID", display = "display::display_option")]
     pub(crate) id: Option<ZoneId>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
@@ -65,15 +66,15 @@ impl From<&ZoneResponse> for ZoneRow {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: i64::from(zone.minimum_ttl),
-            served: display_yes_no(&zone.enabled),
-            description: display_option(&zone.description),
+            served: display::display_yes_no(&zone.enabled),
+            description: display::display_option(&zone.description),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct RecordRow {
-    #[tabled(rename = "ID", display = "display_option")]
+    #[tabled(rename = "ID", display = "display::display_option")]
     pub(crate) id: Option<RecordId>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
@@ -83,7 +84,7 @@ pub(crate) struct RecordRow {
     pub(crate) value: String,
     #[tabled(rename = "TTL")]
     pub(crate) ttl: Ttl,
-    #[tabled(rename = "PRIORITY", display = "display_option")]
+    #[tabled(rename = "PRIORITY", display = "display::display_option")]
     pub(crate) priority: Option<i32>,
     #[tabled(rename = "ZONE-ID")]
     pub(crate) zone_id: ZoneId,
@@ -96,7 +97,7 @@ impl From<&RecordResponse> for RecordRow {
     /// not widen the column.
     fn from(record: &RecordResponse) -> Self {
         RecordRow {
-            value: display_record_value(&record.value),
+            value: display::display_record_value(&record.value),
             ..Self::whole(record)
         }
     }
@@ -147,12 +148,12 @@ impl From<&DnssecKeyResponse> for DnssecKeyRow {
             id: key.id,
             role: key.role.to_string(),
             state: key.state.to_string(),
-            state_changed_at: display_time(key.state_changed_at),
-            eligible_at: display_option_time(&key.eligible_at),
+            state_changed_at: display::display_time(key.state_changed_at),
+            eligible_at: display::display_option_time(&key.eligible_at),
             algorithm: key.algorithm.to_string(),
             key_tag: key.key_tag,
             dnskey: key.dnskey.clone(),
-            created_at: display_time(key.created_at),
+            created_at: display::display_time(key.created_at),
         }
     }
 }
@@ -195,7 +196,7 @@ impl From<&DnssecPolicyResponse> for DnssecPolicyRow {
             } else {
                 format!("{}d", policy.zsk_lifetime_days)
             },
-            created_at: display_time(policy.created_at),
+            created_at: display::display_time(policy.created_at),
         }
     }
 }
@@ -223,9 +224,9 @@ impl From<&SecondaryResponse> for SecondaryRow {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.clone(),
-            enabled: display_yes_no(&secondary.enabled),
-            notify_key_name: display_option(&secondary.notify_key_name),
-            created_at: display_time(secondary.created_at),
+            enabled: display::display_yes_no(&secondary.enabled),
+            notify_key_name: display::display_option(&secondary.notify_key_name),
+            created_at: display::display_time(secondary.created_at),
         }
     }
 }
@@ -269,8 +270,8 @@ impl From<&ZoneVersionResponse> for VersionRow {
             expire: version.expire,
             minimum_ttl: i64::from(version.minimum_ttl),
             change_source: version.change_source.to_string(),
-            changed_by: display_option(&version.changed_by),
-            created_at: display_time(version.created_at),
+            changed_by: display::display_option(&version.changed_by),
+            created_at: display::display_time(version.created_at),
         }
     }
 }
@@ -286,7 +287,7 @@ pub(crate) struct VersionRecordRow {
     pub(crate) value: String,
     #[tabled(rename = "TTL")]
     pub(crate) ttl: Ttl,
-    #[tabled(rename = "PRIORITY", display = "display_option")]
+    #[tabled(rename = "PRIORITY", display = "display::display_option")]
     pub(crate) priority: Option<i32>,
 }
 
@@ -296,7 +297,7 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
         VersionRecordRow {
             name: record.name.clone(),
             record_type: record.record_type.to_string(),
-            value: display_record_value(&record.value),
+            value: display::display_record_value(&record.value),
             ttl: record.ttl,
             priority: record.priority,
         }
@@ -309,9 +310,9 @@ pub(crate) struct RollbackSummaryRow {
     pub(crate) target_serial: u32,
     #[tabled(rename = "NEW-SERIAL")]
     pub(crate) new_serial: u32,
-    #[tabled(rename = "APPLIED", display = "display_yes_no")]
+    #[tabled(rename = "APPLIED", display = "display::display_yes_no")]
     pub(crate) applied: bool,
-    #[tabled(rename = "DRY-RUN", display = "display_yes_no")]
+    #[tabled(rename = "DRY-RUN", display = "display::display_yes_no")]
     pub(crate) dry_run: bool,
     #[tabled(rename = "ADDED")]
     pub(crate) added: u64,
@@ -375,12 +376,16 @@ impl SecondaryStatusRow {
         SecondaryStatusRow {
             address: secondary.address.clone(),
             status: detail,
-            visible_serial: display_option(&secondary.visible_serial),
-            lag: display_serial_lag(zone_serial, secondary.visible_serial, secondary.status),
+            visible_serial: display::display_option(&secondary.visible_serial),
+            lag: display::display_serial_lag(
+                zone_serial,
+                secondary.visible_serial,
+                secondary.status,
+            ),
             last_transfer: secondary
                 .last_transfer
                 .as_ref()
-                .map_or_else(|| MISSING_CELL.to_string(), display_transfer),
+                .map_or_else(|| MISSING_CELL.to_string(), display::display_transfer),
         }
     }
 }
@@ -388,9 +393,9 @@ impl SecondaryStatusRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Tabled)]
 pub(crate) struct ImportSummaryRow {
     /// The counts describe the plan, which a rejected file never applies.
-    #[tabled(rename = "APPLIED", display = "display_yes_no")]
+    #[tabled(rename = "APPLIED", display = "display::display_yes_no")]
     pub(crate) applied: bool,
-    #[tabled(rename = "DRY-RUN", display = "display_yes_no")]
+    #[tabled(rename = "DRY-RUN", display = "display::display_yes_no")]
     pub(crate) dry_run: bool,
     #[tabled(rename = "PARSED")]
     pub(crate) parsed: u64,
@@ -450,7 +455,7 @@ impl From<&ImportZonesItemResponse> for ImportZonesRow {
     /// Build a table row from one zone's outcome.
     fn from(item: &ImportZonesItemResponse) -> Self {
         let summary = item.import.as_ref().map(|import| import.summary);
-        let count = |value: Option<u64>| display_option(&value);
+        let count = |value: Option<u64>| display::display_option(&value);
 
         ImportZonesRow {
             zone_name: item.zone_name.clone(),
@@ -461,7 +466,7 @@ impl From<&ImportZonesItemResponse> for ImportZonesRow {
             updated: count(summary.map(|summary| summary.updated)),
             unchanged: count(summary.map(|summary| summary.unchanged)),
             skipped: count(summary.map(|summary| summary.skipped)),
-            error: display_option(&item.error.as_ref().map(|error| &error.error)),
+            error: display::display_option(&item.error.as_ref().map(|error| &error.error)),
         }
     }
 }
@@ -495,13 +500,13 @@ impl From<&TokenResponse> for TokenRow {
             name: token.name.clone(),
             token: MISSING_CELL.to_string(),
             role_name: token.role_name.clone(),
-            description: display_option(&token.description),
-            created_at: display_time(token.created_at),
+            description: display::display_option(&token.description),
+            created_at: display::display_time(token.created_at),
             expires_at: token
                 .expires_at
-                .map(display_time)
+                .map(display::display_time)
                 .unwrap_or_else(|| "Never".to_string()),
-            last_used_at: display_option_time(&token.last_used_at),
+            last_used_at: display::display_option_time(&token.last_used_at),
         }
     }
 }
@@ -542,7 +547,7 @@ impl From<&TsigKeyResponse> for TsigKeyRow {
             algorithm: key.algorithm.to_string(),
             secret: MISSING_CELL.to_string(),
             role_name: key.role_name.clone(),
-            created_at: display_time(key.created_at),
+            created_at: display::display_time(key.created_at),
         }
     }
 }
@@ -583,12 +588,12 @@ impl From<&RoleResponse> for RoleRow {
         RoleRow {
             id: role.id,
             name: role.name.clone(),
-            builtin: display_yes_no(&role.builtin),
+            builtin: display::display_yes_no(&role.builtin),
             grant_count: role.grant_count,
             token_count: role.token_count,
             tsig_key_count: role.tsig_key_count,
-            description: display_option(&role.description),
-            created_at: display_time(role.created_at),
+            description: display::display_option(&role.description),
+            created_at: display::display_time(role.created_at),
         }
     }
 }
@@ -627,7 +632,7 @@ impl From<&RoleGrantResponse> for RoleGrantRow {
                 .join(","),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
-            created_at: display_time(grant.created_at),
+            created_at: display::display_time(grant.created_at),
         }
     }
 }
@@ -657,12 +662,12 @@ impl From<&TransferResponse> for TransferRow {
     fn from(transfer: &TransferResponse) -> Self {
         TransferRow {
             zone_name: transfer.zone_name.clone(),
-            transfer: display_transfer_kind(transfer),
+            transfer: display::display_transfer_kind(transfer),
             transport: transfer.transport.to_string(),
-            serial: display_option(&transfer.serial),
+            serial: display::display_option(&transfer.serial),
             address: transfer.address.clone(),
-            at: display_time(transfer.at),
-            error: display_option(&transfer.error),
+            at: display::display_time(transfer.at),
+            error: display::display_option(&transfer.error),
         }
     }
 }
@@ -690,13 +695,13 @@ impl From<&AuditLogResponse> for AuditLogRow {
     /// Build a table row from one audit log row.
     fn from(log: &AuditLogResponse) -> Self {
         AuditLogRow {
-            at: display_time(log.created_at),
+            at: display::display_time(log.created_at),
             entity: log.entity.to_string(),
             entity_name: log.entity_name.clone(),
             operation: log.operation.to_string(),
             change_source: log.change_source.to_string(),
-            changed_by: display_option(&log.changed_by),
-            detail: display_option(&log.detail),
+            changed_by: display::display_option(&log.changed_by),
+            detail: display::display_option(&log.detail),
         }
     }
 }

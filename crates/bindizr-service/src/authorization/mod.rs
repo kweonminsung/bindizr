@@ -1,31 +1,22 @@
 //! Authorize [`Caller`] through role grants: invisible zones yield 404, denied actions 403.
 //! Socket callers are unrestricted; DNS callers use TSIG or explicitly admitted unsigned access.
 
-use bindizr_core::{
-    dns::name::OwnerName,
-    model::{
-        api_token::TokenId,
-        role::RoleId,
-        role_grant::{Action, RoleGrant, RoleGrants},
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrants};
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use crate::{
-    Context, Transaction,
-    change::ChangeOrigin,
-    error::ServiceError,
-    model::{
-        api_token::ApiToken,
-        change::{ChangeActor, ChangeSource},
-        record::{Record, RecordData, RecordType},
-        tsig_key::{TsigKey, TsigKeyId},
-        zone::Zone,
-    },
-    token::hash_token,
-};
+use crate::change::ChangeOrigin;
+use crate::error::ServiceError;
+use crate::model::api_token::ApiToken;
+use crate::model::change::{ChangeActor, ChangeSource};
+use crate::model::record::{Record, RecordData, RecordType};
+use crate::model::tsig_key::{TsigKey, TsigKeyId};
+use crate::model::zone::Zone;
+use crate::{Context, Transaction, token};
 
 /// A request's access rights and change origin, kept as independent facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,7 +205,7 @@ impl Caller {
         cx: &Context,
         bearer_token: &str,
     ) -> Result<(Caller, ApiToken), ServiceError> {
-        let token_hash = hash_token(bearer_token);
+        let token_hash = token::hash_token(bearer_token);
 
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
             Ok(Some(token)) => token,

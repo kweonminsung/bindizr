@@ -1,9 +1,10 @@
-use bindizr_core::model::{role::RoleId, tsig_key::TsigKeyId};
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::tsig_key::TsigKeyId;
 
-use crate::{
-    Backend, Db, LockLevel, Transaction, error::DatabaseError, model::tsig_key::TsigKey, mysql,
-    postgres, sqlite, tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::tsig_key::TsigKey;
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert a TSIG key.
 pub async fn create_tx(tx: &mut Transaction<'_>, key: TsigKey) -> Result<TsigKey, DatabaseError> {

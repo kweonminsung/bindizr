@@ -1,20 +1,13 @@
 //! Authoritative parent DS responder with configurable records and metadata.
 
-use std::{
-    net::{SocketAddr, UdpSocket},
-    str::FromStr,
-    sync::{Arc, Mutex},
-    thread,
-};
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use base64::Engine;
-use domain::{
-    base::{
-        Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl,
-        iana::{Class, DigestAlgorithm, OptRcode, SecurityAlgorithm},
-    },
-    rdata::{Ds, Soa},
-};
+use domain::base::iana::{Class, DigestAlgorithm, OptRcode, SecurityAlgorithm};
+use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl};
+use domain::rdata::{Ds, Soa};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
 
@@ -58,6 +51,8 @@ impl DsRecord {
         key_tag: u16,
         ttl: u32,
     ) -> Self {
+        use std::str::FromStr;
+
         let dnskey = dnssec["keys"]
             .as_array()
             .expect("status carries keys")

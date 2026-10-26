@@ -4,7 +4,8 @@ use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
-use crate::{Context, error::ServiceError, transaction};
+use crate::error::ServiceError;
+use crate::{Context, transaction};
 
 /// Rows one prune removed from a zone's history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

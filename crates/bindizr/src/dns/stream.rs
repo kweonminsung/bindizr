@@ -1,23 +1,19 @@
 //! Plain/TLS DNS streams and the write half shared by concurrent queries.
 
-use std::{
-    io,
-    pin::Pin,
-    task::{self, Poll},
-};
+use std::io;
+use std::pin::Pin;
+use std::task::{self, Poll};
 
-use bindizr_core::{
-    dns::message::{DnsMessageBuilder, EncodeMessageError, encode_tcp_message},
-    model::transfer::TransferTransport,
-};
-use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf, ReadHalf, WriteHalf},
-    net::TcpStream,
-    sync::{Mutex, watch},
-};
+use bindizr_core::dns::message;
+use bindizr_core::dns::message::{DnsMessageBuilder, EncodeMessageError};
+use bindizr_core::model::transfer::TransferTransport;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf, ReadHalf, WriteHalf};
+use tokio::net::TcpStream;
+use tokio::sync::{Mutex, watch};
 use tokio_rustls::server::TlsStream;
 
-use crate::dns::{error::DnsError, wire};
+use crate::dns::error::DnsError;
+use crate::dns::wire;
 
 /// A connection as its listener accepted it: a plain TCP socket, or a TLS
 /// session over one (XoT, RFC 9103).
@@ -152,7 +148,7 @@ impl ResponseWriter {
 
     /// Write one DNS message as a TCP frame.
     pub(crate) async fn write_message(&self, message: &[u8]) -> Result<(), DnsError> {
-        let frame = encode_tcp_message(message)?;
+        let frame = message::encode_tcp_message(message)?;
         self.write_frame(&frame).await
     }
 
@@ -213,15 +209,19 @@ impl ResponseWriter {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
+    use std::time::Duration;
 
-    use tokio::{io::AsyncReadExt as _, net::TcpListener, time::timeout};
+    use tokio::net::TcpListener;
+    use tokio::time;
 
     use super::*;
 
     /// A known failure suppresses queued frames and wakes connection waiters.
     #[tokio::test]
     async fn failed_connection_suppresses_queued_responses() {
+        use tokio::io::AsyncReadExt as _;
+
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let (client, accepted) = tokio::join!(
             TcpStream::connect(listener.local_addr().unwrap()),
@@ -241,7 +241,7 @@ mod tests {
 
         writer.fail();
 
-        timeout(Duration::from_secs(1), writer.failed())
+        time::timeout(Duration::from_secs(1), writer.failed())
             .await
             .unwrap();
 
@@ -256,7 +256,7 @@ mod tests {
         drop(writer);
         let mut received = Vec::new();
 
-        timeout(Duration::from_secs(1), client.read_to_end(&mut received))
+        time::timeout(Duration::from_secs(1), client.read_to_end(&mut received))
             .await
             .unwrap()
             .unwrap();

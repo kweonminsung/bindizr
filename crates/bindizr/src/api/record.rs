@@ -1,31 +1,21 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::{DefaultBodyLimit, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{
+    CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
+    DeleteRecordsRequest, DeleteRecordsResponse, ErrorResponse, PaginatedResponse, RecordFilter,
+    RecordResponse, Run, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
 };
-use bindizr_service::{
-    Context, record,
-    types::{
-        CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
-        DEFAULT_PAGE_LIMIT, DeleteRecordsRequest, DeleteRecordsResponse, ErrorResponse,
-        PaginatedResponse, RecordFilter, RecordResponse, Run, SingleRecordResponse,
-        UpdateRecordRequest, WriteRecordResponse,
-    },
-};
+use bindizr_service::{Context, record};
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-        middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-        query::DryRunQuery,
-    },
-    params::IdParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES};
+use crate::api::query::DryRunQuery;
+use crate::params::IdParams;
 
 /// Build the record API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

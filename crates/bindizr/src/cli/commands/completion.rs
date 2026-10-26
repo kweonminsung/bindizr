@@ -1,11 +1,12 @@
 //! Completion scripts and the man page, generated from the clap command the
 //! binary parses with, so they cannot drift from `--help`.
 
-use bindizr_core::stream::write_stdout;
+use bindizr_core::stream;
 use clap::CommandFactory;
 use clap_complete::Shell;
 
-use crate::cli::{Args, error::CliError};
+use crate::cli::Args;
+use crate::cli::error::CliError;
 
 /// Print the completion script for `shell` on stdout.
 pub(crate) fn handle_command(shell: Shell) -> Result<(), CliError> {
@@ -37,6 +38,6 @@ fn write_generated(bytes: &[u8]) -> Result<(), CliError> {
     let text = std::str::from_utf8(bytes).map_err(|error| {
         CliError::request_with_source(format!("generated output was not UTF-8: {}", error), error)
     })?;
-    write_stdout(text);
+    stream::write_stdout(text);
     Ok(())
 }

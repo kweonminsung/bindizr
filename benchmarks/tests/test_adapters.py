@@ -100,6 +100,55 @@ class AdapterTests(IsolatedAsyncioTestCase):
             await asyncio.gather(first, second)
         self.assertEqual(set(adapter.records), {"old|A", "new|A"})
 
+    async def test_every_file_adapter_serializes_and_publishes_accepted_candidates(self):
+        """Share snapshot mutation semantics while publishers keep their readiness rules."""
+        for adapter in self.adapters():
+            entered, release = asyncio.Event(), asyncio.Event()
+
+            async def publish(candidate):
+                """Hold publication before the common snapshot is advanced."""
+                entered.set()
+                await release.wait()
+                return True
+
+            with self.subTest(adapter=adapter.key), \
+                    patch.object(adapter, "_flush_and_reload", side_effect=publish):
+                first = asyncio.create_task(adapter.create_record("bench.example", self.record))
+                second = None
+                try:
+                    await asyncio.wait_for(entered.wait(), 2)
+                    self.assertEqual(adapter.records, {})
+                    second = asyncio.create_task(adapter.create_record("bench.example", self.old))
+                finally:
+                    release.set()
+                    await asyncio.gather(*(task for task in (first, second) if task is not None))
+                self.assertEqual(set(adapter.records), {"old|A", "new|A"})
+
+    async def test_cancelled_publication_preserves_state_and_releases_the_write_lock(self):
+        """Cancel pending publication without retaining a candidate or blocking later writes."""
+        for adapter in self.adapters():
+            adapter.records = {"old|A": self.old}
+            entered = asyncio.Event()
+
+            async def pending(candidate):
+                """Keep the concrete publisher pending until cancellation."""
+                entered.set()
+                await asyncio.Future()
+
+            with self.subTest(adapter=adapter.key), \
+                    patch.object(adapter, "_flush_and_reload", side_effect=pending):
+                task = asyncio.create_task(adapter.create_record("bench.example", self.record))
+                try:
+                    await asyncio.wait_for(entered.wait(), 2)
+                finally:
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+                self.assertEqual(adapter.records, {"old|A": self.old})
+            with patch.object(adapter, "_flush_and_reload", AsyncMock(return_value=True)):
+                await asyncio.wait_for(adapter.create_record("bench.example", self.record), 2)
+            self.assertEqual(set(adapter.records), {"old|A", "new|A"})
+
     async def test_coredns_copy_failure_and_cancel_preserve_state(self):
         """Failed or cancelled copies preserve the published snapshot."""
         adapter = self.adapters()[2]

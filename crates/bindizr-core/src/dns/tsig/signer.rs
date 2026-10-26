@@ -1,15 +1,10 @@
 //! Response signing and the MAC chain carried across transfer messages.
 
-use domain::{
-    base::{
-        ToName,
-        iana::{Class, TsigRcode},
-        message_builder::{AdditionalBuilder, PushError},
-        wire::Composer,
-    },
-    rdata::tsig::{Time48, Tsig},
-    tsig::Key,
-};
+use domain::base::iana::{Class, TsigRcode};
+use domain::base::message_builder::{AdditionalBuilder, PushError};
+use domain::base::wire::Composer;
+use domain::rdata::tsig::{Time48, Tsig};
+use domain::tsig::Key;
 use ring::hmac;
 use thiserror::Error;
 
@@ -89,6 +84,8 @@ impl TransferSigner {
         now: Time48,
         fudge: u16,
     ) -> Result<(), SignResponseError> {
+        use domain::base::ToName;
+
         let name = self.key.domain.name().to_canonical_name::<Vec<u8>>();
         let algorithm = self.key.domain.algorithm().to_name();
         let mut digest = hmac::Context::with_key(&self.key.hmac);

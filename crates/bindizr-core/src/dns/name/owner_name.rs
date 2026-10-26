@@ -1,8 +1,6 @@
 //! A record's owner name, held as decoded labels.
 
-use super::{
-    MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName, trim_presentation_name,
-};
+use super::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
 
 /// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
 /// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
@@ -32,7 +30,7 @@ impl OwnerName {
     /// Parse `@`, relative names, or absolute names inside `zone` into octet labels.
     /// Validate wire lengths without imposing hostname character rules.
     pub fn parse_in_zone(input: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
-        let trimmed = trim_presentation_name(input);
+        let trimmed = super::trim_presentation_name(input);
 
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
@@ -63,7 +61,7 @@ impl OwnerName {
         input: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
-        let trimmed = trim_presentation_name(input);
+        let trimmed = super::trim_presentation_name(input);
 
         if trimmed == Self::APEX {
             return Ok(Self::apex());

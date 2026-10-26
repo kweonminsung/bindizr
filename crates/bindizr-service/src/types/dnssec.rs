@@ -1,9 +1,8 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::{
-    dns::{Serial, dnssec::KeyTag},
-    model::dnssec_key::{DnssecAlgorithm, DnssecKeyId},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::model::dnssec_key::{DnssecAlgorithm, DnssecKeyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

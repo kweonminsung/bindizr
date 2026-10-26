@@ -1,10 +1,9 @@
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
+use std::time::Instant;
 
-use axum::{
-    extract::{MatchedPath, Request, State},
-    middleware::Next,
-    response::Response,
-};
+use axum::extract::{MatchedPath, Request, State};
+use axum::middleware::Next;
+use axum::response::Response;
 use bindizr_service::Context;
 
 /// Record request count and latency, labeled by the route pattern

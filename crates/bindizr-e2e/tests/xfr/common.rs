@@ -1,16 +1,12 @@
 //! Fixtures and metrics shared by TCP and TLS transfer tests.
 
-use domain::{
-    base::{
-        MessageBuilder, Ttl,
-        iana::{Class, Rtype},
-        message_builder::AdditionalBuilder,
-    },
-    rdata::Soa,
-};
+use domain::base::iana::{Class, Rtype};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::{MessageBuilder, Ttl};
+use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 
-use crate::common::{TestApp, dns::parse_name};
+use crate::common::{TestApp, dns};
 
 /// Read one series of a counter from `/metrics`, picked by its labels.
 pub(crate) async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
@@ -28,7 +24,7 @@ pub(crate) async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
 
 /// Build an IXFR query carrying the client's SOA serial.
 pub(crate) fn build_ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
-    let name = parse_name(zone).unwrap();
+    let name = dns::parse_name(zone).unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1995);
     let mut question = builder.question();
@@ -68,10 +64,14 @@ pub(crate) fn build_multi_question_query(
     builder.header_mut().set_rd(true);
     let mut question = builder.question();
     question
-        .push((&parse_name(zone).unwrap(), qtype, qclass))
+        .push((&dns::parse_name(zone).unwrap(), qtype, qclass))
         .unwrap();
     question
-        .push((&parse_name("other.example").unwrap(), Rtype::A, Class::IN))
+        .push((
+            &dns::parse_name("other.example").unwrap(),
+            Rtype::A,
+            Class::IN,
+        ))
         .unwrap();
     let mut additional = question.additional();
 
@@ -98,7 +98,9 @@ pub(crate) fn build_edns_query(
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(3225);
     let mut question = builder.question();
-    question.push((&parse_name(zone).unwrap(), qtype)).unwrap();
+    question
+        .push((&dns::parse_name(zone).unwrap(), qtype))
+        .unwrap();
     let mut additional = question.additional();
 
     for (version, dnssec_ok) in opts {

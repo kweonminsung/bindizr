@@ -5,23 +5,20 @@ mod update;
 
 use std::net::SocketAddr;
 
+use bindizr_core::dns::message::{
+    ExtendedErrorCode, Keepalive, OptRcode, QueryMetadata, Rcode, ResponseLimit,
+};
+use bindizr_core::dns::nsupdate::DEFAULT_FUDGE;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
-use bindizr_core::{
-    dns::{
-        message::{ExtendedErrorCode, Keepalive, OptRcode, QueryMetadata, Rcode, ResponseLimit},
-        nsupdate::{DEFAULT_FUDGE, build_response},
-        tsig::{RequestSignature, TsigError, request_signature},
-    },
-    metrics::NsupdateResult,
-    model::transfer::TransferTransport,
-};
+use bindizr_core::dns::tsig::{RequestSignature, TsigError};
+use bindizr_core::dns::{nsupdate, tsig};
+use bindizr_core::metrics::NsupdateResult;
+use bindizr_core::model::transfer::TransferTransport;
 
-use crate::dns::{
-    error::DnsError,
-    server::DnsContext,
-    stream::ResponseWriter,
-    udp::{ReplyTarget, UdpSocket},
-};
+use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
+use crate::dns::stream::ResponseWriter;
+use crate::dns::udp::{ReplyTarget, UdpSocket};
 
 /// Apply an nsupdate received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
@@ -93,7 +90,7 @@ async fn handle_nsupdate_request(
 
             // RFC 8945, Section 5.2: a request whose key verifies is answered
             // under it, a FORMERR included; a bad key or MAC is its own error.
-            let (signer, fudge) = match request_signature(query_data) {
+            let (signer, fudge) = match tsig::request_signature(query_data) {
                 RequestSignature::Key { name, fudge } => {
                     match update::authenticate_tsig_key(dns_cx, &name, query_data).await {
                         Ok((_, signer)) => (Some(signer), fudge),
@@ -154,7 +151,7 @@ async fn handle_nsupdate_request(
             cx.metrics()
                 .track_nsupdate(NsupdateResult::Rcode(response_rcode.rcode()));
 
-            return Ok(build_response(
+            return Ok(nsupdate::build_response(
                 query_data,
                 response_rcode,
                 None,
@@ -245,7 +242,7 @@ async fn handle_nsupdate_request(
     cx.metrics()
         .track_nsupdate(NsupdateResult::Rcode(rcode.rcode()));
 
-    Ok(build_response(
+    Ok(nsupdate::build_response(
         query_data, rcode, ede, signer, fudge, limit,
     )?)
 }

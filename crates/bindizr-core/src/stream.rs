@@ -1,13 +1,9 @@
 //! Write all bindizr output without panicking on a closed pipe.
 //! Early readers such as `head` must not crash a command or the daemon.
 
-use std::{
-    io::{self, ErrorKind, Write},
-    sync::{
-        OnceLock,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::io::{self, ErrorKind, Write};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Set once a reader is gone, so the rest of a long listing costs no failed
 /// syscalls. Ending the process stays the entry point's call.
@@ -82,10 +78,8 @@ macro_rules! errln {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::{Error, ErrorKind, Write},
-        sync::atomic::AtomicBool,
-    };
+    use std::io::{Error, ErrorKind, Write};
+    use std::sync::atomic::AtomicBool;
 
     use super::*;
 

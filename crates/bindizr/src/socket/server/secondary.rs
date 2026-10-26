@@ -1,14 +1,11 @@
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    secondary,
-    types::{
-        CheckSecondaryResponse, CreateSecondaryRequest, MessageResponse, PageRequest,
-        PaginatedResponse, SecondaryResponse, SecondaryTransferFilter, SecondaryTransfersResponse,
-        SingleSecondaryResponse, UpdateSecondaryRequest,
-    },
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    CheckSecondaryResponse, CreateSecondaryRequest, MessageResponse, PageRequest,
+    PaginatedResponse, SecondaryResponse, SecondaryTransferFilter, SecondaryTransfersResponse,
+    SingleSecondaryResponse, UpdateSecondaryRequest,
 };
+use bindizr_service::{Context, secondary};
 
 use crate::socket::types::DaemonResponse;
 

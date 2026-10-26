@@ -1,9 +1,8 @@
-use bindizr_core::{config::Config, metrics::Metrics};
+use bindizr_core::config::Config;
+use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
-use tokio::{
-    sync::mpsc,
-    time::{advance, pause},
-};
+use tokio::sync::mpsc;
+use tokio::time;
 
 use super::*;
 
@@ -30,7 +29,9 @@ async fn context(batch_ms: u64) -> Arc<Context> {
 /// A worker must collect later writes while the first NOTIFY waits for an ACK.
 #[tokio::test]
 async fn worker_sends_later_zone_before_silent_secondary_times_out() {
-    use crate::{authorization::Caller, secondary, types::CreateSecondaryRequest};
+    use crate::authorization::Caller;
+    use crate::secondary;
+    use crate::types::CreateSecondaryRequest;
 
     let cx = context(10).await;
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -99,7 +100,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
 async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     let cx = context(1000).await;
 
-    pause();
+    time::pause();
     let name = cx.config().dns.catalog_zone_name.clone();
     let first = NotifyJob::new(NotifyTarget::Zone(&name));
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -107,16 +108,19 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
 
     let task = tokio::spawn(async move { collect_batch(&cx, &mut rx, &mut stop, first).await });
     tokio::task::yield_now().await;
-    advance(Duration::from_millis(600)).await;
+    time::advance(Duration::from_millis(600)).await;
 
     tx.send(NotifyJob::new(NotifyTarget::Zone(&name))).unwrap();
 
     tokio::task::yield_now().await;
-    advance(Duration::from_millis(399)).await;
+    time::advance(Duration::from_millis(399)).await;
 
-    assert!(!task.is_finished());
+    assert!(
+        !task.is_finished(),
+        "the first job's 1s batching window must remain open at 999ms"
+    );
 
-    advance(Duration::from_millis(1)).await;
+    time::advance(Duration::from_millis(1)).await;
     let batch = task.await.unwrap();
 
     assert_eq!(batch.zones, HashSet::from([name]));
@@ -127,7 +131,7 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
 async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     let cx = context(7_200_000).await;
 
-    pause();
+    time::pause();
     let name = cx.config().dns.catalog_zone_name.clone();
     let first = NotifyJob::new(NotifyTarget::Zone(&name));
 
@@ -135,10 +139,11 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
 
     assert_eq!(
         deadline - first.enqueued_at,
-        Duration::from_secs(u64::from(CATALOG_SOA_REFRESH.as_secs()))
+        Duration::from_secs(u64::from(CATALOG_SOA_REFRESH.as_secs())),
+        "the catalog's served SOA REFRESH must cap the configured 2h batching window"
     );
 
-    advance(Duration::from_secs(3601)).await;
+    time::advance(Duration::from_secs(3601)).await;
 
     let started = Instant::now();
     let (_tx, mut rx) = mpsc::unbounded_channel();
@@ -146,7 +151,11 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
 
     let batch = collect_batch(&cx, &mut rx, &mut stop, first).await;
 
-    assert_eq!(Instant::now(), started);
+    assert_eq!(
+        Instant::now(),
+        started,
+        "an expired batching window must flush without starting a new wait"
+    );
     assert_eq!(batch.zones.len(), 1);
 }
 
@@ -155,7 +164,7 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
 async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     let cx = context(10_000).await;
 
-    pause();
+    time::pause();
     let name = cx.config().dns.catalog_zone_name.clone();
     let first = NotifyJob::new(NotifyTarget::Zone(&name));
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -165,7 +174,7 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     let task =
         tokio::spawn(async move { collect_batch(&worker_cx, &mut rx, &mut stop, first).await });
     tokio::task::yield_now().await;
-    advance(Duration::from_millis(500)).await;
+    time::advance(Duration::from_millis(500)).await;
 
     let mut config = (*cx.config()).clone();
     config.dns.notify.batch_ms = 100;
@@ -173,7 +182,7 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     tx.send(NotifyJob::new(NotifyTarget::Zone(&name))).unwrap();
 
     tokio::task::yield_now().await;
-    advance(Duration::from_millis(100)).await;
+    time::advance(Duration::from_millis(100)).await;
 
     assert_eq!(task.await.unwrap().zones.len(), 1);
 
@@ -187,5 +196,9 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     let batch = collect_batch(&cx, &mut rx, &mut stop, first).await;
 
     assert!(batch.all_zones);
-    assert_eq!(Instant::now(), started);
+    assert_eq!(
+        Instant::now(),
+        started,
+        "shutdown must flush queued jobs without waiting for their batching deadline"
+    );
 }

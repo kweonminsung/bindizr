@@ -1,48 +1,33 @@
-use domain::{
-    base::{
-        Message, Name, Rtype, Serial, Ttl,
-        iana::{Class, Opcode, OptRcode, Rcode, TsigRcode},
-    },
-    rdata::{
-        Soa,
-        tsig::{Time48, Tsig},
-    },
-    tsig::ClientTransaction,
-};
+use domain::base::iana::{Class, Opcode, OptRcode, Rcode, TsigRcode};
+use domain::base::{Message, Name, Rtype, Serial, Ttl};
+use domain::rdata::Soa;
+use domain::rdata::tsig::{Time48, Tsig};
+use domain::tsig::ClientTransaction;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use serial_test::serial;
 
-use crate::common::{
-    TestApp, TestAppOptions,
-    dns::{
-        exchange_request, exchange_udp, fetch_exported_record_sets,
-        nsupdate::{
-            PrerequisiteRecord, UpdateRecord, build_update, send_signed_update_with_edns_version,
-            send_signed_update_with_two_zones, send_update_tcp, send_update_udp,
-        },
-        parse_name,
-        tsig::{KeyRole, create_tsig_key, verify_response_mac},
-    },
-    exchange_tcp,
-};
+use crate::common;
+use crate::common::dns::nsupdate::{PrerequisiteRecord, UpdateRecord};
+use crate::common::dns::tsig::KeyRole;
+use crate::common::dns::{nsupdate, tsig};
+use crate::common::{TestApp, TestAppOptions, dns};
 
 /// Preserve root targets through signed updates, transfers, and DNSSEC.
 #[tokio::test]
 #[serial]
 async fn nsupdate_root_targets_round_trip_through_signed_zone() {
-    use domain::{
-        base::{MessageBuilder, ToName, UnknownRecordData, rdata::ComposeRecordData},
-        dep::octseq::parse::Parser,
-        rdata::{Dnskey, Rrsig},
-    };
+    use domain::base::rdata::ComposeRecordData;
+    use domain::base::{MessageBuilder, ToName, UnknownRecordData};
+    use domain::dep::octseq::parse::Parser;
+    use domain::rdata::{Dnskey, Rrsig};
     use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "root-target-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "root-target-key", KeyRole::Admin).await;
 
     let targets = [
         ("ns", Rtype::NS),
@@ -61,7 +46,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
         .collect();
 
     assert_eq!(
-        send_update_tcp(app.dns_port(), name, &[], &updates, Some(&key)).unwrap(),
+        nsupdate::send_update_tcp(app.dns_port(), name, &[], &updates, Some(&key)).unwrap(),
         Rcode::NOERROR,
     );
 
@@ -75,7 +60,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    let sets = fetch_exported_record_sets(&app, name).await;
+    let sets = dns::fetch_exported_record_sets(&app, name).await;
     let public_keys: Vec<_> = sets[&(format!("{name}."), Rtype::DNSKEY)]
         .iter()
         .map(|data| {
@@ -109,7 +94,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
             let mut signed_data = Vec::new();
             signature.compose_canonical_rdata(&mut signed_data).unwrap();
             signed_data.truncate(signed_data.len() - signature.signature().len());
-            parse_name(&owner)
+            dns::parse_name(&owner)
                 .unwrap()
                 .compose_canonical(&mut signed_data)
                 .unwrap();
@@ -128,10 +113,10 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
 
     let mut question = MessageBuilder::new_vec().question();
     question
-        .push((&parse_name(name).unwrap(), Rtype::AXFR))
+        .push((&dns::parse_name(name).unwrap(), Rtype::AXFR))
         .unwrap();
-    let response = exchange_request(question.additional(), Some(&key), |request| {
-        exchange_tcp(app.dns_port(), request)
+    let response = dns::exchange_request(question.additional(), Some(&key), |request| {
+        common::exchange_tcp(app.dns_port(), request)
     })
     .unwrap();
 
@@ -172,16 +157,18 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
         }];
 
         assert_eq!(
-            send_update_udp(app.dns_port(), name, &prerequisites, &delete, Some(&key)).unwrap(),
+            nsupdate::send_update_udp(app.dns_port(), name, &prerequisites, &delete, Some(&key))
+                .unwrap(),
             Rcode::NOERROR,
         );
         assert!(
-            !fetch_exported_record_sets(&app, name)
+            !dns::fetch_exported_record_sets(&app, name)
                 .await
                 .contains_key(&(owner, rtype))
         );
         assert_eq!(
-            send_update_tcp(app.dns_port(), name, &prerequisites, &[], Some(&key)).unwrap(),
+            nsupdate::send_update_tcp(app.dns_port(), name, &prerequisites, &[], Some(&key))
+                .unwrap(),
             Rcode::NXRRSET,
         );
     }
@@ -201,12 +188,12 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
         let zone_name = zone["name"].as_str().unwrap();
 
         let serial = app.read_zone_serial(zone_name).await;
-        let records = fetch_exported_record_sets(&app, zone_name).await;
+        let records = dns::fetch_exported_record_sets(&app, zone_name).await;
 
         for prerequisite in [false, true] {
             for owner in [zone_name, "outside.invalid"] {
                 for additional_tsig in [false, true] {
-                    let mut request = build_update(
+                    let mut request = nsupdate::build_update(
                         8945,
                         zone_name,
                         Class::IN,
@@ -225,8 +212,8 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
                     } else {
                         message.additional().unwrap().pos()
                     };
-                    let mut record = parse_name(owner).unwrap().as_slice().to_vec();
-                    let mut rdata = parse_name("hmac-sha256").unwrap().as_slice().to_vec();
+                    let mut record = dns::parse_name(owner).unwrap().as_slice().to_vec();
+                    let mut rdata = dns::parse_name("hmac-sha256").unwrap().as_slice().to_vec();
                     rdata.extend_from_slice(&Time48::now().into_octets());
                     rdata.extend_from_slice(&300u16.to_be_bytes());
                     rdata.extend_from_slice(&32u16.to_be_bytes());
@@ -246,8 +233,8 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
                     }
 
                     for bytes in [
-                        exchange_udp(app.dns_port(), &request).unwrap(),
-                        exchange_tcp(app.dns_port(), &request).unwrap(),
+                        dns::exchange_udp(app.dns_port(), &request).unwrap(),
+                        common::exchange_tcp(app.dns_port(), &request).unwrap(),
                     ] {
                         let response = Message::from_octets(bytes).unwrap();
 
@@ -263,7 +250,10 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
         }
 
         assert_eq!(app.read_zone_serial(zone_name).await, serial);
-        assert_eq!(fetch_exported_record_sets(&app, zone_name).await, records);
+        assert_eq!(
+            dns::fetch_exported_record_sets(&app, zone_name).await,
+            records
+        );
     }
 }
 
@@ -271,13 +261,14 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
 #[tokio::test]
 #[serial]
 async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
-    use domain::{base::rdata::ComposeRecordData, rdata::AllRecordData};
+    use domain::base::rdata::ComposeRecordData;
+    use domain::rdata::AllRecordData;
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "managed-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "managed-key", KeyRole::Admin).await;
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -301,10 +292,10 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
     let request = domain::base::MessageBuilder::new_vec().question();
     let mut request = request;
     request
-        .push((&parse_name(name).unwrap(), Rtype::AXFR))
+        .push((&dns::parse_name(name).unwrap(), Rtype::AXFR))
         .unwrap();
-    let transfer = exchange_request(request.additional(), Some(&key), |request| {
-        exchange_tcp(app.dns_port(), request)
+    let transfer = dns::exchange_request(request.additional(), Some(&key), |request| {
+        common::exchange_tcp(app.dns_port(), request)
     })
     .unwrap();
     let rows = transfer
@@ -323,7 +314,7 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
         let owner = row.owner().to_string();
 
         assert_eq!(
-            send_update_udp(
+            nsupdate::send_update_udp(
                 app.dns_port(),
                 name,
                 &[PrerequisiteRecord::RecordSetInUse {
@@ -365,9 +356,9 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
 
             for tcp in [false, true] {
                 let code = if tcp {
-                    send_update_tcp(app.dns_port(), name, &[], &changes, Some(&key))
+                    nsupdate::send_update_tcp(app.dns_port(), name, &[], &changes, Some(&key))
                 } else {
-                    send_update_udp(app.dns_port(), name, &[], &changes, Some(&key))
+                    nsupdate::send_update_udp(app.dns_port(), name, &[], &changes, Some(&key))
                 }
                 .unwrap();
 
@@ -388,7 +379,7 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
         versions
     );
     assert_eq!(
-        send_update_udp(
+        nsupdate::send_update_udp(
             app.dns_port(),
             name,
             &[PrerequisiteRecord::NameNotInUse {
@@ -411,7 +402,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
     let zone_name = zone["name"].as_str().unwrap();
     let owner = format!("caa.{zone_name}.");
 
-    let key = create_tsig_key(&app, "caa-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "caa-key", KeyRole::Admin).await;
 
     let values = [
         b"\x00\x05issue".to_vec(),
@@ -423,7 +414,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
     ];
 
     for rdata in &values {
-        let additional = build_update(
+        let additional = nsupdate::build_update(
             173,
             zone_name,
             Class::IN,
@@ -436,8 +427,8 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
             }],
         )
         .unwrap();
-        let response = exchange_request(additional, Some(&key), |message| {
-            exchange_udp(app.dns_port(), message)
+        let response = dns::exchange_request(additional, Some(&key), |message| {
+            dns::exchange_udp(app.dns_port(), message)
         })
         .unwrap();
 
@@ -448,7 +439,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
         );
     }
 
-    let sets = fetch_exported_record_sets(&app, zone_name).await;
+    let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
     let mut exported = sets.get(&(owner.clone(), Rtype::CAA)).unwrap().clone();
     let mut expected = values.to_vec();
     exported.sort();
@@ -468,7 +459,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
 
         let serial = app.read_zone_serial(zone_name).await;
 
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &prerequisites,
@@ -486,7 +477,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
     }
 
     assert!(
-        !fetch_exported_record_sets(&app, zone_name)
+        !dns::fetch_exported_record_sets(&app, zone_name)
             .await
             .contains_key(&(owner, Rtype::CAA))
     );
@@ -500,7 +491,7 @@ async fn nsupdate_naptr_flags_refuse_the_whole_update() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "naptr-flags-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "naptr-flags-key", KeyRole::Admin).await;
 
     for (flags, expected) in [
         (b"!".as_slice(), Rcode::REFUSED),
@@ -518,7 +509,7 @@ async fn nsupdate_naptr_flags_refuse_the_whole_update() {
         let mut rdata = vec![0, 10, 0, 10, u8::try_from(flags.len()).unwrap()];
         rdata.extend_from_slice(flags);
         rdata.extend_from_slice(&[0, 0, 0]);
-        let rcode = send_update_tcp(
+        let rcode = nsupdate::send_update_tcp(
             app.dns_port(),
             zone_name,
             &[],
@@ -546,7 +537,7 @@ async fn nsupdate_naptr_flags_refuse_the_whole_update() {
             assert_eq!(app.read_zone_serial(zone_name).await, serial);
         } else {
             assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
-            let exported = fetch_exported_record_sets(&app, zone_name).await;
+            let exported = dns::fetch_exported_record_sets(&app, zone_name).await;
             assert!(exported[&(format!("naptr.{zone_name}."), Rtype::NAPTR)].contains(&rdata));
         }
     }
@@ -560,7 +551,7 @@ async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "class-udp-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "class-udp-key", KeyRole::Admin).await;
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
 
@@ -602,15 +593,15 @@ async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
         for (prerequisites, updates) in &cases {
             for signing_key in [None, Some(&key)] {
                 let mut request =
-                    build_update(171, zone_name, class, prerequisites, updates).unwrap();
+                    nsupdate::build_update(171, zone_name, class, prerequisites, updates).unwrap();
                 request
                     .opt(|opt| {
                         opt.set_udp_payload_size(1232);
                         Ok(())
                     })
                     .unwrap();
-                let response = exchange_request(request, signing_key, |message| {
-                    exchange_udp(app.dns_port(), message)
+                let response = dns::exchange_request(request, signing_key, |message| {
+                    dns::exchange_udp(app.dns_port(), message)
                 })
                 .unwrap();
 
@@ -635,7 +626,7 @@ async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
     }
 
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &[], &[add], None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &[add], None).unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
@@ -649,7 +640,7 @@ async fn nsupdate_signs_zone_class_refusals_over_tcp() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "class-tcp-key", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "class-tcp-key", KeyRole::Own).await;
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
 
@@ -665,9 +656,9 @@ async fn nsupdate_signs_zone_class_refusals_over_tcp() {
         (Class::HS, Rcode::NOTAUTH),
         (Class::from_int(65280), Rcode::NOTAUTH),
     ] {
-        let request = build_update(172, zone_name, class, &[], &updates).unwrap();
-        let response = exchange_request(request, Some(&key), |message| {
-            exchange_tcp(app.dns_port(), message)
+        let request = nsupdate::build_update(172, zone_name, class, &[], &updates).unwrap();
+        let response = dns::exchange_request(request, Some(&key), |message| {
+            common::exchange_tcp(app.dns_port(), message)
         })
         .unwrap();
 
@@ -691,7 +682,7 @@ async fn nsupdate_adds_and_deletes_records() {
 
     let port = app.dns_port();
 
-    for send_update in [send_update_udp, send_update_tcp] {
+    for send_update in [nsupdate::send_update_udp, nsupdate::send_update_tcp] {
         let owner = format!("www.{zone_name}.");
         let rcode = send_update(
             port,
@@ -792,7 +783,7 @@ async fn nsupdate_deletes_every_record_of_a_name_and_type() {
     let owner = format!("multi.{zone_name}.");
 
     for addr in ["192.0.2.20", "192.0.2.21"] {
-        send_update_udp(
+        nsupdate::send_update_udp(
             port,
             &zone_name,
             &[],
@@ -806,7 +797,7 @@ async fn nsupdate_deletes_every_record_of_a_name_and_type() {
         .expect("add update");
     }
 
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[],
@@ -845,7 +836,7 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     let owner = format!("guarded.{zone_name}.");
 
     // The owner does not exist, so a "must exist" prerequisite fails.
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[PrerequisiteRecord::NameInUse {
@@ -864,7 +855,7 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     assert_eq!(app.list_records(&zone_name).await.len(), before);
 
     // The matching "must not exist" prerequisite lets the same update through.
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[PrerequisiteRecord::NameNotInUse {
@@ -897,7 +888,7 @@ async fn nsupdate_value_prerequisite_requires_complete_record_set() {
     let owner = format!("check.{zone_name}.");
 
     for addr in ["192.0.2.1", "192.0.2.2"] {
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             port,
             &zone_name,
             &[],
@@ -923,7 +914,7 @@ async fn nsupdate_value_prerequisite_requires_complete_record_set() {
 
     // RFC 2136, Section 3.2.3: the prerequisite record set must equal the zone's,
     // so naming one of its two values is NXRRSET and applies nothing.
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[PrerequisiteRecord::AEquals {
@@ -939,7 +930,7 @@ async fn nsupdate_value_prerequisite_requires_complete_record_set() {
     assert_eq!(app.list_records(&zone_name).await.len(), before);
 
     // Both values, in either order, are the whole record set.
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[
@@ -1001,7 +992,8 @@ async fn nsupdate_prerequisite_accepts_zone_soa() {
         ),
     ] {
         let rcode =
-            send_update_udp(app.dns_port(), zone_name, &prerequisites, &add, None).expect("update");
+            nsupdate::send_update_udp(app.dns_port(), zone_name, &prerequisites, &add, None)
+                .expect("update");
         assert_eq!(rcode, expected, "{prerequisites:?}");
     }
 
@@ -1009,8 +1001,8 @@ async fn nsupdate_prerequisite_accepts_zone_soa() {
     let serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
     let served_soa = |serial: u32| {
         Soa::new(
-            parse_name(&format!("ns1.{zone_name}")).unwrap(),
-            parse_name("admin.example.com").unwrap(),
+            dns::parse_name(&format!("ns1.{zone_name}")).unwrap(),
+            dns::parse_name("admin.example.com").unwrap(),
             Serial::from(serial),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
@@ -1023,7 +1015,7 @@ async fn nsupdate_prerequisite_accepts_zone_soa() {
         (served_soa(serial), Rcode::NOERROR),
         (served_soa(serial + 1), Rcode::NXRRSET),
     ] {
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[PrerequisiteRecord::SoaEquals {
@@ -1048,7 +1040,7 @@ async fn nsupdate_refuses_an_owner_outside_the_zone() {
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         app.dns_port(),
         &zone_name,
         &[],
@@ -1117,8 +1109,9 @@ async fn nsupdate_prescans_ignored_deletes() {
                     );
                 }
 
-                let rcode = send_update_udp(app.dns_port(), &zone_name, &[], &updates, None)
-                    .expect("delete update");
+                let rcode =
+                    nsupdate::send_update_udp(app.dns_port(), &zone_name, &[], &updates, None)
+                        .expect("delete update");
 
                 assert_eq!(
                     rcode,
@@ -1188,7 +1181,7 @@ async fn nsupdate_prescans_delete_types() {
                 },
                 delete,
             ];
-            let rcode = send_update_udp(app.dns_port(), &zone_name, &[], &updates, None)
+            let rcode = nsupdate::send_update_udp(app.dns_port(), &zone_name, &[], &updates, None)
                 .expect("meta-type delete");
 
             assert_eq!(rcode, Rcode::FORMERR, "{updates:?}");
@@ -1211,7 +1204,7 @@ async fn nsupdate_signs_prescan_errors_over_tcp() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "prescan-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "prescan-key", KeyRole::Admin).await;
     let before = app.list_records(zone_name).await;
     let serial = app.read_zone_serial(zone_name).await;
 
@@ -1246,7 +1239,7 @@ async fn nsupdate_signs_prescan_errors_over_tcp() {
             },
             UpdateRecord::DeleteRecordSet { name: owner, rtype },
         ];
-        let rcode = send_update_tcp(app.dns_port(), target, &[], &updates, Some(&key))
+        let rcode = nsupdate::send_update_tcp(app.dns_port(), target, &[], &updates, Some(&key))
             .expect("signed response");
 
         assert_eq!(rcode, expected, "{updates:?}");
@@ -1255,7 +1248,7 @@ async fn nsupdate_signs_prescan_errors_over_tcp() {
     }
 
     // A correctly formed SOA delete remains a successful no-op, under TSIG too.
-    let rcode = send_update_tcp(
+    let rcode = nsupdate::send_update_tcp(
         app.dns_port(),
         zone_name,
         &[],
@@ -1286,7 +1279,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     let before = app.read_zone_serial(&zone_name).await;
 
     let owner = format!("pair.{zone_name}.");
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[],
@@ -1312,7 +1305,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 
     // An update that changes nothing must leave the serial alone, or every
     // no-op would make secondaries re-transfer.
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[],
@@ -1340,7 +1333,7 @@ async fn nsupdate_create_grant_preserves_existing_records() {
 
     let port = app.dns_port();
 
-    let key = create_tsig_key(&app, "nsupdate-rewrite-key", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "nsupdate-rewrite-key", KeyRole::Own).await;
     app.run_cli_success(
         &[
             "role",
@@ -1377,7 +1370,8 @@ async fn nsupdate_create_grant_preserves_existing_records() {
             addr: "192.0.2.130".to_string(),
         }],
     ] {
-        let rcode = send_update_udp(port, &zone_name, &[], &updates, Some(&key)).expect("update");
+        let rcode =
+            nsupdate::send_update_udp(port, &zone_name, &[], &updates, Some(&key)).expect("update");
         assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
     }
 
@@ -1410,7 +1404,8 @@ async fn nsupdate_create_grant_preserves_existing_records() {
     let serial = app.read_zone_serial(&zone_name).await;
 
     for updates in [&replace, &retime, &wks_replace] {
-        let rcode = send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
+        let rcode =
+            nsupdate::send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
         assert_eq!(rcode, Rcode::REFUSED, "{updates:?}");
         assert_eq!(app.list_records(&zone_name).await, before);
         assert_eq!(app.read_zone_serial(&zone_name).await, serial);
@@ -1431,7 +1426,8 @@ async fn nsupdate_create_grant_preserves_existing_records() {
     .await;
 
     for updates in [&replace, &retime, &wks_replace] {
-        let rcode = send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
+        let rcode =
+            nsupdate::send_update_udp(port, &zone_name, &[], updates, Some(&key)).expect("update");
         assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
     }
 }
@@ -1447,7 +1443,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
 
     let port = app.dns_port();
 
-    let key = create_tsig_key(&app, "nsupdate-policy-key", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "nsupdate-policy-key", KeyRole::Own).await;
 
     let add = |owner: String| UpdateRecord::AddA {
         name: owner,
@@ -1456,7 +1452,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     };
 
     // No grant gives this key anything in the zone.
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[],
@@ -1484,7 +1480,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     )
     .await;
 
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[],
@@ -1495,7 +1491,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
 
     assert_eq!(rcode, Rcode::REFUSED);
 
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         port,
         &zone_name,
         &[],
@@ -1519,7 +1515,8 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
         name: format!("a.{zone_name}."),
         addr: "192.0.2.60".to_string(),
     };
-    let rcode = send_update_udp(port, &zone_name, &[], &[delete], Some(&key)).expect("send");
+    let rcode =
+        nsupdate::send_update_udp(port, &zone_name, &[], &[delete], Some(&key)).expect("send");
 
     assert_eq!(rcode, Rcode::REFUSED);
 
@@ -1553,7 +1550,7 @@ async fn nsupdate_signed_prerequisite_requires_matching_grant() {
 
     let port = app.dns_port();
 
-    let key = create_tsig_key(&app, "nsupdate-prereq-key", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "nsupdate-prereq-key", KeyRole::Own).await;
     app.run_cli_success(
         &[
             "role",
@@ -1576,7 +1573,8 @@ async fn nsupdate_signed_prerequisite_requires_matching_grant() {
     let secret = || PrerequisiteRecord::NameNotInUse {
         name: format!("secret.{zone_name}."),
     };
-    let rcode = send_update_udp(port, &zone_name, &[secret()], &[], Some(&key)).expect("send");
+    let rcode =
+        nsupdate::send_update_udp(port, &zone_name, &[secret()], &[], Some(&key)).expect("send");
 
     assert_eq!(rcode, Rcode::REFUSED);
 
@@ -1594,7 +1592,8 @@ async fn nsupdate_signed_prerequisite_requires_matching_grant() {
         .await;
 
     assert_eq!(status, reqwest::StatusCode::CREATED, "{body}");
-    let rcode = send_update_udp(port, &zone_name, &[secret()], &[], Some(&key)).expect("send");
+    let rcode =
+        nsupdate::send_update_udp(port, &zone_name, &[secret()], &[], Some(&key)).expect("send");
 
     assert_eq!(rcode, Rcode::REFUSED);
 
@@ -1604,7 +1603,8 @@ async fn nsupdate_signed_prerequisite_requires_matching_grant() {
         name: host.clone(),
         addr: "192.0.2.60".to_string(),
     };
-    let rcode = send_update_udp(port, &zone_name, &[equals()], &[], Some(&key)).expect("send");
+    let rcode =
+        nsupdate::send_update_udp(port, &zone_name, &[equals()], &[], Some(&key)).expect("send");
 
     assert_eq!(rcode, Rcode::NXRRSET);
     let add = UpdateRecord::AddA {
@@ -1612,10 +1612,11 @@ async fn nsupdate_signed_prerequisite_requires_matching_grant() {
         ttl: 300,
         addr: "192.0.2.60".to_string(),
     };
-    let rcode = send_update_udp(port, &zone_name, &[], &[add], Some(&key)).expect("send");
+    let rcode = nsupdate::send_update_udp(port, &zone_name, &[], &[add], Some(&key)).expect("send");
 
     assert_eq!(rcode, Rcode::NOERROR);
-    let rcode = send_update_udp(port, &zone_name, &[equals()], &[], Some(&key)).expect("send");
+    let rcode =
+        nsupdate::send_update_udp(port, &zone_name, &[equals()], &[], Some(&key)).expect("send");
 
     assert_eq!(rcode, Rcode::NOERROR);
 }
@@ -1629,7 +1630,7 @@ async fn nsupdate_adds_at_the_zone_apex() {
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         app.dns_port(),
         &zone_name,
         &[],
@@ -1680,11 +1681,13 @@ async fn nsupdate_checks_authority_before_refusing_unsigned_requests() {
     };
 
     assert_eq!(
-        send_update_udp(app.dns_port(), &unserved, &[], &update(&unserved), None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), &unserved, &[], &update(&unserved), None)
+            .unwrap(),
         Rcode::NOTAUTH
     );
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &[], &update(zone_name), None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &update(zone_name), None)
+            .unwrap(),
         Rcode::REFUSED
     );
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
@@ -1716,7 +1719,8 @@ async fn nsupdate_evaluates_prerequisites_in_wire_order() {
         (vec![outside, absent], Rcode::NOTZONE),
     ] {
         assert_eq!(
-            send_update_udp(app.dns_port(), zone_name, &prerequisites, &update, None).unwrap(),
+            nsupdate::send_update_udp(app.dns_port(), zone_name, &prerequisites, &update, None)
+                .unwrap(),
             rcode
         );
     }
@@ -1730,7 +1734,7 @@ async fn nsupdate_answers_notauth_for_a_zone_it_does_not_serve() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-notauth.example");
 
-    let rcode = send_update_udp(
+    let rcode = nsupdate::send_update_udp(
         app.dns_port(),
         &zone_name,
         &[],
@@ -1798,8 +1802,8 @@ async fn nsupdate_keeps_the_apex_ns_set() {
             },
         ],
     ] {
-        let rcode =
-            send_update_udp(app.dns_port(), &zone_name, &[], &updates, None).expect("apex delete");
+        let rcode = nsupdate::send_update_udp(app.dns_port(), &zone_name, &[], &updates, None)
+            .expect("apex delete");
         assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
     }
 
@@ -1868,8 +1872,8 @@ async fn nsupdate_passes_over_a_cname_conflict_and_replaces_a_cname() {
             target: format!("two.{zone_name}."),
         }],
     ] {
-        let rcode =
-            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).expect("update");
+        let rcode = nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None)
+            .expect("update");
         assert_eq!(rcode, Rcode::NOERROR, "{updates:?}");
     }
 
@@ -1900,7 +1904,7 @@ async fn nsupdate_moves_a_record_set_to_the_added_ttl() {
         (600, "192.0.2.101"),
         (900, "192.0.2.100"),
     ] {
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -1937,10 +1941,11 @@ async fn nsupdate_signs_parse_errors_with_request_key() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "formerr-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "formerr-key", KeyRole::Admin).await;
 
     let (rcode, signed) =
-        send_signed_update_with_two_zones(app.dns_port(), zone_name, &key).expect("update");
+        nsupdate::send_signed_update_with_two_zones(app.dns_port(), zone_name, &key)
+            .expect("update");
 
     assert_eq!(rcode, Rcode::FORMERR);
     assert!(signed, "the FORMERR was not signed");
@@ -1955,10 +1960,11 @@ async fn nsupdate_signs_badvers_with_request_key() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "badvers-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "badvers-key", KeyRole::Admin).await;
 
     let (rcode, signed) =
-        send_signed_update_with_edns_version(app.dns_port(), zone_name, &key, 1).expect("update");
+        nsupdate::send_signed_update_with_edns_version(app.dns_port(), zone_name, &key, 1)
+            .expect("update");
 
     assert_eq!(rcode, OptRcode::BADVERS);
     assert!(signed, "the BADVERS was not signed");
@@ -1972,12 +1978,13 @@ async fn nsupdate_response_preserves_edns_dnssec_ok() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "update-dnssec-ok-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "update-dnssec-ok-key", KeyRole::Admin).await;
 
     for dnssec_ok in [false, true] {
         for version in [0, 1] {
             for tcp in [false, true] {
-                let mut query = build_update(3225, zone_name, Class::IN, &[], &[]).unwrap();
+                let mut query =
+                    nsupdate::build_update(3225, zone_name, Class::IN, &[], &[]).unwrap();
                 query
                     .opt(|opt| {
                         opt.set_udp_payload_size(4096);
@@ -1986,11 +1993,11 @@ async fn nsupdate_response_preserves_edns_dnssec_ok() {
                         Ok(())
                     })
                     .unwrap();
-                let response = exchange_request(query, Some(&key), |message| {
+                let response = dns::exchange_request(query, Some(&key), |message| {
                     if tcp {
-                        exchange_tcp(app.dns_port(), message)
+                        common::exchange_tcp(app.dns_port(), message)
                     } else {
-                        exchange_udp(app.dns_port(), message)
+                        dns::exchange_udp(app.dns_port(), message)
                     }
                 })
                 .unwrap();
@@ -2019,12 +2026,12 @@ async fn badtime_update_responses_preserve_edns_and_verify() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "badtime-update-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "badtime-update-key", KeyRole::Admin).await;
 
     let signed_at = Time48::from_u64(u64::from(Time48::now()) - 3600);
 
     for dnssec_ok in [false, true] {
-        let mut query = build_update(8945, zone_name, Class::IN, &[], &[]).unwrap();
+        let mut query = nsupdate::build_update(8945, zone_name, Class::IN, &[], &[]).unwrap();
         query
             .opt(|opt| {
                 opt.set_udp_payload_size(4096);
@@ -2042,8 +2049,8 @@ async fn badtime_update_responses_preserve_edns_and_verify() {
         let query = query.finish();
 
         for response in [
-            exchange_udp(app.dns_port(), &query).unwrap(),
-            exchange_tcp(app.dns_port(), &query).unwrap(),
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            common::exchange_tcp(app.dns_port(), &query).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 
@@ -2064,7 +2071,7 @@ async fn badtime_update_responses_preserve_edns_and_verify() {
             assert_eq!(tsig.data().time_signed(), signed_at);
             assert_eq!(tsig.data().fudge(), 17);
             assert_eq!(tsig.data().other().len(), 6);
-            verify_response_mac(&query, &response, &key).unwrap();
+            tsig::verify_response_mac(&query, &response, &key).unwrap();
         }
     }
 }
@@ -2077,7 +2084,7 @@ async fn truncated_updates_follow_tsig_validation_order() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "truncated-update-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "truncated-update-key", KeyRole::Admin).await;
 
     for (age, corrupt, expected) in [
         (0, false, TsigRcode::BADTRUNC),
@@ -2086,7 +2093,7 @@ async fn truncated_updates_follow_tsig_validation_order() {
         (3600, true, TsigRcode::BADSIG),
     ] {
         let signed_at = Time48::from_u64(u64::from(Time48::now()) - age);
-        let mut query = build_update(8945, zone_name, Class::IN, &[], &[]).unwrap();
+        let mut query = nsupdate::build_update(8945, zone_name, Class::IN, &[], &[]).unwrap();
         query
             .opt(|opt| {
                 opt.set_udp_payload_size(1232);
@@ -2109,8 +2116,8 @@ async fn truncated_updates_follow_tsig_validation_order() {
         }
 
         for response in [
-            exchange_udp(app.dns_port(), &query).unwrap(),
-            exchange_tcp(app.dns_port(), &query).unwrap(),
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            common::exchange_tcp(app.dns_port(), &query).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 
@@ -2132,7 +2139,7 @@ async fn truncated_updates_follow_tsig_validation_order() {
                 assert!(tsig.data().mac().is_empty());
             } else {
                 assert_eq!(tsig.data().mac().len(), 32);
-                verify_response_mac(&query, &response, &key).unwrap();
+                tsig::verify_response_mac(&query, &response, &key).unwrap();
             }
 
             assert_eq!(
@@ -2212,8 +2219,8 @@ async fn nsupdate_replaces_a_dname_and_passes_over_one_beside_a_cname() {
             Rcode::REFUSED,
         ),
     ] {
-        let rcode =
-            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).expect("update");
+        let rcode = nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None)
+            .expect("update");
         assert_eq!(rcode, expected, "{updates:?}");
     }
 
@@ -2305,8 +2312,14 @@ async fn dnssec_prerequisites_see_derived_records() {
             } else {
                 &add
             };
-            let rcode = send_update_udp(app.dns_port(), zone_name, &[prerequisite], updates, None)
-                .expect("prerequisite response");
+            let rcode = nsupdate::send_update_udp(
+                app.dns_port(),
+                zone_name,
+                &[prerequisite],
+                updates,
+                None,
+            )
+            .expect("prerequisite response");
 
             assert_eq!(rcode, expected, "{row}");
             assert_eq!(app.list_records(zone_name).await, before);
@@ -2365,7 +2378,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
 
-        let sets = fetch_exported_record_sets(&app, zone_name).await;
+        let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
 
         let apex = format!("{zone_name}.");
 
@@ -2403,22 +2416,28 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
                     rdata: rdata.clone(),
                 })
                 .collect();
-            let rcode = send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
-                .expect("exact set");
+            let rcode =
+                nsupdate::send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
+                    .expect("exact set");
 
             assert_eq!(rcode, Rcode::NOERROR, "{name} {rtype}");
             let mut repeated = prerequisites.clone();
             repeated.reverse();
             repeated.extend(prerequisites.clone());
-            let rcode = send_update_udp(app.dns_port(), zone_name, &repeated, &[], None)
+            let rcode = nsupdate::send_update_udp(app.dns_port(), zone_name, &repeated, &[], None)
                 .expect("repeated set");
 
             assert_eq!(rcode, Rcode::NOERROR, "{name} {rtype}");
 
             if prerequisites.len() > 1 {
-                let rcode =
-                    send_update_udp(app.dns_port(), zone_name, &prerequisites[..1], &[], None)
-                        .expect("subset");
+                let rcode = nsupdate::send_update_udp(
+                    app.dns_port(),
+                    zone_name,
+                    &prerequisites[..1],
+                    &[],
+                    None,
+                )
+                .expect("subset");
                 assert_eq!(rcode, Rcode::NXRRSET, "{name} {rtype}");
             }
         }
@@ -2440,15 +2459,16 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
                     rdata,
                 })
                 .collect();
-            let rcode = send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
-                .expect("different set");
+            let rcode =
+                nsupdate::send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None)
+                    .expect("different set");
 
             assert_eq!(rcode, Rcode::NXRRSET);
         }
 
         // Read-only checks must not advance the signed view.
         assert_eq!(app.read_zone_serial(zone_name).await, serial);
-        assert_eq!(fetch_exported_record_sets(&app, zone_name).await, sets);
+        assert_eq!(dns::fetch_exported_record_sets(&app, zone_name).await, sets);
 
         // Re-signing must make the old RRSIG prerequisite fail.
         let signatures: Vec<_> = sets[&(apex.clone(), Rtype::RRSIG)]
@@ -2464,7 +2484,7 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
             ttl: 300,
             addr: "192.0.2.141".to_string(),
         };
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &signatures,
@@ -2476,13 +2496,13 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
         assert_eq!(rcode, Rcode::NOERROR);
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
 
-        let after = fetch_exported_record_sets(&app, zone_name).await;
+        let after = dns::fetch_exported_record_sets(&app, zone_name).await;
 
         assert_ne!(
             after[&(apex.clone(), Rtype::RRSIG)],
             sets[&(apex.clone(), Rtype::RRSIG)]
         );
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &signatures,
@@ -2493,7 +2513,10 @@ async fn dnssec_prerequisites_compare_whole_served_record_sets() {
 
         assert_eq!(rcode, Rcode::NXRRSET);
         assert_eq!(app.read_zone_serial(zone_name).await, serial + 1);
-        assert_eq!(fetch_exported_record_sets(&app, zone_name).await, after);
+        assert_eq!(
+            dns::fetch_exported_record_sets(&app, zone_name).await,
+            after
+        );
     }
 }
 
@@ -2517,7 +2540,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    let key = create_tsig_key(&app, "dnssec-prereq", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "dnssec-prereq", KeyRole::Own).await;
     app.run_cli_success(
         &[
             "role",
@@ -2536,7 +2559,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
 
     let apex = format!("{zone_name}.");
 
-    let sets = fetch_exported_record_sets(&app, zone_name).await;
+    let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
     let values = &sets[&(apex.clone(), Rtype::DNSKEY)];
     let prerequisites: Vec<_> = values
         .iter()
@@ -2546,8 +2569,9 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
             rdata: rdata.clone(),
         })
         .collect();
-    let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
-        .expect("restricted read");
+    let rcode =
+        nsupdate::send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
+            .expect("restricted read");
 
     assert_eq!(rcode, Rcode::REFUSED);
 
@@ -2565,8 +2589,9 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     )
     .await;
 
-    let rcode = send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
-        .expect("granted read");
+    let rcode =
+        nsupdate::send_update_tcp(app.dns_port(), zone_name, &prerequisites, &[], Some(&key))
+            .expect("granted read");
 
     assert_eq!(rcode, Rcode::NOERROR);
 
@@ -2580,13 +2605,14 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
             rtype,
             rdata,
         };
-        let rcode = send_update_tcp(app.dns_port(), zone_name, &[prerequisite], &[], Some(&key))
-            .expect("signed error");
+        let rcode =
+            nsupdate::send_update_tcp(app.dns_port(), zone_name, &[prerequisite], &[], Some(&key))
+                .expect("signed error");
 
         assert_eq!(rcode, expected);
     }
 
-    assert_eq!(fetch_exported_record_sets(&app, zone_name).await, sets);
+    assert_eq!(dns::fetch_exported_record_sets(&app, zone_name).await, sets);
 }
 
 /// Preserve binary owners, TXT octets, WKS service bitmaps, and RDATA case.
@@ -2597,7 +2623,7 @@ async fn update_preserves_binary_values_and_names() {
     let zone = app.create_test_zone().await;
     let zone = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "opaque-key", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "opaque-key", KeyRole::Admin).await;
 
     let target = crate::common::dns::parse_name("Mixed.Example.")
         .unwrap()
@@ -2619,7 +2645,7 @@ async fn update_preserves_binary_values_and_names() {
         let export_owner = format!("{}.", crate::common::dns::parse_name(&owner).unwrap());
 
         assert_eq!(
-            send_update_udp(
+            nsupdate::send_update_udp(
                 app.dns_port(),
                 zone,
                 &[],
@@ -2635,14 +2661,14 @@ async fn update_preserves_binary_values_and_names() {
             Rcode::NOERROR
         );
 
-        let exported = fetch_exported_record_sets(&app, zone).await;
+        let exported = dns::fetch_exported_record_sets(&app, zone).await;
 
         assert_eq!(
             exported.get(&(export_owner.clone(), rtype)).unwrap(),
             &vec![rdata.clone()]
         );
         assert_eq!(
-            send_update_udp(
+            nsupdate::send_update_udp(
                 app.dns_port(),
                 zone,
                 &[PrerequisiteRecord::RecordEquals {
@@ -2661,7 +2687,7 @@ async fn update_preserves_binary_values_and_names() {
             Rcode::NOERROR
         );
         assert!(
-            !fetch_exported_record_sets(&app, zone)
+            !dns::fetch_exported_record_sets(&app, zone)
                 .await
                 .contains_key(&(export_owner, rtype))
         );
@@ -2671,8 +2697,8 @@ async fn update_preserves_binary_values_and_names() {
 /// Build a replacement whose metadata differs from the default zone SOA.
 fn replacement(zone: &str, serial: u32) -> Soa<Name<Vec<u8>>> {
     Soa::new(
-        parse_name(&format!("ns2.{zone}")).unwrap(),
-        parse_name(r"host\.master.example.net").unwrap(),
+        dns::parse_name(&format!("ns2.{zone}")).unwrap(),
+        dns::parse_name(r"host\.master.example.net").unwrap(),
         Serial::from(serial),
         Ttl::from_secs(1800),
         Ttl::from_secs(900),
@@ -2709,7 +2735,7 @@ async fn soa_addition_ignores_ineffective_updates() {
         (format!("{zone_name}."), serial.wrapping_add(1 << 31)),
         (format!("{zone_name}."), u32::MAX),
     ] {
-        let rcode = send_update_udp(
+        let rcode = nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -2748,7 +2774,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
     };
 
     assert_eq!(
-        send_update_udp(
+        nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -2815,7 +2841,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
     };
 
     assert_eq!(
-        send_update_udp(
+        nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[prerequisite],
@@ -2870,7 +2896,7 @@ async fn soa_replacement_uses_zone_permissions() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let key = create_tsig_key(&app, "soa-writer", KeyRole::Own).await;
+    let key = tsig::create_tsig_key(&app, "soa-writer", KeyRole::Own).await;
     app.run_cli_success(
         &[
             "role",
@@ -2893,7 +2919,7 @@ async fn soa_replacement_uses_zone_permissions() {
     }];
 
     assert_eq!(
-        send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::REFUSED
     );
     assert_eq!(metadata(&app, zone_name).await, before);
@@ -2913,7 +2939,7 @@ async fn soa_replacement_uses_zone_permissions() {
     .await;
 
     assert_eq!(
-        send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(app.read_zone_serial(zone_name).await, 100);
@@ -2928,7 +2954,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
     let zone_name = zone["name"].as_str().unwrap();
 
     assert_eq!(
-        send_update_udp(
+        nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -2951,8 +2977,8 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
         (
             600,
             Soa::new(
-                parse_name("ns.example.net").unwrap(),
-                parse_name(".").unwrap(),
+                dns::parse_name("ns.example.net").unwrap(),
+                dns::parse_name(".").unwrap(),
                 Serial::from(100),
                 Ttl::from_secs(100),
                 Ttl::from_secs(100),
@@ -2963,8 +2989,8 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
         (
             600,
             Soa::new(
-                parse_name("ns.example.net").unwrap(),
-                parse_name("admin.example.net").unwrap(),
+                dns::parse_name("ns.example.net").unwrap(),
+                dns::parse_name("admin.example.net").unwrap(),
                 Serial::from(100),
                 Ttl::from_secs(u32::MAX),
                 Ttl::from_secs(100),
@@ -2992,7 +3018,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
         ];
 
         assert_eq!(
-            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+            nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
             Rcode::REFUSED
         );
         assert_eq!(metadata(&app, zone_name).await, before);
@@ -3009,7 +3035,8 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
     }];
 
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &prerequisites, &updates, None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &prerequisites, &updates, None)
+            .unwrap(),
         Rcode::NXDOMAIN
     );
     assert_eq!(metadata(&app, zone_name).await, before);
@@ -3034,7 +3061,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
     ];
 
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
         Rcode::REFUSED
     );
     assert_eq!(metadata(&app, zone_name).await, before);
@@ -3058,7 +3085,7 @@ async fn soa_noop_accepts_maximum_serial() {
 
     for serial in [i32::MAX as u32, i32::MAX as u32, i32::MAX as u32 - 1] {
         assert_eq!(
-            send_update_udp(
+            nsupdate::send_update_udp(
                 app.dns_port(),
                 zone_name,
                 &[],
@@ -3080,7 +3107,9 @@ async fn soa_noop_accepts_maximum_serial() {
 #[tokio::test]
 #[serial]
 async fn soa_replacement_updates_the_signed_zone() {
-    use domain::{base::rdata::ComposeRecordData, dep::octseq::parse::Parser, rdata::Rrsig};
+    use domain::base::rdata::ComposeRecordData;
+    use domain::dep::octseq::parse::Parser;
+    use domain::rdata::Rrsig;
 
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3096,12 +3125,12 @@ async fn soa_replacement_updates_the_signed_zone() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    let before = fetch_exported_record_sets(&app, zone_name).await;
+    let before = dns::fetch_exported_record_sets(&app, zone_name).await;
 
     let soa = replacement(zone_name, 100);
 
     assert_eq!(
-        send_update_udp(
+        nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -3116,7 +3145,7 @@ async fn soa_replacement_updates_the_signed_zone() {
         Rcode::NOERROR
     );
 
-    let after = fetch_exported_record_sets(&app, zone_name).await;
+    let after = dns::fetch_exported_record_sets(&app, zone_name).await;
 
     let key = (format!("{zone_name}."), Rtype::SOA);
     let mut expected = Vec::new();
@@ -3144,7 +3173,7 @@ async fn soa_replacement_updates_the_signed_zone() {
     }];
 
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &prerequisites, &[], None).unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(app.read_zone_serial(zone_name).await, 100);
@@ -3154,7 +3183,9 @@ async fn soa_replacement_updates_the_signed_zone() {
 #[tokio::test]
 #[serial]
 async fn ixfr_replays_soa_replacement() {
-    use domain::base::{Message, MessageBuilder, iana::Class, rdata::ComposeRecordData};
+    use domain::base::iana::Class;
+    use domain::base::rdata::ComposeRecordData;
+    use domain::base::{Message, MessageBuilder};
 
     let app = unsigned_nsupdate_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -3171,17 +3202,17 @@ async fn ixfr_replays_soa_replacement() {
         .collect();
 
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &[], &padding, None).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &padding, None).unwrap(),
         Rcode::NOERROR
     );
 
     let old_serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
-    let before = fetch_exported_record_sets(&app, zone_name).await;
+    let before = dns::fetch_exported_record_sets(&app, zone_name).await;
 
     let soa = replacement(zone_name, old_serial + 10);
 
     assert_eq!(
-        send_update_udp(
+        nsupdate::send_update_udp(
             app.dns_port(),
             zone_name,
             &[],
@@ -3202,7 +3233,7 @@ async fn ixfr_replays_soa_replacement() {
         .unwrap(),
         Rcode::NOERROR
     );
-    let name = parse_name(zone_name).unwrap();
+    let name = dns::parse_name(zone_name).unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(0x1234);
     let mut question = builder.question();
@@ -3253,7 +3284,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let initial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
-    let key = create_tsig_key(&app, "serial-reuse", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "serial-reuse", KeyRole::Admin).await;
     let before = crate::common::axfr(app.dns_port(), zone_name, Some(&key))
         .unwrap()
         .records();
@@ -3281,7 +3312,8 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
         }
 
         assert_eq!(
-            send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+            nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key))
+                .unwrap(),
             Rcode::NOERROR
         );
     }
@@ -3316,7 +3348,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
     .collect();
 
     assert_eq!(
-        send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
+        nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::NOERROR
     );
     assert_eq!(
@@ -3365,8 +3397,8 @@ async fn nsupdate_rejects_unsupported_types_and_invalid_wks_atomically() {
         ];
 
         for rcode in [
-            send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
-            send_update_tcp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+            nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
+            nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
         ] {
             assert_eq!(rcode, expected);
         }
@@ -3393,7 +3425,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
     for rdata in [&original, &other_address, &other_protocol, &replacement] {
         let serial = app.read_zone_serial(zone_name).await;
 
-        let rcode = send_update_tcp(
+        let rcode = nsupdate::send_update_tcp(
             app.dns_port(),
             zone_name,
             &[],
@@ -3413,7 +3445,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
 
     let serial = app.read_zone_serial(zone_name).await;
 
-    let rcode = send_update_tcp(
+    let rcode = nsupdate::send_update_tcp(
         app.dns_port(),
         zone_name,
         &[],
@@ -3430,7 +3462,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
     assert_eq!(rcode, Rcode::NOERROR);
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
 
-    let sets = fetch_exported_record_sets(&app, zone_name).await;
+    let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
     let mut actual = sets.get(&(owner, rtype)).unwrap().clone();
     actual.sort();
     let mut expected = vec![replacement, other_address, other_protocol];
@@ -3452,7 +3484,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
 async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
     use std::net::{Shutdown, TcpStream};
 
-    use crate::common::dns::{read_frame, write_frame};
+    use crate::common::dns;
 
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
@@ -3463,7 +3495,7 @@ async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
         .unwrap();
 
     for id in [81, 82] {
-        let request = build_update(
+        let request = nsupdate::build_update(
             id,
             zone_name,
             Class::IN,
@@ -3476,14 +3508,15 @@ async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
         )
         .unwrap()
         .finish();
-        write_frame(&mut stream, &request).unwrap();
+        dns::write_frame(&mut stream, &request).unwrap();
     }
 
     stream.shutdown(Shutdown::Write).unwrap();
     let mut ids = Vec::new();
 
     for _ in 0..2 {
-        let response = Message::from_octets(read_frame(&mut stream).unwrap().unwrap()).unwrap();
+        let response =
+            Message::from_octets(dns::read_frame(&mut stream).unwrap().unwrap()).unwrap();
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         ids.push(response.header().id());
     }
@@ -3510,15 +3543,15 @@ async fn soa_replacement_preserves_mailbox_domain_octets() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    let signing_key = create_tsig_key(&app, "octet-soa-key", KeyRole::Admin).await;
+    let signing_key = tsig::create_tsig_key(&app, "octet-soa-key", KeyRole::Admin).await;
 
     let mut serial = 1;
 
     for key in [None, Some(&signing_key)] {
         serial += 1;
         let soa = Soa::new(
-            parse_name("ns.example.com").unwrap(),
-            parse_name(r"admin.\255.example.com").unwrap(),
+            dns::parse_name("ns.example.com").unwrap(),
+            dns::parse_name(r"admin.\255.example.com").unwrap(),
             serial.into(),
             Ttl::from_secs(300),
             Ttl::from_secs(60),
@@ -3532,13 +3565,13 @@ async fn soa_replacement_preserves_mailbox_domain_octets() {
         }];
 
         assert_eq!(
-            send_update_udp(app.dns_port(), &name, &[], &updates, key).unwrap(),
+            nsupdate::send_update_udp(app.dns_port(), &name, &[], &updates, key).unwrap(),
             Rcode::NOERROR
         );
         serial += 1;
         let soa = Soa::new(
-            parse_name("ns.example.com").unwrap(),
-            parse_name(r"admin.\255.example.com").unwrap(),
+            dns::parse_name("ns.example.com").unwrap(),
+            dns::parse_name(r"admin.\255.example.com").unwrap(),
             serial.into(),
             Ttl::from_secs(300),
             Ttl::from_secs(60),
@@ -3552,7 +3585,7 @@ async fn soa_replacement_preserves_mailbox_domain_octets() {
         }];
 
         assert_eq!(
-            send_update_tcp(app.dns_port(), &name, &[], &updates, key).unwrap(),
+            nsupdate::send_update_tcp(app.dns_port(), &name, &[], &updates, key).unwrap(),
             Rcode::NOERROR
         );
         assert_eq!(app.read_zone_serial(&name).await, i64::from(serial));

@@ -2,13 +2,9 @@
 
 use std::str::FromStr;
 
-use domain::{
-    base::{
-        MessageBuilder, Name, Record, Ttl, UnknownRecordData,
-        iana::{Class, Rcode},
-    },
-    rdata::{A, Cname, Mx, Srv, Txt},
-};
+use domain::base::iana::{Class, Rcode};
+use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
+use domain::rdata::{A, Cname, Mx, Srv, Txt};
 use serde_json::{Value, json};
 
 use super::*;

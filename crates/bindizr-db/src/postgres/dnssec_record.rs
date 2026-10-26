@@ -1,14 +1,12 @@
-use bindizr_core::model::{dnssec_record::DnssecRecordId, zone::ZoneId};
+use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Postgres, Transaction};
 
-use crate::{
-    LockLevel,
-    dnssec_record::DnssecRecordFilter,
-    error::DatabaseError,
-    model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
-    sql::{apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, refresh_bound},
-};
+use crate::dnssec_record::DnssecRecordFilter;
+use crate::error::DatabaseError;
+use crate::model::dnssec_record::{DnssecRecord, DnssecRecordWithZone};
+use crate::{LockLevel, sql};
 
 /// Insert a batch of derived DNSSEC records in the current transaction.
 pub(crate) async fn create_many_tx(
@@ -69,7 +67,7 @@ pub(crate) async fn list_signatures_covering_apex_soa_tx(
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
     Ok(sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
         "SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest FROM dnssec_records WHERE zone_id = $1 AND name = {} AND record_type = 46 AND covered_record_type = 6 ORDER BY id",
-        apex_owner_sql()
+        sql::apex_owner_sql()
     )))
     .bind(zone_id)
     .fetch_all(&mut **tx)
@@ -157,7 +155,7 @@ pub(crate) async fn list_zone_ids_expiring_within_refresh(
     else {
         return Ok(Vec::new());
     };
-    let bound = refresh_bound(cutoff, max_refresh_days);
+    let bound = sql::refresh_bound(cutoff, max_refresh_days);
 
     let zone_ids = sqlx::query_scalar::<_, ZoneId>(
         r#"
@@ -195,7 +193,7 @@ pub(crate) async fn count_expiring_within_refresh(
     else {
         return Ok(0);
     };
-    let bound = refresh_bound(cutoff, max_refresh_days);
+    let bound = sql::refresh_bound(cutoff, max_refresh_days);
 
     let count = sqlx::query_scalar::<_, i64>(
         r#"
@@ -245,9 +243,9 @@ pub(crate) async fn list_by_filter_with_zone(
 ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let apex_owner = apex_owner_sql();
-    let search = like_pattern(filter.search.as_deref());
-    let grant_match = grant_record_match_sql("d", None, concat_pipes);
+    let apex_owner = sql::apex_owner_sql();
+    let search = sql::like_pattern(filter.search.as_deref());
+    let grant_match = sql::grant_record_match_sql("d", None, sql::concat_pipes);
 
     let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
         r#"
@@ -334,9 +332,9 @@ pub(crate) async fn count_by_filter(
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let apex_owner = apex_owner_sql();
-    let search = like_pattern(filter.search.as_deref());
-    let grant_match = grant_record_match_sql("d", None, concat_pipes);
+    let apex_owner = sql::apex_owner_sql();
+    let search = sql::like_pattern(filter.search.as_deref());
+    let grant_match = sql::grant_record_match_sql("d", None, sql::concat_pipes);
 
     let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         r#"

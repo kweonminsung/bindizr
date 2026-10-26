@@ -1,21 +1,15 @@
 //! Register a secondary and save its management audit entry.
 
-use bindizr_core::model::{
-    audit_log::{AuditEntity, AuditOperation},
-    role_grant::Action,
-    secondary::SecondaryId,
-};
+use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::secondary::SecondaryId;
 use chrono::Utc;
 
-use super::{normalize_secondary_address, normalize_secondary_name};
-use crate::{
-    Context, audit,
-    authorization::Caller,
-    error::ServiceError,
-    model::secondary::Secondary,
-    transaction, tsig_key,
-    types::{CreateSecondaryRequest, SecondaryResponse},
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::secondary::Secondary;
+use crate::types::{CreateSecondaryRequest, SecondaryResponse};
+use crate::{Context, audit, transaction, tsig_key};
 
 /// Register a secondary by name and `host[:port]` address; with
 /// `notify_key_name`, NOTIFY to it is signed with that TSIG key.
@@ -26,8 +20,8 @@ pub async fn create(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = normalize_secondary_name(&request.name)?;
-    let address = normalize_secondary_address(&request.address)?;
+    let name = super::normalize_secondary_name(&request.name)?;
+    let address = super::normalize_secondary_address(&request.address)?;
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {

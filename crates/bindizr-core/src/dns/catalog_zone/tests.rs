@@ -1,5 +1,6 @@
 use super::*;
-use crate::dns::{name::encode_name, record::Rdata};
+use crate::dns::name;
+use crate::dns::record::Rdata;
 
 /// A catalog needs an apex NS; unrelated NS records cannot supply it.
 #[test]
@@ -43,7 +44,7 @@ fn name_record(owner: &str, rtype: Rtype, target: &str) -> TransferRecord {
         name: owner.to_string(),
         rtype,
         ttl: 0,
-        rdata: Rdata::new(encode_name(target).unwrap()).unwrap(),
+        rdata: Rdata::new(name::encode_name(target).unwrap()).unwrap(),
     }
 }
 

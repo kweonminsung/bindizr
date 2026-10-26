@@ -2,32 +2,24 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::zone_version::VersionFilter;
+use bindizr_service::types::{
+    DEFAULT_PAGE_LIMIT, DiffZoneVersionsResponse, ErrorResponse, GetZoneVersionResponse,
+    PaginatedResponse, RollbackZoneResponse, Run, ZoneVersionResponse,
 };
-use bindizr_core::{dns::Serial, model::zone_version::VersionFilter};
-use bindizr_service::{
-    Context,
-    types::{
-        DEFAULT_PAGE_LIMIT, DiffZoneVersionsResponse, ErrorResponse, GetZoneVersionResponse,
-        PaginatedResponse, RollbackZoneResponse, Run, ZoneVersionResponse,
-    },
-    zone,
-};
+use bindizr_service::{Context, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-        query::DryRunQuery,
-    },
-    params::NameParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::query::DryRunQuery;
+use crate::params::NameParams;
 
 /// List a zone's versions, newest serial first.
 #[utoipa::path(

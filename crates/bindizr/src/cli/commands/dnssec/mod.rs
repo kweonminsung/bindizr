@@ -12,16 +12,11 @@ use clap::Subcommand;
 pub(crate) use keys::DnssecKeysCommand;
 pub(crate) use policy::DnssecPolicyCommand;
 
-use crate::{
-    cli::{
-        error::CliError,
-        output::{
-            DnssecKeyRow, DnssecPolicyRow, OutputFormat, RenderOutputError, display_time,
-            print_payload, print_table,
-        },
-    },
-    socket::{client, types::DaemonCommand},
-};
+use crate::cli::error::CliError;
+use crate::cli::output;
+use crate::cli::output::{DnssecKeyRow, DnssecPolicyRow, OutputFormat, RenderOutputError};
+use crate::socket::client;
+use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing a zone's DNSSEC signing.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
@@ -296,7 +291,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         DnssecCommand::Status { name, output } => {
@@ -314,7 +309,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             if output == OutputFormat::Table {
                 outln!("{}", response.message)
             } else {
-                print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?
             }
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
@@ -357,7 +352,7 @@ fn print_status(
     output: OutputFormat,
 ) -> Result<(), RenderOutputError> {
     if output != OutputFormat::Table {
-        return print_payload(status, output);
+        return output::print_payload(status, output);
     }
 
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
@@ -424,7 +419,10 @@ fn print_status(
             );
 
             if let Some(eligible_at) = key.eligible_at {
-                line.push_str(&format!(", promotable from {}", display_time(eligible_at)));
+                line.push_str(&format!(
+                    ", promotable from {}",
+                    output::display_time(eligible_at)
+                ));
             }
 
             outln!("{}", line);
@@ -432,11 +430,14 @@ fn print_status(
     }
 
     if let Some(expires_at) = status.earliest_signature_expires_at {
-        outln!("Earliest signature expiry: {}", display_time(expires_at));
+        outln!(
+            "Earliest signature expiry: {}",
+            output::display_time(expires_at)
+        );
     }
 
     if let Some(resign_at) = status.next_resign_at {
-        outln!("Next re-signing: {}", display_time(resign_at));
+        outln!("Next re-signing: {}", output::display_time(resign_at));
     }
 
     if status.expired_signatures == 0 {
@@ -451,9 +452,9 @@ fn print_status(
     }
 
     outln!("Policy:");
-    print_table(vec![DnssecPolicyRow::from(policy)]);
+    output::print_table(vec![DnssecPolicyRow::from(policy)]);
     outln!("Keys:");
-    print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
+    output::print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
 
     if !status.ds_records.is_empty() {
         outln!("DS records (register in the parent zone):");

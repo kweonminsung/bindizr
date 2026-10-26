@@ -1,9 +1,9 @@
 use std::fmt;
 
-use bindizr_core::{
-    dns::{Serial, dnssec::KeyTag},
-    model::{record::RecordId, role_grant::RoleGrantId},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::RoleGrantId;
 use thiserror::Error;
 
 /// Machine-readable error codes exposed to API and CLI clients. The

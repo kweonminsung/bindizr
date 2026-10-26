@@ -3,7 +3,8 @@ use std::time::Duration;
 use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
 
-use crate::socket::{server::SocketContext, types::DaemonResponse};
+use crate::socket::server::SocketContext;
+use crate::socket::types::DaemonResponse;
 
 /// Daemon lifecycle transitions requestable over the control socket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

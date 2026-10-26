@@ -4,7 +4,6 @@ Bindizr's path is API -> serial bump -> NOTIFY -> AXFR/IXFR -> secondary -> dig.
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 import time
 from pathlib import Path
@@ -23,8 +22,6 @@ async def run(adapter, config, context) -> dict:
 
     await adapter.create_zone(zone)
 
-    loop = asyncio.get_event_loop()
-
     # Warm up: the first record in a fresh zone pays a one-time secondary
     # bootstrap (for Bindizr: catalog discovery + initial AXFR), so do one
     # throwaway create to keep it out of the measured samples.
@@ -32,9 +29,9 @@ async def run(adapter, config, context) -> dict:
 
     try:
         await adapter.create_record(zone, warm)
-        await loop.run_in_executor(
-            None, dig.poll_until_visible, f"warmup.{zone.rstrip('.')}", "A",
-            "10.0.0.1", endpoint.host, endpoint.port, propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
+        await dig.poll_until_visible(
+            f"warmup.{zone.rstrip('.')}", "A", "10.0.0.1", endpoint.host, endpoint.port,
+            propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
     except Exception:
         pass
 
@@ -58,9 +55,8 @@ async def run(adapter, config, context) -> dict:
             api.track_latency(time.monotonic() - t0, ok=False)
             continue
 
-        # Blocking poll runs in a thread so we don't stall the loop.
-        secs = await loop.run_in_executor(
-            None, dig.poll_until_visible, fqdn, "A", ip, endpoint.host, endpoint.port,
+        secs = await dig.poll_until_visible(
+            fqdn, "A", ip, endpoint.host, endpoint.port,
             propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
 
         # Time from the create call, not from when polling started: a

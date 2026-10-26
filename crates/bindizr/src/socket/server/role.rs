@@ -1,13 +1,11 @@
 use bindizr_core::model::role_grant::RoleGrantId;
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    role::{self, grant},
-    types::{
-        CreateRoleGrantRequest, CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse,
-        RoleGrantResponse, RoleResponse, SingleRoleGrantResponse, SingleRoleResponse,
-    },
+use bindizr_service::Context;
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::role::{self, grant};
+use bindizr_service::types::{
+    CreateRoleGrantRequest, CreateRoleRequest, MessageResponse, PageRequest, PaginatedResponse,
+    RoleGrantResponse, RoleResponse, SingleRoleGrantResponse, SingleRoleResponse,
 };
 
 use crate::socket::types::DaemonResponse;

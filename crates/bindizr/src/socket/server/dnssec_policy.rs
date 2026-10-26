@@ -1,13 +1,10 @@
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    dnssec_policy,
-    error::ServiceError,
-    types::{
-        CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
-        PaginatedResponse, SingleDnssecPolicyResponse, UpdateDnssecPolicyRequest,
-    },
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, MessageResponse, PageRequest,
+    PaginatedResponse, SingleDnssecPolicyResponse, UpdateDnssecPolicyRequest,
 };
+use bindizr_service::{Context, dnssec_policy};
 
 use crate::socket::types::DaemonResponse;
 

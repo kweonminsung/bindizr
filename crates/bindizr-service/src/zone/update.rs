@@ -1,31 +1,15 @@
-use bindizr_core::{
-    dns::{
-        Serial,
-        name::{OwnerName, ZoneName},
-    },
-    model::role_grant::Action,
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    dnssec,
-    error::ServiceError,
-    model::{
-        zone::Zone,
-        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
-    },
-    record::validate_record_name_in_zone,
-    serial::generate_serial,
-    text::normalize_description,
-    transaction,
-    ttl::{validate_default_ttl, validate_minimum_ttl, validate_soa_interval},
-    types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse},
-    zone::validation::{
-        normalize_mname, normalize_name, normalize_rname, reject_catalog_zone_name,
-    },
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
+use crate::types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse};
+use crate::zone::validation;
+use crate::{Context, dnssec, record, serial, text, transaction, ttl};
 
 /// Outcome of the transactional part of a zone update.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,34 +64,48 @@ pub async fn update(
         .name
         .as_deref()
         .map(|name| {
-            let name = normalize_name(name)?;
-            reject_catalog_zone_name(cx, &name)?;
+            let name = validation::normalize_name(name)?;
+            validation::reject_catalog_zone_name(cx, &name)?;
             Ok::<_, ServiceError>(name)
         })
         .transpose();
-    let mname = request.mname.as_deref().map(normalize_mname).transpose();
-    let rname = request.rname.as_deref().map(normalize_rname).transpose();
-    let ttl = request.default_ttl.map(validate_default_ttl).transpose();
+    let mname = request
+        .mname
+        .as_deref()
+        .map(validation::normalize_mname)
+        .transpose();
+    let rname = request
+        .rname
+        .as_deref()
+        .map(validation::normalize_rname)
+        .transpose();
+    let ttl = request
+        .default_ttl
+        .map(ttl::validate_default_ttl)
+        .transpose();
     let description = request
         .description
         .as_deref()
         .map(|description| {
-            normalize_description(Some(description), ServiceError::invalid_zone_field)
+            text::normalize_description(Some(description), ServiceError::invalid_zone_field)
         })
         .transpose();
     let refresh = request
         .refresh
-        .map(|value| validate_soa_interval(value, "refresh"))
+        .map(|value| ttl::validate_soa_interval(value, "refresh"))
         .transpose();
     let retry = request
         .retry
-        .map(|value| validate_soa_interval(value, "retry"))
+        .map(|value| ttl::validate_soa_interval(value, "retry"))
         .transpose();
     let expire = request
         .expire
-        .map(|value| validate_soa_interval(value, "expire"))
+        .map(|value| ttl::validate_soa_interval(value, "expire"))
         .transpose();
-    let minimum_ttl = request.minimum_ttl.map(validate_minimum_ttl).transpose();
+    let minimum_ttl = request
+        .minimum_ttl
+        .map(ttl::validate_minimum_ttl)
+        .transpose();
 
     let mut tx = transaction::begin_tx(cx, "failed to update zone").await?;
 
@@ -130,7 +128,7 @@ pub async fn update(
             retry: retry?.unwrap_or(existing_zone.retry),
             expire: expire?.unwrap_or(existing_zone.expire),
             minimum_ttl: minimum_ttl?.unwrap_or(existing_zone.minimum_ttl),
-            serial: generate_serial(Some(existing_zone.serial)),
+            serial: serial::generate_serial(Some(existing_zone.serial)),
             enabled: request.enabled.unwrap_or(existing_zone.enabled),
             ..existing_zone.clone()
         };
@@ -148,16 +146,18 @@ pub async fn update(
                 bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
 
             for record in &records {
-                validate_record_name_in_zone(&record.name, &candidate.name).map_err(|error| {
-                    if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
-                        error
-                    } else {
-                        ServiceError::invalid_record_name(format!(
-                            "a record of the zone would not fit under zone '{}'",
-                            candidate.name
-                        ))
-                    }
-                })?;
+                record::validate_record_name_in_zone(&record.name, &candidate.name).map_err(
+                    |error| {
+                        if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
+                            error
+                        } else {
+                            ServiceError::invalid_record_name(format!(
+                                "a record of the zone would not fit under zone '{}'",
+                                candidate.name
+                            ))
+                        }
+                    },
+                )?;
             }
         }
 

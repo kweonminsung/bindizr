@@ -2,7 +2,9 @@ use bindizr_core::model::dnssec_policy::PolicyId;
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::{LockLevel, error::DatabaseError, model::dnssec_policy::DnssecPolicy};
+use crate::LockLevel;
+use crate::error::DatabaseError;
+use crate::model::dnssec_policy::DnssecPolicy;
 
 /// Insert a DNSSEC policy.
 pub(crate) async fn create_tx(

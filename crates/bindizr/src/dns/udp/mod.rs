@@ -4,32 +4,23 @@
 #[cfg(test)]
 mod tests;
 
-use std::{
-    future::Future,
-    io::{self, IoSlice, IoSliceMut},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    os::fd::AsRawFd,
-    sync::Arc,
-};
+use std::future::Future;
+use std::io::{self, IoSlice, IoSliceMut};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::os::fd::AsRawFd;
+use std::sync::Arc;
 
-use bindizr_core::{
-    dns::message::{self, Keepalive, ResponseLimit, Rtype},
-    model::transfer::TransferTransport,
-};
-use nix::{
-    libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo},
-    sys::socket::{
-        ControlMessage, ControlMessageOwned, MsgFlags, SockaddrStorage, recvmsg, sendmsg,
-        setsockopt, sockopt,
-    },
-};
+use bindizr_core::dns::message::{self, Keepalive, ResponseLimit, Rtype};
+use bindizr_core::model::transfer::TransferTransport;
+use nix::libc::{in_addr, in_pktinfo, in6_addr, in6_pktinfo};
+use nix::sys::socket;
+use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, SockaddrStorage, sockopt};
 use thiserror::Error;
-use tokio::{io::Interest, task::JoinSet};
+use tokio::io::Interest;
+use tokio::task::JoinSet;
 
-use super::{
-    error::DnsError,
-    server::{self, DnsContext},
-};
+use super::error::DnsError;
+use super::server::{self, DnsContext};
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;
@@ -65,9 +56,9 @@ impl UdpSocket {
     /// Enable per-packet addressing before the listener starts receiving.
     pub(crate) fn new(socket: tokio::net::UdpSocket) -> io::Result<Self> {
         if socket.local_addr()?.is_ipv6() {
-            setsockopt(&socket, sockopt::Ipv6RecvPacketInfo, &true)?;
+            socket::setsockopt(&socket, sockopt::Ipv6RecvPacketInfo, &true)?;
         } else {
-            setsockopt(&socket, sockopt::Ipv4PacketInfo, &true)?;
+            socket::setsockopt(&socket, sockopt::Ipv4PacketInfo, &true)?;
         }
         Ok(Self { socket })
     }
@@ -79,7 +70,7 @@ impl UdpSocket {
             .async_io(Interest::READABLE, || {
                 let mut iov = [IoSliceMut::new(buffer)];
                 let mut control = nix::cmsg_space!(in_pktinfo, in6_pktinfo);
-                let message = recvmsg::<SockaddrStorage>(
+                let message = socket::recvmsg::<SockaddrStorage>(
                     self.socket.as_raw_fd(),
                     &mut iov,
                     Some(&mut control),
@@ -177,7 +168,7 @@ impl UdpSocket {
                     }
                 };
 
-                sendmsg(
+                socket::sendmsg(
                     self.socket.as_raw_fd(),
                     &[IoSlice::new(response)],
                     &[control],

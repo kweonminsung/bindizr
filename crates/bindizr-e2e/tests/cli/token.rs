@@ -1,4 +1,5 @@
-use crate::common::{TestApp, assert_cli_failure_contains};
+use crate::common;
+use crate::common::TestApp;
 
 /// Verify that token create rejects duplicate name.
 #[tokio::test]
@@ -23,5 +24,5 @@ async fn token_create_needs_an_existing_role() {
 
     let args = ["token", "create", &name, "--role", "no-such-role"];
     let refused = app.run_cli(&args, None).await;
-    assert_cli_failure_contains(&args, &refused, "not found");
+    common::assert_cli_failure_contains(&args, &refused, "not found");
 }

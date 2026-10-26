@@ -1,6 +1,7 @@
 use std::process::{Command, Stdio};
 
-use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
+use crate::common;
+use crate::common::TestApp;
 
 const VALID_CONFIG: &str = r#"
 [api]
@@ -53,7 +54,7 @@ async fn doctor_reports_healthy_installation() {
         result = app.run_cli(&args, None).await;
     }
 
-    assert_cli_success(&args, &result);
+    common::assert_cli_success(&args, &result);
     let output = String::from_utf8(result.stdout).expect("CLI stdout was not UTF-8");
 
     assert!(output.contains("Config valid"));
@@ -106,7 +107,7 @@ fn doctor_without_a_daemon_runs_the_offline_checks() {
         .output()
         .expect("failed to run bindizr CLI");
 
-    assert_cli_failure_contains(&args, &output, "failing check");
+    common::assert_cli_failure_contains(&args, &output, "failing check");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(stdout.contains("Daemon not reachable"), "{stdout}");

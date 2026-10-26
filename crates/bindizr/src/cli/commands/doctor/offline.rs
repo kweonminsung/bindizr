@@ -1,12 +1,10 @@
 //! Checks run from this process when no daemon is up: the database and the
 //! listen ports.
 
-use std::{
-    io::{self, ErrorKind},
-    net::SocketAddr,
-    path::Path,
-    time::Duration,
-};
+use std::io::{self, ErrorKind};
+use std::net::SocketAddr;
+use std::path::Path;
+use std::time::Duration;
 
 use bindizr_core::config::{Config, DatabaseType};
 use tokio::net::{TcpListener, UdpSocket};

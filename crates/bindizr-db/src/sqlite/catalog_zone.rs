@@ -1,4 +1,5 @@
-use bindizr_core::dns::{Serial, name::ZoneName};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
 use sqlx::{Sqlite, Transaction};
 
 use crate::error::DatabaseError;

@@ -1,18 +1,16 @@
 //! DNS exchanges shared by the protocol tests.
 
-use std::{
-    io::{Read, Write},
-    net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket},
-    sync::Arc,
-    time::Duration,
-};
+use std::io::{Read, Write};
+use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
+use std::sync::Arc;
+use std::time::Duration;
 
-use domain::{
-    base::{Message, message_builder::AdditionalBuilder},
-    rdata::tsig::Time48,
-    tsig::ClientTransaction,
-};
-use rustls::{ClientConfig, ClientConnection, StreamOwned, pki_types::ServerName};
+use domain::base::Message;
+use domain::base::message_builder::AdditionalBuilder;
+use domain::rdata::tsig::Time48;
+use domain::tsig::ClientTransaction;
+use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, ClientConnection, StreamOwned};
 
 use super::tsig::SigningKey;
 

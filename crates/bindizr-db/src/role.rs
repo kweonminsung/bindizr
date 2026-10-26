@@ -1,9 +1,9 @@
 use bindizr_core::model::role::RoleId;
 
-use crate::{
-    Backend, Db, Transaction, error::DatabaseError, model::role::Role, mysql, postgres, sqlite,
-    tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::role::Role;
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
 /// Insert a role.
 pub async fn create_tx(tx: &mut Transaction<'_>, role: Role) -> Result<Role, DatabaseError> {

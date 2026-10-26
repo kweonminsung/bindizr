@@ -3,16 +3,14 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Duration, Utc};
 
 use super::*;
-use crate::{
-    dns::name::{OwnerName, ZoneName},
-    model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
-        dnssec_policy::DnssecDenial,
-        dnssec_record::{DnssecRecord, DnssecRecordType},
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+use crate::dns::name::{OwnerName, ZoneName};
+use crate::model::dnssec_key::{
+    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
 };
+use crate::model::dnssec_policy::DnssecDenial;
+use crate::model::dnssec_record::{DnssecRecord, DnssecRecordType};
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
 
 /// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {

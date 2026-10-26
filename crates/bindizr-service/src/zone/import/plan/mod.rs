@@ -1,21 +1,12 @@
-//! Reconcile imported records and build their preview without writing rows.
+//! Reconcile imported records into row changes without writing or authorizing them.
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::{
-    dns::name::OwnerName,
-    model::record::{RecordId, RecordKey},
-};
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::RecordKey;
 
-use crate::{
-    authorization::Caller,
-    model::{
-        record::{Record, RecordData, RecordType},
-        zone::Zone,
-    },
-    types::{ImportMode, RecordDiffResponse},
-    zone::diff::build_record_diff,
-};
+use crate::model::record::{Record, RecordData, RecordType};
+use crate::types::ImportMode;
 
 /// A record the import wants present, with its owner name already normalized so
 /// it can be compared against existing records.
@@ -123,41 +114,6 @@ impl<'a> ImportPlan<'a> {
             unchanged,
             updated,
         }
-    }
-}
-
-impl ImportPlan<'_> {
-    /// Preview against the same zone and record snapshot used to compute
-    /// this plan, showing the existing rows `caller` may read.
-    pub(crate) fn diff(
-        &self,
-        caller: &Caller,
-        zone: &Zone,
-        existing: &[Record],
-    ) -> RecordDiffResponse {
-        let deleted_ids: HashSet<RecordId> = self
-            .dels
-            .iter()
-            .chain(&self.ttl_dels)
-            .map(|record| record.id)
-            .collect();
-
-        let before =
-            caller.readable_records(zone.id, existing.iter().cloned().map(RecordData::from));
-        let mut after = caller.readable_records(
-            zone.id,
-            existing
-                .iter()
-                .filter(|record| !deleted_ids.contains(&record.id))
-                .cloned()
-                .map(RecordData::from),
-        );
-
-        for add in &self.adds {
-            after.push_written(add.data.clone());
-        }
-
-        build_record_diff(zone, &before, &after)
     }
 }
 

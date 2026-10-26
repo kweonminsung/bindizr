@@ -1,7 +1,8 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{TestApp, probe_zone_soa};
+use crate::common;
+use crate::common::TestApp;
 
 mod history;
 mod import;
@@ -944,7 +945,7 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     let server = format!("127.0.0.1:{}", app.dns_port());
 
     assert!(
-        probe_zone_soa(app.dns_port(), zone_name),
+        common::probe_zone_soa(app.dns_port(), zone_name),
         "a served zone answers its SOA"
     );
 
@@ -966,7 +967,7 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     // Unknown to the DNS plane, so a secondary drops the zone instead of
     // serving a copy nothing refreshes.
     assert!(
-        !probe_zone_soa(app.dns_port(), zone_name),
+        !common::probe_zone_soa(app.dns_port(), zone_name),
         "a disabled zone must not answer its SOA"
     );
 
@@ -1028,7 +1029,7 @@ async fn disabled_zone_remains_editable_and_leaves_dns_plane() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["zone"]["description"].is_null(), "{body}");
     assert!(
-        probe_zone_soa(app.dns_port(), zone_name),
+        common::probe_zone_soa(app.dns_port(), zone_name),
         "re-enabling serves the zone again"
     );
 }
@@ -1134,7 +1135,7 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
 
     let serial = app.read_zone_serial(&zone_name).await;
 
-    assert!(!probe_zone_soa(app.dns_port(), &zone_name));
+    assert!(!common::probe_zone_soa(app.dns_port(), &zone_name));
     let path = format!("/zones/{zone_name}");
 
     let (status, body) = app
@@ -1153,7 +1154,7 @@ async fn zone_create_omits_records_when_apex_ns_is_disabled() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(probe_zone_soa(app.dns_port(), &zone_name));
+    assert!(common::probe_zone_soa(app.dns_port(), &zone_name));
 
     // Rolling back to the initial empty version cannot remove the active zone's NS.
     for suffix in ["?dry_run=true", ""] {

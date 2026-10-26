@@ -1,21 +1,14 @@
 use std::collections::HashSet;
 
-use bindizr_core::dns::{
-    Ttl,
-    name::{OwnerName, ZoneName, has_whitespace_or_control, trim_presentation_name},
-    record::{SoaMailbox, SrvRecordValue},
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::record::{SoaMailbox, SrvRecordValue};
+use bindizr_core::dns::{Ttl, name};
 use bindizr_db::{LockLevel, Transaction};
 
-use crate::{
-    Context,
-    error::ServiceError,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
-    ttl::validate_default_ttl,
-};
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::{Context, ttl};
 
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
@@ -36,7 +29,7 @@ pub(crate) fn normalize_soa(
 ) -> Result<NormalizedSoa, ServiceError> {
     let mname = normalize_mname(mname)?;
     let rname = normalize_rname(rname)?;
-    let ttl = validate_default_ttl(ttl)?;
+    let ttl = ttl::validate_default_ttl(ttl)?;
     Ok(NormalizedSoa { mname, rname, ttl })
 }
 
@@ -88,7 +81,7 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceEr
 
 /// Normalize the SOA primary server name.
 pub(crate) fn normalize_mname(value: &str) -> Result<String, ServiceError> {
-    if trim_presentation_name(value) == "." {
+    if name::trim_presentation_name(value) == "." {
         return Ok(".".to_string());
     }
     Ok(normalize_domain_name(value, "mname")?.to_string())
@@ -104,7 +97,7 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
         ));
     }
 
-    if has_whitespace_or_control(value) {
+    if name::has_whitespace_or_control(value) {
         return Err(ServiceError::invalid_zone_field(
             "rname must not contain whitespace or control characters".to_string(),
         ));
@@ -350,20 +343,21 @@ pub(crate) async fn validate_record_changes_tx(
 mod tests {
     use bindizr_core::dns::name::ZoneName;
 
-    use super::{normalize_mname, normalize_name};
-
     /// Root MNAME is valid without loosening zone-name or label parsing.
     #[test]
     fn primary_name_preserves_root_and_literal_dot() {
-        assert_eq!(normalize_mname(" . ").unwrap(), ".");
-        assert_eq!(normalize_mname(r"\.").unwrap(), r"\046");
-        assert_eq!(normalize_mname(" NS.Example. ").unwrap(), "ns.example");
+        assert_eq!(super::normalize_mname(" . ").unwrap(), ".");
+        assert_eq!(super::normalize_mname(r"\.").unwrap(), r"\046");
+        assert_eq!(
+            super::normalize_mname(" NS.Example. ").unwrap(),
+            "ns.example"
+        );
 
         for invalid in ["", "..", "host..example"] {
-            assert!(normalize_mname(invalid).is_err(), "{invalid:?}");
+            assert!(super::normalize_mname(invalid).is_err(), "{invalid:?}");
         }
 
-        assert!(normalize_name(".").is_err());
+        assert!(super::normalize_name(".").is_err());
     }
 
     /// Preserve escaped trailing whitespace while tolerating ordinary surrounding padding.
@@ -372,15 +366,15 @@ mod tests {
         for byte in [9u8, 10, 11, 12, 13, 32] {
             let input = format!(" tail\\{} \t", char::from(byte));
             let expected = ZoneName::parse(&format!("tail\\{byte:03}")).unwrap();
-            assert_eq!(normalize_name(&input).unwrap(), expected);
+            assert_eq!(super::normalize_name(&input).unwrap(), expected);
         }
 
         assert_eq!(
-            normalize_name(" example.com \t").unwrap().as_str(),
+            super::normalize_name(" example.com \t").unwrap().as_str(),
             "example.com"
         );
         assert!(
-            normalize_name(" . ")
+            super::normalize_name(" . ")
                 .unwrap_err()
                 .to_string()
                 .contains("root zone")
@@ -395,7 +389,7 @@ mod tests {
                 let input = format!("{label}{suffix}");
 
                 assert!(
-                    normalize_name(&input)
+                    super::normalize_name(&input)
                         .unwrap_err()
                         .to_string()
                         .contains("wildcard"),
@@ -405,7 +399,7 @@ mod tests {
         }
 
         for input in ["a*.example", "a.*.example", r"\042\046example"] {
-            assert!(normalize_name(input).is_ok(), "{input:?}");
+            assert!(super::normalize_name(input).is_ok(), "{input:?}");
         }
     }
 }

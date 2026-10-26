@@ -1,11 +1,6 @@
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata,
-    value::{
-        DEFAULT_PRIORITY, parse_optional_u16_record_field, parse_u16_record_field,
-        split_record_fields, validate_domain_record_value,
-    },
-};
-use crate::dns::name::{encode_name, to_fqdn};
+use super::value::DEFAULT_PRIORITY;
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use crate::dns::name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SrvRecordValue<'a> {
@@ -22,15 +17,18 @@ impl<'a> SrvRecordValue<'a> {
         value: &'a str,
         fallback_priority: Option<i32>,
     ) -> Result<Self, ParseRecordValueError> {
-        match split_record_fields(value).collect::<Vec<_>>().as_slice() {
+        match value::split_record_fields(value)
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
             [weight, port, target] => Ok(Self {
-                priority: parse_optional_u16_record_field(
+                priority: value::parse_optional_u16_record_field(
                     "SRV priority",
                     fallback_priority,
                     DEFAULT_PRIORITY,
                 )?,
-                weight: parse_u16_record_field("SRV weight", weight)?,
-                port: parse_u16_record_field("SRV port", port)?,
+                weight: value::parse_u16_record_field("SRV weight", weight)?,
+                port: value::parse_u16_record_field("SRV port", port)?,
                 target,
             }),
             _ => Err(ParseRecordValueError::SrvShape {
@@ -45,7 +43,7 @@ impl<'a> SrvRecordValue<'a> {
         rdata.extend_from_slice(&self.priority.to_be_bytes());
         rdata.extend_from_slice(&self.weight.to_be_bytes());
         rdata.extend_from_slice(&self.port.to_be_bytes());
-        rdata.extend_from_slice(&encode_name(self.target)?);
+        rdata.extend_from_slice(&name::encode_name(self.target)?);
         Rdata::new(rdata)
     }
 
@@ -55,7 +53,7 @@ impl<'a> SrvRecordValue<'a> {
             return Ok(());
         }
 
-        validate_domain_record_value("SRV record target", self.target)
+        value::validate_domain_record_value("SRV record target", self.target)
     }
 
     /// The host this record names, as stored; `.` when the service is absent.
@@ -70,13 +68,18 @@ impl<'a> SrvRecordValue<'a> {
             self.priority,
             self.weight,
             self.port,
-            to_fqdn(self.target)
+            name::to_fqdn(self.target)
         )
     }
 
     /// The value column's form: `<weight> <port> <target>` with a case-preserving
     /// FQDN target.
     pub fn to_stored(&self) -> String {
-        format!("{} {} {}", self.weight, self.port, to_fqdn(self.target))
+        format!(
+            "{} {} {}",
+            self.weight,
+            self.port,
+            name::to_fqdn(self.target)
+        )
     }
 }

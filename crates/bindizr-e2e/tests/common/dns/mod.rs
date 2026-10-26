@@ -3,12 +3,13 @@ mod transfer;
 mod transport;
 pub(crate) mod tsig;
 
-use std::{net::Ipv4Addr, str::FromStr, time::Duration};
+use std::net::Ipv4Addr;
+use std::time::Duration;
 
-use domain::{
-    base::{Message, MessageBuilder, Name, Rtype, iana::Rcode, name::ParsedName},
-    rdata::AllRecordData,
-};
+use domain::base::iana::Rcode;
+use domain::base::name::ParsedName;
+use domain::base::{Message, MessageBuilder, Name, Rtype};
+use domain::rdata::AllRecordData;
 pub(crate) use parent::{DsRecord, FakeParent};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -240,6 +241,8 @@ fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8
 
 /// Parse a DNS name into its wire form, a bare or trailing dot reading as the root.
 pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
+    use std::str::FromStr;
+
     let trimmed = name.trim_end_matches('.');
     if trimmed.is_empty() {
         return Ok(Name::root_vec());
@@ -497,10 +500,8 @@ pub(crate) async fn fetch_exported_record_sets(
     app: &TestApp,
     zone_name: &str,
 ) -> std::collections::BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
-    use domain::{
-        base::rdata::ComposeRecordData,
-        zonefile::inplace::{Entry, Zonefile},
-    };
+    use domain::base::rdata::ComposeRecordData;
+    use domain::zonefile::inplace::{Entry, Zonefile};
 
     let (status, body) = app
         .send_request(

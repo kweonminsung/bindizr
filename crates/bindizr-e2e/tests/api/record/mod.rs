@@ -2,7 +2,7 @@ use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{TestApp, dns::fetch_exported_record_sets};
+use crate::common::{TestApp, dns};
 
 mod bulk;
 mod dname_targets;
@@ -63,7 +63,7 @@ async fn root_record_targets_round_trip_through_management() {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["record"]["value"], ".");
 
-        let records = fetch_exported_record_sets(&app, name).await;
+        let records = dns::fetch_exported_record_sets(&app, name).await;
 
         assert_eq!(records[&(format!("{owner}.{name}."), rtype)], [vec![0]]);
 
@@ -178,7 +178,7 @@ async fn escaped_record_targets_round_trip_through_management() {
         }
     }
 
-    let exported = fetch_exported_record_sets(&app, name).await;
+    let exported = dns::fetch_exported_record_sets(&app, name).await;
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{name}/export"), None)
         .await;
@@ -202,7 +202,7 @@ async fn escaped_record_targets_round_trip_through_management() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let imported = fetch_exported_record_sets(&app, &imported_name).await;
+    let imported = dns::fetch_exported_record_sets(&app, &imported_name).await;
 
     for (owner, rtype, kind, input, priority, rdata) in expected_records {
         assert_eq!(
@@ -2673,7 +2673,7 @@ async fn binary_txt_and_wks_round_trip() {
         let wire_type: Rtype = rtype.parse().unwrap();
 
         assert_eq!(
-            fetch_exported_record_sets(&app, zone)
+            dns::fetch_exported_record_sets(&app, zone)
                 .await
                 .get(&(format!("{name}.{zone}."), wire_type))
                 .unwrap(),
@@ -2691,7 +2691,7 @@ async fn binary_txt_and_wks_round_trip() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        fetch_exported_record_sets(&app, zone)
+        dns::fetch_exported_record_sets(&app, zone)
             .await
             .get(&(format!("imported.{zone}."), Rtype::TXT))
             .unwrap(),

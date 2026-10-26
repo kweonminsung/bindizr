@@ -1,30 +1,21 @@
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
+use std::time::Instant;
 
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    model::{record::RecordId, role_grant::Action},
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::validation::{
-    normalize_record_owner_name, parse_record_fields, validate_record_constraints,
+use super::validation;
+use crate::authorization::{Caller, RecordAccess};
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordData};
+use crate::types::{
+    CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse, Run,
 };
-use crate::{
-    Context,
-    authorization::{Caller, RecordAccess},
-    dnssec,
-    error::ServiceError,
-    model::record::{Record, RecordData},
-    serial::generate_serial,
-    time::elapsed_ms,
-    transaction,
-    types::{
-        CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse,
-        Run,
-    },
-    zone::{self, diff::build_record_diff},
-};
+use crate::zone::diff;
+use crate::{Context, dnssec, serial, time, transaction, zone};
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -60,13 +51,15 @@ pub async fn create_bulk(
     let t = Instant::now();
     let prepared = items
         .iter()
-        .map(|item| parse_record_fields(&item.record_type, &item.value, item.ttl, item.priority))
+        .map(|item| {
+            validation::parse_record_fields(&item.record_type, &item.value, item.ttl, item.priority)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let owners: Vec<_> = items
         .iter()
-        .map(|item| normalize_record_owner_name(&item.name, zone_name))
+        .map(|item| validation::normalize_record_owner_name(&item.name, zone_name))
         .collect();
-    let prepare_ms = elapsed_ms(t);
+    let prepare_ms = time::elapsed_ms(t);
 
     let mut timings = BulkTimings::default();
 
@@ -78,7 +71,7 @@ pub async fn create_bulk(
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        timings.load_zone_ms = elapsed_ms(t);
+        timings.load_zone_ms = time::elapsed_ms(t);
 
         // Authorize before loading existing record rows so an ungranted caller
         // gets 404 instead of constraint details; dry runs included.
@@ -124,9 +117,9 @@ pub async fn create_bulk(
             }
         };
 
-        timings.load_existing_ms = elapsed_ms(t);
+        timings.load_existing_ms = time::elapsed_ms(t);
 
-        let new_serial = generate_serial(Some(zone.serial));
+        let new_serial = serial::generate_serial(Some(zone.serial));
 
         // The diff is only shown on a dry-run preview, so keep the `before`
         // copy (and pay for building the diff) off the apply hot path.
@@ -148,7 +141,7 @@ pub async fn create_bulk(
                 .push(record);
         }
 
-        timings.build_index_ms = elapsed_ms(t);
+        timings.build_index_ms = time::elapsed_ms(t);
 
         let t = Instant::now();
         let mut to_insert = Vec::with_capacity(prepared.len());
@@ -161,7 +154,7 @@ pub async fn create_bulk(
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
-            validate_record_constraints(
+            validation::validate_record_constraints(
                 records_at_name,
                 &owner_name,
                 &prepared_record.record_type,
@@ -185,7 +178,7 @@ pub async fn create_bulk(
             to_insert.push(record);
         }
 
-        timings.build_records_ms = elapsed_ms(t);
+        timings.build_records_ms = time::elapsed_ms(t);
 
         zone::validate_record_changes_tx(&mut tx, &zone, &[], &to_insert).await?;
 
@@ -200,7 +193,7 @@ pub async fn create_bulk(
                 after.push_written(RecordData::from(record.clone()));
             }
 
-            let diff = build_record_diff(&zone, &before, &after);
+            let diff = diff::build_record_diff(&zone, &before, &after);
 
             (to_insert, diff)
         } else {
@@ -209,7 +202,7 @@ pub async fn create_bulk(
             let created_records =
                 super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
-            timings.db_write_ms = elapsed_ms(t);
+            timings.db_write_ms = time::elapsed_ms(t);
 
             let t = Instant::now();
 
@@ -218,7 +211,7 @@ pub async fn create_bulk(
             // Advance the serial once so IXFR consumers detect the batch.
             zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-            timings.serial_ms = elapsed_ms(t);
+            timings.serial_ms = time::elapsed_ms(t);
 
             (created_records, RecordDiffResponse::default())
         };
@@ -256,7 +249,7 @@ pub async fn create_bulk(
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
-    let notify_ms = elapsed_ms(t);
+    let notify_ms = time::elapsed_ms(t);
 
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -274,7 +267,7 @@ pub async fn create_bulk(
         timings.db_write_ms,
         timings.serial_ms,
         notify_ms,
-        elapsed_ms(t_total),
+        time::elapsed_ms(t_total),
     );
 
     let records = created_records

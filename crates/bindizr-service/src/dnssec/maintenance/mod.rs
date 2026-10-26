@@ -1,23 +1,17 @@
 //! Per-zone DNSSEC maintenance transactions for signing and rollover.
 
-use bindizr_core::{
-    dns::{dnssec::SigningPass, name::ZoneName},
-    model::{
-        dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
-        zone::ZoneId,
-    },
-};
+use bindizr_core::dns::dnssec::SigningPass;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    Context,
-    change::ChangeOrigin,
-    dnssec::{self, rollover::promotable_sep_key_ids},
-    error::ServiceError,
-    transaction,
-    types::Holddown,
-};
+use crate::change::ChangeOrigin;
+use crate::dnssec::rollover;
+use crate::error::ServiceError;
+use crate::types::Holddown;
+use crate::{Context, dnssec, transaction};
 
 /// Re-sign a zone transactionally, advancing its serial only for changed signatures.
 /// Return `None` if the zone is gone, unsigned, or needs no new signatures.
@@ -188,7 +182,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         };
 
         // The same rule `ds-seen` applies, minus the errors it reports.
-        let Ok(awaiting) = promotable_sep_key_ids(&signed, Holddown::Wait) else {
+        let Ok(awaiting) = rollover::promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
 

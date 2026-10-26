@@ -2,13 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use sqlx::FromRow;
 
-use crate::{
-    dns::{Serial, SoaInterval, Ttl},
-    model::{
-        change::{ChangeActor, ChangeActorColumns, ChangeSource},
-        zone::ZoneId,
-    },
-};
+use crate::dns::{Serial, SoaInterval, Ttl};
+use crate::model::change::{ChangeActor, ChangeActorColumns, ChangeSource};
+use crate::model::zone::ZoneId;
 
 /// Select stored versions by journal content, independently of who made the change.
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]

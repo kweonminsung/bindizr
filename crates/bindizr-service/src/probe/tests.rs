@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use bindizr_core::{config::Config, metrics::Metrics};
+use bindizr_core::config::Config;
+use bindizr_core::metrics::Metrics;
 use serde_json::json;
-use tokio::{
-    net::{TcpListener, UdpSocket},
-    sync::{mpsc, watch},
-    time::{Duration, timeout},
-};
+use tokio::net::{TcpListener, UdpSocket};
+use tokio::sync::{mpsc, watch};
+use tokio::time;
+use tokio::time::Duration;
 
 use super::*;
 
@@ -77,7 +77,7 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     let task_cx = cx.clone();
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &name, None).await });
     let mut query = [0u8; 4096];
-    let (len, client) = timeout(Duration::from_secs(2), udp.recv_from(&mut query))
+    let (len, client) = time::timeout(Duration::from_secs(2), udp.recv_from(&mut query))
         .await
         .unwrap()
         .unwrap();
@@ -87,7 +87,7 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     query[2] = 0x82; // QR and TC would otherwise start a TCP exchange.
     udp.send_to(&query[..len], client).await.unwrap();
     assert!(
-        timeout(Duration::from_millis(150), tcp.accept())
+        time::timeout(Duration::from_millis(150), tcp.accept())
             .await
             .is_err()
     );
@@ -117,12 +117,12 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
     let mut first_query = [0u8; 4096];
     let mut second_query = [0u8; 4096];
     let (first_len, first_client) =
-        timeout(Duration::from_secs(2), first.recv_from(&mut first_query))
+        time::timeout(Duration::from_secs(2), first.recv_from(&mut first_query))
             .await
             .unwrap()
             .unwrap();
     let (second_len, second_client) =
-        timeout(Duration::from_secs(2), second.recv_from(&mut second_query))
+        time::timeout(Duration::from_secs(2), second.recv_from(&mut second_query))
             .await
             .unwrap()
             .unwrap();

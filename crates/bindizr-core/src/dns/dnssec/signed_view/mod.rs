@@ -8,35 +8,29 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
-use domain::{
-    base::{iana::Rtype, rdata::ComposeRecordData},
-    crypto::sign::{KeyPair, SecretKeyBytes},
-    dnssec::sign::{keys::signingkey::SigningKey, records::Rrset, signatures::rrsigs::sign_rrset},
-    rdata::{ZoneRecordData, dnssec::Timestamp},
-};
-use input::denial_records;
+use domain::base::iana::Rtype;
+use domain::base::rdata::ComposeRecordData;
+use domain::crypto::sign::{KeyPair, SecretKeyBytes};
+use domain::dnssec::sign::keys::signingkey::SigningKey;
+use domain::dnssec::sign::records::Rrset;
+use domain::dnssec::sign::signatures::rrsigs;
+use domain::rdata::ZoneRecordData;
+use domain::rdata::dnssec::Timestamp;
 use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
 use super::{WireName, WireRecord};
-use crate::{
-    dns::{
-        LibraryError, Serial, Ttl,
-        dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag},
-        name::{OwnerName, ParseNameError, ZoneName},
-        record::{EncodeRdataError, Rdata},
-    },
-    model::{
-        dnssec_key::DnssecKey,
-        dnssec_policy::DnssecDenial,
-        dnssec_record::{
-            DnssecRecord, DnssecRecordId, DnssecRecordKey, DnssecRecordType,
-            ParseDnssecRecordTypeError,
-        },
-        record::Record,
-        zone::Zone,
-    },
+use crate::dns::dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag};
+use crate::dns::name::{OwnerName, ParseNameError, ZoneName};
+use crate::dns::record::{EncodeRdataError, Rdata};
+use crate::dns::{LibraryError, Serial, Ttl};
+use crate::model::dnssec_key::DnssecKey;
+use crate::model::dnssec_policy::DnssecDenial;
+use crate::model::dnssec_record::{
+    DnssecRecord, DnssecRecordId, DnssecRecordKey, DnssecRecordType, ParseDnssecRecordTypeError,
 };
+use crate::model::record::Record;
+use crate::model::zone::Zone;
 
 type SignRecord = WireRecord<ZoneRecordData<Vec<u8>, WireName>>;
 
@@ -165,7 +159,7 @@ impl SignedViewParams<'_> {
         let input = self.signing_input(&apex, &signers)?;
 
         let mut new_rows: Vec<DnssecRecord> = Vec::new();
-        let denial_records = denial_records(&apex, &input, self.denial)?;
+        let denial_records = input::denial_records(&apex, &input, self.denial)?;
 
         // Rows for everything the signer owns: the apex key record sets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
@@ -462,7 +456,7 @@ impl<'a> Signer<'a> {
                 reason: error.to_string(),
             }
         })?;
-        sign_rrset(
+        rrsigs::sign_rrset(
             &self.signing_key,
             &record_set,
             Timestamp::from(inception.timestamp() as u32),

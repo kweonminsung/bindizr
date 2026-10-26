@@ -10,14 +10,18 @@ mod tls;
 mod udp;
 pub(crate) mod wire;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use bindizr_service::Context;
 use thiserror::Error;
-use tokio::{net::TcpListener, task::JoinHandle};
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 
-use self::{server::DnsContext, udp::UdpSocket};
-use crate::{shutdown::Shutdown, tls::TlsCertificate};
+use self::server::DnsContext;
+use self::udp::UdpSocket;
+use crate::shutdown::Shutdown;
+use crate::tls::TlsCertificate;
 
 /// Why a DNS listener could not come up.
 #[derive(Debug, Error)]

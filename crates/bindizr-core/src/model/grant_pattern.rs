@@ -1,7 +1,8 @@
 //! Grant patterns: `*` for all, `@` for apex, `*.sub` for a subtree, exact names,
 //! and comma-separated record types.
 
-use crate::{dns::name::OwnerName, model::record::RecordType};
+use crate::dns::name::OwnerName;
+use crate::model::record::RecordType;
 
 /// The pattern or type list that covers everything.
 pub const MATCH_ANY: &str = "*";
@@ -65,50 +66,65 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_pattern_coverage, matches_name};
+
     use crate::dns::name::OwnerName;
 
     /// Verify that pattern matching covers all forms.
     #[test]
     fn pattern_matching_covers_all_forms() {
-        assert!(matches_name("*", &OwnerName::apex()));
-        assert!(matches_name("*", &OwnerName::from_row("anything.at.all")));
+        assert!(super::matches_name("*", &OwnerName::apex()));
+        assert!(super::matches_name(
+            "*",
+            &OwnerName::from_row("anything.at.all")
+        ));
 
-        assert!(matches_name("@", &OwnerName::apex()));
-        assert!(!matches_name("@", &OwnerName::from_row("www")));
+        assert!(super::matches_name("@", &OwnerName::apex()));
+        assert!(!super::matches_name("@", &OwnerName::from_row("www")));
 
-        assert!(matches_name("www", &OwnerName::from_row("www")));
-        assert!(matches_name("www", &OwnerName::from_row("WWW")));
-        assert!(!matches_name("www", &OwnerName::from_row("sub.www")));
+        assert!(super::matches_name("www", &OwnerName::from_row("www")));
+        assert!(super::matches_name("www", &OwnerName::from_row("WWW")));
+        assert!(!super::matches_name("www", &OwnerName::from_row("sub.www")));
 
-        assert!(matches_name("*.sub", &OwnerName::from_row("sub")));
-        assert!(matches_name("*.sub", &OwnerName::from_row("a.sub")));
-        assert!(matches_name("*.sub", &OwnerName::from_row("a.b.sub")));
-        assert!(!matches_name("*.sub", &OwnerName::from_row("sub.other")));
-        assert!(!matches_name("*.sub", &OwnerName::from_row("xsub")));
+        assert!(super::matches_name("*.sub", &OwnerName::from_row("sub")));
+        assert!(super::matches_name("*.sub", &OwnerName::from_row("a.sub")));
+        assert!(super::matches_name(
+            "*.sub",
+            &OwnerName::from_row("a.b.sub")
+        ));
+        assert!(!super::matches_name(
+            "*.sub",
+            &OwnerName::from_row("sub.other")
+        ));
+        assert!(!super::matches_name("*.sub", &OwnerName::from_row("xsub")));
     }
 
     /// Verify that a subtree grant does not reach a label that merely spells it.
     #[test]
     fn subtree_grant_rejects_escaped_label_boundary() {
         // `a\.sub` is the single label `a.sub`, not a name under `sub`.
-        assert!(!matches_name("*.sub", &OwnerName::from_row(r"a\.sub")));
-        assert!(matches_name("*.sub", &OwnerName::from_row(r"a\.b.sub")));
+        assert!(!super::matches_name(
+            "*.sub",
+            &OwnerName::from_row(r"a\.sub")
+        ));
+        assert!(super::matches_name(
+            "*.sub",
+            &OwnerName::from_row(r"a\.b.sub")
+        ));
     }
 
     /// Verify that a pattern covers another only when every name of the
     /// inner one matches the outer, compared by label.
     #[test]
     fn has_pattern_coverage_compares_by_label() {
-        assert!(has_pattern_coverage("*", "*.apps"));
-        assert!(has_pattern_coverage("*.apps", "api.apps"));
-        assert!(has_pattern_coverage("*.apps", "*.k8s.apps"));
-        assert!(has_pattern_coverage("*.apps", "apps"));
-        assert!(has_pattern_coverage("api.apps", "api.apps"));
-        assert!(!has_pattern_coverage("api.apps", "*.api.apps"));
-        assert!(!has_pattern_coverage("*.apps", "xapps"));
-        assert!(!has_pattern_coverage("*.apps", "*"));
-        assert!(!has_pattern_coverage("@", "www"));
-        assert!(has_pattern_coverage("@", "@"));
+        assert!(super::has_pattern_coverage("*", "*.apps"));
+        assert!(super::has_pattern_coverage("*.apps", "api.apps"));
+        assert!(super::has_pattern_coverage("*.apps", "*.k8s.apps"));
+        assert!(super::has_pattern_coverage("*.apps", "apps"));
+        assert!(super::has_pattern_coverage("api.apps", "api.apps"));
+        assert!(!super::has_pattern_coverage("api.apps", "*.api.apps"));
+        assert!(!super::has_pattern_coverage("*.apps", "xapps"));
+        assert!(!super::has_pattern_coverage("*.apps", "*"));
+        assert!(!super::has_pattern_coverage("@", "www"));
+        assert!(super::has_pattern_coverage("@", "@"));
     }
 }

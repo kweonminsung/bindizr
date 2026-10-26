@@ -1,31 +1,21 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{
+    DnssecStatusResponse, DsCheck, EnableDnssecRequest, ErrorResponse, Holddown, MessageResponse,
+    StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
 };
-use bindizr_service::{
-    Context, dnssec,
-    types::{
-        DnssecStatusResponse, DsCheck, EnableDnssecRequest, ErrorResponse, Holddown,
-        MessageResponse, StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
-    },
-    zone,
-};
+use bindizr_service::{Context, dnssec, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path, Query},
-        middleware::body_parser::JsonBody,
-    },
-    params::NameParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path, Query};
+use crate::api::middleware::body_parser::JsonBody;
+use crate::params::NameParams;
 
 /// Build the DNSSEC API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

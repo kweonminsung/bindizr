@@ -1,20 +1,15 @@
 //! A fake secondary that records NOTIFY signatures and signs its replies (RFC 1996).
 //! SOA replies use [`SERVED_SERIAL`] so probes see it as reachable and behind.
 
-use std::{
-    net::{SocketAddr, UdpSocket},
-    sync::{Arc, Mutex},
-    thread,
-};
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-use domain::{
-    base::{
-        Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl,
-        iana::{Class, Opcode, Rcode},
-    },
-    rdata::{Soa, tsig::Time48},
-    tsig::{Key, ServerTransaction},
-};
+use domain::base::iana::{Class, Opcode, Rcode};
+use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, Ttl};
+use domain::rdata::Soa;
+use domain::rdata::tsig::Time48;
+use domain::tsig::{Key, ServerTransaction};
 
 use crate::common::dns::tsig::SigningKey;
 
@@ -42,6 +37,8 @@ impl FakeSecondary {
     /// Start on an ephemeral port; with `key`, a signed NOTIFY is verified
     /// under it and answered signed.
     pub(crate) fn start(key: Option<&SigningKey>) -> Self {
+        use domain::base::ToName;
+
         let socket = UdpSocket::bind(("127.0.0.1", 0)).expect("failed to bind the fake secondary");
         let addr = socket
             .local_addr()

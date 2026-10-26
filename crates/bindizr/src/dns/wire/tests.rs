@@ -1,6 +1,6 @@
 use std::io::ErrorKind;
 
-use bindizr_core::dns::message::encode_tcp_message;
+use bindizr_core::dns::message;
 
 use super::*;
 
@@ -14,9 +14,12 @@ async fn read(bytes: &[u8]) -> Result<Vec<u8>, DnsError> {
 async fn framing_round_trips_complete_message() {
     let mut framed = Vec::new();
 
-    write_frame(&mut framed, &encode_tcp_message(b"payload").unwrap())
-        .await
-        .unwrap();
+    write_frame(
+        &mut framed,
+        &message::encode_tcp_message(b"payload").unwrap(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(framed[..2], 7u16.to_be_bytes());
     assert_eq!(read(&framed).await.unwrap(), b"payload");
@@ -26,8 +29,8 @@ async fn framing_round_trips_complete_message() {
 /// pending, so the next read begins where this one ended.
 #[tokio::test]
 async fn framing_preserves_next_pipelined_frame() {
-    let mut framed = encode_tcp_message(b"one").unwrap();
-    framed.extend_from_slice(&encode_tcp_message(b"two").unwrap());
+    let mut framed = message::encode_tcp_message(b"one").unwrap();
+    framed.extend_from_slice(&message::encode_tcp_message(b"two").unwrap());
     let mut pending = Vec::new();
     let mut reader = &framed[..];
 
@@ -35,7 +38,7 @@ async fn framing_preserves_next_pipelined_frame() {
         read_tcp_message(&mut reader, &mut pending).await.unwrap(),
         b"one"
     );
-    assert_eq!(pending, encode_tcp_message(b"two").unwrap());
+    assert_eq!(pending, message::encode_tcp_message(b"two").unwrap());
     assert_eq!(
         read_tcp_message(&mut reader, &mut pending).await.unwrap(),
         b"two"

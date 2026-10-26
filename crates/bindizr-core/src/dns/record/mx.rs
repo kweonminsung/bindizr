@@ -1,11 +1,6 @@
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata,
-    value::{
-        DEFAULT_PRIORITY, parse_optional_u16_record_field, split_record_fields,
-        validate_domain_record_value,
-    },
-};
-use crate::dns::name::{encode_name, to_fqdn_lowercase};
+use super::value::DEFAULT_PRIORITY;
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use crate::dns::name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MxRecordValue<'a> {
@@ -20,9 +15,12 @@ impl<'a> MxRecordValue<'a> {
         value: &'a str,
         fallback_priority: Option<i32>,
     ) -> Result<Self, ParseRecordValueError> {
-        match split_record_fields(value).collect::<Vec<_>>().as_slice() {
+        match value::split_record_fields(value)
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
             [target] => Ok(Self {
-                priority: parse_optional_u16_record_field(
+                priority: value::parse_optional_u16_record_field(
                     "MX priority",
                     fallback_priority,
                     DEFAULT_PRIORITY,
@@ -38,7 +36,7 @@ impl<'a> MxRecordValue<'a> {
     /// The wire-format RDATA of a stored value (RFC 1035, Section 3.3.9).
     pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = self.priority.to_be_bytes().to_vec();
-        rdata.extend_from_slice(&encode_name(self.target)?);
+        rdata.extend_from_slice(&name::encode_name(self.target)?);
         Rdata::new(rdata)
     }
 
@@ -51,7 +49,7 @@ impl<'a> MxRecordValue<'a> {
             return Ok(());
         }
 
-        validate_domain_record_value("MX record target", self.target)
+        value::validate_domain_record_value("MX record target", self.target)
     }
 
     /// Null MX (RFC 7505): priority 0 with target `.`.
@@ -61,11 +59,11 @@ impl<'a> MxRecordValue<'a> {
 
     /// Render the MX value in canonical text form.
     pub fn canonical(&self) -> String {
-        format!("{} {}", self.priority, to_fqdn_lowercase(self.target))
+        format!("{} {}", self.priority, name::to_fqdn_lowercase(self.target))
     }
 
     /// The value column's form: the target host as a lowercase FQDN.
     pub fn to_stored(&self) -> String {
-        to_fqdn_lowercase(self.target)
+        name::to_fqdn_lowercase(self.target)
     }
 }

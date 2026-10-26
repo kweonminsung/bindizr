@@ -4,10 +4,9 @@
 use bindizr_core::model::audit_log::{AuditEntity, AuditLog};
 use chrono::{DateTime, Utc};
 
-use crate::{
-    AuditLogSortField, Backend, Db, SortOrder, Transaction, error::DatabaseError, mysql, postgres,
-    sqlite, tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::tx::TransactionKind;
+use crate::{AuditLogSortField, Backend, Db, SortOrder, Transaction, mysql, postgres, sqlite};
 
 /// Which audit log rows a listing selects and how they are ordered; paging
 /// rides along.

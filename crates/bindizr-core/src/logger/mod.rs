@@ -1,7 +1,5 @@
-use std::{
-    io::{self, Write},
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-};
+use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use chrono::Local;
 use log::{Level, Metadata, Record};

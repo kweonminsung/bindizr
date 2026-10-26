@@ -1,26 +1,19 @@
 //! Multiplex NOTIFY transactions on one connected socket per active target.
 
-use std::{
-    collections::{BTreeSet, HashMap, HashSet, VecDeque},
-    future::pending,
-    net::SocketAddr,
-    sync::{Arc, Weak},
-    time::Duration,
-};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::future;
+use std::net::SocketAddr;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 
-use bindizr_core::dns::{
-    message::{Keepalive, Name, OptRcode, QueryMetadata, ResponseLimit},
-    query::{
-        ParseResponseError, build_notify_query, matches_response_to_request,
-        validate_notify_response,
-    },
-    tsig::{ResponseVerifier, TsigSigningKey, sign_request, verify_response},
-};
-use tokio::{
-    net::UdpSocket,
-    sync::{Mutex, mpsc, oneshot},
-    time::{Instant, sleep_until},
-};
+use bindizr_core::dns::message::{Keepalive, Name, OptRcode, QueryMetadata, ResponseLimit};
+use bindizr_core::dns::query::ParseResponseError;
+use bindizr_core::dns::tsig::{ResponseVerifier, TsigSigningKey};
+use bindizr_core::dns::{query, tsig};
+use tokio::net::UdpSocket;
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::time;
+use tokio::time::Instant;
 
 use super::{ExchangeMessageError, SendNotifyError};
 
@@ -132,12 +125,12 @@ impl NotifyClient {
     ) -> Result<NotifyHandle, SendNotifyError> {
         let (target, id) = self.reserve(address).await?;
 
-        let (_, mut builder) = build_notify_query(qname, key);
+        let (_, mut builder) = query::build_notify_query(qname, key);
 
         // The reserved ID must be part of the signed bytes reused by every retry.
         builder.header_mut().set_id(id);
         let verifier = key
-            .map(|key| sign_request(&mut builder, key.clone()))
+            .map(|key| tsig::sign_request(&mut builder, key.clone()))
             .transpose()?;
         let wire = builder.finish();
         let limit = QueryMetadata::parse(&wire, Keepalive::None)
@@ -236,8 +229,8 @@ async fn serve(
 
             () = async {
                 match deadline {
-                    Some(deadline) => sleep_until(deadline).await,
-                    None => pending().await
+                    Some(deadline) => time::sleep_until(deadline).await,
+                    None => future::pending().await
                 }
             } => {
                 let (_, id) = timers.pop_first().expect("a timer woke this branch");
@@ -335,7 +328,7 @@ async fn serve(
                 // Unrelated replies must neither consume the request nor extend its deadline.
                 if request.limit.validate_len(received).is_err()
                     || !request.sent
-                    || !matches_response_to_request(&request.request, response)
+                    || !query::matches_response_to_request(&request.request, response)
                 {
                     continue;
                 }
@@ -343,7 +336,7 @@ async fn serve(
                 let verified = request
                     .verifier
                     .as_ref()
-                    .map(|verifier| verify_response(verifier, response))
+                    .map(|verifier| tsig::verify_response(verifier, response))
                     .transpose();
 
                 if let Err(error) = &verified
@@ -362,7 +355,7 @@ async fn serve(
                 timers.remove(&(request.deadline, id));
 
                 let result = verified.map_err(SendNotifyError::Verify).and_then(|_| {
-                    match validate_notify_response(id, &request.qname, response) {
+                    match query::validate_notify_response(id, &request.qname, response) {
                         // RFC 1996, Section 3.12: a validated NOTIMP completes the transaction.
                         Err(ParseResponseError::NotifyRcode(OptRcode::NOTIMP)) => {
                             log::warn!(

@@ -5,7 +5,6 @@ their measured QPS difference determines the report's query-overhead conclusion.
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -27,6 +26,8 @@ async def run(adapter, config, context) -> dict:
                if record["type"] == "A"][:size]
 
     await adapter.import_records(zone, records)
+    if adapter.bulk_errors:
+        raise RuntimeError(f"preparing the query zone failed for {adapter.bulk_errors} records")
 
     names = [f'{record["name"]}.{zone.rstrip(".")}' for record in records]
     endpoint = adapter.dns_endpoint()
@@ -34,8 +35,8 @@ async def run(adapter, config, context) -> dict:
     # Exclude propagation wait from the query workload's warmup and measurements.
     propagation_config = config["propagation"]
 
-    missing = await asyncio.get_event_loop().run_in_executor(
-        None, dig.first_unqueryable, records, zone, endpoint.host, endpoint.port,
+    missing = await dig.first_unqueryable(
+        records, zone, endpoint.host, endpoint.port,
         propagation_config["poll_interval_ms"], propagation_config["timeout_secs"])
 
     if missing is not None:

@@ -1,28 +1,25 @@
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
+use std::time::Duration;
 
-use domain::{
-    base::{Message, MessageBuilder, Name, iana::Rtype, opt::exterr::ExtendedError},
-    rdata::tsig::Time48,
-    tsig::ClientSequence,
-};
+use domain::base::iana::Rtype;
+use domain::base::opt::exterr::ExtendedError;
+use domain::base::{Message, MessageBuilder, Name};
+use domain::rdata::tsig::Time48;
+use domain::tsig::ClientSequence;
 
 use super::*;
-use crate::{
-    dns::{
-        DNS_TCP_MAX_SIZE,
-        tsig::{TsigSigningKey, verify_tsig},
-    },
-    model::{record::RecordType, tsig_key::TsigAlgorithm},
-};
+use crate::dns::tsig::TsigSigningKey;
+use crate::dns::{DNS_TCP_MAX_SIZE, tsig};
+use crate::model::record::RecordType;
+use crate::model::tsig_key::TsigAlgorithm;
 
 /// Virtual catalog metadata retains its SOA, schema version and member wire records.
 #[test]
 fn catalog_response_preserves_metadata_and_member_records() {
-    use crate::dns::{
-        CatalogZone, Serial, SoaInterval, Ttl, extract_member_zones,
-        name::ZoneName,
-        query::{TransferMessagePosition, extract_transfer_records},
-    };
+    use crate::dns;
+    use crate::dns::name::ZoneName;
+    use crate::dns::query::TransferMessagePosition;
+    use crate::dns::{CatalogZone, Serial, SoaInterval, Ttl, query};
 
     let catalog = CatalogZone {
         name: ZoneName::parse("catalog.example").unwrap(),
@@ -45,7 +42,7 @@ fn catalog_response_preserves_metadata_and_member_records() {
     builder.add_catalog_ptr(&catalog, "member.example").unwrap();
     builder.add_catalog_soa(&catalog).unwrap();
     let response = builder.build().unwrap();
-    let records = extract_transfer_records(
+    let records = query::extract_transfer_records(
         query.query_id,
         &qname,
         TransferMessagePosition::First,
@@ -65,7 +62,7 @@ fn catalog_response_preserves_metadata_and_member_records() {
     assert_eq!(records[1].rdata.as_bytes(), b"\x07invalid\0");
     assert_eq!(records[2].rdata.as_bytes(), b"\x012");
     assert_eq!(
-        extract_member_zones(&records, &catalog.name).unwrap(),
+        dns::extract_member_zones(&records, &catalog.name).unwrap(),
         vec![ZoneName::parse("member.example").unwrap()]
     );
 }
@@ -75,7 +72,6 @@ fn catalog_response_preserves_metadata_and_member_records() {
 fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
     use domain::tsig::ClientTransaction;
 
-    use crate::dns::tsig::tests::{assert_response_mac, test_key};
     let long_name = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -85,7 +81,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
     );
     let key = crate::model::tsig_key::TsigKey {
         name: long_name.clone(),
-        ..test_key(TsigAlgorithm::HmacSha512)
+        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -112,7 +108,9 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
 
         assert!(request.len() < 512);
         let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
-        let signer: TransferSigner = verify_tsig(&request, Some(key.clone())).unwrap().into();
+        let signer: TransferSigner = tsig::verify_tsig(&request, Some(key.clone()))
+            .unwrap()
+            .into();
 
         for rcode in [
             OptRcode::REFUSED,
@@ -142,7 +140,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+            crate::dns::tsig::tests::assert_response_mac(
+                &request,
+                &response,
+                TsigAlgorithm::HmacSha512,
+            );
         }
 
         let response = query
@@ -156,7 +158,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 .header()
                 .tc()
         );
-        assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+        crate::dns::tsig::tests::assert_response_mac(
+            &request,
+            &response,
+            TsigAlgorithm::HmacSha512,
+        );
 
         let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA).sign_with(signer);
         builder
@@ -174,7 +180,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         assert_eq!(message.header_counts().ancount(), 0);
         assert!(response.len() <= query.response_limit().max_len());
         client.answer(&mut message.clone(), Time48::now()).unwrap();
-        assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+        crate::dns::tsig::tests::assert_response_mac(
+            &request,
+            &response,
+            TsigAlgorithm::HmacSha512,
+        );
     }
 }
 
@@ -463,7 +473,7 @@ fn signed_transfer_authenticates_every_envelope() {
     let parsed = ParsedQuery::parse(&query, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
     let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR)
-        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
+        .sign_with(tsig::verify_tsig(&query, Some(key)).unwrap().into());
 
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
@@ -511,7 +521,7 @@ fn signed_message_reserves_space_for_tsig() {
     let (query, _) = build_signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
     let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
-        .sign_with(verify_tsig(&query, Some(key)).unwrap().into());
+        .sign_with(tsig::verify_tsig(&query, Some(key)).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.
@@ -522,11 +532,8 @@ fn signed_message_reserves_space_for_tsig() {
 /// including maximal, unrelated question and key names.
 #[test]
 fn maximum_record_values_fit_signed_edns_transfer_frames() {
-    use crate::dns::{
-        name::{OwnerName, ZoneName},
-        record::{MAX_RECORD_RDATA, TxtRecordValue},
-        tsig::tests::test_key,
-    };
+    use crate::dns::name::{OwnerName, ZoneName};
+    use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
 
     let longest_name = |labels: [char; 4]| {
         labels
@@ -540,7 +547,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
     let qname = zone.to_wire_name().unwrap();
     let key = crate::model::tsig_key::TsigKey {
         name: longest_name(['k', 'l', 'm', 'n']),
-        ..test_key(TsigAlgorithm::HmacSha512)
+        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -594,8 +601,11 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
         let request = additional.finish();
         let query =
             ParsedQuery::parse(&request, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
-        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
-            .sign_with(verify_tsig(&request, Some(key.clone())).unwrap().into());
+        let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(
+            tsig::verify_tsig(&request, Some(key.clone()))
+                .unwrap()
+                .into(),
+        );
         let mut frames = Vec::new();
 
         for _ in 0..2 {
@@ -910,8 +920,6 @@ fn response_limits_follow_transport_and_edns() {
 fn oversized_response_does_not_advance_the_signer() {
     use domain::tsig::ClientTransaction;
 
-    use crate::dns::tsig::tests::test_key;
-
     let qname = Name::<Vec<u8>>::from_str(&format!(
         "{}.{}.{}.q",
         "a".repeat(63),
@@ -921,7 +929,7 @@ fn oversized_response_does_not_advance_the_signer() {
     .unwrap();
     let key = crate::model::tsig_key::TsigKey {
         name: format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63)),
-        ..test_key(TsigAlgorithm::HmacSha512)
+        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -935,7 +943,7 @@ fn oversized_response_does_not_advance_the_signer() {
     );
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let wire = additional.finish();
-    let mut signer: TransferSigner = verify_tsig(&wire, Some(key)).unwrap().into();
+    let mut signer: TransferSigner = tsig::verify_tsig(&wire, Some(key)).unwrap().into();
     let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
 
     assert!(matches!(
@@ -959,9 +967,7 @@ fn oversized_response_does_not_advance_the_signer() {
 fn oversized_frame_does_not_advance_the_signer() {
     use domain::tsig::ClientTransaction;
 
-    use crate::dns::tsig::tests::test_key;
-
-    let key = test_key(TsigAlgorithm::HmacSha256)
+    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let query = axfr_query();
@@ -976,7 +982,7 @@ fn oversized_frame_does_not_advance_the_signer() {
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let wire = additional.finish();
     let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
-    let signer = verify_tsig(&wire, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(&wire, Some(key)).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
 
     // Bypass the chunking helper to exercise the final frame guard itself.

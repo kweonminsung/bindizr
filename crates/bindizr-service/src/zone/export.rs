@@ -1,18 +1,16 @@
 //! Render a zone as BIND master-file text, the inverse of `zone import`.
 
-use std::fmt::Write as _;
-
-use bindizr_core::dns::name::{ZoneName, to_fqdn};
+use bindizr_core::dns::name;
+use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
-    transaction,
-    types::ZoneView,
-};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::dnssec_record::DnssecRecord;
+use crate::model::record::Record;
+use crate::model::zone::Zone;
+use crate::types::ZoneView;
+use crate::{Context, transaction};
 
 /// Render a BIND master file (RFC 1035); unsigned output round-trips through `zone import`.
 /// Import manages SOA separately. Signed output adds derived DNSSEC records for inspection only.
@@ -22,6 +20,8 @@ pub async fn export(
     zone_name: &ZoneName,
     view: ZoneView,
 ) -> Result<String, ServiceError> {
+    use std::fmt::Write as _;
+
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
@@ -57,8 +57,8 @@ pub async fn export(
     out.push_str(&format!(
         "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
         zone.default_ttl,
-        to_fqdn(&zone.mname),
-        to_fqdn(mailbox.as_str()),
+        name::to_fqdn(&zone.mname),
+        name::to_fqdn(mailbox.as_str()),
         zone.serial,
         zone.refresh,
         zone.retry,

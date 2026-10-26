@@ -1,4 +1,5 @@
-use crate::{cli::common::read_signing_key_tag, common::TestApp};
+use crate::cli::common;
+use crate::common::TestApp;
 
 mod delegation;
 mod keys;
@@ -35,7 +36,7 @@ async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
 
     assert!(status.contains("DNSSEC enabled"));
 
-    let key_tag = read_signing_key_tag(&app, &zone_name).await;
+    let key_tag = common::read_signing_key_tag(&app, &zone_name).await;
 
     assert!(key_tag > 0);
 

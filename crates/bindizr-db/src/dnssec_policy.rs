@@ -1,9 +1,9 @@
 use bindizr_core::model::dnssec_policy::PolicyId;
 
-use crate::{
-    Backend, Db, LockLevel, Transaction, error::DatabaseError, model::dnssec_policy::DnssecPolicy,
-    mysql, postgres, sqlite, tx::TransactionKind,
-};
+use crate::error::DatabaseError;
+use crate::model::dnssec_policy::DnssecPolicy;
+use crate::tx::TransactionKind;
+use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert a DNSSEC policy.
 pub async fn create_tx(

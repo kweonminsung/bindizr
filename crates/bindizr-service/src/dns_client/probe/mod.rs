@@ -1,17 +1,12 @@
 //! SOA network probes for explicitly supplied targets.
-use std::{
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
 
-use bindizr_core::dns::{
-    Serial,
-    address::AddressTarget,
-    dnssec::EncodeWireNameError,
-    message::{Name, Opcode, Rtype},
-    name::ZoneName,
-    query::{build_question, extract_soa_serial},
-};
+use bindizr_core::dns::address::AddressTarget;
+use bindizr_core::dns::dnssec::EncodeWireNameError;
+use bindizr_core::dns::message::{Name, Opcode, Rtype};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{Serial, query};
 use thiserror::Error;
 
 use super::{ExchangeMessageError, ResolveAddressError};
@@ -90,13 +85,14 @@ async fn probe_address(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<Serial, ProbeSoaError> {
-    let (query_id, builder) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA, None);
+    let (query_id, builder) =
+        query::build_question(Opcode::QUERY, false, false, qname, Rtype::SOA, None);
     let query = builder.finish();
 
     let response =
         super::exchange_with_tcp_fallback(server_addr, timeout, &query, "SOA probe").await?;
 
-    Ok(Serial::from(extract_soa_serial(
+    Ok(Serial::from(query::extract_soa_serial(
         query_id, qname, &response,
     )?))
 }

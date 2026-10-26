@@ -1,15 +1,15 @@
-use std::{net::SocketAddr, process, sync::Arc};
+use std::net::SocketAddr;
+use std::process;
+use std::sync::Arc;
 
 use bindizr_core::config::Config;
-use bindizr_service::{Context, error::ServiceError, secondary, types::MessageResponse, zone};
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::MessageResponse;
+use bindizr_service::{Context, secondary, zone};
 
-use crate::{
-    daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::{
-        server::SocketContext,
-        types::{DaemonResponse, DaemonStatusResponse},
-    },
-};
+use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
+use crate::socket::server::SocketContext;
+use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
 /// Return the daemon's current status as JSON.
 pub(crate) async fn get_daemon_status(

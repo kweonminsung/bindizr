@@ -1,16 +1,12 @@
 use bindizr_core::model::record::RecordId;
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    record,
-    types::{
-        CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest,
-        DeleteRecordsRequest, DeleteRecordsResponse, PaginatedResponse, RecordFilter,
-        RecordResponse, Run, SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
-    },
-    zone,
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    CreateBulkRecordsRequest, CreateBulkRecordsResponse, CreateRecordRequest, DeleteRecordsRequest,
+    DeleteRecordsResponse, PaginatedResponse, RecordFilter, RecordResponse, Run,
+    SingleRecordResponse, UpdateRecordRequest, WriteRecordResponse,
 };
+use bindizr_service::{Context, record, zone};
 
 use crate::socket::types::DaemonResponse;
 

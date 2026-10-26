@@ -1,10 +1,16 @@
 //! Plain DNS TCP listener and connection admission.
 
-use std::{future::Future, sync::Arc};
+use std::future::Future;
+use std::sync::Arc;
 
-use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
-use super::{connection::serve_connection, error::DnsError, server::DnsContext, stream::DnsStream};
+use super::connection;
+use super::error::DnsError;
+use super::server::DnsContext;
+use super::stream::DnsStream;
 use crate::shutdown::Shutdown;
 
 /// Accept plain DNS TCP connections until shutdown.
@@ -62,8 +68,13 @@ pub(crate) async fn run_tcp_server(
                 connections.spawn(async move {
                     let _permit = permit;
 
-                    if let Err(error) =
-                        serve_connection(dns_cx, DnsStream::Tcp(stream), client_addr, stop).await
+                    if let Err(error) = connection::serve_connection(
+                        dns_cx,
+                        DnsStream::Tcp(stream),
+                        client_addr,
+                        stop,
+                    )
+                    .await
                     {
                         log::error!(
                             "Failed to read DNS TCP message from {}: {}",

@@ -1,4 +1,5 @@
-use bindizr_core::dns::{ConvertSerialError, Serial, message::EncodeMessageError};
+use bindizr_core::dns::message::EncodeMessageError;
+use bindizr_core::dns::{ConvertSerialError, Serial};
 use bindizr_service::error::ServiceError;
 use thiserror::Error;
 

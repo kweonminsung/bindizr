@@ -1,48 +1,29 @@
 //! Validate and apply one imported snapshot under its zone lock, then notify after commit.
 
-use std::{
-    collections::{HashMap, HashSet},
-    time::Instant,
-};
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
-use bindizr_core::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName},
-        record::SoaMailbox,
-        zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue},
-    },
-    model::{record::RecordId, zone::ZoneId},
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::record::SoaMailbox;
+use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue};
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{
-    ImportOptions, ImportSource, MissingZoneAction, authorize_import, authorize_new_zone_import,
-    plan::{DesiredRecord, ImportPlan},
+use super::plan::{DesiredRecord, ImportPlan};
+use super::{ImportOptions, ImportSource, MissingZoneAction};
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordData, RecordKey, RecordType};
+use crate::model::zone::Zone;
+use crate::record::validation;
+use crate::types::{
+    ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
-use crate::{
-    Context,
-    authorization::Caller,
-    dnssec,
-    error::ServiceError,
-    model::{
-        record::{Record, RecordData, RecordKey, RecordType},
-        zone::Zone,
-    },
-    record::{
-        create_with_changes_tx, delete_with_changes_tx,
-        validation::{normalize_record_owner_name, validate_record_constraints},
-    },
-    serial::generate_serial,
-    time::elapsed_ms,
-    transaction,
-    ttl::{validate_minimum_ttl, validate_soa_interval},
-    types::{
-        ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
-    },
-    zone,
-};
+use crate::zone::diff;
+use crate::{Context, dnssec, record, serial, time, transaction, ttl, zone};
 
 /// Resolve a new zone from the imported SOA and configured creation defaults.
 fn prepare_zone(
@@ -66,10 +47,10 @@ fn prepare_zone(
         rname: normalized.rname,
         default_ttl: normalized.ttl,
         serial: soa.serial,
-        refresh: validate_soa_interval(i32::from(soa.refresh), "refresh")?,
-        retry: validate_soa_interval(i32::from(soa.retry), "retry")?,
-        expire: validate_soa_interval(i32::from(soa.expire), "expire")?,
-        minimum_ttl: validate_minimum_ttl(i64::from(soa.minimum_ttl))?,
+        refresh: ttl::validate_soa_interval(i32::from(soa.refresh), "refresh")?,
+        retry: ttl::validate_soa_interval(i32::from(soa.retry), "retry")?,
+        expire: ttl::validate_soa_interval(i32::from(soa.expire), "expire")?,
+        minimum_ttl: ttl::validate_minimum_ttl(i64::from(soa.minimum_ttl))?,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -129,15 +110,15 @@ pub(crate) async fn apply_import(
 
         let zone_missing = existing.is_none();
         let default_ttl = if let Some(zone) = &existing {
-            authorize_import(caller, mode, zone)?;
+            super::authorize_import(caller, mode, zone)?;
             zone.default_ttl
         } else if missing_zone_action == MissingZoneAction::Create {
-            authorize_new_zone_import(caller, mode)?;
+            super::authorize_new_zone_import(caller, mode)?;
             cx.config().dns.zone_defaults.ttl
         } else {
             return Err(ServiceError::zone_not_found(zone_name));
         };
-        timings.load_zone_ms = elapsed_ms(t);
+        timings.load_zone_ms = time::elapsed_ms(t);
 
         let t = Instant::now();
         let parsed = match source {
@@ -153,7 +134,7 @@ pub(crate) async fn apply_import(
                 prepare_zone(cx, zone_name, soa, default_ttl)?
             }
         };
-        timings.parse_ms = elapsed_ms(t);
+        timings.parse_ms = time::elapsed_ms(t);
         let mut errors = parsed.errors;
         let mut skipped = 0usize;
 
@@ -178,7 +159,7 @@ pub(crate) async fn apply_import(
                     continue;
                 }
             };
-            let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
+            let stored_name = match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
                 Ok(stored_name) => stored_name,
                 Err(error) => {
                     errors.push(format!("{}: {}", record.owner_fqdn, error));
@@ -220,7 +201,7 @@ pub(crate) async fn apply_import(
             });
         }
 
-        timings.normalize_ms = elapsed_ms(t);
+        timings.normalize_ms = time::elapsed_ms(t);
         let parsed_count = desired.len();
 
         // Append checks only matching owners; replace/upsert need all rows to find deletions.
@@ -254,11 +235,11 @@ pub(crate) async fn apply_import(
             ServiceError::internal_with_source("failed to import zone file", error)
         })?;
 
-        timings.load_existing_ms = elapsed_ms(t);
+        timings.load_existing_ms = time::elapsed_ms(t);
 
         let t = Instant::now();
         let plan = ImportPlan::compute(mode, &existing_records, &desired);
-        timings.reconcile_ms = elapsed_ms(t);
+        timings.reconcile_ms = time::elapsed_ms(t);
 
         let mut all_dels = plan.dels.clone();
         all_dels.extend_from_slice(&plan.ttl_dels);
@@ -297,7 +278,7 @@ pub(crate) async fn apply_import(
                 .entry(add.data.name.clone())
                 .or_default();
 
-            match validate_record_constraints(
+            match validation::validate_record_constraints(
                 records_at_name,
                 &add.data.name,
                 &add.data.record_type,
@@ -321,7 +302,7 @@ pub(crate) async fn apply_import(
             errors.push(error.to_string());
         }
 
-        timings.validate_ms = elapsed_ms(t);
+        timings.validate_ms = time::elapsed_ms(t);
 
         let summary = ImportZoneSummaryResponse {
             parsed: parsed_count as u64,
@@ -337,7 +318,31 @@ pub(crate) async fn apply_import(
         // Only a valid dry run needs a diff; failed validation must not preview
         // changes that cannot be applied.
         let diff = if run.is_dry_run() && errors.is_empty() {
-            plan.diff(caller, &zone, &existing_records)
+            let deleted_ids: HashSet<RecordId> = plan
+                .dels
+                .iter()
+                .chain(&plan.ttl_dels)
+                .map(|record| record.id)
+                .collect();
+
+            let before = caller.readable_records(
+                zone.id,
+                existing_records.iter().cloned().map(RecordData::from),
+            );
+            let mut after = caller.readable_records(
+                zone.id,
+                existing_records
+                    .iter()
+                    .filter(|record| !deleted_ids.contains(&record.id))
+                    .cloned()
+                    .map(RecordData::from),
+            );
+
+            for add in &plan.adds {
+                after.push_written(add.data.clone());
+            }
+
+            diff::build_record_diff(&zone, &before, &after)
         } else {
             RecordDiffResponse::default()
         };
@@ -346,7 +351,7 @@ pub(crate) async fn apply_import(
         let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
 
         let new_serial = if has_changes && errors.is_empty() {
-            generate_serial(Some(zone.serial))
+            serial::generate_serial(Some(zone.serial))
         } else {
             zone.serial
         };
@@ -362,17 +367,17 @@ pub(crate) async fn apply_import(
         if will_apply && has_changes {
             let t = Instant::now();
 
-            delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
-            create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+            record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
+            record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
-            timings.db_write_ms = elapsed_ms(t);
+            timings.db_write_ms = time::elapsed_ms(t);
 
             let t = Instant::now();
 
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-            timings.serial_ms = elapsed_ms(t);
+            timings.serial_ms = time::elapsed_ms(t);
         }
 
         let response = ImportZoneResponse {
@@ -429,7 +434,7 @@ pub(crate) async fn apply_import(
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
-    let notify_ms = elapsed_ms(t);
+    let notify_ms = time::elapsed_ms(t);
 
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -451,7 +456,7 @@ pub(crate) async fn apply_import(
         timings.db_write_ms,
         timings.serial_ms,
         notify_ms,
-        elapsed_ms(t_total),
+        time::elapsed_ms(t_total),
     );
 
     Ok(response)

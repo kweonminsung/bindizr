@@ -1,19 +1,16 @@
 //! Local daemon startup with a temporary database and optional TLS, for the
 //! API or the XoT listener, under one certificate generated for the run.
 
-use std::{
-    fs,
-    io::Read,
-    net::{TcpListener, UdpSocket},
-    path::Path,
-    process::{Child, Command, Stdio},
-    time::Duration,
-};
+use std::fs;
+use std::net::{TcpListener, UdpSocket};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
 use rustls::pki_types::CertificateDer;
 
-use super::{TestApp, TestAppOptions, TestRuntime, reserve_tcp_port, test_namespace};
+use super::{TestApp, TestAppOptions, TestRuntime};
 
 impl TestApp {
     /// Start with non-default config; always the local runtime, because the
@@ -37,9 +34,9 @@ impl TestApp {
         let mut failures = Vec::new();
 
         for _ in 0..3 {
-            let api_port = reserve_tcp_port();
+            let api_port = super::reserve_tcp_port();
             let dns_port = reserve_dns_port();
-            let dns_tls_port = options.dns_tls.then(reserve_tcp_port);
+            let dns_tls_port = options.dns_tls.then(super::reserve_tcp_port);
             write_config(
                 &config_path,
                 api_port,
@@ -71,7 +68,7 @@ impl TestApp {
                         dns_tls_port,
                         tls_cert: tls_cert.clone(),
                         dns_secondary_ports: Vec::new(),
-                        namespace: test_namespace(),
+                        namespace: super::test_namespace(),
                         auth_token: None,
                     };
                 }
@@ -218,6 +215,8 @@ level = "error"
 /// Poll `/health` until the daemon answers; a failure carries the daemon's
 /// stderr, the only place a daemon that dies before listening says why.
 async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Result<(), String> {
+    use std::io::Read;
+
     // /health sits outside the auth layer, so readiness ignores
     // authentication_required.
     let health_url = format!("{base_url}/health");

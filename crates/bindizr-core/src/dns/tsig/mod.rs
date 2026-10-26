@@ -5,27 +5,23 @@ mod response;
 pub use response::build_error_response;
 mod signer;
 
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use base64::Engine;
-use domain::{
-    base::{
-        Message, ToName,
-        iana::{Rcode, TsigRcode},
-        message_builder::AdditionalBuilder,
-    },
-    rdata::tsig::{Time48, Tsig},
-    tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError},
-};
+use domain::base::iana::{Rcode, TsigRcode};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::{Message, ToName};
+use domain::rdata::tsig::{Time48, Tsig};
+use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError};
 use record::ParsedTsig;
 use ring::hmac;
 pub use signer::{ResponseSigner, SignResponseError, TransferSigner};
 use thiserror::Error;
 
-use crate::{
-    dns::{LibraryError, message::RECORD_FIELDS_LEN, name::MAX_WIRE_NAME_LEN},
-    model::tsig_key::{TsigAlgorithm, TsigKey},
-};
+use crate::dns::LibraryError;
+use crate::dns::message::RECORD_FIELDS_LEN;
+use crate::dns::name::MAX_WIRE_NAME_LEN;
+use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
 /// Why a TSIG-signed request could not be accepted.
 #[derive(Debug, Error)]
@@ -209,6 +205,8 @@ pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
 impl TsigKey {
     /// Decode and validate this stored key for TSIG signing and verification.
     pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {
+        use std::str::FromStr;
+
         let name = KeyName::from_str(&self.name).map_err(|error| TsigError::InvalidKeyName {
             name: self.name.clone(),
             source: Box::new(error),

@@ -2,18 +2,14 @@
 
 use std::io::{Read, Write};
 
-use domain::{
-    base::{Message, MessageBuilder, Rtype, iana::Rcode},
-    rdata::tsig::Time48,
-    tsig::ClientSequence,
-};
+use domain::base::iana::Rcode;
+use domain::base::{Message, MessageBuilder, Rtype};
+use domain::rdata::tsig::Time48;
+use domain::tsig::ClientSequence;
 use rustls::ClientConfig;
 
-use super::{
-    parse_name,
-    transport::{connect_tcp, connect_tls, read_frame, write_frame},
-    tsig::{SigningKey, parse_tsig_presence},
-};
+use super::tsig::SigningKey;
+use super::{transport, tsig};
 
 /// Transferred record count or refusal details.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -54,7 +50,7 @@ pub(crate) fn axfr(
     zone: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferResult, String> {
-    let mut stream = connect_tcp(port)?;
+    let mut stream = transport::connect_tcp(port)?;
     transfer(&mut stream, zone, key)
 }
 
@@ -65,7 +61,7 @@ pub(crate) fn xot(
     key: Option<&SigningKey>,
     client: ClientConfig,
 ) -> Result<TransferResult, String> {
-    transfer(&mut connect_tls(port, client)?, zone, key)
+    transfer(&mut transport::connect_tls(port, client)?, zone, key)
 }
 
 /// Transfer a zone over an open stream, verifying the MAC chain when signed.
@@ -79,7 +75,7 @@ fn transfer<S: Read + Write>(
     builder.header_mut().set_id(query_id);
     let mut question = builder.question();
     question
-        .push((&parse_name(zone)?, Rtype::AXFR))
+        .push((&super::parse_name(zone)?, Rtype::AXFR))
         .map_err(|error| error.to_string())?;
     let mut additional = question.additional();
 
@@ -93,14 +89,14 @@ fn transfer<S: Read + Write>(
     };
     let query = additional.finish();
 
-    write_frame(stream, &query)?;
+    transport::write_frame(stream, &query)?;
 
     // Keep reading frames until both boundary SOAs arrive; EOF alone is incomplete.
     let mut records = 0usize;
     let mut soa_seen = 0usize;
 
     while soa_seen < 2 {
-        let Some(frame) = read_frame(stream)? else {
+        let Some(frame) = transport::read_frame(stream)? else {
             return Err(format!(
                 "the transfer ended after {records} record(s) without its closing SOA"
             ));
@@ -110,7 +106,7 @@ fn transfer<S: Read + Write>(
         if message.header().rcode() != Rcode::NOERROR {
             return Ok(TransferResult::Refused {
                 rcode: message.header().rcode(),
-                signed: parse_tsig_presence(&message)?,
+                signed: tsig::parse_tsig_presence(&message)?,
             });
         }
 

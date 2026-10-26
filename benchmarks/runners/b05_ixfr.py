@@ -19,9 +19,9 @@ CHANGE_SIZES = [1, 10, 100, 1000, 10000]
 BASELINE = 1000
 
 
-def _query_serial(zone, host, port):
+async def _query_serial(zone, host, port):
     """Query a zone's SOA serial from the transfer endpoint."""
-    ok, _, out = dig.query(zone, "SOA", host, port)
+    ok, _, out = await dig.query(zone, "SOA", host, port)
 
     if ok and len(out.split()) >= 3:
         try:
@@ -36,13 +36,14 @@ async def run(adapter, config, context) -> list:
     """Measure incremental transfers after each configured change batch propagates."""
     zone = context["zone"]
     xe = adapter.xfr_endpoint()
-    loop = asyncio.get_event_loop()
     change_sizes = config.get("ixfr_change_sizes", CHANGE_SIZES)
     baseline = config.get("ixfr_baseline", BASELINE)
 
     await adapter.delete_zone(zone)
     await adapter.create_zone(zone)
     await adapter.import_records(zone, generate(baseline, config["seed"], zone))
+    if adapter.bulk_errors:
+        raise RuntimeError(f"preparing the IXFR baseline failed for {adapter.bulk_errors} records")
 
     # Wait for the baseline to reach the secondary before reading serials:
     # reading a pre-baseline serial would request IXFR from a serial with no
@@ -52,9 +53,8 @@ async def run(adapter, config, context) -> list:
     propagated = False
 
     while time.monotonic() < deadline:
-        _, count, _ = await loop.run_in_executor(
-            None, dig.axfr, zone, xe.host, xe.port, 300)
-        if count >= baseline and count == prev:
+        count = await dig.count_axfr_records(zone, xe.host, xe.port)
+        if count is not None and count >= baseline and count == prev:
             propagated = True
             break
         prev = count
@@ -80,7 +80,7 @@ async def run(adapter, config, context) -> list:
         base_serial = None
 
         for _ in range(10):
-            base_serial = await loop.run_in_executor(None, _query_serial, zone, xe.host, xe.port)
+            base_serial = await _query_serial(zone, xe.host, xe.port)
             if base_serial is not None:
                 break
             await asyncio.sleep(0.5)
@@ -98,6 +98,8 @@ async def run(adapter, config, context) -> list:
             ci += 1
 
         await adapter.import_records(zone, batch)
+        if adapter.bulk_errors:
+            raise RuntimeError(f"preparing the IXFR change batch failed for {adapter.bulk_errors} records")
 
         # Hold until the serial and the record count both stop moving: an
         # unchanged serial answers IXFR with a tiny "up-to-date" SOA, and the
@@ -107,11 +109,11 @@ async def run(adapter, config, context) -> list:
         prev = None
 
         while time.monotonic() < deadline:
-            current_serial = await loop.run_in_executor(None, _query_serial, zone, xe.host, xe.port)
-            _, count, _ = await loop.run_in_executor(
-                None, dig.axfr, zone, xe.host, xe.port, 300)
+            current_serial = await _query_serial(zone, xe.host, xe.port)
+            count = await dig.count_axfr_records(zone, xe.host, xe.port)
 
-            if current_serial is not None and current_serial > base_serial and (current_serial, count) == prev:
+            if (current_serial is not None and current_serial > base_serial
+                    and count is not None and (current_serial, count) == prev):
                 propagated = True
                 break
 
@@ -130,8 +132,7 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, lines, nbytes = await loop.run_in_executor(
-            None, dig.ixfr, zone, xe.host, xe.port, base_serial)
+        secs, lines, nbytes = await dig.ixfr(zone, xe.host, xe.port, base_serial)
 
         rows.append({
             "system": context["label"],

@@ -1,7 +1,5 @@
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    model::grant_pattern::matches_name,
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::grant_pattern;
 
 use super::*;
 use crate::error::ErrorCode;
@@ -93,7 +91,7 @@ fn normalize_pattern_rejects_escaped_wildcard_labels() {
 fn normalize_pattern_preserves_escaped_at_as_literal_owner() {
     let pattern = normalize_pattern(Some(r"\064")).unwrap();
     assert_eq!(pattern, r"\@");
-    assert!(!matches_name(&pattern, &OwnerName::apex()));
+    assert!(!grant_pattern::matches_name(&pattern, &OwnerName::apex()));
 }
 
 /// Verify that an escaped trailing dot stays in its relative label

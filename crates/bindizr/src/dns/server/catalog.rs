@@ -1,8 +1,11 @@
 //! Encode and stream the service's virtual catalog as AXFR or IXFR.
 
-use bindizr_core::dns::{CatalogZone, Serial, message, message::Rtype, tsig::TransferSigner};
+use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::tsig::TransferSigner;
+use bindizr_core::dns::{CatalogZone, Serial, message};
 
-use crate::dns::{error::DnsError, stream::ResponseWriter};
+use crate::dns::error::DnsError;
+use crate::dns::stream::ResponseWriter;
 
 /// Answer a catalog transfer with its current SOA or full snapshot.
 pub(crate) async fn send_catalog_response(

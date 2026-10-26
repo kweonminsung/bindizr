@@ -1,15 +1,11 @@
-use bindizr_service::{
-    Context,
-    authorization::Caller,
-    dnssec,
-    error::ServiceError,
-    types::{
-        DnssecStatusResponse, DsCheck, EnableDnssecRequest, ExportDnssecKeysResponse, Holddown,
-        ImportDnssecKeysRequest, MessageResponse, StartDnssecRolloverRequest,
-        UpdateDnssecSettingsRequest,
-    },
-    zone,
+use bindizr_service::authorization::Caller;
+use bindizr_service::error::ServiceError;
+use bindizr_service::types::{
+    DnssecStatusResponse, DsCheck, EnableDnssecRequest, ExportDnssecKeysResponse, Holddown,
+    ImportDnssecKeysRequest, MessageResponse, StartDnssecRolloverRequest,
+    UpdateDnssecSettingsRequest,
 };
+use bindizr_service::{Context, dnssec, zone};
 
 use crate::socket::types::DaemonResponse;
 

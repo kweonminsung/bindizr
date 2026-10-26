@@ -3,29 +3,19 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::{
-    dns::{
-        message,
-        message::{ExtendedErrorCode, OptRcode, Rtype},
-        tsig::{RequestSignature, TransferSigner, request_signature},
-    },
-    metrics::{SoaResult, XfrResult},
-    model::transfer::TransferTransport,
-};
-use bindizr_service::{
-    authorization::Caller,
-    zone::{self, TransferAccess},
-};
+use bindizr_core::dns::message::{ExtendedErrorCode, OptRcode, Rtype};
+use bindizr_core::dns::tsig::{RequestSignature, TransferSigner};
+use bindizr_core::dns::{message, tsig};
+use bindizr_core::metrics::{SoaResult, XfrResult};
+use bindizr_core::model::transfer::TransferTransport;
+use bindizr_service::authorization::Caller;
+use bindizr_service::zone::{self, TransferAccess};
 
-use crate::dns::{
-    error::DnsError,
-    server::{
-        DnsContext,
-        auth::{TransferIdentity, TransferRefusal, authenticate_transfer, authorize_transport},
-    },
-    stream::ResponseWriter,
-    udp::{ReplyTarget, UdpSocket},
-};
+use crate::dns::error::DnsError;
+use crate::dns::server::auth::{TransferIdentity, TransferRefusal};
+use crate::dns::server::{DnsContext, auth};
+use crate::dns::stream::ResponseWriter;
+use crate::dns::udp::{ReplyTarget, UdpSocket};
 
 /// Answer an SOA query over TCP. The outcome is counted once the answer is
 /// on the wire: the metric says whether secondaries are getting a serial.
@@ -150,9 +140,9 @@ async fn handle_soa_request(
 
     // A UDP IXFR is a transfer; a SOA query is not.
     let identity = if query.qtype == Rtype::IXFR {
-        authenticate_transfer(dns_cx, query_data, client_ip, transport)
+        auth::authenticate_transfer(dns_cx, query_data, client_ip, transport)
             .await
-            .and_then(|identity| authorize_transport(dns_cx, transport, identity))
+            .and_then(|identity| auth::authorize_transport(dns_cx, transport, identity))
     } else {
         authenticate_soa(dns_cx, client_ip, query_data, transport).await
     };
@@ -331,7 +321,10 @@ async fn authenticate_soa(
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.
     if is_self_probe(dns_cx, client_ip)
-        && matches!(request_signature(query_data), RequestSignature::Absent)
+        && matches!(
+            tsig::request_signature(query_data),
+            RequestSignature::Absent
+        )
     {
         return Ok(TransferIdentity {
             caller: Caller::unsigned_dns(),
@@ -339,5 +332,5 @@ async fn authenticate_soa(
         });
     }
 
-    authenticate_transfer(dns_cx, query_data, client_ip, transport).await
+    auth::authenticate_transfer(dns_cx, query_data, client_ip, transport).await
 }

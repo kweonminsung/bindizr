@@ -1,28 +1,20 @@
 //! Turning an ExternalDNS change set into per-zone record operations: parsing
 //! the request, grouping it by zone, and computing what each zone must change.
 
-use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bindizr_core::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName},
-    },
-    model::record::{RecordId, RecordKey},
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::record::{RecordId, RecordKey};
 use chrono::Utc;
 
-use super::policy::{authoritative_zone, normalize_lookup_name};
-use crate::{
-    error::ServiceError,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
-    record::validate_record_constraints,
-    ttl::validate_record_ttl,
-    types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord},
-};
+use super::policy;
+use crate::error::ServiceError;
+use crate::model::record::{Record, RecordType};
+use crate::model::zone::Zone;
+use crate::types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord};
+use crate::{record, ttl};
 
 /// Desired records with row-encoded values and an absolute owner before zone resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +72,7 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 fn normalize_ttl(ttl: Option<i64>) -> Result<Option<Ttl>, ServiceError> {
     match ttl {
         Some(0) | None => Ok(None),
-        Some(ttl) => Ok(Some(validate_record_ttl(ttl)?)),
+        Some(ttl) => Ok(Some(ttl::validate_record_ttl(ttl)?)),
     }
 }
 
@@ -108,7 +100,7 @@ fn validate_record_set_shape(
 /// Parse and validate an ExternalDNS record group.
 pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
-    let name = normalize_lookup_name(&record.name)?;
+    let name = policy::normalize_lookup_name(&record.name)?;
     let ttl = normalize_ttl(record.ttl)?;
     validate_record_set_shape(record, &record_type)?;
 
@@ -197,12 +189,13 @@ pub(crate) fn group_operations_by_zone(
         let (RecordSetOperation::Add(record_set) | RecordSetOperation::Delete(record_set)) =
             &pending;
         // From all zones, so a hidden subzone still shadows a granted parent.
-        let (zone, name) = authoritative_zone(zones, &record_set.name).ok_or_else(|| {
-            ServiceError::ZoneNotFound(format!(
-                "no zone is authoritative for '{}'",
-                record_set.name
-            ))
-        })?;
+        let (zone, name) =
+            policy::authoritative_zone(zones, &record_set.name).ok_or_else(|| {
+                ServiceError::ZoneNotFound(format!(
+                    "no zone is authoritative for '{}'",
+                    record_set.name
+                ))
+            })?;
 
         let entry = grouped
             .entry(zone.name.clone())
@@ -322,7 +315,7 @@ impl ZoneChangeSet {
 
         for create in &creates {
             let records_at_name = simulated_by_name.entry(create.name.clone()).or_default();
-            validate_record_constraints(
+            record::validate_record_constraints(
                 records_at_name,
                 &create.name,
                 &create.record_type,

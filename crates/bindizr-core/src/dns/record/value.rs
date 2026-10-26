@@ -1,15 +1,11 @@
 //! Shared field parsing/validation helpers for stored record values.
 
 use super::ParseRecordValueError;
-use crate::dns::{
-    DNS_TCP_MAX_SIZE,
-    message::{
-        DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN,
-        query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN},
-    },
-    name::{MAX_WIRE_NAME_LEN, decode_name_labels},
-    tsig::MAX_TSIG_RECORD,
-};
+use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
+use crate::dns::message::{DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN};
+use crate::dns::name::MAX_WIRE_NAME_LEN;
+use crate::dns::tsig::MAX_TSIG_RECORD;
+use crate::dns::{DNS_TCP_MAX_SIZE, name};
 
 /// Priority an MX or SRV row takes when its priority column is NULL; served
 /// and compared as this value, so both types must agree on it.
@@ -230,14 +226,14 @@ pub(crate) fn validate_domain_record_value(
         return Err(ParseRecordValueError::RootZone { field });
     }
 
-    decode_name_labels(value).map_err(|source| ParseRecordValueError::Name { field, source })?;
+    name::decode_name_labels(value)
+        .map_err(|source| ParseRecordValueError::Name { field, source })?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::validate_domain_record_value;
 
     /// Verify that record-value names accept non-LDH owner labels under
     /// RFC 2181, Section 11.
@@ -251,7 +247,7 @@ mod tests {
             "_dmarc.example.com.",
             "host-name.example.com",
         ] {
-            validate_domain_record_value("CNAME record value", value)
+            super::validate_domain_record_value("CNAME record value", value)
                 .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
         }
     }
@@ -270,7 +266,7 @@ mod tests {
             r"short\09.example.com",
         ] {
             assert!(
-                validate_domain_record_value("CNAME record value", value).is_err(),
+                super::validate_domain_record_value("CNAME record value", value).is_err(),
                 "{value} was accepted"
             );
         }

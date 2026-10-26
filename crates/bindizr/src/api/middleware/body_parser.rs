@@ -1,7 +1,5 @@
-use axum::{
-    Json,
-    extract::{FromRequest, Request},
-};
+use axum::Json;
+use axum::extract::{FromRequest, Request};
 use serde::de::DeserializeOwned;
 
 use crate::api::error::ApiError;

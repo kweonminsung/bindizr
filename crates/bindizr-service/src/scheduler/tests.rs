@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use bindizr_core::{config::Config, metrics::Metrics};
+use bindizr_core::config::Config;
+use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use tokio::sync::mpsc;
 

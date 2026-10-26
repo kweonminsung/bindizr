@@ -1,27 +1,22 @@
 //! DNS wire-format encoding for zone-transfer responses: message framing and
 //! record/SOA serialization.
 
-pub use domain::base::{
-    Name,
-    iana::{Class, Opcode, OptRcode, Rcode, Rtype},
-};
-use domain::{
-    base::{
-        MessageBuilder, ToName, Ttl, UnknownRecordData, message_builder::TreeCompressor,
-        opt::keepalive::TcpKeepalive, rdata::ComposeRecordData, record::ComposeRecord,
-        wire::Composer,
-    },
-    rdata::tsig::Time48,
-};
+pub use domain::base::Name;
+pub use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype};
+use domain::base::message_builder::TreeCompressor;
+use domain::base::opt::keepalive::TcpKeepalive;
+use domain::base::rdata::ComposeRecordData;
+use domain::base::record::ComposeRecord;
+use domain::base::wire::Composer;
+use domain::base::{MessageBuilder, ToName, Ttl, UnknownRecordData};
+use domain::rdata::tsig::Time48;
 use thiserror::Error;
 
-use crate::dns::{
-    ConvertSerialError, LibraryError,
-    dnssec::EncodeWireNameError,
-    name::EncodeNameError,
-    record::{EncodeRdataError, Rdata},
-    tsig::{TransferSigner, signature_len},
-};
+use crate::dns::dnssec::EncodeWireNameError;
+use crate::dns::name::EncodeNameError;
+use crate::dns::record::{EncodeRdataError, Rdata};
+use crate::dns::tsig::TransferSigner;
+use crate::dns::{ConvertSerialError, LibraryError, tsig};
 
 /// Fixed DNS message header length (RFC 1035, Section 4.1.1).
 pub(crate) const DNS_HEADER_LEN: usize = 12;
@@ -190,7 +185,7 @@ impl DnsMessageBuilder {
     /// Calculate the response size including the question, the OPT an EDNS
     /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
-        let signature = self.signer.as_ref().map_or(0, signature_len);
+        let signature = self.signer.as_ref().map_or(0, tsig::signature_len);
         let opt = if self.edns != Edns::Absent {
             OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
         } else {

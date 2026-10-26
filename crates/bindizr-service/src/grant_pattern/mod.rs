@@ -1,12 +1,12 @@
 //! Normalize grant name patterns and type lists and derive their covered domains.
 //! Core's `grant_pattern` owns matching.
 
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation},
-    model::grant_pattern::MATCH_ANY,
-};
+use bindizr_core::dns::name;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::grant_pattern::MATCH_ANY;
 
-use crate::{error::ServiceError, model::record::RecordType};
+use crate::error::ServiceError;
+use crate::model::record::RecordType;
 
 /// Derive an ExternalDNS domain filter, which includes all descendants.
 /// Widen `@` and exact names to their containing domain.
@@ -32,7 +32,7 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
     let name_part = raw.strip_prefix("*.").unwrap_or(raw);
 
     // Store the canonical spelling so one name is one pattern.
-    let canonical = labels_to_presentation(&parse_relative_name(name_part)?);
+    let canonical = name::labels_to_presentation(&parse_relative_name(name_part)?);
 
     Ok(match raw.strip_prefix("*.") {
         Some(_) => format!("*.{}", canonical),
@@ -43,7 +43,7 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
 /// Decode a pattern's name part and hold it to the pattern grammar; the name
 /// rules themselves (empty, length, charset) come with decoding.
 fn parse_relative_name(name: &str) -> Result<Vec<Vec<u8>>, ServiceError> {
-    let (labels, rooted) = decode_name_labels(name)
+    let (labels, rooted) = name::decode_name_labels(name)
         .map_err(|error| ServiceError::invalid_input(format!("record name pattern {}", error)))?;
 
     // A pattern is relative, and `*` is the language's metacharacter: it is

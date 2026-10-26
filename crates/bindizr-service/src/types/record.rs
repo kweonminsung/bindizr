@@ -1,14 +1,13 @@
 //! Record payloads, in three groups: the string-or-segments value form, the
 //! request/filter/patch shapes, and the response shapes.
 
-use bindizr_core::{
-    dns::{
-        Ttl,
-        name::ZoneName,
-        record::{ParseRecordValueError, TxtContent, TxtRecordValue},
-    },
-    model::{dnssec_record::DnssecRecordType, record::RecordId, role_grant::Action, zone::ZoneId},
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::record::{ParseRecordValueError, TxtContent, TxtRecordValue};
+use bindizr_core::model::dnssec_record::DnssecRecordType;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::ZoneId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};

@@ -1,16 +1,16 @@
 use std::net::IpAddr;
 
-use bindizr_core::{
-    dns::{message, message::Rtype},
-    model::transfer::TransferKind,
-};
-use bindizr_service::{
-    transfer,
-    zone::{self, TransferAccess},
-};
+use bindizr_core::dns::message;
+use bindizr_core::dns::message::Rtype;
+use bindizr_core::model::transfer::TransferKind;
+use bindizr_service::transfer;
+use bindizr_service::zone::{self, TransferAccess};
 
-use super::{auth::TransferIdentity, catalog, transfer_cache};
-use crate::dns::{error::DnsError, server::DnsContext, stream::ResponseWriter};
+use super::auth::TransferIdentity;
+use super::{catalog, transfer_cache};
+use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
+use crate::dns::stream::ResponseWriter;
 
 /// Send AXFR content with the original QTYPE, including IXFR fallback.
 /// Claim the signer only after authorization, leaving it available for refusal responses.

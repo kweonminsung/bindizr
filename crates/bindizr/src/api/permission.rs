@@ -1,18 +1,14 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing,
-};
-use bindizr_service::{
-    Context, permission,
-    types::{ErrorResponse, PermissionsResponse},
-};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Json, Router, routing};
+use bindizr_service::types::{ErrorResponse, PermissionsResponse};
+use bindizr_service::{Context, permission};
 
-use crate::api::{RequestCaller, error::ApiError};
+use crate::api::RequestCaller;
+use crate::api::error::ApiError;
 
 /// Build the permission API routes.
 pub(crate) fn routes() -> Router<Arc<Context>> {

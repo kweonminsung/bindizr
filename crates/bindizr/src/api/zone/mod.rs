@@ -8,7 +8,8 @@ mod status;
 
 use std::sync::Arc;
 
-use axum::{Router, extract::DefaultBodyLimit, routing};
+use axum::extract::DefaultBodyLimit;
+use axum::{Router, routing};
 use bindizr_service::Context;
 pub(crate) use crud::{
     __path_create_zone, __path_delete_zone, __path_get_zone, __path_list_zones, __path_update_zone,

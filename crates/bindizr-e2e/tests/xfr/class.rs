@@ -1,24 +1,17 @@
 //! IN-only query data, with EDNS and TSIG kept as protocol metadata.
 
-use domain::{
-    base::{
-        Message, MessageBuilder, Ttl,
-        iana::{Class, OptRcode, Rcode, Rtype, TsigRcode},
-        message_builder::AdditionalBuilder,
-    },
-    rdata::{Soa, tsig::Tsig},
-};
+use domain::base::iana::{Class, OptRcode, Rcode, Rtype, TsigRcode};
+use domain::base::message_builder::AdditionalBuilder;
+use domain::base::{Message, MessageBuilder, Ttl};
+use domain::rdata::Soa;
+use domain::rdata::tsig::Tsig;
 use serial_test::serial;
 
-use super::tls::dot_client;
-use crate::common::{
-    TestApp, TestAppOptions,
-    dns::{
-        exchange_request, exchange_udp, parse_name,
-        tsig::{KeyRole, create_tsig_key, sign},
-    },
-    exchange_tcp, exchange_xot,
-};
+use super::tls;
+use crate::common;
+use crate::common::dns::tsig;
+use crate::common::dns::tsig::KeyRole;
+use crate::common::{TestApp, TestAppOptions, dns};
 
 /// An IN IXFR query cannot take its client serial from another class's SOA.
 #[tokio::test]
@@ -34,9 +27,9 @@ async fn ixfr_rejects_foreign_soa_classes() {
     let serial = u32::try_from(zone["serial"].as_u64().unwrap()).unwrap();
 
     app.create_secondary("class-loopback", "127.0.0.1").await;
-    let key = create_tsig_key(&app, "ixfr-record-class", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "ixfr-record-class", KeyRole::Admin).await;
 
-    let name = parse_name(zone_name).unwrap();
+    let name = dns::parse_name(zone_name).unwrap();
 
     for class in [
         Class::IN,
@@ -86,14 +79,14 @@ async fn ixfr_rejects_foreign_soa_classes() {
             }
 
             for response in [
-                exchange_request(request.clone(), key, |wire| {
-                    exchange_udp(app.dns_port(), wire)
+                dns::exchange_request(request.clone(), key, |wire| {
+                    dns::exchange_udp(app.dns_port(), wire)
                 }),
-                exchange_request(request.clone(), key, |wire| {
-                    exchange_tcp(app.dns_port(), wire)
+                dns::exchange_request(request.clone(), key, |wire| {
+                    common::exchange_tcp(app.dns_port(), wire)
                 }),
-                exchange_request(request.clone(), key, |wire| {
-                    exchange_xot(app.dns_tls_port(), wire, dot_client(&app))
+                dns::exchange_request(request.clone(), key, |wire| {
+                    common::exchange_xot(app.dns_tls_port(), wire, tls::dot_client(&app))
                 }),
             ] {
                 let response = response.unwrap();
@@ -133,7 +126,7 @@ fn build_query_with_foreign_record(
     questions: usize,
     version: u8,
 ) -> AdditionalBuilder<Vec<u8>> {
-    let name = parse_name("example.com").unwrap();
+    let name = dns::parse_name("example.com").unwrap();
     let soa = Soa::new(
         name.clone(),
         name.clone(),
@@ -193,7 +186,7 @@ async fn queries_reject_foreign_classes_in_every_section() {
         ..Default::default()
     })
     .await;
-    let key = create_tsig_key(&app, "query-record-class", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "query-record-class", KeyRole::Admin).await;
 
     for section in [Section::Answer, Section::Authority, Section::Additional] {
         for questions in [1, 2] {
@@ -202,14 +195,14 @@ async fn queries_reject_foreign_classes_in_every_section() {
 
                 for key in [None, Some(&key)] {
                     for response in [
-                        exchange_request(request.clone(), key, |wire| {
-                            exchange_udp(app.dns_port(), wire)
+                        dns::exchange_request(request.clone(), key, |wire| {
+                            dns::exchange_udp(app.dns_port(), wire)
                         }),
-                        exchange_request(request.clone(), key, |wire| {
-                            exchange_tcp(app.dns_port(), wire)
+                        dns::exchange_request(request.clone(), key, |wire| {
+                            common::exchange_tcp(app.dns_port(), wire)
                         }),
-                        exchange_request(request.clone(), key, |wire| {
-                            exchange_xot(app.dns_tls_port(), wire, dot_client(&app))
+                        dns::exchange_request(request.clone(), key, |wire| {
+                            common::exchange_xot(app.dns_tls_port(), wire, tls::dot_client(&app))
                         }),
                     ] {
                         let response = response.unwrap();
@@ -244,7 +237,7 @@ async fn foreign_record_classes_keep_tsig_error_precedence() {
         ..Default::default()
     })
     .await;
-    let key = create_tsig_key(&app, "bad-record-class", KeyRole::Admin).await;
+    let key = tsig::create_tsig_key(&app, "bad-record-class", KeyRole::Admin).await;
 
     for unknown in [false, true] {
         let mut signing_key = key.clone();
@@ -254,7 +247,7 @@ async fn foreign_record_classes_keep_tsig_error_precedence() {
         }
 
         let mut request = build_query_with_foreign_record(Section::Authority, 1, 1);
-        sign(&mut request, &signing_key).unwrap();
+        tsig::sign(&mut request, &signing_key).unwrap();
         let mut request = request.finish();
 
         if !unknown {
@@ -263,9 +256,9 @@ async fn foreign_record_classes_keep_tsig_error_precedence() {
         }
 
         for wire in [
-            exchange_udp(app.dns_port(), &request),
-            exchange_tcp(app.dns_port(), &request),
-            exchange_xot(app.dns_tls_port(), &request, dot_client(&app)),
+            dns::exchange_udp(app.dns_port(), &request),
+            common::exchange_tcp(app.dns_port(), &request),
+            common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app)),
         ] {
             let response = Message::from_octets(wire.unwrap()).unwrap();
 

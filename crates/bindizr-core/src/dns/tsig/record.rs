@@ -1,15 +1,16 @@
 //! Validate TSIG placement and authenticate its original wire variables.
 
-use domain::{
-    base::{Message, Record, Rtype, ToName, iana::Class, name::ParsedName},
-    rdata::tsig::Tsig,
-};
+use domain::base::iana::Class;
+use domain::base::name::ParsedName;
+use domain::base::{Message, Record, Rtype, ToName};
+use domain::rdata::tsig::Tsig;
 use ring::hmac;
 use subtle::ConstantTimeEq;
 use thiserror::Error;
 
 use super::TsigSigningKey;
-use crate::dns::{LibraryError, message::DNS_HEADER_LEN};
+use crate::dns::LibraryError;
+use crate::dns::message::DNS_HEADER_LEN;
 
 type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [u8]>>>;
 

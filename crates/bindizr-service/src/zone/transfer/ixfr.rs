@@ -1,17 +1,17 @@
 //! IXFR response selection and journal validation (RFC 1995).
 
-use bindizr_core::dns::{Serial, name::ZoneName};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 use thiserror::Error;
 
-use super::{TransferAccess, authorize_transfer_tx};
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    model::{zone::Zone, zone_change::ZoneChange, zone_version::ZoneVersion},
-    transaction,
-};
+use super::TransferAccess;
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::zone::Zone;
+use crate::model::zone_change::ZoneChange;
+use crate::model::zone_version::ZoneVersion;
+use crate::{Context, transaction};
 
 /// What an IXFR from a client's serial is answered with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +36,7 @@ pub async fn authorize_ixfr_plan_by_name(
 ) -> Result<TransferAccess<(Zone, IxfrPlan)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load the transfer delta").await?;
     let result = async {
-        let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
+        let zone = match super::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),

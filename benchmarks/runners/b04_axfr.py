@@ -20,12 +20,6 @@ from lib import dig  # noqa: E402
 APEX_LINES = 10
 
 
-async def _axfr_count(zone, host, port, timeout=300):
-    """Read the current record count through an AXFR."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, dig.axfr, zone, host, port, timeout)
-
-
 async def run(adapter, config, context) -> list:
     """Measure full zone-transfer performance at the configured zone sizes."""
     zone = context["zone"]
@@ -42,8 +36,7 @@ async def run(adapter, config, context) -> list:
         dropped = False
 
         while time.monotonic() < drop_deadline:
-            _, count, _ = await _axfr_count(zone, xe.host, xe.port)
-            if count <= APEX_LINES:
+            if await dig.zone_is_cleared(zone, xe.host, xe.port, APEX_LINES):
                 dropped = True
                 break
             await asyncio.sleep(1.0)
@@ -64,6 +57,8 @@ async def run(adapter, config, context) -> list:
 
         await adapter.create_zone(zone)
         await adapter.import_records(zone, generate(size, config["seed"], zone))
+        if adapter.bulk_errors:
+            raise RuntimeError(f"preparing the AXFR zone failed for {adapter.bulk_errors} records")
 
         # Wait until the zone is fully transferable — Bindizr's secondary pulls
         # asynchronously. Poll until the AXFR count stops growing and covers the
@@ -73,8 +68,8 @@ async def run(adapter, config, context) -> list:
         propagated = False
 
         while time.monotonic() < deadline:
-            _, count, _ = await _axfr_count(zone, xe.host, xe.port)
-            if count >= size and count == prev:
+            count = await dig.count_axfr_records(zone, xe.host, xe.port)
+            if count is not None and count >= size and count == prev:
                 propagated = True
                 break
             prev = count
@@ -94,7 +89,7 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, count, nbytes = await _axfr_count(zone, xe.host, xe.port)
+        secs, count, nbytes = await dig.axfr(zone, xe.host, xe.port)
 
         rows.append({
             "system": context["label"],

@@ -1,6 +1,7 @@
 //! Match Accept headers against the webhook response media type.
 
-use axum::http::{HeaderMap, header::ACCEPT};
+use axum::http::HeaderMap;
+use axum::http::header::ACCEPT;
 
 /// Maximum fractional precision of an HTTP qvalue (RFC 9110, Section 12.4.2).
 const QUALITY_PRECISION: usize = 3;

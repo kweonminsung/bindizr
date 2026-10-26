@@ -2,25 +2,16 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
-use bindizr_service::{
-    Context,
-    types::{ErrorResponse, ZoneStatusResponse},
-    zone,
-};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use bindizr_service::types::{ErrorResponse, ZoneStatusResponse};
+use bindizr_service::{Context, zone};
 
-use crate::{
-    api::{
-        RequestCaller,
-        error::{ApiError, Path},
-    },
-    params::NameParams,
-};
+use crate::api::RequestCaller;
+use crate::api::error::{ApiError, Path};
+use crate::params::NameParams;
 
 /// Report the sync state of every enabled secondary for a zone.
 #[utoipa::path(

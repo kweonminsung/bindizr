@@ -10,17 +10,18 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
-use bindizr_core::{dns::Ttl, model::role_grant::Action};
-use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
+use bindizr_core::dns::Ttl;
+use bindizr_core::model::role_grant::Action;
+use bindizr_db::record::RecordFilter;
+use bindizr_db::zone::ZoneFilter;
 
-use crate::{
-    Context,
-    authorization::Caller,
-    error::ServiceError,
-    grant_pattern::pattern_domain,
-    model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey},
-    types::{AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse, ExternalDnsRecord},
+use crate::authorization::Caller;
+use crate::error::ServiceError;
+use crate::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey};
+use crate::types::{
+    AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse, ExternalDnsRecord,
 };
+use crate::{Context, grant_pattern};
 
 /// DB read page size; the protocol still returns all endpoints in one response.
 const RECORD_READ_PAGE: u32 = 5_000;
@@ -72,9 +73,9 @@ pub async fn list_managed_domains(
 
     for zone in &zones {
         for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, EXTERNAL_DNS_RECORD_TYPES) {
-            domains.insert(policy::normalize_lookup_name(&pattern_domain(
-                pattern, &zone.name,
-            ))?);
+            domains.insert(policy::normalize_lookup_name(
+                &grant_pattern::pattern_domain(pattern, &zone.name),
+            )?);
         }
     }
 

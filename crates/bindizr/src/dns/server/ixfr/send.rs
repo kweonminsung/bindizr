@@ -2,17 +2,16 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::{
-    dns::{Serial, message, message::Rtype, tsig::TransferSigner},
-    model::{
-        zone::Zone,
-        zone_change::{ChangeOperation, ZoneChange},
-        zone_version::ZoneVersion,
-    },
-};
+use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::tsig::TransferSigner;
+use bindizr_core::dns::{Serial, message};
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_change::{ChangeOperation, ZoneChange};
+use bindizr_core::model::zone_version::ZoneVersion;
 use thiserror::Error;
 
-use crate::dns::{error::DnsError, stream::ResponseWriter};
+use crate::dns::error::DnsError;
+use crate::dns::stream::ResponseWriter;
 
 /// Send the current SOA alone (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(

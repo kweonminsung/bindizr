@@ -1,26 +1,17 @@
 mod record;
 
-use domain::{
-    base::{
-        Message,
-        iana::{Class, Opcode, Rtype},
-        name::ParsedName,
-    },
-    dep::octseq::parse::Parser,
-    rdata::tsig::Tsig,
-};
+use domain::base::Message;
+use domain::base::iana::{Class, Opcode, Rtype};
+use domain::base::name::ParsedName;
+use domain::dep::octseq::parse::Parser;
+use domain::rdata::tsig::Tsig;
 pub use record::{UpdateRecord, ValidateUpdateShapeError};
 use thiserror::Error;
 
-use crate::{
-    dns::{
-        message::{DNS_HEADER_LEN, Edns},
-        name::labels_to_presentation,
-        record::{ParseRdataError, ParseRecordValueError},
-        tsig::is_request_tsig_valid,
-    },
-    model::record::ParseRecordTypeError,
-};
+use crate::dns::message::{DNS_HEADER_LEN, Edns};
+use crate::dns::record::{ParseRdataError, ParseRecordValueError};
+use crate::dns::{name, tsig};
+use crate::model::record::ParseRecordTypeError;
 
 /// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,7 +255,7 @@ fn parse_tsig_record(
         .map_err(|_| ParseUpdateError::InvalidTsig)?;
     let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseUpdateError::InvalidTsig)?;
 
-    if rdata.remaining() != 0 || !is_request_tsig_valid(&tsig) {
+    if rdata.remaining() != 0 || !tsig::is_request_tsig_valid(&tsig) {
         return Err(ParseUpdateError::InvalidTsig);
     }
 
@@ -291,7 +282,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateE
         return Ok(".".to_string());
     }
 
-    Ok(format!("{}.", labels_to_presentation(&labels)))
+    Ok(format!("{}.", name::labels_to_presentation(&labels)))
 }
 
 #[cfg(test)]

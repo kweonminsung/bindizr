@@ -1,22 +1,17 @@
 //! Resolve a bulk import's zone list and report each zone's independent outcome.
 
-use bindizr_core::dns::{address::is_address_target, extract_member_zones};
+use bindizr_core::dns;
+use bindizr_core::dns::address;
 
-use super::{
-    ImportOptions, MissingZoneAction, authorize_new_zone_import, import_actions, import_transfer,
-    normalize_zone_names,
+use super::{ImportOptions, MissingZoneAction};
+use crate::authorization::Caller;
+use crate::dns_client::axfr::AxfrClient;
+use crate::error::ServiceError;
+use crate::types::{
+    ErrorResponse, ImportMode, ImportResult, ImportZonesItemResponse, ImportZonesRequest,
+    ImportZonesResponse, ImportZonesSummaryResponse, Run,
 };
-use crate::{
-    Context,
-    authorization::Caller,
-    dns_client::axfr::AxfrClient,
-    error::ServiceError,
-    types::{
-        ErrorResponse, ImportMode, ImportResult, ImportZonesItemResponse, ImportZonesRequest,
-        ImportZonesResponse, ImportZonesSummaryResponse, Run,
-    },
-    zone,
-};
+use crate::{Context, zone};
 
 /// Import named zones or catalog members from one server over one connection
 /// (RFC 9103, Section 6.3.1), each in its own transaction, reporting every outcome.
@@ -40,7 +35,7 @@ pub async fn import_many(
     };
     let server = request.from_server.trim();
 
-    if !is_address_target(server) {
+    if !address::is_address_target(server) {
         return Err(ServiceError::invalid_input(
             "from_server must name one server as host[:port]",
         ));
@@ -48,18 +43,18 @@ pub async fn import_many(
 
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
-        authorize_new_zone_import(caller, mode)?;
+        super::authorize_new_zone_import(caller, mode)?;
     }
 
     let config = cx.config();
     let mut client = AxfrClient::new(server);
 
     let zone_names = match (&request.zone_names, &request.from_catalog) {
-        (Some(names), None) => normalize_zone_names(names)?,
+        (Some(names), None) => super::normalize_zone_names(names)?,
         (None, Some(catalog)) => {
             // A catalog names every zone its server provisions, so reading it
             // through Bindizr is an all-zones act.
-            for action in import_actions(mode) {
+            for action in super::import_actions(mode) {
                 caller.authorize_all_whole_zones(*action)?;
             }
 
@@ -77,7 +72,7 @@ pub async fn import_many(
                         error,
                     )
                 })?;
-            let members = extract_member_zones(&records, &catalog).map_err(|error| {
+            let members = dns::extract_member_zones(&records, &catalog).map_err(|error| {
                 ServiceError::invalid_input_with_source(
                     format!(
                         "catalog {} from {} cannot be read: {}",
@@ -116,7 +111,8 @@ pub async fn import_many(
     // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
         let (result, import, error) =
-            match import_transfer(cx, caller, zone_name, &mut client, server, options).await {
+            match super::import_transfer(cx, caller, zone_name, &mut client, server, options).await
+            {
                 Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
                 Ok(import) => (ImportResult::Ok, Some(import), None),
                 Err(error) => (

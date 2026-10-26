@@ -3,10 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::{
-    dns::Ttl,
-    model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType},
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

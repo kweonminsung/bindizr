@@ -1,6 +1,8 @@
 //! SQLite file paths, parent directories, and connection URLs.
 
-use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 use crate::error::DatabaseError;
 

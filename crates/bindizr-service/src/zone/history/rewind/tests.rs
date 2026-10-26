@@ -1,13 +1,7 @@
-use bindizr_core::{
-    dns::{
-        Ttl,
-        name::{OwnerName, ZoneName},
-    },
-    model::{
-        dnssec_record::DnssecRecordType,
-        record::{RecordId, RecordType},
-    },
-};
+use bindizr_core::dns::Ttl;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::model::dnssec_record::DnssecRecordType;
+use bindizr_core::model::record::{RecordId, RecordType};
 use chrono::Utc;
 
 use super::*;

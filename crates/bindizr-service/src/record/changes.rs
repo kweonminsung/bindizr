@@ -1,18 +1,13 @@
 //! Record row mutations and their matching IXFR journal entries in the caller's transaction.
 
-use bindizr_core::{
-    dns::Serial,
-    model::{record::RecordId, zone::ZoneId},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::zone::ZoneId;
 
-use crate::{
-    Transaction,
-    error::ServiceError,
-    model::{
-        record::Record,
-        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
-    },
-};
+use crate::Transaction;
+use crate::error::ServiceError;
+use crate::model::record::Record;
+use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 
 /// Insert records with their ADD zone changes for IXFR. The caller has
 /// already validated the rows.

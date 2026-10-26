@@ -1,15 +1,15 @@
-use bindizr_core::{config::Config, metrics::Metrics, model::role_grant::Action};
+use bindizr_core::config::Config;
+use bindizr_core::metrics::Metrics;
+use bindizr_core::model::role_grant::Action;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
-use crate::{
-    Context,
-    error::ErrorCode,
-    role, token,
-    types::{CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest, RoleGrantResponse},
-    zone,
+use crate::error::ErrorCode;
+use crate::types::{
+    CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest, RoleGrantResponse,
 };
+use crate::{Context, role, token, zone};
 
 /// Build isolated service state over SQLite without background workers.
 async fn context() -> Context {

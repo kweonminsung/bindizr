@@ -1,16 +1,9 @@
 mod regexp;
 
 pub use regexp::ValidateNaptrRegexpError;
-use regexp::validate_naptr_regexp;
 
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
-    value::{
-        parse_char_string, parse_u16_record_field, split_record_fields,
-        validate_domain_record_value,
-    },
-};
-use crate::dns::name::{encode_name, to_fqdn};
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use crate::dns::name;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NaptrRecordValue<'a> {
@@ -30,11 +23,11 @@ impl<'a> NaptrRecordValue<'a> {
         let rest = value.trim_start();
         let (order, rest) = parse_field("NAPTR order", rest)?;
         let (preference, rest) = parse_field("NAPTR preference", rest)?;
-        let (flags, rest) = parse_char_string("NAPTR flags", rest)?;
-        let (services, rest) = parse_char_string("NAPTR services", rest)?;
-        let (regexp, rest) = parse_char_string("NAPTR regexp", rest)?;
+        let (flags, rest) = value::parse_char_string("NAPTR flags", rest)?;
+        let (services, rest) = value::parse_char_string("NAPTR services", rest)?;
+        let (regexp, rest) = value::parse_char_string("NAPTR regexp", rest)?;
 
-        let mut fields = split_record_fields(rest);
+        let mut fields = value::split_record_fields(rest);
         let (Some(replacement), None) = (fields.next(), fields.next()) else {
             return Err(ParseRecordValueError::NaptrShape {
                 value: value.to_string(),
@@ -42,8 +35,8 @@ impl<'a> NaptrRecordValue<'a> {
         };
 
         Ok(Self {
-            order: parse_u16_record_field("NAPTR order", order)?,
-            preference: parse_u16_record_field("NAPTR preference", preference)?,
+            order: value::parse_u16_record_field("NAPTR order", order)?,
+            preference: value::parse_u16_record_field("NAPTR preference", preference)?,
             flags,
             services,
             regexp,
@@ -68,7 +61,7 @@ impl<'a> NaptrRecordValue<'a> {
             rdata.extend_from_slice(text.as_bytes());
         }
 
-        rdata.extend_from_slice(&encode_name(self.replacement)?);
+        rdata.extend_from_slice(&name::encode_name(self.replacement)?);
 
         Rdata::new(rdata)
     }
@@ -80,7 +73,7 @@ impl<'a> NaptrRecordValue<'a> {
             return Err(ParseRecordValueError::NaptrFlags);
         }
 
-        validate_naptr_regexp(&self.regexp)?;
+        regexp::validate_naptr_regexp(&self.regexp)?;
 
         // The replacement is a name or the root, which ends the rewrite chain.
         if self.replacement == "." {
@@ -92,7 +85,7 @@ impl<'a> NaptrRecordValue<'a> {
             return Err(ParseRecordValueError::NaptrReplacementWithRegexp);
         }
 
-        validate_domain_record_value("NAPTR record replacement", self.replacement)
+        value::validate_domain_record_value("NAPTR record replacement", self.replacement)
     }
 
     /// Render the NAPTR value in canonical text form.
@@ -101,10 +94,10 @@ impl<'a> NaptrRecordValue<'a> {
             "{} {} {} {} {} {}",
             self.order,
             self.preference,
-            to_quoted_charstr(self.flags.as_bytes()),
-            to_quoted_charstr(self.services.as_bytes()),
-            to_quoted_charstr(self.regexp.as_bytes()),
-            to_fqdn(self.replacement)
+            super::to_quoted_charstr(self.flags.as_bytes()),
+            super::to_quoted_charstr(self.services.as_bytes()),
+            super::to_quoted_charstr(self.regexp.as_bytes()),
+            name::to_fqdn(self.replacement)
         )
     }
 

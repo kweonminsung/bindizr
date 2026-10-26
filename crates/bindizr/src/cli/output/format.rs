@@ -2,7 +2,8 @@ use bindizr_core::outln;
 use bindizr_service::types::PaginatedResponse;
 use clap::ValueEnum;
 use serde::Serialize;
-use tabled::{Table, Tabled, settings::Style};
+use tabled::settings::Style;
+use tabled::{Table, Tabled};
 use thiserror::Error;
 
 /// Why a daemon response could not be rendered.

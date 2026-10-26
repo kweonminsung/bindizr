@@ -1,13 +1,14 @@
-use bindizr_core::{
-    dns::{Serial, name::ZoneName},
-    model::{dnssec_policy::PolicyId, zone::ZoneId},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-use crate::{
-    LockLevel, error::DatabaseError, model::zone::Zone, sql::like_pattern, zone::ZoneFilter,
-};
+use crate::error::DatabaseError;
+use crate::model::zone::Zone;
+use crate::zone::ZoneFilter;
+use crate::{LockLevel, sql};
 
 /// Insert a zone in the current transaction.
 pub(crate) async fn create_tx(
@@ -122,7 +123,7 @@ pub(crate) async fn list_by_filter(
 ) -> Result<Vec<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let search = like_pattern(filter.search.as_deref());
+    let search = sql::like_pattern(filter.search.as_deref());
     let order_by = filter.sort.order_by_sql(filter.order);
 
     let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
@@ -221,7 +222,7 @@ pub(crate) async fn count_by_filter(
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let search = like_pattern(filter.search.as_deref());
+    let search = sql::like_pattern(filter.search.as_deref());
 
     let count = sqlx::query_scalar::<_, i64>(
         r#"

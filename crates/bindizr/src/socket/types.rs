@@ -1,7 +1,7 @@
-use bindizr_core::{
-    dns::Serial,
-    model::{record::RecordId, role_grant::RoleGrantId, zone_version::VersionFilter},
-};
+use bindizr_core::dns::Serial;
+use bindizr_core::model::record::RecordId;
+use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::model::zone_version::VersionFilter;
 use bindizr_service::types::{
     AuditLogFilter, CheckNotifyResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest,
     CreateRecordRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest,

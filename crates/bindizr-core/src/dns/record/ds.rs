@@ -1,13 +1,8 @@
 //! DS record values (RFC 4034, Section 5): a child zone's key digest, entered
 //! by the operator at the delegation point.
 
-use super::{
-    EncodeRdataError, ParseRecordValueError, Rdata,
-    value::{
-        MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field,
-        parse_u16_record_field,
-    },
-};
+use super::value::MAX_RECORD_RDATA;
+use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 use crate::dns::dnssec::KeyTag;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,14 +51,14 @@ impl DsRecordValue {
             .find(|(mnemonic, _)| mnemonic.eq_ignore_ascii_case(algorithm))
         {
             Some((_, number)) => *number,
-            None => parse_u8_record_field("DS algorithm", algorithm)?,
+            None => value::parse_u8_record_field("DS algorithm", algorithm)?,
         };
 
         Ok(Self {
-            key_tag: KeyTag::from(parse_u16_record_field("DS key tag", key_tag)?),
+            key_tag: KeyTag::from(value::parse_u16_record_field("DS key tag", key_tag)?),
             algorithm,
-            digest_type: parse_u8_record_field("DS digest type", digest_type)?,
-            digest: parse_hex_record_field("DS digest", fields)?,
+            digest_type: value::parse_u8_record_field("DS digest type", digest_type)?,
+            digest: value::parse_hex_record_field("DS digest", fields)?,
         })
     }
 
@@ -109,7 +104,7 @@ impl DsRecordValue {
             self.key_tag,
             self.algorithm,
             self.digest_type,
-            hex_upper(&self.digest)
+            value::hex_upper(&self.digest)
         )
     }
 

@@ -1,8 +1,8 @@
 use super::*;
-use crate::{
-    dns::{message::Rtype, name::encode_name, record::TxtRecordValue},
-    model::record::RecordType,
-};
+use crate::dns::message::Rtype;
+use crate::dns::name;
+use crate::dns::record::TxtRecordValue;
+use crate::model::record::RecordType;
 
 /// Verify that encode a RDATA is the address octets.
 #[test]
@@ -35,7 +35,7 @@ fn encode_cname_rdata_returns_target_name() {
     assert_eq!(encoded.record_type, 5);
     assert_eq!(
         encoded.rdata.as_bytes(),
-        encode_name("mail.example.com.").unwrap()
+        name::encode_name("mail.example.com.").unwrap()
     );
 }
 
@@ -94,7 +94,7 @@ fn encode_mx_rdata_returns_preference_and_exchange() {
 
     assert_eq!(encoded.record_type, 15);
     let mut expected = vec![0, 10];
-    expected.extend(encode_name("mail.example.com").unwrap());
+    expected.extend(name::encode_name("mail.example.com").unwrap());
 
     assert_eq!(encoded.rdata.as_bytes(), expected);
 }
@@ -108,7 +108,7 @@ fn encode_srv_rdata_returns_priority_weight_port_and_target() {
 
     assert_eq!(encoded.record_type, 33);
     let mut expected = vec![0, 1, 0, 5, 0x13, 0xc4];
-    expected.extend(encode_name("sip.example.com").unwrap());
+    expected.extend(name::encode_name("sip.example.com").unwrap());
 
     assert_eq!(encoded.rdata.as_bytes(), expected);
 }
