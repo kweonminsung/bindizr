@@ -20,7 +20,7 @@ is amd64-only; on arm64, use the BIND image tested by the
 
     ```bash
     helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-      --version 0.1.0-rc.3 -n bindizr --create-namespace \
+      --version 0.1.0 -n bindizr --create-namespace \
       --set postgresql.enabled=true
     ```
 
@@ -28,7 +28,7 @@ is amd64-only; on arm64, use the BIND image tested by the
 
     ```bash
     helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-      --version 0.1.0-rc.3 -n bindizr --create-namespace \
+      --version 0.1.0 -n bindizr --create-namespace \
       --set postgresql.enabled=true \
       --set bind9.image.repository=ubuntu/bind9 \
       --set bind9.image.tag=9.18-22.04_beta
@@ -149,7 +149,7 @@ kubectl create secret generic bindizr-db-secret -n bindizr \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 
 helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.3 -n bindizr \
+  --version 0.1.0 -n bindizr \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
@@ -174,7 +174,7 @@ On a cluster without a load balancer provider, use `NodePort` for direct testing
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.3 -n bindizr --reuse-values \
+  --version 0.1.0 -n bindizr --reuse-values \
   --set bind9.service.type=NodePort --set bind9.service.nodePort=30053
 dig @<node-ip> -p 30053 www.example.com A +short
 ```
@@ -197,7 +197,7 @@ name and a `host[:port]` address:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.3 -n bindizr --reuse-values \
+  --version 0.1.0 -n bindizr --reuse-values \
   --set 'bindizr.dns.extraSecondaries[0].name=ns2' \
   --set 'bindizr.dns.extraSecondaries[0].address=ns2.example.net:53'
 ```
@@ -217,7 +217,7 @@ HTTPS itself:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.3 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
+  --version 0.1.0 -n bindizr --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
 ```
 
 The readiness probe follows to HTTPS on its own. cert-manager renews the
@@ -236,7 +236,7 @@ the address the secondary connects to:
 
 ```bash
 helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-rc.3 -n bindizr --reuse-values --set bindizr.dns.tls.existingSecret=bindizr-xot-tls
+  --version 0.1.0 -n bindizr --reuse-values --set bindizr.dns.tls.existingSecret=bindizr-xot-tls
 ```
 
 The DNS Service gains a `dns-tls` port (853); expose it as you do the plain

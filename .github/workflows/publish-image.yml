@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag to push, such as 0.1.0-rc.3"
+        description: "Image tag to push, such as 0.1.0"
         required: true
       latest:
         description: "Also point latest at this image"
