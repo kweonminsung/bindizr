@@ -84,7 +84,7 @@ spec:
             - --registry=txt
             - --txt-owner-id=my-cluster
         - name: bindizr-external-dns
-          image: kweonminsung/bindizr:0.1.0-rc.3
+          image: kweonminsung/bindizr:0.1.0
           command: ["bindizr-external-dns"]
           args:
             - --bindizr-url=http://bindizr-bindizr-chart-api.bindizr.svc:8000
