@@ -158,13 +158,13 @@ impl SignedViewParams<'_> {
 
         let input = self.signing_input(&apex, &signers)?;
 
-        let mut new_rows: Vec<DnssecRecord> = Vec::new();
+        let mut new_records: Vec<DnssecRecord> = Vec::new();
         let denial_records = input::denial_records(&apex, &input, self.denial)?;
 
         // Rows for everything the signer owns: the apex key record sets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
         for record in input.iter().filter(|record| is_key_rtype(record.rtype())) {
-            new_rows.push(DnssecRecord {
+            new_records.push(DnssecRecord {
                 id: DnssecRecordId::UNWRITTEN,
                 zone_id: zone.id,
                 name: OwnerName::apex(),
@@ -178,7 +178,7 @@ impl SignedViewParams<'_> {
         }
 
         for record in &denial_records {
-            new_rows.push(DnssecRecord {
+            new_records.push(DnssecRecord {
                 id: DnssecRecordId::UNWRITTEN,
                 zone_id: zone.id,
                 name: parse_derived_owner(record.owner(), &zone.name)?,
@@ -228,14 +228,14 @@ impl SignedViewParams<'_> {
         // Index stored signatures by owner and covered type for record set reuse.
         let mut prev_rrsigs: BTreeMap<(String, i32), Vec<&DnssecRecord>> = BTreeMap::new();
 
-        for row in self.prev {
-            if row.record_type == DnssecRecordType::Rrsig
-                && let Some(covered) = row.covered_record_type
+        for record in self.prev {
+            if record.record_type == DnssecRecordType::Rrsig
+                && let Some(covered) = record.covered_record_type
             {
                 prev_rrsigs
-                    .entry((row.name.to_stored(), covered))
+                    .entry((record.name.to_stored(), covered))
                     .or_default()
-                    .push(row);
+                    .push(record);
             }
         }
 
@@ -262,11 +262,11 @@ impl SignedViewParams<'_> {
             } else {
                 prev_rrsigs
                     .get(&(owner.to_stored(), covered))
-                    .filter(|rows| {
-                        rows.len() == record_set_signers.len()
-                            && rows.iter().all(|row| {
-                                row.record_set_digest.as_deref() == Some(digest.as_str())
-                                    && row
+                    .filter(|records| {
+                        records.len() == record_set_signers.len()
+                            && records.iter().all(|record| {
+                                record.record_set_digest.as_deref() == Some(digest.as_str())
+                                    && record
                                         .expires_at
                                         .is_some_and(|expires| expires > refresh_cutoff)
                             })
@@ -274,9 +274,9 @@ impl SignedViewParams<'_> {
             };
 
             match reusable {
-                Some(rows) => {
-                    for row in rows {
-                        new_rows.push((*row).clone());
+                Some(records) => {
+                    for record in records {
+                        new_records.push((*record).clone());
                     }
                 }
                 None => {
@@ -284,7 +284,7 @@ impl SignedViewParams<'_> {
 
                     for signer in record_set_signers {
                         let rrsig = signer.sign_rrset(record_set, self.inception, expiration)?;
-                        new_rows.push(DnssecRecord {
+                        new_records.push(DnssecRecord {
                             id: DnssecRecordId::UNWRITTEN,
                             zone_id: zone.id,
                             name: owner.clone(),
@@ -301,7 +301,7 @@ impl SignedViewParams<'_> {
         }
 
         // Diff the complete derived plane so unchanged rows keep their storage identity.
-        Ok(SignedViewDiff::compute(self.prev, new_rows))
+        Ok(SignedViewDiff::compute(self.prev, new_records))
     }
 }
 
@@ -320,7 +320,7 @@ impl SignedViewDiff {
     }
 
     /// Compare derived record identities to find additions and removals.
-    fn compute(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
+    fn compute(prev: &[DnssecRecord], new_records: Vec<DnssecRecord>) -> SignedViewDiff {
         let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
 
         for record in prev {
@@ -332,10 +332,10 @@ impl SignedViewDiff {
 
         let mut added = Vec::new();
 
-        for record in new_rows {
+        for record in new_records {
             match remaining.get_mut(&record.match_key()) {
-                Some(rows) if !rows.is_empty() => {
-                    rows.pop();
+                Some(records) if !records.is_empty() => {
+                    records.pop();
                 }
                 _ => added.push(record),
             }

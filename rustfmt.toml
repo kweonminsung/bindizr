@@ -1,3 +1,4 @@
 unstable_features = true
 group_imports = "StdExternalCrate"
 imports_granularity = "Module"
+single_line_if_else_max_width = 0

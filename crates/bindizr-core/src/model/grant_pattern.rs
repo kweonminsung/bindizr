@@ -59,7 +59,9 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
         None => false,
         Some(record_type) => {
             let record_type = record_type.as_str();
-            types.split(',').any(|t| t == record_type)
+            types
+                .split(',')
+                .any(|allowed_type| allowed_type == record_type)
         }
     }
 }

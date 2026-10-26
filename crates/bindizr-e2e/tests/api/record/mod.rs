@@ -1670,7 +1670,11 @@ async fn record_rejects_priority_on_types_without_one() {
         ("NS", "ns2.example.com"),
     ] {
         let request = json!({
-            "name": if record_type == "NS" { "@" } else { "prio" },
+            "name": if record_type == "NS" {
+                "@"
+            } else {
+                "prio"
+            },
             "type": record_type,
             "value": value,
             "ttl": 3600,
@@ -2436,7 +2440,7 @@ async fn signed_record_listing_paginates_derived_records() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|item| item["id"].is_i64()),
+            .all(|record| record["id"].is_i64()),
         "the unsigned listing holds only addressable user records"
     );
 
@@ -2449,30 +2453,33 @@ async fn signed_record_listing_paginates_derived_records() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let items = body["items"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
 
     assert_eq!(
         body["pagination"]["total"].as_u64().unwrap() as usize,
-        items.len()
+        records.len()
     );
     assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
-    assert!(items.iter().any(|item| item["id"].is_i64()));
+    assert!(records.iter().any(|record| record["id"].is_i64()));
 
-    for item in items {
-        assert_eq!(item["zone_name"], zone_name);
-        assert!(item["name"].as_str().unwrap().ends_with('.'));
+    for record in records {
+        assert_eq!(record["zone_name"], zone_name);
+        assert!(record["name"].as_str().unwrap().ends_with('.'));
     }
 
-    let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
+    let derived: Vec<_> = records
+        .iter()
+        .filter(|record| record["id"].is_null())
+        .collect();
 
     for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
         assert!(
-            derived.iter().any(|item| item["type"] == record_type),
-            "signed listing must carry a {record_type} row: {items:?}"
+            derived.iter().any(|record| record["type"] == record_type),
+            "signed listing must carry a {record_type} row: {records:?}"
         );
     }
 
-    assert!(derived.iter().all(|item| item["priority"].is_null()));
+    assert!(derived.iter().all(|record| record["priority"].is_null()));
 
     // The derived plane pages after the user records under one offset space.
     let (status, body) = app
@@ -2484,10 +2491,10 @@ async fn signed_record_listing_paginates_derived_records() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let items = body["items"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
 
-    assert_eq!(items.len(), 2);
-    assert!(items.iter().all(|item| item["id"].is_null()));
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().all(|record| record["id"].is_null()));
 
     let (status, body) = app
         .send_request(
@@ -2498,10 +2505,10 @@ async fn signed_record_listing_paginates_derived_records() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let items = body["items"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
 
-    assert!(!items.is_empty());
-    assert!(items.iter().all(|item| item["type"] == "RRSIG"));
+    assert!(!records.is_empty());
+    assert!(records.iter().all(|record| record["type"] == "RRSIG"));
 
     // A derived type is only addressable through the signed view.
     let (status, _) = app
@@ -2708,10 +2715,18 @@ async fn ptr_record_rejects_alias_target() {
     let zone = zone["name"].as_str().unwrap();
 
     for reverse in [false, true] {
-        let alias = if reverse { "later" } else { "earlier" };
+        let alias = if reverse {
+            "later"
+        } else {
+            "earlier"
+        };
         let cname = json!({"zone_name": zone, "name": alias, "type": "CNAME", "value": "host.example.net."});
         let ptr = json!({"zone_name": zone, "name": format!("ptr-{alias}"), "type": "PTR", "value": format!("{alias}.{zone}.")});
-        let [first, second] = if reverse { [ptr, cname] } else { [cname, ptr] };
+        let [first, second] = if reverse {
+            [ptr, cname]
+        } else {
+            [cname, ptr]
+        };
 
         assert_eq!(
             app.send_request(Method::POST, "/records", Some(first))
@@ -2777,7 +2792,8 @@ async fn record_ttl_preserves_unsigned_boundaries() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|row| row["name"] == format!("{name}.{zone_name}.") && row["ttl"] == ttl),
+                .any(|record| record["name"] == format!("{name}.{zone_name}.")
+                    && record["ttl"] == ttl),
             "{body}"
         );
 

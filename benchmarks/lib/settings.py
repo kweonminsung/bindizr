@@ -18,8 +18,8 @@ def _results_dir() -> Path:
     """Choose `results_<YYYYmmdd_HHMMSS>/`, or reuse `BENCH_RESULTS_DIR` for subset reruns."""
     override = os.environ.get("BENCH_RESULTS_DIR")
     if override:
-        p = Path(override)
-        return p if p.is_absolute() else ROOT / p
+        path = Path(override)
+        return path if path.is_absolute() else ROOT / path
     return ROOT / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
@@ -31,8 +31,8 @@ def load(path: Path | None = None) -> dict[str, Any]:
     """Load benchmark settings and apply environment overrides."""
     path = path or (ROOT / "config" / "settings.yaml")
 
-    with open(path) as fh:
-        config = yaml.safe_load(fh)
+    with open(path) as file:
+        config = yaml.safe_load(file)
 
     if os.environ.get("BENCH_CI") in ("1", "true"):
         config["sizes"] = config["sizes_ci"]
@@ -44,7 +44,7 @@ def load(path: Path | None = None) -> dict[str, Any]:
 
     # Explicit environment values override the CI defaults selected above.
     if os.environ.get("BENCH_SIZES"):
-        config["sizes"] = [int(x) for x in os.environ["BENCH_SIZES"].split(",")]
+        config["sizes"] = [int(size) for size in os.environ["BENCH_SIZES"].split(",")]
 
     if os.environ.get("BENCH_SEED"):
         config["seed"] = int(os.environ["BENCH_SEED"])
@@ -53,7 +53,7 @@ def load(path: Path | None = None) -> dict[str, Any]:
         config["repeats"] = int(os.environ["BENCH_REPEATS"])
 
     if os.environ.get("BENCH_DB_BULK_SIZES"):
-        config["db_bulk_sizes"] = [int(x) for x in os.environ["BENCH_DB_BULK_SIZES"].split(",")]
+        config["db_bulk_sizes"] = [int(size) for size in os.environ["BENCH_DB_BULK_SIZES"].split(",")]
 
     # Quick-run overrides (used for smoke tests / CI tuning).
     if os.environ.get("BENCH_CRUD_DURATION"):

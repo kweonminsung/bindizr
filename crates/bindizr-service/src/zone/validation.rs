@@ -162,10 +162,10 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
 }
 
 /// Check whether a character is permitted in an SOA mailbox local part.
-fn is_valid_email_local_char(c: char) -> bool {
-    c.is_ascii_alphanumeric()
+fn is_valid_email_local_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric()
         || matches!(
-            c,
+            ch,
             '!' | '#'
                 | '$'
                 | '%'

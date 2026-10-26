@@ -23,7 +23,7 @@ pub(crate) async fn create_many_tx(
             .max(1) as i32;
 
     const CHUNK: usize = 500;
-    let mut out = Vec::with_capacity(records.len());
+    let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
         let mut sql = String::from(
@@ -63,11 +63,11 @@ pub(crate) async fn create_many_tx(
             let mut created_record = record.clone();
             created_record.id = RecordId::from(first + offset as i32 * increment);
             created_record.created_at = now;
-            out.push(created_record);
+            created_records.push(created_record);
         }
     }
 
-    Ok(out)
+    Ok(created_records)
 }
 
 /// Find a record by ID.
@@ -173,7 +173,11 @@ pub(crate) async fn list_by_record_types_tx(
     );
 
     for i in 0..record_types.len() {
-        sql.push_str(if i == 0 { "?" } else { ",?" });
+        sql.push_str(if i == 0 {
+            "?"
+        } else {
+            ",?"
+        });
     }
 
     sql.push_str(") ORDER BY name, id");
@@ -217,7 +221,7 @@ pub(crate) async fn list_by_names_tx(
     // Lock only conflicting names; 5000-name chunks reduce round trips
     // without reaching MySQL's 65535-placeholder limit.
     const CHUNK: usize = 5000;
-    let mut out = Vec::new();
+    let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
         let mut sql = String::from(
@@ -225,7 +229,11 @@ pub(crate) async fn list_by_names_tx(
         );
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 { "?" } else { ",?" });
+            sql.push_str(if i == 0 {
+                "?"
+            } else {
+                ",?"
+            });
         }
 
         sql.push(')');
@@ -238,10 +246,10 @@ pub(crate) async fn list_by_names_tx(
         }
 
         let mut rows = query.fetch_all(&mut **tx).await?;
-        out.append(&mut rows);
+        records.append(&mut rows);
     }
 
-    Ok(out)
+    Ok(records)
 }
 
 /// List matching records with their zone metadata.
@@ -487,7 +495,11 @@ pub(crate) async fn delete_many_tx(
         let mut sql = String::from("DELETE FROM records WHERE id IN (");
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 { "?" } else { ",?" });
+            sql.push_str(if i == 0 {
+                "?"
+            } else {
+                ",?"
+            });
         }
 
         sql.push(')');

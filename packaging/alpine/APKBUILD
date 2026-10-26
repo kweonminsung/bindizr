@@ -13,6 +13,7 @@ install="$pkgname.post-install $pkgname.pre-deinstall"
 options="!check !strip"
 source=""
 
+# Install the staged binary, service files, configuration, and documentation into the package.
 package() {
 	cd "${STAGE:?staged tree}"
 	install -Dm755 usr/bin/bindizr "$pkgdir"/usr/bin/bindizr

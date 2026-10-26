@@ -15,13 +15,13 @@ pub(crate) async fn create_many_tx(
     records: &[Record],
 ) -> Result<Vec<Record>, DatabaseError> {
     const CHUNK: usize = 500;
-    let mut out = Vec::with_capacity(records.len());
+    let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
         let mut sql = String::from(
             "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
         );
-        let mut p = 1;
+        let mut bind_index = 1;
 
         for i in 0..chunk.len() {
             if i > 0 {
@@ -30,16 +30,16 @@ pub(crate) async fn create_many_tx(
 
             sql.push_str(&format!(
                 "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                p,
-                p + 1,
-                p + 2,
-                p + 3,
-                p + 4,
-                p + 5,
-                p + 6,
-                p + 7
+                bind_index,
+                bind_index + 1,
+                bind_index + 2,
+                bind_index + 3,
+                bind_index + 4,
+                bind_index + 5,
+                bind_index + 6,
+                bind_index + 7
             ));
-            p += 8;
+            bind_index += 8;
         }
 
         sql.push_str(" RETURNING id");
@@ -66,11 +66,11 @@ pub(crate) async fn create_many_tx(
             let mut created_record = record.clone();
             created_record.id = RecordId::from(row.get::<i32, _>(0));
             created_record.created_at = now;
-            out.push(created_record);
+            created_records.push(created_record);
         }
     }
 
-    Ok(out)
+    Ok(created_records)
 }
 
 /// Find a record by ID.
@@ -226,7 +226,7 @@ pub(crate) async fn list_by_names_tx(
     // Lock only conflicting names; 5000-name chunks reduce round trips
     // without reaching the 65535-placeholder limit.
     const CHUNK: usize = 5000;
-    let mut out = Vec::new();
+    let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
         let mut sql = String::from(
@@ -250,10 +250,10 @@ pub(crate) async fn list_by_names_tx(
         }
 
         let mut rows = query.fetch_all(&mut **tx).await?;
-        out.append(&mut rows);
+        records.append(&mut rows);
     }
 
-    Ok(out)
+    Ok(records)
 }
 
 /// List matching records with their zone metadata.

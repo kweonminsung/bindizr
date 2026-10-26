@@ -94,22 +94,22 @@ pub async fn export(
         );
     }
 
-    derived.sort_by_cached_key(|row| {
+    derived.sort_by_cached_key(|record| {
         (
-            row.name.clone(),
-            row.record_type,
-            row.rdata.to_presentation(row.record_type),
+            record.name.clone(),
+            record.record_type,
+            record.rdata.to_presentation(record.record_type),
         )
     });
 
-    for row in &derived {
+    for record in &derived {
         let _ = writeln!(
             out,
             "{}\t{}\tIN\t{}\t{}",
-            row.name,
-            row.ttl,
-            row.record_type,
-            row.rdata.to_presentation(row.record_type),
+            record.name,
+            record.ttl,
+            record.record_type,
+            record.rdata.to_presentation(record.record_type),
         );
     }
 

@@ -30,15 +30,15 @@ async def query(name: str, rtype: str, server: str, port: int,
     """Return (answered, latency_secs, raw_output)."""
     args = ["dig", f"@{server}", "-p", str(port), name, rtype, "+tries=1",
             f"+time={timeout}", "+short"]
-    t0 = time.monotonic()
+    started = time.monotonic()
 
     try:
-        p = await process.run(*args, timeout=timeout + 2)
-        dt = time.monotonic() - t0
-        out = p.stdout.decode().strip()
-        return (p.returncode == 0 and bool(out), dt, out)
+        result = await process.run(*args, timeout=timeout + 2)
+        elapsed = time.monotonic() - started
+        output = result.stdout.decode().strip()
+        return (result.returncode == 0 and bool(output), elapsed, output)
     except subprocess.TimeoutExpired:
-        return (False, time.monotonic() - t0, "")
+        return (False, time.monotonic() - started, "")
 
 
 async def _transfer(zone: str, server: str, port: int, qtype: str,
@@ -47,22 +47,22 @@ async def _transfer(zone: str, server: str, port: int, qtype: str,
     args = ["dig", f"@{server}", "-p", str(port), zone, qtype, "+tcp",
             f"+time={timeout}", "+tries=1", "+noall", "+noshort", "+answer",
             "+comments", "+stats", "+noonesoa", "+nomultiline", "+ttlid", "+cl"]
-    t0 = time.monotonic()
+    started = time.monotonic()
     try:
-        p = await process.run(*args, timeout=timeout + 10)
+        result = await process.run(*args, timeout=timeout + 10)
     except subprocess.TimeoutExpired as error:
         raise TransferError(zone, server, port, qtype, "timed out") from error
-    dt = time.monotonic() - t0
-    out = p.stdout.decode()
-    lines = [line for line in out.splitlines() if line and not line.startswith(";")]
-    completions = XFR_SIZE.findall(out)
-    statuses = RESPONSE_STATUS.findall(out)
+    elapsed = time.monotonic() - started
+    output = result.stdout.decode()
+    lines = [line for line in output.splitlines() if line and not line.startswith(";")]
+    completions = XFR_SIZE.findall(output)
+    statuses = RESPONSE_STATUS.findall(output)
     rcode = next((status for status in statuses if status != "NOERROR"), None)
 
     # Some dig versions exit zero after an early EOF or a refused transfer.
-    if (p.returncode != 0 or rcode is not None or len(completions) != 1
+    if (result.returncode != 0 or rcode is not None or len(completions) != 1
             or int(completions[0]) != len(lines) or not lines):
-        detail = p.stderr.decode().strip() or rcode or "incomplete transfer"
+        detail = result.stderr.decode().strip() or rcode or "incomplete transfer"
         raise TransferError(zone, server, port, qtype, detail, rcode)
 
     first = lines[0].split()
@@ -73,7 +73,7 @@ async def _transfer(zone: str, server: str, port: int, qtype: str,
                 != [field.lower() for field in last])):
         raise TransferError(zone, server, port, qtype, "invalid SOA boundaries")
 
-    return (dt, len(lines), len(p.stdout))
+    return (elapsed, len(lines), len(result.stdout))
 
 
 async def axfr(zone: str, server: str, port: int, timeout: int = 300) -> tuple[float, int, int]:
@@ -120,14 +120,14 @@ async def poll_until_visible(name: str, rtype: str, expected: str, server: str, 
                              interval_ms: int = 50, timeout_secs: int = 30) -> float | None:
     """Poll until `name`/`rtype` resolves to `expected`. Return seconds, or None."""
     deadline = time.monotonic() + timeout_secs
-    t0 = time.monotonic()
+    started = time.monotonic()
 
     while time.monotonic() < deadline:
-        ok, _, out = await query(name, rtype, server, port)
+        ok, _, output = await query(name, rtype, server, port)
         # Whole-line match: `in out` would accept 10.0.0.1 for an answer of
         # 10.0.0.10 and report propagation that never happened.
-        if ok and expected in out.splitlines():
-            return time.monotonic() - t0
+        if ok and expected in output.splitlines():
+            return time.monotonic() - started
         await asyncio.sleep(interval_ms / 1000.0)
 
     return None

@@ -149,9 +149,9 @@ impl SignedViewParams<'_> {
         }
 
         // Canonical order keeps each record set contiguous for the signing pass.
-        input.sort_by(|a, b| {
+        input.sort_by(|left, right| {
             use domain::base::cmp::CanonicalOrd;
-            a.canonical_cmp(b)
+            left.canonical_cmp(right)
         });
 
         Ok(input)

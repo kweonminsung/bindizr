@@ -638,19 +638,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .await?;
             let status = &response.data;
 
-            if output != OutputFormat::Table {
+            if output == OutputFormat::Table {
+                outln!("Zone {} (serial {})", status.zone_name, status.serial);
+
+                if status.secondaries.is_empty() {
+                    outln!("No enabled secondaries.");
+                    return Ok(());
+                }
+
+                output::print_table(SecondaryStatusRow::rows_from_status(status));
+            } else {
                 output::print_payload(status, output)?;
-                return Ok(());
             }
-
-            outln!("Zone {} (serial {})", status.zone_name, status.serial);
-
-            if status.secondaries.is_empty() {
-                outln!("No enabled secondaries.");
-                return Ok(());
-            }
-
-            output::print_table(SecondaryStatusRow::rows_from_status(status));
         }
         ZoneCommand::Notify(args) => {
             // The daemon has a command for each.

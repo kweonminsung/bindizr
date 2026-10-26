@@ -134,15 +134,15 @@ fn print_key_material(exported: &ExportDnssecKeysResponse) {
         );
 
         // Distinct keys may share (algorithm, tag); the suffix keeps names unique.
-        let dup = exported.keys[..i]
+        let duplicate_count = exported.keys[..i]
             .iter()
             .filter(|candidate_key| {
                 candidate_key.algorithm == key.algorithm && candidate_key.key_tag == key.key_tag
             })
             .count();
 
-        if dup > 0 {
-            base.push_str(&format!(".{}", dup + 1));
+        if duplicate_count > 0 {
+            base.push_str(&format!(".{}", duplicate_count + 1));
         }
 
         outln!("; {}.key ({}, tag {})", base, key.role, key.key_tag);

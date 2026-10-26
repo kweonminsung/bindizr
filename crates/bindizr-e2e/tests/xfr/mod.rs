@@ -97,7 +97,11 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                             "{}.{}.{}.{}",
                             "a".repeat(63),
                             "b".repeat(63),
-                            "c".repeat(if edns.is_some() { 52 } else { 63 }),
+                            "c".repeat(if edns.is_some() {
+                                52
+                            } else {
+                                63
+                            }),
                             "d".repeat(if truncated {
                                 1 + algorithm.native_len() / 2
                             } else {
@@ -125,7 +129,12 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                         }
 
                         let time = Time48::from_u64(
-                            u64::from(Time48::now()) - if stale { 3600 } else { 0 },
+                            u64::from(Time48::now())
+                                - if stale {
+                                    3600
+                                } else {
+                                    0
+                                },
                         );
                         let mac_len = if truncated {
                             algorithm.native_len() / 2
@@ -192,7 +201,14 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                                 assert_eq!(tsig.data().time_signed(), time);
                             }
 
-                            assert_eq!(tsig.data().other().len(), if stale { 6 } else { 0 });
+                            assert_eq!(
+                                tsig.data().other().len(),
+                                if stale {
+                                    6
+                                } else {
+                                    0
+                                }
+                            );
                             assert_eq!(
                                 response.opt().map(|opt| opt.dnssec_ok()),
                                 edns.map(|_| true)
@@ -458,7 +474,11 @@ async fn ixfr_serial_order_selects_soa_only_replies() {
 
                     assert_eq!(first.data(), soa.data());
                     assert_eq!(first.ttl(), soa.ttl());
-                    let expected_count = if soa_only || udp { 1 } else { full_count };
+                    let expected_count = if soa_only || udp {
+                        1
+                    } else {
+                        full_count
+                    };
 
                     if answers.len() != expected_count {
                         mismatches.push((
@@ -1438,7 +1458,11 @@ async fn truncated_queries_follow_tsig_validation_order() {
 
                     assert_eq!(
                         tsig.data().other().len(),
-                        if expected == TsigRcode::BADTIME { 6 } else { 0 }
+                        if expected == TsigRcode::BADTIME {
+                            6
+                        } else {
+                            0
+                        }
                     );
                 }
             }

@@ -25,7 +25,7 @@ pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
     - KEEPALIVE_OPTION_LEN;
 
 /// Split bare fields on unescaped whitespace, preserving DNS presentation escapes.
-pub(super) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
     let mut rest = value;
     std::iter::from_fn(move || {
         rest = rest.trim_start();
@@ -142,17 +142,17 @@ pub(crate) fn parse_string_octets<'a>(
     let quoted = input.starts_with('"');
     let rest = input.strip_prefix('"').unwrap_or(input);
 
-    let mut out = Vec::new();
+    let mut octets = Vec::new();
     let mut bytes = rest.bytes().enumerate();
 
     while let Some((index, byte)) = bytes.next() {
         match byte {
             b'"' if quoted => {
                 let consumed = &rest[index + 1..];
-                return Ok((out, consumed.trim_start()));
+                return Ok((octets, consumed.trim_start()));
             }
             byte if !quoted && byte.is_ascii_whitespace() => {
-                return Ok((out, rest[index..].trim_start()));
+                return Ok((octets, rest[index..].trim_start()));
             }
             b'"' => {
                 return Err(ParseRecordValueError::NotQuoted {
@@ -161,30 +161,36 @@ pub(crate) fn parse_string_octets<'a>(
                 });
             }
             b'\\' => match bytes.next() {
-                Some((_, d @ b'0'..=b'9')) => {
-                    let d2 = bytes.next().map(|(_, b)| b).filter(u8::is_ascii_digit);
-                    let d3 = bytes.next().map(|(_, b)| b).filter(u8::is_ascii_digit);
-                    let (Some(d2), Some(d3)) = (d2, d3) else {
+                Some((_, hundreds @ b'0'..=b'9')) => {
+                    let tens = bytes
+                        .next()
+                        .map(|(_, byte)| byte)
+                        .filter(u8::is_ascii_digit);
+                    let ones = bytes
+                        .next()
+                        .map(|(_, byte)| byte)
+                        .filter(u8::is_ascii_digit);
+                    let (Some(tens), Some(ones)) = (tens, ones) else {
                         return Err(ParseRecordValueError::InvalidEscape { field });
                     };
-                    let code = u16::from(d - b'0') * 100
-                        + u16::from(d2 - b'0') * 10
-                        + u16::from(d3 - b'0');
+                    let code = u16::from(hundreds - b'0') * 100
+                        + u16::from(tens - b'0') * 10
+                        + u16::from(ones - b'0');
                     let byte = u8::try_from(code)
                         .map_err(|_| ParseRecordValueError::InvalidEscape { field })?;
-                    out.push(byte);
+                    octets.push(byte);
                 }
-                Some((_, escaped)) => out.push(escaped),
+                Some((_, escaped)) => octets.push(escaped),
                 None => return Err(ParseRecordValueError::DanglingEscape { field }),
             },
-            other => out.push(other),
+            other => octets.push(other),
         }
     }
 
     if quoted {
         Err(ParseRecordValueError::UnterminatedQuote { field })
     } else {
-        Ok((out, ""))
+        Ok((octets, ""))
     }
 }
 

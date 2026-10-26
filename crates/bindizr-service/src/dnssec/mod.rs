@@ -249,31 +249,31 @@ async fn apply_signed_view_tx(
     // DELs before ADDs; derived rows journal their wire RDATA, not a value.
     let mut changes = Vec::with_capacity(diff.removed.len() + diff.added.len());
 
-    for row in &diff.removed {
+    for record in &diff.removed {
         changes.push(ZoneChange {
             zone_id: zone.id,
             serial: new_serial,
             operation: ChangeOperation::Delete,
-            record_name: row.name.clone(),
-            record_type: JournalRecordType::Derived(row.record_type),
+            record_name: record.name.clone(),
+            record_type: JournalRecordType::Derived(record.record_type),
             record_value: None,
-            record_rdata: Some(row.rdata.clone()),
-            record_ttl: row.ttl,
+            record_rdata: Some(record.rdata.clone()),
+            record_ttl: record.ttl,
             record_priority: None,
             derived: true,
         });
     }
 
-    for row in &diff.added {
+    for record in &diff.added {
         changes.push(ZoneChange {
             zone_id: zone.id,
             serial: new_serial,
             operation: ChangeOperation::Add,
-            record_name: row.name.clone(),
-            record_type: JournalRecordType::Derived(row.record_type),
+            record_name: record.name.clone(),
+            record_type: JournalRecordType::Derived(record.record_type),
             record_value: None,
-            record_rdata: Some(row.rdata.clone()),
-            record_ttl: row.ttl,
+            record_rdata: Some(record.rdata.clone()),
+            record_ttl: record.ttl,
             record_priority: None,
             derived: true,
         });
@@ -282,7 +282,7 @@ async fn apply_signed_view_tx(
     // The derived rows and their IXFR journal commit in the caller's transaction.
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
 
-    let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|row| row.id).collect();
+    let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|record| record.id).collect();
 
     bindizr_db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
     bindizr_db::dnssec_record::create_many_tx(tx, &diff.added).await?;

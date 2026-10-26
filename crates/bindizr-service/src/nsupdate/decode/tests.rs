@@ -97,7 +97,11 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
         (Rtype::from_int(65280), vec![1]),
     ] {
         for class in [Class::ANY, Class::NONE] {
-            let data = if class == Class::ANY { &[][..] } else { &data };
+            let data = if class == Class::ANY {
+                &[][..]
+            } else {
+                &data
+            };
             let valid = record(class, rtype, 0, data);
             let result = decode_updates(std::slice::from_ref(&valid), &zone, data);
 

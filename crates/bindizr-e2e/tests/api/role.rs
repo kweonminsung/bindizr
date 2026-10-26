@@ -757,7 +757,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|z| z["name"].as_str().unwrap())
+        .map(|zone| zone["name"].as_str().unwrap())
         .collect();
 
     assert!(names.contains(&granted_zone.as_str()));

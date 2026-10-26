@@ -24,11 +24,11 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
 
     sampler = sampler_for(adapter, adapter.config)
     with sampler:
-        t0 = time.monotonic()
+        started = time.monotonic()
 
         await load()
 
-        elapsed = time.monotonic() - t0
+        elapsed = time.monotonic() - started
     resource_usage = sampler.summary()
 
     # Adapters count failures instead of raising, so rate off what landed —

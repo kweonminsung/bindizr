@@ -11,17 +11,17 @@ import threading
 from . import docker
 
 
-def _to_bytes(s: str) -> float:
+def _to_bytes(text: str) -> float:
     """Parse Docker memory and I/O size strings into bytes."""
-    s = s.strip()
+    text = text.strip()
     # Docker uses a lowercase SI 'k' for NET/BLOCK IO (e.g. "2.48kB") and binary
     # MiB/GiB for memory; accept both.
-    m = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", s)
+    match = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", text)
 
-    if not m:
+    if not match:
         return 0.0
 
-    val, unit = float(m.group(1)), m.group(2)
+    value, unit = float(match.group(1)), match.group(2)
     scale = {
         "B": 1,
         "KiB": 1024,
@@ -35,13 +35,13 @@ def _to_bytes(s: str) -> float:
         "TB": 1000**4,
     }
 
-    return val * scale.get(unit, 1)
+    return value * scale.get(unit, 1)
 
 
 def sampler_for(adapter, config: dict) -> "ResourceSampler":
     """Sampler over the containers an adapter declares measurable."""
-    ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
-    return ResourceSampler([i for i in ids if i],
+    container_ids = [adapter.compose.resolve_container_id(service) for service in adapter.resource_services]
+    return ResourceSampler([container_id for container_id in container_ids if container_id],
                            config["resources"]["sample_interval_secs"])
 
 
@@ -118,16 +118,16 @@ class ResourceSampler:
         """Stack total per tick. Averaging the flat sample list instead would
         divide a multi-container stack's cost by its container count."""
         totals: dict[int, float] = {}
-        for s in self.samples:
-            totals[s["tick"]] = totals.get(s["tick"], 0.0) + s[field]
+        for sample in self.samples:
+            totals[sample["tick"]] = totals.get(sample["tick"], 0.0) + sample[field]
         return list(totals.values())
 
     def _by_container(self, field: str) -> dict[str, list[float]]:
         """Group samples of a resource field by container name."""
-        out: dict[str, list[float]] = {}
-        for s in self.samples:
-            out.setdefault(s["name"], []).append(s[field])
-        return out
+        by_container: dict[str, list[float]] = {}
+        for sample in self.samples:
+            by_container.setdefault(sample["name"], []).append(sample[field])
+        return by_container
 
     def summary(self) -> dict:
         """Summarize CPU, memory, and network usage across the sampled interval."""
@@ -141,17 +141,17 @@ class ResourceSampler:
         # net_tx is Docker's cumulative counter, so the window's traffic is the
         # per-container rise across it — an absolute max would also count the
         # setup/import/propagation bytes sent before sampling started.
-        net_tx = sum(v[-1] - v[0] for v in self._by_container("net_tx").values())
+        net_tx = sum(values[-1] - values[0] for values in self._by_container("net_tx").values())
 
         return {
             "peak_cpu_pct": round(max(cpu_totals), 2),
             "avg_cpu_pct": round(sum(cpu_totals) / len(cpu_totals), 2),
             # Per-container split, so a stack total can be attributed.
-            "cpu_by_container": {name: round(sum(v) / len(v), 2)
-                                 for name, v in self._by_container("cpu_pct").items()},
+            "cpu_by_container": {name: round(sum(values) / len(values), 2)
+                                 for name, values in self._by_container("cpu_pct").items()},
             "peak_mem_mb": round(max(mem_totals) / 1024**2, 2),
-            "mem_by_container": {name: round(max(v) / 1024**2, 2)
-                                 for name, v in self._by_container("mem_bytes").items()},
+            "mem_by_container": {name: round(max(values) / 1024**2, 2)
+                                 for name, values in self._by_container("mem_bytes").items()},
             "avg_mem_mb": round(sum(mem_totals) / len(mem_totals) / 1024**2, 2),
             "net_tx_mb": round(net_tx / 1024**2, 2),
             "samples": len(self.samples),

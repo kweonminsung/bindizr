@@ -137,11 +137,11 @@ class BindizrAdapter(DnsAdapter):
 
     async def create_zone(self, zone: str) -> None:
         """Create the zone used by the benchmark, with the NS records its secondary needs."""
-        z = zone.rstrip(".")
+        zone_name = zone.rstrip(".")
         body = {
-            "name": z,
-            "mname": f"ns1.{z}.",
-            "rname": f"admin@{z}",
+            "name": zone_name,
+            "mname": f"ns1.{zone_name}.",
+            "rname": f"admin@{zone_name}",
             "default_ttl": 3600,
         }
 
@@ -150,9 +150,9 @@ class BindizrAdapter(DnsAdapter):
                 raise RuntimeError(f"create_zone failed: {response.status} {await response.text()}")
 
         # Ensure the apex NS and glue BIND9 needs, matching other seed zones.
-        for record in ({"name": "@", "type": "NS", "value": f"ns1.{z}."},
+        for record in ({"name": "@", "type": "NS", "value": f"ns1.{zone_name}."},
                     {"name": "ns1", "type": "A", "value": "127.0.0.1"}):
-            body = {**record, "zone_name": z, "ttl": 3600}
+            body = {**record, "zone_name": zone_name, "ttl": 3600}
             async with self.session.post(self.base + "/records", json=body) as response:
                 if response.status not in (200, 201, 409):
                     raise RuntimeError(

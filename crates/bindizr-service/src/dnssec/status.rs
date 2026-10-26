@@ -80,17 +80,17 @@ pub(crate) async fn load_status_tx(
     serial: Serial,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
-    let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
+    let earliest_signature_expires_at = derived.iter().filter_map(|record| record.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.
     let now = Utc::now();
     let signatures = derived
         .iter()
-        .filter(|row| row.expires_at.is_some())
+        .filter(|record| record.expires_at.is_some())
         .count() as u64;
     let expired_signatures = derived
         .iter()
-        .filter(|row| row.expires_at.is_some_and(|expires| expires <= now))
+        .filter(|record| record.expires_at.is_some_and(|expires| expires <= now))
         .count() as u64;
     let next_resign_at = earliest_signature_expires_at
         .zip(policy)

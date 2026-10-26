@@ -558,21 +558,21 @@ impl RecordType {
 /// TXT text for the display column: control characters as `\DDD`, since a
 /// text column cannot hold a NUL, and everything else as typed, for search.
 fn to_display_text(text: &str) -> String {
-    if !text.chars().any(|c| c.is_ascii_control()) {
+    if !text.chars().any(|ch| ch.is_ascii_control()) {
         return text.to_string();
     }
 
-    let mut out = String::with_capacity(text.len() + 4);
+    let mut display = String::with_capacity(text.len() + 4);
 
-    for c in text.chars() {
-        if c.is_ascii_control() {
-            out.push_str(&format!("\\{:03}", c as u8));
+    for ch in text.chars() {
+        if ch.is_ascii_control() {
+            display.push_str(&format!("\\{:03}", ch as u8));
         } else {
-            out.push(c);
+            display.push(ch);
         }
     }
 
-    out
+    display
 }
 
 /// Return domain-name value types for case-insensitive comparison (RFC 4343).

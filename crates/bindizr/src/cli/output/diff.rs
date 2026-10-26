@@ -62,8 +62,16 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
         // Sign and name label the entry once; TTL stays per-line so a TTL-only
         // change reads clearly.
         for (index, (ttl, data)) in lines.iter().enumerate() {
-            let head = if index == 0 { sign.as_str() } else { " " };
-            let name_col = if index == 0 { entry.name.as_str() } else { "" };
+            let head = if index == 0 {
+                sign.as_str()
+            } else {
+                " "
+            };
+            let name_col = if index == 0 {
+                entry.name.as_str()
+            } else {
+                ""
+            };
             let line = format!(
                 "{} {:<24} {:>5} IN {:<6} {}",
                 head, name_col, ttl, rtype, data

@@ -537,7 +537,11 @@ async fn zone_import_preserves_supported_initial_serials() {
         let zone_name = app.zone_name(&format!("import-serial-{serial}.example"));
 
         // The increment passes over zero (RFC 2136, Section 7.11).
-        let next = if serial == u32::MAX { 1 } else { serial + 1 };
+        let next = if serial == u32::MAX {
+            1
+        } else {
+            serial + 1
+        };
         let content = format!(
             "@ IN SOA ns.old.example. hostmaster.{zone_name}. ({serial} 7200 1800 1209600 300)\n\
              @ IN NS ns.old.example.\n\
@@ -1775,7 +1779,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
             app.list_records(zone_name)
                 .await
                 .iter()
-                .any(|row| row["type"] == "A" && row["ttl"] == u32::MAX)
+                .any(|record| record["type"] == "A" && record["ttl"] == u32::MAX)
         );
     }
 

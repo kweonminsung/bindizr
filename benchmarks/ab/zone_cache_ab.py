@@ -50,19 +50,19 @@ async def create_transfer_key(adapter, zone: str) -> str:
 
 def axfr_from_bind9(cid: str, transfer_key: str) -> tuple[float | None, int]:
     """Run dig AXFR inside the bind9 container; return (query_ms, record_lines)."""
-    p = subprocess.run(
+    result = subprocess.run(
         ["docker", "exec", cid, "dig", "@bindizr", "-p", "53", "-y", transfer_key,
          ZONE.rstrip("."), "AXFR", "+tcp", "+time=60"],
         capture_output=True, text=True, timeout=120,
     )
     ms = None
-    times = QUERY_TIME.findall(p.stdout)
+    times = QUERY_TIME.findall(result.stdout)
 
     if times:
         # AXFR may span messages; dig prints one Query time — take the last.
         ms = float(times[-1])
 
-    lines = [ln for ln in p.stdout.splitlines() if ln and not ln.startswith(";")]
+    lines = [line for line in result.stdout.splitlines() if line and not line.startswith(";")]
 
     return ms, len(lines)
 
@@ -70,8 +70,8 @@ def axfr_from_bind9(cid: str, transfer_key: str) -> tuple[float | None, int]:
 async def run_variant(transfer_cache: bool) -> dict:
     """Run the transfer workload with one transfer-cache configuration."""
     label = "on" if transfer_cache else "off"
-    proj = f"bench-zc-{label}"
-    adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}}, proj,
+    project = f"bench-zc-{label}"
+    adapter = registry.build_adapter("bindizr", {"resources": {"sample_interval_secs": 1}}, project,
                              notify_after_update=False, transfer_cache=transfer_cache)
 
     try:
@@ -96,12 +96,12 @@ async def run_variant(transfer_cache: bool) -> dict:
         counts: list[int] = []
 
         for i in range(AXFRS):
-            ms, n = axfr_from_bind9(bind9_cid, transfer_key)
+            ms, record_count = axfr_from_bind9(bind9_cid, transfer_key)
             if ms is None:
-                raise RuntimeError(f"AXFR failed / refused (got {n} record lines)")
+                raise RuntimeError(f"AXFR failed / refused (got {record_count} record lines)")
             samples.append(ms)
-            counts.append(n)
-            print(f"  axfr #{i + 1}: {ms:.0f} ms ({n} lines)", flush=True)
+            counts.append(record_count)
+            print(f"  axfr #{i + 1}: {ms:.0f} ms ({record_count} lines)", flush=True)
 
         cold, warm = samples[0], samples[1:]
 
@@ -128,13 +128,13 @@ async def main() -> None:
     print(f"{'metric':<18}{'off':>12}{'on':>12}{'delta':>12}")
     print("-" * 54)
 
-    for k in ("cold_ms", "warm_mean_ms", "warm_median_ms", "warm_min_ms"):
-        a, b = off[k], on[k]
-        delta = f"{(b - a) / a * 100:+.1f}%" if a else "n/a"
-        print(f"{k:<18}{a:>12.1f}{b:>12.1f}{delta:>12}")
+    for metric in ("cold_ms", "warm_mean_ms", "warm_median_ms", "warm_min_ms"):
+        off_value, on_value = off[metric], on[metric]
+        delta = f"{(on_value - off_value) / off_value * 100:+.1f}%" if off_value else "n/a"
+        print(f"{metric:<18}{off_value:>12.1f}{on_value:>12.1f}{delta:>12}")
 
-    print(f"\noff samples: {[round(x) for x in off['all_ms']]}")
-    print(f"on  samples: {[round(x) for x in on['all_ms']]}")
+    print(f"\noff samples: {[round(sample) for sample in off['all_ms']]}")
+    print(f"on  samples: {[round(sample) for sample in on['all_ms']]}")
 
 
 if __name__ == "__main__":

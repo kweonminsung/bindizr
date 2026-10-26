@@ -91,7 +91,11 @@ async fn mailbox_domain_octets_survive_import_and_rollback() {
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(
                 app.read_zone_serial(&name).await,
-                if dry_run { 2 } else { 3 }
+                if dry_run {
+                    2
+                } else {
+                    3
+                }
             );
         }
 

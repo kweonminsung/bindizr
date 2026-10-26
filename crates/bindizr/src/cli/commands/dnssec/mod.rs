@@ -351,116 +351,116 @@ fn print_status(
     status: &DnssecStatusResponse,
     output: OutputFormat,
 ) -> Result<(), RenderOutputError> {
-    if output != OutputFormat::Table {
-        return output::print_payload(status, output);
-    }
-
-    let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
-        outln!(
-            "Zone {} (serial {}): DNSSEC disabled",
-            status.zone_name,
-            status.serial
-        );
-        return Ok(());
-    };
-
-    outln!(
-        "Zone {} (serial {}): DNSSEC enabled, {} denial",
-        status.zone_name,
-        status.serial,
-        policy.denial
-    );
-
-    if status.withdrawing {
-        outln!(
-            "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
-        );
-    }
-
-    if let Some(addrs) = &status.parent_ns_addrs {
-        outln!("Parent nameservers: {}", addrs.join(", "));
-    }
-
-    if let Some(delegation) = &status.delegation {
-        let servers = delegation.parent_ns_addrs.join(", ");
-
-        if delegation.ds_key_tags.is_empty() {
-            outln!("Parent DS: none served by {}", servers);
-        } else {
+    if output == OutputFormat::Table {
+        let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
             outln!(
-                "Parent DS: key tag{} {} served by {} (TTL {}s)",
-                if delegation.ds_key_tags.len() == 1 {
-                    ""
-                } else {
-                    "s"
-                },
-                delegation
-                    .ds_key_tags
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                servers,
-                delegation.ds_ttl.unwrap_or(0)
+                "Zone {} (serial {}): DNSSEC disabled",
+                status.zone_name,
+                status.serial
+            );
+            return Ok(());
+        };
+
+        outln!(
+            "Zone {} (serial {}): DNSSEC enabled, {} denial",
+            status.zone_name,
+            status.serial,
+            policy.denial
+        );
+
+        if status.withdrawing {
+            outln!(
+                "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
             );
         }
 
-        for key in &delegation.keys {
-            let mut line = format!(
-                "  {} ({}, {}): {}",
-                key.key_tag,
-                key.role,
-                key.state,
-                match (key.ds_published, key.ds_digest_unsupported) {
-                    (true, _) => "at parent",
-                    (false, true) => "at parent in a digest type bindizr cannot check",
-                    (false, false) => "not at parent",
-                }
-            );
+        if let Some(addrs) = &status.parent_ns_addrs {
+            outln!("Parent nameservers: {}", addrs.join(", "));
+        }
 
-            if let Some(eligible_at) = key.eligible_at {
-                line.push_str(&format!(
-                    ", promotable from {}",
-                    output::display_time(eligible_at)
-                ));
+        if let Some(delegation) = &status.delegation {
+            let servers = delegation.parent_ns_addrs.join(", ");
+
+            if delegation.ds_key_tags.is_empty() {
+                outln!("Parent DS: none served by {}", servers);
+            } else {
+                outln!(
+                    "Parent DS: key tag{} {} served by {} (TTL {}s)",
+                    if delegation.ds_key_tags.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                    delegation
+                        .ds_key_tags
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    servers,
+                    delegation.ds_ttl.unwrap_or(0)
+                );
             }
 
-            outln!("{}", line);
+            for key in &delegation.keys {
+                let mut line = format!(
+                    "  {} ({}, {}): {}",
+                    key.key_tag,
+                    key.role,
+                    key.state,
+                    match (key.ds_published, key.ds_digest_unsupported) {
+                        (true, _) => "at parent",
+                        (false, true) => "at parent in a digest type bindizr cannot check",
+                        (false, false) => "not at parent",
+                    }
+                );
+
+                if let Some(eligible_at) = key.eligible_at {
+                    line.push_str(&format!(
+                        ", promotable from {}",
+                        output::display_time(eligible_at)
+                    ));
+                }
+
+                outln!("{}", line);
+            }
         }
-    }
 
-    if let Some(expires_at) = status.earliest_signature_expires_at {
-        outln!(
-            "Earliest signature expiry: {}",
-            output::display_time(expires_at)
-        );
-    }
+        if let Some(expires_at) = status.earliest_signature_expires_at {
+            outln!(
+                "Earliest signature expiry: {}",
+                output::display_time(expires_at)
+            );
+        }
 
-    if let Some(resign_at) = status.next_resign_at {
-        outln!("Next re-signing: {}", output::display_time(resign_at));
-    }
+        if let Some(resign_at) = status.next_resign_at {
+            outln!("Next re-signing: {}", output::display_time(resign_at));
+        }
 
-    if status.expired_signatures == 0 {
-        outln!("Signatures: {}", status.signatures);
+        if status.expired_signatures == 0 {
+            outln!("Signatures: {}", status.signatures);
+        } else {
+            // Resolvers are already failing this much of the zone.
+            outln!(
+                "Signatures: {} ({} EXPIRED)",
+                status.signatures,
+                status.expired_signatures
+            );
+        }
+
+        outln!("Policy:");
+        output::print_table(vec![DnssecPolicyRow::from(policy)]);
+        outln!("Keys:");
+        output::print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
+
+        if !status.ds_records.is_empty() {
+            outln!("DS records (register in the parent zone):");
+            for ds in &status.ds_records {
+                outln!("  {}", ds.presentation);
+            }
+        }
     } else {
-        // Resolvers are already failing this much of the zone.
-        outln!(
-            "Signatures: {} ({} EXPIRED)",
-            status.signatures,
-            status.expired_signatures
-        );
-    }
-
-    outln!("Policy:");
-    output::print_table(vec![DnssecPolicyRow::from(policy)]);
-    outln!("Keys:");
-    output::print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
-
-    if !status.ds_records.is_empty() {
-        outln!("DS records (register in the parent zone):");
-        for ds in &status.ds_records {
-            outln!("  {}", ds.presentation);
-        }
+        output::print_payload(status, output)?;
     }
 
     Ok(())

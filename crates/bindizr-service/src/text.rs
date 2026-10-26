@@ -28,7 +28,7 @@ pub(crate) fn normalize_identifier(
     }
     if !name
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
     {
         return Err(ServiceError::invalid_input(format!(
             "{} may contain only letters, digits, '.', '_', and '-'",

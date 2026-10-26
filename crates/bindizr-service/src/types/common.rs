@@ -17,7 +17,11 @@ pub enum Run {
 impl Run {
     /// The run a `dry_run` flag asks for.
     pub fn from_dry_run(dry_run: bool) -> Self {
-        if dry_run { Run::DryRun } else { Run::Apply }
+        if dry_run {
+            Run::DryRun
+        } else {
+            Run::Apply
+        }
     }
 
     /// Whether the run writes nothing.

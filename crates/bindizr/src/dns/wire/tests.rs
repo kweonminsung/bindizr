@@ -65,7 +65,7 @@ impl AsyncRead for AbruptEof {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
         _task_cx: &mut std::task::Context<'_>,
-        _buf: &mut tokio::io::ReadBuf<'_>,
+        _buffer: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         std::task::Poll::Ready(Err(std::io::Error::new(
             ErrorKind::UnexpectedEof,

@@ -105,7 +105,11 @@ async fn ixfr_rejects_foreign_soa_classes() {
                 assert!(response.opt().unwrap().dnssec_ok());
                 assert_eq!(
                     response.header_counts().ancount(),
-                    if class == Class::IN { 1 } else { 0 }
+                    if class == Class::IN {
+                        1
+                    } else {
+                        0
+                    }
                 );
                 assert!(response.as_slice().len() <= 512);
             }

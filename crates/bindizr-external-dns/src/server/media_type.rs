@@ -135,7 +135,7 @@ fn parameter_value(value: &str) -> Option<String> {
     (!value.is_empty()
         && value
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)))
+            .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)))
     .then(|| value.to_string())
 }
 
@@ -143,7 +143,7 @@ fn parameter_value(value: &str) -> Option<String> {
 fn parse_quality(value: &str) -> Option<u16> {
     let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
 
-    if fraction.len() > QUALITY_PRECISION || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+    if fraction.len() > QUALITY_PRECISION || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
 
@@ -151,10 +151,10 @@ fn parse_quality(value: &str) -> Option<u16> {
         "0" => Some(
             fraction
                 .bytes()
-                .fold(0, |q, b| q * 10 + u16::from(b - b'0'))
+                .fold(0, |q, byte| q * 10 + u16::from(byte - b'0'))
                 * 10u16.pow((QUALITY_PRECISION - fraction.len()) as u32),
         ),
-        "1" if fraction.bytes().all(|b| b == b'0') => Some(QUALITY_SCALE),
+        "1" if fraction.bytes().all(|byte| byte == b'0') => Some(QUALITY_SCALE),
         _ => None,
     }
 }

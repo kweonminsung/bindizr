@@ -102,7 +102,7 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
         .await;
     let ordered: Vec<&str> = exported
         .lines()
-        .filter(|l| l.starts_with("a\t") || l.starts_with("b\t"))
+        .filter(|line| line.starts_with("a\t") || line.starts_with("b\t"))
         .collect();
 
     // Rdata ties break as text, so 192.0.2.10 sorts before 192.0.2.2.

@@ -27,64 +27,64 @@ def _group(path: Path) -> dict[tuple, list[dict]]:
     payload = json.loads(path.read_text())
     groups: dict[tuple, list[dict]] = {}
     for row in payload["results"]:
-        key = tuple(str(row.get(f)) for f in DIMENSION_FIELDS)
+        key = tuple(str(row.get(field)) for field in DIMENSION_FIELDS)
         groups.setdefault(key, []).append(row)
     return groups
 
 
-def _mean(rows: list[dict], k: str):
+def _mean(rows: list[dict], metric: str):
     """Average the available numeric values of one metric."""
-    vals = [row[k] for row in rows
-            if isinstance(row.get(k), (int, float)) and not isinstance(row.get(k), bool)]
-    return statistics.fmean(vals) if vals else None
+    values = [row[metric] for row in rows
+            if isinstance(row.get(metric), (int, float)) and not isinstance(row.get(metric), bool)]
+    return statistics.fmean(values) if values else None
 
 
 def _is_lower_better(metric: str) -> bool:
     """Check whether a smaller metric value indicates improvement."""
-    return any(tok in metric for tok in LOWER_IS_BETTER)
+    return any(token in metric for token in LOWER_IS_BETTER)
 
 
 def main() -> None:
     """Print a metric-by-metric comparison of two benchmark result files."""
-    ap = argparse.ArgumentParser()
-    ap.add_argument("a")
-    ap.add_argument("b")
-    ap.add_argument("--label-a", default="A")
-    ap.add_argument("--label-b", default="B")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("a")
+    parser.add_argument("b")
+    parser.add_argument("--label-a", default="A")
+    parser.add_argument("--label-b", default="B")
+    args = parser.parse_args()
 
-    ga, gb = _group(Path(args.a)), _group(Path(args.b))
+    groups_a, groups_b = _group(Path(args.a)), _group(Path(args.b))
 
-    for key in ga:
-        if key not in gb:
+    for key in groups_a:
+        if key not in groups_b:
             continue
 
-        rows_a, rows_b = ga[key], gb[key]
-        dims = [f"{f}={v}" for f, v in zip(DIMENSION_FIELDS, key) if v != "None"]
-        print(f"\n### {' | '.join(dims)}   "
+        rows_a, rows_b = groups_a[key], groups_b[key]
+        dimensions = [f"{field}={value}" for field, value in zip(DIMENSION_FIELDS, key) if value != "None"]
+        print(f"\n### {' | '.join(dimensions)}   "
               f"(runs: {args.label_a}={len(rows_a)}, {args.label_b}={len(rows_b)})")
         print(f"{'metric':<20} {args.label_a:>14} {args.label_b:>14} {'delta':>12}  better?")
         print("-" * 74)
 
-        for k in rows_a[0]:
-            if k in DIMENSION_FIELDS:
+        for metric in rows_a[0]:
+            if metric in DIMENSION_FIELDS:
                 continue
 
-            ma, mb = _mean(rows_a, k), _mean(rows_b, k)
+            mean_a, mean_b = _mean(rows_a, metric), _mean(rows_b, metric)
 
-            if ma is None or mb is None:
+            if mean_a is None or mean_b is None:
                 continue
 
-            if ma == 0:
-                delta = "n/a" if mb == 0 else "+inf"
+            if mean_a == 0:
+                delta = "n/a" if mean_b == 0 else "+inf"
                 better = ""
             else:
-                pct = (mb - ma) / ma * 100.0
+                pct = (mean_b - mean_a) / mean_a * 100.0
                 delta = f"{pct:+.1f}%"
-                improved = (pct < 0) if _is_lower_better(k) else (pct > 0)
+                improved = (pct < 0) if _is_lower_better(metric) else (pct > 0)
                 better = "yes" if abs(pct) >= 1 and improved else ("no" if abs(pct) >= 1 else "~")
 
-            print(f"{k:<20} {ma:>14.3f} {mb:>14.3f} {delta:>12}  {better}")
+            print(f"{metric:<20} {mean_a:>14.3f} {mean_b:>14.3f} {delta:>12}  {better}")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ APEX_LINES = 10
 async def run(adapter, config, context) -> list:
     """Measure large-zone creation, import, transfer, deletion, and resource use."""
     zone = context["zone"]
-    xe = adapter.xfr_endpoint()
+    endpoint = adapter.xfr_endpoint()
     rows = []
 
     for size in config["sizes"]:
@@ -41,7 +41,7 @@ async def run(adapter, config, context) -> list:
             dropped = False
 
             while time.monotonic() < drop_deadline:
-                if await dig.zone_is_cleared(zone, xe.host, xe.port, APEX_LINES):
+                if await dig.zone_is_cleared(zone, endpoint.host, endpoint.port, APEX_LINES):
                     dropped = True
                     break
                 await asyncio.sleep(1.0)
@@ -60,20 +60,20 @@ async def run(adapter, config, context) -> list:
 
                 continue
 
-            t = time.monotonic()
+            started = time.monotonic()
 
             await adapter.create_zone(zone)
 
-            create_secs = time.monotonic() - t
+            create_secs = time.monotonic() - started
 
-            recs = generate(size, config["seed"], zone)
-            t = time.monotonic()
+            records = generate(size, config["seed"], zone)
+            started = time.monotonic()
 
-            await adapter.import_records(zone, recs)
+            await adapter.import_records(zone, records)
             if adapter.bulk_errors:
                 raise RuntimeError(f"populating the large zone failed for {adapter.bulk_errors} records")
 
-            populate_secs = time.monotonic() - t
+            populate_secs = time.monotonic() - started
 
             # The secondary pulls asynchronously (import_records returns after
             # commit+NOTIFY, not after the transfer lands), so poll until the count
@@ -83,7 +83,7 @@ async def run(adapter, config, context) -> list:
             propagated = False
 
             while time.monotonic() < deadline:
-                count = await dig.count_axfr_records(zone, xe.host, xe.port)
+                count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
                 if count is not None and count >= size and count == prev:
                     propagated = True
                     break
@@ -104,13 +104,13 @@ async def run(adapter, config, context) -> list:
 
                 continue
 
-            export_secs, _, export_bytes = await dig.axfr(zone, xe.host, xe.port)
+            export_secs, _, export_bytes = await dig.axfr(zone, endpoint.host, endpoint.port)
 
-            t = time.monotonic()
+            started = time.monotonic()
 
             await adapter.delete_zone(zone)
 
-            delete_secs = time.monotonic() - t
+            delete_secs = time.monotonic() - started
         resource_usage = sampler.summary()
 
         rows.append({

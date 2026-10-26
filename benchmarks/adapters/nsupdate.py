@@ -15,7 +15,7 @@ class NsupdateAdapter(DnsAdapter):
         super().__init__(config, project)
         self._endpoint = endpoint
         self._zone = zone
-        self._last_err = ""
+        self._last_error = ""
 
     async def _dig(self, name: str, rtype: str) -> tuple[bool, str]:
         """Query a record through the primary's DNS endpoint."""
@@ -41,7 +41,7 @@ class NsupdateAdapter(DnsAdapter):
             if proc.returncode == 0:
                 return True
 
-            self._last_err = (proc.stderr or b"").decode(errors="replace").strip()
+            self._last_error = (proc.stderr or b"").decode(errors="replace").strip()
 
             # A primary can refuse updates while flushing its journal.
             if attempt < retries:
@@ -63,7 +63,7 @@ class NsupdateAdapter(DnsAdapter):
             f'{record["type"]} {zonefile.build_record_data(record)}\n')
 
         if not ok:
-            raise RuntimeError(f"nsupdate add failed: {self._last_err!r} "
+            raise RuntimeError(f"nsupdate add failed: {self._last_error!r} "
                                f"rec={record['type']} {zonefile.build_record_data(record)}")
 
         return f'{fqdn}|{record["type"]}'

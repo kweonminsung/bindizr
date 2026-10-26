@@ -91,22 +91,22 @@ class TechnitiumAdapter(DnsAdapter):
 
     def _build_record_params(self, record: dict) -> dict:
         """Map a benchmark record value to Technitium request parameters."""
-        t = record["type"]
-        v = record["value"]
+        record_type = record["type"]
+        value = record["value"]
 
-        if t in ("A", "AAAA"):
-            return {"ipAddress": v}
+        if record_type in ("A", "AAAA"):
+            return {"ipAddress": value}
 
-        if t == "CNAME":
-            return {"cname": v.rstrip(".")}
+        if record_type == "CNAME":
+            return {"cname": value.rstrip(".")}
 
-        if t == "TXT":
-            return {"text": v}
+        if record_type == "TXT":
+            return {"text": value}
 
-        if t == "MX":
-            return {"exchange": v.rstrip("."), "preference": record.get("priority", 10)}
+        if record_type == "MX":
+            return {"exchange": value.rstrip("."), "preference": record.get("priority", 10)}
 
-        return {"rdata": v}
+        return {"rdata": value}
 
     def _encode_record_handle(self, zone: str, record: dict) -> str:
         """Encode the record identity and value into a reusable adapter handle."""
@@ -149,20 +149,20 @@ class TechnitiumAdapter(DnsAdapter):
     async def update_record(self, zone: str, handle: str, record: dict) -> bool:
         """Replace the record identified by the handle with the supplied value."""
         existing_record = self._decode_record_handle(handle)
-        t = existing_record["type"]
+        record_type = existing_record["type"]
         params = {
             "domain": existing_record["fqdn"],
             "zone": zone.rstrip("."),
-            "type": t,
+            "type": record_type,
             "ttl": record.get("ttl", 3600),
         }
         # Technitium update needs the current value plus new* value fields.
-        vp = self._build_record_params({"type": t, "value": existing_record["value"],
+        value_params = self._build_record_params({"type": record_type, "value": existing_record["value"],
                                  "priority": existing_record.get("priority", 10)})
-        params.update(vp)
+        params.update(value_params)
 
-        for k, val in vp.items():
-            params["new" + k[0].upper() + k[1:]] = val
+        for key, value in value_params.items():
+            params["new" + key[0].upper() + key[1:]] = value
 
         data = await self._get("/zones/records/update", params)
 

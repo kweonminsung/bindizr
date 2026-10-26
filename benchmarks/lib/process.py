@@ -22,8 +22,8 @@ async def run(*command: str, input: bytes | None = None,
         # Cancellation after fork must still leave a child we can reap.
         child = await asyncio.shield(started)
         exchange = asyncio.create_task(child.communicate(input))
-        out, err = await asyncio.wait_for(asyncio.shield(exchange), timeout)
-        return subprocess.CompletedProcess(command, child.returncode, out, err)
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(asyncio.shield(exchange), timeout)
+        return subprocess.CompletedProcess(command, child.returncode, stdout_bytes, stderr_bytes)
     except BaseException as error:
         cleanup = asyncio.create_task(_stop(started, exchange))
         while not cleanup.done():

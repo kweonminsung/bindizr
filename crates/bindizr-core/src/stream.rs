@@ -89,7 +89,7 @@ mod tests {
 
     impl Write for FailingSink {
         /// Fail with this sink's kind.
-        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
             Err(Error::new(self.0, "sink failed"))
         }
 

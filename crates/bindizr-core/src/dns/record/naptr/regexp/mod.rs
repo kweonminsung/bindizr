@@ -450,12 +450,20 @@ fn validate_ere(regex: &[u8]) -> Result<usize, ValidateEreError> {
                         i += 1;
                         state = State::Bracket;
                     } else {
-                        range_start = if seen_ce { 256 } else { u16::from(b'.') };
+                        range_start = if seen_ce {
+                            256
+                        } else {
+                            u16::from(b'.')
+                        };
                         seen_ce = true;
                     }
                 }
                 byte => {
-                    range_start = if seen_ce { 256 } else { u16::from(byte) };
+                    range_start = if seen_ce {
+                        256
+                    } else {
+                        u16::from(byte)
+                    };
                     seen_ce = true;
                     i += 1;
                 }

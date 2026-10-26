@@ -35,9 +35,9 @@ async def run(adapter, config, context) -> dict:
     except Exception:
         pass
 
-    api = LatencyRecorder()
-    visible = LatencyRecorder()
-    api.started_at = visible.started_at = time.monotonic()
+    api_recorder = LatencyRecorder()
+    visible_recorder = LatencyRecorder()
+    api_recorder.started_at = visible_recorder.started_at = time.monotonic()
     timeouts = 0
 
     for i in range(samples):
@@ -46,13 +46,13 @@ async def run(adapter, config, context) -> dict:
         record = {"name": name, "type": "A", "value": ip, "ttl": 60}
         fqdn = f"{name}.{zone.rstrip('.')}"
 
-        t0 = time.monotonic()
+        started = time.monotonic()
 
         try:
             await adapter.create_record(zone, record)
-            api.track_latency(time.monotonic() - t0, ok=True)
+            api_recorder.track_latency(time.monotonic() - started, ok=True)
         except Exception:
-            api.track_latency(time.monotonic() - t0, ok=False)
+            api_recorder.track_latency(time.monotonic() - started, ok=False)
             continue
 
         secs = await dig.poll_until_visible(
@@ -61,26 +61,26 @@ async def run(adapter, config, context) -> dict:
 
         # Time from the create call, not from when polling started: a
         # synchronous apply sends the NOTIFY inside the API call itself.
-        elapsed = time.monotonic() - t0
+        elapsed = time.monotonic() - started
 
         if secs is None:
             timeouts += 1
-            visible.track_latency(elapsed, ok=False)
+            visible_recorder.track_latency(elapsed, ok=False)
         else:
-            visible.track_latency(elapsed, ok=True)
+            visible_recorder.track_latency(elapsed, ok=True)
 
-    api.ended_at = visible.ended_at = time.monotonic()
-    a, v = api.summary(), visible.summary()
+    api_recorder.ended_at = visible_recorder.ended_at = time.monotonic()
+    api_summary, visible_summary = api_recorder.summary(), visible_recorder.summary()
 
     return {
         "system": context["label"],
         "samples": samples,
-        "api_p50_ms": a["p50_ms"],
-        "api_p95_ms": a["p95_ms"],
-        "api_p99_ms": a["p99_ms"],
-        "visible_p50_ms": v["p50_ms"],
-        "visible_p95_ms": v["p95_ms"],
-        "visible_p99_ms": v["p99_ms"],
-        "visible_max_ms": v["max_ms"],
+        "api_p50_ms": api_summary["p50_ms"],
+        "api_p95_ms": api_summary["p95_ms"],
+        "api_p99_ms": api_summary["p99_ms"],
+        "visible_p50_ms": visible_summary["p50_ms"],
+        "visible_p95_ms": visible_summary["p95_ms"],
+        "visible_p99_ms": visible_summary["p99_ms"],
+        "visible_max_ms": visible_summary["max_ms"],
         "timeouts": timeouts,
     }

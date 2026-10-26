@@ -66,9 +66,9 @@ class CoreDnsAdapter(ZoneFileAdapter):
 
     async def _query_soa_serial(self) -> int | None:
         """Query the current zone serial from the zone's SOA."""
-        out = await self._dig(ZONE, "SOA")
+        result = await self._dig(ZONE, "SOA")
 
-        parts = out.split()
+        parts = result.split()
 
         if len(parts) >= 3:
             try:

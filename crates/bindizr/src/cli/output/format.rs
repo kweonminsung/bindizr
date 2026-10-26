@@ -53,19 +53,19 @@ where
     T: Serialize,
     U: Tabled,
 {
-    if format != OutputFormat::Table {
-        return print_payload(page, format);
-    }
+    if format == OutputFormat::Table {
+        print_table(page.items.iter().map(to_table_row).collect());
+        let seen = page.pagination.offset + page.items.len() as u64;
 
-    print_table(page.items.iter().map(to_table_row).collect());
-    let seen = page.pagination.offset + page.items.len() as u64;
-
-    if seen < page.pagination.total {
-        outln!(
-            "Showing {} of {}; page the rest with --limit and --offset.",
-            seen,
-            page.pagination.total
-        );
+        if seen < page.pagination.total {
+            outln!(
+                "Showing {} of {}; page the rest with --limit and --offset.",
+                seen,
+                page.pagination.total
+            );
+        }
+    } else {
+        print_payload(page, format)?;
     }
 
     Ok(())

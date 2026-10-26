@@ -173,17 +173,17 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
             match bytes.next() {
                 Some(b'"') => break,
                 Some(b'\\') => match bytes.next() {
-                    Some(d @ b'0'..=b'9') => {
-                        let d2 = bytes.next().filter(u8::is_ascii_digit);
-                        let d3 = bytes.next().filter(u8::is_ascii_digit);
-                        let (Some(d2), Some(d3)) = (d2, d3) else {
+                    Some(hundreds @ b'0'..=b'9') => {
+                        let tens = bytes.next().filter(u8::is_ascii_digit);
+                        let ones = bytes.next().filter(u8::is_ascii_digit);
+                        let (Some(tens), Some(ones)) = (tens, ones) else {
                             return Err(ParseRecordValueError::InvalidEscape {
                                 field: "TXT value",
                             });
                         };
-                        let code = u16::from(d - b'0') * 100
-                            + u16::from(d2 - b'0') * 10
-                            + u16::from(d3 - b'0');
+                        let code = u16::from(hundreds - b'0') * 100
+                            + u16::from(tens - b'0') * 10
+                            + u16::from(ones - b'0');
 
                         if code > u16::from(u8::MAX) {
                             return Err(ParseRecordValueError::InvalidEscape {
@@ -251,20 +251,20 @@ fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
 /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
 /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
 pub fn to_quoted_charstr(bytes: &[u8]) -> String {
-    let mut out = String::from("\"");
+    let mut text = String::from("\"");
 
     for &byte in bytes {
         match byte {
-            b'"' => out.push_str("\\\""),
-            b'\\' => out.push_str("\\\\"),
-            0x20..=0x7e => out.push(byte as char),
-            _ => out.push_str(&format!("\\{:03}", byte)),
+            b'"' => text.push_str("\\\""),
+            b'\\' => text.push_str("\\\\"),
+            0x20..=0x7e => text.push(byte as char),
+            _ => text.push_str(&format!("\\{:03}", byte)),
         }
     }
 
-    out.push('"');
+    text.push('"');
 
-    out
+    text
 }
 
 #[cfg(test)]

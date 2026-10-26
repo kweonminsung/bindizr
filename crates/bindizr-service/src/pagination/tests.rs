@@ -313,15 +313,31 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         .unwrap();
 
         assert_eq!(
-            records.items.iter().filter(|row| row.id.is_some()).count(),
+            records
+                .items
+                .iter()
+                .filter(|record| record.id.is_some())
+                .count(),
             users
         );
         assert_eq!(
-            records.items.iter().filter(|row| row.id.is_none()).count(),
+            records
+                .items
+                .iter()
+                .filter(|record| record.id.is_none())
+                .count(),
             derived
         );
-        assert!(records.items[..users].iter().all(|row| row.id.is_some()));
-        assert!(records.items[users..].iter().all(|row| row.id.is_none()));
+        assert!(
+            records.items[..users]
+                .iter()
+                .all(|record| record.id.is_some())
+        );
+        assert!(
+            records.items[users..]
+                .iter()
+                .all(|record| record.id.is_none())
+        );
         assert_eq!(records.pagination.total, 1004);
         assert_eq!(records.pagination.limit, limit.unwrap_or(1004));
         assert_eq!(records.pagination.offset, offset.unwrap_or(0));

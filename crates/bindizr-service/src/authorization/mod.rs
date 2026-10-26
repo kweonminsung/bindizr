@@ -87,18 +87,18 @@ impl GrantedRecord for RecordData {
     }
 }
 
-/// Zone rows authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
-/// Responses render existing rows only through this checked type.
+/// Zone records authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
+/// Responses render existing records only through this checked type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReadableRecords<T>(Vec<T>);
 
 impl<T> ReadableRecords<T> {
-    /// Add a row the caller is writing: what it sends is its own to see.
-    pub(crate) fn push_written(&mut self, row: T) {
-        self.0.push(row);
+    /// Add a record the caller is writing: what it sends is its own to see.
+    pub(crate) fn push_written(&mut self, record: T) {
+        self.0.push(record);
     }
 
-    /// The rows.
+    /// The readable records.
     pub(crate) fn as_slice(&self) -> &[T] {
         &self.0
     }
@@ -112,9 +112,9 @@ pub(crate) struct WholeZoneRead {
 }
 
 impl WholeZoneRead {
-    /// Every row of the zone, unfiltered: the proof covers them all.
-    pub(crate) fn readable_records<T>(self, rows: Vec<T>) -> ReadableRecords<T> {
-        ReadableRecords(rows)
+    /// Every record of the zone, unfiltered: the proof covers them all.
+    pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
+        ReadableRecords(records)
     }
 }
 
@@ -427,16 +427,19 @@ impl Caller {
         })
     }
 
-    /// The rows a `record:read` grant covers; the rest are dropped, so a
+    /// The records a `record:read` grant covers; the rest are dropped, so a
     /// write-only grant learns what it writes and nothing already there.
     pub(crate) fn readable_records<T: GrantedRecord>(
         &self,
         zone_id: ZoneId,
-        rows: impl IntoIterator<Item = T>,
+        records: impl IntoIterator<Item = T>,
     ) -> ReadableRecords<T> {
         ReadableRecords(
-            rows.into_iter()
-                .filter(|row| self.sees_record(zone_id, row.name(), Some(row.record_type())))
+            records
+                .into_iter()
+                .filter(|record| {
+                    self.sees_record(zone_id, record.name(), Some(record.record_type()))
+                })
                 .collect(),
         )
     }

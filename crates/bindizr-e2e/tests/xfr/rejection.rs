@@ -684,7 +684,11 @@ async fn questionless_tsig_failures_keep_their_specific_errors() {
                     assert_eq!(tsig.data().error(), expected);
                     assert_eq!(
                         tsig.data().other().len(),
-                        if expected == TsigRcode::BADTIME { 6 } else { 0 }
+                        if expected == TsigRcode::BADTIME {
+                            6
+                        } else {
+                            0
+                        }
                     );
 
                     if expected == TsigRcode::BADKEY || expected == TsigRcode::BADSIG {

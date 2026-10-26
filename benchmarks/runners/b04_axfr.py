@@ -23,7 +23,7 @@ APEX_LINES = 10
 async def run(adapter, config, context) -> list:
     """Measure full zone-transfer performance at the configured zone sizes."""
     zone = context["zone"]
-    xe = adapter.xfr_endpoint()
+    endpoint = adapter.xfr_endpoint()
     rows = []
 
     for size in config["sizes"]:
@@ -36,7 +36,7 @@ async def run(adapter, config, context) -> list:
         dropped = False
 
         while time.monotonic() < drop_deadline:
-            if await dig.zone_is_cleared(zone, xe.host, xe.port, APEX_LINES):
+            if await dig.zone_is_cleared(zone, endpoint.host, endpoint.port, APEX_LINES):
                 dropped = True
                 break
             await asyncio.sleep(1.0)
@@ -68,7 +68,7 @@ async def run(adapter, config, context) -> list:
         propagated = False
 
         while time.monotonic() < deadline:
-            count = await dig.count_axfr_records(zone, xe.host, xe.port)
+            count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
             if count is not None and count >= size and count == prev:
                 propagated = True
                 break
@@ -89,7 +89,7 @@ async def run(adapter, config, context) -> list:
 
             continue
 
-        secs, count, nbytes = await dig.axfr(zone, xe.host, xe.port)
+        secs, count, nbytes = await dig.axfr(zone, endpoint.host, endpoint.port)
 
         rows.append({
             "system": context["label"],

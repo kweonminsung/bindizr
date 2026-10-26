@@ -456,8 +456,8 @@ fn record_match_excludes_priority_from_value() {
     let ten = record(RecordType::Mx, "mail.example.com.", Some(10));
     let twenty = record(RecordType::Mx, "mail.example.com.", Some(20));
 
-    for row in [&ten, &twenty] {
-        assert!(row.matches(Some(&RecordType::Mx), Some("mail.example.com"), None));
+    for record in [&ten, &twenty] {
+        assert!(record.matches(Some(&RecordType::Mx), Some("mail.example.com"), None));
     }
 }
 

@@ -198,7 +198,11 @@ fn build_full_response(query: &[u8], behavior: &ServerBehavior) -> Option<Vec<u8
                 .collect();
             Some(build_response(
                 query,
-                if *aa { FLAG_AA } else { 0 },
+                if *aa {
+                    FLAG_AA
+                } else {
+                    0
+                },
                 0,
                 &answers,
                 &authority,

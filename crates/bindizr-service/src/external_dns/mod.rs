@@ -96,7 +96,7 @@ pub async fn list_records(
     loop {
         // Folded as they arrive, so the rows never sit beside the group
         // they build. The query's name-and-id order is total, so pages tile.
-        let rows = bindizr_db::record::list_by_filter_with_zone(
+        let records_with_zones = bindizr_db::record::list_by_filter_with_zone(
             cx.db(),
             RecordFilter {
                 scope_role_id: caller.scope_role_id(),
@@ -106,16 +106,17 @@ pub async fn list_records(
             },
         )
         .await?;
-        let read = rows.len();
+        let read = records_with_zones.len();
 
-        for row in rows {
-            let record = row.record();
+        for record_with_zone in records_with_zones {
+            let record = record_with_zone.record();
 
             if !record.record_type.is_external_dns_supported() {
                 continue;
             }
 
-            let name = policy::normalize_lookup_name(&record.name.to_fqdn(&row.zone_name))?;
+            let name =
+                policy::normalize_lookup_name(&record.name.to_fqdn(&record_with_zone.zone_name))?;
             let value = record
                 .record_type
                 .presentation_rdata(&record.value, record.priority);

@@ -64,13 +64,13 @@ async def run(adapter, config, context) -> dict:
 
     # Bindizr idles outside the query plane while BIND9 serves, so the split
     # shows where the stack's cost actually lands.
-    by_service = {_service(n): v for n, v in resource_usage.get("cpu_by_container", {}).items()}
+    by_service = {_service(name): value for name, value in resource_usage.get("cpu_by_container", {}).items()}
 
     return {
         "system": context["label"],
         "qps_during": summary["tps"],
         "cpu_total_pct": round(sum(by_service.values()), 2),
-        "cpu_by_container": ", ".join(f"{n} {v}" for n, v in sorted(by_service.items())),
+        "cpu_by_container": ", ".join(f"{name} {value}" for name, value in sorted(by_service.items())),
         "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
         "avg_mem_mb": resource_usage.get("avg_mem_mb", 0),
         "net_tx_mb": resource_usage.get("net_tx_mb", 0),

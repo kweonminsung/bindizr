@@ -19,7 +19,7 @@ pub(crate) async fn create_many_tx(
         let mut sql = String::from(
             "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ",
         );
-        let mut p = 1;
+        let mut bind_index = 1;
 
         for i in 0..chunk.len() {
             if i > 0 {
@@ -28,16 +28,16 @@ pub(crate) async fn create_many_tx(
 
             sql.push_str(&format!(
                 "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                p,
-                p + 1,
-                p + 2,
-                p + 3,
-                p + 4,
-                p + 5,
-                p + 6,
-                p + 7
+                bind_index,
+                bind_index + 1,
+                bind_index + 2,
+                bind_index + 3,
+                bind_index + 4,
+                bind_index + 5,
+                bind_index + 6,
+                bind_index + 7
             ));
-            p += 8;
+            bind_index += 8;
         }
 
         let mut query = sqlx::query(AssertSqlSafe(sql));

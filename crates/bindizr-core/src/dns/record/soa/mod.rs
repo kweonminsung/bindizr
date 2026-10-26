@@ -128,11 +128,11 @@ impl std::fmt::Display for SoaMailbox {
 fn escape_local_part(local: &str) -> String {
     let mut escaped = String::with_capacity(local.len());
 
-    for c in local.chars() {
-        if c == '.' || c == '\\' {
+    for ch in local.chars() {
+        if ch == '.' || ch == '\\' {
             escaped.push('\\');
         }
-        escaped.push(c);
+        escaped.push(ch);
     }
 
     escaped

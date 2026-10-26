@@ -22,7 +22,7 @@ pub async fn apply_changes(
     let started = std::time::Instant::now();
 
     let operations = change_set::parse_changes_request(request)?;
-    let requested_ops = operations.len();
+    let requested_operations = operations.len();
 
     if operations.is_empty() {
         log::info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
@@ -62,17 +62,20 @@ pub async fn apply_changes(
 
             // Authorize the requested operations before idempotent pairs cancel;
             // a no-op must not bypass grants or reveal existing records.
-            let adds = operations.adds.iter().map(|op| (Action::RecordCreate, op));
+            let adds = operations
+                .adds
+                .iter()
+                .map(|operation| (Action::RecordCreate, operation));
             let deletes = operations
                 .deletes
                 .iter()
-                .map(|op| (Action::RecordDelete, op));
+                .map(|operation| (Action::RecordDelete, operation));
             let writes: Vec<RecordAccess<'_>> = adds
                 .chain(deletes)
-                .map(|(action, op)| RecordAccess {
+                .map(|(action, operation)| RecordAccess {
                     action,
-                    relative_name: op.name.clone(),
-                    record_type: Some(&op.record_type),
+                    relative_name: operation.name.clone(),
+                    record_type: Some(&operation.record_type),
                 })
                 .collect();
 
@@ -84,7 +87,7 @@ pub async fn apply_changes(
                 .adds
                 .iter()
                 .chain(operations.deletes.iter())
-                .map(|op| op.name.clone())
+                .map(|operation| operation.name.clone())
                 .collect();
             names.sort();
             names.dedup();
@@ -146,7 +149,7 @@ pub async fn apply_changes(
     log::info!(
         "event=external_dns_apply zones={} ops={} added={} deleted={} noop={} ms={:.1}",
         changed_zones.join(","),
-        requested_ops,
+        requested_operations,
         added,
         deleted,
         changed_zones.is_empty(),

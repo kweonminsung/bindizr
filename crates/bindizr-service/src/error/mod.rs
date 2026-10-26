@@ -524,7 +524,11 @@ impl ServiceError {
             "the parent zone still serves DS records for zone '{}' (key tag{} {}); remove \
                  them and wait out their TTL before disabling DNSSEC, or skip the DS check",
             zone_name,
-            if key_tags.len() == 1 { "" } else { "s" },
+            if key_tags.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
             key_tags
                 .iter()
                 .map(ToString::to_string)
@@ -538,7 +542,11 @@ impl ServiceError {
         ServiceError::DnssecDsNotPublished(format!(
             "the parent zone serves no DS yet for key tag{} {} of zone '{}'; register it \
                  and wait out the DS TTL before confirming, or skip the DS check",
-            if key_tags.len() == 1 { "" } else { "s" },
+            if key_tags.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
             key_tags
                 .iter()
                 .map(ToString::to_string)
@@ -555,7 +563,11 @@ impl ServiceError {
                 "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \
                  types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
                  to publish SHA-256, or skip the DS check",
-                if key_tags.len() == 1 { "" } else { "s" },
+                if key_tags.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
                 key_tags
                     .iter()
                     .map(ToString::to_string)
@@ -601,7 +613,11 @@ impl ServiceError {
             "DNSSEC policy '{}' is used by {} signed zone{}",
             name,
             zone_count,
-            if zone_count == 1 { "" } else { "s" }
+            if zone_count == 1 {
+                ""
+            } else {
+                "s"
+            }
         ))
     }
 

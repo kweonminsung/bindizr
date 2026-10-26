@@ -96,14 +96,14 @@ pub(crate) async fn apply_import(
         run,
         missing_zone_action,
     } = options;
-    let t_total = Instant::now();
+    let total_started = Instant::now();
 
     let mut timings = ImportTimings::default();
 
     let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
     let apply_result: Result<ApplyImportResult, ServiceError> = async {
-        let t = Instant::now();
+        let started = Instant::now();
 
         let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -118,9 +118,9 @@ pub(crate) async fn apply_import(
         } else {
             return Err(ServiceError::zone_not_found(zone_name));
         };
-        timings.load_zone_ms = time::elapsed_ms(t);
+        timings.load_zone_ms = time::elapsed_ms(started);
 
-        let t = Instant::now();
+        let started = Instant::now();
         let parsed = match source {
             ImportSource::Text(content) => ParsedZoneFile::parse(content, zone_name, default_ttl),
             ImportSource::Transfer(parsed) => parsed,
@@ -134,12 +134,12 @@ pub(crate) async fn apply_import(
                 prepare_zone(cx, zone_name, soa, default_ttl)?
             }
         };
-        timings.parse_ms = time::elapsed_ms(t);
+        timings.parse_ms = time::elapsed_ms(started);
         let mut errors = parsed.errors;
         let mut skipped = 0usize;
 
         // Normalize parsed records and drop duplicates within the file by identity.
-        let t = Instant::now();
+        let started = Instant::now();
         let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
         let mut desired_by_key: HashMap<RecordKey, usize> =
             HashMap::with_capacity(parsed.records.len());
@@ -201,11 +201,11 @@ pub(crate) async fn apply_import(
             });
         }
 
-        timings.normalize_ms = time::elapsed_ms(t);
+        timings.normalize_ms = time::elapsed_ms(started);
         let parsed_count = desired.len();
 
         // Append checks only matching owners; replace/upsert need all rows to find deletions.
-        let t = Instant::now();
+        let started = Instant::now();
 
         let existing_records = if zone_missing {
             Ok(Vec::new())
@@ -235,37 +235,37 @@ pub(crate) async fn apply_import(
             ServiceError::internal_with_source("failed to import zone file", error)
         })?;
 
-        timings.load_existing_ms = time::elapsed_ms(t);
+        timings.load_existing_ms = time::elapsed_ms(started);
 
-        let t = Instant::now();
+        let started = Instant::now();
         let plan = ImportPlan::compute(mode, &existing_records, &desired);
-        timings.reconcile_ms = time::elapsed_ms(t);
+        timings.reconcile_ms = time::elapsed_ms(started);
 
-        let mut all_dels = plan.dels.clone();
-        all_dels.extend_from_slice(&plan.ttl_dels);
+        let mut all_deletes = plan.deletes.clone();
+        all_deletes.extend_from_slice(&plan.ttl_deletes);
         let mut to_insert: Vec<Record> = plan
             .adds
             .iter()
-            .map(|add| Record {
+            .map(|desired_record| Record {
                 id: RecordId::UNWRITTEN,
-                name: add.data.name.clone(),
-                record_type: add.data.record_type,
-                value: add.data.value.clone(),
-                ttl: add.data.ttl,
-                priority: add.data.priority,
+                name: desired_record.data.name.clone(),
+                record_type: desired_record.data.record_type,
+                value: desired_record.data.value.clone(),
+                ttl: desired_record.data.ttl,
+                priority: desired_record.data.priority,
                 zone_id: zone.id,
                 created_at: Utc::now(),
             })
             .collect();
 
         // Validate additions without writes, indexing simulated records by owner for conflict checks.
-        let t = Instant::now();
-        let del_ids: HashSet<RecordId> = all_dels.iter().map(|record| record.id).collect();
+        let started = Instant::now();
+        let deleted_ids: HashSet<RecordId> = all_deletes.iter().map(|record| record.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
             HashMap::with_capacity(existing_records.len());
 
         for record in &existing_records {
-            if !del_ids.contains(&record.id) {
+            if !deleted_ids.contains(&record.id) {
                 simulated_by_name
                     .entry(record.name.clone())
                     .or_default()
@@ -273,28 +273,28 @@ pub(crate) async fn apply_import(
             }
         }
 
-        for (add, candidate) in plan.adds.iter().zip(&to_insert) {
+        for (desired_record, candidate) in plan.adds.iter().zip(&to_insert) {
             let records_at_name = simulated_by_name
-                .entry(add.data.name.clone())
+                .entry(desired_record.data.name.clone())
                 .or_default();
 
             match validation::validate_record_constraints(
                 records_at_name,
-                &add.data.name,
-                &add.data.record_type,
-                &add.data.value,
-                add.data.ttl,
-                add.data.priority,
+                &desired_record.data.name,
+                &desired_record.data.record_type,
+                &desired_record.data.value,
+                desired_record.data.ttl,
+                desired_record.data.priority,
                 None,
             ) {
                 Ok(()) => records_at_name.push(candidate.clone()),
-                Err(error) => errors.push(format!("{}: {}", add.source_name, error)),
+                Err(error) => errors.push(format!("{}: {}", desired_record.source_name, error)),
             }
         }
 
         if errors.is_empty()
             && let Err(error) =
-                zone::validate_record_changes_tx(&mut tx, &zone, &all_dels, &to_insert).await
+                zone::validate_record_changes_tx(&mut tx, &zone, &all_deletes, &to_insert).await
         {
             if error.code().is_internal() {
                 return Err(error);
@@ -302,14 +302,14 @@ pub(crate) async fn apply_import(
             errors.push(error.to_string());
         }
 
-        timings.validate_ms = time::elapsed_ms(t);
+        timings.validate_ms = time::elapsed_ms(started);
 
         let summary = ImportZoneSummaryResponse {
             parsed: parsed_count as u64,
             // Additions also carry the re-inserted TTL-reconciled records,
             // which are reported under `updated` instead.
             added: (plan.adds.len() - plan.updated) as u64,
-            deleted: plan.dels.len() as u64,
+            deleted: plan.deletes.len() as u64,
             updated: plan.updated as u64,
             unchanged: plan.unchanged as u64,
             skipped: skipped as u64,
@@ -319,9 +319,9 @@ pub(crate) async fn apply_import(
         // changes that cannot be applied.
         let diff = if run.is_dry_run() && errors.is_empty() {
             let deleted_ids: HashSet<RecordId> = plan
-                .dels
+                .deletes
                 .iter()
-                .chain(&plan.ttl_dels)
+                .chain(&plan.ttl_deletes)
                 .map(|record| record.id)
                 .collect();
 
@@ -338,8 +338,8 @@ pub(crate) async fn apply_import(
                     .map(RecordData::from),
             );
 
-            for add in &plan.adds {
-                after.push_written(add.data.clone());
+            for desired_record in &plan.adds {
+                after.push_written(desired_record.data.clone());
             }
 
             diff::build_record_diff(&zone, &before, &after)
@@ -348,7 +348,7 @@ pub(crate) async fn apply_import(
         };
 
         let will_apply = errors.is_empty() && !run.is_dry_run();
-        let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
+        let has_changes = !plan.deletes.is_empty() || !plan.adds.is_empty() || !plan.ttl_deletes.is_empty();
 
         let new_serial = if has_changes && errors.is_empty() {
             serial::generate_serial(Some(zone.serial))
@@ -365,19 +365,19 @@ pub(crate) async fn apply_import(
         }
 
         if will_apply && has_changes {
-            let t = Instant::now();
+            let started = Instant::now();
 
-            record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
+            record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &all_deletes).await?;
             record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
-            timings.db_write_ms = time::elapsed_ms(t);
+            timings.db_write_ms = time::elapsed_ms(started);
 
-            let t = Instant::now();
+            let started = Instant::now();
 
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-            timings.serial_ms = time::elapsed_ms(t);
+            timings.serial_ms = time::elapsed_ms(started);
         }
 
         let response = ImportZoneResponse {
@@ -417,7 +417,7 @@ pub(crate) async fn apply_import(
         response.errors.len(),
     );
 
-    let t = Instant::now();
+    let started = Instant::now();
 
     // The catalog goes first: a secondary that has not seen the new member
     // there cannot act on the zone's own NOTIFY below.
@@ -434,7 +434,7 @@ pub(crate) async fn apply_import(
         crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
-    let notify_ms = time::elapsed_ms(t);
+    let notify_ms = time::elapsed_ms(started);
 
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -456,7 +456,7 @@ pub(crate) async fn apply_import(
         timings.db_write_ms,
         timings.serial_ms,
         notify_ms,
-        time::elapsed_ms(t_total),
+        time::elapsed_ms(total_started),
     );
 
     Ok(response)

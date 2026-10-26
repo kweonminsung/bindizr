@@ -188,7 +188,12 @@ impl From<&DnssecPolicyResponse> for DnssecPolicyRow {
             name: policy.name.clone(),
             algorithm: policy.algorithm.to_string(),
             denial: policy.denial.to_string(),
-            keys: if policy.split_keys { "KSK/ZSK" } else { "CSK" }.to_string(),
+            keys: if policy.split_keys {
+                "KSK/ZSK"
+            } else {
+                "CSK"
+            }
+            .to_string(),
             validity: format!("{}d", policy.signature_validity_days),
             refresh: format!("{}d", policy.signature_refresh_days),
             zsk_lifetime: if policy.zsk_lifetime_days.as_days() == 0 {

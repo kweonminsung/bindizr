@@ -193,20 +193,20 @@ async fn listings_match_role_grants_visibility() {
         .await
         .unwrap()
         .into_iter()
-        .map(|row| (row.zone_id, row.name.to_string(), row.record_type))
+        .map(|record| (record.zone_id, record.name.to_string(), record.record_type))
         .collect();
 
         let expected: BTreeSet<_> = all_records
             .iter()
-            .filter(|row| {
+            .filter(|record| {
                 rules.covers_record(
                     Action::RecordRead,
-                    row.zone_id,
-                    &row.name,
-                    Some(&row.record_type),
+                    record.zone_id,
+                    &record.name,
+                    Some(&record.record_type),
                 )
             })
-            .map(|row| (row.zone_id, row.name.to_string(), row.record_type))
+            .map(|record| (record.zone_id, record.name.to_string(), record.record_type))
             .collect();
 
         assert_eq!(listed, expected, "records, {case}");
@@ -229,13 +229,15 @@ async fn listings_match_role_grants_visibility() {
         .await
         .unwrap()
         .into_iter()
-        .map(|row| row.name.to_string())
+        .map(|record| record.name.to_string())
         .collect();
 
         let expected: BTreeSet<_> = all_dnssec
             .iter()
-            .filter(|row| rules.covers_record(Action::RecordRead, row.zone_id, &row.name, None))
-            .map(|row| row.name.to_string())
+            .filter(|record| {
+                rules.covers_record(Action::RecordRead, record.zone_id, &record.name, None)
+            })
+            .map(|record| record.name.to_string())
             .collect();
 
         assert_eq!(listed, expected, "DNSSEC records, {case}");

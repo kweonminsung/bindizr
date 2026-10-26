@@ -253,7 +253,7 @@ pub async fn rollback(
                 .push(target);
         }
 
-        let mut dels: Vec<Record> = Vec::new();
+        let mut deletes: Vec<Record> = Vec::new();
         let mut unchanged = 0usize;
         let mut to_add: Vec<RecordData> = Vec::new();
 
@@ -265,19 +265,19 @@ pub async fn rollback(
                     // A TTL change is a DEL + ADD pair, which RFC 2181,
                     // Section 5.2 requires: one name and type, one TTL.
                     if record.ttl != target.ttl {
-                        dels.push(record.clone());
+                        deletes.push(record.clone());
                         to_add.push(target);
                     } else {
                         unchanged += 1;
                     }
                 }
-                None => dels.push(record.clone()),
+                None => deletes.push(record.clone()),
             }
         }
 
         to_add.extend(target_by_key.into_values().flatten());
 
-        let deleted_ids: HashSet<RecordId> = dels.iter().map(|del| del.id).collect();
+        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
 
         // Validate the adds in-memory against the records left after the deletes
         // (mirrors the import reconcile).
@@ -324,11 +324,11 @@ pub async fn rollback(
             to_insert.push(record);
         }
 
-        super::validate_record_changes_tx(&mut tx, &restored_zone, &dels, &to_insert).await?;
+        super::validate_record_changes_tx(&mut tx, &restored_zone, &deletes, &to_insert).await?;
 
         let summary = RollbackZoneSummaryResponse {
             added: to_insert.len() as u64,
-            deleted: dels.len() as u64,
+            deleted: deletes.len() as u64,
             unchanged: unchanged as u64,
             soa_changed,
         };
@@ -356,7 +356,7 @@ pub async fn rollback(
             bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
         }
 
-        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
+        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &deletes).await?;
         record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
         // The restored user plane gets fresh signatures; old RRSIGs are

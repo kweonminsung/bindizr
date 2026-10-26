@@ -289,7 +289,7 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
 
 /// Verify that `parse_record_set` rejects unsupported types.
 #[test]
-fn parse_record_set_op_rejects_unsupported_types() {
+fn parse_record_set_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
         let error =
             change_set::parse_record_set(&record_set("a.example.com", record_type, None, &["x"]))
@@ -303,7 +303,7 @@ fn parse_record_set_op_rejects_unsupported_types() {
 
 /// Verify that `parse_record_set` rejects multi value CNAME and empty values.
 #[test]
-fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
+fn parse_record_set_rejects_multi_value_cname_and_empty_values() {
     let error = change_set::parse_record_set(&record_set(
         "a.example.com",
         "CNAME",
@@ -322,7 +322,7 @@ fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
 
 /// Verify that `parse_record_set` normalizes TTL.
 #[test]
-fn parse_record_set_op_normalizes_ttl() {
+fn parse_record_set_normalizes_ttl() {
     assert_eq!(
         change_set::parse_record_set(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
             .unwrap()
@@ -343,8 +343,8 @@ fn parse_record_set_op_normalizes_ttl() {
 
 /// Verify that `parse_record_set` deduplicates equivalent ipv6 spellings.
 #[test]
-fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
-    let op = change_set::parse_record_set(&record_set(
+fn parse_record_set_deduplicates_equivalent_ipv6_spellings() {
+    let parsed_record_set = change_set::parse_record_set(&record_set(
         "a.example.com",
         "AAAA",
         None,
@@ -352,13 +352,13 @@ fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
     ))
     .unwrap();
 
-    assert_eq!(op.values, vec!["2001:db8::1".to_string()]);
+    assert_eq!(parsed_record_set.values, vec!["2001:db8::1".to_string()]);
 }
 
-/// Verify that parse RRSET op parses quoted TXT values.
+/// Verify that `parse_record_set` parses quoted TXT values.
 #[test]
-fn parse_record_set_op_parses_quoted_txt_values() {
-    let op = change_set::parse_record_set(&record_set(
+fn parse_record_set_parses_quoted_txt_values() {
+    let parsed_record_set = change_set::parse_record_set(&record_set(
         "a.example.com",
         "TXT",
         None,
@@ -366,9 +366,9 @@ fn parse_record_set_op_parses_quoted_txt_values() {
     ))
     .unwrap();
 
-    assert_eq!(op.record_type, RecordType::Txt);
+    assert_eq!(parsed_record_set.record_type, RecordType::Txt);
     assert_eq!(
-        op.values[0],
+        parsed_record_set.values[0],
         "\"heritage=external-dns,external-dns/owner=default\""
     );
     assert!(

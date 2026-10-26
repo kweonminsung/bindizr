@@ -70,7 +70,7 @@ impl From<sqlx::Error> for DatabaseError {
     fn from(error: sqlx::Error) -> Self {
         match &error {
             sqlx::Error::PoolTimedOut => DatabaseError::PoolTimedOut,
-            sqlx::Error::Database(db_err) => match db_err.kind() {
+            sqlx::Error::Database(database_error) => match database_error.kind() {
                 sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(error),
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     DatabaseError::ForeignKeyViolation(error)

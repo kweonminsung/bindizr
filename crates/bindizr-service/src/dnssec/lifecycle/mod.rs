@@ -325,15 +325,15 @@ pub async fn disable(
         // a value.
         let changes: Vec<ZoneChange> = derived
             .iter()
-            .map(|row| ZoneChange {
+            .map(|record| ZoneChange {
                 zone_id: signed.zone.id,
                 serial: new_serial,
                 operation: ChangeOperation::Delete,
-                record_name: row.name.clone(),
-                record_type: JournalRecordType::Derived(row.record_type),
+                record_name: record.name.clone(),
+                record_type: JournalRecordType::Derived(record.record_type),
                 record_value: None,
-                record_rdata: Some(row.rdata.clone()),
-                record_ttl: row.ttl,
+                record_rdata: Some(record.rdata.clone()),
+                record_ttl: record.ttl,
                 record_priority: None,
                 derived: true,
             })

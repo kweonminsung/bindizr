@@ -47,7 +47,7 @@ impl<'a> CaaRecordValue<'a> {
         // RFC 8659, Section 4.1: a nonempty ASCII tag has a one-octet length.
         if self.tag.is_empty()
             || self.tag.len() > usize::from(u8::MAX)
-            || !self.tag.chars().all(|c| c.is_ascii_alphanumeric())
+            || !self.tag.chars().all(|ch| ch.is_ascii_alphanumeric())
         {
             return Err(ParseRecordValueError::CaaTag {
                 tag: self.tag.to_string(),

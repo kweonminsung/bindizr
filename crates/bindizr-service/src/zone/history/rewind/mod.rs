@@ -115,11 +115,11 @@ pub(crate) async fn list_records_at_serial_tx(
 
 /// Deterministic output order (hash-map iteration order is not).
 fn sort_records(records: &mut [RecordData]) {
-    records.sort_by(|a, b| {
-        (&a.name, a.record_type.as_str(), &a.value).cmp(&(
-            &b.name,
-            b.record_type.as_str(),
-            &b.value,
+    records.sort_by(|left, right| {
+        (&left.name, left.record_type.as_str(), &left.value).cmp(&(
+            &right.name,
+            right.record_type.as_str(),
+            &right.value,
         ))
     });
 }

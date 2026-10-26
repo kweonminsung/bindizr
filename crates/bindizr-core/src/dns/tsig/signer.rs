@@ -18,8 +18,8 @@ pub struct SignResponseError(#[from] PushError);
 /// The key and original request MAC needed to sign its response.
 #[derive(Clone, Debug)]
 pub struct ResponseSigner {
-    pub(super) key: TsigSigningKey,
-    pub(super) request_mac: Vec<u8>,
+    pub(crate) key: TsigSigningKey,
+    pub(crate) request_mac: Vec<u8>,
 }
 
 impl ResponseSigner {

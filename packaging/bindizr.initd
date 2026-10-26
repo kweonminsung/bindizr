@@ -22,11 +22,13 @@ error_log="/var/log/bindizr.log"
 # fixes; systemd stops there, supervise-daemon retries every 5 seconds.
 respawn_delay=5
 
+# Require networking and start after the local BIND server.
 depend() {
     need net
     after named
 }
 
+# Prepare the daemon's runtime directory, state directory, and log file.
 start_pre() {
     # The socket's primary path, owner-only, as systemd's RuntimeDirectory
     # makes it; the state directory holds a relative database path.
@@ -35,6 +37,7 @@ start_pre() {
     checkpath --file --mode 0640 --owner bindizr:bindizr /var/log/bindizr.log
 }
 
+# Send SIGHUP to reload the daemon's configuration and certificates.
 reload() {
     ebegin "Reloading ${RC_SVCNAME}"
     supervise-daemon "${RC_SVCNAME}" --signal HUP

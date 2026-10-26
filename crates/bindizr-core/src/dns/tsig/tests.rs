@@ -220,7 +220,14 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
         let mut additional = question.additional();
-        let time = Time48::from_u64(now_secs() - if stale { 3600 } else { 0 });
+        let time = Time48::from_u64(
+            now_secs()
+                - if stale {
+                    3600
+                } else {
+                    0
+                },
+        );
         let _client =
             ClientTransaction::request_with_fudge(key.clone(), &mut additional, time, 300).unwrap();
         let query = additional.finish().into_target();
@@ -308,7 +315,11 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
             .native_len();
 
         for truncated in [false, true] {
-            let mac_len = if truncated { native / 2 } else { native };
+            let mac_len = if truncated {
+                native / 2
+            } else {
+                native
+            };
             let key = TsigKey {
                 name: format!(
                     "{}.{}.{}.{}",
@@ -350,7 +361,11 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                                 "{}.{}.{}.d",
                                 "a".repeat(63 - (509 - request_len)),
                                 "b".repeat(63),
-                                "c".repeat(if edns.is_some() { 52 } else { 63 })
+                                "c".repeat(if edns.is_some() {
+                                    52
+                                } else {
+                                    63
+                                })
                             );
                             let mut builder = MessageBuilder::new_vec();
                             builder.header_mut().set_id(8945);
@@ -372,7 +387,14 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                                     .unwrap();
                             }
 
-                            let time = Time48::from_u64(now_secs() - if stale { 3600 } else { 0 });
+                            let time = Time48::from_u64(
+                                now_secs()
+                                    - if stale {
+                                        3600
+                                    } else {
+                                        0
+                                    },
+                            );
                             ClientTransaction::request_with_fudge(
                                 client.clone(),
                                 &mut query,
@@ -440,7 +462,14 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                                 assert_eq!(signed_at, u64::from(time));
                             }
 
-                            assert_eq!(other.len(), if stale { 6 } else { 0 });
+                            assert_eq!(
+                                other.len(),
+                                if stale {
+                                    6
+                                } else {
+                                    0
+                                }
+                            );
                             assert_response_mac(&query, &response, algorithm);
                             let tsig =
                                 ParsedTsig::parse(&Message::from_octets(query.as_slice()).unwrap())
@@ -457,7 +486,12 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                                     .is_authenticated()
                             );
                             let mut forged = response;
-                            let index = forged.len() - if stale { 13 } else { 7 };
+                            let index = forged.len()
+                                - if stale {
+                                    13
+                                } else {
+                                    7
+                                };
                             forged[index] ^= 1;
 
                             assert!(

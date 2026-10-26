@@ -1329,6 +1329,12 @@ contracts. SQL aliases and serialized fields retain their own spelling.
 Clippy's `disallowed-names` configuration rejects the abbreviated bindings above.
 Python benchmarks use `config` and `context`; a latency accumulator is `recorder`,
 one DNS item is `record`, and a sampled resource report is `resource_usage`.
+Qualify simultaneous accumulators and their summaries (`create_recorder`,
+`read_recorder`, `create_summary`, `read_summary`), rather than abbreviating them
+as `cs` / `rs`. Elapsed-time measurements use descriptive bindings such as
+`started` / `finished`, with `total_started` for an overlapping whole-operation
+interval, never `t`, `t0`, or `t1`. SQL placeholder counters use `bind_index`;
+batch row results use `created_records` / `records`.
 For NOTIFY, use `send` for the operation and its errors, `handle` for the returned
 value that waits for the result and keeps the target socket alive, and `task` or
 `worker` for spawned work. Carry concept renames through error variants, tests,
@@ -1356,7 +1362,10 @@ that handles each format separately keeps `match`.
 Pass a function or method directly to an iterator or `Option`/`Result` combinator
 when the closure only forwards its argument (`map(RecordRow::from)`,
 `filter_map(Result::ok)`). Keep closures that capture context, select fields,
-adjust references, or add error context. Keep sequential orchestration and
+adjust references, or add error context. A closure may also provide the required
+lifetimes where a `From::from` function item is not general enough for an
+`Fn(&T)` bound (`output::print_page`); retain the bound and the closure.
+Keep sequential orchestration and
 ordinary conditions explicit; do not turn them into arrays of steps or callbacks.
 The workspace's `manual_let_else` and `redundant_closure_for_method_calls` Clippy
 lints enforce the mechanical part of these rules.

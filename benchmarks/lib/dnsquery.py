@@ -43,7 +43,7 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
     recorder.started_at = warmup_until
     loop = asyncio.get_event_loop()
     counter = itertools.count()
-    n = len(names)
+    name_count = len(names)
 
     async def worker() -> None:
         """Issue sequential DNS queries on one UDP socket and record their results."""
@@ -59,9 +59,9 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
                     return
 
                 seq = next(counter)
-                name = names[seq % n]
+                name = names[seq % name_count]
                 packet = build_query(seq, name, qtype)
-                t0 = clock()
+                started = clock()
                 ok = False
 
                 try:
@@ -81,10 +81,10 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
                     ok = False
 
                 # Keep warmup replies out of both latency and throughput samples.
-                t1 = clock()
+                finished = clock()
 
-                if t1 >= warmup_until:
-                    recorder.track_latency(t1 - t0, ok=ok)
+                if finished >= warmup_until:
+                    recorder.track_latency(finished - started, ok=ok)
         finally:
             sock.close()
 

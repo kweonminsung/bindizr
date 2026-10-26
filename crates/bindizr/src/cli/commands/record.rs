@@ -363,7 +363,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 }),
             )
             .await?;
-            output::print_page(&response.data, output, |item| RecordRow::from(item))?;
+            output::print_page(&response.data, output, |record| RecordRow::from(record))?;
         }
         RecordCommand::BulkCreate {
             file,
@@ -441,7 +441,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             // This command promises every record at the owner, so traverse all pages.
-            let mut items: Vec<RecordResponse> = Vec::new();
+            let mut records: Vec<RecordResponse> = Vec::new();
             let mut offset = 0u64;
 
             let total = loop {
@@ -456,7 +456,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
                 let read = page.items.len() as u64;
-                items.extend(page.items);
+                records.extend(page.items);
                 offset += read;
 
                 if read == 0 || offset >= page.pagination.total {
@@ -464,7 +464,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 }
             };
             let page = PaginatedResponse {
-                items,
+                items: records,
                 pagination: PaginationResponse {
                     limit: u32::try_from(total).unwrap_or(u32::MAX),
                     offset: 0,

@@ -229,25 +229,25 @@ impl ZoneChangeSet {
     ) -> Result<Self, ServiceError> {
         let mut existing_by_key: HashMap<RecordKey, Vec<&Record>> = HashMap::new();
 
-        for row in existing {
+        for record in existing {
             existing_by_key
-                .entry(row.match_key())
+                .entry(record.match_key())
                 .or_default()
-                .push(row);
+                .push(record);
         }
 
         // A cancelled delete leaves a hole, so a later add sees its row as surviving.
         let mut deletes: Vec<Option<Record>> = Vec::new();
         let mut delete_slots: HashMap<RecordId, usize> = HashMap::new();
 
-        for del in &operations.deletes {
-            for value in &del.values {
-                let key = RecordKey::new(&del.name, del.record_type, value, None);
+        for record_set in &operations.deletes {
+            for value in &record_set.values {
+                let key = RecordKey::new(&record_set.name, record_set.record_type, value, None);
 
-                for row in existing_by_key.get(&key).into_iter().flatten() {
-                    if let Entry::Vacant(slot) = delete_slots.entry(row.id) {
+                for record in existing_by_key.get(&key).into_iter().flatten() {
+                    if let Entry::Vacant(slot) = delete_slots.entry(record.id) {
                         slot.insert(deletes.len());
-                        deletes.push(Some((*row).clone()));
+                        deletes.push(Some((*record).clone()));
                     }
                 }
             }
@@ -256,19 +256,19 @@ impl ZoneChangeSet {
         let mut creates: Vec<Record> = Vec::new();
         let mut created: HashSet<(RecordKey, Ttl)> = HashSet::new();
 
-        for add in &operations.adds {
-            let ttl = add.ttl.unwrap_or(zone.default_ttl);
+        for record_set in &operations.adds {
+            let ttl = record_set.ttl.unwrap_or(zone.default_ttl);
 
-            for value in &add.values {
-                let key = RecordKey::new(&add.name, add.record_type, value, None);
-                let rows: &[&Record] = existing_by_key.get(&key).map_or(&[], Vec::as_slice);
+            for value in &record_set.values {
+                let key = RecordKey::new(&record_set.name, record_set.record_type, value, None);
+                let records: &[&Record] = existing_by_key.get(&key).map_or(&[], Vec::as_slice);
 
                 // An unchanged update cancels its own delete instead of rewriting
                 // the row. TTL-sensitive, so a TTL-only update is still a change.
-                if let Some(slot) = rows
+                if let Some(slot) = records
                     .iter()
-                    .filter(|row| row.ttl == ttl)
-                    .find_map(|row| delete_slots.remove(&row.id))
+                    .filter(|record| record.ttl == ttl)
+                    .find_map(|record| delete_slots.remove(&record.id))
                 {
                     deletes[slot] = None;
                     continue;
@@ -277,7 +277,10 @@ impl ZoneChangeSet {
                 // Idempotent create: a surviving row already holds this rdata. TTL
                 // is excluded to match the duplicate check behind this one, which
                 // would otherwise reject the create as a conflict.
-                if rows.iter().any(|row| !delete_slots.contains_key(&row.id)) {
+                if records
+                    .iter()
+                    .any(|record| !delete_slots.contains_key(&record.id))
+                {
                     continue;
                 }
                 if !created.insert((key, ttl)) {
@@ -286,8 +289,8 @@ impl ZoneChangeSet {
 
                 creates.push(Record {
                     id: RecordId::UNWRITTEN,
-                    name: add.name.clone(),
-                    record_type: add.record_type,
+                    name: record_set.name.clone(),
+                    record_type: record_set.record_type,
                     value: value.clone(),
                     ttl,
                     priority: None,
@@ -304,27 +307,27 @@ impl ZoneChangeSet {
         let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
 
-        for row in existing {
-            if !deleted_ids.contains(&row.id) {
+        for record in existing {
+            if !deleted_ids.contains(&record.id) {
                 simulated_by_name
-                    .entry(row.name.clone())
+                    .entry(record.name.clone())
                     .or_default()
-                    .push(row.clone());
+                    .push(record.clone());
             }
         }
 
-        for create in &creates {
-            let records_at_name = simulated_by_name.entry(create.name.clone()).or_default();
+        for record in &creates {
+            let records_at_name = simulated_by_name.entry(record.name.clone()).or_default();
             record::validate_record_constraints(
                 records_at_name,
-                &create.name,
-                &create.record_type,
-                &create.value,
-                create.ttl,
-                create.priority,
+                &record.name,
+                &record.record_type,
+                &record.value,
+                record.ttl,
+                record.priority,
                 None,
             )?;
-            records_at_name.push(create.clone());
+            records_at_name.push(record.clone());
         }
 
         Ok(ZoneChangeSet { deletes, creates })

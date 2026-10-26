@@ -92,7 +92,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     let nsecs = records_of_type(&diff.added, DnssecRecordType::Nsec);
 
     assert_eq!(nsecs.len(), 2);
-    let apex_nsec = nsecs.iter().find(|row| row.name.is_apex()).unwrap();
+    let apex_nsec = nsecs.iter().find(|record| record.name.is_apex()).unwrap();
     let www_wire = b"\x03www\x07example\x03com\x00";
     let apex_rdata = apex_nsec.rdata.as_bytes();
 
@@ -100,7 +100,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         apex_rdata.starts_with(www_wire),
         "apex NSEC must point at www"
     );
-    let www_nsec = nsecs.iter().find(|row| !row.name.is_apex()).unwrap();
+    let www_nsec = nsecs.iter().find(|record| !record.name.is_apex()).unwrap();
     let apex_wire = b"\x07example\x03com\x00";
 
     assert!(
@@ -109,7 +109,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     );
 
     // NSEC TTL is min(SOA TTL, SOA MINIMUM) per RFC 9077.
-    assert!(nsecs.iter().all(|row| row.ttl == Ttl::from_secs(900)));
+    assert!(nsecs.iter().all(|record| record.ttl == Ttl::from_secs(900)));
 
     // RRSIGs: SOA, DNSKEY, CDS, CDNSKEY, apex NS, apex NSEC, www A, www NSEC.
     let rrsigs = records_of_type(&diff.added, DnssecRecordType::Rrsig);
@@ -142,8 +142,12 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     );
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
     assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
-    assert!(rrsigs.iter().all(|row| row.expires_at.is_some()));
-    assert!(rrsigs.iter().all(|row| row.record_set_digest.is_some()));
+    assert!(rrsigs.iter().all(|record| record.expires_at.is_some()));
+    assert!(
+        rrsigs
+            .iter()
+            .all(|record| record.record_set_digest.is_some())
+    );
 }
 
 /// Verify signatures while serving the original case of name-bearing RDATA.
@@ -275,14 +279,14 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
     let nsec3s = records_of_type(&diff.added, DnssecRecordType::Nsec3);
 
     assert_eq!(nsec3s.len(), 2);
-    assert!(nsec3s.iter().all(|row| !row.name.is_apex()));
+    assert!(nsec3s.iter().all(|record| !record.name.is_apex()));
 
     // Every NSEC3 and the NSEC3PARAM record set is signed.
-    for row in nsec3s {
+    for record in nsec3s {
         assert_eq!(
             rrsigs_covering(
                 &diff.added,
-                &row.name,
+                &record.name,
                 i32::from(DnssecRecordType::Nsec3.wire_type())
             )
             .len(),
@@ -353,12 +357,12 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
         !diff
             .added
             .iter()
-            .any(|row| row.record_type == DnssecRecordType::Nsec && row.name == glue)
+            .any(|record| record.record_type == DnssecRecordType::Nsec && record.name == glue)
     );
     assert!(
         diff.added
             .iter()
-            .any(|row| row.record_type == DnssecRecordType::Nsec && row.name == sub)
+            .any(|record| record.record_type == DnssecRecordType::Nsec && record.name == sub)
     );
 }
 
@@ -405,7 +409,7 @@ fn signing_excludes_ds_below_an_existing_delegation() {
             rrsigs_covering(&diff.added, &below_cut, RECORD_TYPE_DS).is_empty(),
             "{denial:?}"
         );
-        assert!(!diff.added.iter().any(|row| row.name == below_cut));
+        assert!(!diff.added.iter().any(|record| record.name == below_cut));
     }
 }
 

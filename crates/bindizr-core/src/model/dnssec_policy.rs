@@ -262,7 +262,11 @@ pub enum DnssecKeyLayout {
 impl DnssecKeyLayout {
     /// Interpret the stored split-key setting at a key-operation boundary.
     pub fn from_split_keys(split_keys: bool) -> Self {
-        if split_keys { Self::Split } else { Self::Csk }
+        if split_keys {
+            Self::Split
+        } else {
+            Self::Csk
+        }
     }
 }
 

@@ -100,9 +100,17 @@ impl QueryMetadata {
         for minimal in [false, true] {
             let mut candidate_signer = signer.as_deref().cloned();
             let mut additional = self.build_response(
-                if minimal { OptRcode::NOERROR } else { rcode },
+                if minimal {
+                    OptRcode::NOERROR
+                } else {
+                    rcode
+                },
                 truncated || minimal,
-                if minimal { None } else { ede },
+                if minimal {
+                    None
+                } else {
+                    ede
+                },
             );
 
             if let Some(candidate) = &mut candidate_signer {

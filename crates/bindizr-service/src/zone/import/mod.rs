@@ -7,7 +7,6 @@ mod single;
 
 use std::collections::HashSet;
 
-use apply::apply_import;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::zonefile::ParsedZoneFile;
 use bindizr_core::model::role_grant::Action;

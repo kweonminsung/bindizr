@@ -66,7 +66,7 @@ class Compose:
         # its containers running into the next system's run.
         env = {**os.environ, **self.env}
         profiles = ["mysql", "postgres", *self.env.get("COMPOSE_PROFILES", "").split(",")]
-        env["COMPOSE_PROFILES"] = ",".join(dict.fromkeys(p for p in profiles if p))
+        env["COMPOSE_PROFILES"] = ",".join(dict.fromkeys(profile for profile in profiles if profile))
         subprocess.run(
             self._build_command_prefix() + ["down", "-v", "--remove-orphans"],
             check=False, text=True, env=env,
@@ -75,14 +75,14 @@ class Compose:
 
     def read_logs(self, service: str, tail: int = 50) -> str:
         """Collect recent output from a Compose service."""
-        p = run(self._build_command_prefix() + ["logs", "--tail", str(tail), service], check=False)
-        return (p.stdout or "") + (p.stderr or "")
+        result = run(self._build_command_prefix() + ["logs", "--tail", str(tail), service], check=False)
+        return (result.stdout or "") + (result.stderr or "")
 
     def resolve_container_id(self, service: str) -> str | None:
         """Resolve a Compose service name to its running container ID."""
-        p = run(self._build_command_prefix() + ["ps", "-q", service], check=False)
-        out = (p.stdout or "").strip()
-        return out or None
+        result = run(self._build_command_prefix() + ["ps", "-q", service], check=False)
+        container_id = (result.stdout or "").strip()
+        return container_id or None
 
 
 STATS_TIMEOUT_SECS = 3.0
@@ -93,14 +93,14 @@ def read_stats(container_ids: list[str]) -> list[dict]:
     if not container_ids:
         return []
 
-    p = run(
+    result = run(
         ["docker", "stats", "--no-stream", "--format", "{{json .}}", *container_ids],
         check=False,
         timeout=STATS_TIMEOUT_SECS,
     )
     rows = []
 
-    for line in (p.stdout or "").splitlines():
+    for line in (result.stdout or "").splitlines():
         line = line.strip()
         if line:
             try:

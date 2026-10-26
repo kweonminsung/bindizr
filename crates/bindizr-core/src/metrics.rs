@@ -562,7 +562,11 @@ impl Metrics {
     /// Record a zone-cache hit or miss.
     pub fn track_zone_cache_lookup(&self, hit: bool) {
         self.zone_cache_lookups_total
-            .with_label_values(&[if hit { "hit" } else { "miss" }])
+            .with_label_values(&[if hit {
+                "hit"
+            } else {
+                "miss"
+            }])
             .inc();
     }
 

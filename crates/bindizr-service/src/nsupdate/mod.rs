@@ -187,12 +187,12 @@ pub async fn apply(
         let updates = decode::decode_updates(update.updates, &zone.name, update.message)?;
         let mut accesses = Vec::new();
 
-        for op in &updates {
-            match op {
-                UpdateOperation::Record(op) => accesses.push(RecordAccess {
-                    action: op.action(),
-                    relative_name: op.name().clone(),
-                    record_type: op.record_type(),
+        for operation in &updates {
+            match operation {
+                UpdateOperation::Record(operation) => accesses.push(RecordAccess {
+                    action: operation.action(),
+                    relative_name: operation.name().clone(),
+                    record_type: operation.record_type(),
                 }),
                 UpdateOperation::ReplaceSoa { .. } => {
                     caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
@@ -206,10 +206,11 @@ pub async fn apply(
         let new_serial = plan.zone.serial;
         let mut changed = plan.soa_changed;
 
-        for op in &plan.records {
-            changed |=
-                operation::apply_record_operation_tx(&mut tx, &plan.zone, op, new_serial, caller)
-                    .await?;
+        for operation in &plan.records {
+            changed |= operation::apply_record_operation_tx(
+                &mut tx, caller, &plan.zone, operation, new_serial,
+            )
+            .await?;
         }
 
         if changed {

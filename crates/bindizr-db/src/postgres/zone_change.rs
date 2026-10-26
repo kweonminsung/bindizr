@@ -18,7 +18,7 @@ pub(crate) async fn create_many_tx(
         let mut sql = String::from(
             "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
         );
-        let mut p = 1;
+        let mut bind_index = 1;
 
         for i in 0..chunk.len() {
             if i > 0 {
@@ -27,19 +27,19 @@ pub(crate) async fn create_many_tx(
 
             sql.push_str(&format!(
                 "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                p,
-                p + 1,
-                p + 2,
-                p + 3,
-                p + 4,
-                p + 5,
-                p + 6,
-                p + 7,
-                p + 8,
-                p + 9,
-                p + 10
+                bind_index,
+                bind_index + 1,
+                bind_index + 2,
+                bind_index + 3,
+                bind_index + 4,
+                bind_index + 5,
+                bind_index + 6,
+                bind_index + 7,
+                bind_index + 8,
+                bind_index + 9,
+                bind_index + 10
             ));
-            p += 11;
+            bind_index += 11;
         }
 
         let now = Utc::now();

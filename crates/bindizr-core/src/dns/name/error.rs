@@ -18,7 +18,11 @@ pub enum ParseNameError {
     #[error("labels must be {MAX_DNS_LABEL_LEN} bytes or fewer")]
     LabelTooLong,
     /// Hostname syntax for connection addresses, independent of DNS owner labels.
-    #[error("labels must contain only {}", if *underscore_allowed { "ASCII letters, digits, hyphens, or underscores" } else { "ASCII letters, digits, or hyphens" })]
+    #[error("labels must contain only {}", if *underscore_allowed {
+        "ASCII letters, digits, hyphens, or underscores"
+    } else {
+        "ASCII letters, digits, or hyphens"
+    })]
     LabelCharset { underscore_allowed: bool },
     #[error("labels must not start or end with hyphens")]
     LabelHyphen,

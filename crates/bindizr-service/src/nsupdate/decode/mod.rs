@@ -68,7 +68,11 @@ pub(crate) fn decode_prerequisite(
             if !record.rdata.is_empty() {
                 return Err(NsupdateError::FormErr(format!(
                     "{}-class prerequisite must have empty rdata",
-                    if is_any_class { "ANY" } else { "NONE" }
+                    if is_any_class {
+                        "ANY"
+                    } else {
+                        "NONE"
+                    }
                 )));
             }
 

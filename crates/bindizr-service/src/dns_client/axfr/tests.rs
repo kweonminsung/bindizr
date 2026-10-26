@@ -99,7 +99,12 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                     response.extend_from_slice(soa.as_bytes());
                     response.extend_from_slice(&[0, 0, 41, 4, 208, 0, 0, 0, 0]);
                     response.extend_from_slice(
-                        &(if keepalive.is_some() { 6u16 } else { 0 }).to_be_bytes(),
+                        &(if keepalive.is_some() {
+                            6u16
+                        } else {
+                            0
+                        })
+                        .to_be_bytes(),
                     );
 
                     if let Some(timeout) = keepalive {

@@ -38,7 +38,7 @@ async def run_closed_loop(
                 return
 
             seq = next(counter)
-            t0 = clock()
+            started = clock()
 
             try:
                 ok = await step(seq)
@@ -46,10 +46,10 @@ async def run_closed_loop(
                 ok = False
 
             # Warmup work runs normally but contributes no measured samples.
-            t1 = clock()
+            finished = clock()
 
-            if t1 >= warmup_until:
-                recorder.track_latency(t1 - t0, ok=ok)
+            if finished >= warmup_until:
+                recorder.track_latency(finished - started, ok=ok)
 
     workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
 
@@ -79,14 +79,14 @@ async def run_n(step: Step, concurrency: int, total: int) -> LatencyRecorder:
             except asyncio.QueueEmpty:
                 return
 
-            t0 = clock()
+            started = clock()
 
             try:
                 ok = await step(seq)
             except Exception:
                 ok = False
 
-            recorder.track_latency(clock() - t0, ok=ok)
+            recorder.track_latency(clock() - started, ok=ok)
 
     await asyncio.gather(*[worker() for _ in range(concurrency)])
 

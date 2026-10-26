@@ -38,15 +38,15 @@ fn build_record_response(caller: &Caller, record: &ServedRecord) -> RecordRespon
             &record.zone_name,
             caller.record_actions(record.zone_id, &record.name, &record.record_type),
         ),
-        ServedRecord::Derived(row) => RecordResponse {
+        ServedRecord::Derived(record) => RecordResponse {
             id: None,
-            name: row.name.to_fqdn(&row.zone_name),
-            record_type: row.record_type.into(),
-            value: RecordValue::Text(row.rdata.to_presentation(row.record_type)),
-            ttl: row.ttl,
+            name: record.name.to_fqdn(&record.zone_name),
+            record_type: record.record_type.into(),
+            value: RecordValue::Text(record.rdata.to_presentation(record.record_type)),
+            ttl: record.ttl,
             priority: None,
-            zone_id: row.zone_id,
-            zone_name: row.zone_name.to_string(),
+            zone_id: record.zone_id,
+            zone_name: record.zone_name.to_string(),
             actions: Vec::new(),
         },
     }

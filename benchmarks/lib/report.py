@@ -17,22 +17,22 @@ RAW_DIR = RESULTS_DIR / "raw"
 def write_result(benchmark: str, result: dict[str, Any]) -> None:
     """Append one benchmark result to its raw JSON file."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    out = RAW_DIR / f"{benchmark}.json"
+    path = RAW_DIR / f"{benchmark}.json"
     payload: dict[str, Any] = {"benchmark": benchmark, "results": []}
 
-    if out.exists():
-        payload = json.loads(out.read_text())
+    if path.exists():
+        payload = json.loads(path.read_text())
 
     payload["results"].append(result)
-    out.write_text(json.dumps(payload, indent=2))
+    path.write_text(json.dumps(payload, indent=2))
 
 
 def _load_all() -> dict[str, dict]:
     """Load all saved raw benchmark result files."""
     data: dict[str, dict] = {}
     if RAW_DIR.exists():
-        for f in sorted(RAW_DIR.glob("*.json")):
-            payload = json.loads(f.read_text())
+        for file in sorted(RAW_DIR.glob("*.json")):
+            payload = json.loads(file.read_text())
             data[payload["benchmark"]] = payload
     return data
 
@@ -42,7 +42,7 @@ def _render_markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
     line = "| " + " | ".join(headers) + " |\n"
     line += "| " + " | ".join("---" for _ in headers) + " |\n"
     for row in rows:
-        line += "| " + " | ".join(str(c) for c in row) + " |\n"
+        line += "| " + " | ".join(str(cell) for cell in row) + " |\n"
     return line
 
 
@@ -60,21 +60,21 @@ def write_report(env: dict, config: dict) -> None:
     for name, payload in data.items():
         for result in payload["results"]:
             row = {"benchmark": name}
-            row.update({k: v for k, v in result.items() if not isinstance(v, (dict, list))})
+            row.update({key: value for key, value in result.items() if not isinstance(value, (dict, list))})
             csv_rows.append(row)
 
     if csv_rows:
         keys: list[str] = []
 
         for result in csv_rows:
-            for k in result:
-                if k not in keys:
-                    keys.append(k)
+            for key in result:
+                if key not in keys:
+                    keys.append(key)
 
-        with open(RESULTS_DIR / "performance.csv", "w", newline="") as fh:
-            w = csv.DictWriter(fh, fieldnames=keys)
-            w.writeheader()
-            w.writerows(csv_rows)
+        with open(RESULTS_DIR / "performance.csv", "w", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(csv_rows)
 
     (RESULTS_DIR / "performance.md").write_text(_render_markdown(env, data))
     _write_graphs(data)
@@ -91,31 +91,31 @@ def _aggregate(rows: list[dict]) -> list[dict]:
     groups: dict[tuple, list[dict]] = {}
 
     for row in rows:
-        groups.setdefault(tuple(str(row.get(f)) for f in DIMENSION_FIELDS), []).append(row)
+        groups.setdefault(tuple(str(row.get(field)) for field in DIMENSION_FIELDS), []).append(row)
 
-    out = []
+    aggregated = []
 
-    for grp in groups.values():
-        base = grp[0]
-        agg: dict = {}
+    for group in groups.values():
+        base = group[0]
+        aggregate: dict = {}
 
-        for k in base:
-            vals = [g.get(k) for g in grp]
-            numeric = [v for v in vals
-                       if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        for key in base:
+            values = [row.get(key) for row in group]
+            numeric = [value for value in values
+                       if isinstance(value, (int, float)) and not isinstance(value, bool)]
 
-            if k not in DIMENSION_FIELDS and numeric and len(numeric) == len(vals):
-                agg[k] = round(sum(numeric) / len(numeric), 3)
-                agg[f"{k}_std"] = round(stdev(numeric), 3) if len(numeric) > 1 else 0.0
+            if key not in DIMENSION_FIELDS and numeric and len(numeric) == len(values):
+                aggregate[key] = round(sum(numeric) / len(numeric), 3)
+                aggregate[f"{key}_std"] = round(stdev(numeric), 3) if len(numeric) > 1 else 0.0
             else:
-                agg[k] = base.get(k)
+                aggregate[key] = base.get(key)
 
-        if len(grp) > 1:
-            agg["runs"] = len(grp)
+        if len(group) > 1:
+            aggregate["runs"] = len(group)
 
-        out.append(agg)
+        aggregated.append(aggregate)
 
-    return out
+    return aggregated
 
 
 def _display_metric(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
@@ -191,10 +191,10 @@ def _render_b08_conclusion(comparable: dict[str, dict]) -> str:
     outside: list[str] = []
 
     for pairing, standalone in QUERY_BASELINES.items():
-        p, s = comparable.get(pairing), comparable.get(standalone)
-        if not p or not s:
+        pairing_row, standalone_row = comparable.get(pairing), comparable.get(standalone)
+        if not pairing_row or not standalone_row:
             continue
-        delta = (p["qps"] / s["qps"] - 1) * 100
+        delta = (pairing_row["qps"] / standalone_row["qps"] - 1) * 100
         entry = f"`{pairing}` vs `{standalone}` ({delta:+.1f}%)"
         (within if abs(delta) <= QUERY_NOISE_TOLERANCE_PCT else outside).append(entry)
 
@@ -202,21 +202,21 @@ def _render_b08_conclusion(comparable: dict[str, dict]) -> str:
         return ("\n> ⚠️ No-overhead conclusion unavailable: this run has no Bindizr "
                 "pairing and standalone run of the same server to compare.\n")
 
-    out = ""
+    text = ""
 
     if within:
-        out += ("\n> **Bindizr introduces no measurable DNS query overhead because it "
+        text += ("\n> **Bindizr introduces no measurable DNS query overhead because it "
                 "is outside the DNS data plane.** Queries are served by the secondary, "
                 "not by Bindizr, so each pairing tracks that server run standalone: "
                 + ", ".join(within)
                 + f" — within the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% run-to-run tolerance.\n")
 
     if outside:
-        out += (f"\n> ⚠️ Outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance, "
+        text += (f"\n> ⚠️ Outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance, "
                 "so this run does not support the no-overhead conclusion there: "
                 + ", ".join(outside) + ".\n")
 
-    return out
+    return text
 
 
 def _render_b07(rows: list[dict]) -> str:
@@ -224,10 +224,10 @@ def _render_b07(rows: list[dict]) -> str:
     crud = [row for row in rows if "create_tps" in row]
     bulk = [row for row in rows if "import_secs" in row]
     failed = [row for row in rows if row.get("status") == "FAILED"]
-    out = ["\n## Benchmark 7 — Database Performance\n"]
+    lines = ["\n## Benchmark 7 — Database Performance\n"]
 
     if crud:
-        out.append("\n### 7a — CRUD throughput by backend\n")
+        lines.append("\n### 7a — CRUD throughput by backend\n")
         crud = sorted(crud, key=lambda row: (row.get("system", ""),
                                            row.get("backend", "")))
         crud_rows = [[
@@ -238,18 +238,18 @@ def _render_b07(rows: list[dict]) -> str:
             row.get("bindizr_peak_mem_mb", "-"), row.get("db_peak_mem_mb", "-"),
             row.get("runs", 1),
         ] for row in crud]
-        out.append(_render_markdown_table(
+        lines.append(_render_markdown_table(
             ["Pairing", "Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
              "Read p95 (ms)", "Error Rate", "Peak mem (MB)",
              "Bindizr mem (MB)", "DB mem (MB)", "Runs"], crud_rows))
-        out.append("\n> Peak mem is the highest per-tick stack total (Bindizr "
+        lines.append("\n> Peak mem is the highest per-tick stack total (Bindizr "
                    "+ BIND9 + DB server, per `docker stats`). The split "
                    "columns are each container's own peak, taken at possibly "
                    "different ticks and excluding BIND9, so they need not sum "
                    "to it. sqlite runs in-process, so its DB share is 0.\n")
 
     if bulk:
-        out.append("\n### 7b — Bulk import by backend\n")
+        lines.append("\n### 7b — Bulk import by backend\n")
         bulk = sorted(bulk, key=lambda row: (row.get("system", ""),
                                            row.get("backend", ""),
                                            row.get("size", 0)))
@@ -260,22 +260,22 @@ def _render_b07(rows: list[dict]) -> str:
             row.get("bindizr_peak_mem_mb", "-"), row.get("db_peak_mem_mb", "-"),
             row.get("runs", 1),
         ] for row in bulk]
-        out.append(_render_markdown_table(
+        lines.append(_render_markdown_table(
             ["Pairing", "Backend", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
             bulk_rows))
         # One series per pairing and backend, so the note keys on both.
-        out.append(_render_bulk_linearity_note(
+        lines.append(_render_bulk_linearity_note(
             [{**row, "system": f'{row.get("system", "-")} / {row.get("backend", "-")}'}
              for row in bulk]))
 
     if failed:
-        out.append("\n> ⚠️ Failed backends: " +
+        lines.append("\n> ⚠️ Failed backends: " +
                    ", ".join(f'{row.get("system", "-")} / {row.get("backend")} '
                              f'({row.get("error", "?")})'
                              for row in failed) + "\n")
 
-    return "".join(out)
+    return "".join(lines)
 
 
 def _rows(data: dict, key: str) -> list[dict]:
@@ -287,23 +287,23 @@ def _union_headers(results: list[dict]) -> list[str]:
     """Collect columns in first-seen order, including failure-only status/error keys."""
     headers: list[str] = []
     for row in results:
-        for h in row:
-            if not h.endswith("_std") and h not in headers:
-                headers.append(h)
+        for header in row:
+            if not header.endswith("_std") and header not in headers:
+                headers.append(header)
     return headers
 
 
 def _render_markdown(env: dict, data: dict) -> str:
     """Render the environment and benchmark results as a Markdown report."""
-    hw = env["hardware"]
-    out = ["# Bindizr Benchmark Results\n"]
-    out.append("## Test Environment\n")
-    out.append(_render_markdown_table(
+    hardware = env["hardware"]
+    lines = ["# Bindizr Benchmark Results\n"]
+    lines.append("## Test Environment\n")
+    lines.append(_render_markdown_table(
         ["Component", "Value"],
         [
-            ["CPU", f"{hw['cpu']} ({hw['cpu_cores']} cores)"],
-            ["Memory", f"{hw['memory_gb']} GB"],
-            ["Storage (free)", f"{hw['storage_free_gb']} GB"],
+            ["CPU", f"{hardware['cpu']} ({hardware['cpu_cores']} cores)"],
+            ["Memory", f"{hardware['memory_gb']} GB"],
+            ["Storage (free)", f"{hardware['storage_free_gb']} GB"],
             ["OS", env["os"]["platform"]],
             ["Docker", env["docker"]["version"]],
             ["Per-container limit", f"{env.get('limits', {}).get('cpus', '?')} CPU / "
@@ -311,12 +311,12 @@ def _render_markdown(env: dict, data: dict) -> str:
             ["Repeats (averaged)", env.get("config", {}).get("repeats", 1)],
         ],
     ))
-    out.append("\n### Software Versions\n")
-    out.append(_render_markdown_table(["Software", "Version"],
-                         [[k, v] for k, v in env["software"].items()]))
+    lines.append("\n### Software Versions\n")
+    lines.append(_render_markdown_table(["Software", "Version"],
+                         [[name, version] for name, version in env["software"].items()]))
 
     if "b01_crud_tps" in data:
-        out.append("\n## Benchmark 1 — Record CRUD TPS\n")
+        lines.append("\n## Benchmark 1 — Record CRUD TPS\n")
         rows = []
 
         for row in _rows(data, "b01_crud_tps"):
@@ -327,7 +327,7 @@ def _render_markdown(env: dict, data: dict) -> str:
                 row.get("runs", 1),
             ])
 
-        out.append(_render_markdown_table(
+        lines.append(_render_markdown_table(
             ["Product", "Create TPS", "Update TPS", "Delete TPS", "Read TPS",
              "Read p95 (ms)", "Error Rate", "Runs"], rows))
 
@@ -335,7 +335,7 @@ def _render_markdown(env: dict, data: dict) -> str:
     if "b02_bulk_import" in data:
         results = sorted(_rows(data, "b02_bulk_import"),
                          key=lambda row: (row["system"], row.get("size", 0)))
-        out.append("\n## Benchmark 2 — Bulk Import\n")
+        lines.append("\n## Benchmark 2 — Bulk Import\n")
         rows = []
 
         for row in results:
@@ -346,10 +346,10 @@ def _render_markdown(env: dict, data: dict) -> str:
                 row.get("runs", 1),
             ])
 
-        out.append(_render_markdown_table(
+        lines.append(_render_markdown_table(
             ["System", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Runs"], rows))
-        out.append(_render_bulk_linearity_note(results))
+        lines.append(_render_bulk_linearity_note(results))
 
     # Generic dump for the remaining benchmarks.
     titles = {
@@ -368,13 +368,13 @@ def _render_markdown(env: dict, data: dict) -> str:
         if not results:
             continue
 
-        out.append(f"\n## {title}\n")
+        lines.append(f"\n## {title}\n")
         headers = _union_headers(results)
-        rows = [[row.get(h, "-") for h in headers] for row in results]
-        out.append(_render_markdown_table(headers, rows))
+        rows = [[row.get(header, "-") for header in headers] for row in results]
+        lines.append(_render_markdown_table(headers, rows))
 
     if "b07_database" in data:
-        out.append(_render_b07(_rows(data, "b07_database")))
+        lines.append(_render_b07(_rows(data, "b07_database")))
 
     if "b08_query_perf" in data:
         results = _rows(data, "b08_query_perf")
@@ -388,7 +388,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         # A run whose every timed query failed reports qps 0.0 without being
         # FAILED; it is listed, but cannot anchor or receive a comparison.
         comparable = {row["system"]: row for row in ok if row["qps"] > 0}
-        out.append("\n## Benchmark 8 — DNS Query Performance\n")
+        lines.append("\n## Benchmark 8 — DNS Query Performance\n")
         rows = []
 
         for row in ok:
@@ -396,26 +396,26 @@ def _render_markdown(env: dict, data: dict) -> str:
                          row.get("p95_ms", "-"), row.get("p99_ms", "-"),
                          _display_b08_query_delta(row, comparable)])
 
-        out.append(_render_markdown_table(
+        lines.append(_render_markdown_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
              "QPS vs. same server standalone"], rows))
 
         if failed:
-            out.append("\n> ⚠️ Failed runs: " +
+            lines.append("\n> ⚠️ Failed runs: " +
                        ", ".join(f'{row.get("system", "?")} ({row.get("error", "?")})'
                                  for row in failed) + "\n")
 
-        out.append(_render_b08_conclusion(comparable))
+        lines.append(_render_b08_conclusion(comparable))
 
     if "b09_resource_usage" in data:
         results = _rows(data, "b09_resource_usage")
         if results:
-            out.append("\n## Benchmark 9 — Resource Usage\n")
+            lines.append("\n## Benchmark 9 — Resource Usage\n")
             headers = _union_headers(results)
-            rows = [[row.get(h, "-") for h in headers] for row in results]
-            out.append(_render_markdown_table(headers, rows))
+            rows = [[row.get(header, "-") for header in headers] for row in results]
+            lines.append(_render_markdown_table(headers, rows))
 
-    return "\n".join(out)
+    return "\n".join(lines)
 
 
 def _write_graphs(data: dict) -> None:
@@ -443,21 +443,21 @@ def _write_graphs(data: dict) -> None:
         plt.close(fig)
 
     if "b01_crud_tps" in data:
-        rs = _rows(data, "b01_crud_tps")
+        rows = _rows(data, "b01_crud_tps")
         write_bar_chart("b01_create_tps.png", "Record Create TPS",
-            [row["system"] for row in rs], [row.get("create_tps", 0) for row in rs], "TPS")
+            [row["system"] for row in rows], [row.get("create_tps", 0) for row in rows], "TPS")
         write_bar_chart("b01_read_tps.png", "Record Read TPS",
-            [row["system"] for row in rs], [row.get("read_tps", 0) for row in rs], "TPS")
+            [row["system"] for row in rows], [row.get("read_tps", 0) for row in rows], "TPS")
 
     if "b08_query_perf" in data:
-        rs = _rows(data, "b08_query_perf")
+        rows = _rows(data, "b08_query_perf")
         write_bar_chart("b08_qps.png", "DNS Query Throughput (QPS)",
-            [row["system"] for row in rs], [row.get("qps", 0) for row in rs], "QPS")
+            [row["system"] for row in rows], [row.get("qps", 0) for row in rows], "QPS")
 
     if "b03_propagation" in data:
-        rs = _rows(data, "b03_propagation")
+        rows = _rows(data, "b03_propagation")
         write_bar_chart("b03_visible_p95.png", "DNS-Visible Latency p95 (create -> answerable)",
-            [row["system"] for row in rs], [row.get("visible_p95_ms", 0) for row in rs], "ms")
+            [row["system"] for row in rows], [row.get("visible_p95_ms", 0) for row in rows], "ms")
 
     if "b02_bulk_import" in data:
         # Largest-size row per system.
@@ -468,7 +468,7 @@ def _write_graphs(data: dict) -> None:
             if prev is None or row.get("size", 0) >= prev.get("size", 0):
                 by_sys[row["system"]] = row
 
-        rs = list(by_sys.values())
+        rows = list(by_sys.values())
         write_bar_chart("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
-            [row["system"] for row in rs], [row.get("records_per_sec", 0) for row in rs],
+            [row["system"] for row in rows], [row.get("records_per_sec", 0) for row in rows],
             "records/sec")

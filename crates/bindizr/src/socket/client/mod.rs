@@ -29,9 +29,9 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         }
         // Primary refused/missing; the fallback was also tried.
         Err(ConnectDaemonSocketError {
-            fallback: Some(fallback_err),
+            fallback: Some(fallback_error),
             ..
-        }) => is_missing_listener(&fallback_err),
+        }) => is_missing_listener(&fallback_error),
         // Primary failed in an unexpected way; the fallback was not tried.
         Err(ConnectDaemonSocketError {
             primary: error,
@@ -174,9 +174,9 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
         {
             match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
                 Ok(stream) => Ok((FALLBACK_SOCKET_FILE_PATH, stream)),
-                Err(fallback_err) => Err(ConnectDaemonSocketError {
+                Err(fallback_error) => Err(ConnectDaemonSocketError {
                     primary: error,
-                    fallback: Some(fallback_err),
+                    fallback: Some(fallback_error),
                 }),
             }
         }

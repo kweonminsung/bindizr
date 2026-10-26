@@ -23,7 +23,7 @@ pub(crate) const MAX_DOMAIN_LEN: usize = MAX_WIRE_NAME_LEN - 2;
 pub fn has_whitespace_or_control(value: &str) -> bool {
     value
         .chars()
-        .any(|c| c.is_ascii_control() || c.is_whitespace())
+        .any(|ch| ch.is_ascii_control() || ch.is_whitespace())
 }
 
 /// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
@@ -39,7 +39,7 @@ pub(crate) fn classify_domain_label(label: &str) -> Result<(), ParseNameError> {
 
     if !label
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
     {
         return Err(ParseNameError::LabelCharset {
             underscore_allowed: true,
@@ -57,9 +57,16 @@ pub(crate) fn classify_domain_label(label: &str) -> Result<(), ParseNameError> {
 pub fn trim_presentation_name(value: &str) -> &str {
     let mut value = value.trim_start();
 
-    while let Some(last) = value.chars().next_back().filter(|c| c.is_whitespace()) {
+    while let Some(last) = value.chars().next_back().filter(|ch| ch.is_whitespace()) {
         let prefix = &value[..value.len() - last.len_utf8()];
-        if prefix.bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 1 {
+        if prefix
+            .bytes()
+            .rev()
+            .take_while(|&byte| byte == b'\\')
+            .count()
+            % 2
+            == 1
+        {
             break;
         }
         value = prefix;
@@ -103,7 +110,7 @@ pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
     // produces the same lowercase form as decoding and re-encoding.
     let needs_decode = trimmed
         .bytes()
-        .any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')));
+        .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')));
 
     if needs_decode && let Ok(name) = parse_lookup_name(trimmed) {
         return format!("{name}.");

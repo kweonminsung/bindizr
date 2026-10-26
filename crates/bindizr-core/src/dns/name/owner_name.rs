@@ -232,9 +232,9 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
     let mut label: Vec<u8> = Vec::new();
     let mut chars = name.chars().peekable();
 
-    while let Some(c) = chars.next() {
-        match c {
-            c if c.is_ascii_whitespace() || c.is_ascii_control() => {
+    while let Some(ch) = chars.next() {
+        match ch {
+            ch if ch.is_ascii_whitespace() || ch.is_ascii_control() => {
                 return Err(ParseNameError::Whitespace);
             }
             '.' => labels.push(std::mem::take(&mut label)),
@@ -246,7 +246,7 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
                     for _ in 0..3 {
                         let digit = chars
                             .next()
-                            .and_then(|c| c.to_digit(10))
+                            .and_then(|ch| ch.to_digit(10))
                             .ok_or(ParseNameError::InvalidEscape)?;
                         octet = octet * 10 + digit;
                     }
@@ -259,9 +259,9 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
                     label.extend_from_slice(escaped.encode_utf8(&mut buffer).as_bytes());
                 }
             },
-            c => {
+            ch => {
                 let mut buffer = [0u8; 4];
-                label.extend_from_slice(c.encode_utf8(&mut buffer).as_bytes());
+                label.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
             }
         }
     }

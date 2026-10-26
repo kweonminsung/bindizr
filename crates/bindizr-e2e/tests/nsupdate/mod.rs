@@ -224,7 +224,11 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
                     record.extend_from_slice(&u16::try_from(rdata.len()).unwrap().to_be_bytes());
                     record.extend_from_slice(&rdata);
                     request.splice(offset..offset, record.iter().copied());
-                    let (count_offset, count) = if prerequisite { (6, 1u16) } else { (8, 2u16) };
+                    let (count_offset, count) = if prerequisite {
+                        (6, 1u16)
+                    } else {
+                        (8, 2u16)
+                    };
                     request[count_offset..count_offset + 2].copy_from_slice(&count.to_be_bytes());
 
                     if additional_tsig {
@@ -305,13 +309,13 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    for row in rows
+    for record in rows
         .iter()
-        .filter(|row| matches!(row.rtype().to_int(), 46..=48 | 50 | 51 | 59 | 60))
+        .filter(|record| matches!(record.rtype().to_int(), 46..=48 | 50 | 51 | 59 | 60))
     {
         let mut rdata = Vec::new();
-        row.data().compose_canonical_rdata(&mut rdata).unwrap();
-        let owner = row.owner().to_string();
+        record.data().compose_canonical_rdata(&mut rdata).unwrap();
+        let owner = record.owner().to_string();
 
         assert_eq!(
             nsupdate::send_update_udp(
@@ -319,7 +323,7 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
                 name,
                 &[PrerequisiteRecord::RecordSetInUse {
                     name: owner.clone(),
-                    rtype: row.rtype()
+                    rtype: record.rtype()
                 }],
                 &[],
                 Some(&key)
@@ -331,17 +335,17 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
         for operation in [
             UpdateRecord::AddRecord {
                 name: owner.clone(),
-                rtype: row.rtype(),
-                ttl: row.ttl().as_secs(),
+                rtype: record.rtype(),
+                ttl: record.ttl().as_secs(),
                 rdata: rdata.clone(),
             },
             UpdateRecord::DeleteRecordSet {
                 name: owner.clone(),
-                rtype: row.rtype(),
+                rtype: record.rtype(),
             },
             UpdateRecord::DeleteRecord {
                 name: owner.clone(),
-                rtype: row.rtype(),
+                rtype: record.rtype(),
                 rdata,
             },
         ] {
@@ -2144,7 +2148,11 @@ async fn truncated_updates_follow_tsig_validation_order() {
 
             assert_eq!(
                 tsig.data().other().len(),
-                if expected == TsigRcode::BADTIME { 6 } else { 0 }
+                if expected == TsigRcode::BADTIME {
+                    6
+                } else {
+                    0
+                }
             );
         }
     }
@@ -2276,15 +2284,15 @@ async fn dnssec_prerequisites_see_derived_records() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|row| row["id"].is_null())
+        .filter(|record| record["id"].is_null())
         .collect();
 
-    assert!(derived.iter().any(|row| row["type"] == "DNSKEY"));
-    assert!(derived.iter().any(|row| row["type"] == "NSEC3"));
+    assert!(derived.iter().any(|record| record["type"] == "DNSKEY"));
+    assert!(derived.iter().any(|record| record["type"] == "NSEC3"));
 
-    for row in derived {
-        let name = row["name"].as_str().unwrap().to_string();
-        let rtype: Rtype = row["type"].as_str().unwrap().parse().unwrap();
+    for record in derived {
+        let name = record["name"].as_str().unwrap().to_string();
+        let rtype: Rtype = record["type"].as_str().unwrap().parse().unwrap();
 
         for (prerequisite, expected) in [
             (
@@ -2321,7 +2329,7 @@ async fn dnssec_prerequisites_see_derived_records() {
             )
             .expect("prerequisite response");
 
-            assert_eq!(rcode, expected, "{row}");
+            assert_eq!(rcode, expected, "{record}");
             assert_eq!(app.list_records(zone_name).await, before);
             assert_eq!(app.read_zone_serial(zone_name).await, serial);
         }
@@ -3158,14 +3166,14 @@ async fn soa_replacement_updates_the_signed_zone() {
     let signatures: Vec<_> = after[&key]
         .iter()
         .map(|data| Rrsig::parse(&mut Parser::from_ref(data)).unwrap())
-        .filter(|sig| sig.type_covered() == Rtype::SOA)
+        .filter(|signature| signature.type_covered() == Rtype::SOA)
         .collect();
 
     assert!(!signatures.is_empty());
     assert!(
         signatures
             .iter()
-            .all(|sig| sig.original_ttl() == Ttl::from_secs(900))
+            .all(|signature| signature.original_ttl() == Ttl::from_secs(900))
     );
     let prerequisites = [PrerequisiteRecord::SoaEquals {
         name: format!("{zone_name}."),
@@ -3473,8 +3481,8 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
         app.list_records(zone_name)
             .await
             .iter()
-            .filter(|row| row["type"] == "WKS")
-            .all(|row| row["ttl"] == u32::MAX)
+            .filter(|record| record["type"] == "WKS")
+            .all(|record| record["ttl"] == u32::MAX)
     );
 }
 

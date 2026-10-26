@@ -42,7 +42,11 @@ pub fn build_response(
     let readable = message::has_readable_sections(query_data);
 
     for minimal in [false, true] {
-        let rcode = if minimal { OptRcode::NOERROR } else { rcode };
+        let rcode = if minimal {
+            OptRcode::NOERROR
+        } else {
+            rcode
+        };
         let mut builder = crate::dns::message::build_response();
         let mut answer = if readable {
             builder
@@ -65,7 +69,11 @@ pub fn build_response(
             Edns::from_message(&message).push_response_opt(
                 &mut additional,
                 rcode,
-                if minimal { None } else { ede },
+                if minimal {
+                    None
+                } else {
+                    ede
+                },
                 None,
             );
         }

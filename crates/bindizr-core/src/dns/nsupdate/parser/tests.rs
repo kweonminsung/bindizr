@@ -480,7 +480,11 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
             Rtype::from_int(248),
             Rtype::from_int(65535),
         ] {
-            let data = if class == Class::ANY { vec![] } else { vec![1] };
+            let data = if class == Class::ANY {
+                vec![]
+            } else {
+                vec![1]
+            };
             let record = update_record(rtype, class, 0, data);
             let result = record.validate_update_shape();
 
@@ -497,7 +501,11 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
         // A valid data type may be absent from the storage model; its
         // deletion still has a well-formed wire shape (RFC 3597, Section 2).
         for rtype in [Rtype::A, Rtype::SOA, Rtype::HINFO, Rtype::from_int(65280)] {
-            let data = if class == Class::ANY { vec![] } else { vec![1] };
+            let data = if class == Class::ANY {
+                vec![]
+            } else {
+                vec![1]
+            };
             update_record(rtype, class, 0, data)
                 .validate_update_shape()
                 .unwrap();

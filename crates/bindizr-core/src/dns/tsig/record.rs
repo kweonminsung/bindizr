@@ -16,14 +16,14 @@ type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [
 
 /// The final Additional record and where the signed DNS message ends.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct ParsedTsig<'a> {
-    pub(super) record: WireTsig<'a>,
+pub(crate) struct ParsedTsig<'a> {
+    pub(crate) record: WireTsig<'a>,
     start: usize,
 }
 
 /// A malformed TSIG record or its enclosing DNS sections.
 #[derive(Debug, Error)]
-pub(super) enum ParseTsigError {
+pub(crate) enum ParseTsigError {
     #[error("failed to read TSIG record: {0}")]
     Read(#[source] LibraryError),
     #[error("invalid TSIG position, class or TTL")]
@@ -32,7 +32,7 @@ pub(super) enum ParseTsigError {
 
 /// The received MAC cannot match the complete digest or its permitted prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub(super) enum VerifyMacError {
+pub(crate) enum VerifyMacError {
     #[error("TSIG MAC exceeds the digest length")]
     Length,
     #[error("TSIG MAC does not match")]
@@ -41,7 +41,7 @@ pub(super) enum VerifyMacError {
 
 impl<'a> ParsedTsig<'a> {
     /// Require one final TSIG with CLASS ANY and TTL zero (RFC 8945, Sections 4.2 and 5.2).
-    pub(super) fn parse(message: &Message<&'a [u8]>) -> Result<Option<Self>, ParseTsigError> {
+    pub(crate) fn parse(message: &Message<&'a [u8]>) -> Result<Option<Self>, ParseTsigError> {
         for section in [message.answer(), message.authority()] {
             for record in section.map_err(|error| ParseTsigError::Read(Box::new(error)))? {
                 if record
@@ -86,7 +86,7 @@ impl<'a> ParsedTsig<'a> {
     }
 
     /// Compare the key name and algorithm without changing signed message octets.
-    pub(super) fn matches_key(&self, key: &TsigSigningKey) -> bool {
+    pub(crate) fn matches_key(&self, key: &TsigSigningKey) -> bool {
         self.record.owner().name_eq(key.domain.name())
             && self
                 .record
@@ -96,7 +96,7 @@ impl<'a> ParsedTsig<'a> {
     }
 
     /// Authenticate Other Len and Other Data exactly as sent (RFC 8945, Section 4.3.3).
-    pub(super) fn verify_mac(
+    pub(crate) fn verify_mac(
         &self,
         key: &TsigSigningKey,
         message: &Message<&[u8]>,

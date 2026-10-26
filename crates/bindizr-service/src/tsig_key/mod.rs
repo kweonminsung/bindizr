@@ -186,7 +186,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             "TSIG key '{}' still signs NOTIFY for {} secondar{}",
             tsig_key.name,
             secondary_count,
-            if secondary_count == 1 { "y" } else { "ies" }
+            if secondary_count == 1 {
+                "y"
+            } else {
+                "ies"
+            }
         )));
     }
 

@@ -19,7 +19,12 @@ pub(crate) fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {
 
 /// Render a boolean as yes or no.
 pub(crate) fn display_yes_no(value: &bool) -> String {
-    if *value { "yes" } else { "no" }.to_string()
+    if *value {
+        "yes"
+    } else {
+        "no"
+    }
+    .to_string()
 }
 
 /// Serial distance behind the zone, negative when ahead; unordered values show `-`.

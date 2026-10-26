@@ -82,9 +82,9 @@ fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
     records
         .iter()
         .enumerate()
-        .map(|(index, row)| DnssecRecord {
+        .map(|(index, record)| DnssecRecord {
             id: DnssecRecordId::from(index as i32 + 1),
-            ..row.clone()
+            ..record.clone()
         })
         .collect()
 }
@@ -93,7 +93,7 @@ fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
 fn records_of_type(records: &[DnssecRecord], record_type: DnssecRecordType) -> Vec<&DnssecRecord> {
     records
         .iter()
-        .filter(|row| row.record_type == record_type)
+        .filter(|record| record.record_type == record_type)
         .collect()
 }
 
@@ -105,10 +105,10 @@ fn rrsigs_covering<'a>(
 ) -> Vec<&'a DnssecRecord> {
     records
         .iter()
-        .filter(|row| {
-            row.record_type == DnssecRecordType::Rrsig
-                && row.covered_record_type == Some(covered)
-                && row.name == *owner
+        .filter(|record| {
+            record.record_type == DnssecRecordType::Rrsig
+                && record.covered_record_type == Some(covered)
+                && record.name == *owner
         })
         .collect()
 }

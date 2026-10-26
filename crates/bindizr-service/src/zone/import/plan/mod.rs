@@ -19,9 +19,9 @@ pub(crate) struct DesiredRecord {
 /// What an import will change, decided before anything is written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ImportPlan<'a> {
-    pub(crate) dels: Vec<Record>,
+    pub(crate) deletes: Vec<Record>,
     /// Reinserted through `adds`; kept apart so the summary counts them as updates.
-    pub(crate) ttl_dels: Vec<Record>,
+    pub(crate) ttl_deletes: Vec<Record>,
     pub(crate) adds: Vec<&'a DesiredRecord>,
     pub(crate) unchanged: usize,
     pub(crate) updated: usize,
@@ -56,7 +56,7 @@ impl<'a> ImportPlan<'a> {
             .map(|desired_record| (&desired_record.data.name, desired_record.data.record_type))
             .collect();
 
-        let dels: Vec<Record> = match mode {
+        let deletes: Vec<Record> = match mode {
             ImportMode::Append => Vec::new(),
             ImportMode::Replace => existing_records
                 .iter()
@@ -78,7 +78,7 @@ impl<'a> ImportPlan<'a> {
         // Append leaves what it finds, so a TTL it disagrees with stays.
         let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
 
-        let mut ttl_dels = Vec::new();
+        let mut ttl_deletes = Vec::new();
         let mut adds = Vec::new();
         let mut unchanged = 0;
         let mut updated = 0;
@@ -92,7 +92,7 @@ impl<'a> ImportPlan<'a> {
                 present = true;
                 // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
                 if reconcile_ttl && existing_record.ttl != desired_ttl {
-                    ttl_dels.push((*existing_record).clone());
+                    ttl_deletes.push((*existing_record).clone());
                     stale = true;
                 }
             }
@@ -108,8 +108,8 @@ impl<'a> ImportPlan<'a> {
         }
 
         ImportPlan {
-            dels,
-            ttl_dels,
+            deletes,
+            ttl_deletes,
             adds,
             unchanged,
             updated,

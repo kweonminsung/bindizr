@@ -77,7 +77,7 @@ fn append_preserves_records_absent_from_file() {
 
     let plan = ImportPlan::compute(ImportMode::Append, &rows, &want);
 
-    assert!(plan.dels.is_empty());
+    assert!(plan.deletes.is_empty());
     assert_eq!(added(&plan), ["192.0.2.1"]);
 }
 
@@ -93,7 +93,7 @@ fn replace_deletes_records_absent_from_file() {
 
     let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
 
-    assert_eq!(ids(&plan.dels), [RecordId::from(2), RecordId::from(3)]);
+    assert_eq!(ids(&plan.deletes), [RecordId::from(2), RecordId::from(3)]);
     assert_eq!(plan.unchanged, 1);
     assert!(plan.adds.is_empty());
 }
@@ -112,7 +112,7 @@ fn upsert_preserves_name_and_type_pairs_absent_from_file() {
 
     let plan = ImportPlan::compute(ImportMode::Upsert, &rows, &want);
 
-    assert_eq!(ids(&plan.dels), [RecordId::from(1)]);
+    assert_eq!(ids(&plan.deletes), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
 }
 
@@ -125,7 +125,7 @@ fn import_plan_replaces_row_when_ttl_changes() {
 
     let plan = ImportPlan::compute(ImportMode::Upsert, &rows, &want);
 
-    assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
+    assert_eq!(ids(&plan.ttl_deletes), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
     assert_eq!(plan.updated, 1);
     assert_eq!(plan.unchanged, 0);
@@ -139,7 +139,7 @@ fn append_keeps_a_ttl_it_disagrees_with() {
 
     let plan = ImportPlan::compute(ImportMode::Append, &rows, &want);
 
-    assert!(plan.ttl_dels.is_empty());
+    assert!(plan.ttl_deletes.is_empty());
     assert_eq!(plan.unchanged, 1);
 }
 
@@ -153,7 +153,7 @@ fn import_plan_defaults_omitted_ttl_to_zone_default() {
 
     let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
 
-    assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
+    assert_eq!(ids(&plan.ttl_deletes), [RecordId::from(1)]);
     assert_eq!(plan.updated, 1);
 }
 
@@ -176,6 +176,6 @@ fn import_plan_matches_canonically_equivalent_values() {
 
     let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
 
-    assert!(plan.dels.is_empty());
+    assert!(plan.deletes.is_empty());
     assert_eq!(plan.unchanged, 1);
 }

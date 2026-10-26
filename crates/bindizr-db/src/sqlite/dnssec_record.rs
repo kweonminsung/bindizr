@@ -100,7 +100,11 @@ pub(crate) async fn delete_many_tx(
         let mut sql = String::from("DELETE FROM dnssec_records WHERE id IN (");
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 { "?" } else { ",?" });
+            sql.push_str(if i == 0 {
+                "?"
+            } else {
+                ",?"
+            });
         }
 
         sql.push(')');

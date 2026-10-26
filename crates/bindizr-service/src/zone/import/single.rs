@@ -3,7 +3,7 @@
 use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 
-use super::{ImportOptions, ImportSource, MissingZoneAction};
+use super::{ImportOptions, ImportSource, MissingZoneAction, apply};
 use crate::Context;
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
@@ -64,5 +64,5 @@ pub async fn import(
         }
     };
 
-    super::apply_import(cx, caller, zone_name, source, options).await
+    apply::apply_import(cx, caller, zone_name, source, options).await
 }

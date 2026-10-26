@@ -57,15 +57,15 @@ async def run_one(bench: str, system: str, config: dict) -> dict | None:
     """Set up one system, run its selected workload, and collect the result."""
     label = settings.system_label(config, system)
     print(f"\n=== {bench} :: {label} ({system}) ===", flush=True)
-    proj = project_name(system)
+    project = project_name(system)
 
     # b07 manages its own adapters (one per DB backend) — skip generic setup.
     if bench == "b07_database":
         try:
-            mod = importlib.import_module(RUNNERS[bench])
-            context = {"zone": ZONE, "label": label, "system": system, "project": proj}
+            runner = importlib.import_module(RUNNERS[bench])
+            context = {"zone": ZONE, "label": label, "system": system, "project": project}
 
-            result = await mod.run(None, config, context)
+            result = await runner.run(None, config, context)
 
             rows = result if isinstance(result, list) else [result]
 
@@ -86,7 +86,7 @@ async def run_one(bench: str, system: str, config: dict) -> dict | None:
         kwargs["notify_after_update"] = is_bindizr_notify_enabled(bench)
 
     try:
-        adapter = registry.build_adapter(system, config, proj, **kwargs)
+        adapter = registry.build_adapter(system, config, project, **kwargs)
     except Exception as error:
         print(f"  [SKIP] cannot build adapter: {error}")
         return None
@@ -98,19 +98,19 @@ async def run_one(bench: str, system: str, config: dict) -> dict | None:
 
         await adapter.setup()
 
-        mod = importlib.import_module(RUNNERS[bench])
+        runner = importlib.import_module(RUNNERS[bench])
 
         # A runner that samples its own measured phase sets SELF_SAMPLES; a
         # second sampler would only add `docker stats` load to the same run.
-        if not getattr(mod, "SELF_SAMPLES", False):
-            ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
-            ids = [i for i in ids if i]
-            sampler = ResourceSampler(ids, config["resources"]["sample_interval_secs"])
+        if not getattr(runner, "SELF_SAMPLES", False):
+            container_ids = [adapter.compose.resolve_container_id(service) for service in adapter.resource_services]
+            container_ids = [container_id for container_id in container_ids if container_id]
+            sampler = ResourceSampler(container_ids, config["resources"]["sample_interval_secs"])
             sampler.start()
 
-        context = {"zone": ZONE, "label": label, "system": system, "project": proj}
+        context = {"zone": ZONE, "label": label, "system": system, "project": project}
 
-        result = await mod.run(adapter, config, context)
+        result = await runner.run(adapter, config, context)
 
         resource_usage = sampler.stop() if sampler else {}
         sampler = None
@@ -130,8 +130,8 @@ async def run_one(bench: str, system: str, config: dict) -> dict | None:
         print(f"  [FAIL] {bench}/{system}: {error}")
         traceback.print_exc()
         print("  --- container logs (tail) ---")
-        for s in adapter.resource_services:
-            print(adapter.compose.read_logs(s, tail=30))
+        for service in adapter.resource_services:
+            print(adapter.compose.read_logs(service, tail=30))
         return None
     finally:
         # Workload failures must still stop observation and remove the test stack.
@@ -156,7 +156,7 @@ async def main_async(args) -> None:
     # Systems whose required CLI tool is missing (set by benchmark.sh preflight,
     # e.g. bind9_nsupdate when `nsupdate` is absent) are dropped from every
     # benchmark's matrix rather than attempted and failed.
-    disabled = {s for s in os.environ.get("BENCH_DISABLE_SYSTEMS", "").split(",") if s}
+    disabled = {system for system in os.environ.get("BENCH_DISABLE_SYSTEMS", "").split(",") if system}
 
     if disabled:
         print(f"Skipping systems (required tools unavailable): "
@@ -168,15 +168,15 @@ async def main_async(args) -> None:
     report.RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     for bench in benches:
-        f = report.RAW_DIR / f"{bench}.json"
-        if f.exists():
-            f.unlink()
+        file = report.RAW_DIR / f"{bench}.json"
+        if file.exists():
+            file.unlink()
 
     for bench in benches:
         systems = args.systems or config["benchmarks"].get(bench, [])
-        systems = [s for s in systems
-                   if (s == "bind9_native" or config["systems"].get(s, {}).get("enabled"))
-                   and s not in disabled]
+        systems = [system for system in systems
+                   if (system == "bind9_native" or config["systems"].get(system, {}).get("enabled"))
+                   and system not in disabled]
 
         for system in systems:
             for rep in range(repeats):
@@ -193,15 +193,15 @@ async def main_async(args) -> None:
 
 def main() -> None:
     """Parse benchmark CLI options and start the async orchestrator."""
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-b", "--benchmarks", nargs="*", help="benchmark keys (default: all)")
-    ap.add_argument("-s", "--systems", nargs="*", help="system keys (default: per-benchmark)")
-    ap.add_argument("--list", action="store_true", help="list benchmarks and exit")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--benchmarks", nargs="*", help="benchmark keys (default: all)")
+    parser.add_argument("-s", "--systems", nargs="*", help="system keys (default: per-benchmark)")
+    parser.add_argument("--list", action="store_true", help="list benchmarks and exit")
+    args = parser.parse_args()
 
     if args.list:
-        for k in RUNNERS:
-            print(k)
+        for benchmark in RUNNERS:
+            print(benchmark)
         return
 
     asyncio.run(main_async(args))

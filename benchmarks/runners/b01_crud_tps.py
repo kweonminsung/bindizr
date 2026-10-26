@@ -16,15 +16,15 @@ async def run(adapter, config, context) -> dict:
     """Measure record creation, reading, updating, and deletion throughput."""
     zone = context["zone"]
     crud_config = config["crud"]
-    conc = crud_config["concurrency"]
-    dur = crud_config["duration_secs"]
-    warm = crud_config["warmup_secs"]
-    npool = crud_config["records_prepopulate"]
+    concurrency = crud_config["concurrency"]
+    duration_secs = crud_config["duration_secs"]
+    warmup_secs = crud_config["warmup_secs"]
+    pool_size = crud_config["records_prepopulate"]
 
     await adapter.create_zone(zone)
 
     # Prepopulate a non-destructive pool for READ/UPDATE.
-    pool_records = generate(npool, config["seed"] + 1)
+    pool_records = generate(pool_size, config["seed"] + 1)
 
     for i, record in enumerate(pool_records):
         record["name"] = f"pool{i:07d}"
@@ -41,17 +41,17 @@ async def run(adapter, config, context) -> dict:
         """Create one uniquely named record for the measured workload."""
         record = dict(create_records[seq % len(create_records)])
         record["name"] = f"crt{seq:08d}"
-        h = await adapter.create_record(zone, record)
-        created.append(h)
+        handle = await adapter.create_record(zone, record)
+        created.append(handle)
         return True
 
-    create_rec = await loadgen.run_closed_loop(create_step, conc, dur, warm)
+    create_recorder = await loadgen.run_closed_loop(create_step, concurrency, duration_secs, warmup_secs)
 
     async def read_step(seq: int) -> bool:
         """Read one existing record for the measured workload."""
         return await adapter.get_record(zone, pool_handles[seq % len(pool_handles)])
 
-    read_rec = await loadgen.run_closed_loop(read_step, conc, dur, warm)
+    read_recorder = await loadgen.run_closed_loop(read_step, concurrency, duration_secs, warmup_secs)
 
     async def update_step(seq: int) -> bool:
         """Update only TTL so record-group and ID-based APIs do comparable work."""
@@ -60,34 +60,36 @@ async def run(adapter, config, context) -> dict:
         record["ttl"] = 1800
         return await adapter.update_record(zone, pool_handles[idx], record)
 
-    update_rec = await loadgen.run_closed_loop(update_step, conc, dur, warm)
+    update_recorder = await loadgen.run_closed_loop(update_step, concurrency, duration_secs, warmup_secs)
 
     async def delete_step(seq: int) -> bool:
         """Delete records from the CREATE phase, preserving the read/update pool."""
         return await adapter.delete_record(zone, created[seq])
 
-    delete_rec = (
-        await loadgen.run_n(delete_step, conc, len(created))
+    delete_recorder = (
+        await loadgen.run_n(delete_step, concurrency, len(created))
         if created else None
     )
 
-    cs, rs, us = create_rec.summary(), read_rec.summary(), update_rec.summary()
-    ds = delete_rec.summary() if delete_rec else {"tps": 0, "p95_ms": 0, "error_rate": 0}
-    total_err = (create_rec.errors + read_rec.errors + update_rec.errors
-                 + (delete_rec.errors if delete_rec else 0))
-    total_req = (create_rec.total + read_rec.total + update_rec.total
-                 + (delete_rec.total if delete_rec else 0))
+    create_summary, read_summary, update_summary = (
+        create_recorder.summary(), read_recorder.summary(), update_recorder.summary()
+    )
+    delete_summary = delete_recorder.summary() if delete_recorder else {"tps": 0, "p95_ms": 0, "error_rate": 0}
+    total_errors = (create_recorder.errors + read_recorder.errors + update_recorder.errors
+                 + (delete_recorder.errors if delete_recorder else 0))
+    total_requests = (create_recorder.total + read_recorder.total + update_recorder.total
+                 + (delete_recorder.total if delete_recorder else 0))
 
     return {
         "system": context["label"],
-        "create_tps": cs["tps"],
-        "update_tps": us["tps"],
-        "delete_tps": ds["tps"],
-        "read_tps": rs["tps"],
-        "create_p95_ms": cs["p95_ms"],
-        "read_p95_ms": rs["p95_ms"],
-        "update_p95_ms": us["p95_ms"],
-        "read_p50_ms": rs["p50_ms"],
-        "read_p99_ms": rs["p99_ms"],
-        "error_rate": round(total_err / total_req, 5) if total_req else 0,
+        "create_tps": create_summary["tps"],
+        "update_tps": update_summary["tps"],
+        "delete_tps": delete_summary["tps"],
+        "read_tps": read_summary["tps"],
+        "create_p95_ms": create_summary["p95_ms"],
+        "read_p95_ms": read_summary["p95_ms"],
+        "update_p95_ms": update_summary["p95_ms"],
+        "read_p50_ms": read_summary["p50_ms"],
+        "read_p99_ms": read_summary["p99_ms"],
+        "error_rate": round(total_errors / total_requests, 5) if total_requests else 0,
     }

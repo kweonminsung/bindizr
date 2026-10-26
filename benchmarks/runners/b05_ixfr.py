@@ -21,11 +21,11 @@ BASELINE = 1000
 
 async def _query_serial(zone, host, port):
     """Query a zone's SOA serial from the transfer endpoint."""
-    ok, _, out = await dig.query(zone, "SOA", host, port)
+    ok, _, output = await dig.query(zone, "SOA", host, port)
 
-    if ok and len(out.split()) >= 3:
+    if ok and len(output.split()) >= 3:
         try:
-            return int(out.split()[2])
+            return int(output.split()[2])
         except ValueError:
             return None
 
@@ -35,7 +35,7 @@ async def _query_serial(zone, host, port):
 async def run(adapter, config, context) -> list:
     """Measure incremental transfers after each configured change batch propagates."""
     zone = context["zone"]
-    xe = adapter.xfr_endpoint()
+    endpoint = adapter.xfr_endpoint()
     change_sizes = config.get("ixfr_change_sizes", CHANGE_SIZES)
     baseline = config.get("ixfr_baseline", BASELINE)
 
@@ -53,7 +53,7 @@ async def run(adapter, config, context) -> list:
     propagated = False
 
     while time.monotonic() < deadline:
-        count = await dig.count_axfr_records(zone, xe.host, xe.port)
+        count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
         if count is not None and count >= baseline and count == prev:
             propagated = True
             break
@@ -65,37 +65,37 @@ async def run(adapter, config, context) -> list:
               f'for {context["label"]}')
         return [{
             "system": context["label"],
-            "changes": n,
+            "changes": change_count,
             "status": "FAILED",
             "error": "baseline propagation timeout: zone not fully transferable",
-        } for n in change_sizes]
+        } for change_count in change_sizes]
 
     rows = []
     change_pool = generate(sum(change_sizes) + baseline, config["seed"] + 50, zone)
-    ci = 0
+    change_index = 0
 
-    for n in change_sizes:
+    for change_count in change_sizes:
         # Retry a transient SOA miss rather than defaulting: a made-up base
         # serial has no delta history behind it and forces a full AXFR.
         base_serial = None
 
         for _ in range(10):
-            base_serial = await _query_serial(zone, xe.host, xe.port)
+            base_serial = await _query_serial(zone, endpoint.host, endpoint.port)
             if base_serial is not None:
                 break
             await asyncio.sleep(0.5)
 
         if base_serial is None:
-            print(f"  [SKIP] b05: could not read base serial for {n}-change IXFR")
+            print(f"  [SKIP] b05: could not read base serial for {change_count}-change IXFR")
             continue
 
         batch = []
 
-        for _ in range(n):
-            record = dict(change_pool[ci % len(change_pool)])
-            record["name"] = f"ixfr{ci:07d}"
+        for _ in range(change_count):
+            record = dict(change_pool[change_index % len(change_pool)])
+            record["name"] = f"ixfr{change_index:07d}"
             batch.append(record)
-            ci += 1
+            change_index += 1
 
         await adapter.import_records(zone, batch)
         if adapter.bulk_errors:
@@ -109,8 +109,8 @@ async def run(adapter, config, context) -> list:
         prev = None
 
         while time.monotonic() < deadline:
-            current_serial = await _query_serial(zone, xe.host, xe.port)
-            count = await dig.count_axfr_records(zone, xe.host, xe.port)
+            current_serial = await _query_serial(zone, endpoint.host, endpoint.port)
+            count = await dig.count_axfr_records(zone, endpoint.host, endpoint.port)
 
             if (current_serial is not None and current_serial > base_serial
                     and count is not None and (current_serial, count) == prev):
@@ -122,21 +122,21 @@ async def run(adapter, config, context) -> list:
             await asyncio.sleep(1.0)
 
         if not propagated:
-            print(f"  [FAIL] b05: serial did not advance within 120s for {n}-change IXFR")
+            print(f"  [FAIL] b05: serial did not advance within 120s for {change_count}-change IXFR")
             rows.append({
                 "system": context["label"],
-                "changes": n,
+                "changes": change_count,
                 "status": "FAILED",
                 "error": "propagation timeout: serial did not advance within 120s",
             })
 
             continue
 
-        secs, lines, nbytes = await dig.ixfr(zone, xe.host, xe.port, base_serial)
+        secs, lines, nbytes = await dig.ixfr(zone, endpoint.host, endpoint.port, base_serial)
 
         rows.append({
             "system": context["label"],
-            "changes": n,
+            "changes": change_count,
             "transfer_secs": round(secs, 4),
             "transfer_bytes": nbytes,
             "lines": lines,

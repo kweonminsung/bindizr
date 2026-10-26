@@ -75,12 +75,12 @@ impl RecordOperation {
 /// Apply one authorized nsupdate operation in the current transaction.
 pub(crate) async fn apply_record_operation_tx(
     tx: &mut Transaction<'_>,
-    zone: &Zone,
-    op: &RecordOperation,
-    new_serial: Serial,
     caller: &Caller,
+    zone: &Zone,
+    operation: &RecordOperation,
+    new_serial: Serial,
 ) -> Result<bool, NsupdateError> {
-    match op {
+    match operation {
         RecordOperation::AddRecord {
             name: owner,
             record_type,

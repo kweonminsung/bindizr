@@ -33,13 +33,13 @@ async fn signed_notify_advertises_edns_for_long_names() {
     use bindizr_core::dns::tsig::TransferSigner;
     use bindizr_core::model::role::RoleId;
     use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
-    let long_name = |c: &str| {
+    let long_name = |label: &str| {
         format!(
             "{}.{}.{}.{}",
-            c.repeat(63),
-            c.repeat(63),
-            c.repeat(63),
-            c.repeat(61)
+            label.repeat(63),
+            label.repeat(63),
+            label.repeat(63),
+            label.repeat(61)
         )
     };
 
@@ -105,7 +105,13 @@ async fn signed_notify_advertises_edns_for_long_names() {
             let (len, edns) = capture.await.unwrap();
 
             assert_eq!(edns != Edns::Absent, long);
-            assert!(len <= if long { 1232 } else { 512 });
+            assert!(
+                len <= if long {
+                    1232
+                } else {
+                    512
+                }
+            );
 
             if long {
                 assert!(len > 512);
@@ -290,7 +296,11 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     let id = u16::from_be_bytes([request[0], request[1]]);
     let mut response = build_notify_response(
         id,
-        if error == 0 { 0xa000 | rcode } else { 0xa009 },
+        if error == 0 {
+            0xa000 | rcode
+        } else {
+            0xa009
+        },
         "example.com",
     );
     let mut owner = Vec::new();
@@ -306,7 +316,11 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     variables.extend_from_slice(&[0, 255, 0, 0, 0, 0]);
     variables.extend_from_slice(&algorithm);
     variables.extend_from_slice(time);
-    let other = if error == 18 { time } else { &[] };
+    let other = if error == 18 {
+        time
+    } else {
+        &[]
+    };
     variables.extend_from_slice(&[1, 44]);
     variables.extend_from_slice(&error.to_be_bytes());
     variables.extend_from_slice(&(other.len() as u16).to_be_bytes());

@@ -68,7 +68,7 @@ class KnotAdapter(NsupdateAdapter):
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
 
         if proc.returncode != 0:
-            self._last_err = (proc.stderr or b"").decode(errors="replace").strip()
+            self._last_error = (proc.stderr or b"").decode(errors="replace").strip()
 
         return proc.returncode == 0
 

@@ -39,17 +39,17 @@ class LatencyRecorder:
             return 0.0
         return max(self.ended_at - self.started_at, 1e-9)
 
-    def percentile(self, p: float) -> float:
+    def percentile(self, percent: float) -> float:
         """Interpolate a latency percentile from successful request samples."""
         if not self.latencies_ms:
             return 0.0
 
         data = sorted(self.latencies_ms)
-        k = (len(data) - 1) * (p / 100.0)
-        lo = int(k)
-        hi = min(lo + 1, len(data) - 1)
+        position = (len(data) - 1) * (percent / 100.0)
+        lower = int(position)
+        upper = min(lower + 1, len(data) - 1)
 
-        return data[lo] + (data[hi] - data[lo]) * (k - lo)
+        return data[lower] + (data[upper] - data[lower]) * (position - lower)
 
     def summary(self) -> dict[str, float]:
         """Summarize throughput, error rate, and successful-request latency."""

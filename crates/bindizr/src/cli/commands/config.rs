@@ -84,10 +84,11 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
 
     let message = format!("Configuration file '{}' is valid", path);
 
-    match output {
-        OutputFormat::Table => outln!("Configuration is {}.", color::green("valid")),
+    if output == OutputFormat::Table {
+        outln!("Configuration is {}.", color::green("valid"));
+    } else {
         // Built here rather than by the daemon: the check never reaches one.
-        _ => output::print_payload(&MessageResponse { message }, output)?,
+        output::print_payload(&MessageResponse { message }, output)?;
     }
 
     Ok(())

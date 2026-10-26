@@ -152,10 +152,10 @@ pub async fn list_by_filter_with_zone(
     };
 
     let start = offset.unwrap_or(0);
-    let mut items: Vec<ServedRecord> = Vec::new();
+    let mut records: Vec<ServedRecord> = Vec::new();
 
     if user_plane && start < user_total {
-        items.extend(
+        records.extend(
             bindizr_db::record::list_by_filter_with_zone(cx.db(), record_filter)
                 .await?
                 .into_iter()
@@ -165,10 +165,10 @@ pub async fn list_by_filter_with_zone(
 
     // The derived plane pages after the user plane: it starts where the
     // window passed the user rows and fills what the limit still holds.
-    let remaining = limit.map(|limit| limit.saturating_sub(items.len() as u32));
+    let remaining = limit.map(|limit| limit.saturating_sub(records.len() as u32));
 
     if derived_plane && remaining != Some(0) {
-        items.extend(
+        records.extend(
             bindizr_db::dnssec_record::list_by_filter_with_zone(
                 cx.db(),
                 DnssecRecordFilter {
@@ -183,13 +183,13 @@ pub async fn list_by_filter_with_zone(
         );
     }
 
-    let items = items
+    let records = records
         .iter()
-        .map(|item| super::build_record_response(caller, item))
+        .map(|record| super::build_record_response(caller, record))
         .collect();
 
     Ok(pagination::build_paginated_response(
-        items,
+        records,
         limit,
         offset,
         user_total + derived_total,

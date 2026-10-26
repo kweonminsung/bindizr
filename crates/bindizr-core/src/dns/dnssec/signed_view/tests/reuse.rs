@@ -80,7 +80,7 @@ fn expirations_spread_across_the_jitter_window() {
     let expirations: BTreeSet<DateTime<Utc>> =
         records_of_type(&diff.added, DnssecRecordType::Rrsig)
             .iter()
-            .filter_map(|row| row.expires_at)
+            .filter_map(|record| record.expires_at)
             .collect();
 
     assert!(
@@ -225,12 +225,12 @@ fn record_change_reuses_unaffected_signatures() {
     assert!(
         diff.added
             .iter()
-            .any(|row| row.record_type == DnssecRecordType::Nsec && row.name == zzz)
+            .any(|record| record.record_type == DnssecRecordType::Nsec && record.name == zzz)
     );
     assert!(
         diff.removed
             .iter()
-            .any(|row| row.record_type == DnssecRecordType::Nsec && row.name == www)
+            .any(|record| record.record_type == DnssecRecordType::Nsec && record.name == www)
     );
 }
 

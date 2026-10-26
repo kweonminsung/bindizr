@@ -30,7 +30,11 @@ pub(crate) enum StartDnsError {
     UdpPacketInfo(#[source] std::io::Error),
 
     /// Names the usual cause when the port is already taken.
-    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse { format!(" (another DNS server on this host? change {setting})") } else { String::new() })]
+    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse {
+        format!(" (another DNS server on this host? change {setting})")
+    } else {
+        String::new()
+    })]
     Bind {
         socket: &'static str,
         addr: SocketAddr,

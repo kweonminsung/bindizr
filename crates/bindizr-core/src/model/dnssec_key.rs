@@ -161,7 +161,11 @@ impl DnssecKeyRole {
     /// DNSKEY flags field: ZONE, plus SEP for keys the parent DS names
     /// (RFC 4034, Section 2.1.1).
     pub fn flags(&self) -> u16 {
-        if self.is_sep() { 257 } else { 256 }
+        if self.is_sep() {
+            257
+        } else {
+            256
+        }
     }
 }
 

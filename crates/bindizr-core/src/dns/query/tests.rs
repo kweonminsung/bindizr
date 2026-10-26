@@ -181,9 +181,9 @@ fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: boo
     builder.header_mut().set_qr(true);
     builder.header_mut().set_aa(aa);
     let mut answer = if question {
-        let mut q = builder.question();
-        q.push((apex, Rtype::AXFR)).unwrap();
-        q.answer()
+        let mut question = builder.question();
+        question.push((apex, Rtype::AXFR)).unwrap();
+        question.answer()
     } else {
         builder.answer()
     };

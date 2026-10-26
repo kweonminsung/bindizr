@@ -35,13 +35,15 @@ def _mem_split(resource_usage: dict) -> tuple[float, float]:
 async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
     """Measure create/read throughput, latency, and resource use for one backend."""
     crud_config = config["crud"]
-    conc, dur, warm = crud_config["concurrency"], min(crud_config["duration_secs"], 15), crud_config["warmup_secs"]
-    npool = min(crud_config["records_prepopulate"], 2000)
+    concurrency, duration_secs, warmup_secs = (
+        crud_config["concurrency"], min(crud_config["duration_secs"], 15), crud_config["warmup_secs"]
+    )
+    pool_size = min(crud_config["records_prepopulate"], 2000)
 
     # Populate the read workload's record pool before resource sampling starts.
     await adapter.create_zone(zone)
 
-    pool = generate(npool, config["seed"] + 1)
+    pool = generate(pool_size, config["seed"] + 1)
     handles = []
 
     for i, record in enumerate(pool):
@@ -65,22 +67,22 @@ async def _bench_backend(adapter, config, zone, label, pairing) -> dict:
             return await adapter.get_record(zone, handles[seq % len(handles)])
 
         # Measure create and read separately, each with its own unrecorded warmup.
-        create_run = await loadgen.run_closed_loop(create_step, conc, dur, warm)
-        read_run = await loadgen.run_closed_loop(read_step, conc, dur, warm)
+        create_recorder = await loadgen.run_closed_loop(create_step, concurrency, duration_secs, warmup_secs)
+        read_recorder = await loadgen.run_closed_loop(read_step, concurrency, duration_secs, warmup_secs)
     resource_usage = sampler.summary()
 
-    cs, rs = create_run.summary(), read_run.summary()
+    create_summary, read_summary = create_recorder.summary(), read_recorder.summary()
     bindizr_mem, db_mem = _mem_split(resource_usage)
 
     return {
         "system": pairing,
         "backend": label,
-        "create_tps": cs["tps"],
-        "read_tps": rs["tps"],
-        "create_p95_ms": cs["p95_ms"],
-        "read_p95_ms": rs["p95_ms"],
+        "create_tps": create_summary["tps"],
+        "read_tps": read_summary["tps"],
+        "create_p95_ms": create_summary["p95_ms"],
+        "read_p95_ms": read_summary["p95_ms"],
         "error_rate": round(
-            (create_run.errors + read_run.errors) / max(create_run.total + read_run.total, 1), 5
+            (create_recorder.errors + read_recorder.errors) / max(create_recorder.total + read_recorder.total, 1), 5
         ),
         "peak_mem_mb": resource_usage.get("peak_mem_mb", 0),
         "bindizr_peak_mem_mb": bindizr_mem,
@@ -99,11 +101,11 @@ async def _bulk_backend(adapter, config, zone, backend, size, pairing) -> dict:
 
     sampler = sampler_for(adapter, config)
     with sampler:
-        t0 = time.monotonic()
+        started = time.monotonic()
 
         await adapter.import_records(zone, records)
 
-        elapsed = time.monotonic() - t0
+        elapsed = time.monotonic() - started
     resource_usage = sampler.summary()
 
     # Adapters count failures instead of raising, so rate off what landed —
@@ -137,9 +139,9 @@ async def run(_adapter, config, context) -> list:
     system = context["system"]
 
     for backend in config["databases"]:
-        proj = f"bench-{system.replace('_', '-')}-db-{backend}"
+        project = f"bench-{system.replace('_', '-')}-db-{backend}"
         # notify off: isolate database write throughput from NOTIFY/XFR cost.
-        adapter = registry.build_adapter(system, config, proj, db_type=backend,
+        adapter = registry.build_adapter(system, config, project, db_type=backend,
                                  notify_after_update=False)
 
         try:

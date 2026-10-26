@@ -25,12 +25,12 @@ API_MAX_CONNECTIONS = 8
 
 def _content(record: dict) -> str:
     """Render a benchmark record in the PowerDNS API content format."""
-    v = record["value"]
+    value = record["value"]
     if record["type"] == "MX":
-        return f'{record.get("priority", 10)} {v}'
+        return f'{record.get("priority", 10)} {value}'
     if record["type"] == "TXT":
-        return v if v.startswith('"') else f'"{v}"'
-    return v
+        return value if value.startswith('"') else f'"{value}"'
+    return value
 
 
 class PowerDnsAdapter(DnsAdapter):
@@ -81,11 +81,11 @@ class PowerDnsAdapter(DnsAdapter):
 
     async def create_zone(self, zone: str) -> None:
         """Create the zone used by the benchmark."""
-        z = zone if zone.endswith(".") else zone + "."
+        zone_name = zone if zone.endswith(".") else zone + "."
         body = {
-            "name": z,
+            "name": zone_name,
             "kind": "Native",
-            "nameservers": [f"ns1.{z}"],
+            "nameservers": [f"ns1.{zone_name}"],
         }
 
         async with self.session.post(self.base + "/zones", json=body) as response:
@@ -94,21 +94,21 @@ class PowerDnsAdapter(DnsAdapter):
 
     async def delete_zone(self, zone: str) -> None:
         """Remove the benchmark zone and its records."""
-        z = zone if zone.endswith(".") else zone + "."
-        async with self.session.delete(self.base + f"/zones/{z}") as response:
+        zone_name = zone if zone.endswith(".") else zone + "."
+        async with self.session.delete(self.base + f"/zones/{zone_name}") as response:
             await response.read()
 
     async def _patch(self, zone: str, name: str, rtype: str, changetype: str,
                      record: dict | None) -> bool:
         """Submit a record-group change through the PowerDNS API."""
-        z = zone if zone.endswith(".") else zone + "."
+        zone_name = zone if zone.endswith(".") else zone + "."
         rrset = {"name": self._fqdn(zone, name), "type": rtype, "changetype": changetype}
 
         if changetype == "REPLACE":
             rrset["ttl"] = record.get("ttl", 3600)
             rrset["records"] = [{"content": _content(record), "disabled": False}]
 
-        async with self.session.patch(self.base + f"/zones/{z}", json={"rrsets": [rrset]}) as response:
+        async with self.session.patch(self.base + f"/zones/{zone_name}", json={"rrsets": [rrset]}) as response:
             await response.read()
             return response.status in (200, 204)
 
@@ -120,7 +120,7 @@ class PowerDnsAdapter(DnsAdapter):
 
     async def import_records(self, zone: str, records: list[dict]) -> None:
         """Import records in batched PowerDNS PATCH requests for throughput."""
-        z = zone if zone.endswith(".") else zone + "."
+        zone_name = zone if zone.endswith(".") else zone + "."
         batch = 500
 
         for start in range(0, len(records), batch):
@@ -132,7 +132,7 @@ class PowerDnsAdapter(DnsAdapter):
                 "records": [{"content": _content(record), "disabled": False}],
             } for record in records[start:start + batch]]
 
-            async with self.session.patch(self.base + f"/zones/{z}",
+            async with self.session.patch(self.base + f"/zones/{zone_name}",
                                           json={"rrsets": rrsets}) as response:
                 if response.status not in (200, 204):
                     raise RuntimeError(f"bulk PATCH {response.status}: {await response.text()}")
@@ -140,8 +140,8 @@ class PowerDnsAdapter(DnsAdapter):
     async def get_record(self, zone: str, handle: str) -> bool:
         """Check whether the record identified by the handle is present."""
         fqdn, rtype = handle.rsplit("|", 1)
-        z = zone if zone.endswith(".") else zone + "."
-        url = self.base + f"/zones/{z}?rrset_name={fqdn}&rrset_type={rtype}"
+        zone_name = zone if zone.endswith(".") else zone + "."
+        url = self.base + f"/zones/{zone_name}?rrset_name={fqdn}&rrset_type={rtype}"
 
         async with self.session.get(url) as response:
             if response.status != 200:
