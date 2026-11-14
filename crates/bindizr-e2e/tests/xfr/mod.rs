@@ -897,7 +897,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
 }
 
 /// Poll transfer counts until `field` reaches `expected`, returning the last summary on timeout.
-/// Saving follows the transfer response, so an immediate read may still see the old row.
+/// Saving follows the transfer response, so an immediate read may not see the new row yet.
 async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) -> Value {
     let deadline = Instant::now() + Duration::from_secs(5);
 
@@ -916,7 +916,7 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
     }
 }
 
-/// Verify per-zone transfer history, including refusals before secondary registration.
+/// Verify the transfer log and its per-zone summary, including refusals before secondary registration.
 #[tokio::test]
 #[serial]
 async fn transfer_history_returns_served_secondary_transfers() {
@@ -959,6 +959,43 @@ async fn transfer_history_returns_served_secondary_transfers() {
     assert_eq!(body["transfers"][0]["serial"], zone["serial"], "{body}");
     assert!(body["transfers"][0]["error"].is_null(), "{body}");
     assert_eq!(body["transfers"][0]["address"], "127.0.0.1");
+
+    // The log keeps the refusal beneath the transfer that followed it.
+    assert_eq!(body["transfers"][1]["result"], "refused", "{body}");
+    assert_eq!(
+        body["transfers"].as_array().map(Vec::len),
+        Some(2),
+        "{body}"
+    );
+
+    // A time window past both leaves the summary and empties the list, and
+    // one that ends before it starts is refused.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            "/secondaries/loopback/transfers?until=2000-01-01T00:00:00Z",
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["axfr"], 1, "{body}");
+    assert_eq!(
+        body["transfers"].as_array().map(Vec::len),
+        Some(0),
+        "{body}"
+    );
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            "/secondaries/loopback/transfers?since=2026-01-02T00:00:00Z&until=2026-01-01T00:00:00Z",
+            None,
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_INPUT", "{body}");
 
     // A zone filter for another zone leaves the summary and empties the list.
     let (status, body) = app

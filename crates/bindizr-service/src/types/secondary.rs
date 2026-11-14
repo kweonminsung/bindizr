@@ -3,7 +3,7 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::model::secondary::SecondaryId;
 use bindizr_core::model::transfer::{
-    TransferKind, TransferResult, TransferTransport, TransferWithZone,
+    TransferKind, TransferLogWithZone, TransferResult, TransferTransport,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -143,9 +143,9 @@ pub struct TransferResponse {
     pub error: Option<String>,
 }
 
-impl From<&TransferWithZone> for TransferResponse {
+impl From<&TransferLogWithZone> for TransferResponse {
     /// Build the payload of one saved transfer.
-    fn from(transfer: &TransferWithZone) -> Self {
+    fn from(transfer: &TransferLogWithZone) -> Self {
         TransferResponse {
             address: transfer.client_addr.clone(),
             zone_name: transfer.zone_name.to_string(),
@@ -221,6 +221,12 @@ pub struct SecondaryTransferFilter {
     /// Only the transfers of this zone.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
+    /// Only transfers answered at or after this time (RFC 3339).
+    #[schema(example = "2026-10-01T00:00:00Z")]
+    pub since: Option<DateTime<Utc>>,
+    /// Only transfers answered before this time (RFC 3339).
+    #[schema(example = "2026-11-01T00:00:00Z")]
+    pub until: Option<DateTime<Utc>>,
 }
 
 impl CheckSecondaryResponse {

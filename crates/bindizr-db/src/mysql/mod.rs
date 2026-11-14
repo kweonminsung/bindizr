@@ -11,7 +11,7 @@ pub(crate) mod record;
 pub(crate) mod role;
 pub(crate) mod role_grant;
 pub(crate) mod secondary;
-pub(crate) mod transfer;
+pub(crate) mod transfer_log;
 pub(crate) mod tsig_key;
 pub(crate) mod zone;
 pub(crate) mod zone_change;

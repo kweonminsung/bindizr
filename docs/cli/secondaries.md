@@ -100,10 +100,10 @@ it; `-o json` carries the same fields.
 
 ## What it pulled
 
-Bindizr keeps the latest transfer it served each client address per zone,
-refusals and failures included. `bindizr secondary transfers <name>` reads
-it back for the addresses the secondary resolves to, `zone status` shows the
-same transfer per zone in its `LAST-TRANSFER` column, and `doctor` prints the
+Bindizr logs every transfer it answered each client address, refusals and
+failures included. `bindizr secondary transfers <name>` lists them newest
+first for the addresses the secondary resolves to, `zone status` shows each
+zone's last transfer in its `LAST-TRANSFER` column, and `doctor` prints the
 summary per secondary:
 
 ```text
@@ -112,6 +112,7 @@ ZONE            TRANSFER     TRANSPORT  SERIAL  ADDRESS     AT                  
 example.com     IXFR delta   TLS        42      10.0.0.14   2026-09-28T09:41:05Z  -
 example.net     AXFR         TLS        7       10.0.0.14   2026-09-28T09:40:58Z  -
 internal.test   refused      TCP        -       10.0.0.14   2026-09-28T09:40:58Z  role does not permit 'zone:transfer' in zone 'internal.test'
+example.com     IXFR delta   TLS        41      10.0.0.14   2026-09-28T09:12:31Z  -
 3 zones: 1 IXFR delta, 0 IXFR full, 1 AXFR, 1 refused, 0 failed
 ```
 
@@ -122,9 +123,16 @@ catalogs (RFC 1995, Section 2).
 UDP IXFRs return the current SOA. Serial comparisons follow RFC 1982, Section 3.2.
 `TRANSPORT` says whether the request came over plain TCP or TLS, and `zone
 status` marks a TLS transfer with `over TLS`.
-`--zone` narrows the list and `--limit` shortens it; the summary counts every
-zone regardless. The rows are in the database, so a restart keeps them and
-deleting a zone drops them.
+`--zone` narrows the list, `--since` and `--until` bound it in time (a span
+ago such as `7d`, a UTC date, or RFC 3339), and `--limit` shortens it; the
+summary counts each zone's last transfer regardless. The rows are in the
+database, so a restart keeps them and deleting a zone drops them.
+
+The log keeps `history.transfer.max_days` of transfers (90 by default; `0`
+keeps them forever), and each client's last transfer of a zone beyond that.
+`history.transfer.save = "unserved"` logs refusals and failures alone, so the
+summary and `LAST-TRANSFER` then show no successful transfer — see
+[Configuration](../configuration.md).
 
 Secondaries are also manageable over the HTTP API (`/secondaries`, with
 `POST /secondaries/{name}/check` for the check and

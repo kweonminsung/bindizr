@@ -79,9 +79,15 @@ data:
     expire = {{ int64 .Values.bindizr.zoneDefaults.expire }}
     minimum_ttl = {{ .Values.bindizr.zoneDefaults.minimumTtl }}
 
-    [history]
-    zone_max_days = {{ .Values.bindizr.history.zoneMaxDays }}
-    audit_max_days = {{ .Values.bindizr.history.auditMaxDays }}
+    [history.zone]
+    max_days = {{ .Values.bindizr.history.zone.maxDays }}
+
+    [history.audit]
+    max_days = {{ .Values.bindizr.history.audit.maxDays }}
+
+    [history.transfer]
+    save = "{{ .Values.bindizr.history.transfer.save }}"
+    max_days = {{ .Values.bindizr.history.transfer.maxDays }}
 
     [logging]
     level = "{{ .Values.bindizr.logging.level }}"

@@ -230,9 +230,17 @@ fn print_config(config: &Config) {
     print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
     outln!();
 
-    print_section("history");
-    print_value("zone_max_days", config.history.zone_max_days);
-    print_value("audit_max_days", config.history.audit_max_days);
+    print_section("history.zone");
+    print_value("max_days", config.history.zone.max_days);
+    outln!();
+
+    print_section("history.audit");
+    print_value("max_days", config.history.audit.max_days);
+    outln!();
+
+    print_section("history.transfer");
+    print_value("save", config.history.transfer.save);
+    print_value("max_days", config.history.transfer.max_days);
     outln!();
 
     print_section("logging");

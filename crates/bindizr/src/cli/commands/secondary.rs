@@ -5,11 +5,12 @@ use bindizr_service::types::{
     PaginatedResponse, SecondaryResponse, SecondaryStatus, SecondaryTransferFilter,
     SecondaryTransfersResponse, SingleSecondaryResponse, UpdateSecondaryRequest,
 };
+use chrono::{DateTime, Utc};
 use clap::Subcommand;
 
 use crate::cli::error::CliError;
-use crate::cli::output;
 use crate::cli::output::{OutputFormat, RenderOutputError, SecondaryRow, TransferRow};
+use crate::cli::{output, time};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
@@ -94,6 +95,13 @@ pub(crate) enum SecondaryCommand {
         /// Only the transfers of this zone
         #[arg(long, value_name = "ZONE")]
         zone: Option<String>,
+        /// Only transfers at or after this time: a span ago (7d, 12h, 30m), a
+        /// UTC date (2026-10-01), or RFC 3339
+        #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
+        since: Option<DateTime<Utc>>,
+        /// Only transfers before this time, in the same forms
+        #[arg(long, value_name = "TIME", value_parser = time::parse_time)]
+        until: Option<DateTime<Utc>>,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -175,6 +183,8 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             name,
             limit,
             zone,
+            since,
+            until,
             output,
         } => {
             let response = client::send_command::<SecondaryTransfersResponse>(
@@ -183,6 +193,8 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     filter: SecondaryTransferFilter {
                         limit,
                         zone_name: zone,
+                        since,
+                        until,
                     },
                 },
             )

@@ -83,8 +83,16 @@ bindizr:
     # Days of history kept; older entries are pruned by the scheduler pass
     # (0 = forever). Zone versions serve diff, rollback, and incremental
     # updates to secondaries; the audit log says who changed what.
-    zoneMaxDays: 365
-    auditMaxDays: 365
+    zone:
+      maxDays: 365
+    audit:
+      maxDays: 365
+    # The transfer log: the zone transfers each client was answered. `save`
+    # is all, or unserved for refusals and failures alone; each client's last
+    # transfer of a zone stays past maxDays.
+    transfer:
+      save: all
+      maxDays: 90
 
   logging:
     level: info

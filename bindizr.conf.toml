@@ -64,9 +64,15 @@ file_path = "/var/lib/bindizr/bindizr.db"
 # expire = 3600000              # SOA expire
 # minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
-[history]                     # Days of history kept; older entries are pruned by the scheduler pass (0 = forever)
-# zone_max_days = 365           # Zone versions: diff and rollback, and incremental updates to secondaries
-# audit_max_days = 365          # Audit log entries: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
+[history.zone]                # Zone versions: diff and rollback, and incremental updates to secondaries
+# max_days = 365              # Days kept; older entries are pruned by the scheduler pass (0 = forever)
+
+[history.audit]               # Audit log: who changed a token, role, grant, key, secondary, or policy, or deleted a zone
+# max_days = 365              # Days kept (0 = forever)
+
+[history.transfer]            # Transfer log: the zone transfers each client was answered
+# save = "all"                # all, or unserved for refusals and failures alone
+# max_days = 90               # Days kept (0 = forever); each client's last transfer of a zone stays
 
 [logging]
 # level = "info"                # error, warn, info, debug, trace

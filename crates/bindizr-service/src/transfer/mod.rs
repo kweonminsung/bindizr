@@ -1,13 +1,17 @@
-//! Persist each client's latest transfer, refusal or failure per zone across restarts and instances.
+//! The transfer log: each transfer, refusal, or failure a client was answered,
+//! kept across restarts and instances.
 
+use std::cmp::Reverse;
 use std::net::IpAddr;
 
+use bindizr_core::config::SavedTransfers;
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::transfer::{
-    Transfer, TransferKind, TransferResult, TransferTransport, TransferWithZone,
+    TransferKind, TransferLog, TransferLogWithZone, TransferResult, TransferTransport,
 };
 use bindizr_core::model::zone::ZoneId;
+use bindizr_db::transfer_log::TransferLogFilter;
 use chrono::Utc;
 
 use crate::Context;
@@ -24,9 +28,14 @@ pub async fn save_ok(
     incremental: bool,
     serial: Serial,
 ) {
-    let saved = bindizr_db::transfer::upsert(
+    // `history.transfer.save = "unserved"` keeps refusals and failures alone.
+    if cx.config().history.transfer.save == SavedTransfers::Unserved {
+        return;
+    }
+
+    let saved = bindizr_db::transfer_log::create(
         cx.db(),
-        Transfer {
+        TransferLog {
             client_addr: client.to_string(),
             zone_id,
             kind,
@@ -111,9 +120,9 @@ async fn save_unserved(
             return;
         }
     };
-    let saved = bindizr_db::transfer::upsert(
+    let saved = bindizr_db::transfer_log::create(
         cx.db(),
-        Transfer {
+        TransferLog {
             client_addr: client.to_string(),
             zone_id: zone.id,
             kind,
@@ -132,47 +141,73 @@ async fn save_unserved(
     }
 }
 
-/// The transfers served to any of `clients`, newest first.
+/// The transfers `filter` selects among those answered to any of `clients`,
+/// newest first.
 pub(crate) async fn list_by_clients(
     cx: &Context,
     clients: &[IpAddr],
-) -> Result<Vec<TransferWithZone>, ServiceError> {
-    let mut transfers = Vec::new();
+    filter: &TransferLogFilter,
+) -> Result<Vec<TransferLogWithZone>, ServiceError> {
+    let mut logs = Vec::new();
 
     for client in clients {
-        transfers.extend(
-            bindizr_db::transfer::list_by_client_addr_with_zone(cx.db(), &client.to_string())
-                .await?,
+        logs.extend(
+            bindizr_db::transfer_log::list_by_client_addr_and_filter_with_zone(
+                cx.db(),
+                &client.to_string(),
+                filter,
+            )
+            .await?,
         );
     }
 
-    transfers.sort_by_key(|transfer| std::cmp::Reverse(transfer.served_at));
+    // Each address gave its newest `limit`, so the newest of them all are here.
+    logs.sort_by_key(|log| Reverse(log.served_at));
 
-    Ok(transfers)
+    if let Some(limit) = filter.limit {
+        logs.truncate(limit as usize);
+    }
+
+    Ok(logs)
 }
 
-/// The latest transfer of `zone_name` served to any of `clients`.
+/// The latest transfer of each zone answered to each of `clients`.
+pub(crate) async fn list_latest_by_clients(
+    cx: &Context,
+    clients: &[IpAddr],
+) -> Result<Vec<TransferLogWithZone>, ServiceError> {
+    let mut logs = Vec::new();
+
+    for client in clients {
+        logs.extend(
+            bindizr_db::transfer_log::list_by_client_addr_with_zone_latest_per_zone(
+                cx.db(),
+                &client.to_string(),
+            )
+            .await?,
+        );
+    }
+
+    Ok(logs)
+}
+
+/// The latest transfer of `zone_name` answered to any of `clients`.
 pub(crate) async fn find_by_clients_and_zone_name(
     cx: &Context,
     clients: &[IpAddr],
     zone_name: &ZoneName,
-) -> Result<Option<TransferWithZone>, ServiceError> {
-    let mut latest: Option<TransferWithZone> = None;
+) -> Result<Option<TransferLogWithZone>, ServiceError> {
+    let filter = TransferLogFilter {
+        zone_name: Some(zone_name.clone()),
+        limit: Some(1),
+        ..TransferLogFilter::default()
+    };
 
-    for client in clients {
-        if let Some(transfer) = bindizr_db::transfer::get_by_client_addr_and_zone_name_with_zone(
-            cx.db(),
-            &client.to_string(),
-            zone_name,
-        )
+    Ok(list_by_clients(cx, clients, &filter)
         .await?
-            && latest
-                .as_ref()
-                .is_none_or(|found| transfer.served_at > found.served_at)
-        {
-            latest = Some(transfer);
-        }
-    }
-
-    Ok(latest)
+        .into_iter()
+        .next())
 }
+
+#[cfg(test)]
+mod tests;

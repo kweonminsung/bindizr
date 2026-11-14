@@ -1,5 +1,5 @@
-//! The latest transfer Bindizr served, refused, or failed for one client and
-//! one zone: what a secondary pulled.
+//! The transfer log: every transfer Bindizr served, refused, or failed for a
+//! client address and a zone, which is what a secondary pulled.
 
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
@@ -195,10 +195,10 @@ impl TryFrom<String> for TransferTransport {
     }
 }
 
-/// The latest transfer served to one client address for one zone, as it is
-/// written; a refusal or failure keeps its reason and no serial.
+/// One transfer answered to a client address for a zone, as it is written; a
+/// refusal or failure keeps its reason and no serial.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transfer {
+pub struct TransferLog {
     pub client_addr: String,
     pub zone_id: ZoneId,
     /// The transfer the client asked for.
@@ -216,9 +216,9 @@ pub struct Transfer {
     pub error: Option<String>,
 }
 
-/// A transfer joined with its zone's name, as the listings return it.
+/// A transfer log row joined with its zone's name, as the listings return it.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-pub struct TransferWithZone {
+pub struct TransferLogWithZone {
     pub client_addr: String,
     #[sqlx(try_from = "String")]
     pub kind: TransferKind,
