@@ -54,19 +54,6 @@ pub(crate) struct Cli {
     log_level: String,
 }
 
-/// The validated adapter settings the listeners and the upstream client start from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AdapterConfig {
-    /// Normalized base URL without a trailing slash.
-    pub(crate) bindizr_url: String,
-    pub(crate) token: Option<String>,
-    pub(crate) ca_file: Option<String>,
-    pub(crate) listen_addr: SocketAddr,
-    pub(crate) health_listen_addr: SocketAddr,
-    pub(crate) timeout_secs: u64,
-    pub(crate) log_level: LogLevel,
-}
-
 /// Why the command line does not describe a runnable adapter.
 #[derive(Debug, Error)]
 pub(crate) enum LoadAdapterConfigError {
@@ -92,6 +79,19 @@ pub(crate) enum LoadAdapterConfigError {
         #[source]
         source: ConfigError,
     },
+}
+
+/// The validated adapter settings the listeners and the upstream client start from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AdapterConfig {
+    /// Normalized base URL without a trailing slash.
+    pub(crate) bindizr_url: String,
+    pub(crate) token: Option<String>,
+    pub(crate) ca_file: Option<String>,
+    pub(crate) listen_addr: SocketAddr,
+    pub(crate) health_listen_addr: SocketAddr,
+    pub(crate) timeout_secs: u64,
+    pub(crate) log_level: LogLevel,
 }
 
 impl AdapterConfig {

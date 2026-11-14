@@ -502,7 +502,9 @@ fn extract_ds_record_set_rejects_an_error_rcode() {
 
     assert!(matches!(
         extract_ds_record_set(42, &child, &response),
-        Err(ParseResponseError::Rcode(OptRcode::REFUSED))
+        Err(ParseResponseError::Rcode {
+            rcode: OptRcode::REFUSED
+        })
     ));
 }
 
@@ -547,7 +549,7 @@ fn responses_reject_extended_rcodes() {
         append_opt(&mut ds, rcode, 0);
 
         assert!(
-            matches!(extract_ds_record_set(42, &child, &ds), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            matches!(extract_ds_record_set(42, &child, &ds), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
             "DS did not preserve {code}"
         );
 
@@ -555,7 +557,7 @@ fn responses_reject_extended_rcodes() {
         append_opt(&mut soa, rcode, 0);
 
         assert!(
-            matches!(extract_soa_serial(42, &child, &soa), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            matches!(extract_soa_serial(42, &child, &soa), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
             "SOA did not preserve {code}"
         );
 
@@ -563,7 +565,7 @@ fn responses_reject_extended_rcodes() {
         append_opt(&mut transfer, rcode, 0);
 
         assert!(
-            matches!(extract_transfer_records(42, &child, TransferMessagePosition::First, &transfer), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            matches!(extract_transfer_records(42, &child, TransferMessagePosition::First, &transfer), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
             "AXFR did not preserve {code}"
         );
 

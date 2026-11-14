@@ -96,7 +96,7 @@ fn normalize_zone_names_canonicalizes_and_drops_repeats() {
 
     assert_eq!(
         zone_names,
-        vec![
+        [
             ZoneName::parse("example.com").unwrap(),
             ZoneName::parse("example.net").unwrap(),
         ]

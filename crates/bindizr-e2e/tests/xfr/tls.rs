@@ -66,18 +66,18 @@ fn exchange_signed_boundary_transfer<S: io::Read + io::Write>(
     let mut soa_count = 0;
 
     while soa_count < 2 {
-        let mut message =
-            Message::from_octets(dns::read_frame(stream).unwrap().expect("closing SOA")).unwrap();
+        let response = dns::read_frame(stream).unwrap().expect("closing SOA");
+        let mut response = Message::from_octets(response).unwrap();
 
-        assert_eq!(message.header().rcode(), Rcode::NOERROR);
-        client.answer(&mut message, Time48::now()).unwrap();
-        soa_count += message
+        assert_eq!(response.header().rcode(), Rcode::NOERROR);
+        client.answer(&mut response, Time48::now()).unwrap();
+        soa_count += response
             .answer()
             .unwrap()
             .map(Result::unwrap)
             .filter(|record| record.rtype() == Rtype::SOA)
             .count();
-        messages.push(message);
+        messages.push(response);
     }
 
     client.done().unwrap();
@@ -159,6 +159,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let base_serial = app.read_zone_serial(&zone_name).await;
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -341,7 +342,7 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
         assert_eq!(response.header_counts().ancount(), 1);
 
         if stage == 2 {
-            let long_name = format!(
+            let long_tsig_key_name = format!(
                 "{}.{}.{}.{}",
                 "a".repeat(63),
                 "b".repeat(63),
@@ -349,7 +350,7 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
                 "d".repeat(61)
             );
 
-            let long_key = tsig::create_tsig_key(&app, &long_name, KeyRole::Admin).await;
+            let long_key = tsig::create_tsig_key(&app, &long_tsig_key_name, KeyRole::Admin).await;
 
             for tcp in [false, true] {
                 let mut question = MessageBuilder::new_vec().question();
@@ -632,10 +633,8 @@ async fn truncated_tls_queries_follow_tsig_validation_order() {
                 query[mac_end] ^= 1;
             }
 
-            let response = Message::from_octets(
-                dns::exchange_tls(app.dns_tls_port(), &query, dot_client(&app)).unwrap(),
-            )
-            .unwrap();
+            let response = dns::exchange_tls(app.dns_tls_port(), &query, dot_client(&app)).unwrap();
+            let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().id(), 3225);
             assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
@@ -800,6 +799,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
 
     let refused = app.run_cli(&args, None).await;
     crate::common::assert_cli_failure_contains(&args, &refused, "nothing was reloaded");
+
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
     let outcome =
         dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");

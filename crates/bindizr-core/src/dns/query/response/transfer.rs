@@ -4,6 +4,7 @@ use domain::base::Name;
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::rdata::AllRecordData;
 
+use crate::dns::query::response;
 use crate::dns::query::response::ParseResponseError;
 use crate::dns::record::Rdata;
 
@@ -27,17 +28,16 @@ pub fn extract_transfer_records(
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {
     use domain::base::rdata::ComposeRecordData;
 
-    let message =
-        crate::dns::query::response::parse_response_header(query_id, Opcode::QUERY, response)?;
+    let message = response::parse_response_header(query_id, Opcode::QUERY, response)?;
 
     if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {
-        crate::dns::query::response::validate_question(&message, qname, Rtype::AXFR)?;
+        response::validate_question(&message, qname, Rtype::AXFR)?;
     }
 
-    let rcode = crate::dns::query::response::response_rcode(&message)?;
+    let rcode = response::response_rcode(&message)?;
 
     if rcode != OptRcode::NOERROR {
-        return Err(ParseResponseError::Rcode(rcode));
+        return Err(ParseResponseError::Rcode { rcode });
     }
 
     let answer = message

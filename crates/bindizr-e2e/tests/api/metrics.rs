@@ -61,12 +61,14 @@ async fn serial_bumps_count_only_committed_versions() {
 
     app.create_zone_cli(&first_zone_name, "3600").await;
     app.create_zone_cli(&second_zone_name, "3600").await;
+
     let (_, before) = app.send_request(Method::GET, "/metrics", None).await;
     let before = metric_value(before.as_str().unwrap(), "bindizr_zone_serial_bumps_total");
 
     assert_eq!(before, 2.0);
 
     let base_serial = app.read_zone_serial(&first_zone_name).await;
+
     let (status, body) = app
         .send_request(
             Method::POST,

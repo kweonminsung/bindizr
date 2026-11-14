@@ -293,7 +293,6 @@ async fn apply_signed_view_tx(
 mod tests {
     use bindizr_core::model::dnssec_key::DnssecAlgorithm;
     use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
-    use chrono::Utc;
 
     use super::*;
 

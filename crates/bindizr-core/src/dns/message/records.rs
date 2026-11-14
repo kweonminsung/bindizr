@@ -1,5 +1,7 @@
 //! Stored records, SOA versions, and catalog members as response answers.
 
+use domain::base::iana::Rtype;
+
 use crate::dns;
 use crate::dns::dnssec::EncodeWireNameError;
 use crate::dns::message::{DnsMessageBuilder, EncodeMessageError, Name};
@@ -11,9 +13,6 @@ use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
 use crate::model::zone_change::{JournalRecordType, ZoneChange};
 use crate::model::zone_version::ZoneVersion;
-
-/// SOA is synthesized rather than stored as a user record.
-const SOA_WIRE_TYPE: u16 = 6;
 
 impl DnsMessageBuilder {
     /// Append one journal change to a DNS transfer message.
@@ -59,7 +58,7 @@ impl DnsMessageBuilder {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
             zone.name.to_wire_name()?,
-            SOA_WIRE_TYPE,
+            Rtype::SOA.to_int(),
             zone.default_ttl.as_secs(),
             rdata,
         )
@@ -82,7 +81,7 @@ impl DnsMessageBuilder {
         .to_rdata()?;
         self.add_raw_rdata(
             catalog_zone.name.to_wire_name()?,
-            SOA_WIRE_TYPE,
+            Rtype::SOA.to_int(),
             catalog_zone.default_ttl.as_secs(),
             rdata,
         )
@@ -104,7 +103,7 @@ impl DnsMessageBuilder {
         // IXFR SOA owner is the transfer QNAME.
         self.add_raw_rdata(
             self.qname.clone(),
-            SOA_WIRE_TYPE,
+            Rtype::SOA.to_int(),
             version.default_ttl.as_secs(),
             rdata,
         )
@@ -128,9 +127,9 @@ impl DnsMessageBuilder {
 
     /// Add the catalog-zone NS record, which is the placeholder "invalid".
     pub fn add_catalog_ns(&mut self, catalog_zone: &CatalogZone) -> Result<(), EncodeMessageError> {
-        let owner_name = catalog_zone.name.to_fqdn();
+        let apex_name = catalog_zone.name.to_fqdn();
         self.add_text_rdata(
-            &owner_name,
+            &apex_name,
             RecordType::Ns,
             "invalid",
             catalog_zone.default_ttl.as_secs(),

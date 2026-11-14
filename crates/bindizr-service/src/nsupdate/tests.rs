@@ -62,9 +62,7 @@ fn parser_errors_retain_their_sources() {
         Some(&shape)
     );
 
-    let parse = ParseUpdateError::Rdata {
-        record_type: "A".to_string(),
-    };
+    let parse = ParseUpdateError::Rdata { record_type: "A" };
     let error = NsupdateError::from(parse.clone());
 
     assert_eq!(error.rcode(), Rcode::FORMERR);

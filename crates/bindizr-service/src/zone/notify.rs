@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use bindizr_core::model::role_grant::Action;
 
-use crate::Context;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::notify::NotifyTarget;
 use crate::types::{MessageResponse, NotifySerial};
+use crate::{Context, notify, zone};
 
 /// Send a manual NOTIFY for one zone or all zones, bumping the serial
 /// first when `serial` says to; an all-zones round runs the zones concurrently.
@@ -28,25 +28,25 @@ pub async fn notify(
             }
         }
         NotifyTarget::Zone(zone_name) => {
-            let zone = crate::zone::lookup_by_name(cx, zone_name).await?;
+            let zone = zone::lookup_by_name(cx, zone_name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
-                crate::zone::force_increment_serial(cx, caller, zone_name).await?;
+                zone::force_increment_serial(cx, caller, zone_name).await?;
                 serial_bumped = true;
             }
         }
         NotifyTarget::All => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
-                for zone in crate::zone::list(cx).await? {
-                    crate::zone::force_increment_serial(cx, caller, &zone.name).await?;
+                for zone in zone::list(cx).await? {
+                    zone::force_increment_serial(cx, caller, &zone.name).await?;
                     serial_bumped = true;
                 }
             }
         }
     }
 
-    crate::notify::send_notify(cx, target).await?;
+    notify::send_notify(cx, target).await?;
 
     let scope = match target {
         NotifyTarget::Zone(zone_name) => format!("zone: {zone_name}"),

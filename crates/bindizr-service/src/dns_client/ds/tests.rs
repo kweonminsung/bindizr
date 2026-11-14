@@ -1,11 +1,8 @@
 use std::io;
-use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use bindizr_core::dns::dnssec::KeyTag;
 use bindizr_core::dns::message::Class;
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecord;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time;
@@ -331,10 +328,10 @@ async fn probe_parent_ds_reports_each_server_apart() {
     .await
     .unwrap();
 
-    assert_eq!(parent.ns_addrs, vec![first.to_string(), second.to_string()]);
+    assert_eq!(parent.ns_addrs, [first.to_string(), second.to_string()]);
     assert_eq!(
         parent.answers,
-        vec![
+        [
             Some(DsRecordSet {
                 records: vec![parsed_ds_record(34217)],
                 ttl: 3600,
@@ -370,7 +367,7 @@ async fn query_ds_retries_a_truncated_response_over_tcp() {
 
     assert_eq!(
         answers,
-        vec![Some(DsRecordSet {
+        [Some(DsRecordSet {
             records: vec![parsed_ds_record(34217)],
             ttl: 3600,
         })]
@@ -400,7 +397,7 @@ async fn query_ds_reports_absence_per_server() {
     .await
     .unwrap();
 
-    assert_eq!(answers, vec![None, None]);
+    assert_eq!(answers, [None, None]);
 
     // A lagging server still serving the DS stays visible to the caller.
     let answers = query_ds(
@@ -497,6 +494,6 @@ async fn resolve_parent_ns_addrs_rejects_an_unresolvable_entry() {
     assert_eq!(servers[1].0, "192.0.2.1");
     assert_eq!(
         servers[1].1,
-        vec!["192.0.2.1:53".parse::<SocketAddr>().unwrap()]
+        ["192.0.2.1:53".parse::<SocketAddr>().unwrap()]
     );
 }

@@ -196,7 +196,7 @@ level = "error"
             "\n[dns.transfer]\nrequire_tls = true\n"
         } else {
             ""
-        },
+        }
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

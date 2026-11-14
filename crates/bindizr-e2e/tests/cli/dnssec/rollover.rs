@@ -63,6 +63,7 @@ async fn zone_dnssec_rolls_nsec3_keys() {
         .await;
 
     assert!(!refused.status.success());
+
     let args = [
         "dnssec",
         "rollover",

@@ -111,10 +111,14 @@ async fn role_grants_support_create_list_and_revoke() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // A grant id is only reachable under the role that holds it.
-    let other = app.zone_name("other-role");
+    let other_role_name = app.zone_name("other-role");
 
     let (status, _) = app
-        .send_request(Method::POST, "/roles", Some(json!({ "name": other })))
+        .send_request(
+            Method::POST,
+            "/roles",
+            Some(json!({ "name": other_role_name })),
+        )
         .await;
 
     assert_eq!(status, StatusCode::CREATED);
@@ -122,7 +126,7 @@ async fn role_grants_support_create_list_and_revoke() {
     let (status, _) = app
         .send_request(
             Method::DELETE,
-            &format!("/roles/{other}/grants/{grant_id}"),
+            &format!("/roles/{other_role_name}/grants/{grant_id}"),
             None,
         )
         .await;
@@ -446,11 +450,11 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
     let absent_zone_name = app.zone_name("absent.com");
 
     for zone_name in [&hidden_zone_name, &absent_zone_name] {
-        let spelled = format!("{}.", zone_name.to_ascii_uppercase());
+        let spelled_zone_name = format!("{}.", zone_name.to_ascii_uppercase());
         let expected = format!("zone with name '{zone_name}' not found");
 
         let (status, body) = app
-            .send_request(Method::GET, &format!("/zones/{spelled}"), None)
+            .send_request(Method::GET, &format!("/zones/{spelled_zone_name}"), None)
             .await;
 
         assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
@@ -460,7 +464,7 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
             .send_request(
                 Method::POST,
                 "/records",
-                Some(record_body(&spelled, "www", "A", "192.0.2.1")),
+                Some(record_body(&spelled_zone_name, "www", "A", "192.0.2.1")),
             )
             .await;
 
@@ -1062,6 +1066,7 @@ async fn record_bulk_rejects_ungranted_request_before_zone_lookup() {
     let zone_name = app.zone_name("example.com");
 
     app.create_named_zone(&zone_name).await;
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -1367,7 +1372,7 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
     let listing_path = format!("/records?zone_name={zone_name}&limit=1000");
 
     let (_, body) = app.send_request(Method::GET, &listing_path, None).await;
-    let every_id = ids(&body);
+    let record_ids = ids(&body);
 
     for (index, (pattern, types)) in [
         ("*", "*"),
@@ -1416,12 +1421,12 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
         );
         let mut looked_up = Vec::new();
 
-        for id in &every_id {
+        for record_id in &record_ids {
             let (status, _) = app
-                .send_request(Method::GET, &format!("/records/{id}"), None)
+                .send_request(Method::GET, &format!("/records/{record_id}"), None)
                 .await;
             if status == StatusCode::OK {
-                looked_up.push(*id);
+                looked_up.push(*record_id);
             }
         }
 
@@ -1452,6 +1457,7 @@ async fn write_only_grant_changes_matching_records() {
     let zone_name = app.zone_name("example.com");
 
     app.create_named_zone(&zone_name).await;
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1642,7 +1648,7 @@ async fn responses_hide_records_outside_read_grants() {
     // readable `www` proves the sweep reads something. The NS goes first so
     // its DS has a delegation.
     let mut secret_ids = Vec::new();
-    let mut delegation_ns_id = None;
+    let mut delegation_ns_record_id = None;
 
     for (name, record_type, value) in [
         ("_acme-challenge", "TXT", "leak-marker-challenge"),
@@ -1669,7 +1675,7 @@ async fn responses_hide_records_outside_read_grants() {
         let record_id = body["record"]["id"].as_i64().unwrap();
 
         if record_type == "NS" {
-            delegation_ns_id = Some(record_id);
+            delegation_ns_record_id = Some(record_id);
         }
 
         if name != "www" {
@@ -1677,7 +1683,7 @@ async fn responses_hide_records_outside_read_grants() {
         }
     }
 
-    let delegation_ns_id = delegation_ns_id.unwrap();
+    let delegation_ns_record_id = delegation_ns_record_id.unwrap();
 
     let serial = app.read_zone_serial(&zone_name).await;
 
@@ -1844,8 +1850,8 @@ async fn responses_hide_records_outside_read_grants() {
         (Method::POST, rollback_path.clone(), None),
     ];
 
-    for id in &secret_ids {
-        requests.push((Method::GET, format!("/records/{id}"), None));
+    for record_id in &secret_ids {
+        requests.push((Method::GET, format!("/records/{record_id}"), None));
 
         // A partial update would echo the fields it inherits.
         for request in [
@@ -1857,11 +1863,15 @@ async fn responses_hide_records_outside_read_grants() {
                 "dry_run": true
             }),
         ] {
-            requests.push((Method::PUT, format!("/records/{id}"), Some(request)));
+            requests.push((Method::PUT, format!("/records/{record_id}"), Some(request)));
         }
 
         // Previewed, so every role meets every record.
-        requests.push((Method::DELETE, format!("/records/{id}?dry_run=true"), None));
+        requests.push((
+            Method::DELETE,
+            format!("/records/{record_id}?dry_run=true"),
+            None,
+        ));
     }
 
     let leaks = |body: &Value| {
@@ -1903,7 +1913,7 @@ async fn responses_hide_records_outside_read_grants() {
     let (status, body) = app
         .send_request(
             Method::DELETE,
-            &format!("/records/{delegation_ns_id}"),
+            &format!("/records/{delegation_ns_record_id}"),
             None,
         )
         .await;

@@ -334,6 +334,7 @@ async fn external_dns_domain_filter_respects_subtree_grant() {
         None,
     )
     .await;
+
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
@@ -709,7 +710,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     let endpoints: Value = response.json().await.unwrap();
     let endpoint = endpoints
         .as_array()
-        .unwrap()
+        .expect("endpoints array")
         .iter()
         .find(|endpoint| {
             endpoint["dnsName"] == format!("app.{zone_name}") && endpoint["recordType"] == "A"

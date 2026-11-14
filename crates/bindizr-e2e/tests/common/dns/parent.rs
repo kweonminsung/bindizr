@@ -106,7 +106,7 @@ impl DsRecord {
 }
 
 /// The records and response metadata the fake parent serves.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ParentResponse {
     records: Vec<DsRecord>,
     rcode: OptRcode,
@@ -192,7 +192,7 @@ impl FakeParent {
                             Soa::new(
                                 parent.clone(),
                                 parent.clone(),
-                                Serial(1),
+                                Serial::from(1),
                                 Ttl::from_secs(60),
                                 Ttl::from_secs(60),
                                 Ttl::from_secs(60),

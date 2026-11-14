@@ -346,8 +346,8 @@ impl ServiceError {
     }
 
     /// Build an error naming the missing zone.
-    pub fn zone_not_found(name: impl fmt::Display) -> Self {
-        Self::ZoneNotFound(format!("zone with name '{name}' not found"))
+    pub fn zone_not_found(zone_name: impl fmt::Display) -> Self {
+        Self::ZoneNotFound(format!("zone with name '{zone_name}' not found"))
     }
 
     /// Build an error identifying the missing record.

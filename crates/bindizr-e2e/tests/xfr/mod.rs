@@ -52,7 +52,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
         Algorithm::Sha384,
         Algorithm::Sha512,
     ] {
-        let name = format!(
+        let tsig_key_name = format!(
             "{}.{}.{}.{}",
             "k".repeat(63),
             "l".repeat(63),
@@ -67,14 +67,14 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
                 Method::POST,
                 "/tsig-keys",
                 Some(
-                    json!({ "name": name, "role_name": "admin", "algorithm": algorithm.to_string() }),
+                    json!({ "name": tsig_key_name, "role_name": "admin", "algorithm": algorithm.to_string() }),
                 ),
             )
             .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
         let key = SigningKey {
-            name,
+            name: tsig_key_name,
             secret: body["secret"].as_str().unwrap().to_string(),
             algorithm,
         };
@@ -385,7 +385,6 @@ async fn udp_ixfr_returns_current_soa() {
     // to TCP only when the answer's serial is ahead of its own.
     let (query_id, response) =
         dns::exchange_dns_query(app.dns_port(), zone_name, Rtype::IXFR.to_int()).unwrap();
-
     let response = Message::from_octets(response).unwrap();
     let header = response.header();
 
@@ -792,6 +791,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
     // Phase 4: mutation re-signs the zone in one transaction; verifying the new
     // A record on both secondaries exercises the signed IXFR delta.
     let base_serial = app.read_zone_serial(&zone_name).await;
+
     let (status, _) = app
         .send_request(
             Method::POST,
@@ -1320,10 +1320,10 @@ async fn query_tsig_error_preserves_edns_dnssec_ok() {
     let key = tsig::create_tsig_key(&app, "dnssec-ok-error-key", KeyRole::Admin).await;
 
     for dnssec_ok in [false, true] {
-        for error in [TsigRcode::BADKEY, TsigRcode::BADSIG] {
+        for rcode in [TsigRcode::BADKEY, TsigRcode::BADSIG] {
             let mut signing_key = key.clone();
 
-            if error == TsigRcode::BADKEY {
+            if rcode == TsigRcode::BADKEY {
                 signing_key.name = "unknown-key".to_string();
             }
 
@@ -1331,7 +1331,7 @@ async fn query_tsig_error_preserves_edns_dnssec_ok() {
             tsig::sign(&mut query, &signing_key).unwrap();
             let mut query = query.finish();
 
-            if error == TsigRcode::BADSIG {
+            if rcode == TsigRcode::BADSIG {
                 let mac_end = query.len() - 7;
                 query[mac_end] ^= 0xff;
             }
@@ -1352,7 +1352,7 @@ async fn query_tsig_error_preserves_edns_dnssec_ok() {
                     .unwrap()
                     .unwrap();
 
-                assert_eq!(tsig.data().error(), error);
+                assert_eq!(tsig.data().error(), rcode);
                 assert!(tsig.data().mac().is_empty());
             }
         }

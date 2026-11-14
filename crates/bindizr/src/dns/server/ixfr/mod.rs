@@ -62,8 +62,12 @@ pub(crate) async fn handle_ixfr(
     };
     let (zone, plan) = match access {
         TransferAccess::Granted(content) => content,
-        TransferAccess::NotAuth => return Err(DnsError::NotAuth(zone_name_str.to_string())),
-        TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
+        TransferAccess::NotAuth => {
+            return Err(DnsError::NotAuth {
+                zone_name: zone_name_str.to_string(),
+            });
+        }
+        TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
     };
     let current_serial = zone.serial;
 

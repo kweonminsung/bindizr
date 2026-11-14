@@ -2,7 +2,7 @@ use std::slice;
 
 use bindizr_core::config::Config;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::dns::{Serial, SoaInterval, Ttl};
+use bindizr_core::dns::{Serial, SoaInterval};
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
@@ -11,12 +11,11 @@ use chrono::Utc;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
-use crate::authorization::Caller;
 use crate::error::ErrorCode;
 use crate::external_dns::change_set::{ZoneChangeSet, ZoneOperations};
 use crate::types::{
     ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
-    CreateZoneRequest, ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,
+    CreateZoneRequest, ExternalDnsRecordUpdate, RoleGrantResponse,
 };
 use crate::{record, role, token, zone};
 
@@ -366,7 +365,7 @@ fn parse_record_set_deduplicates_equivalent_ipv6_spellings() {
     ))
     .unwrap();
 
-    assert_eq!(parsed_record_set.values, vec!["2001:db8::1".to_string()]);
+    assert_eq!(parsed_record_set.values, ["2001:db8::1".to_string()]);
 }
 
 /// Verify that `parse_record_set` parses quoted TXT values.
@@ -408,7 +407,7 @@ fn adjust_record_set_canonicalizes_type_and_values() {
     .unwrap();
 
     assert_eq!(adjusted.record_type, "AAAA");
-    assert_eq!(adjusted.values, vec!["2001:db8::1", "2001:db8::2"]);
+    assert_eq!(adjusted.values, ["2001:db8::1", "2001:db8::2"]);
 
     let adjusted = change_set::adjust_record_set(&record_set(
         "c.example.com",
@@ -418,7 +417,7 @@ fn adjust_record_set_canonicalizes_type_and_values() {
     ))
     .unwrap();
 
-    assert_eq!(adjusted.values, vec!["cdn.example.net."]);
+    assert_eq!(adjusted.values, ["cdn.example.net."]);
     assert_eq!(adjusted.ttl, Some(300));
 }
 
@@ -433,7 +432,7 @@ fn adjust_record_set_returns_txt_values_in_presentation_form() {
     ))
     .unwrap();
 
-    assert_eq!(adjusted.values, vec!["\"v=spf1 -all\""]);
+    assert_eq!(adjusted.values, ["\"v=spf1 -all\""]);
 
     // ExternalDNS sends TTL 0 for "not configured".
     assert_eq!(adjusted.ttl, None);
@@ -444,12 +443,12 @@ fn adjust_record_set_returns_txt_values_in_presentation_form() {
         change_set::adjust_record_set(&record_set("t.example.com", "TXT", None, &[canonical]))
             .unwrap();
 
-    assert_eq!(adjusted.values, vec![canonical]);
+    assert_eq!(adjusted.values, [canonical]);
 
     let adjusted =
         change_set::adjust_record_set(&record_set("t.example.com", "TXT", None, &["   "])).unwrap();
 
-    assert_eq!(adjusted.values, vec![r#""   ""#]);
+    assert_eq!(adjusted.values, [r#""   ""#]);
 }
 
 /// Verify that `adjust_record_set` passes unparseable values through.
@@ -458,7 +457,7 @@ fn adjust_record_set_passes_unparseable_values_through() {
     let adjusted =
         change_set::adjust_record_set(&record_set("bad.example.com", "A", None, &["not-an-ip"]))
             .unwrap();
-    assert_eq!(adjusted.values, vec!["not-an-ip"]);
+    assert_eq!(adjusted.values, ["not-an-ip"]);
 }
 
 /// Verify that `adjust_record_set` rejects unsupported shapes.

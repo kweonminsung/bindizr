@@ -1,11 +1,7 @@
-use std::collections::HashSet;
-use std::io;
 use std::str::FromStr;
 
-use bindizr_core::dns::message::{Keepalive, ParsedQuery};
-use bindizr_core::dns::query;
+use bindizr_core::dns::message::ParsedQuery;
 use thiserror::Error;
-use tokio::time;
 
 use super::*;
 

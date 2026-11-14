@@ -230,7 +230,7 @@ mod tests {
 
     use super::*;
 
-    /// Verify that every `RecordChange` variant has one spelling across `as_str` and serde.
+    /// Verify that `RecordChange` has one spelling across `as_str` and serde.
     #[test]
     fn record_change_spells_itself_once() {
         for value in [

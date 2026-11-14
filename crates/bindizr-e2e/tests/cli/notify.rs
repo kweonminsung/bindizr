@@ -46,7 +46,8 @@ async fn notify_supports_all_zones_and_one_zone() {
             None,
         )
         .await;
-    let notified: Value = serde_json::from_str(&notified).unwrap();
+    let notified: Value = serde_json::from_str(&notified).expect("CLI did not return valid JSON");
+
     assert_eq!(
         notified["message"],
         "NOTIFY sent successfully for zone: catalog.bindizr"

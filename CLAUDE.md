@@ -1589,9 +1589,11 @@ path when short module names collide.
 Every path starts at the crate (`crate::…`) or at a dependency; `super::` is not
 used, not even for a parent's facade or its items. A module inside `zone` imports
 `use crate::zone;` and calls `zone::lookup_by_name`, exactly as a caller outside
-does, so one function has one spelling wherever it is called; where a local of
-the module's name (`zone`, `record`) is in scope, write `crate::zone::…` in
-full rather than renaming the local. The one exception
+does, so one function has one spelling wherever it is called. A local of the
+module's name (`let zone = …`) does not change that: a value and a module live
+in different namespaces, so `zone::create_tx(&mut tx, &zone)` stays short. A
+longer path is kept only where two modules share the short name in one file
+(`bindizr_db::zone` beside the service's `zone`). The one exception
 is a test module's `use super::*;`, which imports the module under test.
 A `bindizr_db` entity function is always spelled in full
 (`bindizr_db::zone::get_tx`), since its modules share the service's names, and
@@ -1673,8 +1675,13 @@ Where two spellings mean the same thing, the workspace writes one:
   `.as_str()` or `.clone()`.
 - Error enums keep their variants packed; a payload other than a cause is a
   named field.
-- A multi-line `format!` or log-macro argument list ends without a trailing
-  comma (bindizr-db's SQL builders keep theirs).
+- A multi-line macro call (`format!`, log macros, `writeln!`, `assert!`,
+  `assert_eq!`, `matches!`) ends without a trailing comma; bindizr-db's SQL
+  `format!` builders keep theirs.
+- An `enumerate()` index is `index`.
+- A hand-written impl of a `sqlx`, `serde` or `utoipa` trait names the trait
+  by its crate path (`impl sqlx::Type<Sqlite> for`), since `Type` would collide
+  with `utoipa::openapi::schema::Type`.
 - Channel halves are named for their role or qualified (`jobs`, `stop_tx`),
   never a bare `tx` / `rx`: `tx` is a `Transaction`.
 - A function-local `use` imports a trait that one function needs only for

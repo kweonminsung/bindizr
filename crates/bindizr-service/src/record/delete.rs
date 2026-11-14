@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::slice;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
@@ -11,7 +10,7 @@ use crate::error::ServiceError;
 use crate::record::validation;
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
-use crate::{Context, dnssec, notify, serial, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, transaction, zone};
 
 /// Delete a record by id, bumping the zone serial and recording a DEL
 /// change for IXFR. `caller` is authorized against the row this tx locked.
@@ -38,7 +37,7 @@ pub async fn delete(
 
     let mut tx = transaction::begin_tx(cx, "failed to delete record").await?;
 
-    let apply_result: Result<(DeleteRecordsResponse, ZoneName), ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
@@ -140,7 +139,7 @@ pub async fn delete(
             return Ok((response, zone.name));
         }
 
-        crate::record::delete_with_changes_tx(
+        record::delete_with_changes_tx(
             &mut tx,
             zone.id,
             new_serial,
@@ -206,7 +205,7 @@ pub async fn delete_matching(
 
     let mut tx = transaction::begin_tx(cx, "failed to delete records").await?;
 
-    let apply_result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -281,7 +280,7 @@ pub async fn delete_matching(
         }
 
         // Apply the complete deletion and refresh signatures in the same transaction.
-        crate::record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
+        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
         // Once for the whole set, so IXFR consumers see one step.

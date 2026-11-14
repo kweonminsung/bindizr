@@ -39,7 +39,8 @@ pub(crate) struct AppState {
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", routing::get(handle_negotiate))
-        .route("/records", routing::get(list_records).post(apply_changes))
+        .route("/records", routing::get(list_records))
+        .route("/records", routing::post(apply_changes))
         .route("/adjustendpoints", routing::post(adjust_endpoints))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

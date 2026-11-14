@@ -151,15 +151,15 @@ pub(crate) fn send_signed_update_with_edns_version(
     version: u8,
 ) -> Result<(OptRcode, bool), String> {
     let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(3);
-    let mut builder = build_update(query_id, zone_name, Class::IN, &[], &[])?;
-    builder
+    let mut request = build_update(query_id, zone_name, Class::IN, &[], &[])?;
+    request
         .opt(|opt| {
             opt.set_udp_payload_size(4096);
             opt.set_version(version);
             Ok(())
         })
         .map_err(|error| error.to_string())?;
-    let response = dns::exchange_request(builder, Some(key), |message| {
+    let response = dns::exchange_request(request, Some(key), |message| {
         dns::exchange_udp(port, message)
     })?;
     let rcode = response

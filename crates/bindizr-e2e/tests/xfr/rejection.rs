@@ -196,7 +196,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
     assert!(response.as_slice().len() <= 512);
     assert_eq!(
         common::read_counter(&app, "bindizr_nsupdate_requests_total", &labels).await,
-        before + 1.0,
+        before + 1.0
     );
 }
 
@@ -272,7 +272,7 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
         if advertised == 512 {
             assert!(matches!(
                 received,
-                Err(error) if matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock),
+                Err(error) if matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
             ));
             assert_eq!(
                 common::read_counter(&app, "bindizr_xfr_total", &failed).await,
@@ -823,8 +823,8 @@ async fn questionless_refusals_allow_connection_reuse() {
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_opcode(opcode);
         dns::write_frame(&mut stream, &builder.finish()).unwrap();
-        let response =
-            Message::from_octets(dns::read_frame(&mut stream).unwrap().unwrap()).unwrap();
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(
             response.header().rcode(),
@@ -842,8 +842,8 @@ async fn questionless_refusals_allow_connection_reuse() {
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_opcode(opcode);
         dns::write_frame(&mut stream, &builder.finish()).unwrap();
-        let response =
-            Message::from_octets(dns::read_frame(&mut stream).unwrap().unwrap()).unwrap();
+        let response = dns::read_frame(&mut stream).unwrap().unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(
             response.header().rcode(),

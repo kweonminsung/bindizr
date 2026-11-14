@@ -40,6 +40,8 @@ const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
 const COMPOSE_XOT_KEY: &str = "xot-key";
+
+/// The secret of `COMPOSE_XOT_KEY`, as bind9-1's named.conf spells it.
 const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
 /// The stack shared by every test of the run, started on first use.

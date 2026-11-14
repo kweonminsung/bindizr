@@ -189,16 +189,16 @@ async fn escaped_record_targets_round_trip_through_management() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    let imported_name = app.zone_name("escaped-target-import.example");
+    let imported_zone_name = app.zone_name("escaped-target-import.example");
     let content = body
         .as_str()
         .unwrap()
-        .replace(&format!("{zone_name}."), &format!("{imported_name}."));
+        .replace(&format!("{zone_name}."), &format!("{imported_zone_name}."));
 
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{imported_name}/import"),
+            &format!("/zones/{imported_zone_name}/import"),
             Some(json!({
                 "content": content, "create": true
             })),
@@ -207,7 +207,7 @@ async fn escaped_record_targets_round_trip_through_management() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let imported = dns::fetch_exported_record_sets(&app, &imported_name).await;
+    let imported = dns::fetch_exported_record_sets(&app, &imported_zone_name).await;
 
     for (owner, rtype, record_type, input, priority, rdata) in expected_records {
         assert_eq!(
@@ -215,7 +215,7 @@ async fn escaped_record_targets_round_trip_through_management() {
             slice::from_ref(&rdata)
         );
         assert_eq!(
-            imported[&(format!("{owner}.{imported_name}."), rtype)],
+            imported[&(format!("{owner}.{imported_zone_name}."), rtype)],
             [rdata]
         );
         let mut path = format!(
@@ -2284,6 +2284,7 @@ async fn record_enforces_dname_and_alias_target_rules() {
     let apex_zone_name = app.zone_name("apex-dname.example");
 
     app.create_zone_cli(&apex_zone_name, "3600").await;
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -2346,7 +2347,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let ns_id = body["records"][0]["id"].as_i64().unwrap();
+    let ns_record_id = body["records"][0]["id"].as_i64().unwrap();
 
     let base_serial = app.read_zone_serial(zone_name).await;
 
@@ -2354,7 +2355,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
         let (status, body) = app
             .send_request(
                 Method::PUT,
-                &format!("/records/{ns_id}"),
+                &format!("/records/{ns_record_id}"),
                 Some(json!({ "name": "moved", "dry_run": dry_run })),
             )
             .await;
@@ -2362,7 +2363,7 @@ async fn record_mutations_validate_the_complete_proposed_state() {
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
         for path in [
-            format!("/records/{ns_id}?dry_run={dry_run}"),
+            format!("/records/{ns_record_id}?dry_run={dry_run}"),
             format!("/records?zone_name={zone_name}&name=child&type=NS&dry_run={dry_run}"),
         ] {
             let (status, body) = app.send_request(Method::DELETE, &path, None).await;
@@ -2476,10 +2477,7 @@ async fn signed_record_listing_paginates_derived_records() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let records = body["items"].as_array().unwrap();
 
-    assert_eq!(
-        body["pagination"]["total"].as_u64().unwrap() as usize,
-        records.len()
-    );
+    assert_eq!(body["pagination"]["total"], records.len());
     assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
     assert!(records.iter().any(|record| record["id"].is_i64()));
 
@@ -2852,6 +2850,7 @@ async fn record_ttl_preserves_unsigned_boundaries() {
     }
 
     app.create_secondary("ttl-loopback", "127.0.0.1").await;
+
     let (status, body) = app
         .send_request(
             Method::POST,

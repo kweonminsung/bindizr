@@ -11,7 +11,7 @@ use crate::error::ServiceError;
 use crate::record::validation;
 use crate::types::{RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
-use crate::{Context, dnssec, notify, serial, transaction, ttl, zone};
+use crate::{Context, dnssec, notify, record, serial, transaction, ttl, zone};
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
@@ -367,7 +367,7 @@ async fn update_locked(
         let zone_name = zone.name.clone();
 
         let updated_record =
-            crate::record::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate)
+            record::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate)
                 .await?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;

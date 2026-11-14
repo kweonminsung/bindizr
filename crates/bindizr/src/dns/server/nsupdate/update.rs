@@ -20,12 +20,12 @@ use crate::dns::server::DnsContext;
 #[derive(Debug, Error)]
 pub(crate) enum UpdateError {
     /// Malformed OPT or unsupported EDNS version (RFC 6891, Section 6.1).
-    #[error("unacceptable EDNS: {0}")]
-    Edns(OptRcode),
-    #[error("{0}")]
-    NotSupported(String),
-    #[error("{0}")]
-    NotAuth(String),
+    #[error("unacceptable EDNS: {rcode}")]
+    Edns { rcode: OptRcode },
+    #[error("{reason}")]
+    NotSupported { reason: String },
+    #[error("{reason}")]
+    NotAuth { reason: String },
     #[error("'{name}' is not a zone name: {source}")]
     ZoneName {
         name: String,
@@ -65,14 +65,14 @@ pub(crate) async fn apply_update(
 
         // RFC 6891, Section 6.1.3: BADVERS precedes every policy refusal.
         if let Some(rcode) = request.edns.format_error() {
-            return Err(UpdateError::Edns(rcode));
+            return Err(UpdateError::Edns { rcode });
         }
 
         // RFC 9103, Section 7.8: the TLS listener serves transfers alone.
         if transport == TransferTransport::Tls {
-            return Err(UpdateError::NotSupported(
-                "UPDATE is not served over TLS".to_string(),
-            ));
+            return Err(UpdateError::NotSupported {
+                reason: "UPDATE is not served over TLS".to_string(),
+            });
         }
 
         // Unsigned UPDATE admits every reachable client; the service refuses it
@@ -86,9 +86,9 @@ pub(crate) async fn apply_update(
 
         // Parse absolute labels; unrepresentable zone names are not served (RFC 2136, Section 3.1.2).
         if request.zone_name == "." {
-            return Err(UpdateError::NotAuth(
-                "the root zone is not served here".to_string(),
-            ));
+            return Err(UpdateError::NotAuth {
+                reason: "the root zone is not served here".to_string(),
+            });
         }
 
         let zone_name =

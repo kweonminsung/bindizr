@@ -32,13 +32,13 @@ pub enum ParseUpdateError {
     InvalidTsig,
     /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
     #[error("invalid {record_type} rdata")]
-    Rdata { record_type: String },
+    Rdata { record_type: &'static str },
     #[error("invalid prerequisite rdata: {0}")]
     PrerequisiteRdata(#[from] ParseRdataError),
     /// A name inside the RDATA does not read back into presentation form.
     #[error("invalid {record_type} rdata: {source}")]
     RdataName {
-        record_type: String,
+        record_type: &'static str,
         #[source]
         source: Box<Self>,
     },

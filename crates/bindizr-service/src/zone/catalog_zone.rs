@@ -7,7 +7,7 @@ use ring::digest;
 use ring::digest::SHA256;
 
 use crate::error::ServiceError;
-use crate::{Context, transaction};
+use crate::{Context, transaction, zone};
 
 /// TTL used by the generated catalog's records.
 const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
@@ -57,7 +57,7 @@ async fn advance_catalog_serial(
 
 /// Refresh the catalog at startup from every enabled managed zone.
 pub async fn refresh_catalog(cx: &Context) -> Result<(CatalogZone, Vec<String>), ServiceError> {
-    refresh_catalog_from_zones(cx, crate::zone::list(cx).await?).await
+    refresh_catalog_from_zones(cx, zone::list(cx).await?).await
 }
 
 /// Refresh the virtual catalog from supplied zones and persist its membership serial.

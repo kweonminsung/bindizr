@@ -50,14 +50,6 @@ const ADMIN_ROLE_DESCRIPTION: &str = "every action in all zones";
 #[derive(Debug)]
 pub struct Db(Backend);
 
-/// Which backend `Db` holds; the root functions match on it.
-#[derive(Debug)]
-pub(crate) enum Backend {
-    MySql(Pool<MySql>),
-    Postgres(Pool<Postgres>),
-    Sqlite(Pool<Sqlite>),
-}
-
 impl Db {
     /// Connect to the configured backend and set up the schema; the daemon
     /// calls this once and holds the value.
@@ -133,211 +125,7 @@ impl Db {
             max: pool_max_connections(),
         }
     }
-}
 
-/// Connect once and run a trivial query, creating neither tables nor a pool
-/// to keep; `doctor` runs this when no daemon is up.
-pub async fn probe_connection(database: &DatabaseConfig) -> Result<(), DatabaseError> {
-    match database.database_type {
-        DatabaseType::MySql => {
-            let pool = MySqlPoolOptions::new()
-                .max_connections(1)
-                .connect_with(parse_mysql_connect_options(
-                    &database.mysql.url,
-                    &database.tls,
-                )?)
-                .await
-                .map_err(DatabaseError::MySqlConnect)?;
-            sqlx::query("SELECT 1").execute(&pool).await?;
-        }
-        DatabaseType::Postgres => {
-            let pool = PgPoolOptions::new()
-                .max_connections(1)
-                .connect_with(parse_postgres_connect_options(
-                    &database.postgresql.url,
-                    &database.tls,
-                )?)
-                .await
-                .map_err(DatabaseError::PostgresConnect)?;
-            sqlx::query("SELECT 1").execute(&pool).await?;
-        }
-        DatabaseType::Sqlite => {
-            // Creating the file here would leave it owned by whoever ran doctor.
-            let url = sqlite::path::to_url(&database.sqlite.file_path)?;
-            let connect_options = parse_sqlite_connect_options(&url)?
-                .create_if_missing(false)
-                .read_only(true);
-
-            let pool = SqlitePoolOptions::new()
-                .max_connections(1)
-                .connect_with(connect_options)
-                .await
-                .map_err(DatabaseError::SqliteOpen)?;
-            sqlx::query("SELECT 1").execute(&pool).await?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Parse a SQLite URL into connection options.
-fn parse_sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
-    SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
-}
-
-/// Parse the MySQL URL and lay `[database.tls]` over it: a set key replaces
-/// the URL's own parameter.
-fn parse_mysql_connect_options(
-    url: &str,
-    tls: &DatabaseTlsConfig,
-) -> Result<MySqlConnectOptions, DatabaseError> {
-    let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
-
-    if let Some(mode) = tls.mode {
-        options = options.ssl_mode(match mode {
-            DatabaseTlsMode::Disable => MySqlSslMode::Disabled,
-            DatabaseTlsMode::Prefer => MySqlSslMode::Preferred,
-            DatabaseTlsMode::Require => MySqlSslMode::Required,
-            DatabaseTlsMode::VerifyCa => MySqlSslMode::VerifyCa,
-            DatabaseTlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
-        });
-    }
-    if let Some(ca_file) = &tls.ca_file {
-        options = options.ssl_ca(ca_file);
-    }
-
-    Ok(options)
-}
-
-/// Parse the PostgreSQL URL and lay `[database.tls]` over it: a set key
-/// replaces the URL's own parameter.
-fn parse_postgres_connect_options(
-    url: &str,
-    tls: &DatabaseTlsConfig,
-) -> Result<PgConnectOptions, DatabaseError> {
-    let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
-
-    if let Some(mode) = tls.mode {
-        options = options.ssl_mode(match mode {
-            DatabaseTlsMode::Disable => PgSslMode::Disable,
-            DatabaseTlsMode::Prefer => PgSslMode::Prefer,
-            DatabaseTlsMode::Require => PgSslMode::Require,
-            DatabaseTlsMode::VerifyCa => PgSslMode::VerifyCa,
-            DatabaseTlsMode::VerifyFull => PgSslMode::VerifyFull,
-        });
-    }
-    if let Some(ca_file) = &tls.ca_file {
-        options = options.ssl_root_cert(ca_file);
-    }
-
-    Ok(options)
-}
-
-/// How full the connection pool is. sqlx counts held connections, not waiters,
-/// so saturation shows as `connections` reaching `max`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PoolStats {
-    /// Connections the pool holds, idle and handed out alike.
-    pub connections: u32,
-    pub idle: u32,
-    pub max: u32,
-}
-
-/// Return the max pooled connections, scaled to the host instead of sqlx's flat 10.
-/// SQLite shares it: under WAL the pool bounds readers, not the one writer.
-fn pool_max_connections() -> u32 {
-    let cores = thread::available_parallelism().map_or(4, NonZero::get);
-    ((cores * 4) as u32).clamp(8, 64)
-}
-
-impl Backend {
-    /// Connect to MySQL and return the pool.
-    async fn connect_mysql(url: &str, tls: &DatabaseTlsConfig) -> Result<Self, DatabaseError> {
-        let pool = MySqlPoolOptions::new()
-            .max_connections(pool_max_connections())
-            .after_connect(|connection, _| {
-                Box::pin(async move {
-                    // Row locks, not version isolation, carry correctness:
-                    // READ COMMITTED matches PostgreSQL and sheds gap locking.
-                    sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
-                        .execute(connection)
-                        .await
-                        .map(|_| ())
-                })
-            })
-            .connect_with(parse_mysql_connect_options(url, tls)?)
-            .await
-            .map_err(DatabaseError::MySqlConnect)?;
-
-        Ok(Self::MySql(pool))
-    }
-
-    /// Connect to PostgreSQL and return the pool.
-    async fn connect_postgres(url: &str, tls: &DatabaseTlsConfig) -> Result<Self, DatabaseError> {
-        let pool = PgPoolOptions::new()
-            .max_connections(pool_max_connections())
-            .after_connect(|connection, _| {
-                Box::pin(async move {
-                    // Already the default; pinned so all backends state one contract.
-                    sqlx::query(
-                        "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED",
-                    )
-                    .execute(connection)
-                    .await
-                    .map(|_| ())
-                })
-            })
-            .connect_with(parse_postgres_connect_options(url, tls)?)
-            .await
-            .map_err(DatabaseError::PostgresConnect)?;
-
-        Ok(Self::Postgres(pool))
-    }
-
-    /// Connect to SQLite and return the pool.
-    async fn connect_sqlite(url: &str) -> Result<Self, DatabaseError> {
-        // A clean install points at a database file that does not exist yet.
-        let connect_options = parse_sqlite_connect_options(url)?.create_if_missing(true);
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(pool_max_connections())
-            .after_connect(|connection, _| {
-                Box::pin(async move {
-                    // SQLite enforces foreign keys only when enabled per connection.
-                    sqlx::query("PRAGMA foreign_keys = ON")
-                        .execute(&mut *connection)
-                        .await?;
-
-                    // Set the busy timeout before WAL locks too; short timeouts starve
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY.
-                    sqlx::query("PRAGMA busy_timeout = 15000")
-                        .execute(&mut *connection)
-                        .await?;
-
-                    // Reassert WAL on each connection to separate reader/writer locks.
-                    // SQLite reports the active mode rather than failing if WAL cannot apply.
-                    let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
-                        .fetch_one(&mut *connection)
-                        .await?;
-
-                    if !mode.eq_ignore_ascii_case("wal") {
-                        log::warn!(
-                            "SQLite journal_mode is '{mode}', not WAL: readers will queue behind writes"
-                        );
-                    }
-
-                    Ok(())
-                })
-            })
-            .connect_with(connect_options)
-            .await
-            .map_err(DatabaseError::SqliteOpen)?;
-
-        Ok(Self::Sqlite(pool))
-    }
-}
-
-impl Db {
     /// Run this backend's creation statements and seed the built-in policy and role.
     async fn create_tables(&self) -> Result<(), DatabaseError> {
         match &self.0 {
@@ -498,4 +286,214 @@ impl Db {
 
         Ok(())
     }
+}
+
+/// Which backend `Db` holds; the root functions match on it.
+#[derive(Debug)]
+pub(crate) enum Backend {
+    MySql(Pool<MySql>),
+    Postgres(Pool<Postgres>),
+    Sqlite(Pool<Sqlite>),
+}
+
+impl Backend {
+    /// Connect to MySQL and return the pool.
+    async fn connect_mysql(url: &str, tls: &DatabaseTlsConfig) -> Result<Self, DatabaseError> {
+        let pool = MySqlPoolOptions::new()
+            .max_connections(pool_max_connections())
+            .after_connect(|connection, _| {
+                Box::pin(async move {
+                    // Row locks, not version isolation, carry correctness:
+                    // READ COMMITTED matches PostgreSQL and sheds gap locking.
+                    sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+                        .execute(connection)
+                        .await
+                        .map(|_| ())
+                })
+            })
+            .connect_with(parse_mysql_connect_options(url, tls)?)
+            .await
+            .map_err(DatabaseError::MySqlConnect)?;
+
+        Ok(Self::MySql(pool))
+    }
+
+    /// Connect to PostgreSQL and return the pool.
+    async fn connect_postgres(url: &str, tls: &DatabaseTlsConfig) -> Result<Self, DatabaseError> {
+        let pool = PgPoolOptions::new()
+            .max_connections(pool_max_connections())
+            .after_connect(|connection, _| {
+                Box::pin(async move {
+                    // Already the default; pinned so all backends state one contract.
+                    sqlx::query(
+                        "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED",
+                    )
+                    .execute(connection)
+                    .await
+                    .map(|_| ())
+                })
+            })
+            .connect_with(parse_postgres_connect_options(url, tls)?)
+            .await
+            .map_err(DatabaseError::PostgresConnect)?;
+
+        Ok(Self::Postgres(pool))
+    }
+
+    /// Connect to SQLite and return the pool.
+    async fn connect_sqlite(url: &str) -> Result<Self, DatabaseError> {
+        // A clean install points at a database file that does not exist yet.
+        let connect_options = parse_sqlite_connect_options(url)?.create_if_missing(true);
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(pool_max_connections())
+            .after_connect(|connection, _| {
+                Box::pin(async move {
+                    // SQLite enforces foreign keys only when enabled per connection.
+                    sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(&mut *connection)
+                        .await?;
+
+                    // Set the busy timeout before WAL locks too; short timeouts starve
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY.
+                    sqlx::query("PRAGMA busy_timeout = 15000")
+                        .execute(&mut *connection)
+                        .await?;
+
+                    // Reassert WAL on each connection to separate reader/writer locks.
+                    // SQLite reports the active mode rather than failing if WAL cannot apply.
+                    let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
+                        .fetch_one(&mut *connection)
+                        .await?;
+
+                    if !mode.eq_ignore_ascii_case("wal") {
+                        log::warn!(
+                            "SQLite journal_mode is '{mode}', not WAL: readers will queue behind writes"
+                        );
+                    }
+
+                    Ok(())
+                })
+            })
+            .connect_with(connect_options)
+            .await
+            .map_err(DatabaseError::SqliteOpen)?;
+
+        Ok(Self::Sqlite(pool))
+    }
+}
+
+/// Connect once and run a trivial query, creating neither tables nor a pool
+/// to keep; `doctor` runs this when no daemon is up.
+pub async fn probe_connection(database: &DatabaseConfig) -> Result<(), DatabaseError> {
+    match database.database_type {
+        DatabaseType::MySql => {
+            let pool = MySqlPoolOptions::new()
+                .max_connections(1)
+                .connect_with(parse_mysql_connect_options(
+                    &database.mysql.url,
+                    &database.tls,
+                )?)
+                .await
+                .map_err(DatabaseError::MySqlConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
+        }
+        DatabaseType::Postgres => {
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect_with(parse_postgres_connect_options(
+                    &database.postgresql.url,
+                    &database.tls,
+                )?)
+                .await
+                .map_err(DatabaseError::PostgresConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
+        }
+        DatabaseType::Sqlite => {
+            // Creating the file here would leave it owned by whoever ran doctor.
+            let url = sqlite::path::to_url(&database.sqlite.file_path)?;
+            let connect_options = parse_sqlite_connect_options(&url)?
+                .create_if_missing(false)
+                .read_only(true);
+
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(connect_options)
+                .await
+                .map_err(DatabaseError::SqliteOpen)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Parse a SQLite URL into connection options.
+fn parse_sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
+    SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
+}
+
+/// Parse the MySQL URL and lay `[database.tls]` over it: a set key replaces
+/// the URL's own parameter.
+fn parse_mysql_connect_options(
+    url: &str,
+    tls: &DatabaseTlsConfig,
+) -> Result<MySqlConnectOptions, DatabaseError> {
+    let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
+
+    if let Some(mode) = tls.mode {
+        options = options.ssl_mode(match mode {
+            DatabaseTlsMode::Disable => MySqlSslMode::Disabled,
+            DatabaseTlsMode::Prefer => MySqlSslMode::Preferred,
+            DatabaseTlsMode::Require => MySqlSslMode::Required,
+            DatabaseTlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+            DatabaseTlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
+        });
+    }
+    if let Some(ca_file) = &tls.ca_file {
+        options = options.ssl_ca(ca_file);
+    }
+
+    Ok(options)
+}
+
+/// Parse the PostgreSQL URL and lay `[database.tls]` over it: a set key
+/// replaces the URL's own parameter.
+fn parse_postgres_connect_options(
+    url: &str,
+    tls: &DatabaseTlsConfig,
+) -> Result<PgConnectOptions, DatabaseError> {
+    let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
+
+    if let Some(mode) = tls.mode {
+        options = options.ssl_mode(match mode {
+            DatabaseTlsMode::Disable => PgSslMode::Disable,
+            DatabaseTlsMode::Prefer => PgSslMode::Prefer,
+            DatabaseTlsMode::Require => PgSslMode::Require,
+            DatabaseTlsMode::VerifyCa => PgSslMode::VerifyCa,
+            DatabaseTlsMode::VerifyFull => PgSslMode::VerifyFull,
+        });
+    }
+    if let Some(ca_file) = &tls.ca_file {
+        options = options.ssl_root_cert(ca_file);
+    }
+
+    Ok(options)
+}
+
+/// How full the connection pool is. sqlx counts held connections, not waiters,
+/// so saturation shows as `connections` reaching `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolStats {
+    /// Connections the pool holds, idle and handed out alike.
+    pub connections: u32,
+    pub idle: u32,
+    pub max: u32,
+}
+
+/// Return the max pooled connections, scaled to the host instead of sqlx's flat 10.
+/// SQLite shares it: under WAL the pool bounds readers, not the one writer.
+fn pool_max_connections() -> u32 {
+    let cores = thread::available_parallelism().map_or(4, NonZero::get);
+    ((cores * 4) as u32).clamp(8, 64)
 }

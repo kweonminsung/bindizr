@@ -6,7 +6,7 @@ use domain::rdata::tsig::Tsig;
 use domain::tsig::ClientTransaction;
 
 use super::*;
-use crate::dns::tsig;
+use crate::dns::{message, tsig};
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
 /// Verify that a truncated zone or later section receives only a header, without an invented OPT.

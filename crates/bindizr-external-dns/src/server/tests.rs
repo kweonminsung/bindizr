@@ -1,18 +1,12 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use axum::body;
-use axum::extract::{Request, State};
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
 use reqwest::Client;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 use super::*;
-use crate::metrics::AdapterMetrics;
-use crate::upstream::UpstreamClient;
-use crate::wire::MEDIA_TYPE;
 
 /// One request the mock bindizr server saw: path, Authorization header, body.
 type RecordedRequest = (String, Option<String>, String);

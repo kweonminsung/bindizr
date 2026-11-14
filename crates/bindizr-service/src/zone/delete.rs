@@ -8,7 +8,7 @@ use bindizr_db::record::RecordFilter;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{DeleteZoneResponse, Run, ZoneResponse};
-use crate::{Context, audit, notify, transaction};
+use crate::{Context, audit, notify, transaction, zone};
 
 /// Delete a zone, records, and rollback history; NOTIFY the catalog after commit.
 /// A dry run reports the contents without removing them.
@@ -22,7 +22,7 @@ pub async fn delete(
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
-        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneDelete, &zone)?;
 

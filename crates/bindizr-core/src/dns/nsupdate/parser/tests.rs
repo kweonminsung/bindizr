@@ -308,9 +308,9 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
 fn variable_length_rdata_stops_before_the_next_record() {
     for (rtype, rdata) in [
         (Rtype::CAA, b"\x00\x05issue".to_vec()),
-        (Rtype::DS, [vec![0, 1, 13, 2], vec![0xAB; 32]].concat()),
-        (Rtype::SSHFP, [vec![4, 2], vec![0xAB; 32]].concat()),
-        (Rtype::TLSA, [vec![3, 1, 1], vec![0xAB; 32]].concat()),
+        (Rtype::DS, [vec![0, 1, 13, 2], vec![0xab; 32]].concat()),
+        (Rtype::SSHFP, [vec![4, 2], vec![0xab; 32]].concat()),
+        (Rtype::TLSA, [vec![3, 1, 1], vec![0xab; 32]].concat()),
     ] {
         let mut record = update_record(rtype, Class::IN, 300, rdata.clone());
         let expected = record.to_record_value(&rdata).unwrap();
@@ -334,7 +334,7 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
         3, b'w', b'w', b'w', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
     ];
     let rdata_start = message.len();
-    let pointer = [0xC0, 5]; // Points at the "example.com." bytes above
+    let pointer = [0xc0, 5]; // Points at the "example.com." bytes above
     message.extend_from_slice(&pointer);
 
     let record = UpdateRecord {
@@ -357,11 +357,11 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
 #[test]
 fn to_record_value_rejects_non_backward_compression_pointers() {
     let forward = [
-        0xC0, 0x02, // Pointer to the root label after this pointer
+        0xc0, 0x02, // Pointer to the root label after this pointer
         0x00,
     ];
     let self_referential = [
-        0xC0, 0x00, // Pointer to itself
+        0xc0, 0x00, // Pointer to itself
     ];
 
     for message in [&forward[..], &self_referential[..]] {
@@ -369,7 +369,7 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
         assert_eq!(
             record.to_record_value(message),
             Err(ParseUpdateError::Rdata {
-                record_type: "CNAME".to_string(),
+                record_type: "CNAME",
             })
         );
     }
@@ -383,7 +383,7 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     assert_eq!(
         record.to_record_value(&message),
         Err(ParseUpdateError::Rdata {
-            record_type: "CNAME".to_string(),
+            record_type: "CNAME",
         })
     );
 }
@@ -402,7 +402,7 @@ fn to_record_value_rejects_empty_txt_rdata() {
 /// Verify that arbitrary TXT octets survive UPDATE decoding.
 #[test]
 fn to_record_value_preserves_non_utf8_txt_character_strings() {
-    let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
+    let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xff]);
     let (_, value, _) = record.to_record_value(&record.rdata).unwrap();
     assert_eq!(value, r#""\255""#);
 }
@@ -411,7 +411,7 @@ fn to_record_value_preserves_non_utf8_txt_character_strings() {
 #[test]
 fn to_record_value_splits_srv_priority_into_its_own_column() {
     // priority 10, weight 20, port 5060, target sip.example.com.
-    let mut rdata = vec![0, 10, 0, 20, 0x13, 0xC4];
+    let mut rdata = vec![0, 10, 0, 20, 0x13, 0xc4];
     rdata.extend_from_slice(&[
         3, b's', b'i', b'p', 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
     ]);

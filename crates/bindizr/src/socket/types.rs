@@ -355,7 +355,7 @@ mod tests {
         }
     }
 
-    /// Verify that every DoctorCheckStatus variant spells itself canonically and round-trips.
+    /// Verify that `DoctorCheckStatus` has one spelling across `as_str` and serde.
     #[test]
     fn doctor_check_status_spells_itself_once() {
         for value in [

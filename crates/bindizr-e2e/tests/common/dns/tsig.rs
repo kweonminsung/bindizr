@@ -49,10 +49,10 @@ pub(crate) fn parse_tsig_presence(response: &Message<Vec<u8>>) -> Result<bool, S
 
 /// Sign a request using a client transaction.
 pub(crate) fn sign(
-    builder: &mut AdditionalBuilder<Vec<u8>>,
+    request: &mut AdditionalBuilder<Vec<u8>>,
     key: &SigningKey,
 ) -> Result<(), String> {
-    ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
+    ClientTransaction::request(key.to_tsig_key()?, request, Time48::now())
         .map_err(|error| error.to_string())?;
     Ok(())
 }

@@ -173,7 +173,7 @@ pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, 
         .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
 }
 
-/// Look up the key an incoming TSIG record names. Authentication precedes
+/// Find the key an incoming TSIG record names. Authentication precedes
 /// any zone transaction, so this is a plain read.
 pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKey>, ServiceError> {
     // Canonicalize like storage does; an unparseable name matches no key.

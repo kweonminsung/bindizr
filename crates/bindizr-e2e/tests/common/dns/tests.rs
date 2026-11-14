@@ -1,11 +1,8 @@
 //! Unit tests of the DNS harness itself: the response parser the e2e assertions rely on.
 
-use std::str::FromStr;
-
-use domain::base::iana::{Class, Rcode};
-use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
+use domain::base::iana::Class;
+use domain::base::{Record, Ttl, UnknownRecordData};
 use domain::rdata::{A, Cname, Mx, Srv, Txt};
-use serde_json::{Value, json};
 
 use super::*;
 
@@ -59,7 +56,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
 
     for rdata in [
         b"\x00\x05issue".as_slice(),
-        b"\x80\x06custom\x00\xFF\x0A\"\\",
+        b"\x80\x06custom\x00\xff\x0a\"\\",
     ] {
         answer
             .push(Record::new(
@@ -84,7 +81,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
         ))
         .unwrap();
 
-    for bytes in [
+    for rdata in [
         b"".as_slice(),
         &[0, 255, 192, 12],
         &[192, 0, 2, 1, 6, 0x81, 0x80],
@@ -94,7 +91,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
                 &owner,
                 Class::IN,
                 ttl,
-                UnknownRecordData::from_octets(Rtype::from_int(65280), bytes).unwrap(),
+                UnknownRecordData::from_octets(Rtype::from_int(65280), rdata).unwrap(),
             ))
             .unwrap();
     }

@@ -109,8 +109,8 @@ impl RecordRow {
 }
 
 impl From<&RecordResponse> for RecordRow {
-    /// Build a listing row, with the value shortened so one long record does
-    /// not widen the column.
+    /// Build a CLI table row from the record response, with the value shortened
+    /// so one long record does not widen the column.
     fn from(record: &RecordResponse) -> Self {
         Self {
             value: display::display_record_value(&record.value),
@@ -325,7 +325,7 @@ pub(crate) struct RollbackSummaryRow {
     pub(crate) deleted: u64,
     #[tabled(rename = "UNCHANGED")]
     pub(crate) unchanged: u64,
-    #[tabled(rename = "SOA-CHANGED")]
+    #[tabled(rename = "SOA-CHANGED", display = "display::display_yes_no")]
     pub(crate) soa_changed: bool,
 }
 

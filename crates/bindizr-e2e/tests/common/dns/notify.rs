@@ -19,7 +19,7 @@ pub(crate) const SERVED_SERIAL: u32 = 1;
 /// One NOTIFY as the fake secondary saw it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReceivedNotify {
-    pub(crate) zone: String,
+    pub(crate) zone_name: String,
     /// The request carried a TSIG record.
     pub(crate) signed: bool,
     /// The TSIG verified under the fake's key; a signature under another key
@@ -82,7 +82,7 @@ impl FakeSecondary {
                                 Soa::new(
                                     mname.clone(),
                                     mname,
-                                    Serial(SERVED_SERIAL),
+                                    Serial::from(SERVED_SERIAL),
                                     Ttl::from_secs(60),
                                     Ttl::from_secs(60),
                                     Ttl::from_secs(60),
@@ -111,7 +111,7 @@ impl FakeSecondary {
                         Ok(context) => signer = context,
                         Err(error) => {
                             seen.lock().expect("received lock").push(ReceivedNotify {
-                                zone: zone_name,
+                                zone_name,
                                 signed,
                                 verified: false,
                             });
@@ -128,7 +128,7 @@ impl FakeSecondary {
                 }
 
                 seen.lock().expect("received lock").push(ReceivedNotify {
-                    zone: zone_name,
+                    zone_name,
                     signed,
                     verified: signer.is_some(),
                 });

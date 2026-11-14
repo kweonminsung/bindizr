@@ -1,6 +1,5 @@
 use std::fs;
 use std::os::unix::fs::MetadataExt;
-use std::sync::Arc;
 use std::time::Duration;
 
 use bindizr_core::config::Config;
@@ -8,15 +7,14 @@ use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
+use bindizr_service::secondary;
 use bindizr_service::types::{CreateSecondaryRequest, CreateZoneRequest, UpdateZoneRequest};
-use bindizr_service::{Context, secondary};
 use serde_json::{Value, json};
 use tokio::net::UdpSocket;
 use tokio::sync::watch;
 use tokio::{task, time};
 
 use super::*;
-use crate::socket;
 
 /// Verify that invalid command fields are rejected instead of silently defaulting.
 #[test]

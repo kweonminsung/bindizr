@@ -393,16 +393,16 @@ impl fmt::Display for ServedRecordType {
 }
 
 impl From<RecordType> for ServedRecordType {
-    /// Wrap a stored user record type for a record response.
-    fn from(value: RecordType) -> Self {
-        Self::User(value)
+    /// Build a record response type from a stored user record type.
+    fn from(record_type: RecordType) -> Self {
+        Self::User(record_type)
     }
 }
 
 impl From<DnssecRecordType> for ServedRecordType {
-    /// Wrap a generated DNSSEC record type for a record response.
-    fn from(value: DnssecRecordType) -> Self {
-        Self::Derived(value)
+    /// Build a record response type from a generated DNSSEC record type.
+    fn from(record_type: DnssecRecordType) -> Self {
+        Self::Derived(record_type)
     }
 }
 
@@ -412,7 +412,7 @@ mod tests {
 
     use super::*;
 
-    /// Verify that signed and plain record responses stay compatible with DNS mnemonic strings.
+    /// Verify that `ServedRecordType` has one spelling across `to_text`, `Display`, and serde.
     #[test]
     fn served_record_type_spells_itself_once() {
         for (value, expected) in [

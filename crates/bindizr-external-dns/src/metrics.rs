@@ -4,6 +4,11 @@
 use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
 use thiserror::Error;
 
+/// Failure to register an adapter metric collector.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub(crate) struct RegisterMetricsError(#[from] prometheus::Error);
+
 /// The adapter's Prometheus registry and the request metrics registered in it.
 #[derive(Debug)]
 pub(crate) struct AdapterMetrics {
@@ -66,8 +71,3 @@ impl AdapterMetrics {
             .unwrap_or_default()
     }
 }
-
-/// Failure to register an adapter metric collector.
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub(crate) struct RegisterMetricsError(#[from] prometheus::Error);

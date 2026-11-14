@@ -372,6 +372,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         .await;
 
     assert!(!refused.status.success());
+
     let args = [
         "zone",
         "import",

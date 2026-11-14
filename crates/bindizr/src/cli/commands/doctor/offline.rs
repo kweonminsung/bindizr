@@ -2,7 +2,6 @@
 //! listen ports.
 
 use std::io;
-use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;
@@ -97,10 +96,10 @@ fn check_port(
 ) {
     match bound {
         Ok(()) => report.ok(format!("{label} port free: {addr}")),
-        Err(error) if error.kind() == ErrorKind::AddrInUse => {
+        Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
             report.fail(format!("{label} port in use: {addr} ({in_use_hint})"));
         }
-        Err(error) if error.kind() == ErrorKind::PermissionDenied => report.skip(format!(
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => report.skip(format!(
             "{label} port check skipped: binding {addr} needs root"
         )),
         Err(error) => report.fail(format!("{label} port not bindable: {addr} ({error})")),

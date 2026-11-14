@@ -15,7 +15,7 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse};
-use crate::{Context, audit, grant_pattern, pagination, transaction, zone};
+use crate::{Context, audit, grant_pattern, pagination, role, transaction, zone};
 
 /// Grant `role_name` the request's actions in its zone, or in all zones
 /// when it names none.
@@ -27,8 +27,8 @@ pub async fn create(
 ) -> Result<RoleGrantResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let role = crate::role::lookup_by_name(cx, role_name).await?;
-    crate::role::refuse_builtin(&role)?;
+    let role = role::lookup_by_name(cx, role_name).await?;
+    role::refuse_builtin(&role)?;
 
     let actions = request
         .actions
@@ -134,7 +134,7 @@ pub async fn list(
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(page.limit)?;
 
-    let role = crate::role::lookup_by_name(cx, role_name).await?;
+    let role = role::lookup_by_name(cx, role_name).await?;
     list_by_role(cx, &role, page).await
 }
 
@@ -162,8 +162,8 @@ pub async fn revoke(
 ) -> Result<(), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let role = crate::role::lookup_by_name(cx, role_name).await?;
-    crate::role::refuse_builtin(&role)?;
+    let role = role::lookup_by_name(cx, role_name).await?;
+    role::refuse_builtin(&role)?;
 
     let grant = bindizr_db::role_grant::get(cx.db(), grant_id)
         .await?

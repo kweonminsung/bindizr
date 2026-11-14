@@ -14,7 +14,7 @@ use crate::types::{
     CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse,
 };
 use crate::zone::diff;
-use crate::{Context, dnssec, notify, serial, time, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, time, transaction, zone};
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -197,8 +197,7 @@ pub async fn create_bulk(
             let started = Instant::now();
 
             let created_records =
-                crate::record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
-                    .await?;
+                record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
             timings.db_write_ms = time::elapsed_ms(started);
 

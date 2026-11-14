@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use bindizr_core::dns::message::EncodeMessageError;
-use tokio::task::JoinSet;
 use tokio::time;
 
 use super::*;

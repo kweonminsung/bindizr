@@ -11,7 +11,7 @@ use tokio::task::JoinSet;
 use tokio::time;
 
 use crate::dns::error::DnsError;
-use crate::dns::server::DnsContext;
+use crate::dns::server::{DnsContext, nsupdate, soa};
 use crate::dns::stream::{DnsStream, ResponseWriter};
 use crate::dns::{server, wire};
 
@@ -155,9 +155,9 @@ async fn handle_tcp_query(
     }
 
     // nsupdate parses its own message and TSIG; other queries share this parse.
-    if server::nsupdate::is_nsupdate(query_data) {
+    if nsupdate::is_nsupdate(query_data) {
         if let Err(error) =
-            server::nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await
+            nsupdate::handle_tcp_nsupdate(dns_cx, writer, client_addr, query_data).await
         {
             log::error!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
         }
@@ -215,7 +215,7 @@ async fn handle_tcp_query(
 
             writer.write_message(&response).await
         } else if query.qtype == Rtype::SOA {
-            server::soa::handle_tcp_soa(dns_cx, writer, client_addr, &query, query_data).await
+            soa::handle_tcp_soa(dns_cx, writer, client_addr, &query, query_data).await
         } else {
             server::handle_tcp_xfr(dns_cx, writer, client_addr, &query, query_data).await
         }

@@ -15,7 +15,7 @@ pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
 use crate::authorization::Caller;
 use crate::error::{ErrorCode, ServiceError};
-use crate::{Context, Transaction, transaction};
+use crate::{Context, Transaction, transaction, zone};
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
 /// the DNS plane owes instead.
@@ -130,7 +130,7 @@ pub async fn refresh_catalog_content(
 
     match transaction::finish_tx(tx, result, "failed to load catalog content").await? {
         TransferAccess::Granted(zones) => Ok(TransferAccess::Granted(
-            crate::zone::refresh_catalog_from_zones(cx, zones).await?,
+            zone::refresh_catalog_from_zones(cx, zones).await?,
         )),
         TransferAccess::NotAuth => Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => Ok(TransferAccess::Refused(reason)),
@@ -186,8 +186,7 @@ async fn authorize_transfer_tx(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
-    let Some(zone) = crate::zone::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await?
-    else {
+    let Some(zone) = zone::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {
         return Ok(TransferAccess::NotAuth);
     };
     let caller = match reauthenticate_transfer_tx(tx, caller).await? {

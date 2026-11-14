@@ -54,6 +54,7 @@ async fn role_grants_support_create_list_and_revoke() {
 
     let refused = app.run_cli(&args, None).await;
     common::assert_cli_failure_contains(&args, &refused, "built in");
+
     let args = ["role", "delete", "admin"];
 
     let refused = app.run_cli(&args, None).await;

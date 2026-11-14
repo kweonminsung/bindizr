@@ -13,7 +13,6 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError};
-use record::ParsedTsig;
 pub use response::build_error_response;
 use ring::hmac;
 pub use signer::{ResponseSigner, SignResponseError, TransferSigner};
@@ -22,6 +21,7 @@ use thiserror::Error;
 use crate::dns::LibraryError;
 use crate::dns::message::RECORD_FIELDS_LEN;
 use crate::dns::name::MAX_WIRE_NAME_LEN;
+use crate::dns::tsig::record::ParsedTsig;
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
 /// Reserve the maximum TSIG size: longest key name, `hmac-sha512.`,

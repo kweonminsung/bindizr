@@ -27,99 +27,6 @@ pub struct Caller {
     origin: ChangeOrigin,
 }
 
-/// Which resources the caller may access; transport and credential names do not decide it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CallerScope {
-    Global,
-    /// A role's caller, through the credential that authenticated it.
-    Role {
-        id: RoleId,
-        credential: Credential,
-        grants: RoleGrants,
-    },
-}
-
-/// The credential a role's caller proved itself with, re-read by every
-/// transaction that acts for it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Credential {
-    Token(TokenId),
-    TsigKey(TsigKeyId),
-}
-
-/// One record action to authorize, its owner relative to the zone (stored
-/// form). A `None` type matches only grants that constrain no type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordAccess {
-    pub(crate) action: Action,
-    pub(crate) relative_name: OwnerName,
-    pub(crate) record_type: Option<RecordType>,
-}
-
-/// A record as grants see it: an owner name and a type.
-pub(crate) trait GrantedRecord {
-    /// Return the owner name, relative to its zone (stored form).
-    fn name(&self) -> &OwnerName;
-
-    /// Return the record's type.
-    fn record_type(&self) -> RecordType;
-}
-
-impl GrantedRecord for Record {
-    /// Return the stored owner name.
-    fn name(&self) -> &OwnerName {
-        &self.name
-    }
-
-    /// Return the stored type.
-    fn record_type(&self) -> RecordType {
-        self.record_type
-    }
-}
-
-impl GrantedRecord for RecordData {
-    /// Return the owner name.
-    fn name(&self) -> &OwnerName {
-        &self.name
-    }
-
-    /// Return the type.
-    fn record_type(&self) -> RecordType {
-        self.record_type
-    }
-}
-
-/// Zone records authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
-/// Responses render existing records only through this checked type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReadableRecords<T>(Vec<T>);
-
-impl<T> ReadableRecords<T> {
-    /// Add a record the caller is writing: what it sends is its own to see.
-    pub(crate) fn push_written(&mut self, record: T) {
-        self.0.push(record);
-    }
-
-    /// Return the readable records.
-    pub(crate) fn as_slice(&self) -> &[T] {
-        &self.0
-    }
-}
-
-/// Proof that the caller may read a zone's records whole, from
-/// [`Caller::authorize_whole_zone_read`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WholeZoneRead {
-    _proof: (),
-}
-
-impl WholeZoneRead {
-    /// Return every record of the zone, unfiltered: the proof covers them all.
-    pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
-        ReadableRecords(records)
-    }
-}
-
 impl Caller {
     /// Build the globally authorized caller after the daemon socket checks its peer UID.
     pub fn socket() -> Self {
@@ -508,6 +415,99 @@ impl Caller {
             "role does not permit '{action}' over zone '{}' whole",
             zone.name
         )))
+    }
+}
+
+/// Which resources the caller may access; transport and credential names do not decide it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CallerScope {
+    Global,
+    /// A role's caller, through the credential that authenticated it.
+    Role {
+        id: RoleId,
+        credential: Credential,
+        grants: RoleGrants,
+    },
+}
+
+/// The credential a role's caller proved itself with, re-read by every
+/// transaction that acts for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Credential {
+    Token(TokenId),
+    TsigKey(TsigKeyId),
+}
+
+/// One record action to authorize, its owner relative to the zone (stored
+/// form). A `None` type matches only grants that constrain no type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordAccess {
+    pub(crate) action: Action,
+    pub(crate) relative_name: OwnerName,
+    pub(crate) record_type: Option<RecordType>,
+}
+
+/// A record as grants see it: an owner name and a type.
+pub(crate) trait GrantedRecord {
+    /// Return the owner name, relative to its zone (stored form).
+    fn name(&self) -> &OwnerName;
+
+    /// Return the record's type.
+    fn record_type(&self) -> RecordType;
+}
+
+impl GrantedRecord for Record {
+    /// Return the stored owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// Return the stored type.
+    fn record_type(&self) -> RecordType {
+        self.record_type
+    }
+}
+
+impl GrantedRecord for RecordData {
+    /// Return the owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// Return the type.
+    fn record_type(&self) -> RecordType {
+        self.record_type
+    }
+}
+
+/// Zone records authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
+/// Responses render existing records only through this checked type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadableRecords<T>(Vec<T>);
+
+impl<T> ReadableRecords<T> {
+    /// Add a record the caller is writing: what it sends is its own to see.
+    pub(crate) fn push_written(&mut self, record: T) {
+        self.0.push(record);
+    }
+
+    /// Return the readable records.
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+/// Proof that the caller may read a zone's records whole, from
+/// [`Caller::authorize_whole_zone_read`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WholeZoneRead {
+    _proof: (),
+}
+
+impl WholeZoneRead {
+    /// Return every record of the zone, unfiltered: the proof covers them all.
+    pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
+        ReadableRecords(records)
     }
 }
 

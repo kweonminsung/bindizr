@@ -12,11 +12,11 @@ use tokio::sync::AcquireError;
 #[derive(Debug, Error)]
 pub(crate) enum DnsError {
     /// No enabled zone carries the name: answered NOTAUTH.
-    #[error("not authoritative for zone: {0}")]
-    NotAuth(String),
+    #[error("not authoritative for zone: {zone_name}")]
+    NotAuth { zone_name: String },
     /// The key that signed the request holds no grant over the zone whole.
-    #[error("transfer refused: {0}")]
-    Refused(String),
+    #[error("transfer refused: {reason}")]
+    Refused { reason: String },
     #[error("service error: {0}")]
     Service(#[from] ServiceError),
     #[error("IO error: {0}")]
@@ -44,8 +44,8 @@ pub(crate) enum DnsError {
     /// An IXFR whose version rows do not cover a serial the journal names.
     #[error("DNS protocol error: missing {which} SOA version for serial {serial}")]
     MissingVersion { which: &'static str, serial: Serial },
-    #[error("invalid query: {0}")]
-    InvalidQuery(String),
+    #[error("invalid query: {reason}")]
+    InvalidQuery { reason: String },
     #[error("failed to build NSUPDATE response: {0}")]
     BuildNsupdateResponse(#[from] BuildResponseError),
 }

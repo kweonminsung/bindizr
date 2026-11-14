@@ -14,11 +14,11 @@ use bindizr_core::model::zone::Zone;
 pub use multiple::import_many;
 pub use single::import;
 
-use crate::Context;
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
 use crate::types::{ImportMode, ImportZoneResponse, Run};
+use crate::{Context, zone};
 
 /// Text needs the locked zone's default TTL; AXFR carries every TTL explicitly.
 #[derive(Debug)]
@@ -54,7 +54,7 @@ async fn import_transfer(
 ) -> Result<ImportZoneResponse, ServiceError> {
     // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
     if options.missing_zone_action == MissingZoneAction::Reject {
-        let zone = crate::zone::lookup_by_name(cx, zone_name).await?;
+        let zone = zone::lookup_by_name(cx, zone_name).await?;
         authorize_import(caller, options.mode, &zone)?;
     }
 
@@ -86,7 +86,7 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
     let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
 
     for name in names {
-        let zone_name = crate::zone::normalize_name(name)?;
+        let zone_name = zone::normalize_name(name)?;
         if seen.insert(zone_name.clone()) {
             zone_names.push(zone_name);
         }

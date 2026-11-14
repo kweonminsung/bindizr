@@ -5,14 +5,14 @@ use bindizr_core::model::role_grant::Action;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::{Context, audit, transaction};
+use crate::{Context, audit, secondary, transaction};
 
 /// Delete a secondary by name.
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
     // Unlocked read to learn the row to delete; a row gone meanwhile reads as not found below.
-    let secondary = crate::secondary::lookup_by_name(cx, name).await?;
+    let secondary = secondary::lookup_by_name(cx, name).await?;
 
     let mut tx = transaction::begin_tx(cx, "failed to delete secondary").await?;
 

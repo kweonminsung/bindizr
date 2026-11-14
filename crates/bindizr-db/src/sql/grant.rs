@@ -3,6 +3,8 @@
 
 use bindizr_core::model::role_grant::Action;
 
+use crate::sql;
+
 /// Use `#` for LIKE escaping so stored backslashes remain data (RFC 1035, Section 5.1).
 /// It needs no SQL-literal escaping on any backend.
 const LIKE_ESCAPE: char = '#';
@@ -36,7 +38,7 @@ pub(crate) fn grant_record_match_sql(
 ) -> String {
     let actions = concat(&["','", "p.actions", "','"]);
     let read = format!("{actions} LIKE '%,{},%'", Action::RecordRead.as_str());
-    let apex = crate::sql::apex_owner_sql();
+    let apex = sql::apex_owner_sql();
     let suffix = "SUBSTR(p.record_name_pattern, 3)";
     let under = concat(&["'%.'", &like_escaped_sql(suffix)]);
     let name = format!(

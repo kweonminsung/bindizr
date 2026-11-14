@@ -374,8 +374,8 @@ impl TestApp {
         body["zone"].clone()
     }
 
-    /// CLI-side twin of `create_test_zone`: create a zone via `zone create` and
-    /// return the CLI output.
+    /// Create a zone via `zone create` and return the CLI output, as the CLI-side
+    /// twin of `create_test_zone`.
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");

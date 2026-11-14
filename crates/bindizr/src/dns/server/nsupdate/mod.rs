@@ -180,11 +180,11 @@ async fn handle_nsupdate_request(
                 }
             }
         }
-        Err(UpdateError::Edns(rcode)) => {
+        Err(UpdateError::Edns { rcode }) => {
             log::info!("Refusing the EDNS of an NSUPDATE from {client_addr}");
             (rcode, None)
         }
-        Err(UpdateError::NotSupported(reason)) => {
+        Err(UpdateError::NotSupported { reason }) => {
             log::info!("NSUPDATE refused from {client_addr}: {reason}");
             (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
@@ -192,7 +192,7 @@ async fn handle_nsupdate_request(
             log::warn!("NSUPDATE refused from {client_addr}: {error}");
             (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
-        Err(error @ (UpdateError::NotAuth(_) | UpdateError::ZoneName { .. })) => {
+        Err(error @ (UpdateError::NotAuth { .. } | UpdateError::ZoneName { .. })) => {
             log::warn!("NSUPDATE notauth from {client_addr}: {error}");
             (
                 OptRcode::NOTAUTH,

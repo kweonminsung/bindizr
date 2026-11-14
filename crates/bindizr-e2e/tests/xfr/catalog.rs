@@ -16,14 +16,14 @@ use crate::xfr::common;
 async fn catalog_queries_match_equivalent_dns_escapes() {
     use domain::base::ToName;
 
-    for (configured, question) in [
+    for (catalog_zone_name, qname) in [
         (r"cat\046alog.example", r"CAT\.ALOG.EXAMPLE"),
         (r"cat\092alog.example", r"CAT\\ALOG.EXAMPLE"),
         (r"cat\255alog.example", r"CAT\255ALOG.EXAMPLE"),
         (r"cat\000alog.example", r"CAT\000ALOG.EXAMPLE"),
     ] {
         let app = TestApp::start_with_options(TestAppOptions {
-            catalog_zone_name: configured.to_string(),
+            catalog_zone_name: catalog_zone_name.to_string(),
             ..Default::default()
         })
         .await;
@@ -34,9 +34,9 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
         for key in [None, Some(&key)] {
             for qtype in [Rtype::SOA, Rtype::IXFR] {
                 let query = if qtype == Rtype::IXFR {
-                    common::build_ixfr_query(question, 1)
+                    common::build_ixfr_query(qname, 1)
                 } else {
-                    common::build_edns_query(question, qtype, &[(0, false)])
+                    common::build_edns_query(qname, qtype, &[(0, false)])
                 };
                 let response = dns::exchange_request(query, key, |message| {
                     dns::exchange_udp(app.dns_port(), message)
@@ -46,7 +46,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                 assert_eq!(
                     response.header().rcode(),
                     Rcode::NOERROR,
-                    "{configured} {qtype}"
+                    "{catalog_zone_name} {qtype}"
                 );
                 assert_eq!(
                     response
@@ -55,13 +55,14 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                         .qname()
                         .to_name::<Vec<u8>>()
                         .as_slice(),
-                    dns::parse_name(question).unwrap().as_slice()
+                    dns::parse_name(qname).unwrap().as_slice()
                 );
                 assert_eq!(response.header_counts().ancount(), 1);
+
                 let query = if qtype == Rtype::IXFR {
-                    common::build_ixfr_query(question, 1)
+                    common::build_ixfr_query(qname, 1)
                 } else {
-                    common::build_edns_query(question, qtype, &[(0, false)])
+                    common::build_edns_query(qname, qtype, &[(0, false)])
                 };
                 let response = dns::exchange_request(query, key, |message| {
                     dns::exchange_tcp(app.dns_port(), message)
@@ -71,7 +72,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                 assert_eq!(
                     response.header().rcode(),
                     Rcode::NOERROR,
-                    "{configured} {qtype}"
+                    "{catalog_zone_name} {qtype}"
                 );
                 let echoed = response
                     .sole_question()
@@ -81,13 +82,13 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
 
                 assert_eq!(
                     echoed.as_slice(),
-                    dns::parse_name(question).unwrap().as_slice()
+                    dns::parse_name(qname).unwrap().as_slice()
                 );
                 assert!(response.header_counts().ancount() >= 1);
             }
 
             assert_eq!(
-                dns::fetch_axfr_tcp(app.dns_port(), question, key)
+                dns::fetch_axfr_tcp(app.dns_port(), qname, key)
                     .unwrap()
                     .records(),
                 5
@@ -138,9 +139,10 @@ async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
             .records(),
         5
     );
+
     let query = common::build_edns_query(&catalog_zone_name, Rtype::SOA, &[]).finish();
-    let response =
-        Message::from_octets(dns::exchange_tcp(app.dns_port(), &query).unwrap()).unwrap();
+    let response = dns::exchange_tcp(app.dns_port(), &query).unwrap();
+    let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::NOERROR);
     assert!(

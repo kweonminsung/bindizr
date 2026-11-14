@@ -1,16 +1,13 @@
 //! Entries eviction and the record accounting it evicts on.
 
-use std::sync::Arc;
-
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::{Record, RecordId, RecordType};
-use bindizr_core::model::zone::ZoneId;
-use bindizr_core::model::zone_version::ZoneVersionId;
+use bindizr_core::model::record::{RecordId, RecordType};
 use chrono::Utc;
 
 use super::*;
 
+/// Record budget the cache is given in these tests.
 const MAX_RECORDS: usize = 500_000;
 
 /// Build cached zone content with the requested record count.

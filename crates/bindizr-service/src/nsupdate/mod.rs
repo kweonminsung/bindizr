@@ -7,15 +7,14 @@ mod plan;
 mod prerequisite;
 
 use bindizr_core::dns::message::{Class, Rcode, Rtype};
+use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
 use bindizr_core::dns::nsupdate::parser::{
     ParseUpdateError, UpdateRecord, ValidateUpdateShapeError,
 };
 use bindizr_core::dns::record::ParseRecordValueError;
-use bindizr_core::dns::{Serial, name};
 use bindizr_core::model::record::RecordType;
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use bindizr_db::error::DatabaseError;
 use plan::UpdateOperation;
@@ -136,7 +135,7 @@ pub async fn apply(
 
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
-    let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {
+    let apply_result: Result<_, NsupdateError> = async {
         let zone = zone::find_served_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| {

@@ -54,13 +54,13 @@ pub(crate) fn exchange_udp(port: u16, message: &[u8]) -> Result<Vec<u8>, String>
     socket
         .send_to(message, ("127.0.0.1", port))
         .map_err(|error| error.to_string())?;
-    let mut response = vec![0; usize::from(u16::MAX)];
+    let mut buffer = vec![0; usize::from(u16::MAX)];
     let (len, _) = socket
-        .recv_from(&mut response)
+        .recv_from(&mut buffer)
         .map_err(|error| error.to_string())?;
-    response.truncate(len);
+    buffer.truncate(len);
 
-    Ok(response)
+    Ok(buffer)
 }
 
 /// Send one TCP message and return the first response frame.

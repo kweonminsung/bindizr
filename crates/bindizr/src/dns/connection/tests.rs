@@ -1,6 +1,6 @@
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Name, Opcode, OptRcode, Rcode};
-use bindizr_core::dns::{message, query};
+use bindizr_core::dns::message::{Name, Rcode};
+use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
@@ -11,7 +11,7 @@ use rustls::{ServerConfig, version};
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
-use tokio::{task, time};
+use tokio::task;
 
 use super::*;
 use crate::dns::udp::UdpSocket;

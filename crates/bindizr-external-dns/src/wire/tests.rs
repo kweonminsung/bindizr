@@ -28,7 +28,7 @@ fn endpoint_deserializes_external_dns_wire_format() {
     .unwrap();
 
     assert_eq!(parsed.dns_name, "app.example.com");
-    assert_eq!(parsed.targets, vec!["192.0.2.10"]);
+    assert_eq!(parsed.targets, ["192.0.2.10"]);
     assert_eq!(parsed.record_type, "A");
     assert_eq!(parsed.record_ttl, 300);
     assert_eq!(
@@ -130,7 +130,7 @@ fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
 
     // TTL 0 (unset) maps to None so the server applies the zone TTL.
     assert_eq!(request.updates[0].old.ttl, None);
-    assert_eq!(request.updates[0].new.values, vec!["192.0.2.3"]);
+    assert_eq!(request.updates[0].new.values, ["192.0.2.3"]);
     assert!(request.deletes.is_empty());
 }
 

@@ -4,13 +4,14 @@ use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use chrono::{DateTime, Duration};
-use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::authorization::Caller;
+use crate::types::CreateZoneRequest;
 use crate::zone;
 
+/// The client address every test transfer is served to.
 const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
 
 /// Build service state over a disposable database holding the named zones.
@@ -31,13 +32,20 @@ async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<Zon
     let mut zone_ids = Vec::new();
 
     for zone_name in zone_names {
-        let request = serde_json::from_value(json!({
-            "name": zone_name,
-            "mname": format!("ns.{zone_name}"),
-            "rname": format!("hostmaster@{zone_name}"),
-            "apex_ns": false
-        }))
-        .unwrap();
+        let request = CreateZoneRequest {
+            name: zone_name.to_string(),
+            mname: format!("ns.{zone_name}"),
+            rname: format!("hostmaster@{zone_name}"),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: false,
+            dry_run: false,
+        };
         let created = zone::create(&cx, &Caller::socket(), &request)
             .await
             .unwrap();

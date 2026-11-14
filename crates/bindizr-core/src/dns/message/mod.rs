@@ -20,11 +20,11 @@ pub use query::{
     Edns, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
     UDP_PAYLOAD_SIZE_WITHOUT_EDNS, extract_opcode, is_response,
 };
-use query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 pub use query_metadata::{QueryMetadata, has_readable_sections};
 use thiserror::Error;
 
 use crate::dns::dnssec::EncodeWireNameError;
+use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 use crate::dns::name::EncodeNameError;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::tsig::TransferSigner;

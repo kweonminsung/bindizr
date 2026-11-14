@@ -98,27 +98,27 @@ fn transfer<S: Read + Write>(
     let mut soa_seen = 0usize;
 
     while soa_seen < 2 {
-        let Some(frame) = transport::read_frame(stream)? else {
+        let Some(response) = transport::read_frame(stream)? else {
             return Err(format!(
                 "the transfer ended after {records} record(s) without its closing SOA"
             ));
         };
-        let mut message = Message::from_octets(frame).map_err(|error| error.to_string())?;
+        let mut response = Message::from_octets(response).map_err(|error| error.to_string())?;
 
-        if message.header().rcode() != Rcode::NOERROR {
+        if response.header().rcode() != Rcode::NOERROR {
             return Ok(TransferResult::Refused {
-                rcode: message.header().rcode(),
-                signed: tsig::parse_tsig_presence(&message)?,
+                rcode: response.header().rcode(),
+                signed: tsig::parse_tsig_presence(&response)?,
             });
         }
 
         if let Some(client) = client.as_mut() {
             client
-                .answer(&mut message, Time48::now())
+                .answer(&mut response, Time48::now())
                 .map_err(|error| format!("envelope did not verify: {error}"))?;
         }
 
-        for record in message.answer().map_err(|error| error.to_string())? {
+        for record in response.answer().map_err(|error| error.to_string())? {
             let record = record.map_err(|error| error.to_string())?;
             if record.rtype() == Rtype::SOA {
                 soa_seen += 1;

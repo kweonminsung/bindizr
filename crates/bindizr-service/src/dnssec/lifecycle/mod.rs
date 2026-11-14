@@ -200,16 +200,19 @@ pub async fn update_settings(
 
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = match &policy_name {
-            Some(name) => {
+            Some(policy_name) => {
                 if keys.is_empty() {
                     return Err(ServiceError::dnssec_not_enabled(&zone.name));
                 }
 
                 let current = dnssec::lookup_zone_policy_tx(&mut tx, &zone).await?;
-                let target =
-                    bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, name, LockLevel::Shared)
-                        .await?
-                        .ok_or_else(|| ServiceError::dnssec_policy_not_found(name))?;
+                let target = bindizr_db::dnssec_policy::get_by_name_tx(
+                    &mut tx,
+                    policy_name,
+                    LockLevel::Shared,
+                )
+                .await?
+                .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
                 validate_policy_move(&zone, &current, &target)?;
 
                 Some(target)

@@ -11,7 +11,7 @@ use crate::error::ServiceError;
 use crate::types::{
     CheckSecondariesResponse, CheckSecondaryResponse, SecondaryTransferSummaryResponse,
 };
-use crate::{Context, dns_client, notify, probe};
+use crate::{Context, dns_client, notify, probe, secondary};
 
 /// Check one secondary, enabled or not: resolve it, compare its catalog serial
 /// with Bindizr's listener, and send catalog NOTIFY.
@@ -22,7 +22,7 @@ pub async fn check(
 ) -> Result<CheckSecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let secondary = crate::secondary::lookup_by_name(cx, name).await?;
+    let secondary = secondary::lookup_by_name(cx, name).await?;
 
     let config = cx.config();
     let catalog_zone_name = config.dns.catalog_zone_name.clone();
@@ -49,10 +49,10 @@ pub async fn check(
     let catalog =
         probe::probe_secondary(cx, &catalog_zone_name, &secondary, catalog_serial).await?;
     let notifies = notify::send_notify_to_secondary(cx, &catalog_zone_name, &secondary).await?;
-    let transfers = crate::secondary::summarize_transfers(cx, &secondary).await?;
+    let transfers = secondary::summarize_transfers(cx, &secondary).await?;
 
     Ok(CheckSecondaryResponse {
-        secondary: crate::secondary::lookup_response(cx, &secondary).await?,
+        secondary: secondary::lookup_response(cx, &secondary).await?,
         addresses,
         resolve_error,
         catalog_zone_name: catalog_zone_name.to_string(),
@@ -78,9 +78,9 @@ pub async fn check_enabled(
     let notifies = notify::send_notify_to_secondaries(cx, catalog_zone_name).await?;
     let mut transfers = Vec::new();
 
-    for secondary in crate::secondary::list_enabled(cx).await? {
+    for secondary in secondary::list_enabled(cx).await? {
         transfers.push(SecondaryTransferSummaryResponse {
-            summary: crate::secondary::summarize_transfers(cx, &secondary).await?,
+            summary: secondary::summarize_transfers(cx, &secondary).await?,
             secondary_name: secondary.name,
             address: secondary.address.to_string(),
         });

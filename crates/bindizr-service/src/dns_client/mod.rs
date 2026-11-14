@@ -179,8 +179,8 @@ pub(crate) async fn resolve_address_entries(
 ) -> Vec<(String, Result<Vec<SocketAddr>, ResolveAddressError>)> {
     let mut entries = Vec::new();
 
-    for item in raw.split(',') {
-        let trimmed = item.trim();
+    for entry in raw.split(',') {
+        let trimmed = entry.trim();
 
         if trimmed.is_empty() {
             continue;

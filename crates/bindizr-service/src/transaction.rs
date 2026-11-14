@@ -1,10 +1,8 @@
 //! The transaction plumbing every mutation flow shares: open one on the
 //! context's database, then commit on success or roll back on failure.
 
-use bindizr_db::Transaction;
-
-use crate::Context;
 use crate::error::ServiceError;
+use crate::{Context, Transaction};
 
 /// Begin a database transaction and translate any startup error.
 pub(crate) async fn begin_tx(

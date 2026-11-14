@@ -13,7 +13,7 @@ use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 use crate::socket::server::SocketContext;
 use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
-/// Return the daemon's current status as JSON.
+/// Get the daemon's current status as JSON.
 pub(crate) async fn get_daemon_status(
     cx: &Context,
 ) -> Result<DaemonResponse<DaemonStatusResponse>, ServiceError> {
@@ -88,7 +88,7 @@ pub(crate) fn reload_config(
     })
 }
 
-/// Return the daemon's effective configuration.
+/// Get the daemon's effective configuration.
 pub(crate) fn get_config(cx: &Context) -> DaemonResponse<Arc<Config>> {
     DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),

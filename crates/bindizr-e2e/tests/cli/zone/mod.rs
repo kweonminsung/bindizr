@@ -46,6 +46,7 @@ async fn escaped_zone_names_follow_the_same_policy() {
     let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
     assert_eq!(fetched["zone"]["name"], canonical_zone_name);
+
     let wildcard_zone_name = format!(r"\042.{base_zone_name}");
     let args = [
         "zone",

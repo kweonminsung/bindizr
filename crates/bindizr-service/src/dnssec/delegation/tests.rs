@@ -1,6 +1,5 @@
 use std::slice;
 
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecord;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole};
@@ -9,7 +8,6 @@ use bindizr_core::model::zone::ZoneId;
 
 use super::*;
 use crate::error::ErrorCode;
-use crate::types::DsState;
 
 /// Verify that missing parent configuration keeps its service-owned cause and established message.
 #[test]

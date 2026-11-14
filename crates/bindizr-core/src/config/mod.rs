@@ -593,7 +593,8 @@ pub struct DnsConfig {
 impl DnsConfig {
     /// Return whether a DNS question's decoded labels name this instance's catalog (RFC 4343).
     pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
-        ZoneName::parse(zone_name).is_ok_and(|name| name == self.catalog_zone_name)
+        ZoneName::parse(zone_name)
+            .is_ok_and(|canonical_zone_name| canonical_zone_name == self.catalog_zone_name)
     }
 
     /// Return how long a TCP or TLS connection may sit idle between queries.

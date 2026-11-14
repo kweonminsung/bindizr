@@ -249,7 +249,7 @@ pub(crate) async fn remove_socket_file(socket_path: &str) {
 pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
     let mut failures = Vec::new();
 
-    for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
+    for (index, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
         let error = match bind_socket(path).await {
             Ok(listener) => return Ok(((*path).to_string(), listener)),
             // Another daemon already owns this socket. Trying the next candidate
@@ -258,7 +258,7 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
             Err(error) => error,
         };
 
-        if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
+        if let Some(next) = SOCKET_PATH_CANDIDATES.get(index + 1) {
             log::warn!("Cannot use Unix socket path '{path}': {error}. Falling back to '{next}'.");
         }
 

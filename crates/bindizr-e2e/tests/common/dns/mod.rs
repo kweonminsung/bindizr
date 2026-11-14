@@ -555,4 +555,5 @@ fn generic_wks_export(text: &str) -> String {
     normalized
 }
 
+#[cfg(test)]
 mod tests;

@@ -9,7 +9,7 @@ use bindizr_db::LockLevel;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{SecondaryResponse, UpdateSecondaryRequest};
-use crate::{Context, audit, transaction, tsig_key};
+use crate::{Context, audit, secondary, transaction, tsig_key};
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
 /// key name sends NOTIFY unsigned again.
@@ -21,7 +21,7 @@ pub async fn update(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = crate::secondary::normalize_name(name)?;
+    let name = secondary::normalize_name(name)?;
     let address = request
         .address
         .as_deref()
@@ -135,5 +135,5 @@ pub async fn update(
 
     let secondary = transaction::finish_tx(tx, apply_result, "failed to update secondary").await?;
 
-    crate::secondary::lookup_response(cx, &secondary).await
+    secondary::lookup_response(cx, &secondary).await
 }

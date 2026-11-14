@@ -8,7 +8,7 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateSecondaryRequest, SecondaryResponse};
-use crate::{Context, audit, transaction, tsig_key};
+use crate::{Context, audit, secondary, transaction, tsig_key};
 
 /// Register a secondary by name and `host[:port]` address; with
 /// `notify_key_name`, NOTIFY to it is signed with that TSIG key.
@@ -19,8 +19,8 @@ pub async fn create(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = crate::secondary::normalize_name(&request.name)?;
-    let address = crate::secondary::normalize_address(&request.address)?;
+    let name = secondary::normalize_name(&request.name)?;
+    let address = secondary::normalize_address(&request.address)?;
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {

@@ -95,6 +95,7 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     let base_serial = app.read_zone_serial(&zone_name).await;
+
     let (status, body) = app
         .send_request(
             Method::PUT,

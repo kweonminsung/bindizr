@@ -264,6 +264,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
+
     let receiver = FakeSecondary::start(None);
 
     app.create_secondary("receiver", &receiver.addr()).await;
@@ -286,7 +287,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         while !receiver
             .received()
             .iter()
-            .any(|notify| notify.zone == zone_name)
+            .any(|notify| notify.zone_name == zone_name)
         {
             time::sleep(Duration::from_millis(10)).await;
         }
@@ -298,7 +299,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         receiver
             .received()
             .iter()
-            .filter(|notify| notify.zone == zone_name)
+            .filter(|notify| notify.zone_name == zone_name)
             .count(),
         1
     );
@@ -318,7 +319,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         while receiver
             .received()
             .iter()
-            .filter(|notify| notify.zone == zone_name)
+            .filter(|notify| notify.zone_name == zone_name)
             .count()
             < 2
         {

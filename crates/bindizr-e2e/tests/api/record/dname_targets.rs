@@ -90,7 +90,7 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let delegation_id = body["records"][1]["id"].as_i64().unwrap();
+    let delegation_record_id = body["records"][1]["id"].as_i64().unwrap();
 
     for target in [
         format!("redirect.{zone_name}."),
@@ -136,7 +136,7 @@ async fn dname_targets_respect_label_and_delegation_boundaries() {
         let (status, body) = app
             .send_request(
                 Method::DELETE,
-                &format!("/records/{delegation_id}?dry_run={dry_run}"),
+                &format!("/records/{delegation_record_id}?dry_run={dry_run}"),
                 None,
             )
             .await;

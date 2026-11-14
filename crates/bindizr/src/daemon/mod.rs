@@ -31,10 +31,11 @@ use tokio::{signal, sync, time};
 use crate::api::StartApiError;
 use crate::dns::StartDnsError;
 use crate::shutdown::Shutdown;
+use crate::socket::server;
 use crate::socket::server::control::DaemonControl;
-use crate::socket::server::{BindSocketError, ServeSocketError, SocketContext};
+use crate::socket::server::{BindSocketError, ServeSocketError, SocketContext, control};
 use crate::tls::{LoadCertificateError, TlsCertificates};
-use crate::{api, dns, socket};
+use crate::{api, dns};
 
 /// How long the servers that can finish on their own get before the daemon
 /// exits anyway.
@@ -164,7 +165,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
     // Bind the control socket first so a second daemon fails before
     // opening the database or claiming DNS ports.
-    let (socket_path, socket_listener) = socket::server::bind().await?;
+    let (socket_path, socket_listener) = server::bind().await?;
     log::info!("Daemon socket server listening on {socket_path}");
 
     // Read before the database opens: a pair that does not load is a
@@ -208,9 +209,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
     let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
 
-    let (control_tx, mut control_rx) = socket::server::control::channel();
+    let (control_tx, mut control_rx) = control::channel();
     let socket_cx = Arc::new(SocketContext::new(cx.clone(), control_tx, tls.clone()));
-    let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
+    let socket_task = server::serve(socket_cx, socket_listener, &shutdown)?;
 
     let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
 
@@ -288,7 +289,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     };
 
     drain(&shutdown, servers, scheduler_worker, notify_worker).await;
-    socket::server::remove_socket_file(&socket_path).await;
+    server::remove_socket_file(&socket_path).await;
 
     match outcome {
         RunResult::Stop => Ok(()),

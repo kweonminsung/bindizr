@@ -61,10 +61,10 @@ async fn tokens_support_create_list_and_delete() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["token"]["name"], scoped_name);
     assert_eq!(body["token"]["role_name"], scoped_name);
-    let scoped_secret = body["secret"].as_str().unwrap().to_string();
+    let scoped_token = body["secret"].as_str().unwrap().to_string();
 
     // The new token authenticates, and its role holds no grant yet.
-    app.set_auth_token(scoped_secret.clone());
+    app.set_auth_token(scoped_token.clone());
 
     let (status, _) = app
         .send_request(
@@ -88,10 +88,10 @@ async fn tokens_support_create_list_and_delete() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["token"]["role_name"], "admin");
-    let admin_secret = body["secret"].as_str().unwrap().to_string();
+    let admin_token = body["secret"].as_str().unwrap().to_string();
 
     // A token in the built-in role minted over HTTP may create zones.
-    app.set_auth_token(admin_secret);
+    app.set_auth_token(admin_token);
 
     let (status, _) = app
         .send_request(
@@ -183,7 +183,7 @@ async fn tokens_support_create_list_and_delete() {
     assert_eq!(status, StatusCode::OK);
 
     // A deleted token stops authenticating at once.
-    app.set_auth_token(scoped_secret);
+    app.set_auth_token(scoped_token);
 
     let (status, _) = app.send_request(Method::GET, "/zones", None).await;
 
@@ -257,16 +257,17 @@ async fn tokens_self_describes_the_bearer() {
     let (admin_name, admin_token) = app.create_api_token().await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
 
-    for (name, token, role) in [
+    for (name, token, role_name) in [
         (admin_name, admin_token, "admin".to_string()),
         (scoped_name.clone(), scoped_token, scoped_name),
     ] {
         app.set_auth_token(token);
+
         let (status, body) = app.send_request(Method::GET, "/tokens/self", None).await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["token"]["name"], name);
-        assert_eq!(body["token"]["role_name"], role);
+        assert_eq!(body["token"]["role_name"], role_name);
         assert!(body.get("secret").is_none(), "{body}");
     }
 }

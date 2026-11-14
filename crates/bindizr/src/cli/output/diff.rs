@@ -68,19 +68,19 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
 
         // Sign and name label the entry once; TTL stays per-line so a TTL-only
         // change reads clearly.
-        for (i, (ttl, data)) in lines.iter().enumerate() {
-            let head = if i == 0 {
+        for (index, (ttl, data)) in lines.iter().enumerate() {
+            let head = if index == 0 {
                 sign.as_str()
             } else {
                 " "
             };
-            let name_cell = if i == 0 {
+            let name_cell = if index == 0 {
                 entry.name.as_str()
             } else {
                 ""
             };
             let line = format!("{head} {name_cell:<24} {ttl:>5} IN {record_type:<6} {data}");
-            let line = if i < removed {
+            let line = if index < removed {
                 color::red(&line)
             } else {
                 color::green(&line)

@@ -44,13 +44,6 @@ struct CachedTransfer {
     last_used: u64,
 }
 
-/// The DNS front end's transfer cache: one cached transfer per zone, behind
-/// one lock, within the record budget `dns.transfer.cache_max_records` sets.
-#[derive(Debug, Default)]
-pub(crate) struct TransferCache {
-    entries: Mutex<Entries>,
-}
-
 /// Transfer-cache entries, record budget, and recency clock; the enclosing
 /// cache owns the lock so eviction can be tested independently.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -59,6 +52,105 @@ struct Entries {
     records: usize,
     /// The logical clock recency is measured on; advanced under the lock.
     clock: u64,
+}
+
+impl Entries {
+    /// Advance the logical clock used to track cache recency.
+    fn tick(&mut self) -> u64 {
+        self.clock += 1;
+        self.clock
+    }
+
+    /// Drop least-recently-used zones until the retained records fit
+    /// `max_records`, which a reload may have lowered since the last store.
+    fn trim_to(&mut self, max_records: usize) -> usize {
+        if self.records <= max_records {
+            return 0;
+        }
+
+        // One recency-ordered pass, not a full scan per eviction under the lock.
+        let mut by_recency: Vec<(u64, ZoneId)> = self
+            .zones
+            .iter()
+            .map(|(&zone_id, entry)| (entry.last_used, zone_id))
+            .collect();
+        by_recency.sort_unstable();
+        let mut evicted = 0;
+
+        for (_, lru_zone_id) in by_recency {
+            if self.records <= max_records {
+                break;
+            }
+            self.remove(lru_zone_id);
+            evicted += 1;
+        }
+
+        evicted
+    }
+
+    /// Find cached zone content matching the requested version.
+    fn find(
+        &mut self,
+        zone_id: ZoneId,
+        version_id: ZoneVersionId,
+    ) -> Option<CachedTransferContent> {
+        let now = self.tick();
+        let entry = self
+            .zones
+            .get_mut(&zone_id)
+            .filter(|entry| entry.version_id == version_id)?;
+        entry.last_used = now;
+
+        Some(entry.content.clone())
+    }
+
+    /// Store a zone within the record budget and return the number of evictions.
+    fn store(
+        &mut self,
+        zone_id: ZoneId,
+        version_id: ZoneVersionId,
+        content: CachedTransferContent,
+        max_records: usize,
+    ) -> usize {
+        // Evict the old version even if its replacement exceeds the cache budget.
+        self.remove(zone_id);
+
+        let records = content.record_count();
+
+        if records > max_records {
+            return 0;
+        }
+
+        let evicted = self.trim_to(max_records - records);
+
+        self.records += records;
+        let last_used = self.tick();
+        self.zones.insert(
+            zone_id,
+            CachedTransfer {
+                version_id,
+                content,
+                records,
+                last_used,
+            },
+        );
+
+        evicted
+    }
+
+    /// Remove a cached zone and subtract its records from the retained count.
+    fn remove(&mut self, zone_id: ZoneId) {
+        if let Some(removed) = self.zones.remove(&zone_id) {
+            self.records -= removed.records;
+        }
+    }
+}
+
+/// The DNS front end's transfer cache: one cached transfer per zone, behind
+/// one lock, within the record budget `dns.transfer.cache_max_records` sets.
+#[derive(Debug, Default)]
+pub(crate) struct TransferCache {
+    entries: Mutex<Entries>,
 }
 
 impl TransferCache {
@@ -183,98 +275,6 @@ async fn fetch_transfer_content(
                 )
             }),
     )
-}
-
-impl Entries {
-    /// Advance the logical clock used to track cache recency.
-    fn tick(&mut self) -> u64 {
-        self.clock += 1;
-        self.clock
-    }
-
-    /// Drop least-recently-used zones until the retained records fit
-    /// `max_records`, which a reload may have lowered since the last store.
-    fn trim_to(&mut self, max_records: usize) -> usize {
-        if self.records <= max_records {
-            return 0;
-        }
-
-        // One recency-ordered pass, not a full scan per eviction under the lock.
-        let mut by_recency: Vec<(u64, ZoneId)> = self
-            .zones
-            .iter()
-            .map(|(&zone_id, entry)| (entry.last_used, zone_id))
-            .collect();
-        by_recency.sort_unstable();
-        let mut evicted = 0;
-
-        for (_, lru_zone_id) in by_recency {
-            if self.records <= max_records {
-                break;
-            }
-            self.remove(lru_zone_id);
-            evicted += 1;
-        }
-
-        evicted
-    }
-
-    /// Find cached zone content matching the requested version.
-    fn find(
-        &mut self,
-        zone_id: ZoneId,
-        version_id: ZoneVersionId,
-    ) -> Option<CachedTransferContent> {
-        let now = self.tick();
-        let entry = self
-            .zones
-            .get_mut(&zone_id)
-            .filter(|entry| entry.version_id == version_id)?;
-        entry.last_used = now;
-
-        Some(entry.content.clone())
-    }
-
-    /// Store a zone within the record budget and return the number of evictions.
-    fn store(
-        &mut self,
-        zone_id: ZoneId,
-        version_id: ZoneVersionId,
-        content: CachedTransferContent,
-        max_records: usize,
-    ) -> usize {
-        // Evict the old version even if its replacement exceeds the cache budget.
-        self.remove(zone_id);
-
-        let records = content.record_count();
-
-        if records > max_records {
-            return 0;
-        }
-
-        let evicted = self.trim_to(max_records - records);
-
-        self.records += records;
-        let last_used = self.tick();
-        self.zones.insert(
-            zone_id,
-            CachedTransfer {
-                version_id,
-                content,
-                records,
-                last_used,
-            },
-        );
-
-        evicted
-    }
-
-    /// Remove a cached zone and subtract its records from the retained count.
-    fn remove(&mut self, zone_id: ZoneId) {
-        if let Some(removed) = self.zones.remove(&zone_id) {
-            self.records -= removed.records;
-        }
-    }
 }
 
 #[cfg(test)]

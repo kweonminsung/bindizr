@@ -24,7 +24,7 @@ fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
     );
     assert_eq!(
         ServiceError::record_name_ambiguous("example.com", "www", 2).to_string(),
-        "2 records are named 'www' in zone 'example.com'; address one by its id",
+        "2 records are named 'www' in zone 'example.com'; address one by its id"
     );
 }
 
@@ -47,18 +47,18 @@ fn ds_check_failure_preserves_source_and_wire_message() {
         error.to_string(),
         "could not verify that the parent zone serves no DS for zone 'example.com': \
          parent server 'ns.parent.example' did not resolve: resolver disconnected; set the \
-         zone's parent nameserver addresses, or skip the DS check",
+         zone's parent nameserver addresses, or skip the DS check"
     );
     let source = error.source().unwrap();
 
     assert!(matches!(
         source.downcast_ref::<ProbeParentDsError>(),
-        Some(ProbeParentDsError::Unresolved { entry, .. }) if entry == "ns.parent.example",
+        Some(ProbeParentDsError::Unresolved { entry, .. }) if entry == "ns.parent.example"
     ));
     assert!(matches!(
         source.source().unwrap().downcast_ref::<ResolveAddressError>(),
         Some(ResolveAddressError::Lookup(error))
-            if error.kind() == io::ErrorKind::ConnectionReset,
+            if error.kind() == io::ErrorKind::ConnectionReset
     ));
 }
 
@@ -72,7 +72,7 @@ fn unsupported_ds_digest_preserves_policy_message_without_source() {
         error.to_string(),
         "the parent zone serves a DS for key tag 7 of zone 'example.com', but only in digest \
          types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
-         to publish SHA-256, or skip the DS check",
+         to publish SHA-256, or skip the DS check"
     );
     assert!(error.source().is_none());
 }
@@ -100,7 +100,7 @@ fn internal_context_preserves_the_source() {
     assert_eq!(source.kind(), io::ErrorKind::ConnectionReset);
 }
 
-/// Verify that every serialized error code keeps its established wire spelling.
+/// Verify that `ErrorCode` has one spelling across `as_str` and serde.
 #[test]
 fn error_code_spells_itself_once() {
     for (value, expected) in [

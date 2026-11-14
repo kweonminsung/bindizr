@@ -9,7 +9,7 @@ use crate::error::ErrorCode;
 fn test_zone() -> Zone {
     Zone {
         id: ZoneId::from(1),
-        name: ZoneName::from_row("example.com"),
+        name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "hostmaster@example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),

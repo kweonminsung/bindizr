@@ -1,4 +1,3 @@
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
 use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};

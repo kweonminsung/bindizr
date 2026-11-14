@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use bindizr_core::config::Config;
 use bindizr_core::dns::message::{Name, Opcode, Rcode, Rtype};
-use bindizr_core::dns::tsig::TsigError;
-use bindizr_core::dns::{query, tsig};
+use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
@@ -42,9 +41,9 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         &Caller::socket(),
         &CreateTsigKeyRequest {
             name: "fault-key".to_string(),
-            role_name: "admin".to_string(),
             algorithm: None,
             secret: None,
+            role_name: "admin".to_string(),
         },
     )
     .await
@@ -98,7 +97,7 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
 
         assert!(matches!(
             error,
-            UpdateError::Tsig(TsigError::EmptySecret) | UpdateError::LoadTsigKey(_),
+            UpdateError::Tsig(TsigError::EmptySecret) | UpdateError::LoadTsigKey(_)
         ));
 
         let response = handle_nsupdate_request(

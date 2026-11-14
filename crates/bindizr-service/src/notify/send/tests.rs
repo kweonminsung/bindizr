@@ -88,7 +88,9 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     assert!(matches!(
         &failures[0].1,
         SendNotifyError::Send(dns_client::notify::SendNotifyError::Response(
-            ParseResponseError::NotifyRcode(OptRcode::SERVFAIL)
+            ParseResponseError::NotifyRcode {
+                rcode: OptRcode::SERVFAIL
+            }
         ))
     ));
     assert!(matches!(
@@ -98,7 +100,9 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
             .unwrap()
             .downcast_ref::<dns_client::notify::SendNotifyError>(),
         Some(dns_client::notify::SendNotifyError::Response(
-            ParseResponseError::NotifyRcode(OptRcode::SERVFAIL)
+            ParseResponseError::NotifyRcode {
+                rcode: OptRcode::SERVFAIL
+            }
         ))
     ));
     let expected_message = failures[0].1.to_string();

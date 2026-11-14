@@ -5,6 +5,7 @@ use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
 use domain::base::{Message, Name, Question};
 use domain::rdata::tsig::Time48;
 
+use crate::dns::message;
 use crate::dns::message::{
     Edns, EncodeMessageError, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
     ResponseLimit,
@@ -146,7 +147,7 @@ impl QueryMetadata {
         truncated: bool,
         ede: Option<ExtendedErrorCode>,
     ) -> AdditionalBuilder<TreeCompressor<Vec<u8>>> {
-        let mut builder = crate::dns::message::build_response();
+        let mut builder = message::build_response();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);

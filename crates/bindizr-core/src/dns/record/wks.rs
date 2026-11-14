@@ -4,7 +4,10 @@ use std::net::Ipv4Addr;
 
 use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
+/// IPv4 address and protocol length, preceding the service bitmap.
 const WKS_PREFIX_LEN: usize = 5;
+
+/// Bitmap length covering every 16-bit port, one bit per port.
 const MAX_SERVICE_BITMAP_LEN: usize = (u16::MAX as usize + 1) / 8;
 
 /// One IPv4 address and protocol with a validated service bitmap.

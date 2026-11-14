@@ -17,18 +17,6 @@ const EXIT_DENIED: i32 = 5;
 const EXIT_CONFIG: i32 = 6;
 const EXIT_UNAVAILABLE: i32 = 7;
 
-/// Error surfaced to the CLI user: the daemon's message plus, when the daemon
-/// sent a machine-readable code, an actionable hint derived from it.
-#[derive(Debug, Error)]
-#[error("{message}")]
-pub(crate) struct CliError {
-    pub(crate) code: Option<ErrorCode>,
-    failure: Failure,
-    pub(crate) message: String,
-    #[source]
-    source: Option<Box<dyn std::error::Error + Send + Sync>>,
-}
-
 /// The kinds of failure that exit differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Failure {
@@ -39,6 +27,18 @@ enum Failure {
     /// The configuration is unusable, so running the same thing again changes
     /// nothing.
     Configuration,
+}
+
+/// Error surfaced to the CLI user: the daemon's message plus, when the daemon
+/// sent a machine-readable code, an actionable hint derived from it.
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub(crate) struct CliError {
+    pub(crate) code: Option<ErrorCode>,
+    failure: Failure,
+    pub(crate) message: String,
+    #[source]
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
 impl CliError {

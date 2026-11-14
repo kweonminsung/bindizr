@@ -100,7 +100,7 @@ pub(crate) async fn apply_import(
 
     let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
-    let apply_result: Result<ApplyImportResult, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let started = Instant::now();
 
         let existing_zone = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;

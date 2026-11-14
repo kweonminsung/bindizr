@@ -34,8 +34,12 @@ pub(crate) async fn handle_axfr(
         };
         let content = match access {
             TransferAccess::Granted(content) => content,
-            TransferAccess::NotAuth => return Err(DnsError::NotAuth(zone_name_str.to_string())),
-            TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
+            TransferAccess::NotAuth => {
+                return Err(DnsError::NotAuth {
+                    zone_name: zone_name_str.to_string(),
+                });
+            }
+            TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
         };
 
         return catalog::send_catalog_response(
@@ -62,8 +66,12 @@ pub(crate) async fn handle_axfr(
     };
     let (zone, content) = match access {
         TransferAccess::Granted(content) => content,
-        TransferAccess::NotAuth => return Err(DnsError::NotAuth(zone_name_str.to_string())),
-        TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
+        TransferAccess::NotAuth => {
+            return Err(DnsError::NotAuth {
+                zone_name: zone_name_str.to_string(),
+            });
+        }
+        TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
     };
 
     log::info!(

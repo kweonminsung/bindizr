@@ -1,15 +1,9 @@
-use std::time::Duration;
-
 use bindizr_core::dns::message::Class;
 use bindizr_core::dns::record::{Rdata, SoaRecordValue};
-use bindizr_core::dns::{message, name};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
-use tokio::time;
 
 use super::*;
-use crate::dns_client;
 
 /// Verify that an outstanding transfer finishes and zero and expired keepalive timeouts
 /// are then honored.

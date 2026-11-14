@@ -60,9 +60,9 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
 
         if read == 0 {
             return Err(match expected {
+                Some(expected) => DnsError::IncompleteMessage { expected },
                 None if pending.is_empty() => DnsError::PeerClosed,
                 None => DnsError::IncompletePrefix,
-                Some(expected) => DnsError::IncompleteMessage { expected },
             });
         }
 

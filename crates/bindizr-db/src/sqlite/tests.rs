@@ -16,6 +16,7 @@ use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
 use crate::record::RecordFilter;
 use crate::schema::sqlite;
+use crate::sqlite::{dnssec_record, record, role, zone};
 use crate::zone::ZoneFilter;
 
 /// Owner names text matching gets wrong: `evil\.sub` is one label (RFC 1035,
@@ -32,6 +33,7 @@ const NAMES: [&str; 9] = [
     "dyn",
 ];
 
+/// The record types each fixture name carries.
 const TYPES: [RecordType; 2] = [RecordType::A, RecordType::Txt];
 
 /// Build two zones with a record of each type at every name, and an RRSIG per name.
@@ -165,17 +167,13 @@ fn roles() -> Vec<Vec<RoleGrant>> {
 #[tokio::test]
 async fn listings_match_role_grants_visibility() {
     let pool = fixture().await;
-    let all_records =
-        crate::sqlite::record::list_by_filter_with_zone(&pool, &RecordFilter::default())
-            .await
-            .unwrap();
-    let all_dnssec = crate::sqlite::dnssec_record::list_by_filter_with_zone(
-        &pool,
-        &DnssecRecordFilter::default(),
-    )
-    .await
-    .unwrap();
-    let all_zones = crate::sqlite::zone::list_by_filter(&pool, &ZoneFilter::default())
+    let all_records = record::list_by_filter_with_zone(&pool, &RecordFilter::default())
+        .await
+        .unwrap();
+    let all_dnssec = dnssec_record::list_by_filter_with_zone(&pool, &DnssecRecordFilter::default())
+        .await
+        .unwrap();
+    let all_zones = zone::list_by_filter(&pool, &ZoneFilter::default())
         .await
         .unwrap();
 
@@ -188,7 +186,7 @@ async fn listings_match_role_grants_visibility() {
         let rules = RoleGrants::from(grants.clone());
         let case = format!("role {index}: {grants:?}");
 
-        let listed: BTreeSet<_> = crate::sqlite::record::list_by_filter_with_zone(
+        let listed: BTreeSet<_> = record::list_by_filter_with_zone(
             &pool,
             &RecordFilter {
                 scope_role_id: Some(role_id),
@@ -224,7 +222,7 @@ async fn listings_match_role_grants_visibility() {
         assert_eq!(!expected.is_empty(), reads, "records reached, {case}");
 
         // A derived row carries no type of the grant's vocabulary.
-        let listed: BTreeSet<_> = crate::sqlite::dnssec_record::list_by_filter_with_zone(
+        let listed: BTreeSet<_> = dnssec_record::list_by_filter_with_zone(
             &pool,
             &DnssecRecordFilter {
                 scope_role_id: Some(role_id),
@@ -247,7 +245,7 @@ async fn listings_match_role_grants_visibility() {
 
         assert_eq!(listed, expected, "DNSSEC records, {case}");
 
-        let listed: BTreeSet<_> = crate::sqlite::zone::list_by_filter(
+        let listed: BTreeSet<_> = zone::list_by_filter(
             &pool,
             &ZoneFilter {
                 scope_role_id: Some(role_id),
@@ -276,7 +274,7 @@ async fn listings_match_role_grants_visibility() {
 async fn delete_tx_reports_whether_a_row_went() {
     let pool = fixture().await;
     let mut tx = pool.begin().await.unwrap();
-    let role = crate::sqlite::role::create_tx(
+    let role = role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,
@@ -288,16 +286,8 @@ async fn delete_tx_reports_whether_a_row_went() {
     .await
     .unwrap();
 
-    assert!(
-        crate::sqlite::role::delete_tx(&mut tx, role.id)
-            .await
-            .unwrap()
-    );
-    assert!(
-        !crate::sqlite::role::delete_tx(&mut tx, role.id)
-            .await
-            .unwrap()
-    );
+    assert!(role::delete_tx(&mut tx, role.id).await.unwrap());
+    assert!(!role::delete_tx(&mut tx, role.id).await.unwrap());
 
     tx.rollback().await.unwrap();
 }
@@ -316,7 +306,7 @@ async fn create_tx_rejects_a_rowid_past_the_32_bit_range() {
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
 
-    let result = crate::sqlite::role::create_tx(
+    let result = role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,

@@ -3,7 +3,6 @@
 
 use std::future::Future;
 use std::io;
-use std::io::{IoSlice, IoSliceMut};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
@@ -22,16 +21,10 @@ use tokio::task::JoinSet;
 
 use crate::dns::error::DnsError;
 use crate::dns::server;
-use crate::dns::server::DnsContext;
+use crate::dns::server::{DnsContext, nsupdate, soa};
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;
-
-/// The UDP socket and packet metadata needed to preserve the queried address.
-#[derive(Debug)]
-pub(crate) struct UdpSocket {
-    socket: tokio::net::UdpSocket,
-}
 
 /// A received peer and the local destination to use for its response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +47,12 @@ enum UdpError {
     MissingDestination,
 }
 
+/// The UDP socket and packet metadata needed to preserve the queried address.
+#[derive(Debug)]
+pub(crate) struct UdpSocket {
+    socket: tokio::net::UdpSocket,
+}
+
 impl UdpSocket {
     /// Enable per-packet addressing before the listener starts receiving.
     pub(crate) fn new(socket: tokio::net::UdpSocket) -> io::Result<Self> {
@@ -70,7 +69,7 @@ impl UdpSocket {
         let (len, flags, peer, destination) = self
             .socket
             .async_io(Interest::READABLE, || {
-                let mut iov = [IoSliceMut::new(buffer)];
+                let mut iov = [io::IoSliceMut::new(buffer)];
                 let mut control = nix::cmsg_space!(in_pktinfo, in6_pktinfo);
                 let message = socket::recvmsg::<SockaddrStorage>(
                     self.socket.as_raw_fd(),
@@ -172,7 +171,7 @@ impl UdpSocket {
 
                 socket::sendmsg(
                     self.socket.as_raw_fd(),
-                    &[IoSlice::new(response)],
+                    &[io::IoSlice::new(response)],
                     &[control],
                     MsgFlags::empty(),
                     Some(&peer),
@@ -262,9 +261,8 @@ async fn handle_udp_query(
         return;
     }
 
-    if server::nsupdate::is_nsupdate(query_data) {
-        if let Err(error) =
-            server::nsupdate::handle_udp_nsupdate(dns_cx, socket, target, query_data).await
+    if nsupdate::is_nsupdate(query_data) {
+        if let Err(error) = nsupdate::handle_udp_nsupdate(dns_cx, socket, target, query_data).await
         {
             log::error!("NSUPDATE UDP handler failed for {client_addr}: {error}");
         }
@@ -326,9 +324,7 @@ async fn handle_udp_query(
     }
 
     if query.qtype == Rtype::SOA {
-        if let Err(error) =
-            server::soa::handle_udp_soa(dns_cx, socket, target, &query, query_data).await
-        {
+        if let Err(error) = soa::handle_udp_soa(dns_cx, socket, target, &query, query_data).await {
             log::warn!("Failed to handle SOA UDP query from {client_addr}: {error}");
         }
 
@@ -337,9 +333,7 @@ async fn handle_udp_query(
 
     // RFC 1995, Section 2: return only the current SOA; lagging clients retry over TCP.
     if query.qtype == Rtype::IXFR {
-        if let Err(error) =
-            server::soa::handle_udp_ixfr(dns_cx, socket, target, &query, query_data).await
-        {
+        if let Err(error) = soa::handle_udp_ixfr(dns_cx, socket, target, &query, query_data).await {
             log::warn!("Failed to handle IXFR UDP query from {client_addr}: {error}");
         }
 

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tokio::net::UdpSocket;
 use tokio::time;
 
+use crate::api::zone;
 use crate::common;
 use crate::common::{TestApp, TestAppOptions, dns};
 
@@ -691,6 +692,7 @@ async fn zone_import_preserves_native_wks_values() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     let base_serial = app.read_zone_serial(zone_name).await;
+
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -1501,7 +1503,7 @@ fn serve_import_transfer(zone_name: String, trailing: bool) -> (String, JoinHand
 
 /// Serve repeated catalog records and the expected member transfers, recording requests.
 fn serve_catalog(
-    members: Vec<String>,
+    member_zone_names: Vec<String>,
     split: bool,
     apex_ns: bool,
     member_transfers: usize,
@@ -1512,7 +1514,7 @@ fn serve_catalog(
         let mut queries = Vec::new();
 
         for (index, zone_name) in iter::once("catalog.example".to_string())
-            .chain(members.iter().cloned())
+            .chain(member_zone_names.iter().cloned())
             .take(1 + member_transfers)
             .enumerate()
         {
@@ -1560,13 +1562,13 @@ fn serve_catalog(
                     ))
                     .unwrap();
 
-                for (index, member) in members.iter().enumerate() {
+                for (index, member_zone_name) in member_zone_names.iter().enumerate() {
                     answer
                         .push((
                             &dns::parse_name(&format!("member-{index}.zones.catalog.example"))
                                 .unwrap(),
                             Ttl::from_secs(0),
-                            Ptr::new(dns::parse_name(member).unwrap()),
+                            Ptr::new(dns::parse_name(member_zone_name).unwrap()),
                         ))
                         .unwrap();
                 }
@@ -1587,13 +1589,15 @@ fn serve_catalog(
                     ))
                     .unwrap();
 
-                for (index, member) in members.iter().enumerate() {
+                for (index, member_zone_name) in member_zone_names.iter().enumerate() {
                     answer
                         .push((
                             &dns::parse_name(&format!("MEMBER-{index}.ZONES.CATALOG.example"))
                                 .unwrap(),
                             Ttl::from_secs(120),
-                            Ptr::new(dns::parse_name(&member.to_ascii_uppercase()).unwrap()),
+                            Ptr::new(
+                                dns::parse_name(&member_zone_name.to_ascii_uppercase()).unwrap(),
+                            ),
                         ))
                         .unwrap();
                 }
@@ -1653,7 +1657,7 @@ fn serve_catalog(
 /// Verify that HTTP and CLI ignore repeated catalog records within and across AXFR messages.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
+async fn catalog_import_ignores_repeated_records() {
     let app = TestApp::start_local().await;
 
     for cli in [false, true] {
@@ -1681,7 +1685,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
                     )
                     .await;
 
-                serde_json::from_str(&imported).unwrap()
+                serde_json::from_str(&imported).expect("CLI did not return valid JSON")
             } else {
                 let (status, body) = app
                     .send_request(
@@ -2013,14 +2017,19 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
 
     for cli in [false, true] {
         for dry_run in [false, true] {
-            let members = vec![
+            let member_zone_names = vec![
                 app.zone_name(&format!("ordinary-{cli}-{dry_run}.example")),
                 format!(
                     r"{}.\032",
                     app.zone_name(&format!("space-{cli}-{dry_run}.example"))
                 ),
             ];
-            let (address, server) = serve_catalog(members.clone(), false, true, members.len());
+            let (address, server) = serve_catalog(
+                member_zone_names.clone(),
+                false,
+                true,
+                member_zone_names.len(),
+            );
 
             let body: Value = if cli {
                 let mut args = vec![
@@ -2039,7 +2048,8 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                     args.push("--dry-run");
                 }
 
-                serde_json::from_str(&app.run_cli_success(&args, None).await).unwrap()
+                serde_json::from_str(&app.run_cli_success(&args, None).await)
+                    .expect("CLI did not return valid JSON")
             } else {
                 let (status, body) = app
                     .send_request(
@@ -2066,10 +2076,10 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
             assert_eq!(body["summary"]["zones"], 2, "{body}");
             assert_eq!(body["summary"]["ok"], 2, "{body}");
 
-            for (index, member) in members.iter().enumerate() {
+            for (index, member_zone_name) in member_zone_names.iter().enumerate() {
                 assert_eq!(
                     dns::parse_name(&queries[index + 1]).unwrap(),
-                    dns::parse_name(member).unwrap()
+                    dns::parse_name(member_zone_name).unwrap()
                 );
                 assert_eq!(
                     body["zones"][index]["import"]["applied"], !dry_run,
@@ -2077,16 +2087,16 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                 );
 
                 let (status, fetched) = app
-                    .send_request(Method::GET, &crate::api::zone::zone_path(member), None)
+                    .send_request(Method::GET, &zone::zone_path(member_zone_name), None)
                     .await;
 
                 if dry_run {
                     assert_eq!(status, StatusCode::NOT_FOUND, "{fetched}");
                 } else {
                     assert_eq!(status, StatusCode::OK, "{fetched}");
-                    assert_eq!(fetched["zone"]["name"], *member, "{fetched}");
+                    assert_eq!(fetched["zone"]["name"], *member_zone_name, "{fetched}");
 
-                    let records = app.list_records(member).await;
+                    let records = app.list_records(member_zone_name).await;
 
                     assert!(
                         records.iter().any(|record| record["value"] == "192.0.2.50"),

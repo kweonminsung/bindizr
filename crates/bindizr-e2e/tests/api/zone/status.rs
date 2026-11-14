@@ -19,7 +19,7 @@ async fn zone_status_reports_secondaries() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["zone_name"], zone_name);
-    assert_eq!(body["serial"], zone["serial"].as_i64().unwrap());
+    assert_eq!(body["serial"], zone["serial"]);
 
     let secondaries = body["secondaries"].as_array().unwrap();
 

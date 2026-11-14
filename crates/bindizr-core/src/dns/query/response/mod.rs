@@ -39,8 +39,8 @@ pub enum ParseResponseError {
     OtherQuestion,
     #[error("response is not authoritative")]
     NotAuthoritative,
-    #[error("RCODE {}", .0.to_int())]
-    Rcode(OptRcode),
+    #[error("RCODE {}", .rcode.to_int())]
+    Rcode { rcode: OptRcode },
     #[error("malformed response OPT record")]
     MalformedEdns,
     #[error("malformed answer section: {0}")]
@@ -54,8 +54,8 @@ pub enum ParseResponseError {
     /// The NOTIFY acknowledgement did not read as one; the source says why.
     #[error("NOTIFY {0}")]
     Notify(#[source] Box<Self>),
-    #[error("NOTIFY response returned RCODE {}", .0.to_int())]
-    NotifyRcode(OptRcode),
+    #[error("NOTIFY response returned RCODE {}", .rcode.to_int())]
+    NotifyRcode { rcode: OptRcode },
     #[error("no SOA record in answer")]
     NoSoa,
     #[error("malformed authority section: {0}")]

@@ -56,7 +56,7 @@ fn encode_sshfp_rdata_returns_algorithm_type_and_fingerprint() {
     // RFC 4255, Section 3.1.
     let encoded = EncodedRdata::from_columns(RecordType::Sshfp, "4 1 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 44);
-    assert_eq!(encoded.rdata.as_bytes(), [4, 1, 0x4B, 0x9B, 0x6B, 0x07]);
+    assert_eq!(encoded.rdata.as_bytes(), [4, 1, 0x4b, 0x9b, 0x6b, 0x07]);
 }
 
 /// Verify that encode TLSA RDATA is usage selector matching then data.
@@ -65,7 +65,7 @@ fn encode_tlsa_rdata_returns_usage_selector_matching_and_data() {
     // RFC 6698, Section 2.1.
     let encoded = EncodedRdata::from_columns(RecordType::Tlsa, "3 1 0 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 52);
-    assert_eq!(encoded.rdata.as_bytes(), [3, 1, 0, 0x4B, 0x9B, 0x6B, 0x07]);
+    assert_eq!(encoded.rdata.as_bytes(), [3, 1, 0, 0x4b, 0x9b, 0x6b, 0x07]);
 }
 
 /// Verify that encode DS RDATA is tag algorithm digest type then digest.
@@ -77,7 +77,7 @@ fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
     assert_eq!(encoded.record_type, 43);
     assert_eq!(
         encoded.rdata.as_bytes(),
-        [0x85, 0xA9, 13, 2, 0x4B, 0x9B, 0x6B, 0x07]
+        [0x85, 0xa9, 13, 2, 0x4b, 0x9b, 0x6b, 0x07]
     );
 }
 

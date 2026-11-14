@@ -1,6 +1,4 @@
-use bindizr_core::dns::message::{Class, Name, OptRcode};
-use bindizr_core::dns::query;
-use bindizr_core::dns::query::ParseResponseError;
+use bindizr_core::dns::message::{Class, OptRcode};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time;
 
@@ -134,7 +132,9 @@ fn extract_soa_serial_rejects_error_rcode() {
     let response = build_soa_response(42, 0x8405, "example.com", true, 2026);
     assert!(matches!(
         query::extract_soa_serial(42, &qname(), &response),
-        Err(ParseResponseError::Rcode(OptRcode::REFUSED))
+        Err(ParseResponseError::Rcode {
+            rcode: OptRcode::REFUSED
+        })
     ));
 }
 

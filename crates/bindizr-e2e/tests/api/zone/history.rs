@@ -452,13 +452,14 @@ async fn zone_versions_record_who_made_each_change() {
 
     app.run_cli_success(&["token", "delete", &admin_name], None)
         .await;
+
     let history = app
         .run_cli_success(
             &["zone", "version", "list", &zone_name, "--output", "json"],
             None,
         )
         .await;
-    let history: Value = serde_json::from_str(&history).unwrap();
+    let history: Value = serde_json::from_str(&history).expect("CLI did not return valid JSON");
 
     assert_eq!(
         history["items"][0]["changed_by"],

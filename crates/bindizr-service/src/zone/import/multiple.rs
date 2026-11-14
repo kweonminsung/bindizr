@@ -1,6 +1,7 @@
 //! Resolve a bulk import's zone list and report each zone's independent outcome.
 
 use bindizr_core::dns;
+use bindizr_core::dns::address;
 
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
@@ -9,6 +10,7 @@ use crate::types::{
     ErrorResponse, ImportMode, ImportResult, ImportZonesItemResponse, ImportZonesRequest,
     ImportZonesResponse, ImportZonesSummaryResponse, Run,
 };
+use crate::zone::import;
 use crate::zone::import::{ImportOptions, MissingZoneAction};
 use crate::{Context, zone};
 
@@ -34,7 +36,7 @@ pub async fn import_many(
     };
     let address = request.from_server.trim();
 
-    if !bindizr_core::dns::address::is_address_target(address) {
+    if !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(
             "from_server must name one server as host[:port]",
         ));
@@ -42,18 +44,18 @@ pub async fn import_many(
 
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
-        crate::zone::import::authorize_new_zone_import(caller, mode)?;
+        import::authorize_new_zone_import(caller, mode)?;
     }
 
     let config = cx.config();
     let mut client = AxfrClient::new(address);
 
     let zone_names = match (&request.zone_names, &request.from_catalog) {
-        (Some(names), None) => crate::zone::import::normalize_zone_names(names)?,
+        (Some(names), None) => import::normalize_zone_names(names)?,
         (None, Some(catalog)) => {
             // A catalog names every zone its server provisions, so reading it
             // through Bindizr is an all-zones act.
-            for action in crate::zone::import::import_actions(mode) {
+            for action in import::import_actions(mode) {
                 caller.authorize_all_whole_zones(*action)?;
             }
 
@@ -108,24 +110,18 @@ pub async fn import_many(
 
     // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
-        let (result, import, error) = match crate::zone::import::import_transfer(
-            cx,
-            caller,
-            zone_name,
-            &mut client,
-            address,
-            options,
-        )
-        .await
-        {
-            Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
-            Ok(import) => (ImportResult::Ok, Some(import), None),
-            Err(error) => (
-                ImportResult::Failed,
-                None,
-                Some(ErrorResponse::from(&error)),
-            ),
-        };
+        let (result, import, error) =
+            match import::import_transfer(cx, caller, zone_name, &mut client, address, options)
+                .await
+            {
+                Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
+                Ok(import) => (ImportResult::Ok, Some(import), None),
+                Err(error) => (
+                    ImportResult::Failed,
+                    None,
+                    Some(ErrorResponse::from(&error)),
+                ),
+            };
 
         match result {
             ImportResult::Ok => summary.ok += 1,

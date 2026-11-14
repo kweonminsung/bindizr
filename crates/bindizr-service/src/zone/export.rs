@@ -7,7 +7,7 @@ use bindizr_db::LockLevel;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::ZoneView;
-use crate::{Context, transaction};
+use crate::{Context, transaction, zone};
 
 /// Render a BIND master file (RFC 1035); unsigned output round-trips through `zone import`.
 /// Import manages SOA separately. Signed output adds derived DNSSEC records for inspection only.
@@ -24,7 +24,7 @@ pub async fn export(
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
 
     let result: Result<_, ServiceError> = async {
-        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -89,7 +89,7 @@ pub async fn export(
             record.record_type,
             record
                 .record_type
-                .presentation_rdata(&record.value, record.priority),
+                .presentation_rdata(&record.value, record.priority)
         );
     }
 
@@ -108,7 +108,7 @@ pub async fn export(
             record.name,
             record.ttl,
             record.record_type,
-            record.rdata.to_presentation(record.record_type),
+            record.rdata.to_presentation(record.record_type)
         );
     }
 

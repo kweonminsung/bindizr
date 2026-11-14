@@ -9,7 +9,7 @@ use super::*;
 use crate::error::ErrorCode;
 use crate::types::{
     BulkRecordItem, CreateBulkRecordsRequest, CreateRecordRequest, CreateRoleGrantRequest,
-    CreateRoleRequest, CreateTokenRequest, CreateZoneRequest, RecordValue, RoleGrantResponse,
+    CreateRoleRequest, CreateTokenRequest, CreateZoneRequest, RoleGrantResponse,
     UpdateRecordRequest,
 };
 use crate::{Context, role, token, zone};

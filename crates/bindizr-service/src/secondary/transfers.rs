@@ -13,7 +13,7 @@ use crate::error::ServiceError;
 use crate::types::{
     SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse, TransferSummaryResponse,
 };
-use crate::{Context, dns_client, pagination, transfer, zone};
+use crate::{Context, dns_client, pagination, secondary, transfer, zone};
 
 /// List the transfers Bindizr answered `name`, newest first, with how each zone
 /// was last served.
@@ -33,7 +33,7 @@ pub async fn list_transfers(
         return Err(ServiceError::invalid_input("since must be before until"));
     }
 
-    let secondary = crate::secondary::lookup_by_name(cx, name).await?;
+    let secondary = secondary::lookup_by_name(cx, name).await?;
 
     let zone_name = filter
         .zone_name

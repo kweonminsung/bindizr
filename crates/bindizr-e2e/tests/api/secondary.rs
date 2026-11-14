@@ -198,7 +198,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(
         signed_receiver.received(),
         [ReceivedNotify {
-            zone: expected_zone_name.clone(),
+            zone_name: expected_zone_name.clone(),
             signed: true,
             verified: true,
         }]
@@ -206,7 +206,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(
         plain_receiver.received(),
         [ReceivedNotify {
-            zone: expected_zone_name.clone(),
+            zone_name: expected_zone_name.clone(),
             signed: false,
             verified: false,
         }]
@@ -249,7 +249,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(
         wrong_receiver.received(),
         [ReceivedNotify {
-            zone: expected_zone_name,
+            zone_name: expected_zone_name,
             signed: true,
             verified: false,
         }]
@@ -318,6 +318,7 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
         checked.contains("in sync at serial 1") && checked.contains("accepted"),
         "{checked}"
     );
+
     let args = ["secondary", "check", "dead"];
 
     let failed = app.run_cli(&args, None).await;

@@ -135,6 +135,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     app.create_named_zone(&zone_name).await;
+
     let (status, deleted_zone) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}"), None)
         .await;

@@ -562,7 +562,7 @@ pub(crate) fn build_signed_update(algorithm: TsigAlgorithm, time_signed: u64) ->
     build_signed_update_with_tsig_fields(algorithm, time_signed, TsigRcode::NOERROR, &[])
 }
 
-/// Independently sign all TSIG variables, retaining arbitrary request Other Data.
+/// Sign all TSIG variables independently, retaining arbitrary request Other Data.
 fn build_signed_update_with_tsig_fields(
     algorithm: TsigAlgorithm,
     time_signed: u64,
@@ -745,7 +745,7 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
 
         // The MAC ends before original ID, error, and other-len (six bytes).
         let mac_end = query_data.len() - 7;
-        query_data[mac_end] ^= 0xFF;
+        query_data[mac_end] ^= 0xff;
         let error = verify_tsig(&query_data, Some(key.clone())).unwrap_err();
 
         // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
@@ -770,7 +770,7 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     // Flip the original ID (first two of the trailing six rdata bytes): the
     // MAC is computed over the original ID, so verification must fail.
     let original_id = query_data.len() - 6;
-    query_data[original_id] ^= 0xFF;
+    query_data[original_id] ^= 0xff;
 
     let key = test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()

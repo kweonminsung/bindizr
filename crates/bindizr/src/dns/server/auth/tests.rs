@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use bindizr_core::config::Config;
-use bindizr_core::dns::message::{Keepalive, Name, Opcode, ParsedQuery, Rcode, Rtype};
-use bindizr_core::dns::{query, tsig};
+use bindizr_core::dns::message::{Keepalive, Name, ParsedQuery, Rcode, Rtype};
+use bindizr_core::dns::query;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::Context;
@@ -42,9 +42,9 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         &Caller::socket(),
         &CreateTsigKeyRequest {
             name: "fault-key".to_string(),
-            role_name: "admin".to_string(),
             algorithm: None,
             secret: None,
+            role_name: "admin".to_string(),
         },
     )
     .await
