@@ -58,32 +58,32 @@ pub(crate) struct RecordAccess {
 
 /// A record as grants see it: an owner name and a type.
 pub(crate) trait GrantedRecord {
-    /// The owner name, relative to its zone (stored form).
+    /// Return the owner name, relative to its zone (stored form).
     fn name(&self) -> &OwnerName;
 
-    /// The record's type.
+    /// Return the record's type.
     fn record_type(&self) -> RecordType;
 }
 
 impl GrantedRecord for Record {
-    /// The stored owner name.
+    /// Return the stored owner name.
     fn name(&self) -> &OwnerName {
         &self.name
     }
 
-    /// The stored type.
+    /// Return the stored type.
     fn record_type(&self) -> RecordType {
         self.record_type
     }
 }
 
 impl GrantedRecord for RecordData {
-    /// The owner name.
+    /// Return the owner name.
     fn name(&self) -> &OwnerName {
         &self.name
     }
 
-    /// The type.
+    /// Return the type.
     fn record_type(&self) -> RecordType {
         self.record_type
     }
@@ -100,7 +100,7 @@ impl<T> ReadableRecords<T> {
         self.0.push(record);
     }
 
-    /// The readable records.
+    /// Return the readable records.
     pub(crate) fn as_slice(&self) -> &[T] {
         &self.0
     }
@@ -114,7 +114,7 @@ pub(crate) struct WholeZoneRead {
 }
 
 impl WholeZoneRead {
-    /// Every record of the zone, unfiltered: the proof covers them all.
+    /// Return every record of the zone, unfiltered: the proof covers them all.
     pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
         ReadableRecords(records)
     }
@@ -299,7 +299,7 @@ impl Caller {
         )))
     }
 
-    /// The role whose grants bound the caller's visibility; `None` means
+    /// Return the role whose grants bound the caller's visibility; `None` means
     /// unrestricted. List queries join it against the grants in SQL.
     pub(crate) fn scope_role_id(&self) -> Option<RoleId> {
         match &self.scope {
@@ -308,7 +308,7 @@ impl Caller {
         }
     }
 
-    /// The grants that bound the caller, or `None` when nothing does.
+    /// Return the grants that bound the caller, or `None` when nothing does.
     pub(crate) fn grants(&self) -> Option<&RoleGrants> {
         match &self.scope {
             CallerScope::Global => None,
@@ -322,8 +322,8 @@ impl Caller {
             .is_none_or(|grants| grants.reaches_zone(zone_id))
     }
 
-    /// 404 for zones the caller cannot see, so a role cannot probe zone
-    /// existence.
+    /// Authorize the zone's visibility: 404 for zones the caller cannot see,
+    /// so a role cannot probe zone existence.
     pub(crate) fn authorize_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
         if self.sees_zone(zone.id) {
             return Ok(());
@@ -405,26 +405,26 @@ impl Caller {
         &self,
         action: Action,
         zone_id: ZoneId,
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: Option<RecordType>,
     ) -> bool {
         self.grants()
-            .is_none_or(|grants| grants.reaches_record(action, zone_id, name, record_type))
+            .is_none_or(|grants| grants.reaches_record(action, zone_id, owner, record_type))
     }
 
     /// Return whether a `record:read` grant covers a record of this name and type.
     pub(crate) fn sees_record(
         &self,
         zone_id: ZoneId,
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: Option<RecordType>,
     ) -> bool {
         self.grants().is_none_or(|grants| {
-            grants.covers_record(Action::RecordRead, zone_id, name, record_type)
+            grants.covers_record(Action::RecordRead, zone_id, owner, record_type)
         })
     }
 
-    /// The records a `record:read` grant covers; the rest are dropped, so a
+    /// Return the records a `record:read` grant covers; the rest are dropped, so a
     /// write-only grant learns what it writes and nothing already there.
     pub(crate) fn readable_records<T: GrantedRecord>(
         &self,
@@ -441,12 +441,12 @@ impl Caller {
         )
     }
 
-    /// The record actions the caller may take on one record, so a client
+    /// Return the record actions the caller may take on one record, so a client
     /// offers exactly the ones the service would allow.
     pub(crate) fn record_actions(
         &self,
         zone_id: ZoneId,
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: RecordType,
     ) -> Vec<Action> {
         [
@@ -456,8 +456,9 @@ impl Caller {
         ]
         .into_iter()
         .filter(|&action| {
-            self.grants()
-                .is_none_or(|grants| grants.covers_record(action, zone_id, name, Some(record_type)))
+            self.grants().is_none_or(|grants| {
+                grants.covers_record(action, zone_id, owner, Some(record_type))
+            })
         })
         .collect()
     }

@@ -29,7 +29,7 @@ pub async fn get_status(
     // are read together under the zone lock.
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
@@ -55,8 +55,7 @@ pub async fn count_keys_by_state(cx: &Context, state: DnssecKeyState) -> Result<
     Ok(bindizr_db::dnssec_key::count_by_state(cx.db(), state).await?)
 }
 
-/// Count signatures inside their policy's re-sign window across every
-/// zone.
+/// Count signatures inside their policy's re-sign window across all zones.
 pub async fn count_rrsigs_expiring_within_refresh(
     cx: &Context,
     now: DateTime<Utc>,
@@ -138,10 +137,7 @@ pub(crate) async fn lookup_status_tx(
         next_resign_at,
         serial,
         withdrawing,
-        parent_ns_addrs: zone
-            .parent_ns_addrs
-            .as_deref()
-            .map(parent_ns_addrs::parent_ns_addr_entries),
+        parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addrs::split),
         delegation: None,
     })
 }
@@ -165,7 +161,7 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
             "{} IN DS {} {} {DS_DIGEST_TYPE} {digest}",
             zone.name.to_fqdn(),
             key.key_tag,
-            key.algorithm.as_i32(),
+            key.algorithm.as_i32()
         ),
     })
 }

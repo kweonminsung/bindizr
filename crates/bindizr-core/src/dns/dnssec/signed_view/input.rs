@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use domain::base::UnknownRecordData;
+use domain::base::cmp::CanonicalOrd;
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::FlattenInto;
 use domain::dep::octseq::Parser;
@@ -107,9 +108,11 @@ impl SignedViewParams<'_> {
 
         // Add user records to the same input used for denial proofs and signatures.
         for record in self.records {
-            let EncodedRdata { record_type, rdata } =
-                EncodedRdata::from_columns(record.record_type, &record.value, record.priority)?;
-            let rtype = Rtype::from_int(record_type);
+            let EncodedRdata {
+                record_type: rtype,
+                rdata,
+            } = EncodedRdata::from_columns(record.record_type, &record.value, record.priority)?;
+            let rtype = Rtype::from_int(rtype);
 
             // UnknownRecordData cannot canonicalize embedded names for signing.
             let rdata = rdata
@@ -150,10 +153,7 @@ impl SignedViewParams<'_> {
         }
 
         // Canonical order keeps each record set contiguous for the signing pass.
-        input.sort_by(|left, right| {
-            use domain::base::cmp::CanonicalOrd;
-            left.canonical_cmp(right)
-        });
+        input.sort_by(CanonicalOrd::canonical_cmp);
 
         Ok(input)
     }

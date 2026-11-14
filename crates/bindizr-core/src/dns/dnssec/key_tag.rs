@@ -7,17 +7,17 @@ use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 use thiserror::Error;
 
-/// A key tag, 0 through 65535.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct KeyTag(u16);
-
 /// A row's key tag outside the 16 bits the wire carries: corrupt data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("invalid key tag: {key_tag}")]
 pub struct ConvertKeyTagError {
     key_tag: i32,
 }
+
+/// A key tag, 0 through 65535.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct KeyTag(u16);
 
 impl KeyTag {
     /// Return the key tag as the wire carries it.

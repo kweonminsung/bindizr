@@ -1,11 +1,6 @@
 //! Master-file and AXFR import parsing, including names, values, and errors.
 
-use domain::zonefile::inplace::{Entry, Zonefile};
-
 use super::*;
-use crate::dns::name;
-use crate::dns::name::ZoneName;
-use crate::dns::query::TransferRecord;
 use crate::dns::record::Rdata;
 
 /// Verify that TXT octets that cannot be represented as UTF-8 segments are preserved.

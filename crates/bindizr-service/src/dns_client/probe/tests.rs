@@ -1,4 +1,4 @@
-use bindizr_core::dns::message::{Name, OptRcode};
+use bindizr_core::dns::message::{Class, Name, OptRcode};
 use bindizr_core::dns::query;
 use bindizr_core::dns::query::ParseResponseError;
 use tokio::net::{TcpListener, UdpSocket};
@@ -78,13 +78,13 @@ fn build_soa_response(
     buffer.extend_from_slice(&0u16.to_be_bytes());
 
     crate::dns_client::ds::tests::encode_name(qname, &mut buffer);
-    buffer.extend_from_slice(&6u16.to_be_bytes());
-    buffer.extend_from_slice(&1u16.to_be_bytes());
+    buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
 
     if with_answer {
         crate::dns_client::ds::tests::encode_name(qname, &mut buffer);
-        buffer.extend_from_slice(&6u16.to_be_bytes());
-        buffer.extend_from_slice(&1u16.to_be_bytes());
+        buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+        buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
         buffer.extend_from_slice(&3600u32.to_be_bytes());
 
         let mut rdata = Vec::new();
@@ -133,8 +133,8 @@ fn extract_soa_serial_rejects_error_rcode() {
     // RCODE 5 (REFUSED)
     let response = build_soa_response(42, 0x8405, "example.com", true, 2026);
     assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &response).unwrap_err(),
-        ParseResponseError::Rcode(OptRcode::REFUSED)
+        query::extract_soa_serial(42, &qname(), &response),
+        Err(ParseResponseError::Rcode(OptRcode::REFUSED))
     ));
 }
 
@@ -156,8 +156,8 @@ fn extract_soa_serial_rejects_missing_qr_bit() {
 fn extract_soa_serial_rejects_truncated_response() {
     let response = build_soa_response(42, 0x8600, "example.com", true, 2026);
     assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &response).unwrap_err(),
-        ParseResponseError::Truncated
+        query::extract_soa_serial(42, &qname(), &response),
+        Err(ParseResponseError::Truncated)
     ));
 }
 
@@ -166,8 +166,8 @@ fn extract_soa_serial_rejects_truncated_response() {
 fn extract_soa_serial_rejects_answer_without_soa() {
     let response = build_soa_response(42, 0x8400, "example.com", false, 0);
     assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &response).unwrap_err(),
-        ParseResponseError::NoSoa
+        query::extract_soa_serial(42, &qname(), &response),
+        Err(ParseResponseError::NoSoa)
     ));
 }
 
@@ -178,14 +178,14 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
     let cached = build_soa_response(42, 0x8000, "example.com", true, 2026);
 
     assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &cached).unwrap_err(),
-        ParseResponseError::NotAuthoritative
+        query::extract_soa_serial(42, &qname(), &cached),
+        Err(ParseResponseError::NotAuthoritative)
     ));
     let other = build_soa_response(42, 0x8400, "other.com", true, 2026);
 
     assert!(matches!(
-        query::extract_soa_serial(42, &qname(), &other).unwrap_err(),
-        ParseResponseError::OtherQuestion
+        query::extract_soa_serial(42, &qname(), &other),
+        Err(ParseResponseError::OtherQuestion)
     ));
 }
 

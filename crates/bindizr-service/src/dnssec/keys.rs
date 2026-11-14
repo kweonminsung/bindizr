@@ -30,7 +30,7 @@ pub async fn export_keys(
     // from the keys.
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let SignedZone { zone, keys, .. } = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -86,7 +86,7 @@ pub async fn import_keys(
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;

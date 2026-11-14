@@ -145,7 +145,7 @@ pub enum Keepalive {
 }
 
 impl Keepalive {
-    /// Advertise the TCP idle timeout (RFC 7828, Section 3.3.2); none over UDP.
+    /// Return the TCP idle timeout to advertise (RFC 7828, Section 3.3.2); none over UDP.
     pub(crate) fn tcp_keepalive(self) -> Option<TcpKeepalive> {
         let Self::IdleTimeout(idle_timeout) = self else {
             return None;
@@ -155,7 +155,7 @@ impl Keepalive {
         Some(TcpKeepalive::new(Some(timeout)))
     }
 
-    /// Use the request's transport and EDNS advertisement for every response encoder.
+    /// Return every response encoder's budget from the request's transport and EDNS advertisement.
     pub(crate) fn response_limit(self, edns: Edns) -> ResponseLimit {
         match self {
             Self::IdleTimeout(_) => ResponseLimit::STREAM,
@@ -186,7 +186,7 @@ pub enum ParseQueryError {
 }
 
 impl ParseQueryError {
-    /// Preserve readable metadata so the listener can authenticate before replying.
+    /// Return readable metadata so the listener can authenticate before replying.
     pub fn query_metadata(&self) -> Option<&QueryMetadata> {
         match self {
             Self::NoQuestion { query_metadata }
@@ -203,15 +203,15 @@ fn question_count_error(opcode: Opcode, count: u16) -> Option<OptRcode> {
 }
 
 /// Read an opcode without requiring any particular body layout.
-pub fn extract_opcode(message: &[u8]) -> Option<Opcode> {
-    Message::from_octets(message)
+pub fn extract_opcode(query_data: &[u8]) -> Option<Opcode> {
+    Message::from_octets(query_data)
         .ok()
         .map(|message| message.header().opcode())
 }
 
-/// Detect QR=1 replies, which must not trigger another reply to a spoofed source.
-pub fn is_response(message: &[u8]) -> bool {
-    Message::from_octets(message).is_ok_and(|message| message.header().qr())
+/// Return whether the message is a QR=1 reply, which must not trigger another reply to a spoofed source.
+pub fn is_response(query_data: &[u8]) -> bool {
+    Message::from_octets(query_data).is_ok_and(|message| message.header().qr())
 }
 
 /// A query's question, EDNS metadata, and transfer parameters.
@@ -307,12 +307,12 @@ impl ParsedQuery {
         })
     }
 
-    /// Advertise the TCP idle timeout (RFC 7828, Section 3.3.2); none over UDP.
+    /// Return the TCP idle timeout to advertise (RFC 7828, Section 3.3.2); none over UDP.
     pub(crate) fn tcp_keepalive(&self) -> Option<TcpKeepalive> {
         self.keepalive.tcp_keepalive()
     }
 
-    /// Use the request's transport and EDNS advertisement for every response encoder.
+    /// Return every response encoder's budget from the request's transport and EDNS advertisement.
     pub fn response_limit(&self) -> ResponseLimit {
         self.keepalive.response_limit(self.edns)
     }

@@ -5,10 +5,10 @@ use bindizr_core::dns::message::Rcode;
 use super::*;
 
 /// Build a wire record whose RDATA starts at the beginning of its test message.
-fn record(class: Class, record_type: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
+fn record(class: Class, rtype: Rtype, ttl: u32, rdata: &[u8]) -> UpdateRecord {
     UpdateRecord {
         name: "host.example.com.".to_string(),
-        record_type,
+        record_type: rtype,
         class,
         ttl,
         rdata: rdata.to_vec(),
@@ -155,8 +155,10 @@ fn nsupdate_decode_returns_operations_with_checked_owners() {
     let operations = decode_updates(&[add], &zone_name, &message).unwrap();
 
     match &operations[0] {
-        UpdateOperation::Record(RecordOperation::AddRecord { name, ttl, .. }) => {
-            assert_eq!(name.labels(), [b"host.name".to_vec()]);
+        UpdateOperation::Record(RecordOperation::AddRecord {
+            name: owner, ttl, ..
+        }) => {
+            assert_eq!(owner.labels(), [b"host.name".to_vec()]);
             assert_eq!(ttl.as_secs(), u32::MAX);
         }
         other => panic!("{other:?}"),

@@ -9,6 +9,9 @@ use tokio::time;
 use crate::common;
 use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 
+/// The ExternalDNS webhook media type, versioned.
+const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
+
 /// A spawned bindizr-external-dns adapter process, killed on drop.
 #[derive(Debug)]
 struct ExternalDnsAdapter {
@@ -77,8 +80,6 @@ impl Drop for ExternalDnsAdapter {
         let _ = self.child.wait();
     }
 }
-
-const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
 /// Grant the test token access to a zone.
 async fn grant_zone(app: &TestApp, zone_name: &str, role_name: &str) {
@@ -194,7 +195,7 @@ async fn external_dns_domain_listing_unions_split_grants() {
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     let grant = |zone_name: String, actions: &'static str, pattern: &'static str| {
-        let role = scoped_name.clone();
+        let role_name = scoped_name.clone();
         let app = &app;
 
         async move {
@@ -202,7 +203,7 @@ async fn external_dns_domain_listing_unions_split_grants() {
                 &[
                     "role",
                     "grant",
-                    &role,
+                    &role_name,
                     "--zone",
                     &zone_name,
                     "--actions",
@@ -395,13 +396,13 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 
     assert_eq!(
         record_values(&body, &app_fqdn, "A"),
-        vec!["192.0.2.1", "192.0.2.2"]
+        ["192.0.2.1", "192.0.2.2"]
     );
 
     // Ownership TXT round-trips in its quoted presentation form.
     assert_eq!(
         record_values(&body, &app_fqdn, "TXT"),
-        vec!["\"heritage=external-dns,external-dns/owner=default\""]
+        ["\"heritage=external-dns,external-dns/owner=default\""]
     );
 
     // Update replacing one target: one more serial bump.

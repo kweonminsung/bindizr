@@ -71,7 +71,7 @@ impl TryFrom<String> for DnssecDenial {
 
     /// Validate and convert the stored value into a DNSSEC denial.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -110,7 +110,7 @@ impl DnssecPolicy {
         self.name == DEFAULT_DNSSEC_POLICY_NAME
     }
 
-    /// Describe the policy's key layout for validation errors.
+    /// Return the policy's key layout as validation errors describe it.
     pub fn key_layout(&self) -> &'static str {
         if self.split_keys {
             "split KSK/ZSK keys"
@@ -119,7 +119,7 @@ impl DnssecPolicy {
         }
     }
 
-    /// Spread expirations over half the available window to avoid zone-wide
+    /// Return the expiration jitter, half the available window, to avoid zone-wide
     /// re-signing while keeping the earliest signature outside its refresh window.
     pub fn expiration_jitter_secs(&self) -> i64 {
         (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2

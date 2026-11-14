@@ -53,7 +53,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
     );
 
     // Signing changes the zone content, so it rides the serial/IXFR mechanics.
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 1);
+    assert_eq!(dnssec["serial"], base_serial + 1);
 
     // The healthy case status has to be able to show.
     assert!(dnssec["signatures"].as_u64().unwrap() > 0, "{dnssec}");
@@ -108,7 +108,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|item| item["serial"].as_i64().unwrap())
+            .map(|version| version["serial"].as_i64().unwrap())
             .collect()
     };
     let default_serials = listed_serials(&body);

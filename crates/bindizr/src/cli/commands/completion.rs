@@ -6,6 +6,7 @@ use std::str;
 use bindizr_core::out;
 use clap::CommandFactory;
 use clap_complete::Shell;
+use clap_mangen::Man;
 
 use crate::cli::Args;
 use crate::cli::error::CliError;
@@ -22,7 +23,7 @@ pub(crate) fn handle_command(shell: Shell) -> Result<(), CliError> {
 /// Print the roff man page for `bindizr` on stdout.
 pub(crate) fn handle_man_command() -> Result<(), CliError> {
     let mut page = Vec::new();
-    clap_mangen::Man::new(Args::command())
+    Man::new(Args::command())
         .render(&mut page)
         .map_err(|error| {
             CliError::request_with_source(format!("failed to render the man page: {error}"), error)

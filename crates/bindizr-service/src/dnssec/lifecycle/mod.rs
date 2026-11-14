@@ -55,11 +55,11 @@ pub async fn enable(
             .as_deref()
             .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
     )?;
-    let parent_ns_addrs = parent_ns_addrs::normalize_parent_ns_addrs(&request.parent_ns_addrs)?;
+    let parent_ns_addrs = parent_ns_addrs::normalize(&request.parent_ns_addrs)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to enable DNSSEC").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -189,12 +189,12 @@ pub async fn update_settings(
     let parent_ns_addrs = request
         .parent_ns_addrs
         .as_deref()
-        .map(parent_ns_addrs::normalize_parent_ns_addrs)
+        .map(parent_ns_addrs::normalize)
         .transpose()?;
 
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
@@ -300,7 +300,7 @@ pub async fn disable(
 ) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,

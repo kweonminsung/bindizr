@@ -138,7 +138,7 @@ pub async fn create(
         created_record
             .priority
             .map_or("null".to_string(), |value| value.to_string()),
-        created_record.id,
+        created_record.id
     );
 
     // Request secondary transfers only after the new record is committed.

@@ -15,7 +15,7 @@ pub enum Run {
 }
 
 impl Run {
-    /// The run a `dry_run` flag asks for.
+    /// Return the run a `dry_run` flag asks for.
     pub fn from_dry_run(dry_run: bool) -> Self {
         if dry_run {
             Self::DryRun

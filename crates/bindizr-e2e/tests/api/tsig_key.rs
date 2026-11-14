@@ -30,21 +30,21 @@ async fn tsig_key_supports_create_read_and_delete() {
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["secret"], generated_secret.as_str());
+    assert_eq!(body["secret"], generated_secret);
 
     // ...but omitted from the list response, which the compose stack's own
     // key may share.
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    let listed = body["items"]
+    let tsig_key = body["items"]
         .as_array()
         .unwrap()
         .iter()
         .find(|tsig_key| tsig_key["name"] == "update-key")
         .expect("the key is listed");
 
-    assert!(listed.get("secret").is_none());
+    assert!(tsig_key.get("secret").is_none());
 
     let (status, _) = app
         .send_request(

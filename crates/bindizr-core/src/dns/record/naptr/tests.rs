@@ -1,20 +1,19 @@
 use super::*;
 use crate::dns::record;
-use crate::dns::record::ParseRecordValueError;
 
 /// Verify that invalid flags are rejected with either replacement form.
 #[test]
 fn naptr_flags_reject_non_alphanumeric_characters() {
     let invalid = (0..=127u8)
         .filter(|byte| !byte.is_ascii_alphanumeric())
-        .map(|byte| String::from(char::from(byte)))
+        .map(|byte| char::from(byte).to_string())
         .chain(["é".to_string(), "한".to_string(), "９".to_string()]);
 
     for flags in invalid {
         for replacement in [".", "next.example."] {
             let text = format!(
                 "1 1 {} \"app\" \"\" {replacement}",
-                record::to_quoted_charstr(flags.as_bytes()),
+                record::to_quoted_charstr(flags.as_bytes())
             );
             let parsed = NaptrRecordValue::parse(&text).unwrap();
 

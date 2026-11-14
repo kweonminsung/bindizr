@@ -66,21 +66,24 @@ impl DnsMessageBuilder {
     }
 
     /// Add a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub fn add_catalog_soa(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
+    pub fn add_catalog_soa(
+        &mut self,
+        catalog_zone: &CatalogZone,
+    ) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
-            serial: zone.serial.as_u32(),
-            refresh: zone.refresh.as_secs(),
-            retry: zone.retry.as_secs(),
-            expire: zone.expire.as_secs(),
-            minimum: zone.minimum_ttl.as_secs(),
+            serial: catalog_zone.serial.as_u32(),
+            refresh: catalog_zone.refresh.as_secs(),
+            retry: catalog_zone.retry.as_secs(),
+            expire: catalog_zone.expire.as_secs(),
+            minimum: catalog_zone.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
         self.add_raw_rdata(
-            zone.name.to_wire_name()?,
+            catalog_zone.name.to_wire_name()?,
             SOA_WIRE_TYPE,
-            zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl.as_secs(),
             rdata,
         )
     }
@@ -124,13 +127,13 @@ impl DnsMessageBuilder {
     }
 
     /// Add the catalog-zone NS record, which is the placeholder "invalid".
-    pub fn add_catalog_ns(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
-        let owner_name = zone.name.to_fqdn();
+    pub fn add_catalog_ns(&mut self, catalog_zone: &CatalogZone) -> Result<(), EncodeMessageError> {
+        let owner_name = catalog_zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
             RecordType::Ns,
             "invalid",
-            zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -138,15 +141,15 @@ impl DnsMessageBuilder {
     /// Add the catalog-zone version TXT record.
     pub fn add_catalog_schema_version(
         &mut self,
-        zone: &CatalogZone,
+        catalog_zone: &CatalogZone,
     ) -> Result<(), EncodeMessageError> {
-        let version_name = format!("version.{}.", zone.name);
+        let version_name = format!("version.{}.", catalog_zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
             &version_name,
             RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
-            zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -154,17 +157,17 @@ impl DnsMessageBuilder {
     /// Append a catalog membership PTR answer.
     pub fn add_catalog_ptr(
         &mut self,
-        zone: &CatalogZone,
+        catalog_zone: &CatalogZone,
         zone_name: &str,
     ) -> Result<(), EncodeMessageError> {
-        let ptr_name = dns::catalog_member_owner_name(&zone.name, zone_name);
+        let ptr_name = dns::catalog_member_owner_name(&catalog_zone.name, zone_name);
         let ptr_target = name::to_fqdn(zone_name);
 
         self.add_text_rdata(
             &ptr_name,
             RecordType::Ptr,
             &ptr_target,
-            zone.default_ttl.as_secs(),
+            catalog_zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -189,7 +192,7 @@ impl DnsMessageBuilder {
     /// rows share this shape). Unsupported types are skipped.
     pub fn add_record_parts(
         &mut self,
-        name: &OwnerName,
+        owner: &OwnerName,
         zone_name: &ZoneName,
         record_type: RecordType,
         value: &str,
@@ -200,7 +203,7 @@ impl DnsMessageBuilder {
             record_type: rtype,
             rdata,
         } = EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(name.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
+        self.add_raw_rdata(owner.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
     }
 
     /// Add a derived DNSSEC record; its RDATA is stored in wire form.

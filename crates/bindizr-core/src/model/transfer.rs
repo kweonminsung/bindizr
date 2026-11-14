@@ -5,13 +5,13 @@ use std::fmt;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use domain::base::iana::Rtype;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
 use utoipa::ToSchema;
 
 use crate::dns::Serial;
-use crate::dns::message::Rtype;
 use crate::dns::name::ZoneName;
 use crate::model::zone::ZoneId;
 
@@ -83,7 +83,7 @@ impl TryFrom<String> for TransferKind {
 
     /// Validate and convert the stored value into a transfer kind.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -136,7 +136,7 @@ impl TryFrom<String> for TransferResult {
 
     /// Validate and convert the stored value into a transfer result.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -196,7 +196,7 @@ impl TryFrom<String> for TransferTransport {
 
     /// Validate and convert the stored value into a transport.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 

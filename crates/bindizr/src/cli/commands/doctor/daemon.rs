@@ -20,6 +20,7 @@ use crate::socket::types::{
     DaemonCommand, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus,
 };
 
+/// An API that does not answer must become a failed check, not a hang.
 const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Why the API did not answer a probe as a reachable API.

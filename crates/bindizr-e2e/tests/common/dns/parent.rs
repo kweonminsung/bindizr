@@ -53,8 +53,6 @@ impl DsRecord {
         key_tag: u16,
         ttl: u32,
     ) -> Self {
-        use std::str::FromStr;
-
         use base64::Engine;
 
         let dnskey = dnssec["keys"]
@@ -78,7 +76,7 @@ impl DsRecord {
 
         // RFC 4034, Section 5.1.4: the digest covers the wire owner name,
         // then the DNSKEY RDATA.
-        let apex = Name::<Vec<u8>>::from_str(zone_name).expect("zone name");
+        let apex = super::parse_name(zone_name).expect("zone name");
         let mut hasher = Context::new(&SHA1_FOR_LEGACY_USE_ONLY);
         hasher.update(apex.as_slice());
         hasher.update(&rdata);

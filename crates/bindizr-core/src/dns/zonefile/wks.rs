@@ -116,6 +116,8 @@ fn append_entry(
     entry: Range<usize>,
     fields: &[Range<usize>],
 ) -> Result<(), RewriteNativeRecordsError> {
+    use std::str::FromStr;
+
     let original = &content[entry.clone()];
     let owner_fields = usize::from(!original.starts_with(char::is_whitespace));
     let is_directive = fields
@@ -127,8 +129,7 @@ fn append_entry(
         .skip(owner_fields)
         .take(3)
         .find_map(|(index, field)| {
-            content[field.clone()]
-                .parse::<Rtype>()
+            Rtype::from_str(&content[field.clone()])
                 .ok()
                 .map(|rtype| (index, rtype))
         });

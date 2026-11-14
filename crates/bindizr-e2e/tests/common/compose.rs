@@ -13,22 +13,35 @@ use tokio::time;
 
 use super::{TestApp, TestRuntime};
 
+/// The compose file that defines the DNS stack.
 const COMPOSE_FILE: &str = "docker-compose.yml";
+
+/// The override compose file for ARM hosts.
 const ARM_COMPOSE_FILE: &str = "docker-compose.arm.yml";
+
+/// The Compose project name the stack runs under.
 const COMPOSE_PROJECT_NAME: &str = "bindizr-e2e-dns";
+
+/// The compose bindizr's HTTP API as the host reaches it.
 const COMPOSE_API_BASE_URL: &str = "http://127.0.0.1:8000";
+
+/// The switch that adds the ARM override compose file.
 const ARM_STACK_ENV: &str = "BINDIZR_E2E_ARM";
+
+/// The host ports of the BIND9 secondaries' DNS listeners.
 const SECONDARY_PORTS: [u16; 2] = [1053, 1054];
 
 /// The BIND9 services of the compose file, by the names the daemon reaches them at.
 const COMPOSE_SECONDARY_SERVICES: [&str; 2] = ["bind9-1", "bind9-2"];
 
+/// The longest a `docker compose` command may run.
 const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
 const COMPOSE_XOT_KEY: &str = "xot-key";
 const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
+/// The stack shared by every test of the run, started on first use.
 static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 
 impl TestApp {
@@ -116,11 +129,11 @@ async fn probe_api_resource(client: &Client, path: &str) -> bool {
         == StatusCode::OK
 }
 
-/// POST `body` to the compose API, accepting one of `allowed` statuses.
-async fn post(client: &Client, path: &str, body: Value, allowed: &[StatusCode]) {
+/// POST `request` to the compose API, accepting one of `allowed` statuses.
+async fn post(client: &Client, path: &str, request: Value, allowed: &[StatusCode]) {
     let response = client
         .post(format!("{COMPOSE_API_BASE_URL}{path}"))
-        .json(&body)
+        .json(&request)
         .send()
         .await
         .unwrap_or_else(|error| panic!("POST {path}: {error}"));

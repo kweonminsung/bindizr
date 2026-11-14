@@ -29,8 +29,7 @@ pub(crate) async fn create_many_tx(
                 sql.push(',');
             }
             sql.push_str(&format!(
-                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                bind_index,
+                "(${bind_index}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                 bind_index + 1,
                 bind_index + 2,
                 bind_index + 3,

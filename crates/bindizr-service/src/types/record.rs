@@ -41,7 +41,7 @@ pub enum RecordValue {
 }
 
 impl RecordValue {
-    /// The value as one string; TXT segments concatenate into the text they
+    /// Return the value as one string; TXT segments concatenate into the text they
     /// encode.
     pub fn to_text(&self) -> String {
         match self {
@@ -316,7 +316,7 @@ pub struct RecordResponse {
 }
 
 impl RecordResponse {
-    /// Render a record response with absolute names and the caller's actions.
+    /// Build a record response with absolute names and the caller's actions.
     pub(crate) fn from_record(record: &Record, zone_name: &ZoneName, actions: Vec<Action>) -> Self {
         Self {
             id: record.id.written(),
@@ -386,7 +386,7 @@ impl ServedRecordType {
 }
 
 impl fmt::Display for ServedRecordType {
-    /// Display the canonical DNS mnemonic.
+    /// Write the canonical DNS mnemonic.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(&self.to_text())
     }

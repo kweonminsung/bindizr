@@ -78,7 +78,7 @@ pub(crate) fn normalize_record_owner_name(
     })
 }
 
-/// Check whether any record already holds the candidate's rdata. Canonical
+/// Return whether any record already holds the candidate's rdata. Canonical
 /// comparison keeps protocol and API callers agreeing on "already exists".
 fn has_matching_rdata<'a>(
     records: impl IntoIterator<Item = &'a Record>,
@@ -217,7 +217,7 @@ pub(crate) fn validate_record_constraints(
     {
         return Err(ServiceError::record_conflict(format!(
             "TTL {ttl} does not match the existing {record_type} records for '{owner}' (TTL {}); records sharing a name and type share one TTL",
-            conflicting.ttl,
+            conflicting.ttl
         )));
     }
 

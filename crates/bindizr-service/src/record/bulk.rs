@@ -95,17 +95,17 @@ pub async fn create_bulk(
         // Only records whose owner name appears in the batch can conflict, so
         // load just those instead of the whole zone.
         let started = Instant::now();
-        let mut batch_names: Vec<OwnerName> = writes
+        let mut batch_owners: Vec<OwnerName> = writes
             .iter()
             .map(|write| write.relative_name.clone())
             .collect();
-        batch_names.sort();
-        batch_names.dedup();
+        batch_owners.sort();
+        batch_owners.dedup();
 
         let existing_records = bindizr_db::record::list_by_names_tx(
             &mut tx,
             zone.id,
-            &batch_names,
+            &batch_owners,
             LockLevel::Exclusive,
         )
         .await
@@ -233,7 +233,7 @@ pub async fn create_bulk(
     log::info!(
         "event=record_bulk_create zone={zone_name} count={} dry_run={}",
         created_records.len(),
-        request.dry_run,
+        request.dry_run
     );
 
     let started = Instant::now();
@@ -258,7 +258,7 @@ pub async fn create_bulk(
         timings.build_records_ms,
         timings.db_write_ms,
         timings.serial_ms,
-        time::elapsed_ms(total_started),
+        time::elapsed_ms(total_started)
     );
 
     let records: Vec<_> = created_records

@@ -186,8 +186,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    // The zone's newest version survives regardless of age: the IXFR
-    // up-to-date response reads it.
+    // Retain the newest version for up-to-date IXFR responses.
     let result = sqlx::query(
         r#"
         DELETE FROM zone_versions

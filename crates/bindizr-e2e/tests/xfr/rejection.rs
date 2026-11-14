@@ -28,7 +28,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
         "k".repeat(63),
         "l".repeat(63),
         "m".repeat(63),
-        "n".repeat(61),
+        "n".repeat(61)
     ))
     .unwrap();
     let algorithm = dns::parse_name(&format!(
@@ -36,7 +36,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
         "a".repeat(63),
         "b".repeat(63),
         "c".repeat(63),
-        "d".repeat(61),
+        "d".repeat(61)
     ))
     .unwrap();
 
@@ -146,7 +146,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
         "k".repeat(63),
         "l".repeat(63),
         "m".repeat(63),
-        "n".repeat(61),
+        "n".repeat(61)
     ))
     .unwrap();
     let algorithm = dns::parse_name(&format!(
@@ -154,7 +154,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
         "a".repeat(63),
         "b".repeat(63),
         "c".repeat(63),
-        "d".repeat(61),
+        "d".repeat(61)
     ))
     .unwrap();
     let labels = [r#"result="servfail""#];
@@ -206,14 +206,14 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
 async fn udp_axfr_counts_encoding_failure_before_truncation() {
     let app = TestApp::start_local().await;
 
-    let key_name = format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63));
+    let tsig_key_name = format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63));
 
     let (status, body) = app
         .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({
-                "name": key_name,
+                "name": tsig_key_name,
                 "role_name": "admin",
                 "algorithm": "hmac-sha512"
             })),
@@ -222,7 +222,7 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let key = SigningKey {
-        name: key_name,
+        name: tsig_key_name,
         secret: body["secret"].as_str().unwrap().to_string(),
         algorithm: Algorithm::Sha512,
     };
@@ -230,7 +230,7 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
         "{}.{}.{}.q",
         "a".repeat(63),
         "b".repeat(63),
-        "c".repeat(63),
+        "c".repeat(63)
     ))
     .unwrap();
 
@@ -318,7 +318,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
         "k".repeat(63),
         "l".repeat(63),
         "m".repeat(63),
-        "n".repeat(61),
+        "n".repeat(61)
     ))
     .unwrap();
     let algorithm = dns::parse_name(&format!(
@@ -326,7 +326,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
         "a".repeat(63),
         "b".repeat(63),
         "c".repeat(63),
-        "d".repeat(61),
+        "d".repeat(61)
     ))
     .unwrap();
 
@@ -562,6 +562,7 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
             dns::exchange_tcp(app.dns_port(), &request).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
+
             assert_eq!(response.header().opcode(), Opcode::from_int(15));
             assert_eq!(response.header().rcode(), Rcode::NOTIMP);
             assert_eq!(response.header_counts().qdcount(), 0);
@@ -722,6 +723,7 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
                 dns::exchange_tcp(app.dns_port(), &request).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
+
                 assert_eq!(response.header().rcode(), Rcode::NOTIMP);
                 assert_eq!(response.header_counts().qdcount(), 0);
                 assert_eq!(response.as_slice().len(), 12);
@@ -815,13 +817,14 @@ async fn questionless_refusals_allow_connection_reuse() {
         ..Default::default()
     })
     .await;
-    let mut tcp = dns::connect_tcp(app.dns_port()).unwrap();
+    let mut stream = dns::connect_tcp(app.dns_port()).unwrap();
 
     for opcode in [Opcode::QUERY, Opcode::from_int(15), Opcode::QUERY] {
-        let mut request = MessageBuilder::new_vec();
-        request.header_mut().set_opcode(opcode);
-        dns::write_frame(&mut tcp, &request.finish()).unwrap();
-        let response = Message::from_octets(dns::read_frame(&mut tcp).unwrap().unwrap()).unwrap();
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_opcode(opcode);
+        dns::write_frame(&mut stream, &builder.finish()).unwrap();
+        let response =
+            Message::from_octets(dns::read_frame(&mut stream).unwrap().unwrap()).unwrap();
 
         assert_eq!(
             response.header().rcode(),
@@ -833,13 +836,14 @@ async fn questionless_refusals_allow_connection_reuse() {
         );
     }
 
-    let mut tls = dns::connect_tls(app.dns_tls_port(), tls::dot_client(&app)).unwrap();
+    let mut stream = dns::connect_tls(app.dns_tls_port(), tls::dot_client(&app)).unwrap();
 
     for opcode in [Opcode::QUERY, Opcode::from_int(15), Opcode::QUERY] {
-        let mut request = MessageBuilder::new_vec();
-        request.header_mut().set_opcode(opcode);
-        dns::write_frame(&mut tls, &request.finish()).unwrap();
-        let response = Message::from_octets(dns::read_frame(&mut tls).unwrap().unwrap()).unwrap();
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_opcode(opcode);
+        dns::write_frame(&mut stream, &builder.finish()).unwrap();
+        let response =
+            Message::from_octets(dns::read_frame(&mut stream).unwrap().unwrap()).unwrap();
 
         assert_eq!(
             response.header().rcode(),

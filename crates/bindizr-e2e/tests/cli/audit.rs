@@ -32,12 +32,12 @@ async fn audit_list_shows_socket_changes() {
     assert_eq!(items[0]["operation"], "delete");
     assert_eq!(items[1]["operation"], "create");
 
-    for item in items {
-        assert_eq!(item["entity"], "token");
-        assert_eq!(item["entity_name"], name);
+    for log in items {
+        assert_eq!(log["entity"], "token");
+        assert_eq!(log["entity_name"], name);
         // A socket command is the daemon's own user: no token names it.
-        assert_eq!(item["change_source"], "socket");
-        assert!(item["changed_by"].is_null(), "{item}");
+        assert_eq!(log["change_source"], "socket");
+        assert!(log["changed_by"].is_null(), "{log}");
     }
 
     // Without an entity, the role's own creation is listed beside its token's;
@@ -73,7 +73,7 @@ async fn audit_list_shows_socket_changes() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|item| item["entity"].as_str().unwrap())
+        .map(|log| log["entity"].as_str().unwrap())
         .collect();
 
     assert_eq!(entities, ["role", "token", "token"], "{sorted}");

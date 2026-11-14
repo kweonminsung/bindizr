@@ -9,6 +9,7 @@ use ring::hmac;
 use thiserror::Error;
 
 use super::TsigSigningKey;
+use crate::dns::nsupdate::DEFAULT_FUDGE;
 
 /// The response signature could not be appended to the DNS message.
 #[derive(Debug, Error)]
@@ -29,7 +30,7 @@ impl ResponseSigner {
         additional: &mut AdditionalBuilder<T>,
         now: Time48,
     ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(additional, now, 300)
+        self.sign_response_with_fudge(additional, now, DEFAULT_FUDGE)
     }
 
     /// Sign one response with the caller's accepted clock tolerance.
@@ -56,17 +57,6 @@ pub struct TransferSigner {
     first: bool,
 }
 
-impl From<ResponseSigner> for TransferSigner {
-    /// Begin the response chain with the original request's MAC.
-    fn from(signer: ResponseSigner) -> Self {
-        Self {
-            key: signer.key,
-            previous_mac: signer.request_mac,
-            first: true,
-        }
-    }
-}
-
 impl TransferSigner {
     /// Sign the next transfer additional with the suggested TSIG fudge.
     pub fn sign_response<T: Composer>(
@@ -74,7 +64,7 @@ impl TransferSigner {
         additional: &mut AdditionalBuilder<T>,
         now: Time48,
     ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(additional, now, 300)
+        self.sign_response_with_fudge(additional, now, DEFAULT_FUDGE)
     }
 
     /// Advance the chain only after the signed record fits the builder.
@@ -132,5 +122,16 @@ impl TransferSigner {
     /// Return the key used to size and identify the next signature.
     pub fn key(&self) -> &Key {
         self.key.as_ref()
+    }
+}
+
+impl From<ResponseSigner> for TransferSigner {
+    /// Begin the response chain with the original request's MAC.
+    fn from(signer: ResponseSigner) -> Self {
+        Self {
+            key: signer.key,
+            previous_mac: signer.request_mac,
+            first: true,
+        }
     }
 }

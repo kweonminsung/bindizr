@@ -4,7 +4,7 @@ use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::socket::server::SocketContext;
+use super::SocketContext;
 use crate::socket::types::DaemonResponse;
 
 /// Daemon lifecycle transitions requestable over the control socket.
@@ -43,10 +43,10 @@ pub(crate) fn restart(socket_cx: &SocketContext) -> DaemonResponse<MessageRespon
 /// Send the transition after a short delay so the command response reaches
 /// the client before the daemon tears down.
 fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
-    let tx = socket_cx.control().clone();
+    let control_tx = socket_cx.control().clone();
 
     tokio::spawn(async move {
         time::sleep(Duration::from_millis(100)).await;
-        let _ = tx.send(control).await;
+        let _ = control_tx.send(control).await;
     });
 }

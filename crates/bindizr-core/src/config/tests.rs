@@ -40,7 +40,7 @@ impl Default for TestConfigToml {
 
 impl TestConfigToml {
     /// Render the configuration fixture as TOML.
-    fn render(&self) -> String {
+    fn render(self) -> String {
         let unselected_databases = if self.unselected_databases {
             "\n[database.mysql]\nurl = \"\"\n\n[database.postgresql]\nurl = \"\"\n"
         } else {
@@ -73,20 +73,20 @@ level = "debug"
             database_type = self.database_type,
             dns_extra = self.dns_extra,
             api_listen_port = self.api_listen_port,
-            dns_listen_port = self.dns_listen_port,
+            dns_listen_port = self.dns_listen_port
         )
     }
 }
 
 /// Parse a TOML configuration fixture.
-fn parse_config(toml: &TestConfigToml) -> Result<Config, ConfigError> {
+fn parse_config(toml: TestConfigToml) -> Result<Config, ConfigError> {
     Config::from_toml(&toml.render(), |_| None)
 }
 
 /// Verify that `from_toml` accepts valid config.
 #[test]
 fn from_toml_accepts_valid_config() {
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         dns_extra: "[dns.nsupdate]\ntsig_required = false\n\n[dns.notify]\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
@@ -112,7 +112,7 @@ fn dns_listener_accepts_wildcard_and_specific_addresses() {
         "192.0.2.10",
         "2001:db8::10",
     ] {
-        parse_config(&TestConfigToml {
+        parse_config(TestConfigToml {
             api_listen_addr: "0.0.0.0",
             dns_listen_addr: addr,
             ..Default::default()
@@ -124,7 +124,7 @@ fn dns_listener_accepts_wildcard_and_specific_addresses() {
 /// Verify that `from_toml` defaults missing optional fields.
 #[test]
 fn from_toml_defaults_missing_optional_fields() {
-    let parsed = parse_config(&TestConfigToml::default()).unwrap();
+    let parsed = parse_config(TestConfigToml::default()).unwrap();
 
     assert!(parsed.api.metrics_enabled);
     assert!(!parsed.api.external_dns_enabled);
@@ -241,7 +241,7 @@ fn from_toml_rejects_empty_values_and_missing_database_location() {
 fn from_toml_defaults_fields_of_an_empty_sub_table() {
     // The sample file keeps every sub-table header and comments out the
     // keys, so a header with nothing under it must read as the defaults.
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         dns_extra: "[dns.notify]\n\n[dns.tls]\n\n[dns.transfer]\ncache_max_records = 10",
         ..Default::default()
     })
@@ -256,7 +256,7 @@ fn from_toml_defaults_fields_of_an_empty_sub_table() {
 #[test]
 fn from_toml_rejects_an_unknown_key() {
     // A mistyped key would otherwise be dropped and the default applied.
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "listen_prot = 5300",
         ..Default::default()
     })
@@ -271,7 +271,7 @@ fn from_toml_rejects_an_unknown_key() {
 /// Verify that `from_toml` defaults unselected database sections.
 #[test]
 fn from_toml_defaults_unselected_database_sections() {
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         unselected_databases: false,
         ..Default::default()
     })
@@ -288,7 +288,7 @@ fn from_toml_defaults_unselected_database_sections() {
 /// Verify that `from_toml` rejects invalid listen addr.
 #[test]
 fn from_toml_rejects_invalid_listen_addr() {
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         api_listen_addr: "not-an-ip",
         ..Default::default()
     })
@@ -300,7 +300,7 @@ fn from_toml_rejects_invalid_listen_addr() {
 /// Verify that `from_toml` rejects empty selected database url.
 #[test]
 fn from_toml_rejects_empty_selected_database_url() {
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         database_type: "mysql",
         ..Default::default()
     })
@@ -316,7 +316,7 @@ fn from_toml_rejects_empty_selected_database_url() {
 /// Verify that `apply_env_overrides` replaces config values before validation.
 #[test]
 fn apply_env_overrides_replaces_config_values_before_validation() {
-    let mut overridden = parse_config(&TestConfigToml {
+    let mut overridden = parse_config(TestConfigToml {
         authentication_required: true,
         ..Default::default()
     })
@@ -408,7 +408,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
 /// Verify that `apply_env_overrides` rejects invalid values.
 #[test]
 fn apply_env_overrides_rejects_invalid_values() {
-    let mut overridden = parse_config(&TestConfigToml {
+    let mut overridden = parse_config(TestConfigToml {
         unselected_databases: false,
         ..Default::default()
     })
@@ -465,7 +465,7 @@ fn from_toml_rejects_a_database_ca_file_without_a_verifying_mode() {
     assert_eq!(parsed.database.tls.mode, Some(DatabaseTlsMode::VerifyCa));
 }
 
-/// Verify that the database TLS mode is spelled once across its forms.
+/// Verify that `DatabaseTlsMode` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn database_tls_mode_spells_itself_once() {
     for value in [
@@ -488,7 +488,7 @@ fn database_tls_mode_spells_itself_once() {
 #[test]
 fn from_toml_rejects_port_zero() {
     // Port 0 binds an ephemeral one, somewhere no client could find.
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_listen_port: 0,
         ..Default::default()
     })
@@ -499,7 +499,7 @@ fn from_toml_rejects_port_zero() {
         "{error}"
     );
 
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         api_listen_port: 0,
         ..Default::default()
     })
@@ -510,7 +510,7 @@ fn from_toml_rejects_port_zero() {
         "{error}"
     );
 
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "[dns.tls]\nlisten_port = 0",
         ..Default::default()
     })
@@ -528,7 +528,7 @@ fn from_toml_rejects_port_zero() {
 /// Section 3.1), whether or not the TLS listener is on.
 #[test]
 fn from_toml_rejects_the_ports_rfc_7858_reserves() {
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_listen_port: 853,
         ..Default::default()
     })
@@ -541,7 +541,7 @@ fn from_toml_rejects_the_ports_rfc_7858_reserves() {
         "{error}"
     );
 
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "[dns.tls]\nlisten_port = 53",
         ..Default::default()
     })
@@ -559,7 +559,7 @@ fn from_toml_rejects_the_ports_rfc_7858_reserves() {
 /// the reverse, for the API and the DNS listener alike.
 #[test]
 fn from_toml_rejects_a_tls_half_pair() {
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         api_extra: "[api.tls]\ncert_file = \"/tls/api.crt\"",
         ..Default::default()
     })
@@ -572,7 +572,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         "{error}"
     );
 
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         api_extra: "[api.tls]\nkey_file = \"/tls/api.key\"",
         ..Default::default()
     })
@@ -585,7 +585,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         "{error}"
     );
 
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "[dns.tls]\ncert_file = \"/tls/xot.crt\"",
         ..Default::default()
     })
@@ -598,7 +598,7 @@ fn from_toml_rejects_a_tls_half_pair() {
         "{error}"
     );
 
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "[dns.tls]\nkey_file = \"/tls/xot.key\"",
         ..Default::default()
     })
@@ -615,7 +615,7 @@ fn from_toml_rejects_a_tls_half_pair() {
 /// Verify that `from_toml` rejects listeners sharing a port.
 #[test]
 fn from_toml_rejects_listeners_sharing_a_port() {
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         api_listen_port: 5353,
         dns_listen_port: 5353,
         ..Default::default()
@@ -635,7 +635,7 @@ fn from_toml_rejects_listeners_sharing_a_port() {
 #[test]
 fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
     // Off, the port is never bound, so an API on 853 is fine.
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         api_listen_port: 853,
         ..Default::default()
     })
@@ -644,7 +644,7 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
     assert_eq!(parsed.dns.tls.listen_port, 853);
 
     let on = "[dns.tls]\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"";
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         api_listen_port: 853,
         dns_extra: on,
         ..Default::default()
@@ -659,7 +659,7 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
     );
 
     // The TLS listener shares the DNS address, so equal ports always collide.
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_listen_port: 8853,
         dns_extra: "[dns.tls]\nlisten_port = 8853\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"",
         ..Default::default()
@@ -679,7 +679,7 @@ fn from_toml_checks_the_tls_port_only_while_the_listener_is_on() {
 fn reload_rejects_settings_that_require_restart() {
     // authentication_required is in the list because the router is built
     // once: a section is fixed whole, not field by field.
-    let current = parse_config(&TestConfigToml::default()).unwrap();
+    let current = parse_config(TestConfigToml::default()).unwrap();
 
     let mut api_moved = current.clone();
     api_moved.api.listen_port += 1;
@@ -724,7 +724,7 @@ fn reload_rejects_settings_that_require_restart() {
 fn from_toml_rejects_an_unusable_catalog_zone_name() {
     // The name is served as a zone and copied into every secondary's
     // configuration, so it must fail at startup rather than on transfer.
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "catalog_zone_name = \"catalog bindizr\"",
         ..Default::default()
     })
@@ -743,7 +743,7 @@ fn from_toml_rejects_an_unusable_catalog_zone_name() {
 /// Verify that `is_catalog_zone` matches the configured name, ignoring case.
 #[test]
 fn is_catalog_zone_matches_the_configured_name_ignoring_case() {
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         dns_extra: "catalog_zone_name = \"catalog.prod\"",
         ..Default::default()
     })
@@ -792,7 +792,7 @@ fn is_catalog_zone_compares_decoded_labels() {
 #[test]
 fn from_toml_checks_catalog_member_owner_lengths_after_overrides() {
     for last_len in [22, 23, 53, 54, 61] {
-        let catalog = format!(
+        let catalog_zone_name = format!(
             "{}.{}.{}.{}",
             "a".repeat(63),
             "b".repeat(63),
@@ -801,16 +801,20 @@ fn from_toml_checks_catalog_member_owner_lengths_after_overrides() {
         );
 
         assert_eq!(
-            ZoneName::parse(&catalog).unwrap().to_wire().unwrap().len(),
+            ZoneName::parse(&catalog_zone_name)
+                .unwrap()
+                .to_wire()
+                .unwrap()
+                .len(),
             194 + last_len
         );
         let text = format!(
-            "{}\n[dns]\ncatalog_zone_name = '{catalog}'\n",
+            "{}\n[dns]\ncatalog_zone_name = '{catalog_zone_name}'\n",
             "[database]\ntype = 'sqlite'\n[database.sqlite]\nfile_path = ':memory:'"
         );
         let file = Config::from_toml(&text, |_| None);
         let overridden = Config::from_toml(&TestConfigToml::default().render(), |name| {
-            (name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| catalog.clone())
+            (name == "BINDIZR_DNS_CATALOG_ZONE_NAME").then(|| catalog_zone_name.clone())
         });
 
         for result in [file, overridden] {
@@ -852,7 +856,7 @@ fn from_toml_canonicalizes_catalog_zone_name() {
         "catalog_zone_name = \"catalog.Prod.\"",
         "catalog_zone_name = \" catalog.prod \"",
     ] {
-        let parsed = parse_config(&TestConfigToml {
+        let parsed = parse_config(TestConfigToml {
             dns_extra,
             ..Default::default()
         })
@@ -866,7 +870,7 @@ fn from_toml_canonicalizes_catalog_zone_name() {
 /// Verify that a reload takes the settings read per use.
 #[test]
 fn reload_applies_settings_read_per_use() {
-    let current = parse_config(&TestConfigToml::default()).unwrap();
+    let current = parse_config(TestConfigToml::default()).unwrap();
 
     let mut next = current.clone();
     next.dns.notify.retries = 9;
@@ -880,7 +884,7 @@ fn reload_applies_settings_read_per_use() {
 /// Verify that the catalog zone name override is parsed like the file's value.
 #[test]
 fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
-    let mut config = parse_config(&TestConfigToml::default()).unwrap();
+    let mut config = parse_config(TestConfigToml::default()).unwrap();
 
     let error = config
         .apply_env_overrides(|name| match name {
@@ -899,7 +903,7 @@ fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
 /// as the same value in a request would be.
 #[test]
 fn dns_validate_rejects_a_zero_zone_default() {
-    let mut parsed = parse_config(&TestConfigToml::default()).unwrap();
+    let mut parsed = parse_config(TestConfigToml::default()).unwrap();
     parsed.dns.zone_defaults.retry = SoaInterval::from_secs(0);
 
     let error = parsed.dns.validate().unwrap_err();
@@ -910,7 +914,7 @@ fn dns_validate_rejects_a_zero_zone_default() {
     );
 }
 
-/// Verify that every DatabaseType variant keeps one canonical spelling and round-trips.
+/// Verify that `DatabaseType` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn database_type_spells_itself_once() {
     for value in [
@@ -927,7 +931,7 @@ fn database_type_spells_itself_once() {
     }
 }
 
-/// Verify that every SavedTransfers variant keeps one canonical spelling and round-trips.
+/// Verify that `SavedTransfers` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn saved_transfers_spells_itself_once() {
     for value in [SavedTransfers::All, SavedTransfers::Unserved] {
@@ -958,7 +962,7 @@ fn from_toml_reads_history_tables() {
     assert_eq!(parsed.history.transfer.max_days, 14);
 }
 
-/// Verify that every LogFormat variant keeps one canonical spelling and round-trips.
+/// Verify that `LogFormat` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn log_format_spells_itself_once() {
     for value in [LogFormat::Text, LogFormat::Json] {
@@ -971,7 +975,7 @@ fn log_format_spells_itself_once() {
     }
 }
 
-/// Verify that every LogLevel variant keeps one canonical spelling and round-trips.
+/// Verify that `LogLevel` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn log_level_spells_itself_once() {
     for value in [
@@ -994,7 +998,7 @@ fn log_level_spells_itself_once() {
 /// transfers are sent to.
 #[test]
 fn from_toml_requires_the_tls_listener_to_require_tls() {
-    let error = parse_config(&TestConfigToml {
+    let error = parse_config(TestConfigToml {
         dns_extra: "[dns.transfer]\nrequire_tls = true",
         ..Default::default()
     })
@@ -1007,7 +1011,7 @@ fn from_toml_requires_the_tls_listener_to_require_tls() {
         "{error}"
     );
 
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         dns_extra: "[dns.tls]\ncert_file = \"/tls/xot.crt\"\nkey_file = \"/tls/xot.key\"\n\n[dns.transfer]\nrequire_tls = true",
         ..Default::default()
     })
@@ -1020,7 +1024,7 @@ fn from_toml_requires_the_tls_listener_to_require_tls() {
 /// their environment variables.
 #[test]
 fn from_toml_reads_the_tcp_limits_and_the_import_block() {
-    let parsed = parse_config(&TestConfigToml {
+    let parsed = parse_config(TestConfigToml {
         dns_extra: "tcp_idle_timeout_secs = 60\ntcp_max_connections = 512\n\n[dns.import]\ntimeout_secs = 120\nmax_records = 1000000",
         ..Default::default()
     })
@@ -1047,7 +1051,7 @@ fn from_toml_reads_the_tcp_limits_and_the_import_block() {
             "dns.import.max_records must be at least 1",
         ),
     ] {
-        let error = parse_config(&TestConfigToml {
+        let error = parse_config(TestConfigToml {
             dns_extra: extra,
             ..Default::default()
         })
@@ -1055,7 +1059,7 @@ fn from_toml_reads_the_tcp_limits_and_the_import_block() {
         assert!(error.to_string().contains(message), "{error}");
     }
 
-    let mut overridden = parse_config(&TestConfigToml::default()).unwrap();
+    let mut overridden = parse_config(TestConfigToml::default()).unwrap();
     overridden
         .apply_env_overrides(|name| match name {
             "BINDIZR_DNS_TCP_IDLE_TIMEOUT_SECS" => Some("45".to_string()),

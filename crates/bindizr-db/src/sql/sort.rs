@@ -38,10 +38,10 @@ impl ZoneSortField {
         }
     }
 
-    /// Build a zone listing order with id as the tie-breaker, preventing tied
-    /// rows from moving between pages.
+    /// Return the `ORDER BY` a zone listing pages under, with id as the
+    /// tie-breaker, preventing tied rows from moving between pages.
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
-        format!("ORDER BY {} {}, id", self.column(), order.as_str())
+        format!("ORDER BY {} {}, id", self.column(), order.keyword())
     }
 }
 
@@ -89,7 +89,7 @@ impl RecordSortField {
     /// Return the `ORDER BY` a record listing pages under; see
     /// [`ZoneSortField::order_by_sql`].
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
-        format!("ORDER BY {} {}, r.id", self.column(), order.as_str())
+        format!("ORDER BY {} {}, r.id", self.column(), order.keyword())
     }
 }
 
@@ -139,8 +139,8 @@ impl AuditLogSortField {
         format!(
             "ORDER BY {} {}, id {}",
             self.column(),
-            order.as_str(),
-            order.as_str(),
+            order.keyword(),
+            order.keyword(),
         )
     }
 }
@@ -172,8 +172,8 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
-    /// Return the canonical wire spelling.
-    fn as_str(self) -> &'static str {
+    /// Return the SQL keyword for this direction.
+    fn keyword(self) -> &'static str {
         match self {
             Self::Asc => "ASC",
             Self::Desc => "DESC",

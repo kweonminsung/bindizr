@@ -11,6 +11,7 @@ use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::tsig::{ResponseVerifier, TsigSigningKey};
 use bindizr_core::dns::{query, tsig};
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::time;
 use tokio::time::Instant;
@@ -36,7 +37,7 @@ impl Default for NotifyClient {
 /// The sender keeps its socket task alive until its last transaction completes.
 #[derive(Debug)]
 struct TargetSocket {
-    jobs: mpsc::UnboundedSender<PendingNotify>,
+    jobs: UnboundedSender<PendingNotify>,
     ids: Mutex<HashSet<u16>>,
 }
 
@@ -98,9 +99,9 @@ impl NotifyClient {
         .await?;
         socket.connect(server_addr).await?;
 
-        let (jobs, rx) = mpsc::unbounded_channel();
+        let (jobs_tx, jobs) = mpsc::unbounded_channel();
         let target = Arc::new(TargetSocket {
-            jobs,
+            jobs: jobs_tx,
             ids: Mutex::new(HashSet::new()),
         });
 
@@ -110,7 +111,7 @@ impl NotifyClient {
             .expect("a new socket has unused IDs");
 
         targets.insert(server_addr, Arc::downgrade(&target));
-        tokio::spawn(serve(server_addr, socket, rx));
+        tokio::spawn(serve(server_addr, socket, jobs));
 
         Ok((target, id))
     }
@@ -186,7 +187,7 @@ impl NotifyHandle {
 async fn serve(
     server_addr: SocketAddr,
     socket: UdpSocket,
-    mut rx: mpsc::UnboundedReceiver<PendingNotify>,
+    mut jobs: UnboundedReceiver<PendingNotify>,
 ) {
     let mut requests: HashMap<u16, PendingNotify> = HashMap::new();
 
@@ -218,7 +219,7 @@ async fn serve(
         let deadline = timers.first().map(|(time, _)| *time);
 
         tokio::select! {
-            job = rx.recv(), if accepting => match job {
+            job = jobs.recv(), if accepting => match job {
                 Some(request) => {
                     let id = u16::from_be_bytes([request.request[0], request.request[1]]);
                     timers.insert((request.deadline, id));

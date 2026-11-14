@@ -117,7 +117,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    // Delete through the newest serial with an expired row to keep IXFR steps whole.
+    // Delete whole serials only, so the remaining IXFR steps stay complete.
     // MySQL requires a derived table when DELETE reads its own table.
     let result = sqlx::query(
         r#"

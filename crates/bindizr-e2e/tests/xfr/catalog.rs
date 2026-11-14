@@ -100,7 +100,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
-    let catalog = format!(
+    let catalog_zone_name = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
         "b".repeat(63),
@@ -108,17 +108,23 @@ async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
         "d".repeat(22)
     );
 
-    assert_eq!(dns::parse_name(&catalog).unwrap().as_slice().len(), 216);
+    assert_eq!(
+        dns::parse_name(&catalog_zone_name)
+            .unwrap()
+            .as_slice()
+            .len(),
+        216
+    );
 
     let app = TestApp::start_with_options(TestAppOptions {
-        catalog_zone_name: catalog.clone(),
+        catalog_zone_name: catalog_zone_name.clone(),
         ..Default::default()
     })
     .await;
     app.create_secondary("loopback", "127.0.0.1").await;
 
     assert_eq!(
-        dns::fetch_axfr_tcp(app.dns_port(), &catalog, None)
+        dns::fetch_axfr_tcp(app.dns_port(), &catalog_zone_name, None)
             .unwrap()
             .records(),
         4
@@ -127,12 +133,12 @@ async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
     app.create_test_zone().await;
 
     assert_eq!(
-        dns::fetch_axfr_tcp(app.dns_port(), &catalog, None)
+        dns::fetch_axfr_tcp(app.dns_port(), &catalog_zone_name, None)
             .unwrap()
             .records(),
         5
     );
-    let query = common::build_edns_query(&catalog, Rtype::SOA, &[]).finish();
+    let query = common::build_edns_query(&catalog_zone_name, Rtype::SOA, &[]).finish();
     let response =
         Message::from_octets(dns::exchange_tcp(app.dns_port(), &query).unwrap()).unwrap();
 

@@ -56,12 +56,12 @@ pub(crate) fn display_serial_lag(
     }
 }
 
-/// Format a timestamp for table output; `-o json` carries the full precision.
+/// Render a timestamp for table output; `-o json` carries the full precision.
 pub(crate) fn display_time(at: DateTime<Utc>) -> String {
     at.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-/// Format an optional timestamp for table output.
+/// Render an optional timestamp for table output.
 pub(crate) fn display_option_time(value: &Option<DateTime<Utc>>) -> String {
     value.map_or_else(|| MISSING_CELL.to_string(), display_time)
 }
@@ -80,7 +80,7 @@ pub(crate) fn display_record_value(value: &RecordValue) -> String {
     }
 }
 
-/// Format uptime as days, hours, minutes, and seconds; an unset start
+/// Render uptime as days, hours, minutes, and seconds; an unset start
 /// time means the front ends are still starting.
 pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     if started_at_ms == 0 {
@@ -147,6 +147,6 @@ pub(crate) fn display_transfer_summary(summary: &TransferSummaryResponse) -> Str
         ixfr = TransferKind::Ixfr,
         axfr = TransferKind::Axfr,
         refused = TransferResult::Refused,
-        failed = TransferResult::Failed,
+        failed = TransferResult::Failed
     )
 }

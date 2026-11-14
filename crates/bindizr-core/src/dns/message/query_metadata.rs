@@ -65,7 +65,7 @@ impl QueryMetadata {
         self.edns.format_error()
     }
 
-    /// Carry the negotiated transport budget into the final send.
+    /// Return the negotiated transport budget for the final send.
     pub fn response_limit(&self) -> ResponseLimit {
         self.keepalive.response_limit(self.edns)
     }

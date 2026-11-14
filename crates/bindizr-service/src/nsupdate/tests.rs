@@ -7,13 +7,13 @@ use super::*;
 #[test]
 fn parse_update_owner_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
-        parse_update_owner("www.example.com.", &ZoneName::from_row("example.com"))
+        parse_update_owner("www.example.com.", &ZoneName::parse("example.com").unwrap())
             .unwrap()
             .to_stored(),
         "www"
     );
     assert!(
-        parse_update_owner("example.com.", &ZoneName::from_row("example.com"))
+        parse_update_owner("example.com.", &ZoneName::parse("example.com").unwrap())
             .unwrap()
             .is_apex()
     );
@@ -22,7 +22,7 @@ fn parse_update_owner_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
         parse_update_owner(
             r"host\.name.example.com.",
-            &ZoneName::from_row("example.com")
+            &ZoneName::parse("example.com").unwrap()
         )
         .unwrap()
         .labels(),
@@ -41,7 +41,8 @@ fn parse_update_owner_rejects_owners_outside_the_zone() {
         // One label spelling the zone is not inside it.
         r"evil\.example.com.",
     ] {
-        let error = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
+        let error =
+            parse_update_owner(owner, &ZoneName::parse("example.com").unwrap()).unwrap_err();
         assert_eq!(error.rcode(), Rcode::NOTZONE, "{owner:?}");
     }
 }
@@ -77,14 +78,8 @@ fn parser_errors_retain_their_sources() {
 #[test]
 fn service_errors_retain_their_sources_and_classification() {
     for (source, rcode) in [
-        (
-            ServiceError::forbidden("denied".to_string()),
-            Rcode::REFUSED,
-        ),
-        (
-            ServiceError::invalid_input("invalid".to_string()),
-            Rcode::REFUSED,
-        ),
+        (ServiceError::forbidden("denied"), Rcode::REFUSED),
+        (ServiceError::invalid_input("invalid"), Rcode::REFUSED),
         (
             ServiceError::internal_with_source("storage failed", io::Error::other("storage")),
             Rcode::SERVFAIL,

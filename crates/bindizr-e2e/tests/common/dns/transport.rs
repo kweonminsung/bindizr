@@ -101,11 +101,11 @@ pub(crate) fn connect_tls(
     port: u16,
     client: ClientConfig,
 ) -> Result<StreamOwned<ClientConnection, TcpStream>, String> {
-    let tcp = connect_tcp(port)?;
-    let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let stream = connect_tcp(port)?;
+    let server_name = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
     let session =
-        ClientConnection::new(Arc::new(client), server).map_err(|error| error.to_string())?;
-    Ok(StreamOwned::new(session, tcp))
+        ClientConnection::new(Arc::new(client), server_name).map_err(|error| error.to_string())?;
+    Ok(StreamOwned::new(session, stream))
 }
 
 /// Write a DNS message with its two-byte TCP length prefix.

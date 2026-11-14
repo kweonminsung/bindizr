@@ -370,18 +370,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         } => {
             let response = client::send_command::<WriteZoneResponse>(DaemonCommand::CreateZone(
                 CreateZoneRequest {
-                    dry_run,
-                    apex_ns: !no_apex_ns,
                     name,
                     mname,
                     rname,
                     default_ttl,
                     serial: serial.map(Serial::from),
-                    description,
                     refresh,
                     retry,
                     expire,
                     minimum_ttl,
+                    description,
+                    apex_ns: !no_apex_ns,
+                    dry_run,
                 },
             ))
             .await?;
@@ -464,7 +464,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<WriteZoneResponse>(DaemonCommand::UpdateZone {
                 zone_name: name,
                 request: UpdateZoneRequest {
-                    dry_run,
                     name: new_name,
                     mname,
                     rname,
@@ -475,6 +474,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     minimum_ttl,
                     enabled,
                     description,
+                    dry_run,
                 },
             })
             .await?;

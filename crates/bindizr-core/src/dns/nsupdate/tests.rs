@@ -1,13 +1,12 @@
 use std::str::FromStr;
 
-use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
-use domain::base::{Message, Name};
+use domain::base::Name;
+use domain::base::iana::{Class, Rcode, Rtype, TsigRcode};
 use domain::rdata::tsig::Tsig;
 use domain::tsig::ClientTransaction;
 
 use super::*;
-use crate::dns::message::ResponseLimit;
-use crate::dns::{message, tsig};
+use crate::dns::tsig;
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
 /// Verify that a truncated zone or later section receives only a header, without an invented OPT.
@@ -94,15 +93,15 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
 /// Verify that `build_response` signs with request mac chain.
 #[test]
 fn build_response_signs_with_request_mac_chain() {
-    let query =
+    let query_data =
         tsig::tests::build_signed_update(TsigAlgorithm::HmacSha256, tsig::tests::now_secs());
     let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
 
     let response = build_response(
-        &query,
+        &query_data,
         OptRcode::NOERROR,
         None,
         Some(signer),
@@ -128,11 +127,11 @@ fn build_response_signs_with_request_mac_chain() {
 
     // The request's MAC is the last rdata field before the trailing original
     // ID, error, and other-len (2 bytes each).
-    let request_mac = query[query.len() - 6 - 32..query.len() - 6].to_vec();
+    let request_mac = query_data[query_data.len() - 6 - 32..query_data.len() - 6].to_vec();
 
     // The unsigned build supplies the response before TSIG, including ARCOUNT.
     let unsigned = build_response(
-        &query,
+        &query_data,
         OptRcode::NOERROR,
         None,
         None,
@@ -197,8 +196,8 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
 
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-        let request = additional.finish().into_target();
-        let signer = tsig::verify_tsig(&request, Some(key.clone())).unwrap();
+        let query_data = additional.finish().into_target();
+        let signer = tsig::verify_tsig(&query_data, Some(key.clone())).unwrap();
 
         for rcode in [
             OptRcode::NOERROR,
@@ -207,7 +206,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
             OptRcode::SERVFAIL,
         ] {
             let response = build_response(
-                &request,
+                &query_data,
                 rcode,
                 None,
                 Some(signer.clone()),
@@ -223,7 +222,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+            tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
         }
     }
 }

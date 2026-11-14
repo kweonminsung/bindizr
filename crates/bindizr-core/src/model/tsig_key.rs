@@ -87,7 +87,7 @@ impl TryFrom<String> for TsigAlgorithm {
 
     /// Validate and convert the stored value into a TSIG algorithm.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 

@@ -231,7 +231,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         )
         .await
         .unwrap();
-        let audits = audit::list(
+        let logs = audit::list(
             &cx,
             &caller,
             &AuditLogFilter {
@@ -260,7 +260,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         for (count, pagination) in [
             (zones.items.len(), zones.pagination),
             (records.items.len(), records.pagination),
-            (audits.items.len(), audits.pagination),
+            (logs.items.len(), logs.pagination),
             (versions.items.len(), versions.pagination),
             (filtered_versions.items.len(), filtered_versions.pagination),
         ] {

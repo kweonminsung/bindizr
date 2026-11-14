@@ -66,13 +66,13 @@ pub enum ParseResponseError {
     NoParentSoa,
 }
 
-/// Read TC to decide whether UDP needs a TCP retry (RFC 1035, Section 4.2.1).
+/// Return whether TC is set, so UDP needs a TCP retry (RFC 1035, Section 4.2.1).
 pub fn is_truncated(response: &[u8]) -> bool {
     Message::from_octets(response).is_ok_and(|message| message.header().tc())
 }
 
-/// Match and structurally validate an incoming datagram before trusting its flags
-/// (RFC 1035, Section 7.3; RFC 5452, Section 9.1).
+/// Return whether an incoming datagram matches and structurally validates before
+/// trusting its flags (RFC 1035, Section 7.3; RFC 5452, Section 9.1).
 pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
     let (Ok(request), Ok(response)) = (
         Message::from_octets(request),
@@ -136,11 +136,11 @@ fn parse_question_response<'a>(
     query_id: u16,
     opcode: Opcode,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
     let message = parse_response(query_id, opcode, response)?;
-    validate_question(&message, qname, rtype)?;
+    validate_question(&message, qname, qtype)?;
     Ok(message)
 }
 
@@ -148,14 +148,14 @@ fn parse_question_response<'a>(
 fn validate_question(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
 ) -> Result<(), ParseResponseError> {
     let question = message
         .sole_question()
         .map_err(|error| ParseResponseError::MalformedQuestion(Box::new(error)))?;
 
     if !question.qname().name_eq(qname)
-        || question.qtype() != rtype
+        || question.qtype() != qtype
         || question.qclass() != Class::IN
     {
         return Err(ParseResponseError::OtherQuestion);
@@ -168,10 +168,10 @@ fn validate_question(
 fn parse_authoritative_response<'a>(
     query_id: u16,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
-    let message = parse_question_response(query_id, Opcode::QUERY, qname, rtype, response)?;
+    let message = parse_question_response(query_id, Opcode::QUERY, qname, qtype, response)?;
     if !message.header().aa() {
         return Err(ParseResponseError::NotAuthoritative);
     }

@@ -98,7 +98,7 @@ impl TryFrom<String> for AuditEntity {
 
     /// Validate and convert the stored value into an entity.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -150,7 +150,7 @@ impl TryFrom<String> for AuditOperation {
 
     /// Validate and convert the stored value into an operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 

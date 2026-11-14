@@ -10,7 +10,10 @@ use bindizr_db::LockLevel;
 use crate::error::ServiceError;
 use crate::{Context, Transaction, ttl};
 
+/// Longest SOA mailbox address accepted, in bytes.
 const MAX_EMAIL_LEN: usize = 254;
+
+/// Longest SOA mailbox local part accepted, in bytes.
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
 
 /// Validated SOA names and TTL, shared by API and DNS zone writes.
@@ -165,7 +168,7 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     Ok(())
 }
 
-/// Check whether a character is permitted in an SOA mailbox local part.
+/// Return whether a character is permitted in an SOA mailbox local part.
 fn is_valid_email_local_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
         || matches!(
@@ -233,7 +236,7 @@ pub(crate) async fn validate_record_changes_tx(
     };
     let delegations = owners_of(RecordType::Ns);
 
-    if zone.enabled && !delegations.iter().any(|name| name.is_apex()) {
+    if zone.enabled && !delegations.iter().any(|owner| owner.is_apex()) {
         return Err(ServiceError::record_conflict(
             "an enabled zone requires at least one apex NS record (RFC 2181, Section 6.1)",
         ));
@@ -253,7 +256,7 @@ pub(crate) async fn validate_record_changes_tx(
     let dnames = owners_of(RecordType::Dname);
 
     if !dnames.is_empty() {
-        let mut names: HashSet<_> = if zone.id == ZoneId::UNWRITTEN {
+        let mut owners: HashSet<_> = if zone.id == ZoneId::UNWRITTEN {
             HashSet::new()
         } else {
             bindizr_db::record::list_names_tx(tx, zone.id)
@@ -262,32 +265,32 @@ pub(crate) async fn validate_record_changes_tx(
                 .collect()
         };
 
-        let removed_names: Vec<_> = removed
+        let removed_owners: Vec<_> = removed
             .iter()
             .map(|record| record.name.clone())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
 
-        for name in &removed_names {
-            names.remove(name);
+        for owner in &removed_owners {
+            owners.remove(owner);
         }
 
         // A removed row may share its owner with rows that survive.
         let remaining =
-            bindizr_db::record::list_by_names_tx(tx, zone.id, &removed_names, LockLevel::Unlocked)
+            bindizr_db::record::list_by_names_tx(tx, zone.id, &removed_owners, LockLevel::Unlocked)
                 .await?;
-        names.extend(
+        owners.extend(
             remaining
                 .into_iter()
                 .filter(|record| !removed_ids.contains(&record.id))
                 .map(|record| record.name),
         );
-        names.extend(added.iter().map(|record| record.name.clone()));
-        let dname_labels: HashSet<_> = dnames.iter().map(|name| name.labels()).collect();
+        owners.extend(added.iter().map(|record| record.name.clone()));
+        let dname_labels: HashSet<_> = dnames.iter().map(|owner| owner.labels()).collect();
 
-        if names.iter().any(|name| {
-            let labels = name.labels();
+        if owners.iter().any(|owner| {
+            let labels = owner.labels();
             (1..=labels.len()).any(|depth| dname_labels.contains(&labels[depth..]))
         }) {
             return Err(ServiceError::record_conflict(
@@ -302,10 +305,10 @@ pub(crate) async fn validate_record_changes_tx(
     let authoritative_dnames: Vec<_> = dnames
         .iter()
         .copied()
-        .filter(|name| {
+        .filter(|owner| {
             !delegations
                 .iter()
-                .any(|cut| !cut.is_apex() && name.is_same_or_under(cut))
+                .any(|cut| !cut.is_apex() && owner.is_same_or_under(cut))
         })
         .collect();
 
@@ -331,7 +334,7 @@ pub(crate) async fn validate_record_changes_tx(
             }
             if authoritative_dnames
                 .iter()
-                .any(|name| &owner != *name && owner.is_same_or_under(name))
+                .any(|dname| &owner != *dname && owner.is_same_or_under(dname))
             {
                 return Err(ServiceError::record_conflict(
                     "an NS, MX, PTR, or SRV record cannot name a descendant of a DNAME record of this zone as its target (RFC 6672, Section 5.1)",

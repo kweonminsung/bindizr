@@ -3,7 +3,6 @@ mod dname_targets;
 
 use std::slice;
 
-use domain::base::Name;
 use domain::base::iana::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -38,13 +37,13 @@ async fn root_record_targets_round_trip_through_management() {
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
         assert_eq!(body["record"]["value"], ".");
-        let id = body["record"]["id"].as_i64().unwrap();
+        let record_id = body["record"]["id"].as_i64().unwrap();
 
         for target in ["Target.Example.NET.", "."] {
             let (status, body) = app
                 .send_request(
                     Method::PUT,
-                    &format!("/records/{id}"),
+                    &format!("/records/{record_id}"),
                     Some(json!({ "value": target })),
                 )
                 .await;
@@ -60,7 +59,7 @@ async fn root_record_targets_round_trip_through_management() {
         }
 
         let (status, body) = app
-            .send_request(Method::GET, &format!("/records/{id}"), None)
+            .send_request(Method::GET, &format!("/records/{record_id}"), None)
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -79,7 +78,7 @@ async fn root_record_targets_round_trip_through_management() {
             let (status, body) = app
                 .send_request(
                     Method::PUT,
-                    &format!("/records/{id}"),
+                    &format!("/records/{record_id}"),
                     Some(json!({ "value": invalid })),
                 )
                 .await;
@@ -111,8 +110,6 @@ async fn root_record_targets_round_trip_through_management() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn escaped_record_targets_round_trip_through_management() {
-    use std::str::FromStr;
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -121,7 +118,7 @@ async fn escaped_record_targets_round_trip_through_management() {
     for (index, suffix) in ["", "get.example"].into_iter().enumerate() {
         let simple = format!("tar\\ {suffix}");
         let decimal = format!(r"tar\032{suffix}.");
-        let target = Name::<Vec<u8>>::from_str(&decimal).unwrap();
+        let target = dns::parse_name(&decimal).unwrap();
 
         for (record_type, rtype, prefix, wire_prefix) in [
             ("CNAME", Rtype::CNAME, "", &[][..]),
@@ -161,10 +158,10 @@ async fn escaped_record_targets_round_trip_through_management() {
                 "{record_type} {input:?}: {body}"
             );
             assert_eq!(body["record"]["value"], expected_value);
-            let id = body["record"]["id"].as_i64().unwrap();
+            let record_id = body["record"]["id"].as_i64().unwrap();
 
             let (status, body) = app
-                .send_request(Method::GET, &format!("/records/{id}"), None)
+                .send_request(Method::GET, &format!("/records/{record_id}"), None)
                 .await;
 
             assert_eq!(status, StatusCode::OK, "{body}");
@@ -173,7 +170,7 @@ async fn escaped_record_targets_round_trip_through_management() {
             let (status, body) = app
                 .send_request(
                     Method::PUT,
-                    &format!("/records/{id}"),
+                    &format!("/records/{record_id}"),
                     Some(json!({ "value": input })),
                 )
                 .await;
@@ -266,8 +263,8 @@ async fn caa_values_preserve_empty_and_binary_properties() {
 
         assert_eq!(status, StatusCode::CREATED, "{input}: {body}");
         assert_eq!(body["record"]["value"], expected);
-        let id = body["record"]["id"].as_i64().unwrap();
-        let path = format!("/records/{id}");
+        let record_id = body["record"]["id"].as_i64().unwrap();
+        let path = format!("/records/{record_id}");
 
         let (status, body) = app.send_request(Method::GET, &path, None).await;
 
@@ -1374,7 +1371,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["record"]["value"], original);
-    let id = body["record"]["id"].as_i64().unwrap();
+    let record_id = body["record"]["id"].as_i64().unwrap();
 
     let before = app.list_records(zone_name).await;
     let base_serial = app.read_zone_serial(zone_name).await;
@@ -1393,7 +1390,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
                 ),
                 (
                     Method::PUT,
-                    format!("/records/{id}"),
+                    format!("/records/{record_id}"),
                     json!({ "value": invalid }),
                 ),
             ] {
@@ -1415,7 +1412,7 @@ async fn naptr_record_validates_flags_on_create_and_update() {
     let (status, body) = app
         .send_request(
             Method::PUT,
-            &format!("/records/{id}"),
+            &format!("/records/{record_id}"),
             Some(json!({ "value": r#"10 10 "" "app" "" target.example."# })),
         )
         .await;
@@ -2709,7 +2706,7 @@ async fn binary_txt_and_wks_round_trip() {
         assert_eq!(
             &dns::fetch_exported_record_sets(&app, zone_name).await
                 [&(format!("{name}.{zone_name}."), rtype)],
-            &vec![bytes]
+            &[bytes]
         );
     }
 
@@ -2725,7 +2722,7 @@ async fn binary_txt_and_wks_round_trip() {
     assert_eq!(
         &dns::fetch_exported_record_sets(&app, zone_name).await
             [&(format!("imported.{zone_name}."), Rtype::TXT)],
-        &vec![vec![2, 255, 0]]
+        &[vec![2, 255, 0]]
     );
 }
 

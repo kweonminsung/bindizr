@@ -129,6 +129,7 @@ pub(crate) async fn handle_ixfr(
         }) => {
             log::warn!("IXFR: aborting after partial send, not falling back: {error}");
             identity.signer = signer.map(|signer| *signer);
+
             return Err(error);
         }
     }

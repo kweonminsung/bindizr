@@ -390,7 +390,7 @@ async fn update_locked(
             .priority
             .map_or("null".to_string(), |value| value.to_string()),
         updated_record.id,
-        request.dry_run,
+        request.dry_run
     );
 
     // Request secondary transfers only after the replacement is committed.

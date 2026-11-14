@@ -8,11 +8,6 @@ use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 use thiserror::Error;
 
-/// An SOA interval in seconds, 0 through 2^31 - 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "u32", into = "u32")]
-pub struct SoaInterval(u32);
-
 /// An SOA interval outside the range both forms hold.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertSoaIntervalError {
@@ -23,6 +18,11 @@ pub enum ConvertSoaIntervalError {
     #[error("SOA interval {secs} exceeds the maximum of {}", i32::MAX)]
     TooLarge { secs: u32 },
 }
+
+/// An SOA interval in seconds, 0 through 2^31 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct SoaInterval(u32);
 
 impl SoaInterval {
     /// The largest interval the row form holds.

@@ -29,9 +29,9 @@ pub(crate) async fn get_zone(
 /// List zones matching the request filters.
 pub(crate) async fn list_zones(
     cx: &Context,
-    filter: ZoneFilter,
+    filter: &ZoneFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<ZoneResponse>>, ServiceError> {
-    let response = zone::list_by_filter(cx, &Caller::socket(), &filter).await?;
+    let response = zone::list_by_filter(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Zones retrieved successfully".to_string(),
         data: response,

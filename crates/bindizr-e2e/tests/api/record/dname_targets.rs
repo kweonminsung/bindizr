@@ -245,7 +245,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let mx_id = body["record"]["id"].as_i64().unwrap();
+    let mx_record_id = body["record"]["id"].as_i64().unwrap();
 
     let base_serial = app.read_zone_serial(zone_name).await;
 
@@ -253,7 +253,7 @@ async fn dname_targets_validate_mutation_candidates_atomically() {
         let (status, body) = app
             .send_request(
                 Method::PUT,
-                &format!("/records/{mx_id}"),
+                &format!("/records/{mx_record_id}"),
                 Some(json!({
                     "value": format!("host.redirect.{zone_name}."), "dry_run": dry_run
                 })),

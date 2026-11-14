@@ -30,11 +30,10 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio::task::{JoinHandle, JoinSet};
 
+use super::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 use crate::shutdown::Shutdown;
-use crate::socket;
 use crate::socket::server::control::DaemonControl;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
-use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 use crate::tls::TlsCertificates;
 
 /// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
@@ -174,7 +173,7 @@ pub(crate) fn serve(
     listener: UnixListener,
     shutdown: &Shutdown,
 ) -> Result<JoinHandle<()>, ServeSocketError> {
-    let own_uid = socket::read_own_uid().map_err(ServeSocketError::ReadUid)?;
+    let own_uid = super::read_own_uid().map_err(ServeSocketError::ReadUid)?;
     let stop = shutdown.waiter();
     let client_shutdown = shutdown.clone();
 
@@ -200,7 +199,7 @@ pub(crate) fn serve(
             match accepted {
                 // Connecting grants global access, so the peer is checked before a byte is read.
                 Ok((stream, _)) => match stream.peer_cred() {
-                    Ok(peer) if socket::is_trusted_peer(peer.uid(), own_uid) => {
+                    Ok(peer) if super::is_trusted_peer(peer.uid(), own_uid) => {
                         let socket_cx = socket_cx.clone();
                         let stop = client_shutdown.waiter();
                         clients.spawn(async move {
@@ -300,7 +299,7 @@ async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathErro
             });
         }
 
-        let own_uid = socket::read_own_uid()?;
+        let own_uid = super::read_own_uid()?;
 
         if metadata.uid() != own_uid && metadata.uid() != 0 {
             return Err(BindSocketPathError::ForeignDirectory {
@@ -365,7 +364,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(tsig_key::delete_tsig_key(cx, &name).await)
         }
         DaemonCommand::ListAuditLogs(filter) => {
-            encode_response(audit::list_audit_logs(cx, filter).await)
+            encode_response(audit::list_audit_logs(cx, &filter).await)
         }
         DaemonCommand::CreateRole(request) => {
             encode_response(role::create_role(cx, &request).await)
@@ -392,7 +391,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(secondary::get_secondary(cx, &name).await)
         }
         DaemonCommand::UpdateSecondary { name, request } => {
-            encode_response(secondary::update_secondary(cx, &name, request).await)
+            encode_response(secondary::update_secondary(cx, &name, &request).await)
         }
         DaemonCommand::DeleteSecondary { name } => {
             encode_response(secondary::delete_secondary(cx, &name).await)
@@ -401,10 +400,10 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(secondary::check_secondary(cx, &name).await)
         }
         DaemonCommand::ListSecondaryTransfers { name, filter } => {
-            encode_response(secondary::list_secondary_transfers(cx, &name, filter).await)
+            encode_response(secondary::list_secondary_transfers(cx, &name, &filter).await)
         }
         DaemonCommand::CreateDnssecPolicy(request) => {
-            encode_response(dnssec_policy::create_dnssec_policy(cx, request).await)
+            encode_response(dnssec_policy::create_dnssec_policy(cx, &request).await)
         }
         DaemonCommand::ListDnssecPolicies(page) => {
             encode_response(dnssec_policy::list_dnssec_policies(cx, page).await)
@@ -413,7 +412,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(dnssec_policy::get_dnssec_policy(cx, &name).await)
         }
         DaemonCommand::UpdateDnssecPolicy { name, request } => {
-            encode_response(dnssec_policy::update_dnssec_policy(cx, &name, request).await)
+            encode_response(dnssec_policy::update_dnssec_policy(cx, &name, &request).await)
         }
         DaemonCommand::DeleteDnssecPolicy { name } => {
             encode_response(dnssec_policy::delete_dnssec_policy(cx, &name).await)
@@ -421,7 +420,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::CreateZone(request) => {
             encode_response(zone::create_zone(cx, &request).await)
         }
-        DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, filter).await),
+        DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, &filter).await),
         DaemonCommand::GetZone { name } => encode_response(zone::get_zone(cx, &name).await),
         DaemonCommand::UpdateZone { zone_name, request } => {
             encode_response(zone::update_zone(cx, &zone_name, &request).await)
@@ -471,7 +470,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(record::create_bulk_records(cx, &request).await)
         }
         DaemonCommand::ListRecords(filter) => {
-            encode_response(record::list_records(cx, filter).await)
+            encode_response(record::list_records(cx, &filter).await)
         }
         DaemonCommand::GetRecord { id } => encode_response(record::get_record(cx, id).await),
         DaemonCommand::UpdateRecord { id, request } => {
@@ -527,7 +526,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(dnssec::export_dnssec_keys(cx, &name).await)
         }
         DaemonCommand::ImportDnssecKeys { zone_name, request } => {
-            encode_response(dnssec::import_dnssec_keys(cx, &zone_name, request).await)
+            encode_response(dnssec::import_dnssec_keys(cx, &zone_name, &request).await)
         }
     }
 }

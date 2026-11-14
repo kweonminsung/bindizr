@@ -58,15 +58,15 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
 #[test]
 fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     // Core owns the parsing; this layer owns the code and the message.
-    let zone = ZoneName::from_row("test.example.com");
+    let zone_name = ZoneName::parse("test.example.com").unwrap();
 
-    let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
+    let outside = normalize_record_owner_name("a1.other.com.", &zone_name).unwrap_err();
 
     assert_eq!(outside.code(), ErrorCode::InvalidRecordName);
     assert!(outside.to_string().contains("a1.other.com."));
-    assert!(outside.to_string().contains(zone.as_str()));
+    assert!(outside.to_string().contains(zone_name.as_str()));
 
-    let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
+    let empty = normalize_record_owner_name("  ", &zone_name).unwrap_err();
 
     assert_eq!(empty.code(), ErrorCode::InvalidRecordName);
     assert!(empty.to_string().starts_with("record name "));
@@ -240,7 +240,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     );
 }
 
-/// Verify that `add` enforces one TTL per RRSET.
+/// Verify that `add` enforces one TTL per record set.
 #[test]
 fn add_enforces_one_ttl_per_record_set() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);

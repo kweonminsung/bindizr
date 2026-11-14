@@ -92,17 +92,6 @@ pub(crate) struct RecordRow {
     pub(crate) zone_name: String,
 }
 
-impl From<&RecordResponse> for RecordRow {
-    /// Build a listing row, with the value shortened so one long record does
-    /// not widen the column.
-    fn from(record: &RecordResponse) -> Self {
-        Self {
-            value: display::display_record_value(&record.value),
-            ..Self::whole(record)
-        }
-    }
-}
-
 impl RecordRow {
     /// Build the row for a single record, whose whole value is the point.
     pub(crate) fn whole(record: &RecordResponse) -> Self {
@@ -115,6 +104,17 @@ impl RecordRow {
             priority: record.priority,
             zone_id: record.zone_id,
             zone_name: record.zone_name.clone(),
+        }
+    }
+}
+
+impl From<&RecordResponse> for RecordRow {
+    /// Build a listing row, with the value shortened so one long record does
+    /// not widen the column.
+    fn from(record: &RecordResponse) -> Self {
+        Self {
+            value: display::display_record_value(&record.value),
+            ..Self::whole(record)
         }
     }
 }
@@ -370,7 +370,7 @@ impl SecondaryStatusRow {
             .collect()
     }
 
-    /// Build a table row from a secondary server's status.
+    /// Build a CLI table row from a secondary server's status.
     fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: Serial) -> Self {
         let detail = match secondary.error.as_deref() {
             Some(error) if secondary.is_unreachable() => {
@@ -457,7 +457,7 @@ pub(crate) struct ImportZonesRow {
 }
 
 impl From<&ImportZonesItemResponse> for ImportZonesRow {
-    /// Build a table row from one zone's outcome.
+    /// Build a CLI table row from one zone's outcome.
     fn from(item: &ImportZonesItemResponse) -> Self {
         let summary = item.import.as_ref().map(|import| import.summary);
         let count = |value: Option<u64>| display::display_option(&value);
@@ -662,7 +662,7 @@ pub(crate) struct TransferRow {
 }
 
 impl From<&TransferResponse> for TransferRow {
-    /// Build a table row from one served transfer.
+    /// Build a CLI table row from one served transfer.
     fn from(transfer: &TransferResponse) -> Self {
         Self {
             zone_name: transfer.zone_name.clone(),
@@ -696,7 +696,7 @@ pub(crate) struct AuditLogRow {
 }
 
 impl From<&AuditLogResponse> for AuditLogRow {
-    /// Build a table row from one audit log row.
+    /// Build a CLI table row from one audit log row.
     fn from(log: &AuditLogResponse) -> Self {
         Self {
             at: display::display_time(log.created_at),

@@ -7,7 +7,7 @@ use crate::common::{TestApp, TestAppOptions};
 fn metric_value(text: &str, name: &str) -> f64 {
     text.lines()
         .find_map(|line| line.strip_prefix(&format!("{name} ")))
-        .and_then(|value| value.trim().parse().ok())
+        .and_then(|value| value.trim().parse::<f64>().ok())
         .unwrap_or_else(|| panic!("metric {name} missing from scrape"))
 }
 

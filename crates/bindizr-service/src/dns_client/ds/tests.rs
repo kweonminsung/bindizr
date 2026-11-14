@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::message::Class;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecord;
 use tokio::net::{TcpListener, UdpSocket};
@@ -11,12 +12,17 @@ use tokio::time;
 
 use super::*;
 
+/// Deadline for each test exchange.
 const TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Header flag bit for an authoritative answer.
 const FLAG_AA: u16 = 0x0400;
+
+/// Header flag bit for a truncated response.
 const FLAG_TC: u16 = 0x0200;
+
+/// Header RCODE value for NXDOMAIN.
 const RCODE_NXDOMAIN: u16 = 3;
-const RTYPE_DS: u16 = 43;
-const RTYPE_SOA: u16 = 6;
 
 /// Verify that canceling a DS fan-out prevents its child from starting TCP after a late TC
 /// reply.
@@ -130,8 +136,8 @@ fn build_parent_soa_record(query: &[u8]) -> Vec<u8> {
     let parent = qname.split_once('.').map_or("", |(_, rest)| rest);
     let mut record = Vec::new();
     encode_name(parent, &mut record);
-    record.extend_from_slice(&RTYPE_SOA.to_be_bytes());
-    record.extend_from_slice(&1u16.to_be_bytes());
+    record.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    record.extend_from_slice(&Class::IN.to_int().to_be_bytes());
     record.extend_from_slice(&3600u32.to_be_bytes());
     let mut rdata = Vec::new();
     encode_name("ns.parent.example", &mut rdata);
@@ -149,9 +155,9 @@ fn build_parent_soa_record(query: &[u8]) -> Vec<u8> {
 
 /// Build one answer record owned by the question name (a pointer to offset 12).
 fn build_record(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
-    let mut buffer = vec![0xC0, 0x0C];
+    let mut buffer = vec![0xc0, 0x0c];
     buffer.extend_from_slice(&rtype.to_be_bytes());
-    buffer.extend_from_slice(&1u16.to_be_bytes());
+    buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
     buffer.extend_from_slice(&ttl.to_be_bytes());
     buffer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
     buffer.extend_from_slice(rdata);
@@ -164,7 +170,7 @@ fn build_ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
-    build_record(RTYPE_DS, ttl, &rdata)
+    build_record(Rtype::DS.to_int(), ttl, &rdata)
 }
 
 /// Return the record `build_ds_record` serves for `key_tag`, as the probe parses it.

@@ -1,10 +1,8 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use domain::base::iana::Rtype;
+use domain::base::Message;
 use domain::base::opt::exterr::ExtendedError;
-use domain::base::{Message, MessageBuilder, Name};
-use domain::rdata::tsig::Time48;
 use domain::tsig::{ClientSequence, ClientTransaction};
 
 use super::*;
@@ -13,14 +11,14 @@ use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::query::TransferMessagePosition;
 use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
 use crate::dns::tsig::TsigSigningKey;
-use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query, tsig};
+use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query};
 use crate::model::record::RecordType;
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
 /// Verify that virtual catalog metadata retains its SOA, schema version and member wire records.
 #[test]
 fn catalog_response_preserves_metadata_and_member_records() {
-    let catalog = CatalogZone {
+    let catalog_zone = CatalogZone {
         name: ZoneName::parse("catalog.example").unwrap(),
         serial: Serial::from(42),
         default_ttl: Ttl::from_secs(3600),
@@ -29,17 +27,19 @@ fn catalog_response_preserves_metadata_and_member_records() {
         expire: SoaInterval::from_secs(86400),
         minimum_ttl: Ttl::from_secs(60),
     };
-    let qname = catalog.name.to_wire_name().unwrap();
+    let qname = catalog_zone.name.to_wire_name().unwrap();
     let mut question = build_response().question();
     question.push((qname.clone(), Rtype::AXFR)).unwrap();
-    let request = question.finish().into_target();
-    let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
+    let query_data = question.finish().into_target();
+    let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR);
-    builder.add_catalog_soa(&catalog).unwrap();
-    builder.add_catalog_ns(&catalog).unwrap();
-    builder.add_catalog_schema_version(&catalog).unwrap();
-    builder.add_catalog_ptr(&catalog, "member.example").unwrap();
-    builder.add_catalog_soa(&catalog).unwrap();
+    builder.add_catalog_soa(&catalog_zone).unwrap();
+    builder.add_catalog_ns(&catalog_zone).unwrap();
+    builder.add_catalog_schema_version(&catalog_zone).unwrap();
+    builder
+        .add_catalog_ptr(&catalog_zone, "member.example")
+        .unwrap();
+    builder.add_catalog_soa(&catalog_zone).unwrap();
     let response = builder.build().unwrap();
     let records = query::extract_transfer_records(
         query.query_id,
@@ -61,7 +61,7 @@ fn catalog_response_preserves_metadata_and_member_records() {
     assert_eq!(records[1].rdata.as_bytes(), b"\x07invalid\0");
     assert_eq!(records[2].rdata.as_bytes(), b"\x012");
     assert_eq!(
-        dns::extract_member_zones(&records, &catalog.name).unwrap(),
+        dns::extract_member_zones(&records, &catalog_zone.name).unwrap(),
         vec![ZoneName::parse("member.example").unwrap()]
     );
 }
@@ -101,11 +101,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
 
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-        let request = additional.finish().into_target();
+        let query_data = additional.finish().into_target();
 
-        assert!(request.len() < 512);
-        let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
-        let signer: TransferSigner = tsig::verify_tsig(&request, Some(key.clone()))
+        assert!(query_data.len() < 512);
+        let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
+        let signer: TransferSigner = tsig::verify_tsig(&query_data, Some(key.clone()))
             .unwrap()
             .into();
 
@@ -137,7 +137,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+            tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
         }
 
         let response = query
@@ -151,7 +151,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 .header()
                 .tc()
         );
-        tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+        tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
 
         let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA).sign_with(signer);
         builder
@@ -169,7 +169,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         assert_eq!(message.header_counts().ancount(), 0);
         assert!(response.len() <= query.response_limit().max_len());
         client.answer(&mut message.clone(), Time48::now()).unwrap();
-        tsig::tests::assert_response_mac(&request, &response, TsigAlgorithm::HmacSha512);
+        tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
     }
 }
 
@@ -209,11 +209,11 @@ fn axfr_query() -> ParsedQuery {
 #[test]
 fn unreadable_query_bodies_receive_header_only_formerr() {
     for section in [4, 6, 8, 10] {
-        let mut wire = build_question(Rtype::SOA, &[]);
-        wire[section..section + 2].copy_from_slice(&2u16.to_be_bytes());
+        let mut query_data = build_question(Rtype::SOA, &[]);
+        query_data[section..section + 2].copy_from_slice(&2u16.to_be_bytes());
 
         for keepalive in [Keepalive::None, Keepalive::IdleTimeout(Duration::ZERO)] {
-            let error = ParsedQuery::parse(&wire, keepalive).unwrap_err();
+            let error = ParsedQuery::parse(&query_data, keepalive).unwrap_err();
             let response = error
                 .query_metadata()
                 .unwrap()
@@ -336,14 +336,14 @@ fn multi_question_headers_receive_formerr_only_for_query() {
     ] {
         let mut message = Message::from_octets(build_question(Rtype::SOA, &[])).unwrap();
         message.header_mut().set_opcode(opcode);
-        let mut wire = message.into_octets();
-        wire[4..6].copy_from_slice(&count.to_be_bytes());
+        let mut query_data = message.into_octets();
+        query_data[4..6].copy_from_slice(&count.to_be_bytes());
 
         if count == 2 {
-            wire.extend_from_within(12..);
+            query_data.extend_from_within(12..);
         }
 
-        let query = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+        let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
 
         assert_eq!(query.question_count, count);
         assert_eq!(query.format_error(), expected, "{opcode} QDCOUNT={count}");
@@ -360,7 +360,7 @@ fn multi_question_headers_receive_formerr_only_for_query() {
         }
 
         for body in [&[][..], &[0xc0, 0x0c][..]] {
-            let mut unreadable = wire[..12].to_vec();
+            let mut unreadable = query_data[..12].to_vec();
             unreadable.extend_from_slice(body);
             let error = ParsedQuery::parse(&unreadable, Keepalive::None).unwrap_err();
             let response = Message::from_octets(
@@ -385,9 +385,9 @@ fn multi_question_headers_receive_formerr_only_for_query() {
 /// Section 4 leaves QDCOUNT = 0 to the server).
 #[test]
 fn question_less_queries_receive_formerr() {
-    let mut wire = build_question(Rtype::SOA, &[])[..12].to_vec();
-    wire[4..6].copy_from_slice(&0u16.to_be_bytes());
-    let error = ParsedQuery::parse(&wire, Keepalive::None).unwrap_err();
+    let mut query_data = build_question(Rtype::SOA, &[])[..12].to_vec();
+    query_data[4..6].copy_from_slice(&0u16.to_be_bytes());
+    let error = ParsedQuery::parse(&query_data, Keepalive::None).unwrap_err();
     let response = Message::from_octets(
         error
             .query_metadata()
@@ -404,7 +404,7 @@ fn question_less_queries_receive_formerr() {
 
     // A header shorter than twelve octets names no query to answer.
     assert!(
-        ParsedQuery::parse(&wire[..11], Keepalive::None)
+        ParsedQuery::parse(&query_data[..11], Keepalive::None)
             .unwrap_err()
             .query_metadata()
             .is_none()
@@ -502,10 +502,10 @@ fn signed_message_reserves_space_for_tsig() {
     let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let (query, _) = build_signed_axfr_query(key.clone(), None);
+    let (query_data, _) = build_signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
     let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
-        .sign_with(tsig::verify_tsig(&query, Some(key)).unwrap().into());
+        .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.
@@ -579,11 +579,12 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
             .unwrap();
         let mut client =
             ClientSequence::request(key.clone(), &mut additional, Time48::now()).unwrap();
-        let request = additional.finish();
+        let query_data = additional.finish();
         let query =
-            ParsedQuery::parse(&request, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
+            ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::from_secs(30)))
+                .unwrap();
         let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(
-            tsig::verify_tsig(&request, Some(key.clone()))
+            tsig::verify_tsig(&query_data, Some(key.clone()))
                 .unwrap()
                 .into(),
         );
@@ -714,10 +715,10 @@ fn edns_query_returns_opt() {
 fn response_encoding_preserves_edns_dnssec_ok() {
     for version in [0, 1] {
         for flags in [0u16, 0x8000, 0x7fff, 0xffff] {
-            let mut wire = build_question(Rtype::SOA, &[version]);
-            let offset = wire.len() - 4;
-            wire[offset..offset + 2].copy_from_slice(&flags.to_be_bytes());
-            let query = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+            let mut query_data = build_question(Rtype::SOA, &[version]);
+            let offset = query_data.len() - 4;
+            query_data[offset..offset + 2].copy_from_slice(&flags.to_be_bytes());
+            let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
             let rcode = query.format_error().unwrap_or(OptRcode::REFUSED);
             let responses = [
                 query
@@ -818,9 +819,9 @@ fn tcp_response_advertises_idle_timeout() {
 #[test]
 fn query_validation_rejects_invalid_opt_owner_and_section() {
     let plain = build_question(Rtype::SOA, &[]);
-    let wire = build_question(Rtype::SOA, &[0]);
+    let query_data = build_question(Rtype::SOA, &[0]);
     let start = plain.len();
-    let mut named = wire.clone();
+    let mut named = query_data.clone();
     named.splice(start..=start, [1, b'x', 0]);
 
     assert_eq!(
@@ -831,7 +832,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
     );
 
     for count in [6, 8] {
-        let mut misplaced = wire.clone();
+        let mut misplaced = query_data.clone();
         misplaced[count..count + 2].copy_from_slice(&1u16.to_be_bytes());
         misplaced[10..12].fill(0);
 
@@ -842,7 +843,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
             Some(OptRcode::FORMERR)
         );
         misplaced[10..12].copy_from_slice(&1u16.to_be_bytes());
-        misplaced.extend_from_slice(&wire[start..]);
+        misplaced.extend_from_slice(&query_data[start..]);
 
         assert_eq!(
             ParsedQuery::parse(&misplaced, Keepalive::None)
@@ -879,9 +880,10 @@ fn response_limits_follow_transport_and_edns() {
             Rtype::SOA,
             Some(advertised),
         );
-        let wire = additional.finish();
-        let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
-        let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+        let query_data = additional.finish();
+        let udp = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
+        let stream =
+            ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
         assert_eq!(udp.response_limit(), limit);
         assert_eq!(stream.response_limit(), ResponseLimit::STREAM);
@@ -910,9 +912,9 @@ fn oversized_response_does_not_advance_the_signer() {
     let (_, mut additional) =
         query::build_question(Opcode::QUERY, false, false, &qname, Rtype::SOA, Some(512));
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-    let wire = additional.finish();
-    let mut signer: TransferSigner = tsig::verify_tsig(&wire, Some(key)).unwrap().into();
-    let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+    let query_data = additional.finish();
+    let mut signer: TransferSigner = tsig::verify_tsig(&query_data, Some(key)).unwrap().into();
+    let udp = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
 
     assert!(matches!(
         udp.build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer)),
@@ -921,7 +923,7 @@ fn oversized_response_does_not_advance_the_signer() {
             max_len: 512
         })
     ));
-    let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let stream = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
     let response = stream
         .build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer))
         .unwrap();
@@ -940,9 +942,9 @@ fn oversized_frame_does_not_advance_the_signer() {
     let (_, mut additional) =
         query::build_question(Opcode::QUERY, false, false, &query.qname, Rtype::AXFR, None);
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-    let wire = additional.finish();
-    let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
-    let signer = tsig::verify_tsig(&wire, Some(key)).unwrap();
+    let query_data = additional.finish();
+    let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
 
     // Bypass the chunking helper to exercise the final frame guard itself.

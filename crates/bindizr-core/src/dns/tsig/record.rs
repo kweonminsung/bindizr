@@ -13,13 +13,6 @@ use crate::dns::message::DNS_HEADER_LEN;
 
 type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [u8]>>>;
 
-/// The final Additional record and where the signed DNS message ends.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ParsedTsig<'a> {
-    pub(crate) record: WireTsig<'a>,
-    start: usize,
-}
-
 /// A malformed TSIG record or its enclosing DNS sections.
 #[derive(Debug, Error)]
 pub(crate) enum ParseTsigError {
@@ -36,6 +29,13 @@ pub(crate) enum VerifyMacError {
     Length,
     #[error("TSIG MAC does not match")]
     Mismatch,
+}
+
+/// The final Additional record and where the signed DNS message ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedTsig<'a> {
+    pub(crate) record: WireTsig<'a>,
+    start: usize,
 }
 
 impl<'a> ParsedTsig<'a> {
@@ -84,7 +84,7 @@ impl<'a> ParsedTsig<'a> {
         }
     }
 
-    /// Compare the key name and algorithm without changing signed message octets.
+    /// Return whether the key name and algorithm match without changing signed message octets.
     pub(crate) fn matches_key(&self, key: &TsigSigningKey) -> bool {
         self.record.owner().name_eq(key.domain.name())
             && self

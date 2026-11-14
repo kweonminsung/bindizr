@@ -39,7 +39,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
 ) -> Result<Vec<u8>, DnsError> {
     use tokio::io::AsyncReadExt as _;
 
-    let mut chunk = [0; 4096];
+    let mut buffer = [0; 4096];
 
     loop {
         // The two-octet prefix cannot name more than the limit RFC 1035,
@@ -56,7 +56,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
             return Ok(message);
         }
 
-        let read = reader.read(&mut chunk).await?;
+        let read = reader.read(&mut buffer).await?;
 
         if read == 0 {
             return Err(match expected {
@@ -66,7 +66,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
             });
         }
 
-        pending.extend_from_slice(&chunk[..read]);
+        pending.extend_from_slice(&buffer[..read]);
     }
 }
 

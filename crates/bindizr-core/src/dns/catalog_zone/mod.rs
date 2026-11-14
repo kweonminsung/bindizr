@@ -143,7 +143,6 @@ pub fn extract_member_zones(
     }
 
     match version {
-        None => return Err(ExtractMemberZonesError::MissingVersion),
         // One character-string, "2": the rdata is its length byte and the digit.
         Some(rdata) if rdata == [1, b'2'] => {}
         Some(rdata) => {
@@ -155,6 +154,7 @@ pub fn extract_member_zones(
                 .into_owned();
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });
         }
+        None => return Err(ExtractMemberZonesError::MissingVersion),
     }
 
     // Different member IDs must not provision the same zone twice.

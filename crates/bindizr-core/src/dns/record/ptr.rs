@@ -27,7 +27,6 @@ impl<'a> PtrRecordValue<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dns::name;
 
     /// Verify that root targets stay distinct from literal dot labels.
     #[test]

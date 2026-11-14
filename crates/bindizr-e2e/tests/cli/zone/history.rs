@@ -33,7 +33,7 @@ async fn zone_versions_support_diff_and_rollback() {
         .await;
     let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(fetched["zone"]["serial"].as_i64().unwrap(), 1);
+    assert_eq!(fetched["zone"]["serial"], 1);
 
     app.run_cli_success(
         &[
@@ -80,7 +80,7 @@ async fn zone_versions_support_diff_and_rollback() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|item| item["serial"].as_i64().unwrap())
+        .map(|version| version["serial"].as_i64().unwrap())
         .collect();
 
     assert_eq!(serials, [3, 2, 1]);

@@ -6,7 +6,7 @@ use bindizr_core::model::secondary::Secondary;
 use thiserror::Error;
 use tokio::task::JoinSet;
 
-use crate::dns_client::{ResolveAddressError, notify};
+use crate::dns_client::ResolveAddressError;
 use crate::error::ServiceError;
 use crate::types::CheckNotifyResponse;
 use crate::{Context, dns_client, secondary};
@@ -19,7 +19,7 @@ pub enum SendNotifyError {
     #[error("failed to resolve: {0}")]
     Resolve(#[source] ResolveAddressError),
     #[error("{0}")]
-    Send(#[source] notify::SendNotifyError),
+    Send(#[source] dns_client::notify::SendNotifyError),
 }
 
 /// Sending a zone's NOTIFY requests failed.

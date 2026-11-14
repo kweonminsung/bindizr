@@ -17,7 +17,7 @@ pub(crate) async fn create_tx(
         r#"
         INSERT INTO api_tokens (name, token, description, role_id, expires_at, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
-    "#,
+        "#,
     )
     .bind(&token.name)
     .bind(&token.token)

@@ -13,7 +13,7 @@ pub(crate) async fn create_many_tx(
     changes: &[ZoneChange],
 ) -> Result<(), DatabaseError> {
     // One journal row per record, so size it like the record insert:
-    // 11 binds per row, leaving room under SQLite's 32766 limit.
+    // 11 binds per row, leaving room under SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 400;
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -118,8 +118,8 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    // Prune whole serials to keep IXFR steps complete. SQLite sorts sqlx
-    // RFC 3339 timestamps chronologically as text.
+    // Delete whole serials only, so the remaining IXFR steps stay complete.
+    // SQLite sorts sqlx's RFC 3339 timestamp text chronologically.
     let result = sqlx::query(
         r#"
         DELETE FROM zone_journal

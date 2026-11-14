@@ -1,5 +1,3 @@
-use chrono::Utc;
-
 use super::*;
 use crate::dns::record::TxtRecordValue;
 

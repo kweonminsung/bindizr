@@ -171,6 +171,7 @@ async fn handle_nsupdate_request(
                 Ok(response) => {
                     log::warn!("NSUPDATE TSIG rejected from {client_addr}: {rcode}");
                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
+
                     return Ok(response);
                 }
                 Err(error) => {

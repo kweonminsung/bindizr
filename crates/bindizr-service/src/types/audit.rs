@@ -62,7 +62,7 @@ pub struct AuditLogResponse {
 }
 
 impl From<&AuditLog> for AuditLogResponse {
-    /// Render a stored row.
+    /// Build an audit log response from a stored row.
     fn from(log: &AuditLog) -> Self {
         Self {
             id: log.id,

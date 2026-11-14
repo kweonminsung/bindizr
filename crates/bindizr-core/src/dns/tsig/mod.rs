@@ -100,7 +100,7 @@ pub struct TsigSigningKey {
 }
 
 impl AsRef<Key> for TsigSigningKey {
-    /// Borrow the key used by the transaction and sequence signers.
+    /// Return the key used by the transaction and sequence signers.
     fn as_ref(&self) -> &Key {
         &self.domain
     }
@@ -330,7 +330,7 @@ pub(crate) fn is_request_tsig_valid<O: AsRef<[u8]>, N: ToName>(tsig: &Tsig<O, N>
         && is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().as_ref().len())
 }
 
-/// Accept MAC lengths from max(10, half the hash length) to the full length
+/// Return whether a MAC length lies from max(10, half the hash length) to the full length
 /// (RFC 8945, Section 5.2.2.1); defer unknown algorithms to the BADKEY check.
 pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) -> bool {
     let Some(algorithm) = algorithm_from_name(algorithm) else {

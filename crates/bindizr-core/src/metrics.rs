@@ -582,7 +582,7 @@ impl Metrics {
             .inc();
     }
 
-    /// Set what the cache holds after a store, and count what it dropped to fit.
+    /// Count what the cache dropped to fit after a store, and set what it now holds.
     pub fn track_zone_cache_store(&self, records: usize, evicted: usize) {
         self.zone_cache_records.set(records as i64);
         self.zone_cache_evictions_total.inc_by(evicted as u64);

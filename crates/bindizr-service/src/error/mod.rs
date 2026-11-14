@@ -264,39 +264,6 @@ impl ServiceError {
     }
 }
 
-/// Unclassified database errors and invalid stored serials are internal failures.
-/// Call sites map UNIQUE/FK conflicts where their meaning is known.
-impl From<ConvertSerialError> for ServiceError {
-    /// Report the conversion failure as an internal error, keeping it as source.
-    fn from(error: ConvertSerialError) -> Self {
-        Self::Internal {
-            message: error.to_string(),
-            source: Some(Box::new(error)),
-        }
-    }
-}
-
-/// A stored TTL that does not convert is corrupt data: a server fault.
-impl From<ConvertTtlError> for ServiceError {
-    /// Report the conversion failure as an internal error, keeping it as source.
-    fn from(error: ConvertTtlError) -> Self {
-        Self::Internal {
-            message: error.to_string(),
-            source: Some(Box::new(error)),
-        }
-    }
-}
-
-impl From<DatabaseError> for ServiceError {
-    /// Wrap a database error as an internal service error.
-    fn from(error: DatabaseError) -> Self {
-        Self::Internal {
-            message: format!("database error: {error}"),
-            source: Some(Box::new(error)),
-        }
-    }
-}
-
 impl ServiceError {
     /// Build an error for invalid request input.
     pub fn invalid_input(message: impl fmt::Display) -> Self {
@@ -306,7 +273,8 @@ impl ServiceError {
         }
     }
 
-    /// Keep the cause when an external input could not be retrieved or interpreted.
+    /// Build an error for invalid input, keeping the cause when an external input
+    /// could not be retrieved or interpreted.
     pub fn invalid_input_with_source(
         message: impl fmt::Display,
         source: impl std::error::Error + Send + Sync + 'static,
@@ -365,7 +333,8 @@ impl ServiceError {
         }
     }
 
-    /// Keep an internal failure as the source of an operation-specific message.
+    /// Build an error for an internal failure, keeping it as the source of an
+    /// operation-specific message.
     pub fn internal_with_source(
         message: impl fmt::Display,
         source: impl std::error::Error + Send + Sync + 'static,
@@ -391,7 +360,8 @@ impl ServiceError {
         Self::RecordNotFound(format!("no record named '{name}' in zone '{zone_name}'"))
     }
 
-    /// Report an ambiguous owner name, asking for a record id in transport-neutral terms.
+    /// Build an error for an ambiguous owner name, asking for a record id in
+    /// transport-neutral terms.
     pub fn record_name_ambiguous(
         zone_name: impl fmt::Display,
         name: impl fmt::Display,
@@ -605,6 +575,39 @@ impl ServiceError {
         Self::VersionNotFound(format!(
             "no version with serial '{serial}' for zone '{zone_name}'"
         ))
+    }
+}
+
+/// Unclassified database errors and invalid stored serials are internal failures.
+/// Call sites map UNIQUE/FK conflicts where their meaning is known.
+impl From<ConvertSerialError> for ServiceError {
+    /// Build an internal error from the conversion failure, keeping it as source.
+    fn from(error: ConvertSerialError) -> Self {
+        Self::Internal {
+            message: error.to_string(),
+            source: Some(Box::new(error)),
+        }
+    }
+}
+
+/// A stored TTL that does not convert is corrupt data: a server fault.
+impl From<ConvertTtlError> for ServiceError {
+    /// Build an internal error from the conversion failure, keeping it as source.
+    fn from(error: ConvertTtlError) -> Self {
+        Self::Internal {
+            message: error.to_string(),
+            source: Some(Box::new(error)),
+        }
+    }
+}
+
+impl From<DatabaseError> for ServiceError {
+    /// Build an internal error wrapping a database error.
+    fn from(error: DatabaseError) -> Self {
+        Self::Internal {
+            message: format!("database error: {error}"),
+            source: Some(Box::new(error)),
+        }
     }
 }
 

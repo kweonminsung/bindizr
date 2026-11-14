@@ -1,9 +1,5 @@
-use domain::base::iana::Rtype;
-
 use super::*;
-use crate::dns::name;
 use crate::dns::record::TxtRecordValue;
-use crate::model::record::RecordType;
 
 /// Verify that encode a RDATA is the address octets.
 #[test]

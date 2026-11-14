@@ -68,7 +68,7 @@ async fn role_grants_support_create_list_and_revoke() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["items"].as_array().unwrap().len(), 2, "{body}");
 
-    for invalid in [
+    for request in [
         json!({ "zone_name": zone_name, "actions": [] }),
         json!({ "zone_name": zone_name, "actions": ["zone:own"] }),
         json!({ "zone_name": zone_name, "actions": ["record:read"], "record_name_pattern": "a*b" }),
@@ -79,10 +79,10 @@ async fn role_grants_support_create_list_and_revoke() {
         json!({ "zone_name": zone_name, "actions": ["zone:create"] }),
     ] {
         let (status, _) = app
-            .send_request(Method::POST, &grants_path, Some(invalid.clone()))
+            .send_request(Method::POST, &grants_path, Some(request.clone()))
             .await;
 
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}");
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{request}");
     }
 
     let (status, _) = app
@@ -195,13 +195,13 @@ async fn role_credentials_report_names_and_counts() {
     app.set_auth_token(admin_token);
 
     let (scoped_name, _) = app.create_scoped_api_token().await;
-    let key_name = format!("{scoped_name}-key");
+    let tsig_key_name = format!("{scoped_name}-key");
 
     let (status, body) = app
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": key_name, "role_name": scoped_name })),
+            Some(json!({ "name": tsig_key_name, "role_name": scoped_name })),
         )
         .await;
 
@@ -246,7 +246,7 @@ async fn role_credentials_report_names_and_counts() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["pagination"]["total"], 1, "{body}");
-    assert_eq!(body["items"][0]["name"], key_name);
+    assert_eq!(body["items"][0]["name"], tsig_key_name);
 
     let (status, body) = app
         .send_request(Method::GET, "/tsig-keys?role_name=admin", None)
@@ -293,7 +293,7 @@ async fn role_credentials_report_names_and_counts() {
 
     assert!(
         error.contains(&format!("API token {scoped_name}"))
-            && error.contains(&format!("TSIG key {key_name}")),
+            && error.contains(&format!("TSIG key {tsig_key_name}")),
         "{error}"
     );
 }
@@ -446,7 +446,7 @@ async fn zone_lookup_hides_existence_across_name_spellings() {
     let absent_zone_name = app.zone_name("absent.com");
 
     for zone_name in [&hidden_zone_name, &absent_zone_name] {
-        let spelled = format!("{}.", zone_name.to_uppercase());
+        let spelled = format!("{}.", zone_name.to_ascii_uppercase());
         let expected = format!("zone with name '{zone_name}' not found");
 
         let (status, body) = app
@@ -494,7 +494,7 @@ async fn narrowed_grant_reads_only_matching_records() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let granted_id = body["record"]["id"].as_i64().unwrap();
+    let granted_record_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
         .send_request(
@@ -505,7 +505,7 @@ async fn narrowed_grant_reads_only_matching_records() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let outside_id = body["record"]["id"].as_i64().unwrap();
+    let outside_record_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(
@@ -542,21 +542,21 @@ async fn narrowed_grant_reads_only_matching_records() {
         .map(|record| record["id"].as_i64().unwrap())
         .collect();
 
-    assert!(listed_ids.contains(&granted_id));
-    assert!(!listed_ids.contains(&outside_id));
+    assert!(listed_ids.contains(&granted_record_id));
+    assert!(!listed_ids.contains(&outside_record_id));
 
     // The count is narrowed in SQL beside the page, so a scoped listing does
     // not advertise rows it will never hand over.
     assert_eq!(body["pagination"]["total"], 1, "{body}");
 
     let (status, _) = app
-        .send_request(Method::GET, &format!("/records/{granted_id}"), None)
+        .send_request(Method::GET, &format!("/records/{granted_record_id}"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .send_request(Method::GET, &format!("/records/{outside_id}"), None)
+        .send_request(Method::GET, &format!("/records/{outside_record_id}"), None)
         .await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1296,7 +1296,7 @@ async fn permissions_report_what_each_zone_allows() {
 
     assert_eq!(
         zones,
-        vec![
+        [
             json!({
                 "zone_name": narrowed_zone_name,
                 "actions": ["zone:read", "record:read", "record:create"],
@@ -1381,15 +1381,15 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
     .into_iter()
     .enumerate()
     {
-        let role = app.zone_name(&format!("parity{index}"));
+        let role_name = app.zone_name(&format!("parity{index}"));
         app.set_auth_token(admin_token.clone());
 
-        let secret = create_role_with_token(&app, &role).await;
+        let token = create_role_with_token(&app, &role_name).await;
         app.run_cli_success(
             &[
                 "role",
                 "grant",
-                &role,
+                &role_name,
                 "--zone",
                 &zone_name,
                 "--actions",
@@ -1402,7 +1402,7 @@ async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
             None,
         )
         .await;
-        app.set_auth_token(secret);
+        app.set_auth_token(token);
 
         let (status, body) = app.send_request(Method::GET, &listing_path, None).await;
 
@@ -1461,7 +1461,7 @@ async fn write_only_grant_changes_matching_records() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let outside_id = body["record"]["id"].as_i64().unwrap();
+    let outside_record_id = body["record"]["id"].as_i64().unwrap();
 
     // Neighbours at the challenge name the grant cannot read: their values must
     // stay out of every response the write-only role gets.
@@ -1520,6 +1520,7 @@ async fn write_only_grant_changes_matching_records() {
     };
 
     assert!(!leaks(&body), "create revealed a neighbour: {body}");
+
     let mut request = record_body(&zone_name, "_acme-challenge", "TXT", "probe");
     request["dry_run"] = json!(true);
 
@@ -1577,7 +1578,11 @@ async fn write_only_grant_changes_matching_records() {
 
     // A record outside the grant stays hidden, so its id cannot be probed.
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("/records/{outside_id}"), None)
+        .send_request(
+            Method::DELETE,
+            &format!("/records/{outside_record_id}"),
+            None,
+        )
         .await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1661,14 +1666,14 @@ async fn responses_hide_records_outside_read_grants() {
             .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
-        let id = body["record"]["id"].as_i64().unwrap();
+        let record_id = body["record"]["id"].as_i64().unwrap();
 
         if record_type == "NS" {
-            delegation_ns_id = Some(id);
+            delegation_ns_id = Some(record_id);
         }
 
         if name != "www" {
-            secret_ids.push(id);
+            secret_ids.push(record_id);
         }
     }
 
@@ -1678,7 +1683,7 @@ async fn responses_hide_records_outside_read_grants() {
 
     // The shapes a write outruns its read in: a challenge writer reading only
     // `www`, a whole-zone creator, a whole-zone writer, and a zone renamer.
-    let (challenge_role, challenge_token) = app.create_scoped_api_token().await;
+    let (challenge_role_name, challenge_token) = app.create_scoped_api_token().await;
 
     for (actions, pattern, types) in [
         (
@@ -1692,7 +1697,7 @@ async fn responses_hide_records_outside_read_grants() {
             &[
                 "role",
                 "grant",
-                &challenge_role,
+                &challenge_role_name,
                 "--zone",
                 &zone_name,
                 "--actions",
@@ -1707,18 +1712,18 @@ async fn responses_hide_records_outside_read_grants() {
         .await;
     }
 
-    let creator_role = format!("{}-creator", app.namespace());
+    let creator_role_name = format!("{}-creator", app.namespace());
 
-    let creator_token = create_role_with_token(&app, &creator_role).await;
+    let creator_token = create_role_with_token(&app, &creator_role_name).await;
 
-    let writer_role = format!("{}-writer", app.namespace());
+    let writer_role_name = format!("{}-writer", app.namespace());
 
-    let writer_token = create_role_with_token(&app, &writer_role).await;
+    let writer_token = create_role_with_token(&app, &writer_role_name).await;
 
-    for (role, actions) in [
-        (&creator_role, "zone:read,record:create"),
+    for (role_name, actions) in [
+        (&creator_role_name, "zone:read,record:create"),
         (
-            &writer_role,
+            &writer_role_name,
             "zone:update,record:create,record:update,record:delete",
         ),
     ] {
@@ -1726,7 +1731,7 @@ async fn responses_hide_records_outside_read_grants() {
             &[
                 "role",
                 "grant",
-                role,
+                role_name,
                 "--zone",
                 &zone_name,
                 "--actions",
@@ -1737,14 +1742,14 @@ async fn responses_hide_records_outside_read_grants() {
         .await;
     }
 
-    let renamer_role = format!("{}-renamer", app.namespace());
+    let renamer_role_name = format!("{}-renamer", app.namespace());
 
-    let renamer_token = create_role_with_token(&app, &renamer_role).await;
+    let renamer_token = create_role_with_token(&app, &renamer_role_name).await;
     app.run_cli_success(
         &[
             "role",
             "grant",
-            &renamer_role,
+            &renamer_role_name,
             "--actions",
             "zone:update,zone:create",
         ],
@@ -1864,11 +1869,11 @@ async fn responses_hide_records_outside_read_grants() {
         text.contains("leak-marker") || text.contains("192.0.2.201")
     };
 
-    for (role, token) in [
-        (&challenge_role, &challenge_token),
-        (&creator_role, &creator_token),
-        (&writer_role, &writer_token),
-        (&renamer_role, &renamer_token),
+    for (role_name, token) in [
+        (&challenge_role_name, &challenge_token),
+        (&creator_role_name, &creator_token),
+        (&writer_role_name, &writer_token),
+        (&renamer_role_name, &renamer_token),
     ] {
         app.set_auth_token(token.clone());
         let mut succeeded = 0;
@@ -1880,7 +1885,7 @@ async fn responses_hide_records_outside_read_grants() {
 
             assert!(
                 !leaks(&body),
-                "{role}: {method} {path} answered {status} with an unreadable record: {body}"
+                "{role_name}: {method} {path} answered {status} with an unreadable record: {body}"
             );
             succeeded += usize::from(status.is_success());
         }
@@ -1888,7 +1893,7 @@ async fn responses_hide_records_outside_read_grants() {
         // Equal silence from refusals would prove nothing.
         assert!(
             succeeded >= 8,
-            "{role}: only {succeeded} requests succeeded"
+            "{role_name}: only {succeeded} requests succeeded"
         );
     }
 
@@ -2159,18 +2164,18 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
         };
 
         // A relay that holds the transfer until the credential is revoked.
-        let relay = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let relay_addr = relay.local_addr().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_addr = listener.local_addr().unwrap();
         let address = format!("127.0.0.1:{}", app.dns_port());
         let (accepted_tx, accepted_rx) = oneshot::channel();
         let (release_tx, release_rx) = oneshot::channel::<()>();
 
         let relaying = tokio::spawn(async move {
-            let (mut client, _) = relay.accept().await.unwrap();
+            let (mut client, _) = listener.accept().await.unwrap();
             accepted_tx.send(()).unwrap();
             release_rx.await.unwrap();
-            let mut server = TcpStream::connect(address).await.unwrap();
-            let _ = io::copy_bidirectional(&mut client, &mut server).await;
+            let mut upstream = TcpStream::connect(address).await.unwrap();
+            let _ = io::copy_bidirectional(&mut client, &mut upstream).await;
         });
 
         app.set_auth_token(token);

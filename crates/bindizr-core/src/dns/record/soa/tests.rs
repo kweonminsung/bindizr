@@ -1,5 +1,4 @@
 use super::*;
-use crate::dns::name;
 
 /// Verify that `from_email` escapes local part.
 #[test]

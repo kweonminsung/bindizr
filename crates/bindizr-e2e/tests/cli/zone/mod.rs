@@ -13,16 +13,16 @@ use crate::common::TestApp;
 #[serial_test::serial(bindizr_e2e)]
 async fn escaped_zone_names_follow_the_same_policy() {
     let app = TestApp::start_local().await;
-    let base = app.zone_name("cli-escaped");
-    let simple = format!("{base}\\ ");
-    let canonical = format!(r"{base}\032");
+    let base_zone_name = app.zone_name("cli-escaped");
+    let simple_zone_name = format!("{base_zone_name}\\ ");
+    let canonical_zone_name = format!(r"{base_zone_name}\032");
 
     let created = app
         .run_cli_success(
             &[
                 "zone",
                 "create",
-                &simple,
+                &simple_zone_name,
                 "--mname",
                 "ns.example",
                 "--rname",
@@ -35,19 +35,22 @@ async fn escaped_zone_names_follow_the_same_policy() {
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
-    assert_eq!(created["zone"]["name"], canonical);
+    assert_eq!(created["zone"]["name"], canonical_zone_name);
 
     let fetched = app
-        .run_cli_success(&["zone", "get", &canonical, "--output", "json"], None)
+        .run_cli_success(
+            &["zone", "get", &canonical_zone_name, "--output", "json"],
+            None,
+        )
         .await;
     let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(fetched["zone"]["name"], canonical);
-    let wildcard = format!(r"\042.{base}");
+    assert_eq!(fetched["zone"]["name"], canonical_zone_name);
+    let wildcard_zone_name = format!(r"\042.{base_zone_name}");
     let args = [
         "zone",
         "create",
-        &wildcard,
+        &wildcard_zone_name,
         "--mname",
         "ns.example",
         "--rname",

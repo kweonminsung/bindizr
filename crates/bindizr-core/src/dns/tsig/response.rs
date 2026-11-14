@@ -57,7 +57,7 @@ pub fn build_error_response(
 }
 
 /// Echo the question when it fits; a compact UDP error retains the request header.
-fn start_error_response(
+fn build_error_header(
     message: &Message<&[u8]>,
     include_question: bool,
 ) -> Option<AdditionalBuilder<TreeCompressor<Vec<u8>>>> {
@@ -106,7 +106,7 @@ fn build_signed_error_response(
         .last()?
         .ok()?;
     let data = request_tsig.data();
-    let mut additional = start_error_response(message, include_question)?;
+    let mut additional = build_error_header(message, include_question)?;
     Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
 
     // domain 0.12.3 omits OPT and hashes eight Other Data bytes; RFC 8945,
@@ -172,7 +172,7 @@ fn build_unsigned_error_response(
         .last()?
         .ok()?;
 
-    let mut additional = start_error_response(message, include_question)?;
+    let mut additional = build_error_header(message, include_question)?;
     Edns::from_message(message).push_response_opt(&mut additional, OptRcode::NOTAUTH, None, None);
     additional
         .push((

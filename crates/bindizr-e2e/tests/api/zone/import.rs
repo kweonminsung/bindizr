@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, TcpListener};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use std::{io, iter, thread};
@@ -289,7 +289,7 @@ async fn zone_import_upsert_replaces_records_by_name_and_type_only() {
         )
         .await;
 
-    assert_eq!(values(&body), vec!["192.0.2.3"]);
+    assert_eq!(values(&body), ["192.0.2.3"]);
 
     // Same owner, different type: untouched.
     let (_, body) = app
@@ -300,7 +300,7 @@ async fn zone_import_upsert_replaces_records_by_name_and_type_only() {
         )
         .await;
 
-    assert_eq!(values(&body), vec!["keep me"]);
+    assert_eq!(values(&body), ["keep me"]);
 
     // Different owner entirely: untouched.
     let (_, body) = app
@@ -311,7 +311,7 @@ async fn zone_import_upsert_replaces_records_by_name_and_type_only() {
         )
         .await;
 
-    assert_eq!(values(&body), vec!["192.0.2.9"]);
+    assert_eq!(values(&body), ["192.0.2.9"]);
 }
 
 /// Verify that zone import zone file reconciles TTL.
@@ -1026,7 +1026,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
         body["items"][0]["value"],
         format!(
             "4 2 {}",
-            "abababababababababababababababababababababababababababababababab".to_uppercase()
+            "abababababababababababababababababababababababababababababababab".to_ascii_uppercase()
         )
     );
 
@@ -1403,7 +1403,7 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
 }
 
 /// Serve a case-varied AXFR with TC set, AA clear, and optional trailing data.
-fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()>) {
+fn serve_import_transfer(zone_name: String, trailing: bool) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let server = thread::spawn(move || {
@@ -1412,10 +1412,10 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         let query_data = dns::read_frame(&mut stream).unwrap().unwrap();
-        let query = Message::from_octets(query_data.as_slice()).unwrap();
-        let owner = dns::parse_name(&zone).unwrap();
-        let primary = dns::parse_name(&format!("NS1.{zone}.")).unwrap();
-        let mailbox = dns::parse_name(&format!("Hostmaster.{zone}.")).unwrap();
+        let query = Message::from_octets(query_data).unwrap();
+        let owner = dns::parse_name(&zone_name).unwrap();
+        let primary = dns::parse_name(&format!("NS1.{zone_name}.")).unwrap();
+        let mailbox = dns::parse_name(&format!("Hostmaster.{zone_name}.")).unwrap();
         let soa = Soa::new(
             primary.clone(),
             mailbox,
@@ -1426,8 +1426,8 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()
             Ttl::from_secs(300),
         );
         let closing = Soa::new(
-            dns::parse_name(&format!("ns1.{zone}.")).unwrap(),
-            dns::parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+            dns::parse_name(&format!("ns1.{zone_name}.")).unwrap(),
+            dns::parse_name(&format!("hostmaster.{zone_name}.")).unwrap(),
             Serial::from(42),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
@@ -1447,36 +1447,36 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("www.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("www.{zone_name}.")).unwrap(),
                 Ttl::from_secs(u32::MAX),
-                A::new("192.0.2.50".parse().unwrap()),
+                A::new("192.0.2.50".parse::<Ipv4Addr>().unwrap()),
             ))
             .unwrap();
         let root = dns::parse_name(".").unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("rootns.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("rootns.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Ns::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("cname.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("cname.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Cname::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("ptr.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("ptr.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Ptr::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("dname.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("dname.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Dname::new(root),
             ))
@@ -1488,7 +1488,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()
                 .push((
                     &owner,
                     Ttl::from_secs(300),
-                    A::new("192.0.2.51".parse().unwrap()),
+                    A::new("192.0.2.51".parse::<Ipv4Addr>().unwrap()),
                 ))
                 .unwrap();
         }
@@ -1522,7 +1522,7 @@ fn serve_catalog(
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
             let query_data = dns::read_frame(&mut stream).unwrap().unwrap();
-            let query = Message::from_octets(query_data.as_slice()).unwrap();
+            let query = Message::from_octets(query_data).unwrap();
             queries.push(query.sole_question().unwrap().qname().to_string());
             let owner = dns::parse_name(&zone_name).unwrap();
             let primary = dns::parse_name(&format!("ns1.{zone_name}.")).unwrap();
@@ -1602,7 +1602,7 @@ fn serve_catalog(
                     .push((
                         &dns::parse_name(&format!("www.{zone_name}")).unwrap(),
                         Ttl::from_secs(300),
-                        A::new("192.0.2.50".parse().unwrap()),
+                        A::new("192.0.2.50".parse::<Ipv4Addr>().unwrap()),
                     ))
                     .unwrap();
             }
@@ -1625,7 +1625,7 @@ fn serve_catalog(
 
                         if let Some(query_data) = dns::read_frame(&mut stream).unwrap() {
                             queries.push(
-                                Message::from_octets(query_data.as_slice())
+                                Message::from_octets(query_data)
                                     .unwrap()
                                     .sole_question()
                                     .unwrap()
@@ -1658,11 +1658,11 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
 
     for cli in [false, true] {
         for split in [false, true] {
-            let member = app.zone_name(&format!("member-{cli}-{split}.example"));
+            let member_zone_name = app.zone_name(&format!("member-{cli}-{split}.example"));
 
-            app.create_zone_cli(&member, "3600").await;
+            app.create_zone_cli(&member_zone_name, "3600").await;
 
-            let (address, server) = serve_catalog(vec![member.clone()], split, true, 1);
+            let (address, server) = serve_catalog(vec![member_zone_name.clone()], split, true, 1);
 
             let body: Value = if cli {
                 let imported = app
@@ -1705,7 +1705,7 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
             let (status, body) = app
                 .send_request(
                     Method::GET,
-                    &format!("/records?zone_name={member}&type=A"),
+                    &format!("/records?zone_name={member_zone_name}&type=A"),
                     None,
                 )
                 .await;
@@ -1811,22 +1811,24 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
     for cli in [false, true] {
         for dry_run in [false, true] {
             for existing in [false, true] {
-                let member = app.zone_name(&format!("member-{cli}-{dry_run}-{existing}.example"));
+                let member_zone_name =
+                    app.zone_name(&format!("member-{cli}-{dry_run}-{existing}.example"));
 
                 if existing {
-                    app.create_zone_cli(&member, "3600").await;
+                    app.create_zone_cli(&member_zone_name, "3600").await;
                 }
 
                 let before = app
-                    .send_request(Method::GET, &format!("/zones/{member}"), None)
+                    .send_request(Method::GET, &format!("/zones/{member_zone_name}"), None)
                     .await;
                 let before_records = if existing {
-                    app.list_records(&member).await
+                    app.list_records(&member_zone_name).await
                 } else {
                     Vec::new()
                 };
 
-                let (address, server) = serve_catalog(vec![member.clone()], false, false, 0);
+                let (address, server) =
+                    serve_catalog(vec![member_zone_name.clone()], false, false, 0);
 
                 if cli {
                     let mut args = vec![
@@ -1872,13 +1874,13 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                 assert_eq!(server.join().unwrap(), ["catalog.example"]);
 
                 let after = app
-                    .send_request(Method::GET, &format!("/zones/{member}"), None)
+                    .send_request(Method::GET, &format!("/zones/{member_zone_name}"), None)
                     .await;
 
                 assert_eq!(after, before);
 
                 if existing {
-                    assert_eq!(app.list_records(&member).await, before_records);
+                    assert_eq!(app.list_records(&member_zone_name).await, before_records);
                 }
             }
         }
@@ -1892,12 +1894,12 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     let app = TestApp::start_local().await;
 
     // This valid name sorts before '*', so checking members only as they are imported fails.
-    let first = format!("!.{}", app.zone_name("first-member.example"));
+    let first_zone_name = format!("!.{}", app.zone_name("first-member.example"));
 
-    app.create_zone_cli(&first, "3600").await;
-    let records = app.list_records(&first).await;
+    app.create_zone_cli(&first_zone_name, "3600").await;
+    let records = app.list_records(&first_zone_name).await;
     let zones = app.send_request(Method::GET, "/zones", None).await;
-    let versions_path = format!("/zones/{first}/versions?include_signer_serials=true");
+    let versions_path = format!("/zones/{first_zone_name}/versions?include_signer_serials=true");
 
     let versions = app.send_request(Method::GET, &versions_path, None).await;
 
@@ -1905,7 +1907,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
         let (_, response) =
             dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", Rtype::SOA.to_int())
                 .unwrap();
-        let response = Message::from_octets(response.as_slice()).unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         response
             .answer()
@@ -1927,8 +1929,13 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     for cli in [false, true] {
         for dry_run in [false, true] {
             for wildcard in ["*", r"\*", r"\042"] {
-                let member = format!("{wildcard}.{}", app.zone_name("invalid.example"));
-                let (address, server) = serve_catalog(vec![first.clone(), member], false, true, 0);
+                let member_zone_name = format!("{wildcard}.{}", app.zone_name("invalid.example"));
+                let (address, server) = serve_catalog(
+                    vec![first_zone_name.clone(), member_zone_name],
+                    false,
+                    true,
+                    0,
+                );
 
                 if cli {
                     let mut args = vec![
@@ -1980,7 +1987,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                 }
 
                 assert_eq!(app.send_request(Method::GET, "/zones", None).await, zones);
-                assert_eq!(app.list_records(&first).await, records);
+                assert_eq!(app.list_records(&first_zone_name).await, records);
                 assert_eq!(
                     app.send_request(Method::GET, &versions_path, None).await,
                     versions

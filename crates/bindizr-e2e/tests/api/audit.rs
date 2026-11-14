@@ -33,7 +33,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
 
     let role_name = format!("{}-audited", app.namespace());
     let token_name = format!("{role_name}-token");
-    let key_name = format!("{role_name}-key");
+    let tsig_key_name = format!("{role_name}-key");
     let secondary_name = format!("{role_name}-ns2");
     let policy_name = format!("{role_name}-policy");
     let zone_name = app.zone_name("audited.example");
@@ -68,7 +68,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": key_name, "role_name": role_name })),
+            Some(json!({ "name": tsig_key_name, "role_name": role_name })),
         )
         .await;
 
@@ -171,7 +171,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
 
     let expected_operations = [
         ("token", token_name.as_str(), vec!["create"]),
-        ("tsig_key", key_name.as_str(), vec!["create"]),
+        ("tsig_key", tsig_key_name.as_str(), vec!["create"]),
         (
             "secondary",
             secondary_name.as_str(),

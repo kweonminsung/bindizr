@@ -8,7 +8,7 @@ use tokio::sync::watch;
 /// still sees it.
 #[derive(Debug, Clone)]
 pub(crate) struct Shutdown {
-    tx: watch::Sender<bool>,
+    stop_tx: watch::Sender<bool>,
 }
 
 impl Default for Shutdown {
@@ -22,25 +22,25 @@ impl Shutdown {
     /// Create a shared shutdown signal.
     pub(crate) fn new() -> Self {
         Self {
-            tx: watch::channel(false).0,
+            stop_tx: watch::channel(false).0,
         }
     }
 
     /// Signal all listeners to begin shutdown.
     pub(crate) fn trigger(&self) {
-        self.tx.send_replace(true);
+        self.stop_tx.send_replace(true);
     }
 
     /// Resolve once [`Shutdown::trigger`] has been called, before or after.
     pub(crate) fn waiter(&self) -> impl Future<Output = ()> + Send + 'static {
-        let mut rx = self.tx.subscribe();
+        let mut stop_rx = self.stop_tx.subscribe();
 
         async move {
             // `changed` only reports transitions, so test the current value first.
-            if *rx.borrow_and_update() {
+            if *stop_rx.borrow_and_update() {
                 return;
             }
-            let _ = rx.changed().await;
+            let _ = stop_rx.changed().await;
         }
     }
 }

@@ -77,36 +77,36 @@ pub(crate) fn evaluate_prerequisite(
     prerequisite: &Prerequisite,
     wanted: &mut RecordSets,
 ) -> Result<(), NsupdateError> {
-    let name = prerequisite.name();
+    let owner = prerequisite.name();
 
     match prerequisite {
         Prerequisite::NameExists { .. } => {
-            if !served.keys().any(|(owner, _)| owner == name) {
+            if !served.keys().any(|(served_owner, _)| served_owner == owner) {
                 return Err(NsupdateError::NxDomain(format!(
-                    "owner '{name}' does not exist"
+                    "owner '{owner}' does not exist"
                 )));
             }
         }
         Prerequisite::NameAbsent { .. } => {
-            if served.keys().any(|(owner, _)| owner == name) {
-                return Err(NsupdateError::YxDomain(format!("owner '{name}' exists")));
+            if served.keys().any(|(served_owner, _)| served_owner == owner) {
+                return Err(NsupdateError::YxDomain(format!("owner '{owner}' exists")));
             }
         }
         Prerequisite::RecordSetExists {
             record_type: rtype, ..
         } => {
-            if !served.contains_key(&(name.clone(), *rtype)) {
+            if !served.contains_key(&(owner.clone(), *rtype)) {
                 return Err(NsupdateError::NxRrset(format!(
-                    "no {rtype} records at {name}"
+                    "no {rtype} records at {owner}"
                 )));
             }
         }
         Prerequisite::RecordSetAbsent {
             record_type: rtype, ..
         } => {
-            if served.contains_key(&(name.clone(), *rtype)) {
+            if served.contains_key(&(owner.clone(), *rtype)) {
                 return Err(NsupdateError::YxRrset(format!(
-                    "{rtype} records at {name} exist"
+                    "{rtype} records at {owner} exist"
                 )));
             }
         }
@@ -116,7 +116,7 @@ pub(crate) fn evaluate_prerequisite(
             ..
         } => {
             wanted
-                .entry((name.clone(), *rtype))
+                .entry((owner.clone(), *rtype))
                 .or_default()
                 .insert(rdata.clone());
         }
@@ -135,7 +135,7 @@ pub(crate) fn evaluate_record_set_prerequisites(
         if served.get(key) != Some(values) {
             return Err(NsupdateError::NxRrset(format!(
                 "{} records at {} are not the ones the prerequisite names",
-                key.1, key.0,
+                key.1, key.0
             )));
         }
     }
@@ -151,14 +151,14 @@ fn zone_record_sets(
     derived: &[DnssecRecord],
 ) -> Result<RecordSets, ServiceError> {
     let mut sets = RecordSets::new();
-    let mut insert = |name: OwnerName, rtype: Rtype, rdata: Rdata| {
+    let mut insert = |owner: OwnerName, rtype: Rtype, rdata: Rdata| {
         let rdata = rdata.to_canonical(rtype).map_err(|error| {
             ServiceError::internal_with_source(
                 "failed to decode stored prerequisite content",
                 error,
             )
         })?;
-        sets.entry((name, rtype)).or_default().insert(rdata);
+        sets.entry((owner, rtype)).or_default().insert(rdata);
 
         Ok::<(), ServiceError>(())
     };

@@ -58,23 +58,26 @@ async fn escaped_zone_names_round_trip_through_management() {
 
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
-        let renamed = format!("renamed-{simple_zone_name}");
+        let renamed_zone_name = format!("renamed-{simple_zone_name}");
 
         let (status, body) = app
             .send_request(
                 Method::PUT,
                 &zone_path(&simple_zone_name),
-                Some(json!({ "name": renamed })),
+                Some(json!({ "name": renamed_zone_name })),
             )
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
-        let renamed_canonical = body["zone"]["name"].as_str().unwrap();
+        let renamed_canonical_zone_name = body["zone"]["name"].as_str().unwrap();
 
-        assert_eq!(renamed_canonical, format!("renamed-{canonical_zone_name}"));
+        assert_eq!(
+            renamed_canonical_zone_name,
+            format!("renamed-{canonical_zone_name}")
+        );
 
         let (status, body) = app
-            .send_request(Method::GET, &zone_path(renamed_canonical), None)
+            .send_request(Method::GET, &zone_path(renamed_canonical_zone_name), None)
             .await;
 
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -90,14 +93,14 @@ async fn zone_rejects_escaped_wildcard_names_atomically() {
     let zone_name = original["name"].as_str().unwrap();
 
     for label in ["*", r"\*", r"\042"] {
-        let wildcard = format!("{label}.{zone_name}");
+        let wildcard_zone_name = format!("{label}.{zone_name}");
 
         let (status, body) = app
             .send_request(
                 Method::POST,
                 "/zones",
                 Some(json!({
-                    "name": wildcard, "mname": "ns.example", "rname": "admin@example"
+                    "name": wildcard_zone_name, "mname": "ns.example", "rname": "admin@example"
                 })),
             )
             .await;
@@ -109,7 +112,7 @@ async fn zone_rejects_escaped_wildcard_names_atomically() {
             .send_request(
                 Method::PUT,
                 &zone_path(zone_name),
-                Some(json!({ "name": wildcard })),
+                Some(json!({ "name": wildcard_zone_name })),
             )
             .await;
 
@@ -344,7 +347,7 @@ async fn zone_serial_defaults_to_one_and_rejects_explicit_update() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["zone"]["serial"].as_i64().unwrap(), 1);
+    assert_eq!(body["zone"]["serial"], 1);
 
     let request = json!({
         "name": "www", "type": "A", "value": "192.0.2.70",

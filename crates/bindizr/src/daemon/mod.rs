@@ -157,7 +157,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     let config_path = config::resolve_config_path(config_file);
     let config = Config::load(&config_path)?;
 
-    Logger::init(&config.logging);
+    Logger::init(config.logging);
 
     // Reported after the logger exists, so it carries the configured format.
     log::info!("Configuration loaded from {config_path}");

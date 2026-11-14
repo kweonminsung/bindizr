@@ -21,7 +21,7 @@ use crate::error::ServiceError;
 /// save is logged; the transfer already went out.
 pub async fn save_ok(
     cx: &Context,
-    client: IpAddr,
+    client_ip: IpAddr,
     zone_id: ZoneId,
     kind: TransferKind,
     transport: TransferTransport,
@@ -36,7 +36,7 @@ pub async fn save_ok(
     let saved = bindizr_db::transfer_log::create(
         cx.db(),
         TransferLog {
-            client_addr: client.to_string(),
+            client_addr: client_ip.to_string(),
             zone_id,
             kind,
             result: TransferResult::Ok,
@@ -57,7 +57,7 @@ pub async fn save_ok(
 /// Save a refusal for the zone `zone_name` names.
 pub async fn save_refused(
     cx: &Context,
-    client: IpAddr,
+    client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
@@ -65,7 +65,7 @@ pub async fn save_refused(
 ) {
     save_unserved(
         cx,
-        client,
+        client_ip,
         zone_name,
         kind,
         transport,
@@ -79,7 +79,7 @@ pub async fn save_refused(
 /// then broke off.
 pub async fn save_failed(
     cx: &Context,
-    client: IpAddr,
+    client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
@@ -87,7 +87,7 @@ pub async fn save_failed(
 ) {
     save_unserved(
         cx,
-        client,
+        client_ip,
         zone_name,
         kind,
         transport,
@@ -101,7 +101,7 @@ pub async fn save_failed(
 /// Bindizr does not have leaves no row, and a failure to save is logged.
 async fn save_unserved(
     cx: &Context,
-    client: IpAddr,
+    client_ip: IpAddr,
     zone_name: &str,
     kind: TransferKind,
     transport: TransferTransport,
@@ -123,7 +123,7 @@ async fn save_unserved(
     let saved = bindizr_db::transfer_log::create(
         cx.db(),
         TransferLog {
-            client_addr: client.to_string(),
+            client_addr: client_ip.to_string(),
             zone_id: zone.id,
             kind,
             result,
@@ -141,20 +141,20 @@ async fn save_unserved(
     }
 }
 
-/// List the transfers `filter` selects among those answered to any of `clients`,
+/// List the transfers `filter` selects among those answered to any of `client_ips`,
 /// newest first.
 pub(crate) async fn list_by_clients(
     cx: &Context,
-    clients: &[IpAddr],
+    client_ips: &[IpAddr],
     filter: &TransferLogFilter,
 ) -> Result<Vec<TransferLogWithZone>, ServiceError> {
     let mut logs = Vec::new();
 
-    for client in clients {
+    for client_ip in client_ips {
         logs.extend(
             bindizr_db::transfer_log::list_by_client_addr_and_filter_with_zone(
                 cx.db(),
-                &client.to_string(),
+                &client_ip.to_string(),
                 filter,
             )
             .await?,
@@ -171,18 +171,18 @@ pub(crate) async fn list_by_clients(
     Ok(logs)
 }
 
-/// List the latest transfer of each zone answered to each of `clients`.
+/// List the latest transfer of each zone answered to each of `client_ips`.
 pub(crate) async fn list_latest_by_clients(
     cx: &Context,
-    clients: &[IpAddr],
+    client_ips: &[IpAddr],
 ) -> Result<Vec<TransferLogWithZone>, ServiceError> {
     let mut logs = Vec::new();
 
-    for client in clients {
+    for client_ip in client_ips {
         logs.extend(
             bindizr_db::transfer_log::list_by_client_addr_with_zone_latest_per_zone(
                 cx.db(),
-                &client.to_string(),
+                &client_ip.to_string(),
             )
             .await?,
         );
@@ -191,10 +191,10 @@ pub(crate) async fn list_latest_by_clients(
     Ok(logs)
 }
 
-/// Find the latest transfer of `zone_name` answered to any of `clients`.
+/// Find the latest transfer of `zone_name` answered to any of `client_ips`.
 pub(crate) async fn find_by_clients_and_zone_name(
     cx: &Context,
-    clients: &[IpAddr],
+    client_ips: &[IpAddr],
     zone_name: &ZoneName,
 ) -> Result<Option<TransferLogWithZone>, ServiceError> {
     let filter = TransferLogFilter {
@@ -203,7 +203,7 @@ pub(crate) async fn find_by_clients_and_zone_name(
         ..Default::default()
     };
 
-    Ok(list_by_clients(cx, clients, &filter)
+    Ok(list_by_clients(cx, client_ips, &filter)
         .await?
         .into_iter()
         .next())

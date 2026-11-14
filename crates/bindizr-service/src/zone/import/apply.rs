@@ -162,9 +162,9 @@ pub(crate) async fn apply_import(
                     continue;
                 }
             };
-            let stored_name =
+            let owner =
                 match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
-                    Ok(stored_name) => stored_name,
+                    Ok(owner) => owner,
                     Err(error) => {
                         errors.push(format!("{}: {error}", record.owner_fqdn));
                         continue;
@@ -172,7 +172,7 @@ pub(crate) async fn apply_import(
                 };
 
             let data = RecordData {
-                name: stored_name,
+                name: owner,
                 priority: record.record_type.stored_priority(record.priority),
                 record_type: record.record_type,
                 value,
@@ -192,7 +192,7 @@ pub(crate) async fn apply_import(
                     errors.push(format!(
                         "{}: {} records with conflicting TTLs {kept_ttl} and {this_ttl}; \
                          records sharing a name and type share one TTL",
-                        record.owner_fqdn, record.record_type,
+                        record.owner_fqdn, record.record_type
                     ));
                 }
 
@@ -217,17 +217,17 @@ pub(crate) async fn apply_import(
         } else {
             match mode {
                 ImportMode::Append => {
-                    let mut names: Vec<OwnerName> = desired
+                    let mut owners: Vec<OwnerName> = desired
                         .iter()
                         .map(|desired_record| desired_record.data.name.clone())
                         .collect();
-                    names.sort();
-                    names.dedup();
+                    owners.sort();
+                    owners.dedup();
 
                     bindizr_db::record::list_by_names_tx(
                         &mut tx,
                         zone.id,
-                        &names,
+                        &owners,
                         LockLevel::Exclusive,
                     )
                     .await
@@ -420,7 +420,7 @@ pub(crate) async fn apply_import(
         response.summary.updated,
         response.summary.unchanged,
         response.summary.skipped,
-        response.errors.len(),
+        response.errors.len()
     );
 
     let started = Instant::now();
@@ -459,7 +459,7 @@ pub(crate) async fn apply_import(
         timings.validate_ms,
         timings.db_write_ms,
         timings.serial_ms,
-        time::elapsed_ms(total_started),
+        time::elapsed_ms(total_started)
     );
 
     Ok(response)

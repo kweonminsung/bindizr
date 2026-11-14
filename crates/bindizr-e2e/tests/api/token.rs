@@ -20,10 +20,10 @@ async fn tokens_support_create_list_and_delete() {
     // The zone-name prefix keeps token and role names unique in compose mode.
     let scoped_name = app.zone_name("http-scoped");
     let admin_name = app.zone_name("http-admin");
-    let zone_request = |name: &str| {
+    let zone_request = |zone_name: &str| {
         json!({
-            "name": name,
-            "mname": format!("ns1.{name}"),
+            "name": zone_name,
+            "mname": format!("ns1.{zone_name}"),
             "rname": "admin@example.com",
             "default_ttl": 3600
         })

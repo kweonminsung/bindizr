@@ -186,7 +186,7 @@ impl AxfrClient {
                 }),
             };
 
-            result.map(|(records, timeout)| (records, timeout, stream))
+            result.map(|(records, idle_timeout)| (records, idle_timeout, stream))
         };
 
         match time::timeout_at(deadline, transfer).await {

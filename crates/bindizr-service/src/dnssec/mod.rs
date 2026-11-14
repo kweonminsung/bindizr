@@ -101,7 +101,7 @@ async fn resign_zone_tx(
     Ok(Some(new_serial))
 }
 
-/// Read the signing policy unlocked, or `None` for unsigned zones.
+/// Find the signing policy unlocked, or `None` for unsigned zones.
 /// The FK prevents deletion while in use; editable fields need no lock.
 async fn find_zone_policy_tx(
     tx: &mut Transaction<'_>,

@@ -8,7 +8,7 @@ use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
-use bindizr_service::types::UpdateZoneRequest;
+use bindizr_service::types::{CreateSecondaryRequest, CreateZoneRequest, UpdateZoneRequest};
 use bindizr_service::{Context, secondary};
 use serde_json::{Value, json};
 use tokio::net::UdpSocket;
@@ -16,6 +16,7 @@ use tokio::sync::watch;
 use tokio::{task, time};
 
 use super::*;
+use crate::socket;
 
 /// Verify that invalid command fields are rejected instead of silently defaulting.
 #[test]
@@ -195,11 +196,11 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     ));
 
     let secondary_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let secondary_request = serde_json::from_value(json!({
-        "name": "ack-gate",
-        "address": secondary_socket.local_addr().unwrap().to_string()
-    }))
-    .unwrap();
+    let secondary_request = CreateSecondaryRequest {
+        name: "ack-gate".to_string(),
+        address: secondary_socket.local_addr().unwrap().to_string(),
+        notify_key_name: None,
+    };
 
     secondary::create(&cx, &Caller::socket(), &secondary_request)
         .await
@@ -216,12 +217,20 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     let mut client = UnixStream::connect(&path).await.unwrap();
     let mut idle_client = UnixStream::connect(&path).await.unwrap();
 
-    let request = serde_json::from_value(json!({
-        "name": "example.com",
-        "mname": "ns1.example.com",
-        "rname": "admin@example.com"
-    }))
-    .unwrap();
+    let request = CreateZoneRequest {
+        name: "example.com".to_string(),
+        mname: "ns1.example.com".to_string(),
+        rname: "admin@example.com".to_string(),
+        default_ttl: None,
+        serial: None,
+        refresh: None,
+        retry: None,
+        expire: None,
+        minimum_ttl: None,
+        description: None,
+        apex_ns: true,
+        dry_run: false,
+    };
     let command = serde_json::to_string(&DaemonCommand::CreateZone(request)).unwrap();
 
     client

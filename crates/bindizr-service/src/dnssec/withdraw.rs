@@ -21,7 +21,7 @@ pub async fn withdraw(
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -89,7 +89,7 @@ pub async fn cancel_withdrawal(
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,

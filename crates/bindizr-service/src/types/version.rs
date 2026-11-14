@@ -47,7 +47,7 @@ pub struct ZoneVersionResponse {
 impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
     type Error = ServiceError;
 
-    /// Render stored version metadata; an invalid SOA mailbox is a server fault.
+    /// Build version metadata from a stored version; an invalid SOA mailbox is a server fault.
     fn try_from(version: &ZoneVersion) -> Result<Self, Self::Error> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
@@ -90,7 +90,7 @@ pub struct VersionRecordResponse {
 }
 
 impl VersionRecordResponse {
-    /// Render a version record with an absolute owner name.
+    /// Build a version record with an absolute owner name.
     pub(crate) fn from_record(record: &RecordData, zone_name: &ZoneName) -> Self {
         Self {
             name: record.name.to_fqdn(zone_name),

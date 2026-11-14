@@ -15,7 +15,7 @@ pub(crate) async fn create_many_tx(
     records: &[Record],
 ) -> Result<Vec<Record>, DatabaseError> {
     // Statement count drives bulk-insert time, but the gain flattens by ~500
-    // rows; 8 binds per row leaves room under SQLite's 32766 limit.
+    // rows; 8 binds per row leaves room under SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 500;
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -216,7 +216,7 @@ pub(crate) async fn list_by_names_tx(
     _lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
     // Load only same-name conflicts using idx_records_zone_name;
-    // chunk the IN list below SQLite's bind-variable limit.
+    // chunk the IN list below SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 400;
 
     let mut records = Vec::new();
@@ -479,7 +479,7 @@ pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
-    // One bind per id; keep the count under SQLite's conservative limit.
+    // One bind per id; keep the count under SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 900;
 
     for chunk in ids.chunks(CHUNK) {

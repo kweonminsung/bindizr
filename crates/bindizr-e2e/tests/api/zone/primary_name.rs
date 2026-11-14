@@ -50,7 +50,7 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
             .unwrap();
         let query = question.finish();
         let response = dns::exchange_tcp(app.dns_port(), &query).unwrap();
-        let response = Message::from_octets(response.as_slice()).unwrap();
+        let response = Message::from_octets(response).unwrap();
         let soa = response
             .answer()
             .unwrap()
@@ -165,6 +165,7 @@ async fn root_primary_name_preserves_zone_policy_and_import_creation() {
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
     let zone_name = app.zone_name("root-import.example");
     let content = "@ IN SOA . admin.example.net. 1 3600 3600 604800 60\n@ IN NS .\n";
 

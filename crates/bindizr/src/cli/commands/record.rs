@@ -305,13 +305,13 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response = client::send_command::<WriteRecordResponse>(
                 DaemonCommand::CreateRecord(CreateRecordRequest {
-                    dry_run,
                     name,
                     record_type,
                     value: to_record_value_request(value),
-                    zone_name: zone,
                     ttl,
                     priority,
+                    zone_name: zone,
+                    dry_run,
                 }),
             )
             .await?;
@@ -406,9 +406,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     min_priority,
                     max_priority,
                     search,
-                    signed: signed.then_some(true),
                     sort,
                     order,
+                    signed: signed.then_some(true),
                     limit,
                     offset,
                 }),
@@ -489,12 +489,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 client::send_command::<WriteRecordResponse>(DaemonCommand::UpdateRecord {
                     id: RecordId::from(id),
                     request: UpdateRecordRequest {
-                        dry_run,
                         name: new_name,
                         record_type,
                         value: (!value.is_empty()).then(|| to_record_value_request(value)),
                         ttl,
                         priority,
+                        dry_run,
                     },
                 })
                 .await?;
@@ -519,12 +519,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     zone_name: zone,
                     record_name: name,
                     request: UpdateRecordRequest {
-                        dry_run,
                         name: new_name,
                         record_type,
                         value: (!value.is_empty()).then(|| to_record_value_request(value)),
                         ttl,
                         priority,
+                        dry_run,
                     },
                 })
                 .await?;

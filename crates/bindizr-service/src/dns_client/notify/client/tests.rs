@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io;
 use std::str::FromStr;
 
-use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode};
+use bindizr_core::dns::message::{Keepalive, ParsedQuery};
 use bindizr_core::dns::query;
 use thiserror::Error;
 use tokio::time;
@@ -122,7 +122,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
     let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
     let old_ack = query
-        .build_signed_error_response(Rcode::NOERROR.into(), None, None)
+        .build_signed_error_response(OptRcode::NOERROR, None, None)
         .unwrap();
 
     let intruder = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -161,7 +161,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     socket
         .send_to(
             &next
-                .build_signed_error_response(Rcode::NOERROR.into(), None, None)
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
                 .unwrap(),
             peer,
         )
@@ -175,7 +175,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
 /// Verify that an oversized matching ACK, including a truncated prefix, cannot end a
 /// transaction.
 #[tokio::test]
-async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
+async fn send_ignores_oversized_ack_until_a_bounded_ack_arrives() {
     for size in [513, 4096] {
         let client = NotifyClient::default();
 
@@ -199,7 +199,7 @@ async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
         let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
         let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
         let ack = query
-            .build_signed_error_response(Rcode::NOERROR.into(), None, None)
+            .build_signed_error_response(OptRcode::NOERROR, None, None)
             .unwrap();
         let mut oversized = ack.clone();
         oversized.resize(size, 0);

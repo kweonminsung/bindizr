@@ -1,7 +1,7 @@
 //! Read and write BIND `K*.key` / `K*.private` files, preserving rollover timings.
 
-use base64::Engine;
 use base64::engine::general_purpose;
+use base64::{DecodeError, Engine};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use domain::base::iana::SecurityAlgorithm;
 use domain::crypto::sign::{KeyPair, SecretKeyBytes};
@@ -40,7 +40,7 @@ pub enum ImportKeyError {
     #[error("unsupported DNSKEY algorithm '{value}'")]
     Algorithm { value: String },
     #[error("DNSKEY public key is not base64: {0}")]
-    PublicKeyNotBase64(#[source] base64::DecodeError),
+    PublicKeyNotBase64(#[source] DecodeError),
     #[error("a 256-flag key is a ZSK, which a single-CSK layout does not use")]
     ZskInCskLayout,
     #[error("unsupported DNSKEY flags {flags} (expected 256 or 257)")]
@@ -216,7 +216,7 @@ impl DnssecKey {
         let algorithm = algorithm
             .parse::<i32>()
             .ok()
-            .and_then(DnssecAlgorithm::from_i32)
+            .and_then(|value| DnssecAlgorithm::try_from(value).ok())
             .ok_or_else(|| ImportKeyError::Algorithm {
                 value: algorithm.to_string(),
             })?;

@@ -74,7 +74,7 @@ async fn save_at(cx: &Context, now: DateTime<Utc>, transfers: &[(ZoneId, i64)]) 
     }
 }
 
-/// The zone and age in days of each transfer answered to the fixture client, newest first.
+/// List the zone and age in days of each transfer answered to the fixture client, newest first.
 /// Ages round to the nearest day, since a backend may store whole seconds.
 async fn list_ages(
     cx: &Context,

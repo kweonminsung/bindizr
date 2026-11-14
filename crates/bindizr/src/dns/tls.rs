@@ -71,6 +71,7 @@ pub(crate) async fn run_tls_server(
                 Err(error) => break Err(error.into()),
             },
         };
+
         let accepted = tokio::select! {
             biased;
             () = &mut stop => break Ok(()),

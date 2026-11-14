@@ -202,9 +202,11 @@ impl ResponseWriter {
         use tokio::io::AsyncWriteExt as _;
 
         let mut writer = self.writer.lock().await;
+
         if *self.failure.borrow() {
             return Ok(());
         }
+
         writer.shutdown().await
     }
 }

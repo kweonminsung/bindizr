@@ -4,11 +4,10 @@ use bindizr_core::dns::{message, query};
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use bindizr_service::authorization::Caller;
-use bindizr_service::types::RecordFilter;
+use bindizr_service::types::{CreateSecondaryRequest, CreateZoneRequest, RecordFilter};
 use bindizr_service::{Context, record, secondary, zone};
 use rustls::server::ResolvesServerCertUsingSni;
 use rustls::{ServerConfig, version};
-use serde_json::json;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
@@ -52,18 +51,28 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         let cx = context().await;
 
         let caller = Caller::socket();
-        let request = serde_json::from_str(
-            r#"{"name":"example.com","mname":"ns1.example.com","rname":"admin@example.com"}"#,
-        )
-        .unwrap();
+        let request = CreateZoneRequest {
+            name: "example.com".to_string(),
+            mname: "ns1.example.com".to_string(),
+            rname: "admin@example.com".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: true,
+            dry_run: false,
+        };
 
         zone::create(&cx, &caller, &request).await.unwrap();
         let secondary_socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let request = serde_json::from_value(json!({
-            "name": "ack-gate",
-            "address": secondary_socket.local_addr().unwrap().to_string()
-        }))
-        .unwrap();
+        let request = CreateSecondaryRequest {
+            name: "ack-gate".to_string(),
+            address: secondary_socket.local_addr().unwrap().to_string(),
+            notify_key_name: None,
+        };
 
         secondary::create(&cx, &caller, &request).await.unwrap();
 

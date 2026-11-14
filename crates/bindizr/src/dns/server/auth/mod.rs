@@ -52,7 +52,8 @@ impl TransferRefusal {
         }
     }
 
-    /// Identify authentication or backend processing failures for transfer metrics.
+    /// Return whether this is an authentication or backend processing failure for
+    /// transfer metrics.
     pub(crate) fn is_failure(&self) -> bool {
         match self {
             Self::Dns { rcode, .. } => *rcode == OptRcode::SERVFAIL,

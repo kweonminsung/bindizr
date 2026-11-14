@@ -3,6 +3,10 @@
 
 use bindizr_core::model::role_grant::Action;
 
+/// Use `#` for LIKE escaping so stored backslashes remain data (RFC 1035, Section 5.1).
+/// It needs no SQL-literal escaping on any backend.
+const LIKE_ESCAPE: char = '#';
+
 /// Concatenate strings for the backends that spell it `||`.
 pub(crate) fn concat_pipes(parts: &[&str]) -> String {
     parts.join(" || ")
@@ -12,10 +16,6 @@ pub(crate) fn concat_pipes(parts: &[&str]) -> String {
 pub(crate) fn concat_fn(parts: &[&str]) -> String {
     format!("CONCAT({})", parts.join(", "))
 }
-
-/// Use `#` for LIKE escaping so stored backslashes remain data (RFC 1035, Section 5.1).
-/// It needs no SQL-literal escaping on any backend.
-const LIKE_ESCAPE: char = '#';
 
 /// Escape a stored name for use as a `LIKE` pattern: the escape character
 /// first, so the ones it adds are not escaped again.

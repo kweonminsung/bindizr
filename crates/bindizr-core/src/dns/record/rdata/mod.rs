@@ -77,7 +77,7 @@ impl Rdata {
         Ok(Self(bytes))
     }
 
-    /// Borrow the wire-format record data bytes.
+    /// Return the wire-format record data bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

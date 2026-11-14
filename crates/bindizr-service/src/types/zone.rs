@@ -7,7 +7,7 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::openapi::RefOr;
-use utoipa::openapi::schema::Schema;
+use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, SchemaType, Type};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::types::secondary::TransferResponse;
@@ -22,7 +22,7 @@ pub enum ZoneView {
 }
 
 impl ZoneView {
-    /// The view a `signed` flag asks for.
+    /// Return the view a `signed` flag asks for.
     pub fn from_signed(signed: bool) -> Self {
         if signed {
             Self::Signed
@@ -50,7 +50,7 @@ pub enum NotifySerial {
 }
 
 impl NotifySerial {
-    /// The bump a `bump_serial` flag asks for.
+    /// Return the bump a `bump_serial` flag asks for.
     pub fn from_bump_serial(bump_serial: bool) -> Self {
         if bump_serial {
             Self::Bump
@@ -160,8 +160,6 @@ pub struct CreateZoneRequest {
 
 /// Describe the nullable nonnegative SOA minimum accepted by zone writes.
 fn build_minimum_ttl_schema() -> RefOr<Schema> {
-    use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, SchemaType, Type};
-
     ObjectBuilder::new()
         .schema_type(SchemaType::from_iter([Type::Integer, Type::Null]))
         .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))

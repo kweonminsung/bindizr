@@ -73,13 +73,13 @@ pub struct RecordKey {
 impl RecordKey {
     /// Build the identity of a record with these fields, canonicalizing its value once.
     pub fn new(
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: RecordType,
         value: &str,
         priority: Option<i32>,
     ) -> Self {
         Self {
-            name: name.clone(),
+            name: owner.clone(),
             record_type,
             rdata: record_type.canonical_value(value, priority).into_owned(),
         }
@@ -92,7 +92,8 @@ impl Record {
         Ok(EncodedRdata::from_columns(self.record_type, &self.value, self.priority)?.rdata)
     }
 
-    /// Match an RFC 2136, Section 2.5.2 delete by type, canonical value, and priority.
+    /// Return whether an RFC 2136, Section 2.5.2 delete by type, canonical value, and
+    /// priority selects this record.
     /// MX and SRV priorities narrow separately because they occupy their own column.
     pub fn matches(
         &self,
@@ -121,7 +122,7 @@ impl Record {
             .values_equal(&self.value, self.priority, value, priority)
     }
 
-    /// Test UPDATE replacement by singleton type or WKS address/protocol.
+    /// Return whether an UPDATE replaces this record by singleton type or WKS address/protocol.
     pub fn is_replaced_by(&self, value: &str, priority: Option<i32>) -> bool {
         if self.has_rdata(value, priority) {
             return false;
@@ -430,8 +431,8 @@ impl RecordType {
             return match TxtRecordValue::from_presentation(value)
                 .and_then(|rdata| rdata.to_content())
             {
-                Some(TxtContent::Single(value)) => to_display_text(&value),
-                Some(TxtContent::Segments(segments)) => to_display_text(&segments.join("")),
+                Some(TxtContent::Single(value)) => display_text(&value),
+                Some(TxtContent::Segments(segments)) => display_text(&segments.join("")),
                 None => value.to_string(),
             };
         }
@@ -507,8 +508,7 @@ impl FromStr for RecordType {
             "SSHFP" => Ok(Self::Sshfp),
             "TLSA" => Ok(Self::Tlsa),
             "WKS" => Ok(Self::Wks),
-            _ => value
-                .parse::<Rtype>()
+            _ => Rtype::from_str(value)
                 .map_err(|_| ParseRecordTypeError::Unknown {
                     value: value.to_string(),
                 })
@@ -522,7 +522,7 @@ impl TryFrom<String> for RecordType {
 
     /// Validate and convert the stored value into a record type.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -619,7 +619,7 @@ impl utoipa::ToSchema for RecordType {}
 
 /// Render TXT text for the display column: control characters as `\DDD`, since a
 /// text column cannot hold a NUL, and everything else as typed, for search.
-fn to_display_text(text: &str) -> String {
+fn display_text(text: &str) -> String {
     if !text.chars().any(|ch| ch.is_ascii_control()) {
         return text.to_string();
     }

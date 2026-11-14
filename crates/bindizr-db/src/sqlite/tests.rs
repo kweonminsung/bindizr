@@ -34,7 +34,7 @@ const NAMES: [&str; 9] = [
 
 const TYPES: [RecordType; 2] = [RecordType::A, RecordType::Txt];
 
-/// Two zones with a record of each type at every name, and an RRSIG per name.
+/// Build two zones with a record of each type at every name, and an RRSIG per name.
 async fn fixture() -> Pool<Sqlite> {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
@@ -93,12 +93,12 @@ async fn fixture() -> Pool<Sqlite> {
     pool
 }
 
-/// Build a grant of `actions` in `zone` (all zones when `None`).
-fn grant(zone: Option<i32>, actions: &[Action], pattern: &str, types: &str) -> RoleGrant {
+/// Build a grant of `actions` in `zone_id` (all zones when `None`).
+fn grant(zone_id: Option<i32>, actions: &[Action], pattern: &str, types: &str) -> RoleGrant {
     RoleGrant {
         id: RoleGrantId::UNWRITTEN,
         role_id: RoleId::UNWRITTEN,
-        zone_scope: RoleZoneScope::from(zone.map(ZoneId::from)),
+        zone_scope: RoleZoneScope::from(zone_id.map(ZoneId::from)),
         actions: actions.iter().copied().collect(),
         record_name_pattern: pattern.to_string(),
         record_types: types.to_string(),
@@ -136,7 +136,7 @@ async fn create_role(pool: &Pool<Sqlite>, index: usize, grants: &[RoleGrant]) ->
     RoleId::from(role_id)
 }
 
-/// Roles covering each pattern shape, type lists, a union, and no read.
+/// Return roles covering each pattern shape, type lists, a union, and no read.
 fn roles() -> Vec<Vec<RoleGrant>> {
     let read = &[Action::RecordRead][..];
     vec![
@@ -305,7 +305,7 @@ async fn create_tx_rejects_a_rowid_past_the_32_bit_range() {
         .unwrap();
     let mut tx = pool.begin().await.unwrap();
 
-    let error = super::role::create_tx(
+    let result = super::role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,
@@ -314,11 +314,10 @@ async fn create_tx_rejects_a_rowid_past_the_32_bit_range() {
             created_at: Utc::now(),
         },
     )
-    .await
-    .unwrap_err();
+    .await;
 
     assert!(
-        matches!(error, DatabaseError::IdOutOfRange { id } if id == i64::from(i32::MAX) + 1),
-        "{error}"
+        matches!(result, Err(DatabaseError::IdOutOfRange { id }) if id == i64::from(i32::MAX) + 1),
+        "{result:?}"
     );
 }

@@ -83,24 +83,24 @@ pub async fn apply_changes(
 
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.
-            let mut names: Vec<OwnerName> = operations
+            let mut owners: Vec<OwnerName> = operations
                 .adds
                 .iter()
                 .chain(operations.deletes.iter())
                 .map(|operation| operation.name.clone())
                 .collect();
-            names.sort();
-            names.dedup();
+            owners.sort();
+            owners.dedup();
 
-            let records_at_names = bindizr_db::record::list_by_names_tx(
+            let records_at_owners = bindizr_db::record::list_by_names_tx(
                 &mut tx,
                 zone.id,
-                &names,
+                &owners,
                 LockLevel::Exclusive,
             )
             .await?;
 
-            let change_set = ZoneChangeSet::compute(&zone, operations, &records_at_names)?;
+            let change_set = ZoneChangeSet::compute(&zone, operations, &records_at_owners)?;
 
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                 continue;
@@ -150,7 +150,7 @@ pub async fn apply_changes(
         "event=external_dns_apply zones={} ops={requested_operations} added={added} deleted={deleted} noop={} ms={:.1}",
         changed_zones.join(","),
         changed_zones.is_empty(),
-        time::elapsed_ms(started),
+        time::elapsed_ms(started)
     );
 
     Ok(ApplyExternalDnsChangesResponse {

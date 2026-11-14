@@ -213,11 +213,12 @@ pub(crate) async fn apply_record_operation_tx(
 
             Ok(true)
         }
-        RecordOperation::DeleteRecordSet { name, record_type } => {
-            delete_matching_tx(tx, zone, name, *record_type, None, None, new_serial).await
-        }
+        RecordOperation::DeleteRecordSet {
+            name: owner,
+            record_type,
+        } => delete_matching_tx(tx, zone, owner, *record_type, None, None, new_serial).await,
         RecordOperation::DeleteRecord {
-            name,
+            name: owner,
             record_type,
             value,
             priority,
@@ -225,7 +226,7 @@ pub(crate) async fn apply_record_operation_tx(
             delete_matching_tx(
                 tx,
                 zone,
-                name,
+                owner,
                 Some(*record_type),
                 Some(value.as_str()),
                 *priority,

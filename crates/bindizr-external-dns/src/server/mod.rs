@@ -231,7 +231,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
                 changes.create.len(),
                 changes.update_new.len(),
                 changes.delete.len(),
-                started.elapsed().as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64() * 1000.0
             );
             StatusCode::NO_CONTENT.into_response()
         }

@@ -25,9 +25,9 @@ pub(crate) async fn get_record(
 /// List records matching the request filters.
 pub(crate) async fn list_records(
     cx: &Context,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<RecordResponse>>, ServiceError> {
-    let response = record::list_by_filter_with_zone(cx, &Caller::socket(), &filter).await?;
+    let response = record::list_by_filter_with_zone(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Records retrieved successfully".to_string(),
         data: response,

@@ -60,19 +60,6 @@ impl DnssecAlgorithm {
         }
     }
 
-    /// Parse a supported DNSSEC algorithm number.
-    pub fn from_i32(value: i32) -> Option<Self> {
-        match value {
-            8 => Some(Self::RsaSha256),
-            10 => Some(Self::RsaSha512),
-            13 => Some(Self::EcdsaP256Sha256),
-            14 => Some(Self::EcdsaP384Sha384),
-            15 => Some(Self::Ed25519),
-            16 => Some(Self::Ed448),
-            _ => None,
-        }
-    }
-
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -129,7 +116,15 @@ impl TryFrom<i32> for DnssecAlgorithm {
 
     /// Validate and convert the stored value into a DNSSEC algorithm.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        Self::from_i32(value).ok_or(ParseDnssecKeyError::AlgorithmNumber { value })
+        match value {
+            8 => Ok(Self::RsaSha256),
+            10 => Ok(Self::RsaSha512),
+            13 => Ok(Self::EcdsaP256Sha256),
+            14 => Ok(Self::EcdsaP384Sha384),
+            15 => Ok(Self::Ed25519),
+            16 => Ok(Self::Ed448),
+            _ => Err(ParseDnssecKeyError::AlgorithmNumber { value }),
+        }
     }
 }
 
@@ -198,7 +193,7 @@ impl TryFrom<String> for DnssecKeyRole {
 
     /// Validate and convert the stored value into a DNSSEC key role.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -256,7 +251,7 @@ impl TryFrom<String> for DnssecKeyState {
 
     /// Validate and convert the stored value into a DNSSEC key state.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 

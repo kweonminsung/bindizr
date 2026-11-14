@@ -116,6 +116,16 @@ pub struct CheckSecondaryResponse {
     pub transfers: TransferSummaryResponse,
 }
 
+impl CheckSecondaryResponse {
+    /// Return whether every part of the check passed: resolved, in sync, and every
+    /// NOTIFY accepted. The transfer summary is information, not a verdict.
+    pub fn is_healthy(&self) -> bool {
+        self.resolve_error.is_none()
+            && self.catalog.is_in_sync()
+            && self.notifies.iter().all(|notify| notify.error.is_none())
+    }
+}
+
 /// One transfer Bindizr answered, refused, or failed for a secondary's address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TransferResponse {
@@ -226,14 +236,4 @@ pub struct SecondaryTransferFilter {
     /// Only transfers answered before this time (RFC 3339).
     #[schema(example = "2026-11-01T00:00:00Z")]
     pub until: Option<DateTime<Utc>>,
-}
-
-impl CheckSecondaryResponse {
-    /// Return whether every part of the check passed: resolved, in sync, and every
-    /// NOTIFY accepted. The transfer summary is information, not a verdict.
-    pub fn is_healthy(&self) -> bool {
-        self.resolve_error.is_none()
-            && self.catalog.is_in_sync()
-            && self.notifies.iter().all(|notify| notify.error.is_none())
-    }
 }

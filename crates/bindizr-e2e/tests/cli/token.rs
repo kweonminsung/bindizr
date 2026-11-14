@@ -23,6 +23,7 @@ async fn token_create_requires_an_existing_role() {
     let name = app.zone_name("roleless");
 
     let args = ["token", "create", &name, "--role", "no-such-role"];
+
     let refused = app.run_cli(&args, None).await;
     common::assert_cli_failure_contains(&args, &refused, "not found");
 }

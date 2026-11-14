@@ -162,7 +162,7 @@ pub async fn delete(
 
     log::info!(
         "event=record_delete zone={zone_name} record_id={record_id} applied={}",
-        response.applied,
+        response.applied
     );
 
     // Announce only a committed deletion, never a preview.
@@ -297,7 +297,7 @@ pub async fn delete_matching(
     log::info!(
         "event=record_delete_matching zone={zone_name} name={owner} type={record_type:?} deleted={} applied={}",
         response.deleted,
-        response.applied,
+        response.applied
     );
 
     // Announce only a committed deletion, never a preview or an empty

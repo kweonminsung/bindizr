@@ -7,25 +7,25 @@ use crate::model::record::RecordType;
 /// The pattern or type list that covers everything.
 pub const MATCH_ANY: &str = "*";
 
-/// Match a relative owner name (`@`, `www`, `a.b`, ...) against a grant
+/// Return whether a relative owner name (`@`, `www`, `a.b`, ...) matches a grant
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under
 /// it), or an exact relative name.
-pub fn matches_name(pattern: &str, name: &OwnerName) -> bool {
+pub fn matches_name(pattern: &str, owner: &OwnerName) -> bool {
     if pattern == MATCH_ANY {
         return true;
     }
 
     // Patterns are stored in presentation form, where the apex is `@`.
     if pattern == OwnerName::APEX {
-        return name.is_apex();
+        return owner.is_apex();
     }
 
     // Compared label by label so `xsub` does not read as inside `sub`.
     if let Some(suffix) = pattern.strip_prefix("*.") {
-        return name.is_same_or_under(&OwnerName::from_row(suffix));
+        return owner.is_same_or_under(&OwnerName::from_row(suffix));
     }
 
-    *name == OwnerName::from_row(pattern)
+    *owner == OwnerName::from_row(pattern)
 }
 
 /// Return whether every name `inner` matches, `outer` matches too.
@@ -54,15 +54,15 @@ pub fn matches_types(types: &str, record_type: Option<RecordType>) -> bool {
     }
 
     match record_type {
-        // A whole-name delete touches every type at the name, so a type-limited
-        // grant cannot cover it.
-        None => false,
         Some(record_type) => {
             let record_type = record_type.as_str();
             types
                 .split(',')
                 .any(|allowed_type| allowed_type == record_type)
         }
+        // A whole-name delete touches every type at the name, so a type-limited
+        // grant cannot cover it.
+        None => false,
     }
 }
 

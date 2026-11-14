@@ -8,11 +8,10 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::secondary::Secondary;
 use tokio::task::JoinSet;
 
-use crate::dns_client::probe;
 use crate::dns_client::probe::ProbeSoaError;
 use crate::error::ServiceError;
 use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse};
-use crate::{Context, secondary, transfer};
+use crate::{Context, dns_client, secondary, transfer};
 
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
@@ -77,7 +76,7 @@ pub async fn probe_secondaries(
         let address = secondary.address.to_string();
 
         let task = tasks.spawn(async move {
-            probe::probe_addresses(&zone_name, &secondary.address, timeout).await
+            dns_client::probe::probe_addresses(&zone_name, &secondary.address, timeout).await
         });
         targets.insert(task.id(), (index, address));
     }
@@ -121,7 +120,7 @@ pub async fn probe_secondary(
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
     let timeout = cx.config().dns.notify.timeout();
-    let probe = probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
+    let probe = dns_client::probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
     let status = build_secondary_status(probe.address, expected_serial, probe.serial);
     Ok(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
 }

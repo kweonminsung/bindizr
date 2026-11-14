@@ -1,14 +1,16 @@
 use bindizr_core::config::Config;
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::Db;
-use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::error::ErrorCode;
 use crate::types::{
-    CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest, RoleGrantResponse,
+    BulkRecordItem, CreateBulkRecordsRequest, CreateRecordRequest, CreateRoleGrantRequest,
+    CreateRoleRequest, CreateTokenRequest, CreateZoneRequest, RecordValue, RoleGrantResponse,
+    UpdateRecordRequest,
 };
 use crate::{Context, role, token, zone};
 
@@ -50,13 +52,20 @@ async fn credential(cx: &Context) -> String {
     zone::create(
         cx,
         &admin,
-        &serde_json::from_value(json!({
-            "name": "example.test",
-            "mname": "ns.example.test",
-            "rname": "hostmaster@example.test",
-            "apex_ns": false
-        }))
-        .unwrap(),
+        &CreateZoneRequest {
+            name: "example.test".to_string(),
+            mname: "ns.example.test".to_string(),
+            rname: "hostmaster@example.test".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: false,
+            dry_run: false,
+        },
     )
     .await
     .unwrap();
@@ -97,10 +106,15 @@ async fn record_write_actions_follow_transactional_grants() {
             let existing = create(
                 &cx,
                 &admin,
-                &serde_json::from_value(json!({
-                    "name": "existing", "type": "A", "value": "192.0.2.1", "zone_name": "example.test"
-                }))
-                .unwrap(),
+                &CreateRecordRequest {
+                    name: "existing".to_string(),
+                    record_type: "A".to_string(),
+                    value: RecordValue::Text("192.0.2.1".to_string()),
+                    ttl: None,
+                    priority: None,
+                    zone_name: "example.test".to_string(),
+                    dry_run: false,
+                },
             )
             .await
             .unwrap();
@@ -119,32 +133,38 @@ async fn record_write_actions_follow_transactional_grants() {
                 grant(&cx, &["record:delete"]).await;
             }
 
-            let zone_name = zone::normalize_name("example.test").unwrap();
+            let zone_name = ZoneName::parse("example.test").unwrap();
             let before = zone::get_by_name(&cx, &admin, &zone_name).await.unwrap();
             let count = count_all(&cx).await.unwrap();
             let created = create(
                 &cx,
                 &caller,
-                &serde_json::from_value(json!({
-                    "name": "one",
-                    "type": "A",
-                    "value": "192.0.2.2",
-                    "zone_name": "example.test",
-                    "dry_run": dry_run
-                }))
-                .unwrap(),
+                &CreateRecordRequest {
+                    name: "one".to_string(),
+                    record_type: "A".to_string(),
+                    value: RecordValue::Text("192.0.2.2".to_string()),
+                    ttl: None,
+                    priority: None,
+                    zone_name: "example.test".to_string(),
+                    dry_run,
+                },
             )
             .await
             .unwrap();
             let bulk = create_bulk(
                 &cx,
                 &caller,
-                &serde_json::from_value(json!({
-                    "zone_name": "example.test",
-                    "records": [{ "name": "two", "type": "A", "value": "192.0.2.3" }],
-                    "dry_run": dry_run
-                }))
-                .unwrap(),
+                &CreateBulkRecordsRequest {
+                    zone_name: "example.test".to_string(),
+                    records: vec![BulkRecordItem {
+                        name: "two".to_string(),
+                        record_type: "A".to_string(),
+                        value: RecordValue::Text("192.0.2.3".to_string()),
+                        ttl: None,
+                        priority: None,
+                    }],
+                    dry_run,
+                },
             )
             .await
             .unwrap();
@@ -152,10 +172,11 @@ async fn record_write_actions_follow_transactional_grants() {
                 &cx,
                 &caller,
                 existing.record.id.unwrap(),
-                &serde_json::from_value(json!({
-                    "value": "192.0.2.4", "dry_run": dry_run
-                }))
-                .unwrap(),
+                &UpdateRecordRequest {
+                    value: Some(RecordValue::Text("192.0.2.4".to_string())),
+                    dry_run,
+                    ..Default::default()
+                },
             )
             .await
             .unwrap();
@@ -164,10 +185,11 @@ async fn record_write_actions_follow_transactional_grants() {
                 &caller,
                 &zone_name,
                 "existing",
-                &serde_json::from_value(json!({
-                    "value": "192.0.2.5", "dry_run": dry_run
-                }))
-                .unwrap(),
+                &UpdateRecordRequest {
+                    value: Some(RecordValue::Text("192.0.2.5".to_string())),
+                    dry_run,
+                    ..Default::default()
+                },
             )
             .await
             .unwrap();
@@ -210,16 +232,21 @@ async fn record_writes_reject_revoked_credentials() {
         let existing = create(
             &cx,
             &admin,
-            &serde_json::from_value(json!({
-                "name": "existing", "type": "A", "value": "192.0.2.1", "zone_name": "example.test"
-            }))
-            .unwrap(),
+            &CreateRecordRequest {
+                name: "existing".to_string(),
+                record_type: "A".to_string(),
+                value: RecordValue::Text("192.0.2.1".to_string()),
+                ttl: None,
+                priority: None,
+                zone_name: "example.test".to_string(),
+                dry_run: false,
+            },
         )
         .await
         .unwrap();
         let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
         token::delete(&cx, &admin, "writer-token").await.unwrap();
-        let zone_name = zone::normalize_name("example.test").unwrap();
+        let zone_name = ZoneName::parse("example.test").unwrap();
         let serial = zone::get_by_name(&cx, &admin, &zone_name)
             .await
             .unwrap()
@@ -229,14 +256,15 @@ async fn record_writes_reject_revoked_credentials() {
         let error = create(
             &cx,
             &caller,
-            &serde_json::from_value(json!({
-                "name": "one",
-                "type": "A",
-                "value": "192.0.2.2",
-                "zone_name": "example.test",
-                "dry_run": dry_run
-            }))
-            .unwrap(),
+            &CreateRecordRequest {
+                name: "one".to_string(),
+                record_type: "A".to_string(),
+                value: RecordValue::Text("192.0.2.2".to_string()),
+                ttl: None,
+                priority: None,
+                zone_name: "example.test".to_string(),
+                dry_run,
+            },
         )
         .await
         .unwrap_err();
@@ -245,12 +273,17 @@ async fn record_writes_reject_revoked_credentials() {
         let error = create_bulk(
             &cx,
             &caller,
-            &serde_json::from_value(json!({
-                "zone_name": "example.test",
-                "records": [{ "name": "two", "type": "A", "value": "192.0.2.3" }],
-                "dry_run": dry_run
-            }))
-            .unwrap(),
+            &CreateBulkRecordsRequest {
+                zone_name: "example.test".to_string(),
+                records: vec![BulkRecordItem {
+                    name: "two".to_string(),
+                    record_type: "A".to_string(),
+                    value: RecordValue::Text("192.0.2.3".to_string()),
+                    ttl: None,
+                    priority: None,
+                }],
+                dry_run,
+            },
         )
         .await
         .unwrap_err();
@@ -260,10 +293,11 @@ async fn record_writes_reject_revoked_credentials() {
             &cx,
             &caller,
             existing.record.id.unwrap(),
-            &serde_json::from_value(json!({
-                "value": "192.0.2.4", "dry_run": dry_run
-            }))
-            .unwrap(),
+            &UpdateRecordRequest {
+                value: Some(RecordValue::Text("192.0.2.4".to_string())),
+                dry_run,
+                ..Default::default()
+            },
         )
         .await
         .unwrap_err();
@@ -274,10 +308,11 @@ async fn record_writes_reject_revoked_credentials() {
             &caller,
             &zone_name,
             "existing",
-            &serde_json::from_value(json!({
-                "value": "192.0.2.5", "dry_run": dry_run
-            }))
-            .unwrap(),
+            &UpdateRecordRequest {
+                value: Some(RecordValue::Text("192.0.2.5".to_string())),
+                dry_run,
+                ..Default::default()
+            },
         )
         .await
         .unwrap_err();

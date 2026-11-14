@@ -1,7 +1,4 @@
-use domain::base::iana::{Class, Rtype};
-
 use super::*;
-use crate::dns::message::Edns;
 use crate::model::record::RecordType;
 
 /// Verify that compressed SOA names and unsigned fields decode without crossing RDLENGTH.
@@ -121,17 +118,17 @@ fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
     for count_offset in [6, 8] {
         for owner in [&b"\xc0\x0c"[..], &b"\x03key\x00"[..]] {
             for additional_tsig in [false, true] {
-                let mut message = build_minimal_update_with_ztype(6);
-                message[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
-                append_tsig_record_with_owner(&mut message, owner);
+                let mut query_data = build_minimal_update_with_ztype(6);
+                query_data[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
+                append_tsig_record_with_owner(&mut query_data, owner);
 
                 if additional_tsig {
-                    set_arcount(&mut message, 1);
-                    append_tsig_record(&mut message);
+                    set_arcount(&mut query_data, 1);
+                    append_tsig_record(&mut query_data);
                 }
 
                 assert_eq!(
-                    UpdateRequest::parse(&message),
+                    UpdateRequest::parse(&query_data),
                     Err(ParseUpdateError::InvalidTsig)
                 );
             }
@@ -143,11 +140,11 @@ fn parse_update_request_rejects_tsig_in_prerequisite_and_update_sections() {
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
     for class in [Class::IN, Class::CH, Class::HS, Class::from_int(65280)] {
-        let mut message = build_minimal_update_with_ztype(1);
-        let class_start = message.len() - 2;
-        message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
+        let mut query_data = build_minimal_update_with_ztype(1);
+        let class_start = query_data.len() - 2;
+        query_data[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
         assert_eq!(
-            UpdateRequest::parse(&message),
+            UpdateRequest::parse(&query_data),
             Err(ParseUpdateError::InvalidZoneSection)
         );
     }
@@ -166,18 +163,18 @@ fn parse_update_request_preserves_zone_class() {
         Class::from_int(65280),
         Class::from_int(u16::MAX),
     ] {
-        let mut message = build_minimal_update_with_ztype(6);
-        let class_start = message.len() - 2;
-        message[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
-        let request = UpdateRequest::parse(&message).unwrap();
+        let mut query_data = build_minimal_update_with_ztype(6);
+        let class_start = query_data.len() - 2;
+        query_data[class_start..].copy_from_slice(&class.to_int().to_be_bytes());
+        let request = UpdateRequest::parse(&query_data).unwrap();
 
         assert_eq!(request.zone_name, "example.com.");
         assert_eq!(request.zone_class, class);
 
         for count in [0u16, 2] {
-            message[4..6].copy_from_slice(&count.to_be_bytes());
+            query_data[4..6].copy_from_slice(&count.to_be_bytes());
             assert_eq!(
-                UpdateRequest::parse(&message),
+                UpdateRequest::parse(&query_data),
                 Err(ParseUpdateError::InvalidHeader)
             );
         }
@@ -187,11 +184,11 @@ fn parse_update_request_preserves_zone_class() {
 /// Verify that a missing class field is malformed, not an unsupported zone class.
 #[test]
 fn parse_update_request_rejects_truncated_zone_class() {
-    let message = build_minimal_update_with_ztype(6);
+    let query_data = build_minimal_update_with_ztype(6);
 
     for missing in [1, 2] {
         assert_eq!(
-            UpdateRequest::parse(&message[..message.len() - missing]),
+            UpdateRequest::parse(&query_data[..query_data.len() - missing]),
             Err(ParseUpdateError::InvalidZoneSection)
         );
     }
@@ -200,23 +197,23 @@ fn parse_update_request_rejects_truncated_zone_class() {
 /// Verify that `UpdateRequest::parse` accepts opt additional without TSIG.
 #[test]
 fn parse_update_request_accepts_opt_additional_without_tsig() {
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 1);
-    append_opt_record(&mut message);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 1);
+    append_opt_record(&mut query_data);
 
-    let request = UpdateRequest::parse(&message).unwrap();
+    let request = UpdateRequest::parse(&query_data).unwrap();
     assert!(request.tsig.is_none());
 }
 
 /// Verify that `UpdateRequest::parse` accepts opt before TSIG.
 #[test]
 fn parse_update_request_accepts_opt_before_tsig() {
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 2);
-    append_opt_record(&mut message);
-    append_tsig_record(&mut message);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 2);
+    append_opt_record(&mut query_data);
+    append_tsig_record(&mut query_data);
 
-    let request = UpdateRequest::parse(&message).unwrap();
+    let request = UpdateRequest::parse(&query_data).unwrap();
     let tsig = request.tsig.unwrap();
 
     assert_eq!(tsig.name, "key.");
@@ -227,16 +224,16 @@ fn parse_update_request_accepts_opt_before_tsig() {
 /// the same spelling, which decodes to different labels.
 #[test]
 fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 1);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 1);
     append_tsig_record_with_owner(
-        &mut message,
+        &mut query_data,
         &[
             0x0c, b'K', b'e', b'y', b'.', b'W', b'i', b't', b'h', b'.', b'D', b'o', b't', 0x00,
         ],
     );
 
-    let request = UpdateRequest::parse(&message).unwrap();
+    let request = UpdateRequest::parse(&query_data).unwrap();
 
     assert_eq!(request.tsig.unwrap().name, r"Key\046With\046Dot.");
 }
@@ -245,8 +242,8 @@ fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
 /// read as two labels and land the update in a zone it is not in.
 #[test]
 fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
-    let mut message = Vec::new();
-    message.extend_from_slice(&[
+    let mut query_data = Vec::new();
+    query_data.extend_from_slice(&[
         0x12, 0x34, // ID
         0x28, 0x00, // Opcode UPDATE
         0x00, 0x01, // ZOCOUNT
@@ -257,10 +254,10 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
         b'e', // One label
         0x03, b'c', b'o', b'm', 0x00,
     ]);
-    message.extend_from_slice(&6u16.to_be_bytes());
-    message.extend_from_slice(&1u16.to_be_bytes());
+    query_data.extend_from_slice(&6u16.to_be_bytes());
+    query_data.extend_from_slice(&1u16.to_be_bytes());
 
-    let request = UpdateRequest::parse(&message).unwrap();
+    let request = UpdateRequest::parse(&query_data).unwrap();
 
     assert_eq!(request.zone_name, r"evil\046example.com.");
 }
@@ -268,13 +265,13 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
 /// Verify that `UpdateRequest::parse` rejects TSIG before other additional records.
 #[test]
 fn parse_update_request_rejects_tsig_before_other_additional_records() {
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 2);
-    append_tsig_record(&mut message);
-    append_opt_record(&mut message);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 2);
+    append_tsig_record(&mut query_data);
+    append_opt_record(&mut query_data);
 
     assert_eq!(
-        UpdateRequest::parse(&message),
+        UpdateRequest::parse(&query_data),
         Err(ParseUpdateError::InvalidTsig)
     );
 }
@@ -542,12 +539,12 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
 /// are malformed, and a version above 0 is unsupported.
 #[test]
 fn parse_update_request_reads_the_opt_record() {
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 1);
-    append_opt_record(&mut message);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 1);
+    append_opt_record(&mut query_data);
 
     assert_eq!(
-        UpdateRequest::parse(&message).unwrap().edns,
+        UpdateRequest::parse(&query_data).unwrap().edns,
         Edns::Present {
             udp_payload_size: 1232,
             version: 0,
@@ -555,26 +552,26 @@ fn parse_update_request_reads_the_opt_record() {
         }
     );
 
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 2);
-    append_opt_record(&mut message);
-    append_opt_record(&mut message);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 2);
+    append_opt_record(&mut query_data);
+    append_opt_record(&mut query_data);
 
     assert_eq!(
-        UpdateRequest::parse(&message).unwrap().edns,
+        UpdateRequest::parse(&query_data).unwrap().edns,
         Edns::Malformed
     );
 
-    let mut message = build_minimal_update_with_ztype(6);
-    set_arcount(&mut message, 1);
+    let mut query_data = build_minimal_update_with_ztype(6);
+    set_arcount(&mut query_data, 1);
 
     // The TTL's second octet is the EDNS version.
-    message.extend_from_slice(&[
+    query_data.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
     ]);
 
     assert_eq!(
-        UpdateRequest::parse(&message).unwrap().edns,
+        UpdateRequest::parse(&query_data).unwrap().edns,
         Edns::Present {
             udp_payload_size: 1232,
             version: 1,

@@ -36,7 +36,10 @@ async fn root_record_targets_round_trip() {
         let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
         assert_eq!(created["record"]["value"], ".");
-        let record_id = created["record"]["id"].as_i64().unwrap().to_string();
+        let record_id = created["record"]["id"]
+            .as_i64()
+            .expect("created record did not contain an ID")
+            .to_string();
 
         app.run_cli_success(
             &[
@@ -126,7 +129,7 @@ async fn escaped_record_targets_round_trip() {
             .find(|record| {
                 record["type"] == record_type && record["name"] == format!("{owner}.{zone_name}.")
             })
-            .unwrap();
+            .expect("CLI did not return the created record");
 
         assert_eq!(record["value"], expected);
     }
@@ -346,7 +349,10 @@ async fn record_create_builds_txt_segments_from_repeated_values() {
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
     assert_eq!(created["record"]["value"], json!(["v=spf1", "~all"]));
-    let record_id = created["record"]["id"].as_i64().unwrap().to_string();
+    let record_id = created["record"]["id"]
+        .as_i64()
+        .expect("created record did not contain an ID")
+        .to_string();
 
     // A single --value is the plain value again.
     let updated = app
@@ -482,7 +488,7 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
         .filter_map(|record| record["value"].as_str())
         .collect();
 
-    assert_eq!(values, vec!["keep me"], "{listed}");
+    assert_eq!(values, ["keep me"], "{listed}");
 }
 
 /// Verify that `record get` takes an owner name and lists every record there.
@@ -528,7 +534,7 @@ async fn record_get_by_name_lists_every_record_at_the_name() {
         .collect();
     types.sort_unstable();
 
-    assert_eq!(types, vec!["A", "TXT"], "{listed}");
+    assert_eq!(types, ["A", "TXT"], "{listed}");
 }
 
 /// Verify that `record update` takes an owner name when the name holds one record.
@@ -615,17 +621,22 @@ async fn record_update_by_name_rejects_a_name_holding_several_records() {
 #[serial_test::serial(bindizr_e2e)]
 async fn record_listing_filters_by_zone_and_type() {
     let app = TestApp::start().await;
-    let one_zone_name = app.zone_name("one.example");
-    let two_zone_name = app.zone_name("two.example");
+    let first_zone_name = app.zone_name("one.example");
+    let second_zone_name = app.zone_name("two.example");
 
-    for zone_name in [&one_zone_name, &two_zone_name] {
+    for zone_name in [&first_zone_name, &second_zone_name] {
         app.create_zone_cli(zone_name, "3600").await;
     }
 
     for (name, record_type, value, zone_name) in [
-        ("www", "A", "192.0.2.1", one_zone_name.as_str()),
-        ("alias", "CNAME", "www.one.example", one_zone_name.as_str()),
-        ("www", "A", "192.0.2.2", two_zone_name.as_str()),
+        ("www", "A", "192.0.2.1", first_zone_name.as_str()),
+        (
+            "alias",
+            "CNAME",
+            "www.one.example",
+            first_zone_name.as_str(),
+        ),
+        ("www", "A", "192.0.2.2", second_zone_name.as_str()),
     ] {
         app.run_cli_success(
             &[
@@ -650,7 +661,7 @@ async fn record_listing_filters_by_zone_and_type() {
             &[
                 "record",
                 "list",
-                &one_zone_name,
+                &first_zone_name,
                 "--type",
                 "A",
                 "--output",
@@ -663,7 +674,7 @@ async fn record_listing_filters_by_zone_and_type() {
     let records = listed["items"].as_array().expect("missing record items");
 
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["name"], format!("www.{one_zone_name}."));
+    assert_eq!(records[0]["name"], format!("www.{first_zone_name}."));
     assert_eq!(records[0]["value"], "192.0.2.1");
 }
 

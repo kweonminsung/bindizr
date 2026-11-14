@@ -15,6 +15,7 @@ use crate::types::DsState;
 #[test]
 fn missing_parent_nameservers_remains_a_typed_service_error() {
     use std::error::Error;
+
     let error = ServiceError::dnssec_ds_unverified(
         "example.com",
         ProbeDelegationError::NoParentNameservers,

@@ -244,7 +244,7 @@ pub async fn update(
         updated_zone.name,
         updated_zone.serial,
         updated_zone.id,
-        request.dry_run,
+        request.dry_run
     );
 
     // Announce the zone's new serial after its data and version have committed.

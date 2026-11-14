@@ -11,7 +11,7 @@ use super::*;
 async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     let socket = tokio::net::UdpSocket::bind((bind_ip, 0)).await.unwrap();
     let port = socket.local_addr().unwrap().port();
-    let server = Arc::new(UdpSocket::new(socket).unwrap());
+    let socket = Arc::new(UdpSocket::new(socket).unwrap());
     let mut clients = Vec::new();
 
     for (index, destination) in destinations.iter().enumerate() {
@@ -33,7 +33,7 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     for _ in destinations {
         let mut buffer = [0; 128];
 
-        let (len, target) = time::timeout(Duration::from_secs(2), server.recv_from(&mut buffer))
+        let (len, target) = time::timeout(Duration::from_secs(2), socket.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -52,10 +52,10 @@ async fn exchange(bind_ip: IpAddr, destinations: &[IpAddr]) {
     let mut replies = JoinSet::new();
 
     for (target, response) in received.into_iter().rev() {
-        let server = server.clone();
+        let socket = socket.clone();
 
         replies.spawn(async move {
-            server
+            socket
                 .send_to(&response, target, ResponseLimit::UDP)
                 .await
                 .unwrap()
@@ -130,11 +130,11 @@ async fn udp_preserves_destination_across_interleaved_requests() {
 async fn recv_from_rejects_truncated_datagram() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
-    let server = UdpSocket::new(socket).unwrap();
+    let socket = UdpSocket::new(socket).unwrap();
 
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client.send_to(&[0; 32], addr).await.unwrap();
-    let result = time::timeout(Duration::from_secs(2), server.recv_from(&mut [0; 4]))
+    let result = time::timeout(Duration::from_secs(2), socket.recv_from(&mut [0; 4]))
         .await
         .unwrap();
 
@@ -146,14 +146,14 @@ async fn recv_from_rejects_truncated_datagram() {
 async fn recv_from_rejects_missing_destination() {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
     let port = socket.local_addr().unwrap().port();
-    let server = UdpSocket { socket };
+    let socket = UdpSocket { socket };
 
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client
         .send_to(&[0; 32], (Ipv4Addr::LOCALHOST, port))
         .await
         .unwrap();
-    let result = time::timeout(Duration::from_secs(2), server.recv_from(&mut [0; 128]))
+    let result = time::timeout(Duration::from_secs(2), socket.recv_from(&mut [0; 128]))
         .await
         .unwrap();
 
@@ -164,18 +164,18 @@ async fn recv_from_rejects_missing_destination() {
 #[tokio::test]
 async fn udp_send_enforces_the_response_budget() {
     let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let server = UdpSocket::new(socket).unwrap();
+    let socket = UdpSocket::new(socket).unwrap();
 
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client
-        .connect(server.socket.local_addr().unwrap())
+        .connect(socket.socket.local_addr().unwrap())
         .await
         .unwrap();
     client.send(&[0]).await.unwrap();
-    let (_, target) = server.recv_from(&mut [0; 1]).await.unwrap();
+    let (_, target) = socket.recv_from(&mut [0; 1]).await.unwrap();
 
     assert!(matches!(
-        server.send_to(&[0; 513], target, ResponseLimit::UDP).await,
+        socket.send_to(&[0; 513], target, ResponseLimit::UDP).await,
         Err(DnsError::Protocol(EncodeMessageError::TooLarge {
             len: 513,
             max_len: 512
@@ -185,7 +185,7 @@ async fn udp_send_enforces_the_response_budget() {
         matches!(client.try_recv(&mut [0; 1024]), Err(error) if error.kind() == io::ErrorKind::WouldBlock)
     );
     assert_eq!(
-        server
+        socket
             .send_to(&[1; 512], target, ResponseLimit::UDP)
             .await
             .unwrap(),

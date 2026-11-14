@@ -58,7 +58,7 @@ impl NotifyWorker {
 }
 
 /// Spawn the background worker that drains queued NOTIFYs.
-pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWorker {
+pub fn spawn(cx: Arc<Context>, mut jobs: UnboundedReceiver<NotifyJob>) -> NotifyWorker {
     let (stop_tx, mut stop) = watch::channel(false);
 
     let task = tokio::spawn(async move {
@@ -75,9 +75,9 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
                     biased;
                     _ = stop.changed() => return None,
 
-                    job = rx.recv() => job?,
+                    job = jobs.recv() => job?,
                 };
-                Some(collect_batch(&cx, &mut rx, &mut stop, first).await)
+                Some(collect_batch(&cx, &mut jobs, &mut stop, first).await)
             };
             tokio::pin!(collect);
             let batch = loop {
@@ -99,12 +99,12 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
         }
 
         // Reject new jobs before draining so racing callers fall back to inline NOTIFY.
-        rx.close();
+        jobs.close();
 
         // Flush acknowledged writes so secondaries need not wait for their refresh timer.
         let mut last = NotifyBatch::default();
 
-        while let Some(job) = rx.recv().await {
+        while let Some(job) = jobs.recv().await {
             last.add(job);
         }
 
@@ -142,8 +142,8 @@ impl NotifyBatch {
     }
 }
 
-/// Bound intentional delay by SOA REFRESH, measured from enqueue time
-/// (RFC 1996, Section 4.3). Failed lookups send immediately.
+/// Look up the batch deadline: intentional delay is bounded by SOA REFRESH,
+/// measured from enqueue time (RFC 1996, Section 4.3). Failed lookups send immediately.
 async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     let config = cx.config();
     let window = Duration::from_millis(config.dns.notify.batch_ms);
@@ -181,7 +181,7 @@ async fn lookup_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
 /// Coalesce jobs until the earliest deadline or shutdown.
 async fn collect_batch(
     cx: &Context,
-    rx: &mut UnboundedReceiver<NotifyJob>,
+    jobs: &mut UnboundedReceiver<NotifyJob>,
     stop: &mut watch::Receiver<bool>,
     first: NotifyJob,
 ) -> NotifyBatch {
@@ -202,7 +202,7 @@ async fn collect_batch(
 
             () = time::sleep_until(deadline) => break,
 
-            job = rx.recv() => match job {
+            job = jobs.recv() => match job {
                 Some(job) => {
                     // Later writes may shorten the window, never extend it.
                     deadline = deadline.min(lookup_batch_deadline(cx, &job).await);
@@ -214,8 +214,8 @@ async fn collect_batch(
     }
 
     // Drain a fixed backlog so producers cannot postpone a ready batch.
-    for _ in 0..rx.len() {
-        if let Ok(job) = rx.try_recv() {
+    for _ in 0..jobs.len() {
+        if let Ok(job) = jobs.try_recv() {
             batch.add(job);
         }
     }

@@ -21,6 +21,7 @@ use crate::cli::commands::secondary::SecondaryCommand;
 use crate::cli::commands::token::TokenCommand;
 use crate::cli::commands::tsig_key::TsigKeyCommand;
 use crate::cli::commands::zone::ZoneCommand;
+use crate::cli::error::CliError;
 use crate::cli::output::OutputFormat;
 use crate::daemon;
 
@@ -138,12 +139,12 @@ pub async fn execute() {
     let result = match args.command {
         Command::Start { config } => daemon::bootstrap(config.as_deref())
             .await
-            .map_err(error::CliError::from),
+            .map_err(CliError::from),
         Command::Stop { output } => commands::stop::handle_command(output).await,
         Command::Restart { output } => commands::restart::handle_command(output).await,
         Command::Status { output } => commands::status::handle_command(output).await,
         Command::Doctor { config, output } => {
-            commands::doctor::handle_command(config, output).await
+            commands::doctor::handle_command(config.as_deref(), output).await
         }
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
@@ -161,7 +162,7 @@ pub async fn execute() {
     // Lost output must not read as success; a reader that stopped early is
     // not lost output.
     let result = result.and_then(|()| match stream::write_failure() {
-        Some(failure) => Err(error::CliError::request_with_source(
+        Some(failure) => Err(CliError::request_with_source(
             format!("output was lost: {failure}"),
             failure,
         )),

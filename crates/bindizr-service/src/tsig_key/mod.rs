@@ -292,8 +292,6 @@ fn generate_secret(algorithm: TsigAlgorithm) -> String {
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine;
-
     use super::*;
     use crate::error::ErrorCode;
 

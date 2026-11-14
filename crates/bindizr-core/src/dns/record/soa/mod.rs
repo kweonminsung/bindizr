@@ -107,7 +107,7 @@ impl SoaMailbox {
         ))
     }
 
-    /// Return the text representation of this SOA mailbox.
+    /// Return the canonical wire spelling.
     pub fn as_str(&self) -> &str {
         &self.0
     }

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose;
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
-use domain::base::{Message, MessageBuilder, Name, Ttl};
+use domain::base::{Message, MessageBuilder, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{A, Soa};
 use domain::tsig::{Algorithm, ClientSequence, ClientTransaction, Key, KeyName};
@@ -246,6 +246,7 @@ async fn tsig_algorithm_names_match_regardless_of_case() {
         dns::exchange_tcp(app.dns_port(), &query).unwrap(),
     ] {
         let response = Message::from_octets(response).unwrap();
+
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         assert!(tsig::parse_tsig_presence(&response).unwrap());
         tsig::verify_response_mac(&query, &response, &key).unwrap();
@@ -358,6 +359,7 @@ async fn transfer_returns_notauth_for_invalid_zone_name() {
     // connection; the underscore label is one the zone type refuses.
     for zone_name in ["nozone.example.", "_foo.example."] {
         let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, None).expect("AXFR");
+
         assert_eq!(outcome.refusal(), Rcode::NOTAUTH, "zone {zone_name}");
     }
 }
@@ -384,7 +386,7 @@ async fn udp_ixfr_returns_current_soa() {
     let (query_id, response) =
         dns::exchange_dns_query(app.dns_port(), zone_name, Rtype::IXFR.to_int()).unwrap();
 
-    let response = Message::from_octets(response.as_slice()).unwrap();
+    let response = Message::from_octets(response).unwrap();
     let header = response.header();
 
     assert_eq!(header.id(), query_id);
@@ -665,6 +667,7 @@ async fn signed_transfer_limits_zones_to_key_role_grants() {
 
     for zone_name in [&narrowed_zone_name, &ungranted_zone_name] {
         let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+
         assert_eq!(outcome.refusal(), Rcode::REFUSED, "zone {zone_name}");
     }
 }
@@ -1101,7 +1104,7 @@ async fn malformed_tsig_returns_unsigned_formerr() {
     let mut question = builder.question();
     question.push((&qname, Rtype::AXFR)).unwrap();
     let mut additional = question.additional();
-    let algorithm = Name::<Vec<u8>>::from_str("hmac-sha256.").unwrap();
+    let algorithm = dns::parse_name("hmac-sha256.").unwrap();
     let tsig = Tsig::new(
         algorithm,
         Time48::now(),
@@ -1152,7 +1155,7 @@ async fn query_response_preserves_rd_bit() {
             .push((&dns::parse_name(zone_name).unwrap(), Rtype::SOA))
             .unwrap();
         let response = dns::exchange_udp(app.dns_port(), &question.finish()).unwrap();
-        let response = Message::from_octets(response.as_slice()).unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         assert_eq!(response.header().rd(), rd, "rd={rd}");
@@ -1222,10 +1225,10 @@ async fn queries_without_a_readable_question_receive_formerr() {
     let app = TestApp::start_local().await;
 
     for count in [0u16, 1, 2, u16::MAX] {
-        let mut query = MessageBuilder::new_vec();
-        query.header_mut().set_id(9619);
-        query.header_mut().set_rd(true);
-        let mut wire = query.question().finish();
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(9619);
+        builder.header_mut().set_rd(true);
+        let mut wire = builder.question().finish();
         wire[4..6].copy_from_slice(&count.to_be_bytes());
 
         for body in [&[][..], &[0xc0, 0x0c][..]] {
@@ -1516,7 +1519,7 @@ async fn edns_query_returns_opt() {
         &common::build_edns_query(zone_name, Rtype::SOA, &[]).finish(),
     )
     .unwrap();
-    let plain = Message::from_octets(plain.as_slice()).unwrap();
+    let plain = Message::from_octets(plain).unwrap();
 
     assert_eq!(plain.header().rcode(), Rcode::NOERROR);
     assert!(plain.opt().is_none(), "no OPT was asked for");
@@ -1526,7 +1529,7 @@ async fn edns_query_returns_opt() {
         &common::build_edns_query(zone_name, Rtype::SOA, &[(0, false)]).finish(),
     )
     .unwrap();
-    let edns = Message::from_octets(edns.as_slice()).unwrap();
+    let edns = Message::from_octets(edns).unwrap();
 
     assert_eq!(edns.header().rcode(), Rcode::NOERROR);
     let opt = edns.opt().unwrap();
@@ -1539,7 +1542,7 @@ async fn edns_query_returns_opt() {
         &common::build_edns_query(zone_name, Rtype::SOA, &[(0, false); 2]).finish(),
     )
     .unwrap();
-    let doubled = Message::from_octets(doubled.as_slice()).unwrap();
+    let doubled = Message::from_octets(doubled).unwrap();
 
     assert_eq!(doubled.header().rcode(), Rcode::FORMERR);
 
@@ -1548,7 +1551,7 @@ async fn edns_query_returns_opt() {
         &common::build_edns_query(zone_name, Rtype::SOA, &[(1, false)]).finish(),
     )
     .unwrap();
-    let newer = Message::from_octets(newer.as_slice()).unwrap();
+    let newer = Message::from_octets(newer).unwrap();
     let opt = newer.opt().unwrap();
 
     assert_eq!(opt.rcode(newer.header()), OptRcode::BADVERS);
@@ -1559,12 +1562,12 @@ async fn edns_query_returns_opt() {
         &common::build_edns_query(zone_name, Rtype::AXFR, &[(0, false)]).finish(),
     )
     .unwrap();
-    let envelope = Message::from_octets(response.as_slice()).unwrap();
+    let response = Message::from_octets(response).unwrap();
 
-    assert_eq!(envelope.header().rcode(), Rcode::NOERROR);
+    assert_eq!(response.header().rcode(), Rcode::NOERROR);
 
     // RFC 7828, Section 3.3.2: over TCP the OPT carries the idle timeout.
-    let keepalive = envelope
+    let keepalive = response
         .opt()
         .unwrap()
         .opt()
@@ -1611,7 +1614,7 @@ async fn udp_query_truncates_answers_above_limit() {
         &common::build_edns_query(&zone_name, Rtype::SOA, &[]).finish(),
     )
     .unwrap();
-    let plain = Message::from_octets(plain.as_slice()).unwrap();
+    let plain = Message::from_octets(plain).unwrap();
 
     assert!(plain.header().tc(), "over 512 octets without EDNS");
     assert_eq!(plain.header_counts().ancount(), 0);
@@ -1622,7 +1625,7 @@ async fn udp_query_truncates_answers_above_limit() {
         &common::build_edns_query(&zone_name, Rtype::SOA, &[(0, false)]).finish(),
     )
     .unwrap();
-    let edns = Message::from_octets(edns.as_slice()).unwrap();
+    let edns = Message::from_octets(edns).unwrap();
 
     assert!(!edns.header().tc(), "fits the advertised size");
     assert_eq!(edns.header_counts().ancount(), 1);
@@ -1664,7 +1667,7 @@ async fn tcp_connection_completes_pipelined_transfers() {
         let response = dns::read_frame(&mut stream)
             .unwrap()
             .expect("the server closed before both transfers ended");
-        let response = Message::from_octets(response.as_slice()).unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::NOERROR);
         let seen = response
@@ -1758,7 +1761,7 @@ async fn query_returns_notauth_for_unsupported_class() {
         .unwrap();
 
     let response = dns::exchange_udp(app.dns_port(), &question.finish()).unwrap();
-    let response = Message::from_octets(response.as_slice()).unwrap();
+    let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
     assert_eq!(response.first_question().unwrap().qclass(), Class::CH);

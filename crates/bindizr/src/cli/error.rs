@@ -41,43 +41,6 @@ enum Failure {
     Configuration,
 }
 
-/// Output that could not be rendered fails the command it was for.
-impl From<RenderOutputError> for CliError {
-    /// Report the rendering failure as a failed request.
-    fn from(error: RenderOutputError) -> Self {
-        Self::request_with_source(error.to_string(), error)
-    }
-}
-
-/// Input that could not be read fails the command it was for.
-impl From<ReadInputError> for CliError {
-    /// Report the read failure as a failed request.
-    fn from(error: ReadInputError) -> Self {
-        Self::request_with_source(error.to_string(), error)
-    }
-}
-
-/// A configuration the CLI itself loaded and refused.
-impl From<ConfigError> for CliError {
-    /// Report the configuration failure with its exit class.
-    fn from(error: ConfigError) -> Self {
-        Self::configuration(error)
-    }
-}
-
-/// The daemon's own failure, classed so a supervisor knows whether to retry.
-impl From<DaemonError> for CliError {
-    /// Classify a configuration or TLS failure as permanent; anything else may
-    /// pass.
-    fn from(error: DaemonError) -> Self {
-        if error.is_configuration() {
-            Self::configuration(error)
-        } else {
-            Self::request_with_source(error.to_string(), error)
-        }
-    }
-}
-
 impl CliError {
     /// Build the error of a request that failed before or after reaching the
     /// daemon, with no code to hint from.
@@ -280,6 +243,43 @@ impl CliError {
     }
 }
 
+/// Output that could not be rendered fails the command it was for.
+impl From<RenderOutputError> for CliError {
+    /// Report the rendering failure as a failed request.
+    fn from(error: RenderOutputError) -> Self {
+        Self::request_with_source(error.to_string(), error)
+    }
+}
+
+/// Input that could not be read fails the command it was for.
+impl From<ReadInputError> for CliError {
+    /// Report the read failure as a failed request.
+    fn from(error: ReadInputError) -> Self {
+        Self::request_with_source(error.to_string(), error)
+    }
+}
+
+/// A configuration the CLI itself loaded and refused.
+impl From<ConfigError> for CliError {
+    /// Report the configuration failure with its exit class.
+    fn from(error: ConfigError) -> Self {
+        Self::configuration(error)
+    }
+}
+
+/// The daemon's own failure, classed so a supervisor knows whether to retry.
+impl From<DaemonError> for CliError {
+    /// Classify a configuration or TLS failure as permanent; anything else may
+    /// pass.
+    fn from(error: DaemonError) -> Self {
+        if error.is_configuration() {
+            Self::configuration(error)
+        } else {
+            Self::request_with_source(error.to_string(), error)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io;
@@ -324,6 +324,7 @@ mod tests {
     #[test]
     fn local_failure_preserves_the_source() {
         use std::error::Error;
+
         let error = CliError::request_with_source(
             "failed to read the response",
             io::Error::new(io::ErrorKind::UnexpectedEof, "socket closed"),

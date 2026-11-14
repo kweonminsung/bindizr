@@ -19,7 +19,7 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use bindizr_db::error::DatabaseError;
 use plan::UpdateOperation;
-use prerequisite::{Prerequisite, RecordSets};
+use prerequisite::RecordSets;
 use thiserror::Error;
 
 use crate::authorization::{Caller, RecordAccess};
@@ -239,7 +239,7 @@ pub async fn apply(
         cx.metrics().track_serial_bumps(1);
         log::info!(
             "event=nsupdate_apply zone={} serial={new_serial}",
-            zone.name,
+            zone.name
         );
 
         // Queue through the service like every other mutation path, so

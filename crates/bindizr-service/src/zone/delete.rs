@@ -78,7 +78,7 @@ pub async fn delete(
 
     log::info!(
         "event=zone_delete zone={zone_name} applied={}",
-        response.applied,
+        response.applied
     );
 
     // Send catalog NOTIFY so secondaries drop the removed zone

@@ -169,13 +169,13 @@ pub(crate) async fn export_dnssec_keys(
 pub(crate) async fn import_dnssec_keys(
     cx: &Context,
     zone_name: &str,
-    request: ImportDnssecKeysRequest,
+    request: &ImportDnssecKeysRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
     let response = dnssec::import_keys(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
-        &request,
+        request,
     )
     .await?;
 

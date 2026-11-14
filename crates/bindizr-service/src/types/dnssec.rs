@@ -21,7 +21,7 @@ pub enum DsCheck {
 }
 
 impl DsCheck {
-    /// The check a `skip_ds_check` flag asks for.
+    /// Return the check a `skip_ds_check` flag asks for.
     pub fn from_skip_ds_check(skip_ds_check: bool) -> Self {
         if skip_ds_check {
             Self::Skip
@@ -49,7 +49,7 @@ pub enum Holddown {
 }
 
 impl Holddown {
-    /// The wait a `skip_holddown` flag asks for.
+    /// Return the wait a `skip_holddown` flag asks for.
     pub fn from_skip_holddown(skip_holddown: bool) -> Self {
         if skip_holddown {
             Self::Skip

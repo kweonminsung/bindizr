@@ -84,9 +84,9 @@ impl TestApp {
 /// Find a local port available for both TCP and UDP DNS.
 fn reserve_dns_port() -> u16 {
     for _ in 0..10 {
-        let tcp =
+        let listener =
             TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind ephemeral DNS TCP port");
-        let port = tcp
+        let port = listener
             .local_addr()
             .expect("failed to read ephemeral DNS TCP port")
             .port();

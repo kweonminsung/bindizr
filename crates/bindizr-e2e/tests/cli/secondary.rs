@@ -72,18 +72,27 @@ async fn secondary_supports_create_update_and_delete() {
     );
 
     // A NOTIFY key is named on the row and cleared with an empty name.
-    let key_name = format!("{}-notify", app.namespace());
+    let notify_key_name = format!("{}-notify", app.namespace());
 
-    app.run_cli_success(&["tsig-key", "create", &key_name, "--role", "admin"], None)
-        .await;
+    app.run_cli_success(
+        &["tsig-key", "create", &notify_key_name, "--role", "admin"],
+        None,
+    )
+    .await;
     let keyed = app
         .run_cli_success(
-            &["secondary", "update", &name, "--notify-key", &key_name],
+            &[
+                "secondary",
+                "update",
+                &name,
+                "--notify-key",
+                &notify_key_name,
+            ],
             None,
         )
         .await;
 
-    assert!(keyed.contains(&key_name), "{keyed}");
+    assert!(keyed.contains(&notify_key_name), "{keyed}");
 
     let cleared = app
         .run_cli_success(
@@ -106,7 +115,7 @@ async fn secondary_supports_create_update_and_delete() {
         "{cleared}"
     );
 
-    app.run_cli_success(&["tsig-key", "delete", &key_name], None)
+    app.run_cli_success(&["tsig-key", "delete", &notify_key_name], None)
         .await;
 
     let args = ["secondary", "update", &name];

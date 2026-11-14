@@ -107,7 +107,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
 
     assert_eq!(
         values,
-        vec![
+        [
             (Rtype::A.to_int(), Some(json!("192.0.2.1"))),
             (Rtype::MX.to_int(), Some(json!("5 mail.example.com."))),
             (

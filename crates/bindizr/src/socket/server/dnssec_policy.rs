@@ -11,9 +11,9 @@ use crate::socket::types::DaemonResponse;
 /// Create a DNSSEC policy from the control request.
 pub(crate) async fn create_dnssec_policy(
     cx: &Context,
-    request: CreateDnssecPolicyRequest,
+    request: &CreateDnssecPolicyRequest,
 ) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
-    let policy = dnssec_policy::create(cx, &Caller::socket(), &request).await?;
+    let policy = dnssec_policy::create(cx, &Caller::socket(), request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy created successfully".to_string(),
@@ -54,9 +54,9 @@ pub(crate) async fn get_dnssec_policy(
 pub(crate) async fn update_dnssec_policy(
     cx: &Context,
     name: &str,
-    request: UpdateDnssecPolicyRequest,
+    request: &UpdateDnssecPolicyRequest,
 ) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
-    let policy = dnssec_policy::update(cx, &Caller::socket(), name, &request).await?;
+    let policy = dnssec_policy::update(cx, &Caller::socket(), name, request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy updated successfully".to_string(),

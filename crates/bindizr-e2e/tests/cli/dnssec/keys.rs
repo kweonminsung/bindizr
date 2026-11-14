@@ -119,10 +119,16 @@ async fn zone_dnssec_keys_round_trip_export_and_import() {
 
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
     // import is refused before anything is stored.
-    let split_policy = format!("{}-split", app.namespace());
+    let split_policy_name = format!("{}-split", app.namespace());
 
     app.run_cli_success(
-        &["dnssec", "policy", "create", &split_policy, "--split-keys"],
+        &[
+            "dnssec",
+            "policy",
+            "create",
+            &split_policy_name,
+            "--split-keys",
+        ],
         None,
     )
     .await;
@@ -138,7 +144,7 @@ async fn zone_dnssec_keys_round_trip_export_and_import() {
                 "--private",
                 &private_file,
                 "--policy",
-                &split_policy,
+                &split_policy_name,
             ],
             None,
         )

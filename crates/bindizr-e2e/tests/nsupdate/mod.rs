@@ -2,6 +2,7 @@ use std::net::{Shutdown, TcpStream};
 use std::time::Duration;
 
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
+use domain::base::rdata::ComposeRecordData;
 use domain::base::{Message, MessageBuilder, Name, Serial, Ttl, UnknownRecordData};
 use domain::dep::octseq::parse::Parser;
 use domain::rdata::tsig::{Time48, Tsig};
@@ -21,7 +22,6 @@ use crate::common::{TestApp, TestAppOptions, dns};
 #[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_root_targets_round_trip_through_signed_zone() {
     use domain::base::ToName;
-    use domain::base::rdata::ComposeRecordData;
 
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
@@ -64,8 +64,8 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
     let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
     let public_keys: Vec<_> = sets[&(format!("{zone_name}."), Rtype::DNSKEY)]
         .iter()
-        .map(|data| {
-            let key = Dnskey::parse(&mut Parser::from_ref(data)).unwrap();
+        .map(|rdata| {
+            let key = Dnskey::parse(&mut Parser::from_ref(rdata)).unwrap();
             let mut point = vec![4];
             point.extend_from_slice(key.public_key());
             point
@@ -85,7 +85,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
 
         let signatures: Vec<_> = sets[&(owner.clone(), Rtype::RRSIG)]
             .iter()
-            .map(|data| Rrsig::parse(&mut Parser::from_ref(data)).unwrap())
+            .map(|rdata| Rrsig::parse(&mut Parser::from_ref(rdata)).unwrap())
             .filter(|signature| signature.type_covered() == rtype)
             .collect();
 
@@ -273,8 +273,6 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn nsupdate_rejects_managed_dnssec_changes_without_mutating_zone() {
-    use domain::base::rdata::ComposeRecordData;
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -369,7 +367,7 @@ async fn nsupdate_rejects_managed_dnssec_changes_without_mutating_zone() {
                 } else {
                     nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &changes, Some(&key))
                 }
-                .unwrap();
+                .expect("update");
 
                 assert_eq!(rcode, Rcode::REFUSED);
             }
@@ -3106,8 +3104,6 @@ async fn soa_noop_accepts_maximum_serial() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn soa_replacement_updates_the_signed_zone() {
-    use domain::base::rdata::ComposeRecordData;
-
     let app = unsigned_nsupdate_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -3154,7 +3150,7 @@ async fn soa_replacement_updates_the_signed_zone() {
     assert_ne!(after[&key], before[&key]);
     let signatures: Vec<_> = after[&key]
         .iter()
-        .map(|data| Rrsig::parse(&mut Parser::from_ref(data)).unwrap())
+        .map(|rdata| Rrsig::parse(&mut Parser::from_ref(rdata)).unwrap())
         .filter(|signature| signature.type_covered() == Rtype::SOA)
         .collect();
 
@@ -3182,8 +3178,6 @@ async fn soa_replacement_updates_the_signed_zone() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ixfr_replays_soa_replacement() {
-    use domain::base::rdata::ComposeRecordData;
-
     let app = unsigned_nsupdate_app().await;
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
@@ -3555,7 +3549,7 @@ async fn soa_replacement_preserves_mailbox_domain_octets() {
         let soa = Soa::new(
             dns::parse_name("ns.example.com").unwrap(),
             dns::parse_name(r"admin.\255.example.com").unwrap(),
-            serial.into(),
+            Serial::from(serial),
             Ttl::from_secs(300),
             Ttl::from_secs(60),
             Ttl::from_secs(86400),
@@ -3576,7 +3570,7 @@ async fn soa_replacement_preserves_mailbox_domain_octets() {
         let soa = Soa::new(
             dns::parse_name("ns.example.com").unwrap(),
             dns::parse_name(r"admin.\255.example.com").unwrap(),
-            serial.into(),
+            Serial::from(serial),
             Ttl::from_secs(300),
             Ttl::from_secs(60),
             Ttl::from_secs(86400),

@@ -8,8 +8,10 @@ use bindizr_core::dns::nsupdate::parser::UpdateRecord;
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::RecordType;
 
-use super::{NsupdateError, Prerequisite, UpdateOperation};
+use super::NsupdateError;
 use crate::nsupdate::operation::RecordOperation;
+use crate::nsupdate::plan::UpdateOperation;
+use crate::nsupdate::prerequisite::Prerequisite;
 
 /// Prescan the entire update section before selecting any operations
 /// (RFC 2136, Section 3.4.1), retaining checked owners through execution.

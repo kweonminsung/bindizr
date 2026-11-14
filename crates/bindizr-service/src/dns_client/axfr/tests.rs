@@ -164,6 +164,8 @@ async fn fetch_transfer(
     opening: Rdata,
     closing: Rdata,
 ) -> Result<Vec<TransferRecord>, FetchZoneError> {
+    use std::str::FromStr;
+
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -201,7 +203,7 @@ async fn fetch_transfer(
         }
     });
 
-    let qname = "example.com.".parse().unwrap();
+    let qname = Name::from_str("example.com.").unwrap();
 
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let result = time::timeout(

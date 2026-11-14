@@ -28,7 +28,7 @@ impl ZoneName {
         Self::parse(value).expect("zone name validated before storage")
     }
 
-    /// Return the text representation of this zone name.
+    /// Return the canonical wire spelling.
     pub fn as_str(&self) -> &str {
         &self.0
     }

@@ -10,11 +10,6 @@ use thiserror::Error;
 use utoipa::openapi::RefOr;
 use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, Type};
 
-/// A TTL in seconds, 0 through 2^32 - 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(from = "u32", into = "u32")]
-pub struct Ttl(u32);
-
 /// A stored or requested TTL outside the wire range.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertTtlError {
@@ -25,6 +20,11 @@ pub enum ConvertTtlError {
     #[error("TTL {ttl} exceeds the maximum of {}", Ttl::MAX)]
     TooLarge { ttl: i64 },
 }
+
+/// A TTL in seconds, 0 through 2^32 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Ttl(u32);
 
 impl Ttl {
     /// The largest TTL (RFC 8767, Section 4).

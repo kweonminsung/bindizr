@@ -13,25 +13,6 @@ use crate::dns::record::{ParseRdataError, ParseRecordValueError};
 use crate::dns::{name, tsig};
 use crate::model::record::ParseRecordTypeError;
 
-/// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateRequest {
-    pub zone_name: String,
-    pub zone_class: Class,
-    pub prerequisites: Vec<UpdateRecord>,
-    pub updates: Vec<UpdateRecord>,
-    pub tsig: Option<TsigRecord>,
-    pub edns: Edns,
-}
-
-/// TSIG key name for lookup and fudge for the response; `domain::tsig` verifies the full record.
-/// Parsing rejects malformed TSIG records with FORMERR (RFC 8945, Section 5.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TsigRecord {
-    pub name: String,
-    pub fudge: u16,
-}
-
 /// Why an UPDATE message could not be parsed into its sections.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseUpdateError {
@@ -73,6 +54,25 @@ pub enum ParseUpdateError {
     Value(#[from] ParseRecordValueError),
 }
 
+/// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateRequest {
+    pub zone_name: String,
+    pub zone_class: Class,
+    pub prerequisites: Vec<UpdateRecord>,
+    pub updates: Vec<UpdateRecord>,
+    pub tsig: Option<TsigRecord>,
+    pub edns: Edns,
+}
+
+/// TSIG key name for lookup and fudge for the response; `domain::tsig` verifies the full record.
+/// Parsing rejects malformed TSIG records with FORMERR (RFC 8945, Section 5.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TsigRecord {
+    pub name: String,
+    pub fudge: u16,
+}
+
 impl UpdateRequest {
     /// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
     pub fn parse(query_data: &[u8]) -> Result<Self, ParseUpdateError> {
@@ -95,7 +95,7 @@ impl UpdateRequest {
 
         // RFC 2136, Section 3.1.1 requires SOA; authority over ZCLASS is
         // decided by the service, not by the wire parser.
-        let zone = ParsedName::parse(&mut parser).map_err(|_| ParseUpdateError::InvalidName)?;
+        let zname = ParsedName::parse(&mut parser).map_err(|_| ParseUpdateError::InvalidName)?;
         let ztype = parser
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidZoneSection)?;
@@ -107,7 +107,7 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidZoneSection);
         }
 
-        let zone_name = to_presentation_name(&zone)?;
+        let zone_name = to_presentation_name(&zname)?;
 
         // UPDATE uses the answer count for prerequisites and the authority count
         // for changes; these are not ordinary response sections.
@@ -143,7 +143,7 @@ impl UpdateRequest {
 /// Read one update record from the DNS wire message.
 fn parse_record(
     parser: &mut Parser<'_, [u8]>,
-    data: &[u8],
+    query_data: &[u8],
 ) -> Result<UpdateRecord, ParseUpdateError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
     let name = to_presentation_name(&name)?;
@@ -183,7 +183,7 @@ fn parse_record(
         record_type: rtype,
         class,
         ttl,
-        rdata: data[rdata_start..rdata_start + rdlen].to_vec(),
+        rdata: query_data[rdata_start..rdata_start + rdlen].to_vec(),
         rdata_start,
     })
 }

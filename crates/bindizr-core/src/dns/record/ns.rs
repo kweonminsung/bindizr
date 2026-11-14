@@ -27,7 +27,6 @@ impl<'a> NsRecordValue<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dns::name;
 
     /// Verify that the root and a literal dot label retain different wire names.
     #[test]

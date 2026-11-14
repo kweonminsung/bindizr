@@ -71,7 +71,8 @@ pub(crate) async fn evaluate_client_access(
     .await)
 }
 
-/// Match literal IPs first, then resolve hostnames through the ACL cache.
+/// Return whether the client IP matches one of the addresses. Literal IPs are
+/// matched first, then hostnames are resolved through the ACL cache.
 async fn matches_client_address<'a>(
     cache: &AddressCache,
     addresses: impl Iterator<Item = &'a AddressTarget> + Clone,

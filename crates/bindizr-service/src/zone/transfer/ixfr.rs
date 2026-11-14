@@ -36,7 +36,7 @@ pub async fn authorize_ixfr_plan_by_name(
 ) -> Result<TransferAccess<(Zone, IxfrPlan)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load the transfer delta").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = match super::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
@@ -54,17 +54,17 @@ pub async fn authorize_ixfr_plan_by_name(
         } else {
             // RFC 1995, Section 2 permits a full transfer when IXFR is no
             // smaller; rows are counted before any history is loaded.
-            let rows = bindizr_db::zone_change::count_between_serials_tx(
+            let change_count = bindizr_db::zone_change::count_between_serials_tx(
                 &mut tx,
                 zone.id,
                 client_serial,
                 current_serial,
             )
             .await?;
-            let zone_rows = bindizr_db::record::count_tx(&mut tx, zone.id).await?
+            let record_count = bindizr_db::record::count_tx(&mut tx, zone.id).await?
                 + bindizr_db::dnssec_record::count_tx(&mut tx, zone.id).await?;
 
-            if rows >= zone_rows {
+            if change_count >= record_count {
                 IxfrPlan::Full
             } else {
                 let changes = bindizr_db::zone_change::list_between_serials_tx(

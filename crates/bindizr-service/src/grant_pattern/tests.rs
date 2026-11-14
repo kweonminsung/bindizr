@@ -1,4 +1,3 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::grant_pattern;
 
 use super::*;

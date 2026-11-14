@@ -26,6 +26,7 @@ tokio.workspace = true
 base64.workspace = true
 # Sign client requests and read exported zone data independently of production code.
 domain = { workspace = true, features = ["tsig", "zonefile"] }
+hex.workspace = true
 rcgen.workspace = true
 reqwest = { workspace = true, features = ["rustls-no-provider"] }
 ring.workspace = true

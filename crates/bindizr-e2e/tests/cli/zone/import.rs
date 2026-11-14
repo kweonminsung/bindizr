@@ -56,7 +56,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
 
     assert!(!refused.status.success(), "{refused:?}");
 
-    let stdout = String::from_utf8(refused.stdout).expect("CLI stdout was not UTF-8");
+    let stdout = String::from_utf8_lossy(&refused.stdout);
 
     assert_eq!(common::summary_cells(&stdout)[0], "no", "{stdout}");
 
@@ -179,7 +179,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             "@ IN CAA 0 {} \"{}\"\n",
         ),
         "a".repeat(255),
-        "b".repeat(300),
+        "b".repeat(300)
     );
 
     app.run_cli_success(&["zone", "import", &zone_name, "-"], Some(&content))
@@ -354,7 +354,7 @@ async fn zone_import_pulls_several_zones_from_one_server() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|item| item["zone_name"].as_str().unwrap())
+        .map(|zone| zone["zone_name"].as_str().unwrap())
         .collect();
 
     assert_eq!(

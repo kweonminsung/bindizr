@@ -11,7 +11,6 @@ use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::authorization::Caller;
-use crate::dns_client::notify;
 use crate::types::CreateSecondaryRequest;
 
 /// Verify that a failed ACK remains typed for propagation while reports render the same
@@ -76,19 +75,19 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
 
     let error = send_zone_notify(&cx, &zone_name).await.unwrap_err();
     let NotifyZoneError::TargetsFailed {
-        zone_name: failed_zone,
+        zone_name: failed_zone_name,
         failures,
     } = &error
     else {
         panic!("unexpected NOTIFY failure: {error}");
     };
 
-    assert_eq!(failed_zone, "example.com");
+    assert_eq!(failed_zone_name, "example.com");
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].0, failed_address);
     assert!(matches!(
         &failures[0].1,
-        SendNotifyError::Send(notify::SendNotifyError::Response(
+        SendNotifyError::Send(dns_client::notify::SendNotifyError::Response(
             ParseResponseError::NotifyRcode(OptRcode::SERVFAIL)
         ))
     ));
@@ -97,8 +96,8 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
             .1
             .source()
             .unwrap()
-            .downcast_ref::<notify::SendNotifyError>(),
-        Some(notify::SendNotifyError::Response(
+            .downcast_ref::<dns_client::notify::SendNotifyError>(),
+        Some(dns_client::notify::SendNotifyError::Response(
             ParseResponseError::NotifyRcode(OptRcode::SERVFAIL)
         ))
     ));

@@ -7,6 +7,7 @@ pub(crate) mod tsig;
 
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::time::Duration;
 use std::{process, str};
 
@@ -71,8 +72,6 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
 
 /// Map a supported record mnemonic to its wire type number.
 pub(crate) fn parse_record_type(record_type: &str) -> Option<u16> {
-    use std::str::FromStr;
-
     Rtype::from_str(record_type).ok().map(Rtype::to_int)
 }
 
@@ -201,13 +200,13 @@ fn query_dns_records(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsR
 /// Query DNS and count the returned answers.
 fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
-    let message = Message::from_octets(response.as_slice()).map_err(|error| error.to_string())?;
+    let response = Message::from_octets(response.as_slice()).map_err(|error| error.to_string())?;
 
-    if !validate_response_header(query_id, &message)? {
+    if !validate_response_header(query_id, &response)? {
         return Ok(0);
     }
 
-    let answer = message.answer().map_err(|error| error.to_string())?;
+    let answer = response.answer().map_err(|error| error.to_string())?;
     let mut count = 0;
 
     for record in answer {
@@ -245,8 +244,6 @@ fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8
 
 /// Parse a DNS name into its wire form, a bare or trailing dot reading as the root.
 pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
-    use std::str::FromStr;
-
     let trimmed = name.trim_end_matches('.');
     if trimmed.is_empty() {
         return Ok(Name::root_vec());
@@ -259,13 +256,13 @@ pub(crate) fn extract_dns_records(
     query_id: u16,
     response: &[u8],
 ) -> Result<Vec<DnsRecord>, String> {
-    let message = Message::from_octets(response).map_err(|error| error.to_string())?;
+    let response = Message::from_octets(response).map_err(|error| error.to_string())?;
 
-    if !validate_response_header(query_id, &message)? {
+    if !validate_response_header(query_id, &response)? {
         return Ok(Vec::new());
     }
 
-    let answer = message.answer().map_err(|error| error.to_string())?;
+    let answer = response.answer().map_err(|error| error.to_string())?;
     let mut records = Vec::new();
 
     for record in answer.limit_to::<AllRecordData<_, _>>() {
@@ -280,7 +277,7 @@ pub(crate) fn extract_dns_records(
     // A delegation NS record set comes back as a referral: NOERROR with an empty
     // answer section and the NS rows in authority (RFC 1034, Section 4.3.2).
     if records.is_empty() {
-        let authority = message.authority().map_err(|error| error.to_string())?;
+        let authority = response.authority().map_err(|error| error.to_string())?;
 
         for record in authority.limit_to::<AllRecordData<_, _>>() {
             let record = record.map_err(|error| error.to_string())?;
@@ -374,20 +371,20 @@ fn decode_dns_value(
             ds.key_tag(),
             u8::from(ds.algorithm()),
             u8::from(ds.digest_type()),
-            hex_upper(ds.digest())
+            hex::encode_upper(ds.digest())
         )),
         AllRecordData::Sshfp(sshfp) => Value::String(format!(
             "{} {} {}",
             u8::from(sshfp.algorithm()),
             u8::from(sshfp.fingerprint_type()),
-            hex_upper(sshfp.fingerprint())
+            hex::encode_upper(sshfp.fingerprint())
         )),
         AllRecordData::Tlsa(tlsa) => Value::String(format!(
             "{} {} {} {}",
             u8::from(tlsa.usage()),
             u8::from(tlsa.selector()),
             u8::from(tlsa.matching_type()),
-            hex_upper(tlsa.data())
+            hex::encode_upper(tlsa.data())
         )),
         // CAA values are opaque octets, escaped losslessly (RFC 8659, Section 4.1).
         AllRecordData::Caa(caa) => Value::String(caa.to_string()),
@@ -401,7 +398,7 @@ fn decode_dns_value(
 
             if !bytes.is_empty() {
                 value.push(' ');
-                value.push_str(&hex_upper(bytes));
+                value.push_str(&hex::encode_upper(bytes));
             }
 
             Value::String(value)
@@ -434,15 +431,6 @@ fn decode_wks_value(bytes: &[u8]) -> Result<String, String> {
     }
 
     Ok(value)
-}
-
-/// Encode bytes as uppercase hexadecimal text.
-fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
-    bytes
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02X}"))
-        .collect()
 }
 
 /// Render the API's escaped FQDN form without losing label octets or boundaries.
@@ -556,7 +544,7 @@ fn generic_wks_export(text: &str) -> String {
             let mut bytes = ip.octets().to_vec();
             bytes.push(protocol);
             bytes.extend(bitmap);
-            let hex = hex_upper(&bytes);
+            let hex = hex::encode_upper(&bytes);
 
             format!(r"{} \# {} {hex}", fields[..4].join(" "), bytes.len())
         })

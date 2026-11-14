@@ -1,4 +1,4 @@
-//! Record management changes in their transaction; reads require `audit:read`.
+//! Save management changes in their transaction; reads require `audit:read`.
 
 use std::fmt;
 

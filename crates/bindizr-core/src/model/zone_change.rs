@@ -80,7 +80,7 @@ impl TryFrom<String> for ChangeOperation {
 
     /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 

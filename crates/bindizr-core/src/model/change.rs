@@ -70,8 +70,17 @@ impl TryFrom<String> for ChangeSource {
 
     /// Validate and convert the stored value into a change source.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
+}
+
+/// An actor's stored columns do not describe a complete, known credential.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub(crate) enum DecodeChangeActorError {
+    #[error("change actor kind and name must both be present or both be null")]
+    Incomplete,
+    #[error("unknown change actor kind '{value}'")]
+    UnknownKind { value: String },
 }
 
 /// The named credential behind a change, copied so deleting it preserves the history.
@@ -83,7 +92,7 @@ pub enum ChangeActor {
 }
 
 impl ChangeActor {
-    /// Borrow the kind and name stored in the two actor columns.
+    /// Return the kind and name stored in the two actor columns.
     pub fn as_columns(&self) -> (&'static str, &str) {
         match self {
             Self::Token { name } => ("token", name),
@@ -106,15 +115,6 @@ impl fmt::Display for ChangeActor {
 pub(crate) struct ChangeActorColumns {
     changed_by_kind: Option<String>,
     changed_by_name: Option<String>,
-}
-
-/// An actor's stored columns do not describe a complete, known credential.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub(crate) enum DecodeChangeActorError {
-    #[error("change actor kind and name must both be present or both be null")]
-    Incomplete,
-    #[error("unknown change actor kind '{value}'")]
-    UnknownKind { value: String },
 }
 
 impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
@@ -190,12 +190,13 @@ mod tests {
                 },
             ),
         ] {
-            let error = Option::<ChangeActor>::try_from(ChangeActorColumns {
-                changed_by_kind: kind.map(str::to_string),
-                changed_by_name: name.map(str::to_string),
-            })
-            .unwrap_err();
-            assert_eq!(error, expected);
+            assert_eq!(
+                Option::<ChangeActor>::try_from(ChangeActorColumns {
+                    changed_by_kind: kind.map(str::to_string),
+                    changed_by_name: name.map(str::to_string),
+                }),
+                Err(expected)
+            );
         }
     }
 

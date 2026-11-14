@@ -19,7 +19,7 @@ pub(crate) async fn find_served_by_name_tx(
         .filter(|zone| zone.enabled))
 }
 
-/// Read a zone in the caller's transaction at `lock_level`, including disabled zones
+/// Find a zone in the caller's transaction at `lock_level`, including disabled zones
 /// so imports can still write their records.
 pub(crate) async fn find_by_name_tx(
     tx: &mut Transaction<'_>,

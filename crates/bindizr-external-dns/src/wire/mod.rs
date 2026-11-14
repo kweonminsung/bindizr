@@ -125,19 +125,6 @@ pub(crate) struct BindizrRecordUpdate {
     new: BindizrRecord,
 }
 
-impl From<BindizrRecord> for Endpoint {
-    /// Build an endpoint for one bindizr record; the server already sorts values.
-    fn from(record: BindizrRecord) -> Self {
-        Self {
-            dns_name: record.name,
-            targets: record.values,
-            record_type: record.record_type,
-            record_ttl: record.ttl.unwrap_or(0),
-            ..Default::default()
-        }
-    }
-}
-
 impl Endpoint {
     /// Validate adapter input and return its parsed record type.
     /// Mirror server validation so invalid plans fail locally with permanent 4xx errors.
@@ -197,6 +184,19 @@ impl Endpoint {
             record_type: record_type.as_str().to_string(),
             ttl: (self.record_ttl > 0).then_some(self.record_ttl),
             values: self.targets.clone(),
+        }
+    }
+}
+
+impl From<BindizrRecord> for Endpoint {
+    /// Build an endpoint for one bindizr record; the server already sorts values.
+    fn from(record: BindizrRecord) -> Self {
+        Self {
+            dns_name: record.name,
+            targets: record.values,
+            record_type: record.record_type,
+            record_ttl: record.ttl.unwrap_or(0),
+            ..Default::default()
         }
     }
 }

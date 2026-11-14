@@ -117,6 +117,127 @@ pub struct Config {
     pub logging: LoggingConfig,
 }
 
+impl Config {
+    /// Load and validate the file at `config_path`, applying environment
+    /// overrides. The value is the caller's to hold; nothing is stored.
+    pub fn load(config_path: &str) -> Result<Self, ConfigError> {
+        if !PathBuf::from(config_path).exists() {
+            return Err(ConfigError::NotFound {
+                path: config_path.to_string(),
+            });
+        }
+
+        let text = fs::read_to_string(config_path).map_err(|source| ConfigError::Read {
+            path: config_path.to_string(),
+            source,
+        })?;
+
+        // A parse or validation failure names no file, and the path may be a
+        // default the caller never spelled.
+        Self::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
+            path: config_path.to_string(),
+            source: Box::new(source),
+        })
+    }
+
+    /// List the settings a reload actually changed, for the line that reports it.
+    pub fn changed_settings(&self, next: &Self) -> Vec<String> {
+        let mut changed = Vec::new();
+
+        if self.dns != next.dns {
+            changed.push("dns".to_string());
+        }
+        if self.history != next.history {
+            changed.push("history".to_string());
+        }
+        if self.logging != next.logging {
+            changed.push("logging".to_string());
+        }
+
+        changed
+    }
+
+    /// List the settings bound to something built at startup — a listening socket,
+    /// the HTTP router, the database pool — which a reload cannot rebuild.
+    pub fn fixed_settings_changed(&self, next: &Self) -> Vec<String> {
+        let mut fixed = Vec::new();
+
+        if self.api != next.api {
+            fixed.push("api".to_string());
+        }
+        if self.database != next.database {
+            fixed.push("database".to_string());
+        }
+        if self.dns.listen_addr != next.dns.listen_addr {
+            fixed.push("dns.listen_addr".to_string());
+        }
+        if self.dns.listen_port != next.dns.listen_port {
+            fixed.push("dns.listen_port".to_string());
+        }
+        if self.dns.tls != next.dns.tls {
+            fixed.push("dns.tls".to_string());
+        }
+        if self.dns.tcp_max_connections != next.dns.tcp_max_connections {
+            fixed.push("dns.tcp_max_connections".to_string());
+        }
+
+        // A live rename would strand the catalog row and configured secondaries.
+        if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
+            fixed.push("dns.catalog_zone_name".to_string());
+        }
+
+        fixed
+    }
+
+    /// Assemble the effective configuration from its raw sections.
+    fn from_toml(
+        text: &str,
+        get_env: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, ConfigError> {
+        let mut config = toml::from_str::<Self>(text).map_err(ConfigError::Parse)?;
+
+        config.apply_env_overrides(get_env)?;
+        config.api.validate()?;
+        config.database.validate()?;
+        config.dns.validate()?;
+        config.validate_listeners()?;
+
+        Ok(config)
+    }
+
+    /// Reject listeners sharing an endpoint so every server can bind at
+    /// startup; the TLS listener counts only while it is on.
+    fn validate_listeners(&self) -> Result<(), ConfigError> {
+        let api = (self.api.listen_addr, self.api.listen_port);
+        let dns = (self.dns.listen_addr, self.dns.listen_port);
+        let dns_tls = (self.dns.listen_addr, self.dns.tls.listen_port);
+        let dns_tls_on = self.dns.tls.tls_files().is_some();
+        let pairs = [
+            ("api", api, "dns", dns, true),
+            ("dns", dns, "dns.tls", dns_tls, dns_tls_on),
+            ("api", api, "dns.tls", dns_tls, dns_tls_on),
+        ];
+
+        for (first, (first_addr, port), second, (second_addr, second_port), checked) in pairs {
+            // An unspecified address covers every other, so the port alone collides.
+            if checked
+                && port == second_port
+                && (first_addr == second_addr
+                    || first_addr.is_unspecified()
+                    || second_addr.is_unspecified())
+            {
+                return Err(ConfigError::SharedPort {
+                    first,
+                    second,
+                    port,
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// HTTP API server settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,6 +262,16 @@ pub struct ApiConfig {
     pub openapi_enabled: bool,
     #[serde(default)]
     pub tls: ApiTlsConfig,
+}
+
+impl ApiConfig {
+    /// Validate the API configuration fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.listen_port == 0 {
+            return Err(ConfigError::PortZero { section: "api" });
+        }
+        self.tls.validate()
+    }
 }
 
 impl Default for ApiConfig {
@@ -168,6 +299,13 @@ fn default_api_listen_port() -> u16 {
     3000
 }
 
+/// The PEM certificate chain and private key a listener serves TLS with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TlsFiles<'a> {
+    pub cert_file: &'a str,
+    pub key_file: &'a str,
+}
+
 /// HTTPS for the API, served while both PEM files are set; without them the
 /// bearer tokens travel in the clear.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -177,6 +315,33 @@ pub struct ApiTlsConfig {
     pub cert_file: Option<String>,
     #[serde(default)]
     pub key_file: Option<String>,
+}
+
+impl ApiTlsConfig {
+    /// Return the certificate and key to serve HTTPS with, or `None` for plain HTTP.
+    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
+        Some(TlsFiles {
+            cert_file: self.cert_file.as_deref()?,
+            key_file: self.key_file.as_deref()?,
+        })
+    }
+
+    /// Validate the HTTPS fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        // Half a pair would serve plain HTTP on a port the operator means to
+        // be HTTPS, which no later error would reveal.
+        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
+            (Some(_), None) => Err(ConfigError::TlsHalfPair {
+                present: "api.tls.cert_file",
+                missing: "api.tls.key_file",
+            }),
+            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
+                present: "api.tls.key_file",
+                missing: "api.tls.cert_file",
+            }),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Return the default catalog zone name.
@@ -210,6 +375,35 @@ pub struct DatabaseConfig {
     pub postgresql: PostgresConfig,
     #[serde(default)]
     pub tls: DatabaseTlsConfig,
+}
+
+impl DatabaseConfig {
+    /// Validate the database configuration fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        self.tls.validate()?;
+
+        match self.database_type {
+            DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.mysql.url",
+                    database_type: DatabaseType::MySql,
+                })
+            }
+            DatabaseType::Postgres if self.postgresql.url.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.postgresql.url",
+                    database_type: DatabaseType::Postgres,
+                })
+            }
+            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.sqlite.file_path",
+                    database_type: DatabaseType::Sqlite,
+                })
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Supported database backends.
@@ -396,6 +590,84 @@ pub struct DnsConfig {
     pub zone_defaults: ZoneDefaultsConfig,
 }
 
+impl DnsConfig {
+    /// Return whether a DNS question's decoded labels name this instance's catalog (RFC 4343).
+    pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
+        ZoneName::parse(zone_name).is_ok_and(|name| name == self.catalog_zone_name)
+    }
+
+    /// Return how long a TCP or TLS connection may sit idle between queries.
+    pub fn tcp_idle_timeout(&self) -> Duration {
+        Duration::from_secs(self.tcp_idle_timeout_secs)
+    }
+
+    /// Validate the DNS configuration fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        let catalog_wire = self
+            .catalog_zone_name
+            .to_wire()
+            .map_err(ConfigError::CatalogZoneName)?;
+
+        if catalog_wire.len() > dns::MAX_CATALOG_ZONE_WIRE_LEN {
+            return Err(ConfigError::CatalogZoneTooLong {
+                max_wire_len: dns::MAX_CATALOG_ZONE_WIRE_LEN,
+            });
+        }
+        if self.listen_port == 0 {
+            return Err(ConfigError::PortZero { section: "dns" });
+        }
+
+        // RFC 7858, Section 3.1: servers "MUST NOT use port 853 to transport
+        // cleartext DNS messages".
+        if self.listen_port == 853 {
+            return Err(ConfigError::PortReserved {
+                section: "dns",
+                port: 853,
+                reserved_for: "DNS over TLS",
+            });
+        }
+
+        // The idle timeout must fit the keepalive option's 16-bit deciseconds.
+        if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.tcp_idle_timeout_secs) {
+            return Err(ConfigError::OutOfRange {
+                key: "dns.tcp_idle_timeout_secs",
+                min: 1,
+                max: MAX_TCP_IDLE_TIMEOUT_SECS,
+            });
+        }
+        if self.tcp_max_connections == 0 {
+            return Err(ConfigError::Zero {
+                key: "dns.tcp_max_connections",
+            });
+        }
+
+        self.tls.validate()?;
+        self.import.validate()?;
+
+        // Refusing plain transfers with no TLS listener would refuse them all.
+        if self.transfer.require_tls && self.tls.tls_files().is_none() {
+            return Err(ConfigError::TransferRequiresTlsListener);
+        }
+
+        // A zone without its own timers inherits these; a zero is refused
+        // here as it is in a request.
+        let defaults = &self.zone_defaults;
+
+        for (field, secs) in [
+            ("refresh", defaults.refresh.as_secs()),
+            ("retry", defaults.retry.as_secs()),
+            ("expire", defaults.expire.as_secs()),
+            ("minimum_ttl", defaults.minimum_ttl.as_secs()),
+        ] {
+            if secs == 0 {
+                return Err(ConfigError::ZoneDefaultZero { field });
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl Default for DnsConfig {
     /// Build the default DNS listener and zone-management settings.
     fn default() -> Self {
@@ -438,7 +710,7 @@ pub struct NotifyConfig {
 
 impl NotifyConfig {
     /// Return how long one NOTIFY, probe, or resolution waits for its answer.
-    pub fn timeout(&self) -> Duration {
+    pub fn timeout(self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 }
@@ -525,12 +797,12 @@ pub struct ImportConfig {
 
 impl ImportConfig {
     /// Return how long the whole transfer may take.
-    pub fn timeout(&self) -> Duration {
+    pub fn timeout(self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 
     /// Validate the import bounds.
-    fn validate(&self) -> Result<(), ConfigError> {
+    fn validate(self) -> Result<(), ConfigError> {
         if self.timeout_secs == 0 {
             return Err(ConfigError::Zero {
                 key: "dns.import.timeout_secs",
@@ -578,6 +850,47 @@ pub struct DnsTlsConfig {
     pub cert_file: Option<String>,
     #[serde(default)]
     pub key_file: Option<String>,
+}
+
+impl DnsTlsConfig {
+    /// Return the certificate and key to serve XoT with, or `None` while the TLS
+    /// listener is off.
+    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
+        Some(TlsFiles {
+            cert_file: self.cert_file.as_deref()?,
+            key_file: self.key_file.as_deref()?,
+        })
+    }
+
+    /// Validate the TLS listener fields.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.listen_port == 0 {
+            return Err(ConfigError::PortZero { section: "dns.tls" });
+        }
+
+        // RFC 7858, Section 3.1: DNS over TLS "MUST NOT be port 53".
+        if self.listen_port == 53 {
+            return Err(ConfigError::PortReserved {
+                section: "dns.tls",
+                port: 53,
+                reserved_for: "cleartext DNS",
+            });
+        }
+
+        // Half a pair would leave the listener off on a port the operator
+        // means to serve, which no later error would reveal.
+        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
+            (Some(_), None) => Err(ConfigError::TlsHalfPair {
+                present: "dns.tls.cert_file",
+                missing: "dns.tls.key_file",
+            }),
+            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
+                present: "dns.tls.key_file",
+                missing: "dns.tls.cert_file",
+            }),
+            _ => Ok(()),
+        }
+    }
 }
 
 impl Default for DnsTlsConfig {
@@ -902,319 +1215,6 @@ fn resolve_config_path_with_env(
         .map(str::to_string)
         .or_else(|| get_env("BINDIZR_CONFIG_PATH"))
         .unwrap_or_else(|| DEFAULT_CONFIG_PATH.to_string())
-}
-
-impl Config {
-    /// Load and validate the file at `config_path`, applying environment
-    /// overrides. The value is the caller's to hold; nothing is stored.
-    pub fn load(config_path: &str) -> Result<Self, ConfigError> {
-        if !PathBuf::from(config_path).exists() {
-            return Err(ConfigError::NotFound {
-                path: config_path.to_string(),
-            });
-        }
-
-        let text = fs::read_to_string(config_path).map_err(|source| ConfigError::Read {
-            path: config_path.to_string(),
-            source,
-        })?;
-
-        // A parse or validation failure names no file, and the path may be a
-        // default the caller never spelled.
-        Self::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
-            path: config_path.to_string(),
-            source: Box::new(source),
-        })
-    }
-
-    /// List the settings a reload actually changed, for the line that reports it.
-    pub fn changed_settings(&self, next: &Self) -> Vec<String> {
-        let mut changed = Vec::new();
-
-        if self.dns != next.dns {
-            changed.push("dns".to_string());
-        }
-        if self.history != next.history {
-            changed.push("history".to_string());
-        }
-        if self.logging != next.logging {
-            changed.push("logging".to_string());
-        }
-
-        changed
-    }
-
-    /// List the settings bound to something built at startup — a listening socket,
-    /// the HTTP router, the database pool — which a reload cannot rebuild.
-    pub fn fixed_settings_changed(&self, next: &Self) -> Vec<String> {
-        let mut fixed = Vec::new();
-
-        if self.api != next.api {
-            fixed.push("api".to_string());
-        }
-        if self.database != next.database {
-            fixed.push("database".to_string());
-        }
-        if self.dns.listen_addr != next.dns.listen_addr {
-            fixed.push("dns.listen_addr".to_string());
-        }
-        if self.dns.listen_port != next.dns.listen_port {
-            fixed.push("dns.listen_port".to_string());
-        }
-        if self.dns.tls != next.dns.tls {
-            fixed.push("dns.tls".to_string());
-        }
-        if self.dns.tcp_max_connections != next.dns.tcp_max_connections {
-            fixed.push("dns.tcp_max_connections".to_string());
-        }
-
-        // A live rename would strand the catalog row and configured secondaries.
-        if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
-            fixed.push("dns.catalog_zone_name".to_string());
-        }
-
-        fixed
-    }
-
-    /// Assemble the effective configuration from its raw sections.
-    fn from_toml(
-        text: &str,
-        get_env: impl Fn(&str) -> Option<String>,
-    ) -> Result<Self, ConfigError> {
-        let mut config = toml::from_str::<Self>(text).map_err(ConfigError::Parse)?;
-
-        config.apply_env_overrides(get_env)?;
-        config.api.validate()?;
-        config.database.validate()?;
-        config.dns.validate()?;
-        config.validate_listeners()?;
-
-        Ok(config)
-    }
-
-    /// Reject listeners sharing an endpoint so every server can bind at
-    /// startup; the TLS listener counts only while it is on.
-    fn validate_listeners(&self) -> Result<(), ConfigError> {
-        let api = (self.api.listen_addr, self.api.listen_port);
-        let dns = (self.dns.listen_addr, self.dns.listen_port);
-        let dns_tls = (self.dns.listen_addr, self.dns.tls.listen_port);
-        let dns_tls_on = self.dns.tls.tls_files().is_some();
-        let pairs = [
-            ("api", api, "dns", dns, true),
-            ("dns", dns, "dns.tls", dns_tls, dns_tls_on),
-            ("api", api, "dns.tls", dns_tls, dns_tls_on),
-        ];
-
-        for (first, (first_addr, port), second, (second_addr, second_port), checked) in pairs {
-            // An unspecified address covers every other, so the port alone collides.
-            if checked
-                && port == second_port
-                && (first_addr == second_addr
-                    || first_addr.is_unspecified()
-                    || second_addr.is_unspecified())
-            {
-                return Err(ConfigError::SharedPort {
-                    first,
-                    second,
-                    port,
-                });
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl DatabaseConfig {
-    /// Validate the database configuration fields.
-    fn validate(&self) -> Result<(), ConfigError> {
-        self.tls.validate()?;
-
-        match self.database_type {
-            DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
-                Err(ConfigError::EmptyDatabaseLocation {
-                    key: "database.mysql.url",
-                    database_type: DatabaseType::MySql,
-                })
-            }
-            DatabaseType::Postgres if self.postgresql.url.trim().is_empty() => {
-                Err(ConfigError::EmptyDatabaseLocation {
-                    key: "database.postgresql.url",
-                    database_type: DatabaseType::Postgres,
-                })
-            }
-            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => {
-                Err(ConfigError::EmptyDatabaseLocation {
-                    key: "database.sqlite.file_path",
-                    database_type: DatabaseType::Sqlite,
-                })
-            }
-            _ => Ok(()),
-        }
-    }
-}
-
-/// The PEM certificate chain and private key a listener serves TLS with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TlsFiles<'a> {
-    pub cert_file: &'a str,
-    pub key_file: &'a str,
-}
-
-impl ApiConfig {
-    /// Validate the API configuration fields.
-    fn validate(&self) -> Result<(), ConfigError> {
-        if self.listen_port == 0 {
-            return Err(ConfigError::PortZero { section: "api" });
-        }
-        self.tls.validate()
-    }
-}
-
-impl ApiTlsConfig {
-    /// Return the certificate and key to serve HTTPS with, or `None` for plain HTTP.
-    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
-        Some(TlsFiles {
-            cert_file: self.cert_file.as_deref()?,
-            key_file: self.key_file.as_deref()?,
-        })
-    }
-
-    /// Validate the HTTPS fields.
-    fn validate(&self) -> Result<(), ConfigError> {
-        // Half a pair would serve plain HTTP on a port the operator means to
-        // be HTTPS, which no later error would reveal.
-        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
-            (Some(_), None) => Err(ConfigError::TlsHalfPair {
-                present: "api.tls.cert_file",
-                missing: "api.tls.key_file",
-            }),
-            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
-                present: "api.tls.key_file",
-                missing: "api.tls.cert_file",
-            }),
-            _ => Ok(()),
-        }
-    }
-}
-
-impl DnsTlsConfig {
-    /// Return the certificate and key to serve XoT with, or `None` while the TLS
-    /// listener is off.
-    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
-        Some(TlsFiles {
-            cert_file: self.cert_file.as_deref()?,
-            key_file: self.key_file.as_deref()?,
-        })
-    }
-
-    /// Validate the TLS listener fields.
-    fn validate(&self) -> Result<(), ConfigError> {
-        if self.listen_port == 0 {
-            return Err(ConfigError::PortZero { section: "dns.tls" });
-        }
-
-        // RFC 7858, Section 3.1: DNS over TLS "MUST NOT be port 53".
-        if self.listen_port == 53 {
-            return Err(ConfigError::PortReserved {
-                section: "dns.tls",
-                port: 53,
-                reserved_for: "cleartext DNS",
-            });
-        }
-
-        // Half a pair would leave the listener off on a port the operator
-        // means to serve, which no later error would reveal.
-        match (self.cert_file.as_deref(), self.key_file.as_deref()) {
-            (Some(_), None) => Err(ConfigError::TlsHalfPair {
-                present: "dns.tls.cert_file",
-                missing: "dns.tls.key_file",
-            }),
-            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
-                present: "dns.tls.key_file",
-                missing: "dns.tls.cert_file",
-            }),
-            _ => Ok(()),
-        }
-    }
-}
-
-impl DnsConfig {
-    /// Match a DNS question's decoded labels to this instance's catalog (RFC 4343).
-    pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
-        ZoneName::parse(zone_name).is_ok_and(|name| name == self.catalog_zone_name)
-    }
-
-    /// Return how long a TCP or TLS connection may sit idle between queries.
-    pub fn tcp_idle_timeout(&self) -> Duration {
-        Duration::from_secs(self.tcp_idle_timeout_secs)
-    }
-
-    /// Validate the DNS configuration fields.
-    fn validate(&self) -> Result<(), ConfigError> {
-        let catalog_wire = self
-            .catalog_zone_name
-            .to_wire()
-            .map_err(ConfigError::CatalogZoneName)?;
-
-        if catalog_wire.len() > dns::MAX_CATALOG_ZONE_WIRE_LEN {
-            return Err(ConfigError::CatalogZoneTooLong {
-                max_wire_len: dns::MAX_CATALOG_ZONE_WIRE_LEN,
-            });
-        }
-        if self.listen_port == 0 {
-            return Err(ConfigError::PortZero { section: "dns" });
-        }
-
-        // RFC 7858, Section 3.1: servers "MUST NOT use port 853 to transport
-        // cleartext DNS messages".
-        if self.listen_port == 853 {
-            return Err(ConfigError::PortReserved {
-                section: "dns",
-                port: 853,
-                reserved_for: "DNS over TLS",
-            });
-        }
-
-        // The idle timeout must fit the keepalive option's 16-bit deciseconds.
-        if !(1..=MAX_TCP_IDLE_TIMEOUT_SECS).contains(&self.tcp_idle_timeout_secs) {
-            return Err(ConfigError::OutOfRange {
-                key: "dns.tcp_idle_timeout_secs",
-                min: 1,
-                max: MAX_TCP_IDLE_TIMEOUT_SECS,
-            });
-        }
-        if self.tcp_max_connections == 0 {
-            return Err(ConfigError::Zero {
-                key: "dns.tcp_max_connections",
-            });
-        }
-
-        self.tls.validate()?;
-        self.import.validate()?;
-
-        // Refusing plain transfers with no TLS listener would refuse them all.
-        if self.transfer.require_tls && self.tls.tls_files().is_none() {
-            return Err(ConfigError::TransferRequiresTlsListener);
-        }
-
-        // A zone without its own timers inherits these; a zero is refused
-        // here as it is in a request.
-        let defaults = &self.zone_defaults;
-
-        for (field, secs) in [
-            ("refresh", defaults.refresh.as_secs()),
-            ("retry", defaults.retry.as_secs()),
-            ("expire", defaults.expire.as_secs()),
-            ("minimum_ttl", defaults.minimum_ttl.as_secs()),
-        ] {
-            if secs == 0 {
-                return Err(ConfigError::ZoneDefaultZero { field });
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]

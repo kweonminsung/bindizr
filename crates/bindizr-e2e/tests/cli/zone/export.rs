@@ -108,7 +108,7 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
     // Rdata ties break as text, so 192.0.2.10 sorts before 192.0.2.2.
     assert_eq!(
         ordered,
-        vec![
+        [
             "a\t3600\tIN\tA\t192.0.2.10",
             "a\t3600\tIN\tA\t192.0.2.2",
             "a\t3600\tIN\tMX\t10 mail.example.com.",

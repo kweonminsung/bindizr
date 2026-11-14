@@ -268,6 +268,7 @@ async fn handle_udp_query(
         {
             log::error!("NSUPDATE UDP handler failed for {client_addr}: {error}");
         }
+
         return;
     }
 

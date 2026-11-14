@@ -87,7 +87,7 @@ impl Context {
             .clone()
     }
 
-    /// The file the configuration came from.
+    /// Return the file the configuration came from.
     pub fn config_path(&self) -> &str {
         &self.config_path
     }
@@ -115,37 +115,37 @@ impl Context {
         changed
     }
 
-    /// The database every query runs on.
+    /// Return the database every query runs on.
     pub(crate) fn db(&self) -> &Db {
         &self.db
     }
 
-    /// The service's bounded key/address preparation queue.
+    /// Return the service's bounded key/address preparation queue.
     pub(crate) fn notify_preparations(&self) -> &Semaphore {
         &self.notify_preparations
     }
 
-    /// Shared NOTIFY sockets and their active exchanges.
+    /// Return the shared NOTIFY sockets and their active exchanges.
     pub(crate) fn notify_client(&self) -> &NotifyClient {
         &self.notify_client
     }
 
-    /// The daemon's metrics registry.
+    /// Return the daemon's metrics registry.
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
     }
 
-    /// The pool's occupancy, for the metrics scrape.
+    /// Return the pool's occupancy, for the metrics scrape.
     pub fn db_stats(&self) -> PoolStats {
         self.db.stats()
     }
 
-    /// The moment the daemon began serving, absent while it is still starting.
+    /// Return the moment the daemon began serving, absent while it is still starting.
     pub fn started_at(&self) -> Option<DateTime<Utc>> {
         self.started_at.get().copied()
     }
 
-    /// Record the moment every front end came up; the first call wins, and
+    /// Stamp the moment every front end came up; the first call wins, and
     /// the started-at gauge publishes the same moment.
     pub fn set_started_at(&self, at: DateTime<Utc>) {
         if self.started_at.set(at).is_ok() {

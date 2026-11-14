@@ -17,6 +17,14 @@ use thiserror::Error;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::{net, time};
 
+/// One byte beyond the largest supported advertisement detects truncated datagrams.
+const UDP_RESPONSE_BUFFER_LEN: usize = query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
+
+/// Failure to read a length-prefixed DNS message from a TCP stream.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct ReadTcpMessageError(#[from] io::Error);
+
 /// A failed DNS exchange; `what` identifies the operation in timeout and send errors.
 #[derive(Debug, Error)]
 pub enum ExchangeMessageError {
@@ -56,9 +64,6 @@ pub enum ResolveAddressError {
     #[error("resolution timed out after {secs} seconds")]
     TimedOut { secs: u64 },
 }
-
-/// One byte beyond the largest supported advertisement detects truncated datagrams.
-const UDP_RESPONSE_BUFFER_LEN: usize = query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
 
 /// Ask over UDP and, when the answer comes back truncated, again over TCP
 /// (RFC 1035, Section 4.2.1).
@@ -214,7 +219,7 @@ pub async fn resolve_address_entry(
                 Err(_) => {
                     log::error!(
                         "Resolving server address '{target}' timed out after {} seconds",
-                        timeout.as_secs(),
+                        timeout.as_secs()
                     );
                     Err(ResolveAddressError::TimedOut {
                         secs: timeout.as_secs(),
@@ -224,11 +229,6 @@ pub async fn resolve_address_entry(
         }
     }
 }
-
-/// Failure to read a length-prefixed DNS message from a TCP stream.
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub struct ReadTcpMessageError(#[from] io::Error);
 
 #[cfg(test)]
 mod tests {

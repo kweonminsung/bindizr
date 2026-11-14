@@ -37,24 +37,6 @@ pub(crate) async fn poll_with_deadline<T>(
     time::timeout(deadline, wait).await.ok()
 }
 
-/// Read command input from a file path, or from stdin when the path is `-`.
-pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
-    if path == "-" {
-        use std::io::Read;
-
-        let mut buffer = String::new();
-        io::stdin()
-            .read_to_string(&mut buffer)
-            .map_err(ReadInputError::Stdin)?;
-        Ok(buffer)
-    } else {
-        fs::read_to_string(path).map_err(|source| ReadInputError::File {
-            path: path.to_string(),
-            source,
-        })
-    }
-}
-
 /// Why command input could not be read.
 #[derive(Debug, Error)]
 pub(crate) enum ReadInputError {
@@ -66,4 +48,22 @@ pub(crate) enum ReadInputError {
         #[source]
         source: io::Error,
     },
+}
+
+/// Read command input from a file path, or from stdin when the path is `-`.
+pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
+    use std::io::Read;
+
+    if path == "-" {
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .map_err(ReadInputError::Stdin)?;
+        Ok(buffer)
+    } else {
+        fs::read_to_string(path).map_err(|source| ReadInputError::File {
+            path: path.to_string(),
+            source,
+        })
+    }
 }

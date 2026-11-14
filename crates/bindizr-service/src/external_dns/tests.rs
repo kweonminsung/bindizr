@@ -8,7 +8,6 @@ use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::Db;
 use chrono::Utc;
-use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
@@ -17,7 +16,7 @@ use crate::error::ErrorCode;
 use crate::external_dns::change_set::{ZoneChangeSet, ZoneOperations};
 use crate::types::{
     ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
-    ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,
+    CreateZoneRequest, ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,
 };
 use crate::{record, role, token, zone};
 
@@ -41,13 +40,20 @@ async fn create_zone(cx: &Context, zone_name: &str) {
     zone::create(
         cx,
         &Caller::socket(),
-        &serde_json::from_value(json!({
-            "name": zone_name,
-            "mname": format!("ns.{zone_name}"),
-            "rname": format!("hostmaster@{zone_name}"),
-            "apex_ns": false
-        }))
-        .unwrap(),
+        &CreateZoneRequest {
+            name: zone_name.to_string(),
+            mname: format!("ns.{zone_name}"),
+            rname: format!("hostmaster@{zone_name}"),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: false,
+            dry_run: false,
+        },
     )
     .await
     .unwrap();
@@ -82,13 +88,13 @@ async fn credential(cx: &Context) -> String {
 }
 
 /// Grant the fixture role the supplied actions on a named zone.
-async fn grant(cx: &Context, name: &str, actions: &[&str]) -> RoleGrantResponse {
+async fn grant(cx: &Context, zone_name: &str, actions: &[&str]) -> RoleGrantResponse {
     role::grant::create(
         cx,
         &Caller::socket(),
         "external-dns",
         &CreateRoleGrantRequest {
-            zone_name: Some(name.to_string()),
+            zone_name: Some(zone_name.to_string()),
             actions: actions.iter().map(ToString::to_string).collect(),
             record_name_pattern: None,
             record_types: None,
@@ -124,7 +130,7 @@ async fn apply_changes_uses_transactional_zone_visibility() {
     role::grant::revoke(&cx, &Caller::socket(), "external-dns", permission.id)
         .await
         .unwrap();
-    let zone_name = zone::normalize_name("example.test").unwrap();
+    let zone_name = ZoneName::parse("example.test").unwrap();
     let serial = zone::get_by_name(&cx, &Caller::socket(), &zone_name)
         .await
         .unwrap()
@@ -161,8 +167,8 @@ async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
     grant(&cx, "a.example.test", &["record:create"]).await;
     grant(&cx, "example.test", &["record:create"]).await;
     let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
-    let first = zone::normalize_name("a.example.test").unwrap();
-    let serial = zone::get_by_name(&cx, &Caller::socket(), &first)
+    let zone_name = ZoneName::parse("a.example.test").unwrap();
+    let serial = zone::get_by_name(&cx, &Caller::socket(), &zone_name)
         .await
         .unwrap()
         .serial;
@@ -183,7 +189,7 @@ async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
     );
     assert_eq!(record::count_all(&cx).await.unwrap(), 0);
     assert_eq!(
-        zone::get_by_name(&cx, &Caller::socket(), &first)
+        zone::get_by_name(&cx, &Caller::socket(), &zone_name)
             .await
             .unwrap()
             .serial,
@@ -195,7 +201,7 @@ async fn apply_changes_rejects_hidden_subzones_and_rolls_back_all_zones() {
 fn test_zone(id: i32, zone_name: &str) -> Zone {
     Zone {
         id: ZoneId::from(id),
-        name: ZoneName::from_row(zone_name),
+        name: ZoneName::parse(zone_name).unwrap(),
         mname: format!("ns1.{zone_name}"),
         rname: format!("hostmaster@{zone_name}"),
         default_ttl: Ttl::from_secs(3600),
@@ -495,12 +501,12 @@ fn group_operations_by_zone_resolves_subzone_without_parent_fallback() {
 
     assert_eq!(grouped.len(), 1);
     assert_eq!(
-        grouped[&ZoneName::from_row("internal.example.com")].request_name,
+        grouped[&ZoneName::parse("internal.example.com").unwrap()].request_name,
         "api.internal.example.com"
     );
-    assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
+    assert!(grouped.contains_key(&ZoneName::parse("internal.example.com").unwrap()));
     assert_eq!(
-        grouped[&ZoneName::from_row("internal.example.com")].adds[0].name,
+        grouped[&ZoneName::parse("internal.example.com").unwrap()].adds[0].name,
         OwnerName::from_row("api")
     );
 }
@@ -663,7 +669,7 @@ fn change_set_replaces_rows_when_update_changes_targets() {
     assert_eq!(change_set.creates[0].value, "192.0.2.3");
 }
 
-/// Verify that change set replaces whole RRSET when TTL changes.
+/// Verify that change set replaces whole record set when TTL changes.
 #[test]
 fn change_set_replaces_whole_record_set_when_ttl_changes() {
     let zone = test_zone(1, "example.com");

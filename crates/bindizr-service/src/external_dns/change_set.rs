@@ -57,6 +57,121 @@ pub(crate) struct ZoneChangeSet {
     pub(crate) creates: Vec<Record>,
 }
 
+impl ZoneChangeSet {
+    /// Resolve one zone's operations against its current records; idempotent
+    /// operations cancel out, so an effect-free request yields an empty set.
+    pub(crate) fn compute(
+        zone: &Zone,
+        operations: &ZoneOperations,
+        existing_records: &[Record],
+    ) -> Result<Self, ServiceError> {
+        let mut existing_by_key: HashMap<RecordKey, Vec<&Record>> = HashMap::new();
+
+        for record in existing_records {
+            existing_by_key
+                .entry(record.match_key())
+                .or_default()
+                .push(record);
+        }
+
+        // A cancelled delete leaves a hole, so a later add sees its row as surviving.
+        let mut deletes: Vec<Option<Record>> = Vec::new();
+        let mut delete_slots: HashMap<RecordId, usize> = HashMap::new();
+
+        for record_set in &operations.deletes {
+            for value in &record_set.values {
+                let key = RecordKey::new(&record_set.name, record_set.record_type, value, None);
+
+                for record in existing_by_key.get(&key).into_iter().flatten() {
+                    if let Entry::Vacant(slot) = delete_slots.entry(record.id) {
+                        slot.insert(deletes.len());
+                        deletes.push(Some((*record).clone()));
+                    }
+                }
+            }
+        }
+
+        let mut creates: Vec<Record> = Vec::new();
+        let mut created: HashSet<(RecordKey, Ttl)> = HashSet::new();
+
+        for record_set in &operations.adds {
+            let ttl = record_set.ttl.unwrap_or(zone.default_ttl);
+
+            for value in &record_set.values {
+                let key = RecordKey::new(&record_set.name, record_set.record_type, value, None);
+                let records: &[&Record] = existing_by_key.get(&key).map_or(&[], Vec::as_slice);
+
+                // An unchanged update cancels its own delete instead of rewriting
+                // the row. TTL-sensitive, so a TTL-only update is still a change.
+                if let Some(slot) = records
+                    .iter()
+                    .filter(|record| record.ttl == ttl)
+                    .find_map(|record| delete_slots.remove(&record.id))
+                {
+                    deletes[slot] = None;
+                    continue;
+                }
+
+                // Idempotent create: a surviving row already holds this rdata. TTL
+                // is excluded to match the duplicate check behind this one, which
+                // would otherwise reject the create as a conflict.
+                if records
+                    .iter()
+                    .any(|record| !delete_slots.contains_key(&record.id))
+                {
+                    continue;
+                }
+                if !created.insert((key, ttl)) {
+                    continue;
+                }
+
+                creates.push(Record {
+                    id: RecordId::UNWRITTEN,
+                    name: record_set.name.clone(),
+                    record_type: record_set.record_type,
+                    value: value.clone(),
+                    ttl,
+                    priority: None,
+                    zone_id: zone.id,
+                    created_at: Utc::now(),
+                });
+            }
+        }
+
+        let deletes: Vec<Record> = deletes.into_iter().flatten().collect();
+
+        // Validate each insert against the post-delete state plus earlier inserts,
+        // so CNAME exclusivity and record set TTL rules see the state they will land in.
+        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
+        let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
+
+        for record in existing_records {
+            if !deleted_ids.contains(&record.id) {
+                simulated_by_name
+                    .entry(record.name.clone())
+                    .or_default()
+                    .push(record.clone());
+            }
+        }
+
+        for record in &creates {
+            let records_at_name = simulated_by_name.entry(record.name.clone()).or_default();
+            record::validate_record_constraints(
+                records_at_name,
+                &record.name,
+                record.record_type,
+                &record.value,
+                record.ttl,
+                record.priority,
+                None,
+            )?;
+            records_at_name.push(record.clone());
+        }
+
+        Ok(Self { deletes, creates })
+    }
+}
+
 /// Parse a record type the ExternalDNS API manages.
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
     RecordType::parse_external_dns_supported(record_type).ok_or_else(|| {
@@ -83,7 +198,7 @@ fn validate_record_set_shape(
     if record.values.is_empty() {
         return Err(ServiceError::invalid_input(format!(
             "record '{}' {record_type} must have at least one value",
-            record.name,
+            record.name
         )));
     }
     if record_type == RecordType::Cname && record.values.len() > 1 {
@@ -216,119 +331,4 @@ pub(crate) fn group_operations_by_zone(
     }
 
     Ok(grouped)
-}
-
-impl ZoneChangeSet {
-    /// Resolve one zone's operations against its current records; idempotent
-    /// operations cancel out, so an effect-free request yields an empty set.
-    pub(crate) fn compute(
-        zone: &Zone,
-        operations: &ZoneOperations,
-        existing_records: &[Record],
-    ) -> Result<Self, ServiceError> {
-        let mut existing_by_key: HashMap<RecordKey, Vec<&Record>> = HashMap::new();
-
-        for record in existing_records {
-            existing_by_key
-                .entry(record.match_key())
-                .or_default()
-                .push(record);
-        }
-
-        // A cancelled delete leaves a hole, so a later add sees its row as surviving.
-        let mut deletes: Vec<Option<Record>> = Vec::new();
-        let mut delete_slots: HashMap<RecordId, usize> = HashMap::new();
-
-        for record_set in &operations.deletes {
-            for value in &record_set.values {
-                let key = RecordKey::new(&record_set.name, record_set.record_type, value, None);
-
-                for record in existing_by_key.get(&key).into_iter().flatten() {
-                    if let Entry::Vacant(slot) = delete_slots.entry(record.id) {
-                        slot.insert(deletes.len());
-                        deletes.push(Some((*record).clone()));
-                    }
-                }
-            }
-        }
-
-        let mut creates: Vec<Record> = Vec::new();
-        let mut created: HashSet<(RecordKey, Ttl)> = HashSet::new();
-
-        for record_set in &operations.adds {
-            let ttl = record_set.ttl.unwrap_or(zone.default_ttl);
-
-            for value in &record_set.values {
-                let key = RecordKey::new(&record_set.name, record_set.record_type, value, None);
-                let records: &[&Record] = existing_by_key.get(&key).map_or(&[], Vec::as_slice);
-
-                // An unchanged update cancels its own delete instead of rewriting
-                // the row. TTL-sensitive, so a TTL-only update is still a change.
-                if let Some(slot) = records
-                    .iter()
-                    .filter(|record| record.ttl == ttl)
-                    .find_map(|record| delete_slots.remove(&record.id))
-                {
-                    deletes[slot] = None;
-                    continue;
-                }
-
-                // Idempotent create: a surviving row already holds this rdata. TTL
-                // is excluded to match the duplicate check behind this one, which
-                // would otherwise reject the create as a conflict.
-                if records
-                    .iter()
-                    .any(|record| !delete_slots.contains_key(&record.id))
-                {
-                    continue;
-                }
-                if !created.insert((key, ttl)) {
-                    continue;
-                }
-
-                creates.push(Record {
-                    id: RecordId::UNWRITTEN,
-                    name: record_set.name.clone(),
-                    record_type: record_set.record_type,
-                    value: value.clone(),
-                    ttl,
-                    priority: None,
-                    zone_id: zone.id,
-                    created_at: Utc::now(),
-                });
-            }
-        }
-
-        let deletes: Vec<Record> = deletes.into_iter().flatten().collect();
-
-        // Validate each insert against the post-delete state plus earlier inserts,
-        // so CNAME exclusivity and record set TTL rules see the state they will land in.
-        let deleted_ids: HashSet<RecordId> = deletes.iter().map(|record| record.id).collect();
-        let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
-
-        for record in existing_records {
-            if !deleted_ids.contains(&record.id) {
-                simulated_by_name
-                    .entry(record.name.clone())
-                    .or_default()
-                    .push(record.clone());
-            }
-        }
-
-        for record in &creates {
-            let records_at_name = simulated_by_name.entry(record.name.clone()).or_default();
-            record::validate_record_constraints(
-                records_at_name,
-                &record.name,
-                record.record_type,
-                &record.value,
-                record.ttl,
-                record.priority,
-                None,
-            )?;
-            records_at_name.push(record.clone());
-        }
-
-        Ok(Self { deletes, creates })
-    }
 }

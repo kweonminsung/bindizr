@@ -2,7 +2,7 @@
 
 use domain::base::iana::{Class, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{Message, MessageBuilder, Ttl};
+use domain::base::{Message, MessageBuilder, Serial, Ttl};
 use domain::rdata::Soa;
 use domain::rdata::tsig::Tsig;
 
@@ -27,7 +27,7 @@ async fn ixfr_rejects_foreign_soa_classes() {
     app.create_secondary("class-loopback", "127.0.0.1").await;
     let key = tsig::create_tsig_key(&app, "ixfr-record-class", KeyRole::Admin).await;
 
-    let name = dns::parse_name(zone_name).unwrap();
+    let qname = dns::parse_name(zone_name).unwrap();
 
     for class in [
         Class::IN,
@@ -43,17 +43,17 @@ async fn ixfr_rejects_foreign_soa_classes() {
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_id(1995);
         let mut question = builder.question();
-        question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
+        question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
         let mut authority = question.authority();
         authority
             .push((
-                &name,
+                &qname,
                 class,
                 Ttl::ZERO,
                 Soa::new(
-                    name.clone(),
-                    name.clone(),
-                    serial.into(),
+                    qname.clone(),
+                    qname.clone(),
+                    Serial::from(serial),
                     Ttl::ZERO,
                     Ttl::ZERO,
                     Ttl::ZERO,
@@ -129,11 +129,11 @@ fn build_query_with_foreign_record(
     questions: usize,
     version: u8,
 ) -> AdditionalBuilder<Vec<u8>> {
-    let name = dns::parse_name("example.com").unwrap();
+    let qname = dns::parse_name("example.com").unwrap();
     let soa = Soa::new(
-        name.clone(),
-        name.clone(),
-        1.into(),
+        qname.clone(),
+        qname.clone(),
+        Serial::from(1),
         Ttl::ZERO,
         Ttl::ZERO,
         Ttl::ZERO,
@@ -144,27 +144,31 @@ fn build_query_with_foreign_record(
     let mut question = builder.question();
 
     for _ in 0..questions {
-        question.push((&name, Rtype::SOA, Class::IN)).unwrap();
+        question.push((&qname, Rtype::SOA, Class::IN)).unwrap();
     }
 
     let mut answer = question.answer();
 
     if section == Section::Answer {
-        answer.push((&name, Class::CH, Ttl::ZERO, &soa)).unwrap();
+        answer.push((&qname, Class::CH, Ttl::ZERO, &soa)).unwrap();
     }
 
     let mut authority = answer.authority();
-    authority.push((&name, Class::IN, Ttl::ZERO, &soa)).unwrap();
+    authority
+        .push((&qname, Class::IN, Ttl::ZERO, &soa))
+        .unwrap();
 
     if section == Section::Authority {
-        authority.push((&name, Class::CH, Ttl::ZERO, &soa)).unwrap();
+        authority
+            .push((&qname, Class::CH, Ttl::ZERO, &soa))
+            .unwrap();
     }
 
     let mut additional = authority.additional();
 
     if section == Section::Additional {
         additional
-            .push((&name, Class::CH, Ttl::ZERO, &soa))
+            .push((&qname, Class::CH, Ttl::ZERO, &soa))
             .unwrap();
     }
 

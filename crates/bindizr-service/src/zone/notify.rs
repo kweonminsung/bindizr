@@ -66,12 +66,13 @@ pub async fn notify(
 #[cfg(test)]
 mod tests {
     use bindizr_core::config::Config;
+    use bindizr_core::dns::name::ZoneName;
     use bindizr_core::metrics::Metrics;
     use bindizr_db::Db;
-    use serde_json::json;
     use tokio::sync::{mpsc, watch};
 
     use super::*;
+    use crate::types::CreateZoneRequest;
     use crate::zone;
 
     /// Verify that messages describe completed increments, including requests whose target has
@@ -96,30 +97,40 @@ mod tests {
             .unwrap();
         assert_eq!(empty.message, "NOTIFY sent successfully for all zones");
 
-        let (catalog, _) = zone::refresh_catalog(&cx).await.unwrap();
+        let (catalog_zone, _) = zone::refresh_catalog(&cx).await.unwrap();
         let response = notify(
             &cx,
             &caller,
-            NotifyTarget::Zone(&catalog.name),
+            NotifyTarget::Zone(&catalog_zone.name),
             NotifySerial::Bump,
         )
         .await
         .unwrap();
         assert_eq!(
             response.message,
-            format!("NOTIFY sent successfully for zone: {}", catalog.name)
+            format!("NOTIFY sent successfully for zone: {}", catalog_zone.name)
         );
         assert_eq!(
             zone::refresh_catalog(&cx).await.unwrap().0.serial,
-            catalog.serial
+            catalog_zone.serial
         );
 
-        let request = serde_json::from_value(json!({
-            "name": "example.test", "mname": "ns.example.test", "rname": "hostmaster@example.test"
-        }))
-        .unwrap();
+        let request = CreateZoneRequest {
+            name: "example.test".to_string(),
+            mname: "ns.example.test".to_string(),
+            rname: "hostmaster@example.test".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: true,
+            dry_run: false,
+        };
         zone::create(&cx, &caller, &request).await.unwrap();
-        let zone_name = zone::normalize_name("example.test").unwrap();
+        let zone_name = ZoneName::parse("example.test").unwrap();
         let original = zone::get_by_name(&cx, &caller, &zone_name).await.unwrap();
 
         let kept = notify(

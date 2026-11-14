@@ -55,7 +55,7 @@ pub async fn execute() {
         process::exit(EXIT_CONFIG);
     });
 
-    Logger::init(&LoggingConfig {
+    Logger::init(LoggingConfig {
         level: adapter_config.log_level,
         format: LogFormat::Text,
     });

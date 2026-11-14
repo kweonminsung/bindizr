@@ -201,7 +201,6 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
     // Retain the newest version for up-to-date IXFR responses.
-    // MySQL requires a derived table when DELETE reads its own table.
     let result = sqlx::query(
         r#"
         DELETE FROM zone_versions

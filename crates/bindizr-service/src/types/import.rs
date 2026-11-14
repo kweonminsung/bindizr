@@ -10,6 +10,13 @@ use utoipa::ToSchema;
 use crate::types::common::ErrorResponse;
 use crate::types::version::RecordDiffResponse;
 
+/// An import mode outside the supported reconciliation strategies.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("invalid import mode '{value}': expected append, upsert, or replace")]
+pub struct ParseImportModeError {
+    value: String,
+}
+
 /// How parsed records are reconciled with the records already in the zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -33,13 +40,6 @@ impl ImportMode {
             Self::Replace => "replace",
         }
     }
-}
-
-/// An import mode outside the supported reconciliation strategies.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid import mode '{value}': expected append, upsert, or replace")]
-pub struct ParseImportModeError {
-    value: String,
 }
 
 impl FromStr for ImportMode {

@@ -4,7 +4,7 @@ use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use tokio::sync::mpsc;
-use tokio::{task, time};
+use tokio::task;
 
 use super::*;
 

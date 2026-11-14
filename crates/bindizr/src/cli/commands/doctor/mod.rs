@@ -19,7 +19,7 @@ use crate::socket::types::{DaemonCommand, DoctorCheckResponse, DoctorCheckStatus
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct DoctorResponse {
     healthy: bool,
-    failures: usize,
+    failures: u64,
     checks: Vec<DoctorCheckResponse>,
 }
 
@@ -29,7 +29,7 @@ struct DoctorResponse {
 pub(crate) struct Report {
     output: OutputFormat,
     checks: Vec<DoctorCheckResponse>,
-    failures: usize,
+    failures: u64,
 }
 
 impl Report {
@@ -79,7 +79,7 @@ impl Report {
 
 /// Handle the `doctor` subcommand by verifying the installation end to end.
 pub(crate) async fn handle_command(
-    config_file: Option<String>,
+    config_file: Option<&str>,
     output: OutputFormat,
 ) -> Result<(), CliError> {
     if output == OutputFormat::Table {
@@ -93,7 +93,7 @@ pub(crate) async fn handle_command(
         failures: 0,
     };
 
-    let path = config::resolve_config_path(config_file.as_deref());
+    let path = config::resolve_config_path(config_file);
     let file_config = match Config::load(&path) {
         Ok(config) => {
             report.ok(format!("Config valid: {path}"));

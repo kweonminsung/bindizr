@@ -168,7 +168,7 @@ pub async fn rollback(
 ) -> Result<RollbackZoneResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
@@ -182,7 +182,7 @@ pub async fn rollback(
         if !zone.serial.is_newer_than(target_serial) {
             return Err(ServiceError::invalid_input(format!(
                 "target serial {target_serial} must be less than the current serial {}",
-                zone.serial,
+                zone.serial
             )));
         }
 
@@ -378,7 +378,7 @@ pub async fn rollback(
             response.target_serial,
             response.new_serial,
             response.summary.added,
-            response.summary.deleted,
+            response.summary.deleted
         );
 
         notify::notify_after_update(cx, &zone_name).await;

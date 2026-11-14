@@ -7,6 +7,7 @@ use tokio::time;
 use crate::common;
 use crate::common::TestApp;
 
+/// A configuration file that passes validation.
 const VALID_CONFIG: &str = r#"
 [api]
 listen_addr = "127.0.0.1"
@@ -59,7 +60,7 @@ async fn doctor_reports_healthy_installation() {
     }
 
     common::assert_cli_success(&args, &output);
-    let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(stdout.contains("Config valid"));
     assert!(stdout.contains("Daemon running"));

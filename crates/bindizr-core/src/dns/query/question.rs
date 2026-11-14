@@ -15,7 +15,7 @@ pub fn build_question(
     aa: bool,
     rd: bool,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
     edns_udp_payload_size: Option<u16>,
 ) -> (u16, AdditionalBuilder<Vec<u8>>) {
     let query_id = rand::random::<u16>();
@@ -29,7 +29,7 @@ pub fn build_question(
 
     let mut question = builder.question();
     question
-        .push((qname, rtype))
+        .push((qname, qtype))
         .expect("one question fits an unlimited message");
 
     let mut additional = question.additional();

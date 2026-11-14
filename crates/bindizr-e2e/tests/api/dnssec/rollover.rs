@@ -56,7 +56,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
     assert_eq!(ds_records.len(), 1);
     let old_ds = ds_records[0]["presentation"].as_str().unwrap().to_string();
 
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 1);
+    assert_eq!(dnssec["serial"], base_serial + 1);
 
     let (status, body) = app
         .send_request(
@@ -83,7 +83,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         .find(|key| key["state"] == "active")
         .expect("the old key keeps signing during the rollover");
 
-    assert_eq!(active["id"].as_i64().unwrap(), old_key_id);
+    assert_eq!(active["id"], old_key_id);
 
     // Double-DS: both keys are in the parent DS set while it switches over,
     // so the old DS stays alongside the new key's.
@@ -97,7 +97,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
 
     // Pre-publishing changes the DNSKEY record set secondaries hold, so each
     // rollover step rides the serial/IXFR mechanics.
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 2);
+    assert_eq!(dnssec["serial"], base_serial + 2);
 
     let (status, body) = app
         .send_request(
@@ -151,7 +151,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
 
     assert_eq!(ds_records.len(), 1);
     assert_eq!(ds_records[0]["key_tag"], key_by_id(new_key_id)["key_tag"]);
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), base_serial + 3);
+    assert_eq!(dnssec["serial"], base_serial + 3);
 
     let (status, body) = app
         .send_request(

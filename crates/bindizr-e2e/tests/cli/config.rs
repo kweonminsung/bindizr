@@ -4,6 +4,7 @@ use std::process::{Command, Output, Stdio};
 use crate::common;
 use crate::common::TestApp;
 
+/// A configuration file that passes validation.
 const VALID_CONFIG: &str = r#"
 [api]
 listen_addr = "127.0.0.1"

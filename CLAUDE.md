@@ -1386,7 +1386,7 @@ A value's type decides its name wherever it is bound:
 | A fetched db value | its entity (`token`, `logs`), not `row` / `rows` |
 | A conversion's input | `value` from a primitive or text, the domain name otherwise (`fn from(zone: &Zone)`) |
 | A `#[source]` field | `source` |
-| `OwnerName` | `owner` |
+| `OwnerName` | `owner` / `owners` (bindizr-db keeps `name`, as its grammar spells) |
 | `IpAddr` | `ip` |
 | A `CatalogZone` | `catalog_zone`; its name `catalog_zone_name` |
 
@@ -1665,6 +1665,13 @@ Where two spellings mean the same thing, the workspace writes one:
   `.as_str()` or `.clone()`.
 - Error enums keep their variants packed; a payload other than a cause is a
   named field.
+- A multi-line `format!` or log-macro argument list ends without a trailing
+  comma (bindizr-db's SQL builders keep theirs).
+- Channel halves are named for their role or qualified (`jobs`, `stop_tx`),
+  never a bare `tx` / `rx`: `tx` is a `Transaction`.
+- A function-local `use` imports a trait that one function needs only for
+  method calls, and it opens the function's body; a type, module, or a trait
+  named as a path (`CanonicalOrd::canonical_cmp`) is imported at module scope.
 
 The `uninlined_format_args`, `use_self`, `map_unwrap_or`, and
 `semicolon_if_nothing_returned` Clippy lints hold the mechanical part.

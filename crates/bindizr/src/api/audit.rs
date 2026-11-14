@@ -11,7 +11,7 @@ use bindizr_service::types::{
 };
 use bindizr_service::{Context, audit};
 
-use crate::api::RequestCaller;
+use super::RequestCaller;
 use crate::api::error::{ApiError, Query};
 
 /// Build the audit log routes.

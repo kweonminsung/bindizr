@@ -2,7 +2,7 @@
 
 use domain::base::iana::{Class, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{MessageBuilder, Ttl};
+use domain::base::{MessageBuilder, Serial, Ttl};
 use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 
@@ -18,29 +18,29 @@ pub(crate) async fn read_counter(app: &TestApp, name: &str, labels: &[&str]) -> 
     text.lines()
         .filter(|line| line.starts_with(&format!("{name}{{")))
         .find(|line| labels.iter().all(|label| line.contains(label)))
-        .and_then(|line| line.rsplit(' ').next()?.parse().ok())
+        .and_then(|line| line.rsplit(' ').next()?.parse::<f64>().ok())
         .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
 }
 
 /// Build an IXFR query carrying the client's SOA serial.
 pub(crate) fn build_ixfr_query(zone_name: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
-    let name = dns::parse_name(zone_name).unwrap();
+    let qname = dns::parse_name(zone_name).unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1995);
     let mut question = builder.question();
-    question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
+    question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
     let mut authority = question.authority();
 
     // RFC 1995, Section 3: the client's SOA belongs in the authority section.
     authority
         .push((
-            &name,
+            &qname,
             Class::IN,
             Ttl::ZERO,
             Soa::new(
-                name.clone(),
-                name.clone(),
-                serial.into(),
+                qname.clone(),
+                qname.clone(),
+                Serial::from(serial),
                 Ttl::ZERO,
                 Ttl::ZERO,
                 Ttl::ZERO,

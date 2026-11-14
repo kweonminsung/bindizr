@@ -147,7 +147,7 @@ pub async fn import_many(
         summary.zones,
         summary.ok,
         summary.rejected,
-        summary.failed,
+        summary.failed
     );
 
     Ok(ImportZonesResponse {

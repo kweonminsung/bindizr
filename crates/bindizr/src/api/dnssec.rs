@@ -12,7 +12,7 @@ use bindizr_service::{Context, dnssec, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::api::RequestCaller;
+use super::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
 use crate::api::middleware::body_parser::JsonBody;
 use crate::params::NameParams;

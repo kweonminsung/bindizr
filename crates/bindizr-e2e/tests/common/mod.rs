@@ -4,6 +4,7 @@ pub(crate) mod dns;
 mod local;
 mod verify;
 
+use std::env::VarError;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
@@ -28,8 +29,13 @@ pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
 
+/// The switch that runs the suite against the Docker Compose DNS stack.
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
+
+/// The next test's sequence number within this run.
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+/// This run's identifier, shared by every test namespace it generates.
 static RUN_ID: OnceLock<String> = OnceLock::new();
 
 /// One bindizr under test, reached over its HTTP API and CLI, plus the DNS ports it serves.
@@ -460,7 +466,7 @@ impl TestApp {
     pub(crate) async fn run_cli_success(&self, args: &[&str], input: Option<&str>) -> String {
         let output = self.run_cli(args, input).await;
         assert_cli_success(args, &output);
-        String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
+        String::from_utf8_lossy(&output.stdout).into_owned()
     }
 }
 
@@ -490,7 +496,7 @@ fn test_namespace() -> String {
 /// Read a boolean test setting from the environment.
 fn read_env_flag(name: &str) -> bool {
     match env::var(name) {
-        Err(env::VarError::NotPresent) => false,
+        Err(VarError::NotPresent) => false,
         Err(error) => panic!("failed to read {name}: {error}"),
         Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
             "1" | "true" | "yes" | "on" => true,

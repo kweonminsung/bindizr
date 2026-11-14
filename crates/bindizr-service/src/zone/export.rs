@@ -62,7 +62,7 @@ pub async fn export(
         zone.refresh,
         zone.retry,
         zone.expire,
-        zone.minimum_ttl,
+        zone.minimum_ttl
     ));
 
     // Deterministic order: owner name, then type, then rdata. Keyed up front

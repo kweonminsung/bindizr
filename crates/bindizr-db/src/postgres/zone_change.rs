@@ -25,8 +25,7 @@ pub(crate) async fn create_many_tx(
                 sql.push(',');
             }
             sql.push_str(&format!(
-                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                bind_index,
+                "(${bind_index}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                 bind_index + 1,
                 bind_index + 2,
                 bind_index + 3,
@@ -123,8 +122,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    // Delete whole serials only: everything up to the highest serial with
-    // a row older than the cutoff, so remaining IXFR steps stay complete.
+    // Delete whole serials only, so the remaining IXFR steps stay complete.
     let result = sqlx::query(
         r#"
         DELETE FROM zone_journal

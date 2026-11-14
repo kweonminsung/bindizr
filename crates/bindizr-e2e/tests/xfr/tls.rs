@@ -105,7 +105,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
             .join(".")
     };
     let zone_name = longest_name(['a', 'b', 'c', 'd']);
-    let key_name = longest_name(['k', 'l', 'm', 'n']);
+    let tsig_key_name = longest_name(['k', 'l', 'm', 'n']);
 
     let (status, body) = app
         .send_request(
@@ -124,7 +124,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
             Method::POST,
             "/tsig-keys",
             Some(json!({
-                "name": key_name, "algorithm": "hmac-sha512", "role_name": "admin"
+                "name": tsig_key_name, "algorithm": "hmac-sha512", "role_name": "admin"
             })),
         )
         .await;
@@ -136,7 +136,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
     let key = Key::new(
         Algorithm::Sha512,
         &secret,
-        KeyName::from_str(&key_name).unwrap(),
+        KeyName::from_str(&tsig_key_name).unwrap(),
         None,
         None,
     )
@@ -401,6 +401,7 @@ async fn tls_transfer_requires_key_and_registered_address() {
         .expect("XoT");
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
+
     let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
 
     assert!(outcome.records() >= 3);
@@ -447,7 +448,7 @@ async fn tls_transfer_requires_key_and_registered_address() {
 /// Verify that IXFR serial policy applies over TLS after both transfer gates pass.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
+async fn ixfr_serial_policy_requires_a_key_and_registered_address() {
     let app = xot_app().await;
     let zone = app.create_test_zone().await;
     let key = tsig::create_tsig_key(&app, "xot-ixfr-key", KeyRole::Admin).await;
@@ -735,7 +736,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
         &common::build_edns_query(zone_name, Rtype::IXFR, &[(0, false)]).finish(),
     )
     .unwrap();
-    let response = Message::from_octets(response.as_slice()).unwrap();
+    let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::REFUSED);
     assert!(dns::probe_zone_soa(app.dns_port(), zone_name));
@@ -795,6 +796,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
     app.corrupt_test_certificate();
 
     let args = ["config", "reload"];
+
     let refused = app.run_cli(&args, None).await;
     crate::common::assert_cli_failure_contains(&args, &refused, "nothing was reloaded");
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
@@ -1014,25 +1016,29 @@ async fn tls_update_returns_not_supported() {
             tsig::sign(&mut request, key).unwrap();
         }
 
-        let frame =
+        let response =
             dns::exchange_tls(app.dns_tls_port(), &request.finish(), dot_client(&app)).unwrap();
 
-        let response = Message::from_octets(frame.as_slice()).unwrap();
-
-        assert_eq!(response.header().rcode(), Rcode::REFUSED);
         assert_eq!(
-            extended_error_code(&frame),
+            Message::from_octets(response.as_slice())
+                .unwrap()
+                .header()
+                .rcode(),
+            Rcode::REFUSED
+        );
+        assert_eq!(
+            extended_error_code(&response),
             ExtendedErrorCode::NOT_SUPPORTED
         );
-        let response = Message::from_octets(frame).unwrap();
+        let response = Message::from_octets(response).unwrap();
 
         assert_eq!(tsig::parse_tsig_presence(&response).unwrap(), key.is_some());
     }
 }
 
 /// Read the extended error code a refusal names in its OPT.
-fn extended_error_code(frame: &[u8]) -> ExtendedErrorCode {
-    Message::from_octets(frame)
+fn extended_error_code(response: &[u8]) -> ExtendedErrorCode {
+    Message::from_octets(response)
         .unwrap()
         .opt()
         .expect("the refusal carries an OPT")

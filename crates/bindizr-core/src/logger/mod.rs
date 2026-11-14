@@ -88,7 +88,7 @@ impl From<LogLevel> for Level {
 impl Logger {
     /// Install the process-wide logger; reload changes its level and format
     /// through setters because the `log` facade permits only one installation.
-    pub fn init(logging: &LoggingConfig) {
+    pub fn init(logging: LoggingConfig) {
         let log_level = Level::from(logging.level);
 
         set_format(logging.format);

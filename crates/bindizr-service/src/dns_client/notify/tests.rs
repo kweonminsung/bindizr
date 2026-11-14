@@ -7,11 +7,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose;
-use bindizr_core::dns::message::{Edns, Keepalive, Name, OptRcode, ParsedQuery, Rcode};
+use bindizr_core::dns::message::{Class, Edns, Keepalive, Name, OptRcode, ParsedQuery, Rtype};
 use bindizr_core::dns::tsig::{TransferSigner, TsigSigningKey};
 use bindizr_core::dns::{query, tsig};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
+use chrono::Utc;
 use ring::hmac;
 use tokio::net::UdpSocket;
 use tokio::time;
@@ -71,7 +72,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
                 algorithm,
                 secret: general_purpose::STANDARD.encode([1u8; 64]),
                 role_id: RoleId::from(1),
-                created_at: chrono::Utc::now(),
+                created_at: Utc::now(),
             }
             .to_signing_key()
             .unwrap();
@@ -135,8 +136,8 @@ fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     response.extend_from_slice(&0u16.to_be_bytes());
     response.extend_from_slice(&0u16.to_be_bytes());
     crate::dns_client::ds::tests::encode_name(qname, &mut response);
-    response.extend_from_slice(&6u16.to_be_bytes());
-    response.extend_from_slice(&1u16.to_be_bytes());
+    response.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    response.extend_from_slice(&Class::IN.to_int().to_be_bytes());
 
     response
 }
@@ -197,7 +198,7 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     for (request, peer) in requests.iter().rev() {
         let query = ParsedQuery::parse(request, Keepalive::None).unwrap();
         let response = query
-            .build_signed_error_response(Rcode::NOERROR.into(), None, None)
+            .build_signed_error_response(OptRcode::NOERROR, None, None)
             .unwrap();
 
         socket.send_to(&response, peer).await.unwrap();
@@ -240,7 +241,7 @@ async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() 
     socket
         .send_to(
             &query
-                .build_signed_error_response(Rcode::NOERROR.into(), None, None)
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
                 .unwrap(),
             peer,
         )
@@ -259,7 +260,7 @@ async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() 
     socket
         .send_to(
             &query
-                .build_signed_error_response(Rcode::NOERROR.into(), None, None)
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
                 .unwrap(),
             peer,
         )
@@ -337,7 +338,7 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
         algorithm: TsigAlgorithm::HmacSha256,
         secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
-        created_at: chrono::Utc::now(),
+        created_at: Utc::now(),
     }
     .to_signing_key()
     .unwrap();
@@ -470,7 +471,7 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
         algorithm: TsigAlgorithm::HmacSha256,
         secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
-        created_at: chrono::Utc::now(),
+        created_at: Utc::now(),
     }
     .to_signing_key()
     .unwrap();
@@ -531,7 +532,7 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
         algorithm: TsigAlgorithm::HmacSha256,
         secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
-        created_at: chrono::Utc::now(),
+        created_at: Utc::now(),
     }
     .to_signing_key()
     .unwrap();

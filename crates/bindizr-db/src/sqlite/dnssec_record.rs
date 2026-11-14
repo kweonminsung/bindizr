@@ -13,7 +13,7 @@ pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     records: &[DnssecRecord],
 ) -> Result<(), DatabaseError> {
-    // 8 columns per row; keep bind count under SQLite's conservative limit.
+    // 8 columns per row; keep bind count under SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 100;
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -92,7 +92,7 @@ pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
-    // One bind per id; keep the count under SQLite's conservative limit.
+    // One bind per id; keep the count under SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 900;
 
     for chunk in ids.chunks(CHUNK) {

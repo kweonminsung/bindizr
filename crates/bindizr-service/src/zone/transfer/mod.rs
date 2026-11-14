@@ -57,7 +57,7 @@ pub async fn authorize_soa_content_by_name(
 ) -> Result<TransferAccess<(Zone, Vec<DnssecRecord>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load SOA content").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
@@ -86,7 +86,7 @@ pub async fn authorize_transfer_by_name(
 ) -> Result<TransferAccess<(Zone, ZoneVersionId)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => {
                 let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
@@ -145,7 +145,7 @@ pub async fn authorize_transfer_content_by_name(
 ) -> Result<TransferAccess<TransferContent>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load transfer content").await?;
 
-    let result = async {
+    let result: Result<_, ServiceError> = async {
         let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
@@ -168,7 +168,7 @@ pub async fn authorize_transfer_content_by_name(
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
-/// Read the immutable version identity, which remains distinct when serials wrap.
+/// Look up the immutable version identity, which remains distinct when serials wrap.
 async fn lookup_current_version_id_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

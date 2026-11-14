@@ -39,7 +39,7 @@ pub async fn start_rollover(
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
         let mut signed = super::get_signed_zone_tx(
             &mut tx,
@@ -159,7 +159,7 @@ pub async fn advance_rollover(
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let mut signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -385,7 +385,7 @@ pub(crate) fn promotable_sep_key_ids(
             "the replacement key must stay published so resolvers holding the previous \
              DNSKEY records can learn it; retry after {}, or skip the hold-down and accept \
              validation failures until those caches expire",
-            promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
+            promotable_at.format("%Y-%m-%dT%H:%M:%SZ")
         )));
     }
 

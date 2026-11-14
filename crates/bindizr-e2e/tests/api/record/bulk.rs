@@ -100,7 +100,7 @@ async fn record_bulk_insert_returns_not_found_when_zone_is_unknown() {
 
     let request = json!({
         "zone_name": missing_zone_name,
-        "records": [ { "name": "a", "type": "A", "value": "192.0.2.1" } ]
+        "records": [{ "name": "a", "type": "A", "value": "192.0.2.1" }]
     });
 
     let (status, _) = app

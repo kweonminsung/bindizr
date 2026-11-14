@@ -10,17 +10,17 @@ use thiserror::Error;
 use utoipa::openapi::RefOr;
 use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, Type};
 
-/// A zone's SOA serial, in its wire form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Serial(u32);
-
 /// A serial that cannot cross between its row form and its wire form.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertSerialError {
     #[error("invalid DNS serial: {serial}; expected an unsigned 32-bit value")]
     OutOfRange { serial: i64 },
 }
+
+/// A zone's SOA serial, in its wire form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Serial(u32);
 
 impl Serial {
     /// The largest wire serial (RFC 1982, Section 2).

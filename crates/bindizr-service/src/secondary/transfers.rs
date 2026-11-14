@@ -42,11 +42,11 @@ pub async fn list_transfers(
         .transpose()?;
 
     // The summary counts every zone's last transfer, whatever the filter selects.
-    let clients = resolve_ips(cx, &secondary).await;
-    let latest = transfer::list_latest_by_clients(cx, &clients).await?;
+    let client_ips = resolve_ips(cx, &secondary).await;
+    let latest = transfer::list_latest_by_clients(cx, &client_ips).await?;
     let logs = transfer::list_by_clients(
         cx,
-        &clients,
+        &client_ips,
         &TransferLogFilter {
             zone_name,
             since: filter.since,

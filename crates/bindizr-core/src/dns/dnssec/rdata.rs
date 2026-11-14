@@ -1,7 +1,7 @@
 //! The wire RDATA a key implies: DNSKEY and its DS digests.
 
-use base64::Engine;
 use base64::engine::general_purpose;
+use base64::{DecodeError, Engine};
 use domain::base::iana::SecurityAlgorithm;
 use domain::rdata::Dnskey;
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
@@ -20,11 +20,11 @@ pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 #[derive(Debug, Error)]
 pub enum EncodeKeyRdataError {
     #[error("stored public key is not base64: {0}")]
-    PublicKeyNotBase64(#[source] base64::DecodeError),
+    PublicKeyNotBase64(#[source] DecodeError),
     #[error("stored public key is invalid: {0}")]
     InvalidPublicKey(#[source] LibraryError),
-    #[error("unsupported DS digest type {0}")]
-    UnsupportedDigestType(u8),
+    #[error("unsupported DS digest type {digest_type}")]
+    UnsupportedDigestType { digest_type: u8 },
     #[error(transparent)]
     Rdata(#[from] EncodeRdataError),
 }
@@ -57,7 +57,7 @@ impl DnssecKey {
             1 => &SHA1_FOR_LEGACY_USE_ONLY,
             2 => &SHA256,
             4 => &SHA384,
-            other => return Err(EncodeKeyRdataError::UnsupportedDigestType(other)),
+            _ => return Err(EncodeKeyRdataError::UnsupportedDigestType { digest_type }),
         };
         let mut hasher = Context::new(algorithm);
         hasher.update(apex.as_slice());

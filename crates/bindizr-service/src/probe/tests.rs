@@ -5,14 +5,13 @@ use std::time::Duration;
 use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
-use serde_json::json;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::time;
 
 use super::*;
 use crate::authorization::Caller;
-use crate::zone;
+use crate::types::CreateSecondaryRequest;
 
 /// Build isolated SQLite state with a bounded probe timeout and no workers.
 async fn context() -> Arc<Context> {
@@ -68,14 +67,15 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     secondary::create(
         &cx,
         &Caller::socket(),
-        &serde_json::from_value(json!({
-            "name":"secondary", "address":socket.local_addr().unwrap().to_string(),
-        }))
-        .unwrap(),
+        &CreateSecondaryRequest {
+            name: "secondary".to_string(),
+            address: socket.local_addr().unwrap().to_string(),
+            notify_key_name: None,
+        },
     )
     .await
     .unwrap();
-    let zone_name = zone::normalize_name("example.test").unwrap();
+    let zone_name = ZoneName::parse("example.test").unwrap();
     let task_cx = cx.clone();
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &zone_name, None).await });
     let mut buffer = [0; 4096];
@@ -105,15 +105,16 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
         secondary::create(
             &cx,
             &Caller::socket(),
-            &serde_json::from_value(json!({
-                "name":name, "address":socket.local_addr().unwrap().to_string(),
-            }))
-            .unwrap(),
+            &CreateSecondaryRequest {
+                name: name.to_string(),
+                address: socket.local_addr().unwrap().to_string(),
+                notify_key_name: None,
+            },
         )
         .await
         .unwrap();
     }
-    let zone_name = zone::normalize_name("example.test").unwrap();
+    let zone_name = ZoneName::parse("example.test").unwrap();
     let task_cx = cx.clone();
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &zone_name, None).await });
     let mut first_buffer = [0; 4096];

@@ -63,7 +63,10 @@ async fn secondary_supports_create_read_update_and_delete() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let listed = body["items"].as_array().unwrap();
 
-    assert!(listed.iter().any(|item| item["name"] == name), "{body}");
+    assert!(
+        listed.iter().any(|secondary| secondary["name"] == name),
+        "{body}"
+    );
 
     // A partial update keeps the fields it leaves out.
     let (status, body) = app
@@ -194,7 +197,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         signed_receiver.received(),
-        vec![ReceivedNotify {
+        [ReceivedNotify {
             zone: expected_zone_name.clone(),
             signed: true,
             verified: true,
@@ -202,7 +205,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     );
     assert_eq!(
         plain_receiver.received(),
-        vec![ReceivedNotify {
+        [ReceivedNotify {
             zone: expected_zone_name.clone(),
             signed: false,
             verified: false,
@@ -245,7 +248,7 @@ async fn notify_signs_requests_when_secondary_has_key() {
     );
     assert_eq!(
         wrong_receiver.received(),
-        vec![ReceivedNotify {
+        [ReceivedNotify {
             zone: expected_zone_name,
             signed: true,
             verified: false,

@@ -321,8 +321,8 @@ impl RoleGrant {
 
     /// Return whether this grant's record constraints cover `record_type` at the
     /// relative owner name.
-    fn matches(&self, name: &OwnerName, record_type: Option<RecordType>) -> bool {
-        grant_pattern::matches_name(&self.record_name_pattern, name)
+    fn matches(&self, owner: &OwnerName, record_type: Option<RecordType>) -> bool {
+        grant_pattern::matches_name(&self.record_name_pattern, owner)
             && grant_pattern::matches_types(&self.record_types, record_type)
     }
 
@@ -384,12 +384,12 @@ impl RoleGrants {
         &self,
         action: Action,
         zone_id: ZoneId,
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: Option<RecordType>,
     ) -> bool {
         self.0
             .iter()
-            .any(|grant| grant.permits(action, zone_id) && grant.matches(name, record_type))
+            .any(|grant| grant.permits(action, zone_id) && grant.matches(owner, record_type))
     }
 
     /// Return whether `record:read` or the write `action` covers a record of this
@@ -398,11 +398,11 @@ impl RoleGrants {
         &self,
         action: Action,
         zone_id: ZoneId,
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: Option<RecordType>,
     ) -> bool {
-        self.covers_record(Action::RecordRead, zone_id, name, record_type)
-            || self.covers_record(action, zone_id, name, record_type)
+        self.covers_record(Action::RecordRead, zone_id, owner, record_type)
+            || self.covers_record(action, zone_id, owner, record_type)
     }
 
     /// Return whether some grant permits `action` in `zone_id` with no name or type limit.
