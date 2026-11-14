@@ -24,14 +24,14 @@ fn missing_parent_nameservers_remains_a_typed_service_error() {
         error.to_string(),
         "could not verify that the parent zone serves no DS for zone 'example.com': \
          the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'; \
-         set the zone's parent nameserver addresses, or skip the DS check",
+         set the zone's parent nameserver addresses, or skip the DS check"
     );
     assert!(matches!(
         error
             .source()
             .unwrap()
             .downcast_ref::<ProbeDelegationError>(),
-        Some(ProbeDelegationError::NoParentNameservers),
+        Some(ProbeDelegationError::NoParentNameservers)
     ));
 }
 

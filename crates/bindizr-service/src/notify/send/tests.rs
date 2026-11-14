@@ -157,7 +157,7 @@ fn notify_key_failure_preserves_service_source() {
             .downcast_ref::<io::Error>()
             .unwrap()
             .raw_os_error(),
-        Some(5),
+        Some(5)
     );
     assert_eq!(error.to_string(), "failed to read NOTIFY key");
 }

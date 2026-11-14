@@ -246,7 +246,7 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
             assert_eq!(
                 parsed.records[0].value,
                 ZoneFileValue::Rdata(name::to_fqdn(target)),
-                "{kind} {target}",
+                "{kind} {target}"
             );
         }
     }

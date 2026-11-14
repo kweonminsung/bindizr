@@ -37,7 +37,7 @@ enum ProbeApiError {
     ServerFault { line: String },
 }
 
-/// Check whether the daemon responds through its control socket.
+/// Return whether the daemon responds through its control socket.
 pub(crate) async fn check_running(report: &mut Report) -> bool {
     let status = client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
         .await

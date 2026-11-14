@@ -80,7 +80,7 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
 
         assert!(matches!(
             cause.downcast_ref::<io::Error>(),
-            Some(cause) if cause.kind() == io::ErrorKind::ConnectionRefused,
+            Some(cause) if cause.kind() == io::ErrorKind::ConnectionRefused
         ));
     }
 
