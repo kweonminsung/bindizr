@@ -2,23 +2,23 @@
 //! (<https://no-color.org>) and disabled when stdout is not a terminal.
 
 use std::sync::OnceLock;
+use std::{env, io};
 
-/// Check whether terminal output should use ANSI colors.
+/// Return whether terminal output should use ANSI colors.
 fn is_enabled() -> bool {
     use std::io::IsTerminal;
 
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
-            && std::io::stdout().is_terminal()
+        env::var_os("NO_COLOR").is_none_or(|value| value.is_empty()) && io::stdout().is_terminal()
     })
 }
 
-/// Text wrapped in the requested ANSI color, or unchanged when colors are
-/// disabled.
+/// Wrap text in the requested ANSI color, or leave it unchanged when colors
+/// are disabled.
 fn colored(code: &str, text: &str) -> String {
     if is_enabled() {
-        format!("\x1b[{}m{}\x1b[0m", code, text)
+        format!("\x1b[{code}m{text}\x1b[0m")
     } else {
         text.to_string()
     }

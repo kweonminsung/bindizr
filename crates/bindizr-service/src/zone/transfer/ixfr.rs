@@ -2,15 +2,16 @@
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_change::ZoneChange;
+use bindizr_core::model::zone_version::ZoneVersion;
 use bindizr_db::LockLevel;
 use thiserror::Error;
 
-use super::TransferAccess;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
-use crate::model::zone_change::ZoneChange;
-use crate::model::zone_version::ZoneVersion;
+use crate::zone::transfer;
+use crate::zone::transfer::TransferAccess;
 use crate::{Context, transaction};
 
 /// What an IXFR from a client's serial is answered with.
@@ -35,41 +36,43 @@ pub async fn authorize_ixfr_plan_by_name(
     client_serial: Serial,
 ) -> Result<TransferAccess<(Zone, IxfrPlan)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load the transfer delta").await?;
-    let result = async {
-        let zone = match super::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
+
+    let result: Result<_, ServiceError> = async {
+        let zone = match transfer::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        let current = zone.serial;
+        let current_serial = zone.serial;
 
         // RFC 1995, Section 2: equal or newer client serials need only the current SOA.
-        let plan = if client_serial == current || client_serial.is_newer_than(current) {
+        let plan = if client_serial == current_serial || client_serial.is_newer_than(current_serial)
+        {
             IxfrPlan::SoaOnly
-        } else if !current.is_newer_than(client_serial) {
+        } else if !current_serial.is_newer_than(client_serial) {
             // RFC 1982 leaves the half-range distance unordered; send a full snapshot.
             IxfrPlan::Full
         } else {
             // RFC 1995, Section 2 permits a full transfer when IXFR is no
             // smaller; rows are counted before any history is loaded.
-            let rows = bindizr_db::zone_change::count_between_serials_tx(
+            let change_count = bindizr_db::zone_change::count_between_serials_tx(
                 &mut tx,
                 zone.id,
                 client_serial,
-                current,
+                current_serial,
             )
             .await?;
-            let zone_rows = bindizr_db::record::count_tx(&mut tx, zone.id).await?
+            let record_count = bindizr_db::record::count_tx(&mut tx, zone.id).await?
                 + bindizr_db::dnssec_record::count_tx(&mut tx, zone.id).await?;
 
-            if rows >= zone_rows {
+            if change_count >= record_count {
                 IxfrPlan::Full
             } else {
                 let changes = bindizr_db::zone_change::list_between_serials_tx(
                     &mut tx,
                     zone.id,
                     client_serial,
-                    current,
+                    current_serial,
                     LockLevel::Unlocked,
                 )
                 .await?;
@@ -81,7 +84,7 @@ pub async fn authorize_ixfr_plan_by_name(
                         &mut tx,
                         zone.id,
                         client_serial,
-                        current,
+                        current_serial,
                     )
                     .await?;
 
@@ -94,15 +97,17 @@ pub async fn authorize_ixfr_plan_by_name(
                     let version_serials: Vec<Serial> =
                         versions.iter().map(|version| version.serial).collect();
 
-                    match validate_delta(client_serial, current, &journal_serials, &version_serials)
-                    {
+                    match validate_delta(
+                        client_serial,
+                        current_serial,
+                        &journal_serials,
+                        &version_serials,
+                    ) {
                         Ok(()) => IxfrPlan::Changes { changes, versions },
                         Err(gap) => {
                             log::warn!(
-                                "IXFR of {} from serial {}: {}, answering with AXFR",
-                                zone.name,
-                                client_serial,
-                                gap
+                                "IXFR of {} from serial {client_serial}: {gap}, answering with AXFR",
+                                zone.name
                             );
                             IxfrPlan::Full
                         }
@@ -176,8 +181,6 @@ fn validate_delta(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::Serial;
-
     use super::*;
 
     /// Wrap plain numbers as serials.
@@ -248,17 +251,18 @@ mod tests {
     #[test]
     fn ixfr_delta_reports_missing_step() {
         // The version proves serial 11 occurred; omitting its changes would corrupt the replay.
-        let gap = validate_delta(
-            Serial::from(10),
-            Serial::from(12),
-            &serials(&[12]),
-            &serials(&[10, 11, 12]),
-        )
-        .unwrap_err();
-
-        assert!(
-            matches!(&gap, ValidateDeltaError::StepsDiffer { journal, steps, .. } if journal == &serials(&[12]) && steps == &serials(&[11, 12])),
-            "{gap}"
+        assert_eq!(
+            validate_delta(
+                Serial::from(10),
+                Serial::from(12),
+                &serials(&[12]),
+                &serials(&[10, 11, 12]),
+            ),
+            Err(ValidateDeltaError::StepsDiffer {
+                journal: serials(&[12]),
+                client: Serial::from(10),
+                steps: serials(&[11, 12]),
+            })
         );
     }
 }

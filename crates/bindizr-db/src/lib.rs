@@ -1,14 +1,6 @@
 //! Data access: the `Db` a daemon connects to, and one module per entity
 //! whose functions run its queries on whichever backend it holds.
 
-use std::str::FromStr;
-
-use chrono::Utc;
-use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{MySql, Pool, Postgres, Sqlite};
-
 pub mod api_token;
 pub mod audit_log;
 pub mod catalog_zone;
@@ -33,12 +25,20 @@ pub mod zone;
 pub mod zone_change;
 pub mod zone_version;
 
-use bindizr_core::config;
-pub use bindizr_core::model;
+use std::num::NonZero;
+use std::str::FromStr;
+use std::thread;
+
+use bindizr_core::config::{DatabaseConfig, DatabaseTlsConfig, DatabaseTlsMode, DatabaseType};
 use bindizr_core::model::role::Role;
 use bindizr_core::model::role_grant::{Action, ActionSet};
+use chrono::Utc;
 use error::DatabaseError;
 pub use sql::{AuditLogSortField, ParseSortError, RecordSortField, SortOrder, ZoneSortField};
+use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{MySql, Pool, Postgres, Sqlite};
 use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
 
@@ -50,26 +50,18 @@ const ADMIN_ROLE_DESCRIPTION: &str = "every action in all zones";
 #[derive(Debug)]
 pub struct Db(Backend);
 
-/// Which backend `Db` holds; the root functions match on it.
-#[derive(Debug)]
-pub(crate) enum Backend {
-    MySql(Pool<MySql>),
-    Postgres(Pool<Postgres>),
-    Sqlite(Pool<Sqlite>),
-}
-
 impl Db {
     /// Connect to the configured backend and set up the schema; the daemon
     /// calls this once and holds the value.
-    pub async fn connect(database: &config::DatabaseConfig) -> Result<Db, DatabaseError> {
+    pub async fn connect(database: &DatabaseConfig) -> Result<Self, DatabaseError> {
         let backend = match database.database_type {
-            config::DatabaseType::MySql => {
+            DatabaseType::MySql => {
                 Backend::connect_mysql(&database.mysql.url, &database.tls).await?
             }
-            config::DatabaseType::Postgres => {
+            DatabaseType::Postgres => {
                 Backend::connect_postgres(&database.postgresql.url, &database.tls).await?
             }
-            config::DatabaseType::Sqlite => {
+            DatabaseType::Sqlite => {
                 // The file is created on a clean install, so its directory is too.
                 sqlite::path::create_parent_dir(&database.sqlite.file_path)?;
                 let url = sqlite::path::to_url(&database.sqlite.file_path)?;
@@ -77,7 +69,7 @@ impl Db {
             }
         };
 
-        let db = Db(backend);
+        let db = Self(backend);
 
         db.create_tables().await?;
 
@@ -99,7 +91,8 @@ impl Db {
         self.begin_with("BEGIN DEFERRED").await
     }
 
-    /// Shared opener; only SQLite's BEGIN statement distinguishes the two.
+    /// Begin a transaction with SQLite's given BEGIN statement, the only thing
+    /// that distinguishes the two openers.
     async fn begin_with(
         &self,
         sqlite_begin: &'static str,
@@ -117,8 +110,8 @@ impl Db {
         Ok(Transaction(kind))
     }
 
-    /// The pool's occupancy. sqlx counts held connections, not waiters, so
-    /// saturation shows as `connections` reaching `max`.
+    /// Return the pool's occupancy. sqlx counts held connections, not waiters,
+    /// so saturation shows as `connections` reaching `max`.
     pub fn stats(&self) -> PoolStats {
         let (connections, idle) = match &self.0 {
             Backend::MySql(pool) => (pool.size(), pool.num_idle()),
@@ -132,128 +125,180 @@ impl Db {
             max: pool_max_connections(),
         }
     }
-}
 
-/// Connect once and run a trivial query, creating neither tables nor a pool
-/// to keep; `doctor` runs this when no daemon is up.
-pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), DatabaseError> {
-    match database.database_type {
-        config::DatabaseType::MySql => {
-            let pool = MySqlPoolOptions::new()
-                .max_connections(1)
-                .connect_with(mysql_connect_options(&database.mysql.url, &database.tls)?)
-                .await
-                .map_err(DatabaseError::MySqlConnect)?;
-            sqlx::query("SELECT 1").execute(&pool).await?;
+    /// Run this backend's creation statements and seed the built-in policy and role.
+    async fn create_tables(&self) -> Result<(), DatabaseError> {
+        match &self.0 {
+            Backend::MySql(pool) => {
+                let mut connection = pool.acquire().await?;
+
+                for query in schema::mysql::table_creation_queries() {
+                    sqlx::query(query)
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|error| {
+                            log::error!("Failed to execute query '{query}': {error}");
+                            DatabaseError::from(error)
+                        })?;
+                }
+
+                let seed = schema::mysql::default_policy_seed();
+
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+
+                let seed = schema::mysql::admin_role_seed();
+
+                sqlx::query(seed)
+                    .bind(Role::ADMIN)
+                    .bind(ADMIN_ROLE_DESCRIPTION)
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+
+                let seed = schema::mysql::admin_grant_seed();
+
+                sqlx::query(seed)
+                    .bind(ActionSet::from_iter(Action::ALL))
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+            }
+            Backend::Postgres(pool) => {
+                let mut connection = pool.acquire().await?;
+
+                for query in schema::postgres::table_creation_queries() {
+                    sqlx::query(query)
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|error| {
+                            log::error!("Failed to execute query '{query}': {error}");
+                            DatabaseError::from(error)
+                        })?;
+                }
+
+                let seed = schema::postgres::default_policy_seed();
+
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+
+                let seed = schema::postgres::admin_role_seed();
+
+                sqlx::query(seed)
+                    .bind(Role::ADMIN)
+                    .bind(ADMIN_ROLE_DESCRIPTION)
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+
+                let seed = schema::postgres::admin_grant_seed();
+
+                sqlx::query(seed)
+                    .bind(ActionSet::from_iter(Action::ALL))
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+            }
+            Backend::Sqlite(pool) => {
+                let mut connection = pool.acquire().await?;
+
+                for query in schema::sqlite::table_creation_queries() {
+                    sqlx::query(query)
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|error| {
+                            log::error!("Failed to execute query '{query}': {error}");
+                            DatabaseError::from(error)
+                        })?;
+                }
+
+                let seed = schema::sqlite::default_policy_seed();
+
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+
+                let seed = schema::sqlite::admin_role_seed();
+
+                sqlx::query(seed)
+                    .bind(Role::ADMIN)
+                    .bind(ADMIN_ROLE_DESCRIPTION)
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+
+                let seed = schema::sqlite::admin_grant_seed();
+
+                sqlx::query(seed)
+                    .bind(ActionSet::from_iter(Action::ALL))
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|error| {
+                        log::error!("Failed to execute query '{seed}': {error}");
+                        DatabaseError::from(error)
+                    })?;
+            }
         }
-        config::DatabaseType::Postgres => {
-            let pool = PgPoolOptions::new()
-                .max_connections(1)
-                .connect_with(postgres_connect_options(
-                    &database.postgresql.url,
-                    &database.tls,
-                )?)
-                .await
-                .map_err(DatabaseError::PostgresConnect)?;
-            sqlx::query("SELECT 1").execute(&pool).await?;
-        }
-        config::DatabaseType::Sqlite => {
-            // Creating the file here would leave it owned by whoever ran doctor.
-            let url = sqlite::path::to_url(&database.sqlite.file_path)?;
-            let connect_options = sqlite_connect_options(&url)?
-                .create_if_missing(false)
-                .read_only(true);
 
-            let pool = SqlitePoolOptions::new()
-                .max_connections(1)
-                .connect_with(connect_options)
-                .await
-                .map_err(DatabaseError::SqliteOpen)?;
-            sqlx::query("SELECT 1").execute(&pool).await?;
-        }
+        Ok(())
     }
-
-    Ok(())
 }
 
-/// Parse a SQLite URL into connection options.
-fn sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
-    SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
-}
-
-/// Parse the MySQL URL and lay `[database.tls]` over it: a set key replaces
-/// the URL's own parameter.
-fn mysql_connect_options(
-    url: &str,
-    tls: &config::DatabaseTlsConfig,
-) -> Result<MySqlConnectOptions, DatabaseError> {
-    let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
-
-    if let Some(mode) = tls.mode {
-        options = options.ssl_mode(match mode {
-            config::DatabaseTlsMode::Disable => MySqlSslMode::Disabled,
-            config::DatabaseTlsMode::Prefer => MySqlSslMode::Preferred,
-            config::DatabaseTlsMode::Require => MySqlSslMode::Required,
-            config::DatabaseTlsMode::VerifyCa => MySqlSslMode::VerifyCa,
-            config::DatabaseTlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
-        });
-    }
-    if let Some(ca_file) = &tls.ca_file {
-        options = options.ssl_ca(ca_file);
-    }
-
-    Ok(options)
-}
-
-/// Parse the PostgreSQL URL and lay `[database.tls]` over it: a set key
-/// replaces the URL's own parameter.
-fn postgres_connect_options(
-    url: &str,
-    tls: &config::DatabaseTlsConfig,
-) -> Result<PgConnectOptions, DatabaseError> {
-    let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
-
-    if let Some(mode) = tls.mode {
-        options = options.ssl_mode(match mode {
-            config::DatabaseTlsMode::Disable => PgSslMode::Disable,
-            config::DatabaseTlsMode::Prefer => PgSslMode::Prefer,
-            config::DatabaseTlsMode::Require => PgSslMode::Require,
-            config::DatabaseTlsMode::VerifyCa => PgSslMode::VerifyCa,
-            config::DatabaseTlsMode::VerifyFull => PgSslMode::VerifyFull,
-        });
-    }
-    if let Some(ca_file) = &tls.ca_file {
-        options = options.ssl_root_cert(ca_file);
-    }
-
-    Ok(options)
-}
-
-/// How full the connection pool is. sqlx counts held connections, not waiters,
-/// so saturation shows as `connections` reaching `max`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PoolStats {
-    /// Connections the pool holds, idle and handed out alike.
-    pub connections: u32,
-    pub idle: u32,
-    pub max: u32,
-}
-
-/// Max pooled connections, scaled to the host instead of sqlx's flat 10.
-/// SQLite shares it: under WAL the pool bounds readers, not the one writer.
-fn pool_max_connections() -> u32 {
-    let cores = std::thread::available_parallelism()
-        .map(std::num::NonZero::get)
-        .unwrap_or(4);
-    ((cores * 4) as u32).clamp(8, 64)
+/// Which backend `Db` holds; the root functions match on it.
+#[derive(Debug)]
+pub(crate) enum Backend {
+    MySql(Pool<MySql>),
+    Postgres(Pool<Postgres>),
+    Sqlite(Pool<Sqlite>),
 }
 
 impl Backend {
     /// Connect to MySQL and return the pool.
-    async fn connect_mysql(
-        url: &str,
-        tls: &config::DatabaseTlsConfig,
-    ) -> Result<Self, DatabaseError> {
+    async fn connect_mysql(url: &str, tls: &DatabaseTlsConfig) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|connection, _| {
@@ -266,18 +311,15 @@ impl Backend {
                         .map(|_| ())
                 })
             })
-            .connect_with(mysql_connect_options(url, tls)?)
+            .connect_with(parse_mysql_connect_options(url, tls)?)
             .await
             .map_err(DatabaseError::MySqlConnect)?;
 
-        Ok(Backend::MySql(pool))
+        Ok(Self::MySql(pool))
     }
 
     /// Connect to PostgreSQL and return the pool.
-    async fn connect_postgres(
-        url: &str,
-        tls: &config::DatabaseTlsConfig,
-    ) -> Result<Self, DatabaseError> {
+    async fn connect_postgres(url: &str, tls: &DatabaseTlsConfig) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|connection, _| {
@@ -291,17 +333,17 @@ impl Backend {
                     .map(|_| ())
                 })
             })
-            .connect_with(postgres_connect_options(url, tls)?)
+            .connect_with(parse_postgres_connect_options(url, tls)?)
             .await
             .map_err(DatabaseError::PostgresConnect)?;
 
-        Ok(Backend::Postgres(pool))
+        Ok(Self::Postgres(pool))
     }
 
     /// Connect to SQLite and return the pool.
     async fn connect_sqlite(url: &str) -> Result<Self, DatabaseError> {
         // A clean install points at a database file that does not exist yet.
-        let connect_options = sqlite_connect_options(url)?.create_if_missing(true);
+        let connect_options = parse_sqlite_connect_options(url)?.create_if_missing(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(pool_max_connections())
@@ -326,8 +368,7 @@ impl Backend {
 
                     if !mode.eq_ignore_ascii_case("wal") {
                         log::warn!(
-                            "SQLite journal_mode is '{}', not WAL: readers will queue behind writes",
-                            mode
+                            "SQLite journal_mode is '{mode}', not WAL: readers will queue behind writes"
                         );
                     }
 
@@ -338,169 +379,121 @@ impl Backend {
             .await
             .map_err(DatabaseError::SqliteOpen)?;
 
-        Ok(Backend::Sqlite(pool))
+        Ok(Self::Sqlite(pool))
     }
 }
 
-impl Db {
-    /// Run this backend's creation statements and seed the built-in policy and role.
-    async fn create_tables(&self) -> Result<(), DatabaseError> {
-        match &self.0 {
-            Backend::MySql(pool) => {
-                let mut connection = pool.acquire().await?;
-
-                for query in schema::mysql::table_creation_queries() {
-                    sqlx::query(query)
-                        .execute(&mut *connection)
-                        .await
-                        .map_err(|error| {
-                            log::error!("Failed to execute query '{}': {}", query, error);
-                            DatabaseError::from(error)
-                        })?;
-                }
-
-                let seed = schema::mysql::default_policy_seed();
-
-                sqlx::query(seed)
-                    .bind(Utc::now())
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-
-                let seed = schema::mysql::admin_role_seed();
-
-                sqlx::query(seed)
-                    .bind(Role::ADMIN)
-                    .bind(ADMIN_ROLE_DESCRIPTION)
-                    .bind(Utc::now())
-                    .bind(Role::ADMIN)
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-
-                let seed = schema::mysql::admin_grant_seed();
-
-                sqlx::query(seed)
-                    .bind(ActionSet::from_iter(Action::ALL))
-                    .bind(Utc::now())
-                    .bind(Role::ADMIN)
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-            }
-            Backend::Postgres(pool) => {
-                let mut connection = pool.acquire().await?;
-
-                for query in schema::postgres::table_creation_queries() {
-                    sqlx::query(query)
-                        .execute(&mut *connection)
-                        .await
-                        .map_err(|error| {
-                            log::error!("Failed to execute query '{}': {}", query, error);
-                            DatabaseError::from(error)
-                        })?;
-                }
-
-                let seed = schema::postgres::default_policy_seed();
-
-                sqlx::query(seed)
-                    .bind(Utc::now())
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-
-                let seed = schema::postgres::admin_role_seed();
-
-                sqlx::query(seed)
-                    .bind(Role::ADMIN)
-                    .bind(ADMIN_ROLE_DESCRIPTION)
-                    .bind(Utc::now())
-                    .bind(Role::ADMIN)
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-
-                let seed = schema::postgres::admin_grant_seed();
-
-                sqlx::query(seed)
-                    .bind(ActionSet::from_iter(Action::ALL))
-                    .bind(Utc::now())
-                    .bind(Role::ADMIN)
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-            }
-            Backend::Sqlite(pool) => {
-                let mut connection = pool.acquire().await?;
-
-                for query in schema::sqlite::table_creation_queries() {
-                    sqlx::query(query)
-                        .execute(&mut *connection)
-                        .await
-                        .map_err(|error| {
-                            log::error!("Failed to execute query '{}': {}", query, error);
-                            DatabaseError::from(error)
-                        })?;
-                }
-
-                let seed = schema::sqlite::default_policy_seed();
-
-                sqlx::query(seed)
-                    .bind(Utc::now())
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-
-                let seed = schema::sqlite::admin_role_seed();
-
-                sqlx::query(seed)
-                    .bind(Role::ADMIN)
-                    .bind(ADMIN_ROLE_DESCRIPTION)
-                    .bind(Utc::now())
-                    .bind(Role::ADMIN)
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-
-                let seed = schema::sqlite::admin_grant_seed();
-
-                sqlx::query(seed)
-                    .bind(ActionSet::from_iter(Action::ALL))
-                    .bind(Utc::now())
-                    .bind(Role::ADMIN)
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
-                        DatabaseError::from(error)
-                    })?;
-            }
+/// Connect once and run a trivial query, creating neither tables nor a pool
+/// to keep; `doctor` runs this when no daemon is up.
+pub async fn probe_connection(database: &DatabaseConfig) -> Result<(), DatabaseError> {
+    match database.database_type {
+        DatabaseType::MySql => {
+            let pool = MySqlPoolOptions::new()
+                .max_connections(1)
+                .connect_with(parse_mysql_connect_options(
+                    &database.mysql.url,
+                    &database.tls,
+                )?)
+                .await
+                .map_err(DatabaseError::MySqlConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
+        DatabaseType::Postgres => {
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect_with(parse_postgres_connect_options(
+                    &database.postgresql.url,
+                    &database.tls,
+                )?)
+                .await
+                .map_err(DatabaseError::PostgresConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
+        }
+        DatabaseType::Sqlite => {
+            // Creating the file here would leave it owned by whoever ran doctor.
+            let url = sqlite::path::to_url(&database.sqlite.file_path)?;
+            let connect_options = parse_sqlite_connect_options(&url)?
+                .create_if_missing(false)
+                .read_only(true);
 
-        Ok(())
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(connect_options)
+                .await
+                .map_err(DatabaseError::SqliteOpen)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
+        }
     }
+
+    Ok(())
+}
+
+/// Parse a SQLite URL into connection options.
+fn parse_sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
+    SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
+}
+
+/// Parse the MySQL URL and lay `[database.tls]` over it: a set key replaces
+/// the URL's own parameter.
+fn parse_mysql_connect_options(
+    url: &str,
+    tls: &DatabaseTlsConfig,
+) -> Result<MySqlConnectOptions, DatabaseError> {
+    let mut options = MySqlConnectOptions::from_str(url).map_err(DatabaseError::MySqlConnect)?;
+
+    if let Some(mode) = tls.mode {
+        options = options.ssl_mode(match mode {
+            DatabaseTlsMode::Disable => MySqlSslMode::Disabled,
+            DatabaseTlsMode::Prefer => MySqlSslMode::Preferred,
+            DatabaseTlsMode::Require => MySqlSslMode::Required,
+            DatabaseTlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+            DatabaseTlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
+        });
+    }
+    if let Some(ca_file) = &tls.ca_file {
+        options = options.ssl_ca(ca_file);
+    }
+
+    Ok(options)
+}
+
+/// Parse the PostgreSQL URL and lay `[database.tls]` over it: a set key
+/// replaces the URL's own parameter.
+fn parse_postgres_connect_options(
+    url: &str,
+    tls: &DatabaseTlsConfig,
+) -> Result<PgConnectOptions, DatabaseError> {
+    let mut options = PgConnectOptions::from_str(url).map_err(DatabaseError::PostgresConnect)?;
+
+    if let Some(mode) = tls.mode {
+        options = options.ssl_mode(match mode {
+            DatabaseTlsMode::Disable => PgSslMode::Disable,
+            DatabaseTlsMode::Prefer => PgSslMode::Prefer,
+            DatabaseTlsMode::Require => PgSslMode::Require,
+            DatabaseTlsMode::VerifyCa => PgSslMode::VerifyCa,
+            DatabaseTlsMode::VerifyFull => PgSslMode::VerifyFull,
+        });
+    }
+    if let Some(ca_file) = &tls.ca_file {
+        options = options.ssl_root_cert(ca_file);
+    }
+
+    Ok(options)
+}
+
+/// How full the connection pool is. sqlx counts held connections, not waiters,
+/// so saturation shows as `connections` reaching `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolStats {
+    /// Connections the pool holds, idle and handed out alike.
+    pub connections: u32,
+    pub idle: u32,
+    pub max: u32,
+}
+
+/// Return the max pooled connections, scaled to the host instead of sqlx's flat 10.
+/// SQLite shares it: under WAL the pool bounds readers, not the one writer.
+fn pool_max_connections() -> u32 {
+    let cores = thread::available_parallelism().map_or(4, NonZero::get);
+    ((cores * 4) as u32).clamp(8, 64)
 }

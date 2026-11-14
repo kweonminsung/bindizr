@@ -2,18 +2,18 @@
 
 mod record;
 mod response;
-pub use response::build_error_response;
 mod signer;
 
 use std::sync::Arc;
 
-use base64::Engine;
+use base64::DecodeError;
+use base64::engine::general_purpose;
 use domain::base::iana::{Rcode, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, ToName};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName, ValidationError};
-use record::ParsedTsig;
+pub use response::build_error_response;
 use ring::hmac;
 pub use signer::{ResponseSigner, SignResponseError, TransferSigner};
 use thiserror::Error;
@@ -21,7 +21,13 @@ use thiserror::Error;
 use crate::dns::LibraryError;
 use crate::dns::message::RECORD_FIELDS_LEN;
 use crate::dns::name::MAX_WIRE_NAME_LEN;
+use crate::dns::tsig::record::ParsedTsig;
 use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
+
+/// Reserve the maximum TSIG size: longest key name, `hmac-sha512.`,
+/// 64-byte MAC and 6-byte BADTIME data (RFC 8945, Section 4.2).
+pub(crate) const MAX_TSIG_RECORD: usize =
+    MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
 /// Why a TSIG-signed request could not be accepted.
 #[derive(Debug, Error)]
@@ -36,7 +42,7 @@ pub enum TsigError {
         source: LibraryError,
     },
     #[error("stored TSIG secret is not valid base64: {0}")]
-    SecretNotBase64(#[source] base64::DecodeError),
+    SecretNotBase64(#[source] DecodeError),
     #[error("stored TSIG secret decodes to an empty key")]
     EmptySecret,
     #[error("invalid TSIG key '{name}': {source}")]
@@ -73,35 +79,35 @@ pub enum VerifyResponseError {
     Rejected(#[source] LibraryError),
     #[error("authenticated TSIG server clock error: {0}")]
     ServerBadTime(#[source] LibraryError),
-    #[error("authenticated TSIG server error: {0}")]
-    ServerError(TsigRcode),
+    #[error("authenticated TSIG server error: {rcode}")]
+    ServerError { rcode: TsigRcode },
     #[error("TSIG response MAC is shorter than the full-length policy permits")]
     TruncatedMac,
 }
 
 impl VerifyResponseError {
-    /// Report whether MAC validation authenticated the server error.
+    /// Return whether MAC validation authenticated the server error.
     pub fn is_authenticated(&self) -> bool {
-        matches!(self, Self::ServerBadTime(_) | Self::ServerError(_))
+        matches!(self, Self::ServerBadTime(_) | Self::ServerError { .. })
     }
 }
 
 /// Validated key material for transactions and signed TSIG errors.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct TsigSigningKey {
     domain: Arc<Key>,
     hmac: hmac::Key,
 }
 
 impl AsRef<Key> for TsigSigningKey {
-    /// Borrow the key used by the transaction and sequence signers.
+    /// Return the key used by the transaction and sequence signers.
     fn as_ref(&self) -> &Key {
         &self.domain
     }
 }
 
 /// The outbound key and request MAC used to authenticate the response.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct ResponseVerifier {
     key: TsigSigningKey,
     request_mac: Vec<u8>,
@@ -110,12 +116,12 @@ pub struct ResponseVerifier {
 /// Sign a request bindizr is about to send (RFC 8945, Section 5.1) and
 /// return the context that checks its answer.
 pub fn sign_request(
-    builder: &mut AdditionalBuilder<Vec<u8>>,
+    additional: &mut AdditionalBuilder<Vec<u8>>,
     key: TsigSigningKey,
 ) -> Result<ResponseVerifier, SignRequestError> {
-    ClientTransaction::request(key.clone(), builder, Time48::now())
+    ClientTransaction::request(key.clone(), additional, Time48::now())
         .map_err(|error| SignRequestError(Box::new(error)))?;
-    let message = Message::from_octets(builder.as_slice())
+    let message = Message::from_octets(additional.as_slice())
         .map_err(|error| SignRequestError(Box::new(error)))?;
     let tsig = message
         .additional()
@@ -186,18 +192,15 @@ pub fn verify_response(
         return Err(rejected(ValidationError::BadTime));
     }
     if data.error() != TsigRcode::NOERROR {
-        return Err(VerifyResponseError::ServerError(data.error()));
+        return Err(VerifyResponseError::ServerError {
+            rcode: data.error(),
+        });
     }
 
     Ok(())
 }
 
-/// Reserve the maximum TSIG size: longest key name, `hmac-sha512.`,
-/// 64-byte MAC and 6-byte BADTIME data (RFC 8945, Section 4.2).
-pub(crate) const MAX_TSIG_RECORD: usize =
-    MAX_WIRE_NAME_LEN + RECORD_FIELDS_LEN + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
-
-/// Bytes a signed message must leave for its TSIG record.
+/// Return the bytes a signed message must leave for its TSIG record.
 pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
     usize::from(signer.key().compose_len())
 }
@@ -206,6 +209,8 @@ impl TsigKey {
     /// Decode and validate this stored key for TSIG signing and verification.
     pub fn to_signing_key(&self) -> Result<TsigSigningKey, TsigError> {
         use std::str::FromStr;
+
+        use base64::Engine;
 
         let name = KeyName::from_str(&self.name).map_err(|error| TsigError::InvalidKeyName {
             name: self.name.clone(),
@@ -219,7 +224,7 @@ impl TsigKey {
             TsigAlgorithm::HmacSha512 => (Algorithm::Sha512, hmac::HMAC_SHA512),
         };
 
-        let secret = base64::engine::general_purpose::STANDARD
+        let secret = general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(TsigError::SecretNotBase64)?;
 
@@ -318,13 +323,14 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     }
 }
 
-/// A request's Error is zero; MAC length obeys the algorithm's wire bounds (RFC 8945, Section 4.2).
+/// Return whether a request's Error is zero and its MAC length obeys the
+/// algorithm's wire bounds (RFC 8945, Section 4.2).
 pub(crate) fn is_request_tsig_valid<O: AsRef<[u8]>, N: ToName>(tsig: &Tsig<O, N>) -> bool {
     tsig.error() == TsigRcode::NOERROR
         && is_mac_size_in_bounds(tsig.algorithm(), tsig.mac().as_ref().len())
 }
 
-/// Accept MAC lengths from max(10, half the hash length) to the full length
+/// Return whether a MAC length lies from max(10, half the hash length) to the full length
 /// (RFC 8945, Section 5.2.2.1); defer unknown algorithms to the BADKEY check.
 pub(crate) fn is_mac_size_in_bounds<N: ToName>(algorithm: &N, mac_len: usize) -> bool {
     let Some(algorithm) = algorithm_from_name(algorithm) else {

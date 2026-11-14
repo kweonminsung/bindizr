@@ -3,14 +3,17 @@ use std::collections::HashSet;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::{SoaMailbox, SrvRecordValue};
 use bindizr_core::dns::{Ttl, name};
-use bindizr_db::{LockLevel, Transaction};
+use bindizr_core::model::record::{Record, RecordType};
+use bindizr_core::model::zone::{Zone, ZoneId};
+use bindizr_db::LockLevel;
 
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
-use crate::{Context, ttl};
+use crate::{Context, Transaction, ttl};
 
+/// Longest SOA mailbox address accepted, in bytes.
 const MAX_EMAIL_LEN: usize = 254;
+
+/// Longest SOA mailbox local part accepted, in bytes.
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
 
 /// Validated SOA names and TTL, shared by API and DNS zone writes.
@@ -35,11 +38,13 @@ pub(crate) fn normalize_soa(
 
 /// Refuse storing a zone at the virtual catalog name, which shadows SOA and transfer queries
 /// and is excluded from catalog membership. Lookups remain allowed.
-pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<(), ServiceError> {
-    if name == &cx.config().dns.catalog_zone_name {
+pub(crate) fn reject_catalog_zone_name(
+    cx: &Context,
+    zone_name: &ZoneName,
+) -> Result<(), ServiceError> {
+    if zone_name == &cx.config().dns.catalog_zone_name {
         return Err(ServiceError::invalid_zone_field(format!(
-            "'{}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it",
-            name
+            "'{zone_name}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it"
         )));
     }
 
@@ -51,21 +56,25 @@ pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<
 pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
     if value.trim() == "." {
         return Err(ServiceError::invalid_zone_field(
-            "zone name must not be the root zone".to_string(),
+            "zone name must not be the root zone",
         ));
     }
 
-    let name = normalize_domain_name(value, "zone name")?;
-    validate_name(&name)?;
+    let zone_name = normalize_domain_name(value, "zone name")?;
+    validate_name(&zone_name)?;
 
-    Ok(name)
+    Ok(zone_name)
 }
 
 /// Apply the zone policy to a name already parsed from a request or DNS records.
-pub(crate) fn validate_name(name: &ZoneName) -> Result<(), ServiceError> {
-    if name.labels().first().is_some_and(|label| label == b"*") {
+pub(crate) fn validate_name(zone_name: &ZoneName) -> Result<(), ServiceError> {
+    if zone_name
+        .labels()
+        .first()
+        .is_some_and(|label| label == b"*")
+    {
         return Err(ServiceError::invalid_zone_field(
-            "wildcard zone names are not allowed".to_string(),
+            "wildcard zone names are not allowed",
         ));
     }
 
@@ -76,7 +85,7 @@ pub(crate) fn validate_name(name: &ZoneName) -> Result<(), ServiceError> {
 /// live on [`ZoneName`]; this only maps the failure to a zone error.
 fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceError> {
     ZoneName::parse(value)
-        .map_err(|error| ServiceError::invalid_zone_field(format!("{} {}", field, error)))
+        .map_err(|error| ServiceError::invalid_zone_field(format!("{field} {error}")))
 }
 
 /// Normalize the SOA primary server name.
@@ -92,42 +101,40 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
     if value.is_empty() {
-        return Err(ServiceError::invalid_zone_field(
-            "rname must not be empty".to_string(),
-        ));
+        return Err(ServiceError::invalid_zone_field("rname must not be empty"));
     }
 
     if name::has_whitespace_or_control(value) {
         return Err(ServiceError::invalid_zone_field(
-            "rname must not contain whitespace or control characters".to_string(),
+            "rname must not contain whitespace or control characters",
         ));
     }
 
     let Some((local, domain)) = value.split_once('@') else {
         return Err(ServiceError::invalid_zone_field(
-            "rname must contain exactly one @".to_string(),
+            "rname must contain exactly one @",
         ));
     };
 
     if domain.contains('@') {
         return Err(ServiceError::invalid_zone_field(
-            "rname must contain exactly one @".to_string(),
+            "rname must contain exactly one @",
         ));
     }
 
     validate_email_local_part(local)?;
     let domain = normalize_domain_name(domain, "rname domain")?;
 
-    let normalized = format!("{}@{}", local, domain);
+    let normalized = format!("{local}@{domain}");
 
     if normalized.len() > MAX_EMAIL_LEN {
         return Err(ServiceError::invalid_zone_field(
-            "rname must be 254 bytes or fewer".to_string(),
+            "rname must be 254 bytes or fewer",
         ));
     }
 
     SoaMailbox::from_email(&normalized)
-        .map_err(|error| ServiceError::invalid_zone_field(format!("rname {}", error)))?;
+        .map_err(|error| ServiceError::invalid_zone_field(format!("rname {error}")))?;
 
     Ok(normalized)
 }
@@ -136,32 +143,32 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part must not be empty".to_string(),
+            "rname local part must not be empty",
         ));
     }
 
     if local.len() > MAX_EMAIL_LOCAL_LEN {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part must be 64 bytes or fewer".to_string(),
+            "rname local part must be 64 bytes or fewer",
         ));
     }
 
     if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part must not start, end, or contain consecutive dots".to_string(),
+            "rname local part must not start, end, or contain consecutive dots",
         ));
     }
 
     if !local.chars().all(is_valid_email_local_char) {
         return Err(ServiceError::invalid_zone_field(
-            "rname local part contains invalid characters".to_string(),
+            "rname local part contains invalid characters",
         ));
     }
 
     Ok(())
 }
 
-/// Check whether a character is permitted in an SOA mailbox local part.
+/// Return whether a character is permitted in an SOA mailbox local part.
 fn is_valid_email_local_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
         || matches!(
@@ -207,7 +214,7 @@ pub(crate) async fn validate_record_changes_tx(
         RecordType::Ptr,
     ];
 
-    let mut records = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
+    let mut records = if zone.id == ZoneId::UNWRITTEN {
         Vec::new()
     } else {
         bindizr_db::record::list_by_record_types_tx(tx, zone.id, &related_types).await?
@@ -229,7 +236,7 @@ pub(crate) async fn validate_record_changes_tx(
     };
     let delegations = owners_of(RecordType::Ns);
 
-    if zone.enabled && !delegations.iter().any(|name| name.is_apex()) {
+    if zone.enabled && !delegations.iter().any(|owner| owner.is_apex()) {
         return Err(ServiceError::record_conflict(
             "an enabled zone requires at least one apex NS record (RFC 2181, Section 6.1)",
         ));
@@ -249,7 +256,7 @@ pub(crate) async fn validate_record_changes_tx(
     let dnames = owners_of(RecordType::Dname);
 
     if !dnames.is_empty() {
-        let mut names: HashSet<_> = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
+        let mut owners: HashSet<_> = if zone.id == ZoneId::UNWRITTEN {
             HashSet::new()
         } else {
             bindizr_db::record::list_names_tx(tx, zone.id)
@@ -258,32 +265,32 @@ pub(crate) async fn validate_record_changes_tx(
                 .collect()
         };
 
-        let removed_names: Vec<_> = removed
+        let removed_owners: Vec<_> = removed
             .iter()
             .map(|record| record.name.clone())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
 
-        for name in &removed_names {
-            names.remove(name);
+        for owner in &removed_owners {
+            owners.remove(owner);
         }
 
         // A removed row may share its owner with rows that survive.
         let remaining =
-            bindizr_db::record::list_by_names_tx(tx, zone.id, &removed_names, LockLevel::Unlocked)
+            bindizr_db::record::list_by_names_tx(tx, zone.id, &removed_owners, LockLevel::Unlocked)
                 .await?;
-        names.extend(
+        owners.extend(
             remaining
                 .into_iter()
                 .filter(|record| !removed_ids.contains(&record.id))
                 .map(|record| record.name),
         );
-        names.extend(added.iter().map(|record| record.name.clone()));
-        let dname_labels: HashSet<_> = dnames.iter().map(|name| name.labels()).collect();
+        owners.extend(added.iter().map(|record| record.name.clone()));
+        let dname_labels: HashSet<_> = dnames.iter().map(|owner| owner.labels()).collect();
 
-        if names.iter().any(|name| {
-            let labels = name.labels();
+        if owners.iter().any(|owner| {
+            let labels = owner.labels();
             (1..=labels.len()).any(|depth| dname_labels.contains(&labels[depth..]))
         }) {
             return Err(ServiceError::record_conflict(
@@ -298,10 +305,10 @@ pub(crate) async fn validate_record_changes_tx(
     let authoritative_dnames: Vec<_> = dnames
         .iter()
         .copied()
-        .filter(|name| {
+        .filter(|owner| {
             !delegations
                 .iter()
-                .any(|cut| !cut.is_apex() && name.is_same_or_under(cut))
+                .any(|cut| !cut.is_apex() && owner.is_same_or_under(cut))
         })
         .collect();
 
@@ -327,7 +334,7 @@ pub(crate) async fn validate_record_changes_tx(
             }
             if authoritative_dnames
                 .iter()
-                .any(|name| &owner != *name && owner.is_same_or_under(name))
+                .any(|dname| &owner != *dname && owner.is_same_or_under(dname))
             {
                 return Err(ServiceError::record_conflict(
                     "an NS, MX, PTR, or SRV record cannot name a descendant of a DNAME record of this zone as its target (RFC 6672, Section 5.1)",
@@ -341,47 +348,46 @@ pub(crate) async fn validate_record_changes_tx(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::name::ZoneName;
+    use super::*;
 
-    /// Root MNAME is valid without loosening zone-name or label parsing.
+    /// Verify that a root MNAME is valid without loosening zone-name or label parsing.
     #[test]
     fn primary_name_preserves_root_and_literal_dot() {
-        assert_eq!(super::normalize_mname(" . ").unwrap(), ".");
-        assert_eq!(super::normalize_mname(r"\.").unwrap(), r"\046");
-        assert_eq!(
-            super::normalize_mname(" NS.Example. ").unwrap(),
-            "ns.example"
-        );
+        assert_eq!(normalize_mname(" . ").unwrap(), ".");
+        assert_eq!(normalize_mname(r"\.").unwrap(), r"\046");
+        assert_eq!(normalize_mname(" NS.Example. ").unwrap(), "ns.example");
 
         for invalid in ["", "..", "host..example"] {
-            assert!(super::normalize_mname(invalid).is_err(), "{invalid:?}");
+            assert!(normalize_mname(invalid).is_err(), "{invalid:?}");
         }
 
-        assert!(super::normalize_name(".").is_err());
+        assert!(normalize_name(".").is_err());
     }
 
-    /// Preserve escaped trailing whitespace while tolerating ordinary surrounding padding.
+    /// Verify that escaped trailing whitespace is preserved while ordinary surrounding padding is
+    /// tolerated.
     #[test]
     fn zone_name_preserves_escaped_whitespace() {
         for byte in [9u8, 10, 11, 12, 13, 32] {
             let input = format!(" tail\\{} \t", char::from(byte));
             let expected = ZoneName::parse(&format!("tail\\{byte:03}")).unwrap();
-            assert_eq!(super::normalize_name(&input).unwrap(), expected);
+            assert_eq!(normalize_name(&input).unwrap(), expected);
         }
 
         assert_eq!(
-            super::normalize_name(" example.com \t").unwrap().as_str(),
+            normalize_name(" example.com \t").unwrap().as_str(),
             "example.com"
         );
         assert!(
-            super::normalize_name(" . ")
+            normalize_name(" . ")
                 .unwrap_err()
                 .to_string()
                 .contains("root zone")
         );
     }
 
-    /// Apply the wildcard-zone policy to decoded labels for every equivalent spelling.
+    /// Verify that the wildcard-zone policy applies to decoded labels for every equivalent
+    /// spelling.
     #[test]
     fn zone_name_rejects_equivalent_wildcards() {
         for label in ["*", r"\*", r"\042"] {
@@ -389,7 +395,7 @@ mod tests {
                 let input = format!("{label}{suffix}");
 
                 assert!(
-                    super::normalize_name(&input)
+                    normalize_name(&input)
                         .unwrap_err()
                         .to_string()
                         .contains("wildcard"),
@@ -399,7 +405,7 @@ mod tests {
         }
 
         for input in ["a*.example", "a.*.example", r"\042\046example"] {
-            assert!(super::normalize_name(input).is_ok(), "{input:?}");
+            assert!(normalize_name(input).is_ok(), "{input:?}");
         }
     }
 }

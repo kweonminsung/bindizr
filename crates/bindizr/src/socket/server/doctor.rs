@@ -2,17 +2,19 @@ use std::net::SocketAddr;
 
 use bindizr_core::dns::address;
 use bindizr_service::authorization::Caller;
+use bindizr_service::dns_client::probe;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::CheckSecondariesResponse;
-use bindizr_service::{Context, dns_client, secondary, zone};
+use bindizr_service::{Context, secondary, zone};
 use tokio::net::TcpStream;
+use tokio::time;
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 use crate::socket::types::{
     DaemonDoctorResponse, DaemonResponse, DoctorCheckResponse, DoctorCheckStatus,
 };
 
-/// The daemon-side installation checks. The catalog zone is the one probed
+/// Run the daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
 pub(crate) async fn check_installation(
     cx: &Context,
@@ -23,17 +25,17 @@ pub(crate) async fn check_installation(
     let caller = Caller::socket();
     let zones_probe = zone::count(cx, &caller);
 
-    let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
+    let database = match time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Ok,
             message: format!(
-                "Database connected: {} ({} zones)",
-                config.database.database_type, total
+                "Database connected: {} ({total} zones)",
+                config.database.database_type
             ),
         },
         Ok(Err(error)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
-            message: format!("Database not reachable: {}", error),
+            message: format!("Database not reachable: {error}"),
         },
         Err(_) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
@@ -52,15 +54,13 @@ pub(crate) async fn check_installation(
     let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
-        match dns_client::probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout)
-            .await
-        {
+        match probe::probe_server(&config.dns.catalog_zone_name, dns_addr, timeout).await {
             Ok(serial) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Ok,
                     message: format!(
-                        "DNS server reachable: {} (catalog zone {} at serial {})",
-                        dns_addr, config.dns.catalog_zone_name, serial
+                        "DNS server reachable: {dns_addr} (catalog zone {} at serial {serial})",
+                        config.dns.catalog_zone_name
                     ),
                 },
                 Some(serial),
@@ -68,7 +68,7 @@ pub(crate) async fn check_installation(
             Err(error) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Failed,
-                    message: format!("DNS server not reachable: {}: {}", dns_addr, error),
+                    message: format!("DNS server not reachable: {dns_addr}: {error}"),
                 },
                 None,
             ),
@@ -83,27 +83,20 @@ pub(crate) async fn check_installation(
                 config.dns.tls.listen_port,
             );
             Some(
-                match tokio::time::timeout(timeout, TcpStream::connect(dns_tls_addr)).await {
+                match time::timeout(timeout, TcpStream::connect(dns_tls_addr)).await {
                     Ok(Ok(_)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Ok,
                         message: format!(
-                            "DNS TLS server listening: {} (TLS handshake not attempted)",
-                            dns_tls_addr
+                            "DNS TLS server listening: {dns_tls_addr} (TLS handshake not attempted)"
                         ),
                     },
                     Ok(Err(error)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
-                        message: format!(
-                            "DNS TLS server not reachable: {}: {}",
-                            dns_tls_addr, error
-                        ),
+                        message: format!("DNS TLS server not reachable: {dns_tls_addr}: {error}"),
                     },
                     Err(_) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
-                        message: format!(
-                            "DNS TLS server not reachable: {}: timed out",
-                            dns_tls_addr
-                        ),
+                        message: format!("DNS TLS server not reachable: {dns_tls_addr}: timed out"),
                     },
                 },
             )

@@ -5,23 +5,23 @@ use crate::error::DatabaseError;
 use crate::tx::TransactionKind;
 use crate::{Transaction, mysql, postgres, sqlite};
 
-/// The serial advances only when `digest` changed; returns the serial in
-/// effect after the upsert.
+/// Upsert the catalog digest, advancing the serial only when `digest` changed;
+/// return the serial in effect after the upsert.
 pub async fn upsert_tx(
     tx: &mut Transaction<'_>,
-    name: &ZoneName,
+    catalog_zone_name: &ZoneName,
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::catalog_zone::upsert_tx(tx, name, digest, base_serial).await
+            mysql::catalog_zone::upsert_tx(tx, catalog_zone_name, digest, base_serial).await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::catalog_zone::upsert_tx(tx, name, digest, base_serial).await
+            postgres::catalog_zone::upsert_tx(tx, catalog_zone_name, digest, base_serial).await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::catalog_zone::upsert_tx(tx, name, digest, base_serial).await
+            sqlite::catalog_zone::upsert_tx(tx, catalog_zone_name, digest, base_serial).await
         }
     }
 }

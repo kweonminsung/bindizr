@@ -4,13 +4,14 @@ use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use chrono::{DateTime, Duration};
-use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::authorization::Caller;
+use crate::types::CreateZoneRequest;
 use crate::zone;
 
+/// The client address every test transfer is served to.
 const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
 
 /// Build service state over a disposable database holding the named zones.
@@ -30,12 +31,21 @@ async fn context(save: SavedTransfers, zone_names: &[&str]) -> (Context, Vec<Zon
     );
     let mut zone_ids = Vec::new();
 
-    for name in zone_names {
-        let request = serde_json::from_value(json!({
-            "name": name, "mname": format!("ns.{name}"),
-            "rname": format!("hostmaster@{name}"), "apex_ns": false,
-        }))
-        .unwrap();
+    for zone_name in zone_names {
+        let request = CreateZoneRequest {
+            name: zone_name.to_string(),
+            mname: format!("ns.{zone_name}"),
+            rname: format!("hostmaster@{zone_name}"),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: false,
+            dry_run: false,
+        };
         let created = zone::create(&cx, &Caller::socket(), &request)
             .await
             .unwrap();
@@ -72,14 +82,14 @@ async fn save_at(cx: &Context, now: DateTime<Utc>, transfers: &[(ZoneId, i64)]) 
     }
 }
 
-/// The zone and age in days of each transfer answered to the fixture client, newest first.
+/// List the zone and age in days of each transfer answered to the fixture client, newest first.
 /// Ages round to the nearest day, since a backend may store whole seconds.
 async fn list_ages(
     cx: &Context,
     now: DateTime<Utc>,
-    filter: TransferLogFilter,
+    filter: &TransferLogFilter,
 ) -> Vec<(String, i64)> {
-    list_by_clients(cx, &[CLIENT], &filter)
+    list_by_clients(cx, &[CLIENT], filter)
         .await
         .unwrap()
         .iter()
@@ -182,7 +192,7 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
         (
             TransferLogFilter {
                 zone_name: Some(ZoneName::parse("a.test").unwrap()),
-                ..TransferLogFilter::default()
+                ..Default::default()
             },
             vec![("a.test", 1), ("a.test", 3)],
         ),
@@ -190,14 +200,14 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
             TransferLogFilter {
                 since: Some(now - Duration::days(2) - half_day),
                 until: Some(now - Duration::days(1) - half_day),
-                ..TransferLogFilter::default()
+                ..Default::default()
             },
             vec![("b.test", 2)],
         ),
         (
             TransferLogFilter {
                 limit: Some(2),
-                ..TransferLogFilter::default()
+                ..Default::default()
             },
             vec![("a.test", 1), ("b.test", 2)],
         ),
@@ -208,7 +218,7 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
             .collect();
 
         assert_eq!(
-            list_ages(&cx, now, filter.clone()).await,
+            list_ages(&cx, now, &filter.clone()).await,
             expected,
             "{filter:?}"
         );
@@ -220,10 +230,21 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
 async fn prune_older_than_keeps_the_newest_row_of_each_client_and_zone() {
     let (cx, zone_ids) = context(SavedTransfers::All, &["a.test", "b.test"]).await;
     let now = Utc::now();
-    let (a, b) = (zone_ids[0], zone_ids[1]);
+    let (a_zone_id, b_zone_id) = (zone_ids[0], zone_ids[1]);
 
     // a.test has a recent transfer; b.test's newest is older than the cutoff.
-    save_at(&cx, now, &[(a, 40), (b, 35), (a, 30), (b, 20), (a, 1)]).await;
+    save_at(
+        &cx,
+        now,
+        &[
+            (a_zone_id, 40),
+            (b_zone_id, 35),
+            (a_zone_id, 30),
+            (b_zone_id, 20),
+            (a_zone_id, 1),
+        ],
+    )
+    .await;
 
     let cutoff = now - Duration::days(10);
     let pruned = bindizr_db::transfer_log::prune_older_than(cx.db(), cutoff)
@@ -232,7 +253,7 @@ async fn prune_older_than_keeps_the_newest_row_of_each_client_and_zone() {
 
     assert_eq!(pruned, 3);
     assert_eq!(
-        list_ages(&cx, now, TransferLogFilter::default()).await,
+        list_ages(&cx, now, &TransferLogFilter::default()).await,
         [("a.test".to_string(), 1), ("b.test".to_string(), 20)]
     );
 }

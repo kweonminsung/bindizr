@@ -4,26 +4,28 @@
 use bindizr_core::dns::message::OptRcode;
 use bindizr_core::dns::name::{ParseNameError, ZoneName};
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
+use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{ResponseSigner, TsigError};
 use bindizr_core::model::transfer::TransferTransport;
 use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
-use bindizr_service::nsupdate::{self, NsupdateError, Update};
-use bindizr_service::tsig_key;
+use bindizr_service::nsupdate::{NsupdateError, Update};
+use bindizr_service::{nsupdate, tsig_key};
 use thiserror::Error;
 
 use crate::dns::server::DnsContext;
 
+/// Why an UPDATE was not applied, classified for the RCODE it answers.
 #[derive(Debug, Error)]
 pub(crate) enum UpdateError {
     /// Malformed OPT or unsupported EDNS version (RFC 6891, Section 6.1).
-    #[error("unacceptable EDNS: {0}")]
-    Edns(OptRcode),
-    #[error("{0}")]
-    NotSupported(String),
-    #[error("{0}")]
-    NotAuth(String),
+    #[error("unacceptable EDNS: {rcode}")]
+    Edns { rcode: OptRcode },
+    #[error("{reason}")]
+    NotSupported { reason: String },
+    #[error("{reason}")]
+    NotAuth { reason: String },
     #[error("'{name}' is not a zone name: {source}")]
     ZoneName {
         name: String,
@@ -45,6 +47,7 @@ pub(crate) async fn apply_update(
     query_data: &[u8],
     transport: TransferTransport,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
+    let cx = dns_cx.daemon();
     let mut signer = None;
 
     let result = async {
@@ -53,7 +56,7 @@ pub(crate) async fn apply_update(
         let tsig_key = match &request.tsig {
             Some(tsig) => {
                 let (tsig_key, verified) =
-                    authenticate_tsig_key(dns_cx, &tsig.name, query_data).await?;
+                    authenticate_tsig_key(dns_cx, query_data, &tsig.name).await?;
                 signer = Some(verified);
                 tsig_key
             }
@@ -62,20 +65,20 @@ pub(crate) async fn apply_update(
 
         // RFC 6891, Section 6.1.3: BADVERS precedes every policy refusal.
         if let Some(rcode) = request.edns.format_error() {
-            return Err(UpdateError::Edns(rcode));
+            return Err(UpdateError::Edns { rcode });
         }
 
         // RFC 9103, Section 7.8: the TLS listener serves transfers alone.
         if transport == TransferTransport::Tls {
-            return Err(UpdateError::NotSupported(
-                "UPDATE is not served over TLS".to_string(),
-            ));
+            return Err(UpdateError::NotSupported {
+                reason: "UPDATE is not served over TLS".to_string(),
+            });
         }
 
         // Unsigned UPDATE admits every reachable client; the service refuses it
         // under `tsig_required` after the authority check (RFC 2136, Section 3.1.1).
         let caller = match tsig_key {
-            Some(tsig_key) => Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key)
+            Some(tsig_key) => Caller::authenticate_tsig_key(cx, &tsig_key)
                 .await
                 .map_err(NsupdateError::from)?,
             None => Caller::unsigned_dns(),
@@ -83,9 +86,9 @@ pub(crate) async fn apply_update(
 
         // Parse absolute labels; unrepresentable zone names are not served (RFC 2136, Section 3.1.2).
         if request.zone_name == "." {
-            return Err(UpdateError::NotAuth(
-                "the root zone is not served here".to_string(),
-            ));
+            return Err(UpdateError::NotAuth {
+                reason: "the root zone is not served here".to_string(),
+            });
         }
 
         let zone_name =
@@ -102,9 +105,7 @@ pub(crate) async fn apply_update(
             message: query_data,
         };
 
-        let changed = nsupdate::apply(dns_cx.daemon(), &caller, update).await?;
-
-        Ok(changed)
+        Ok(nsupdate::apply(cx, &caller, update).await?)
     }
     .await;
 
@@ -115,8 +116,8 @@ pub(crate) async fn apply_update(
 /// the key comes back with the context that signs the response.
 pub(crate) async fn authenticate_tsig_key(
     dns_cx: &DnsContext,
-    key_name: &str,
     query_data: &[u8],
+    key_name: &str,
 ) -> Result<(Option<TsigKey>, ResponseSigner), UpdateError> {
     let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), key_name)
         .await
@@ -124,20 +125,22 @@ pub(crate) async fn authenticate_tsig_key(
 
     // Verify unknown keys too, so the response encoder receives BADKEY.
     let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
-    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key)?;
+    let signer = tsig::verify_tsig(query_data, signing_key)?;
 
     Ok((tsig_key, signer))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io;
 
     use bindizr_core::dns::message::Rcode;
     use bindizr_core::dns::nsupdate::parser::ValidateUpdateShapeError;
 
     use super::*;
 
-    /// Preserve the complete parser and backend source chains through the DNS boundary.
+    /// Verify that the complete parser and backend source chains are preserved through the
+    /// DNS boundary.
     #[test]
     fn update_errors_retain_sources_across_layers() {
         use std::error::Error;
@@ -160,7 +163,7 @@ mod tests {
 
         let error = UpdateError::from(NsupdateError::from(ServiceError::internal_with_source(
             "storage failed",
-            std::io::Error::other("storage"),
+            io::Error::other("storage"),
         )));
         let nsupdate = error
             .source()
@@ -175,7 +178,7 @@ mod tests {
             .downcast_ref::<ServiceError>()
             .unwrap();
 
-        assert!(service.source().unwrap().is::<std::io::Error>());
+        assert!(service.source().unwrap().is::<io::Error>());
 
         let error = UpdateError::from(TsigError::EmptySecret);
 

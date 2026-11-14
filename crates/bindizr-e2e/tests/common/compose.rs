@@ -4,27 +4,53 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use reqwest::{Client, StatusCode};
+use serde_json::{Value, json};
+use tokio::time;
 
-use super::{TestApp, TestRuntime};
+use crate::common;
+use crate::common::{TestApp, TestRuntime};
 
+/// The compose file that defines the DNS stack.
 const COMPOSE_FILE: &str = "docker-compose.yml";
+
+/// The override compose file for ARM hosts.
 const ARM_COMPOSE_FILE: &str = "docker-compose.arm.yml";
+
+/// The Compose project name the stack runs under.
 const COMPOSE_PROJECT_NAME: &str = "bindizr-e2e-dns";
+
+/// The compose bindizr's HTTP API as the host reaches it.
 const COMPOSE_API_BASE_URL: &str = "http://127.0.0.1:8000";
+
+/// The switch that adds the ARM override compose file.
 const ARM_STACK_ENV: &str = "BINDIZR_E2E_ARM";
+
+/// The host ports of the BIND9 secondaries' DNS listeners.
 const SECONDARY_PORTS: [u16; 2] = [1053, 1054];
+
 /// The BIND9 services of the compose file, by the names the daemon reaches them at.
 const COMPOSE_SECONDARY_SERVICES: [&str; 2] = ["bind9-1", "bind9-2"];
+
+/// The longest a `docker compose` command may run.
 const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
+const COMPOSE_XOT_KEY: &str = "xot-key";
+
+/// The secret of `COMPOSE_XOT_KEY`, as bind9-1's named.conf spells it.
+const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
+/// The stack shared by every test of the run, started on first use.
 static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 
 impl TestApp {
     /// Start a test application using the Docker Compose services.
     pub(crate) async fn start_compose() -> Self {
-        super::install_crypto_provider();
+        common::install_crypto_provider();
         let compose_stack = COMPOSE_STACK.get_or_init(ComposeStack::start);
         let client = Client::new();
 
@@ -39,15 +65,11 @@ impl TestApp {
             dns_tls_port: None,
             tls_cert: None,
             dns_secondary_ports: SECONDARY_PORTS.to_vec(),
-            namespace: super::test_namespace(),
+            namespace: common::test_namespace(),
             auth_token: None,
         }
     }
 }
-
-/// The TSIG key bind9-1 pulls over TLS with, as its named.conf spells it.
-const COMPOSE_XOT_KEY: &str = "xot-key";
-const COMPOSE_XOT_SECRET: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
 /// Register the stack's BIND9 services as secondaries, and the key bind9-1
 /// signs with; the stack is reused across tests, so what exists is left alone.
@@ -60,7 +82,7 @@ async fn register_compose_secondaries(client: &Client) {
         post(
             client,
             "/secondaries",
-            serde_json::json!({ "name": name, "address": format!("{name}:53") }),
+            json!({ "name": name, "address": format!("{name}:53") }),
             &[StatusCode::CREATED],
         )
         .await;
@@ -75,21 +97,21 @@ async fn register_compose_secondaries(client: &Client) {
     post(
         client,
         "/roles",
-        serde_json::json!({ "name": "secondaries" }),
+        json!({ "name": "secondaries" }),
         &[StatusCode::CREATED, StatusCode::CONFLICT],
     )
     .await;
     post(
         client,
         "/roles/secondaries/grants",
-        serde_json::json!({ "actions": ["zone:transfer"] }),
+        json!({ "actions": ["zone:transfer"] }),
         &[StatusCode::CREATED],
     )
     .await;
     post(
         client,
         "/tsig-keys",
-        serde_json::json!({
+        json!({
             "name": COMPOSE_XOT_KEY,
             "secret": COMPOSE_XOT_SECRET,
             "role_name": "secondaries"
@@ -99,7 +121,7 @@ async fn register_compose_secondaries(client: &Client) {
     .await;
 }
 
-/// Whether the compose API serves `path`.
+/// Return whether the compose API serves `path`.
 async fn probe_api_resource(client: &Client, path: &str) -> bool {
     client
         .get(format!("{COMPOSE_API_BASE_URL}{path}"))
@@ -110,11 +132,11 @@ async fn probe_api_resource(client: &Client, path: &str) -> bool {
         == StatusCode::OK
 }
 
-/// POST `body` to the compose API, accepting one of `allowed` statuses.
-async fn post(client: &Client, path: &str, body: serde_json::Value, allowed: &[StatusCode]) {
+/// POST `request` to the compose API, accepting one of `allowed` statuses.
+async fn post(client: &Client, path: &str, request: Value, allowed: &[StatusCode]) {
     let response = client
         .post(format!("{COMPOSE_API_BASE_URL}{path}"))
-        .json(&body)
+        .json(&request)
         .send()
         .await
         .unwrap_or_else(|error| panic!("POST {path}: {error}"));
@@ -191,7 +213,7 @@ impl ComposeStack {
             .stderr(Stdio::inherit());
         let mut child = command.spawn().expect("failed to run docker compose");
 
-        let started_at = Instant::now();
+        let started = Instant::now();
         let status = loop {
             if let Some(status) = child
                 .try_wait()
@@ -200,7 +222,7 @@ impl ComposeStack {
                 break status;
             }
 
-            if started_at.elapsed() > COMPOSE_COMMAND_TIMEOUT {
+            if started.elapsed() > COMPOSE_COMMAND_TIMEOUT {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(
@@ -210,7 +232,7 @@ impl ComposeStack {
                 );
             }
 
-            std::thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_secs(1));
         };
 
         assert!(
@@ -221,7 +243,7 @@ impl ComposeStack {
     }
 }
 
-/// Check whether the expected Compose service ports are reachable.
+/// Return whether the expected Compose service ports are reachable.
 fn is_compose_stack_reachable() -> bool {
     [8000, SECONDARY_PORTS[0], SECONDARY_PORTS[1]]
         .into_iter()
@@ -234,9 +256,10 @@ fn is_compose_stack_reachable() -> bool {
         })
 }
 
-/// The ARM override swaps the amd64-only ISC bind9 image for a multi-arch one.
+/// List the compose files; the ARM override swaps the amd64-only ISC bind9
+/// image for a multi-arch one.
 fn compose_files() -> Vec<&'static str> {
-    if super::read_env_flag(ARM_STACK_ENV) {
+    if common::read_env_flag(ARM_STACK_ENV) {
         vec![COMPOSE_FILE, ARM_COMPOSE_FILE]
     } else {
         vec![COMPOSE_FILE]
@@ -259,7 +282,7 @@ async fn wait_for_compose_api(client: &Client) {
             eprintln!("Still waiting for bindizr API... {attempt}s elapsed");
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_secs(1)).await;
     }
 
     panic!("bindizr API did not become ready at {COMPOSE_API_BASE_URL}");

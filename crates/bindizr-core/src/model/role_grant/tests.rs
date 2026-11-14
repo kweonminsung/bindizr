@@ -1,4 +1,3 @@
-use chrono::Utc;
 use serde_json::json;
 
 use super::*;
@@ -7,16 +6,13 @@ use crate::model::record::EXTERNAL_DNS_RECORD_TYPES;
 /// Verify that `Action` has one spelling across `as_str`, serde, and `FromStr`.
 #[test]
 fn action_spells_itself_once() {
-    for action in Action::ALL {
+    for value in Action::ALL {
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
         assert_eq!(
-            serde_json::to_value(action).unwrap(),
-            json!(action.as_str())
+            serde_json::from_value::<Action>(json!(value.as_str())).unwrap(),
+            value
         );
-        assert_eq!(
-            serde_json::from_value::<Action>(json!(action.as_str())).unwrap(),
-            action
-        );
-        assert_eq!(action.as_str().parse::<Action>().unwrap(), action);
+        assert_eq!(value.as_str().parse::<Action>().unwrap(), value);
     }
 }
 
@@ -35,11 +31,11 @@ fn action_set_serializes_canonical_row_form() {
 /// Verify that an all-zones scope reaches all zones and a zone scope only its own.
 #[test]
 fn zone_scope_reaches_its_zones() {
-    let zone = ZoneId::from(1);
+    let zone_id = ZoneId::from(1);
 
-    assert!(RoleZoneScope::from(None).covers(zone));
-    assert!(RoleZoneScope::from(Some(zone)).covers(zone));
-    assert!(!RoleZoneScope::Zone(ZoneId::from(2)).covers(zone));
+    assert!(RoleZoneScope::from(None).covers(zone_id));
+    assert!(RoleZoneScope::from(Some(zone_id)).covers(zone_id));
+    assert!(!RoleZoneScope::Zone(ZoneId::from(2)).covers(zone_id));
 }
 
 /// Build a grant of `actions` in `scope`, narrowed by `pattern` and `types`.
@@ -59,12 +55,12 @@ fn grant(scope: RoleZoneScope, actions: &[Action], pattern: &str, types: &str) -
 /// own zone, name, and type.
 #[test]
 fn role_grants_answer_over_their_union() {
-    let zone = ZoneId::from(1);
-    let other = ZoneId::from(2);
+    let zone_id = ZoneId::from(1);
+    let other_zone_id = ZoneId::from(2);
     let grants = RoleGrants::from(vec![
         grant(RoleZoneScope::All, &[Action::RecordRead], "*", "*"),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordCreate],
             "*.dyn",
             "A",
@@ -72,14 +68,14 @@ fn role_grants_answer_over_their_union() {
     ]);
     let host = OwnerName::from_row("host.dyn");
 
-    assert!(grants.permits(Action::RecordRead, other));
-    assert!(grants.permits(Action::RecordCreate, zone));
-    assert!(!grants.permits(Action::RecordCreate, other));
-    assert!(grants.covers_record(Action::RecordCreate, zone, &host, Some(&RecordType::A)));
-    assert!(!grants.covers_record(Action::RecordCreate, zone, &host, Some(&RecordType::Txt)));
-    assert!(grants.covers_whole_zone(Action::RecordRead, zone));
-    assert!(!grants.covers_whole_zone(Action::RecordCreate, zone));
-    assert!(grants.reaches_zone(other));
+    assert!(grants.permits(Action::RecordRead, other_zone_id));
+    assert!(grants.permits(Action::RecordCreate, zone_id));
+    assert!(!grants.permits(Action::RecordCreate, other_zone_id));
+    assert!(grants.covers_record(Action::RecordCreate, zone_id, &host, Some(RecordType::A)));
+    assert!(!grants.covers_record(Action::RecordCreate, zone_id, &host, Some(RecordType::Txt)));
+    assert!(grants.covers_whole_zone(Action::RecordRead, zone_id));
+    assert!(!grants.covers_whole_zone(Action::RecordCreate, zone_id));
+    assert!(grants.reaches_zone(other_zone_id));
 
     // Only an all-zones grant carries an action in all zones.
     assert!(grants.permits_all_zones(Action::RecordRead));
@@ -90,7 +86,7 @@ fn role_grants_answer_over_their_union() {
 /// naming any name, and not ones only another pattern holds.
 #[test]
 fn patterns_holding_unions_grants_per_pattern() {
-    let zone = ZoneId::from(1);
+    let zone_id = ZoneId::from(1);
     let sync = [
         Action::RecordRead,
         Action::RecordCreate,
@@ -99,13 +95,13 @@ fn patterns_holding_unions_grants_per_pattern() {
     let grants = RoleGrants::from(vec![
         grant(RoleZoneScope::All, &[Action::RecordRead], "*", "*"),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordCreate, Action::RecordDelete],
             "*.k8s",
             "*",
         ),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordCreate],
             "*.web",
             "*",
@@ -114,7 +110,7 @@ fn patterns_holding_unions_grants_per_pattern() {
 
     assert_eq!(
         grants
-            .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
+            .patterns_holding(zone_id, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["*.k8s"]
@@ -128,25 +124,25 @@ fn patterns_holding_unions_grants_per_pattern() {
     // Split across grants, the actions must still share a record type.
     let disjoint = RoleGrants::from(vec![
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordRead, Action::RecordCreate],
             "*.a",
             "A",
         ),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordDelete],
             "*.a",
             "TXT",
         ),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordRead],
             "*.b",
             "A,TXT",
         ),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordCreate, Action::RecordDelete],
             "*.b",
             "TXT",
@@ -155,7 +151,7 @@ fn patterns_holding_unions_grants_per_pattern() {
 
     assert_eq!(
         disjoint
-            .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
+            .patterns_holding(zone_id, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["*.b"]
@@ -164,13 +160,13 @@ fn patterns_holding_unions_grants_per_pattern() {
     // An enclosing subtree lends its actions to the narrower pattern inside it.
     let nested = RoleGrants::from(vec![
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordRead],
             "*.apps",
             "*",
         ),
         grant(
-            RoleZoneScope::Zone(zone),
+            RoleZoneScope::Zone(zone_id),
             &[Action::RecordCreate, Action::RecordDelete],
             "api.apps",
             "*",
@@ -179,7 +175,7 @@ fn patterns_holding_unions_grants_per_pattern() {
 
     assert_eq!(
         nested
-            .patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
+            .patterns_holding(zone_id, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["api.apps"]
@@ -187,18 +183,18 @@ fn patterns_holding_unions_grants_per_pattern() {
 
     // A type the actions share counts only among the types asked about.
     let mail = RoleGrants::from(vec![grant(
-        RoleZoneScope::Zone(zone),
+        RoleZoneScope::Zone(zone_id),
         &sync,
         "*.mail",
         "MX",
     )]);
 
     assert!(
-        mail.patterns_holding(zone, &sync, EXTERNAL_DNS_RECORD_TYPES)
+        mail.patterns_holding(zone_id, &sync, EXTERNAL_DNS_RECORD_TYPES)
             .is_empty()
     );
     assert_eq!(
-        mail.patterns_holding(zone, &sync, &[RecordType::Mx])
+        mail.patterns_holding(zone_id, &sync, &[RecordType::Mx])
             .into_iter()
             .collect::<Vec<_>>(),
         vec!["*.mail"]

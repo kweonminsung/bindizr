@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use bindizr_service::types::{ErrorResponse, ZoneView};
 use bindizr_service::{Context, zone};
@@ -13,6 +14,15 @@ use utoipa::IntoParams;
 use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
 use crate::params::NameParams;
+
+/// The view switch of a zone export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ExportZoneQuery {
+    /// Append the derived DNSSEC records.
+    signed: Option<bool>,
+}
 
 /// Render a zone as BIND master-file text.
 #[utoipa::path(
@@ -48,17 +58,8 @@ pub(crate) async fn export_zone(
 
     Ok((
         StatusCode::OK,
-        [("content-type", "text/plain; charset=utf-8")],
+        [(CONTENT_TYPE, "text/plain; charset=utf-8")],
         zone_file,
     )
         .into_response())
-}
-
-/// The view switch of a zone export.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
-#[into_params(parameter_in = Query)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ExportZoneQuery {
-    /// Append the derived DNSSEC records.
-    signed: Option<bool>,
 }

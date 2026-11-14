@@ -3,23 +3,23 @@
 
 use bindizr_core::dns::dnssec::{KeyTag, SigningPass};
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_key::DnssecKeyId;
+use bindizr_core::model::dnssec_key::{
+    DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
+};
+use bindizr_core::model::dnssec_policy::DnssecPolicy;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use super::status;
 use crate::authorization::Caller;
-use crate::dnssec::SignedZone;
+use crate::dnssec::{SignedZone, status};
 use crate::error::ServiceError;
-use crate::model::dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState};
-use crate::model::dnssec_policy::DnssecPolicy;
-use crate::model::zone::Zone;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
     StartDnssecRolloverRequest,
 };
-use crate::{Context, Transaction, transaction};
+use crate::{Context, Transaction, dnssec, notify, transaction};
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
 /// the CSK, or for the `role` named in a split-key zone.
@@ -37,9 +37,10 @@ pub async fn start_rollover(
         .map_err(ServiceError::invalid_input)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
-    let result = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
-        let mut signed = super::get_signed_zone_tx(
+        let mut signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -53,9 +54,7 @@ pub async fn start_rollover(
             .iter()
             .any(|key| key.state != DnssecKeyState::Active)
         {
-            return Err(ServiceError::dnssec_rollover_in_progress(
-                signed.zone.name.as_str(),
-            ));
+            return Err(ServiceError::dnssec_rollover_in_progress(&signed.zone.name));
         }
 
         // The key the replacement is modelled on: one of the requested role,
@@ -85,7 +84,7 @@ pub async fn start_rollover(
             publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm).await?;
         signed.keys.push(new_key);
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
@@ -94,7 +93,7 @@ pub async fn start_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -106,8 +105,9 @@ pub async fn start_rollover(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+        transaction::finish_tx(tx, apply_result, "failed to start key rollover").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -117,7 +117,7 @@ pub async fn start_rollover(
 
     // Announce the pre-published key after the signed view commits.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -131,9 +131,7 @@ pub(crate) async fn start_algorithm_rollover_tx(
     keys: Vec<DnssecKey>,
 ) -> Result<Vec<DnssecKey>, ServiceError> {
     if keys.iter().any(|key| key.state != DnssecKeyState::Active) {
-        return Err(ServiceError::dnssec_rollover_in_progress(
-            zone.name.as_str(),
-        ));
+        return Err(ServiceError::dnssec_rollover_in_progress(&zone.name));
     }
 
     // One replacement per key, so both algorithms carry a full signer
@@ -159,8 +157,9 @@ pub async fn advance_rollover(
     holddown: Holddown,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
-    let result = async {
-        let mut signed = super::get_signed_zone_tx(
+
+    let apply_result: Result<_, ServiceError> = async {
+        let mut signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -175,7 +174,7 @@ pub async fn advance_rollover(
         let mut parent_ds_ttl = None;
 
         if ds_check == DsCheck::Probe {
-            let delegation = super::probe_delegation(cx, &signed).await?;
+            let delegation = dnssec::probe_delegation(cx, &signed).await?;
             parent_ds_ttl = delegation.ds_ttl;
             let unconfirmed: Vec<&DnssecDelegationKeyResponse> = delegation
                 .keys
@@ -190,7 +189,7 @@ pub async fn advance_rollover(
 
             if !unsupported.is_empty() {
                 return Err(ServiceError::dnssec_ds_digest_unsupported(
-                    signed.zone.name.as_str(),
+                    &signed.zone.name,
                     &unsupported,
                 ));
             }
@@ -199,7 +198,7 @@ pub async fn advance_rollover(
 
             if !missing.is_empty() {
                 return Err(ServiceError::dnssec_ds_not_published(
-                    signed.zone.name.as_str(),
+                    &signed.zone.name,
                     &missing,
                 ));
             }
@@ -210,7 +209,7 @@ pub async fn advance_rollover(
             promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &awaiting, parent_ds_ttl)
                 .await?;
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
@@ -219,7 +218,7 @@ pub async fn advance_rollover(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -231,8 +230,9 @@ pub async fn advance_rollover(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+        transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -255,7 +255,7 @@ pub async fn advance_rollover(
     log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
 
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -358,7 +358,7 @@ pub(crate) fn promotable_sep_key_ids(
         .any(|key| key.state == DnssecKeyState::Published)
     {
         return Err(ServiceError::dnssec_no_rollover_in_progress(
-            signed.zone.name.as_str(),
+            &signed.zone.name,
         ));
     }
 
@@ -384,7 +384,7 @@ pub(crate) fn promotable_sep_key_ids(
             "the replacement key must stay published so resolvers holding the previous \
              DNSKEY records can learn it; retry after {}, or skip the hold-down and accept \
              validation failures until those caches expire",
-            promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
+            promotable_at.format("%Y-%m-%dT%H:%M:%SZ")
         )));
     }
 

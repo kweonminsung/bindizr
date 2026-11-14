@@ -1,9 +1,7 @@
-use chrono::{DateTime, Duration, Utc};
-
 use super::*;
 use crate::dns::name::ZoneName;
 use crate::dns::{Serial, SoaInterval};
-use crate::model::zone::{Zone, ZoneId};
+use crate::model::zone::ZoneId;
 
 /// A real `dnssec-keygen -a ECDSAP256SHA256` pair (BIND 9.20), so the tests
 /// hold the field spelling and order bindizr must read, not a guess at it.
@@ -27,7 +25,7 @@ fn test_zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -56,7 +54,7 @@ fn import(timing: &[(&str, String)]) -> Result<DnssecKey, ImportKeyError> {
     let mut private = BIND_PRIVATE.to_string();
 
     for (field, at) in timing {
-        private.push_str(&format!("{}: {}\n", field, at));
+        private.push_str(&format!("{field}: {at}\n"));
     }
 
     DnssecKey::import(
@@ -127,27 +125,29 @@ fn key_import_defaults_open_schedule_to_dnskey_ttl() {
 /// Verify that a key outside the window bind serves it in is refused.
 #[test]
 fn key_import_rejects_keys_outside_serving_window() {
-    let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]).unwrap_err();
+    let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]);
 
     assert!(
-        matches!(not_yet, ImportKeyError::NotYetPublished { .. }),
-        "{not_yet}"
+        matches!(not_yet, Err(ImportKeyError::NotYetPublished { .. })),
+        "{not_yet:?}"
     );
 
     let gone = import(&[
         ("Publish", stamp(-48)),
         ("Inactive", stamp(-24)),
         ("Delete", stamp(-1)),
-    ])
-    .unwrap_err();
-
-    assert!(matches!(gone, ImportKeyError::Deleted { .. }), "{gone}");
-
-    let malformed = import(&[("Publish", "not-a-time".to_string())]).unwrap_err();
+    ]);
 
     assert!(
-        matches!(malformed, ImportKeyError::InvalidTime { .. }),
-        "{malformed}"
+        matches!(gone, Err(ImportKeyError::Deleted { .. })),
+        "{gone:?}"
+    );
+
+    let malformed = import(&[("Publish", "not-a-time".to_string())]);
+
+    assert!(
+        matches!(malformed, Err(ImportKeyError::InvalidTime { .. })),
+        "{malformed:?}"
     );
 }
 
@@ -207,7 +207,7 @@ fn key_import_round_trips_bind_key_pair() {
 
 /// Verify that import derives the role from the key layout.
 #[test]
-fn import_derives_the_role_from_the_key_layout() {
+fn key_import_derives_the_role_from_the_key_layout() {
     let zone = test_zone();
     let sep = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let dnskey = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", sep.public_key);
@@ -260,7 +260,7 @@ fn import_derives_the_role_from_the_key_layout() {
 
 /// Verify that `import` rejects a mismatched key pair.
 #[test]
-fn import_rejects_a_mismatched_key_pair() {
+fn key_import_rejects_a_mismatched_key_pair() {
     let zone = test_zone();
     let one = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);

@@ -1,25 +1,17 @@
 //! Validate TSIG placement and authenticate its original wire variables.
 
-use domain::base::iana::Class;
+use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
-use domain::base::{Message, Record, Rtype, ToName};
+use domain::base::{Message, Record, ToName};
 use domain::rdata::tsig::Tsig;
 use ring::hmac;
-use subtle::ConstantTimeEq;
 use thiserror::Error;
 
-use super::TsigSigningKey;
 use crate::dns::LibraryError;
 use crate::dns::message::DNS_HEADER_LEN;
+use crate::dns::tsig::TsigSigningKey;
 
 type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [u8]>>>;
-
-/// The final Additional record and where the signed DNS message ends.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ParsedTsig<'a> {
-    pub(crate) record: WireTsig<'a>,
-    start: usize,
-}
 
 /// A malformed TSIG record or its enclosing DNS sections.
 #[derive(Debug, Error)]
@@ -37,6 +29,13 @@ pub(crate) enum VerifyMacError {
     Length,
     #[error("TSIG MAC does not match")]
     Mismatch,
+}
+
+/// The final Additional record and where the signed DNS message ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedTsig<'a> {
+    pub(crate) record: WireTsig<'a>,
+    start: usize,
 }
 
 impl<'a> ParsedTsig<'a> {
@@ -85,7 +84,7 @@ impl<'a> ParsedTsig<'a> {
         }
     }
 
-    /// Compare the key name and algorithm without changing signed message octets.
+    /// Return whether the key name and algorithm match without changing signed message octets.
     pub(crate) fn matches_key(&self, key: &TsigSigningKey) -> bool {
         self.record.owner().name_eq(key.domain.name())
             && self
@@ -102,6 +101,8 @@ impl<'a> ParsedTsig<'a> {
         message: &Message<&[u8]>,
         request_mac: Option<&[u8]>,
     ) -> Result<(), VerifyMacError> {
+        use subtle::ConstantTimeEq;
+
         let data = self.record.data();
         let mut digest = hmac::Context::with_key(&key.hmac);
 

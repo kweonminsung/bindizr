@@ -6,9 +6,9 @@ use bindizr_core::model::role_grant::Action;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::ZoneStatusResponse;
-use crate::{Context, probe};
+use crate::{Context, probe, zone};
 
-/// Probe every enabled secondary for the zone and classify each
+/// Get the zone's status: probe every enabled secondary and classify each
 /// against the zone's serial; empty with no enabled secondaries.
 pub async fn get_status(
     cx: &Context,
@@ -17,7 +17,7 @@ pub async fn get_status(
 ) -> Result<ZoneStatusResponse, ServiceError> {
     // Read once: a write landing during the probe can show a secondary as
     // ahead for a moment, the drift a read-only path accepts.
-    let zone = super::get_by_name(cx, caller, zone_name).await?;
+    let zone = zone::lookup_by_name(cx, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let serial = zone.serial;

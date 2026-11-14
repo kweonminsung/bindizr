@@ -1,7 +1,19 @@
+use std::net::{Ipv4Addr, TcpListener};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+use std::{io, iter, thread};
+
+use domain::base::iana::Rtype;
+use domain::base::{Message, MessageBuilder, Serial, Ttl};
+use domain::rdata::{A, Cname, Dname, Ns, Ptr, Soa, Txt};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
+use tokio::net::UdpSocket;
+use tokio::time;
 
-use crate::common::{TestApp, TestAppOptions};
+use crate::api::zone;
+use crate::common;
+use crate::common::{TestApp, TestAppOptions, dns};
 
 /// Populate a zone with records before testing an import.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
@@ -16,31 +28,27 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
-/// Import root targets and reject malformed replacements atomically.
+/// Verify that root targets import and malformed replacements are rejected atomically.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomically() {
-    use domain::base::Rtype;
-
-    use crate::common::dns;
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
     let content = "ns IN NS .\ncname IN CNAME .\nptr IN PTR .\ndname IN DNAME .\n";
 
     let (status, body) = app
         .send_request(
             Method::POST,
-            &format!("/zones/{name}/import"),
-            Some(json!({"content": content})),
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content })),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 4);
 
-    let sets = dns::fetch_exported_record_sets(&app, name).await;
+    let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
 
     for (owner, rtype) in [
         ("ns", Rtype::NS),
@@ -48,50 +56,50 @@ async fn zone_import_preserves_root_targets_and_rejects_malformed_names_atomical
         ("ptr", Rtype::PTR),
         ("dname", Rtype::DNAME),
     ] {
-        assert_eq!(sets[&(format!("{owner}.{name}."), rtype)], [vec![0]]);
+        assert_eq!(sets[&(format!("{owner}.{zone_name}."), rtype)], [vec![0]]);
     }
 
-    let before = app.list_records(name).await;
-    let serial = app.read_zone_serial(name).await;
+    let before = app.list_records(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
     let (status, versions) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
             None,
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{versions}");
 
-    for kind in ["NS", "CNAME", "PTR", "DNAME"] {
+    for record_type in ["NS", "CNAME", "PTR", "DNAME"] {
         for dry_run in [true, false] {
-            let content = format!("valid IN A 192.0.2.1\nbad IN {kind} ..\n");
+            let content = format!("valid IN A 192.0.2.1\nbad IN {record_type} ..\n");
 
             let (status, body) = app
                 .send_request(
                     Method::POST,
-                    &format!("/zones/{name}/import"),
-                    Some(json!({"content": content, "mode": "replace", "dry_run": dry_run})),
+                    &format!("/zones/{zone_name}/import"),
+                    Some(json!({ "content": content, "mode": "replace", "dry_run": dry_run })),
                 )
                 .await;
 
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
             assert_eq!(body["applied"], false);
             assert!(!body["errors"].as_array().unwrap().is_empty());
-            assert_eq!(app.list_records(name).await, before);
-            assert_eq!(app.read_zone_serial(name).await, serial);
+            assert_eq!(app.list_records(zone_name).await, before);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 
     let (status, after) = app
         .send_request(
             Method::GET,
-            &format!("/zones/{name}/versions?include_signer_serials=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
             None,
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{after}");
     assert_eq!(after, versions);
 }
 
@@ -114,11 +122,11 @@ async fn zone_import_previews_zone_file_before_apply() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["summary"]["added"], 3);
-    assert_eq!(body["errors"].as_array().unwrap().len(), 0);
+    assert!(body["errors"].as_array().unwrap().is_empty());
 
     // Nothing applied yet.
     let (_, body) = app
@@ -139,7 +147,7 @@ async fn zone_import_previews_zone_file_before_apply() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 3);
 
@@ -162,7 +170,7 @@ async fn zone_import_previews_zone_file_before_apply() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 0);
     assert_eq!(body["summary"]["unchanged"], 3);
@@ -197,7 +205,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
     assert_eq!(body["summary"]["deleted"], 1);
@@ -211,7 +219,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
         )
         .await;
 
-    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+    assert!(body["items"].as_array().unwrap().is_empty());
 
     let (_, body) = app
         .send_request(
@@ -227,7 +235,7 @@ async fn zone_import_replace_removes_records_absent_from_file() {
 /// Verify that zone import zone file upsert mode replaces records by name and type only.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_only() {
+async fn zone_import_upsert_replaces_records_by_name_and_type_only() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -257,12 +265,12 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
     assert_eq!(body["summary"]["deleted"], 2);
 
-    let values = |body: &serde_json::Value| -> Vec<String> {
+    let values = |body: &Value| -> Vec<String> {
         let mut values: Vec<String> = body["items"]
             .as_array()
             .unwrap()
@@ -282,7 +290,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
         )
         .await;
 
-    assert_eq!(values(&body), vec!["192.0.2.3"]);
+    assert_eq!(values(&body), ["192.0.2.3"]);
 
     // Same owner, different type: untouched.
     let (_, body) = app
@@ -293,7 +301,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
         )
         .await;
 
-    assert_eq!(values(&body), vec!["keep me"]);
+    assert_eq!(values(&body), ["keep me"]);
 
     // Different owner entirely: untouched.
     let (_, body) = app
@@ -304,13 +312,13 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
         )
         .await;
 
-    assert_eq!(values(&body), vec!["192.0.2.9"]);
+    assert_eq!(values(&body), ["192.0.2.9"]);
 }
 
 /// Verify that zone import zone file reconciles TTL.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_reconciles_ttl() {
+async fn zone_import_reconciles_ttl() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -324,7 +332,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     )
     .await;
 
-    let ttl_of = |body: &serde_json::Value| -> i64 {
+    let ttl_of = |body: &Value| -> i64 {
         body["items"].as_array().unwrap()[0]["ttl"]
             .as_i64()
             .unwrap()
@@ -341,7 +349,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 0);
     assert_eq!(body["summary"]["deleted"], 0);
@@ -394,10 +402,10 @@ async fn zone_import_zone_file_reconciles_ttl() {
     assert_eq!(ttl_of(&body), 600);
 }
 
-/// Verify importing a zone from another DNS server through the API.
+/// Verify that a zone can be imported from another DNS server through the API.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_fetches_server_records_over_http() {
+async fn zone_import_fetches_server_records() {
     // The transfer ACL must admit the test's own loopback AXFR.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -415,13 +423,13 @@ async fn zone_import_fetches_server_records_over_http() {
     assert_eq!(status, StatusCode::OK);
 
     // A transfer of the zone's own content replaces it with itself.
-    let server = format!("127.0.0.1:{}", app.dns_port());
+    let address = format!("127.0.0.1:{}", app.dns_port());
 
     let (status, body) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({ "from_server": server, "mode": "replace" })),
+            Some(json!({ "from_server": address, "mode": "replace" })),
         )
         .await;
 
@@ -434,7 +442,7 @@ async fn zone_import_fetches_server_records_over_http() {
     // Exactly one source, and that source one server.
     for request in [
         json!({}),
-        json!({ "content": "www IN A 192.0.2.1\n", "from_server": server }),
+        json!({ "content": "www IN A 192.0.2.1\n", "from_server": address }),
         json!({ "from_server": "127.0.0.1:1,127.0.0.1:2", "mode": "replace" }),
     ] {
         let (status, _) = app
@@ -474,7 +482,7 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], false);
 
     // The zone is created empty, so the file's NS and A are both adds.
@@ -501,21 +509,21 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let zone = &body["zone"];
 
     assert_eq!(zone["mname"], "ns1.old.example");
     assert_eq!(zone["rname"], format!("hostmaster@{zone_name}"));
     assert_eq!(zone["refresh"], 7200);
     assert_eq!(zone["retry"], 1800);
-    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["expire"], 1_209_600);
     assert_eq!(zone["minimum_ttl"], 300);
 
     // The import advanced it once for the records it added.
     assert_eq!(zone["serial"], 2026091602);
     let default_ttl = zone["default_ttl"].clone();
 
-    let (status, records) = app
+    let (status, body) = app
         .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=www"),
@@ -523,17 +531,17 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(records["items"][0]["ttl"], default_ttl);
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["items"][0]["ttl"], default_ttl);
 }
 
-/// Preserve the supported boundary serials and ignore source SOA on an existing zone.
+/// Verify that the supported boundary serials are preserved and the source SOA is ignored on an existing zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_preserves_supported_initial_serials() {
     let app = TestApp::start().await;
 
-    for serial in [0u32, 1, 2137483647, 2147483648, u32::MAX] {
+    for serial in [0u32, 1, 2_137_483_647, 2_147_483_648, u32::MAX] {
         let zone_name = app.zone_name(&format!("import-serial-{serial}.example"));
 
         // The increment passes over zero (RFC 2136, Section 7.11).
@@ -565,7 +573,7 @@ async fn zone_import_preserves_supported_initial_serials() {
                 .await;
 
             if dry_run {
-                assert_eq!(status, StatusCode::NOT_FOUND);
+                assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
             } else {
                 assert_eq!(status, StatusCode::OK, "{body}");
                 assert_eq!(body["zone"]["serial"], next);
@@ -590,7 +598,7 @@ async fn zone_import_preserves_supported_initial_serials() {
 /// Verify that a missing zone is an error unless `create` says otherwise.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_refuses_a_missing_zone_without_create() {
+async fn zone_import_rejects_a_missing_zone_without_create() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-nocreate.example");
 
@@ -602,7 +610,7 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 
     // `create` needs an SOA to build the zone from.
@@ -614,7 +622,7 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body["error"].as_str().unwrap().contains("no SOA"), "{body}");
 }
 
@@ -644,10 +652,7 @@ async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
 
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["applied"], false);
-    assert!(
-        !body["errors"].as_array().expect("errors array").is_empty(),
-        "{body}"
-    );
+    assert!(!body["errors"].as_array().unwrap().is_empty(), "{body}");
 
     // The zone was created inside the transaction the rejection discarded.
     let (status, _) = app
@@ -657,7 +662,7 @@ async fn zone_import_leaves_no_zone_when_creation_is_rejected() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Native WKS master-file values survive export and re-import as the supported type.
+/// Verify that native WKS master-file values survive export and re-import as the supported type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_preserves_native_wks_values() {
@@ -669,7 +674,7 @@ async fn zone_import_preserves_native_wks_values() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({"content": "services IN WKS 192.0.2.1 TCP ( 443 22\n 80 22 )\n"})),
+            Some(json!({ "content": "services IN WKS 192.0.2.1 TCP ( 443 22\n 80 22 )\n" })),
         )
         .await;
 
@@ -686,21 +691,22 @@ async fn zone_import_preserves_native_wks_values() {
     let (_, export) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
+
     let (status, body) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({"content": export, "mode": "replace"})),
+            Some(json!({ "content": export, "mode": "replace" })),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(app.list_records(zone_name).await, records);
-    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
 }
 
-/// Unsupported types reject the whole import without changing data or serial.
+/// Verify that unsupported types reject the whole import without changing data or serial.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_rejects_unsupported_types_atomically() {
@@ -709,17 +715,17 @@ async fn zone_import_rejects_unsupported_types_atomically() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
-    for rtype in ["TYPE128", "HINFO", "TYPE65280"] {
+    for record_type in ["TYPE128", "HINFO", "TYPE65280"] {
         for dry_run in [false, true] {
-            let content = format!("www IN A 192.0.2.1\nbox IN {rtype} \\# 2 0000\n");
+            let content = format!("www IN A 192.0.2.1\nbox IN {record_type} \\# 2 0000\n");
 
             let (status, body) = app
                 .send_request(
                     Method::POST,
                     &format!("/zones/{zone_name}/import"),
-                    Some(json!({"content": content, "dry_run": dry_run})),
+                    Some(json!({ "content": content, "dry_run": dry_run })),
                 )
                 .await;
 
@@ -727,7 +733,7 @@ async fn zone_import_rejects_unsupported_types_atomically() {
             assert_eq!(body["applied"], false, "{body}");
             assert!(!body["errors"].as_array().unwrap().is_empty(), "{body}");
             assert_eq!(app.list_records(zone_name).await, before);
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 }
@@ -735,7 +741,7 @@ async fn zone_import_rejects_unsupported_types_atomically() {
 /// Verify that zone import zone file reports validation errors.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_reports_validation_errors() {
+async fn zone_import_reports_validation_errors() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -751,7 +757,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
 
@@ -764,7 +770,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
         )
         .await;
 
-    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+    assert!(body["items"].as_array().unwrap().is_empty());
 }
 
 /// Verify that zone import preview shows empty diff on validation error.
@@ -787,7 +793,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
     assert!(!body["errors"].as_array().unwrap().is_empty());
@@ -802,7 +808,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
 /// Verify that zone import append rejects CNAME over existing db record.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_append_rejects_cname_over_existing_db_record() {
+async fn zone_import_append_rejects_cname_over_existing_record() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -827,7 +833,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
 
@@ -872,7 +878,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
 
@@ -892,7 +898,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
 /// Verify that zone import append dedups against existing db record.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_append_dedups_against_existing_db_record() {
+async fn zone_import_append_dedups_against_existing_record() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -915,7 +921,7 @@ async fn zone_import_append_dedups_against_existing_db_record() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 0);
     assert_eq!(body["summary"]["unchanged"], 1);
@@ -958,7 +964,7 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
     assert_eq!(body["summary"]["unchanged"], 0);
@@ -1008,7 +1014,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 5);
-    assert_eq!(body["errors"].as_array().unwrap().len(), 0, "{body}");
+    assert!(body["errors"].as_array().unwrap().is_empty(), "{body}");
 
     let (_, body) = app
         .send_request(
@@ -1022,7 +1028,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
         body["items"][0]["value"],
         format!(
             "4 2 {}",
-            "abababababababababababababababababababababababababababababababab".to_uppercase()
+            "abababababababababababababababababababababababababababababababab".to_ascii_uppercase()
         )
     );
 
@@ -1031,7 +1037,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let exported = body.as_str().unwrap().to_string();
 
     let (status, body) = app
@@ -1044,10 +1050,10 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 0, "{body}");
-    assert_eq!(body["errors"].as_array().unwrap().len(), 0, "{body}");
+    assert!(body["errors"].as_array().unwrap().is_empty(), "{body}");
 
     // The delegation NS cannot go while its DS survives; DS first, then NS.
-    let record_id = |listing: &serde_json::Value| listing["items"][0]["id"].as_i64().unwrap();
+    let record_id = |listing: &Value| listing["items"][0]["id"].as_i64().unwrap();
 
     let (_, ns_listing) = app
         .send_request(
@@ -1087,7 +1093,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     }
 }
 
-/// Reject an import containing invalid NAPTR flags.
+/// Verify that an import containing invalid NAPTR flags is rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_rejects_invalid_naptr_flags_atomically() {
@@ -1096,7 +1102,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     for flags in ["!", r"\000", r"\195\169"] {
         for dry_run in [true, false] {
@@ -1108,7 +1114,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
                 .send_request(
                     Method::POST,
                     &format!("/zones/{zone_name}/import"),
-                    Some(json!({"content": content, "dry_run": dry_run})),
+                    Some(json!({ "content": content, "dry_run": dry_run })),
                 )
                 .await;
 
@@ -1123,7 +1129,7 @@ async fn zone_import_rejects_invalid_naptr_flags_atomically() {
                 "{body}"
             );
             assert_eq!(app.list_records(zone_name).await, before);
-            assert_eq!(app.read_zone_serial(zone_name).await, serial);
+            assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
         }
     }
 }
@@ -1160,10 +1166,10 @@ async fn zone_import_export_preserves_dname_and_naptr() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
     // The rdata comes back as written, the root replacement included.
-    let exported = body.as_str().expect("zone file text");
+    let exported = body.as_str().unwrap();
 
     assert!(
         exported.contains("200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" ."),
@@ -1217,11 +1223,11 @@ async fn zone_import_export_preserves_escaped_labels_and_values() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
     // RFC 2317, Section 4 delegates through a label carrying a slash, and the
     // CAA value keeps the escapes it was written with.
-    let exported = body.as_str().expect("zone file text");
+    let exported = body.as_str().unwrap();
 
     assert!(
         exported.contains("1.0/25.2.0.192.in-addr.arpa."),
@@ -1230,7 +1236,7 @@ async fn zone_import_export_preserves_escaped_labels_and_values() {
     assert!(exported.contains(r#"0 issue "a\"b\\c""#), "{exported}");
 }
 
-/// Unknown import modes are input errors, not malformed JSON bodies.
+/// Verify that unknown import modes are input errors, not malformed JSON bodies.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_rejects_unknown_mode_in_service() {
@@ -1242,11 +1248,11 @@ async fn zone_import_rejects_unknown_mode_in_service() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({"content": "www IN A 192.0.2.10", "mode": "unknown"})),
+            Some(json!({ "content": "www IN A 192.0.2.10", "mode": "unknown" })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_INPUT");
     assert!(
         body["error"]
@@ -1260,13 +1266,13 @@ async fn zone_import_rejects_unknown_mode_in_service() {
 /// answers each zone's outcome, and refuses a malformed request whole.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn import_zones_reports_each_zone_outcome_over_http() {
+async fn import_zones_reports_each_zone_outcome() {
     // The transfer ACL must admit the test's own loopback AXFRs.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap().to_string();
-    let missing = app.zone_name("bulk-missing.example");
+    let missing_zone_name = app.zone_name("bulk-missing.example");
 
     let (status, _) = app
         .send_request(
@@ -1277,16 +1283,16 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let server = format!("127.0.0.1:{}", app.dns_port());
+    let address = format!("127.0.0.1:{}", app.dns_port());
 
     let (status, body) = app
         .send_request(
             Method::POST,
             "/import",
             Some(json!({
-                "from_server": server,
-                "zone_names": [zone_name, missing],
-                "mode": "replace",
+                "from_server": address,
+                "zone_names": [zone_name, missing_zone_name],
+                "mode": "replace"
             })),
         )
         .await;
@@ -1302,7 +1308,7 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
     assert_eq!(body["zones"][0]["import"]["applied"], true);
     assert_eq!(body["zones"][0]["import"]["summary"]["unchanged"], 2);
     assert!(body["zones"][0]["error"].is_null(), "{body}");
-    assert_eq!(body["zones"][1]["zone_name"], missing);
+    assert_eq!(body["zones"][1]["zone_name"], missing_zone_name);
     assert_eq!(body["zones"][1]["result"], "failed");
     assert!(body["zones"][1]["import"].is_null(), "{body}");
     assert_eq!(body["zones"][1]["error"]["code"], "ZONE_NOT_FOUND");
@@ -1312,10 +1318,10 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
             Method::POST,
             "/import",
             Some(json!({
-                "from_server": server,
+                "from_server": address,
                 "from_catalog": "catalog.bindizr",
                 "mode": "replace",
-                "dry_run": true,
+                "dry_run": true
             })),
         )
         .await;
@@ -1329,15 +1335,16 @@ async fn import_zones_reports_each_zone_outcome_over_http() {
     // Exactly one zone selector, a server, a mode, and a readable catalog.
     for request in [
         json!({ "zone_names": [zone_name] }),
-        json!({ "from_server": server }),
-        json!({ "from_server": server, "zone_names": [] }),
-        json!({ "from_server": server, "zone_names": [zone_name], "from_catalog": "catalog.bindizr" }),
-        json!({ "from_server": server, "zone_names": [zone_name], "mode": "merge" }),
-        json!({ "from_server": server, "from_catalog": "no-such.catalog" }),
+        json!({ "from_server": address }),
+        json!({ "from_server": address, "zone_names": [] }),
+        json!({ "from_server": address, "zone_names": [zone_name], "from_catalog": "catalog.bindizr" }),
+        json!({ "from_server": address, "zone_names": [zone_name], "mode": "merge" }),
+        json!({ "from_server": address, "from_catalog": "no-such.catalog" }),
     ] {
         let (status, body) = app
             .send_request(Method::POST, "/import", Some(request.clone()))
             .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST, "{request}: {body}");
     }
 }
@@ -1367,7 +1374,7 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
             Some(json!({
                 "from_server": "127.0.0.1:1",
                 "zone_names": [zone_name],
-                "create": true,
+                "create": true
             })),
         )
         .await;
@@ -1398,47 +1405,43 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
 }
 
 /// Serve a case-varied AXFR with TC set, AA clear, and optional trailing data.
-fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::JoinHandle<()>) {
-    use domain::base::{Message, MessageBuilder, Serial, Ttl};
-    use domain::rdata::{A, Cname, Dname, Ns, Ptr, Soa};
-
-    use crate::common::dns;
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+fn serve_import_transfer(zone_name: String, trailing: bool) -> (String, JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
-    let server = std::thread::spawn(move || {
+    let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        let query = dns::read_frame(&mut stream).unwrap().unwrap();
-        let message = Message::from_octets(query.as_slice()).unwrap();
-        let owner = dns::parse_name(&zone).unwrap();
-        let primary = dns::parse_name(&format!("NS1.{zone}.")).unwrap();
-        let mailbox = dns::parse_name(&format!("Hostmaster.{zone}.")).unwrap();
+        let query_data = dns::read_frame(&mut stream).unwrap().unwrap();
+        let query = Message::from_octets(query_data).unwrap();
+        let owner = dns::parse_name(&zone_name).unwrap();
+        let primary = dns::parse_name(&format!("NS1.{zone_name}.")).unwrap();
+        let mailbox = dns::parse_name(&format!("Hostmaster.{zone_name}.")).unwrap();
         let soa = Soa::new(
             primary.clone(),
             mailbox,
             Serial::from(42),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
-            Ttl::from_secs(604800),
+            Ttl::from_secs(604_800),
             Ttl::from_secs(300),
         );
         let closing = Soa::new(
-            dns::parse_name(&format!("ns1.{zone}.")).unwrap(),
-            dns::parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+            dns::parse_name(&format!("ns1.{zone_name}.")).unwrap(),
+            dns::parse_name(&format!("hostmaster.{zone_name}.")).unwrap(),
             Serial::from(42),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
-            Ttl::from_secs(604800),
+            Ttl::from_secs(604_800),
             Ttl::from_secs(300),
         );
         let mut builder = MessageBuilder::new_vec();
-        builder.header_mut().set_id(message.header().id());
+        builder.header_mut().set_id(query.header().id());
         builder.header_mut().set_qr(true);
         builder.header_mut().set_tc(true);
         let mut question = builder.question();
-        question.push((&owner, domain::base::Rtype::AXFR)).unwrap();
+        question.push((&owner, Rtype::AXFR)).unwrap();
         let mut answer = question.answer();
         answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
         answer
@@ -1446,36 +1449,36 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("www.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("www.{zone_name}.")).unwrap(),
                 Ttl::from_secs(u32::MAX),
-                A::new("192.0.2.50".parse().unwrap()),
+                A::new("192.0.2.50".parse::<Ipv4Addr>().unwrap()),
             ))
             .unwrap();
         let root = dns::parse_name(".").unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("rootns.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("rootns.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Ns::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("cname.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("cname.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Cname::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("ptr.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("ptr.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Ptr::new(root.clone()),
             ))
             .unwrap();
         answer
             .push((
-                &dns::parse_name(&format!("dname.{zone}.")).unwrap(),
+                &dns::parse_name(&format!("dname.{zone_name}.")).unwrap(),
                 Ttl::from_secs(300),
                 Dname::new(root),
             ))
@@ -1487,7 +1490,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
                 .push((
                     &owner,
                     Ttl::from_secs(300),
-                    A::new("192.0.2.51".parse().unwrap()),
+                    A::new("192.0.2.51".parse::<Ipv4Addr>().unwrap()),
                 ))
                 .unwrap();
         }
@@ -1500,50 +1503,45 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
 
 /// Serve repeated catalog records and the expected member transfers, recording requests.
 fn serve_catalog(
-    members: Vec<String>,
+    member_zone_names: Vec<String>,
     split: bool,
     apex_ns: bool,
     member_transfers: usize,
-) -> (String, std::thread::JoinHandle<Vec<String>>) {
-    use domain::base::{Message, MessageBuilder, Serial, Ttl};
-    use domain::rdata::{A, Ns, Ptr, Soa, Txt};
-
-    use crate::common::dns;
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+) -> (String, JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
-    let server = std::thread::spawn(move || {
+    let server = thread::spawn(move || {
         let mut queries = Vec::new();
 
-        for (index, zone) in std::iter::once("catalog.example".to_string())
-            .chain(members.iter().cloned())
+        for (index, zone_name) in iter::once("catalog.example".to_string())
+            .chain(member_zone_names.iter().cloned())
             .take(1 + member_transfers)
             .enumerate()
         {
             let catalog = index == 0;
             let (mut stream, _) = listener.accept().unwrap();
             stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
-            let query = dns::read_frame(&mut stream).unwrap().unwrap();
-            let message = Message::from_octets(query.as_slice()).unwrap();
-            queries.push(message.sole_question().unwrap().qname().to_string());
-            let owner = dns::parse_name(&zone).unwrap();
-            let primary = dns::parse_name(&format!("ns1.{zone}.")).unwrap();
+            let query_data = dns::read_frame(&mut stream).unwrap().unwrap();
+            let query = Message::from_octets(query_data).unwrap();
+            queries.push(query.sole_question().unwrap().qname().to_string());
+            let owner = dns::parse_name(&zone_name).unwrap();
+            let primary = dns::parse_name(&format!("ns1.{zone_name}.")).unwrap();
             let soa = Soa::new(
                 primary.clone(),
-                dns::parse_name(&format!("hostmaster.{zone}.")).unwrap(),
+                dns::parse_name(&format!("hostmaster.{zone_name}.")).unwrap(),
                 Serial::from(42),
                 Ttl::from_secs(7200),
                 Ttl::from_secs(3600),
-                Ttl::from_secs(604800),
+                Ttl::from_secs(604_800),
                 Ttl::from_secs(300),
             );
             let mut builder = MessageBuilder::new_vec();
-            builder.header_mut().set_id(message.header().id());
+            builder.header_mut().set_id(query.header().id());
             builder.header_mut().set_qr(true);
             let mut question = builder.question();
-            question.push((&owner, domain::base::Rtype::AXFR)).unwrap();
+            question.push((&owner, Rtype::AXFR)).unwrap();
             let mut answer = question.answer();
             answer
                 .push((&owner, Ttl::from_secs(300), soa.clone()))
@@ -1564,13 +1562,13 @@ fn serve_catalog(
                     ))
                     .unwrap();
 
-                for (index, member) in members.iter().enumerate() {
+                for (index, member_zone_name) in member_zone_names.iter().enumerate() {
                     answer
                         .push((
                             &dns::parse_name(&format!("member-{index}.zones.catalog.example"))
                                 .unwrap(),
                             Ttl::from_secs(0),
-                            Ptr::new(dns::parse_name(member).unwrap()),
+                            Ptr::new(dns::parse_name(member_zone_name).unwrap()),
                         ))
                         .unwrap();
                 }
@@ -1578,7 +1576,7 @@ fn serve_catalog(
                 if split {
                     dns::write_frame(&mut stream, &answer.finish()).unwrap();
                     let mut builder = MessageBuilder::new_vec();
-                    builder.header_mut().set_id(message.header().id());
+                    builder.header_mut().set_id(query.header().id());
                     builder.header_mut().set_qr(true);
                     answer = builder.answer();
                 }
@@ -1591,22 +1589,24 @@ fn serve_catalog(
                     ))
                     .unwrap();
 
-                for (index, member) in members.iter().enumerate() {
+                for (index, member_zone_name) in member_zone_names.iter().enumerate() {
                     answer
                         .push((
                             &dns::parse_name(&format!("MEMBER-{index}.ZONES.CATALOG.example"))
                                 .unwrap(),
                             Ttl::from_secs(120),
-                            Ptr::new(dns::parse_name(&member.to_ascii_uppercase()).unwrap()),
+                            Ptr::new(
+                                dns::parse_name(&member_zone_name.to_ascii_uppercase()).unwrap(),
+                            ),
                         ))
                         .unwrap();
                 }
             } else {
                 answer
                     .push((
-                        &dns::parse_name(&format!("www.{zone}")).unwrap(),
+                        &dns::parse_name(&format!("www.{zone_name}")).unwrap(),
                         Ttl::from_secs(300),
-                        A::new("192.0.2.50".parse().unwrap()),
+                        A::new("192.0.2.50".parse::<Ipv4Addr>().unwrap()),
                     ))
                     .unwrap();
             }
@@ -1618,18 +1618,18 @@ fn serve_catalog(
         if member_transfers == 0 {
             // Keep listening after a rejected catalog: no member AXFR may follow.
             listener.set_nonblocking(true).unwrap();
-            let until = std::time::Instant::now() + std::time::Duration::from_millis(150);
+            let until = Instant::now() + Duration::from_millis(150);
 
-            while std::time::Instant::now() < until {
+            while Instant::now() < until {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         stream
-                            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                            .set_read_timeout(Some(Duration::from_secs(1)))
                             .unwrap();
 
-                        if let Some(query) = dns::read_frame(&mut stream).unwrap() {
+                        if let Some(query_data) = dns::read_frame(&mut stream).unwrap() {
                             queries.push(
-                                Message::from_octets(query.as_slice())
+                                Message::from_octets(query_data)
                                     .unwrap()
                                     .sole_question()
                                     .unwrap()
@@ -1640,8 +1640,8 @@ fn serve_catalog(
 
                         break;
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(std::time::Duration::from_millis(5))
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
                     }
                     Err(error) => panic!("{error}"),
                 }
@@ -1654,22 +1654,22 @@ fn serve_catalog(
     (address, server)
 }
 
-/// HTTP and CLI ignore repeated catalog records within and across AXFR messages.
+/// Verify that HTTP and CLI ignore repeated catalog records within and across AXFR messages.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
+async fn catalog_import_ignores_repeated_records() {
     let app = TestApp::start_local().await;
 
     for cli in [false, true] {
         for split in [false, true] {
-            let member = app.zone_name(&format!("member-{cli}-{split}.example"));
+            let member_zone_name = app.zone_name(&format!("member-{cli}-{split}.example"));
 
-            app.create_zone_cli(&member, "3600").await;
+            app.create_zone_cli(&member_zone_name, "3600").await;
 
-            let (address, server) = serve_catalog(vec![member.clone()], split, true, 1);
+            let (address, server) = serve_catalog(vec![member_zone_name.clone()], split, true, 1);
 
-            let body = if cli {
-                let output = app
+            let body: Value = if cli {
+                let imported = app
                     .run_cli_success(
                         &[
                             "zone",
@@ -1685,13 +1685,13 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
                     )
                     .await;
 
-                serde_json::from_str::<Value>(&output).unwrap()
+                serde_json::from_str(&imported).expect("CLI did not return valid JSON")
             } else {
                 let (status, body) = app
                     .send_request(
                         Method::POST,
                         "/import",
-                        Some(json!({"from_server": address, "from_catalog": "catalog.example"})),
+                        Some(json!({ "from_server": address, "from_catalog": "catalog.example" })),
                     )
                     .await;
 
@@ -1706,28 +1706,24 @@ async fn catalog_import_ignores_repeated_records_over_http_and_cli() {
             assert_eq!(body["summary"]["zones"], 1, "{body}");
             assert_eq!(body["zones"][0]["import"]["applied"], true, "{body}");
 
-            let (status, records) = app
+            let (status, body) = app
                 .send_request(
                     Method::GET,
-                    &format!("/records?zone_name={member}&type=A"),
+                    &format!("/records?zone_name={member_zone_name}&type=A"),
                     None,
                 )
                 .await;
 
-            assert_eq!(status, StatusCode::OK);
-            assert_eq!(records["items"][0]["value"], "192.0.2.50", "{records}");
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["items"][0]["value"], "192.0.2.50", "{body}");
         }
     }
 }
 
-/// Accept AXFR case/flag variations over HTTP/CLI; reject trailing records atomically.
+/// Verify that AXFR case/flag variations are accepted over HTTP/CLI and trailing records are rejected atomically.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
-    use domain::base::Rtype;
-
-    use crate::common::dns;
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1754,7 +1750,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
                 .send_request(
                     Method::POST,
                     &format!("/zones/{zone_name}/import"),
-                    Some(json!({"from_server": address, "mode": "replace"})),
+                    Some(json!({ "from_server": address, "mode": "replace" })),
                 )
                 .await;
 
@@ -1784,7 +1780,7 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
     }
 
     let before = app.list_records(zone_name).await;
-    let serial = app.read_zone_serial(zone_name).await;
+    let base_serial = app.read_zone_serial(zone_name).await;
 
     let (address, server) = serve_import_transfer(zone_name.to_string(), true);
 
@@ -1792,19 +1788,25 @@ async fn zone_import_accepts_case_varied_soa_and_rejects_trailing_answers() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({"from_server": address, "mode": "replace"})),
+            Some(json!({ "from_server": address, "mode": "replace" })),
         )
         .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.to_string().contains("after the closing SOA"), "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("after the closing SOA"),
+        "{body}"
+    );
     server.join().unwrap();
 
     assert_eq!(app.list_records(zone_name).await, before);
-    assert_eq!(app.read_zone_serial(zone_name).await, serial);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial);
 }
 
-/// Invalid catalog structure fails before member reads or changes, including previews.
+/// Verify that an invalid catalog structure fails before member reads or changes, including previews.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_import_requires_apex_ns_before_fetching_members() {
@@ -1813,22 +1815,24 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
     for cli in [false, true] {
         for dry_run in [false, true] {
             for existing in [false, true] {
-                let member = app.zone_name(&format!("member-{cli}-{dry_run}-{existing}.example"));
+                let member_zone_name =
+                    app.zone_name(&format!("member-{cli}-{dry_run}-{existing}.example"));
 
                 if existing {
-                    app.create_zone_cli(&member, "3600").await;
+                    app.create_zone_cli(&member_zone_name, "3600").await;
                 }
 
                 let before = app
-                    .send_request(Method::GET, &format!("/zones/{member}"), None)
+                    .send_request(Method::GET, &format!("/zones/{member_zone_name}"), None)
                     .await;
                 let before_records = if existing {
-                    app.list_records(&member).await
+                    app.list_records(&member_zone_name).await
                 } else {
                     Vec::new()
                 };
 
-                let (address, server) = serve_catalog(vec![member.clone()], false, false, 0);
+                let (address, server) =
+                    serve_catalog(vec![member_zone_name.clone()], false, false, 0);
 
                 if cli {
                     let mut args = vec![
@@ -1847,10 +1851,21 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                         args.push("--dry-run");
                     }
 
-                    let output = app.run_cli(&args, None).await;
-                    crate::common::assert_cli_failure_contains(&args, &output, "no apex NS");
+                    let refused = app.run_cli(&args, None).await;
+                    common::assert_cli_failure_contains(&args, &refused, "no apex NS");
                 } else {
-                    let (status, body) = app.send_request(Method::POST, "/import", Some(json!({"from_server": address, "from_catalog": "catalog.example", "create": true, "dry_run": dry_run}))).await;
+                    let (status, body) = app
+                        .send_request(
+                            Method::POST,
+                            "/import",
+                            Some(json!({
+                                "from_server": address,
+                                "from_catalog": "catalog.example",
+                                "create": true,
+                                "dry_run": dry_run
+                            })),
+                        )
+                        .await;
 
                     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
                     assert_eq!(body["code"], "INVALID_INPUT", "{body}");
@@ -1863,47 +1878,42 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                 assert_eq!(server.join().unwrap(), ["catalog.example"]);
 
                 let after = app
-                    .send_request(Method::GET, &format!("/zones/{member}"), None)
+                    .send_request(Method::GET, &format!("/zones/{member_zone_name}"), None)
                     .await;
 
                 assert_eq!(after, before);
 
                 if existing {
-                    assert_eq!(app.list_records(&member).await, before_records);
+                    assert_eq!(app.list_records(&member_zone_name).await, before_records);
                 }
             }
         }
     }
 }
 
-/// Reject wildcard members before member AXFR or any writes, serial changes or NOTIFY.
+/// Verify that wildcard members are rejected before member AXFR or any writes, serial changes or NOTIFY.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
-    use std::time::Duration;
-
-    use domain::base::Message;
-    use domain::rdata::Soa;
-
-    use crate::common::dns;
-
     let app = TestApp::start_local().await;
 
     // This valid name sorts before '*', so checking members only as they are imported fails.
-    let first = format!("!.{}", app.zone_name("first-member.example"));
+    let first_zone_name = format!("!.{}", app.zone_name("first-member.example"));
 
-    app.create_zone_cli(&first, "3600").await;
-    let records = app.list_records(&first).await;
+    app.create_zone_cli(&first_zone_name, "3600").await;
+    let records = app.list_records(&first_zone_name).await;
     let zones = app.send_request(Method::GET, "/zones", None).await;
-    let versions_path = format!("/zones/{first}/versions?include_signer_serials=true");
+    let versions_path = format!("/zones/{first_zone_name}/versions?include_signer_serials=true");
 
     let versions = app.send_request(Method::GET, &versions_path, None).await;
 
     let catalog_serial = || {
-        let (_, wire) = dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", 6).unwrap();
-        let message = Message::from_octets(wire.as_slice()).unwrap();
+        let (_, response) =
+            dns::exchange_dns_query(app.dns_port(), "catalog.bindizr", Rtype::SOA.to_int())
+                .unwrap();
+        let response = Message::from_octets(response).unwrap();
 
-        message
+        response
             .answer()
             .unwrap()
             .limit_to::<Soa<_>>()
@@ -1914,17 +1924,22 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
             .serial()
             .into_int()
     };
-    let serial = catalog_serial();
+    let base_serial = catalog_serial();
 
-    let notify = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    app.create_secondary("notify", &notify.local_addr().unwrap().to_string())
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    app.create_secondary("notify", &socket.local_addr().unwrap().to_string())
         .await;
 
     for cli in [false, true] {
         for dry_run in [false, true] {
             for wildcard in ["*", r"\*", r"\042"] {
-                let member = format!("{wildcard}.{}", app.zone_name("invalid.example"));
-                let (address, server) = serve_catalog(vec![first.clone(), member], false, true, 0);
+                let member_zone_name = format!("{wildcard}.{}", app.zone_name("invalid.example"));
+                let (address, server) = serve_catalog(
+                    vec![first_zone_name.clone(), member_zone_name],
+                    false,
+                    true,
+                    0,
+                );
 
                 if cli {
                     let mut args = vec![
@@ -1945,10 +1960,10 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                         args.push("--dry-run");
                     }
 
-                    let output = app.run_cli(&args, None).await;
+                    let refused = app.run_cli(&args, None).await;
 
                     assert_eq!(server.join().unwrap(), ["catalog.example"]);
-                    crate::common::assert_cli_failure_contains(&args, &output, "wildcard");
+                    common::assert_cli_failure_contains(&args, &refused, "wildcard");
                 } else {
                     let (status, body) = app
                         .send_request(
@@ -1959,7 +1974,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                                 "from_catalog": "catalog.example",
                                 "create": true,
                                 "mode": "replace",
-                                "dry_run": dry_run,
+                                "dry_run": dry_run
                             })),
                         )
                         .await;
@@ -1976,44 +1991,47 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                 }
 
                 assert_eq!(app.send_request(Method::GET, "/zones", None).await, zones);
-                assert_eq!(app.list_records(&first).await, records);
+                assert_eq!(app.list_records(&first_zone_name).await, records);
                 assert_eq!(
                     app.send_request(Method::GET, &versions_path, None).await,
                     versions
                 );
-                assert_eq!(catalog_serial(), serial);
+                assert_eq!(catalog_serial(), base_serial);
             }
         }
     }
 
     assert!(
-        tokio::time::timeout(Duration::from_millis(150), notify.recv_from(&mut [0; 4096]))
+        time::timeout(Duration::from_millis(150), socket.recv_from(&mut [0; 4096]))
             .await
             .is_err(),
         "rejected catalog imports must not send NOTIFY"
     );
 }
 
-/// Keep ordinary and escaped-octet catalog members importable through HTTP and CLI.
+/// Verify that ordinary and escaped-octet catalog members stay importable through HTTP and CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn catalog_import_preserves_valid_members_and_escaped_octets() {
-    use crate::common::dns;
-
     let app = TestApp::start_local().await;
 
     for cli in [false, true] {
         for dry_run in [false, true] {
-            let members = vec![
+            let member_zone_names = vec![
                 app.zone_name(&format!("ordinary-{cli}-{dry_run}.example")),
                 format!(
                     r"{}.\032",
                     app.zone_name(&format!("space-{cli}-{dry_run}.example"))
                 ),
             ];
-            let (address, server) = serve_catalog(members.clone(), false, true, members.len());
+            let (address, server) = serve_catalog(
+                member_zone_names.clone(),
+                false,
+                true,
+                member_zone_names.len(),
+            );
 
-            let body = if cli {
+            let body: Value = if cli {
                 let mut args = vec![
                     "zone",
                     "import",
@@ -2030,7 +2048,8 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                     args.push("--dry-run");
                 }
 
-                serde_json::from_str::<Value>(&app.run_cli_success(&args, None).await).unwrap()
+                serde_json::from_str(&app.run_cli_success(&args, None).await)
+                    .expect("CLI did not return valid JSON")
             } else {
                 let (status, body) = app
                     .send_request(
@@ -2040,7 +2059,7 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                             "from_server": address,
                             "from_catalog": "catalog.example",
                             "create": true,
-                            "dry_run": dry_run,
+                            "dry_run": dry_run
                         })),
                     )
                     .await;
@@ -2057,27 +2076,27 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
             assert_eq!(body["summary"]["zones"], 2, "{body}");
             assert_eq!(body["summary"]["ok"], 2, "{body}");
 
-            for (index, member) in members.iter().enumerate() {
+            for (index, member_zone_name) in member_zone_names.iter().enumerate() {
                 assert_eq!(
                     dns::parse_name(&queries[index + 1]).unwrap(),
-                    dns::parse_name(member).unwrap()
+                    dns::parse_name(member_zone_name).unwrap()
                 );
                 assert_eq!(
                     body["zones"][index]["import"]["applied"], !dry_run,
                     "{body}"
                 );
 
-                let (status, zone) = app
-                    .send_request(Method::GET, &super::zone_path(member), None)
+                let (status, fetched) = app
+                    .send_request(Method::GET, &zone::zone_path(member_zone_name), None)
                     .await;
 
                 if dry_run {
-                    assert_eq!(status, StatusCode::NOT_FOUND, "{zone}");
+                    assert_eq!(status, StatusCode::NOT_FOUND, "{fetched}");
                 } else {
-                    assert_eq!(status, StatusCode::OK, "{zone}");
-                    assert_eq!(zone["zone"]["name"], *member, "{zone}");
+                    assert_eq!(status, StatusCode::OK, "{fetched}");
+                    assert_eq!(fetched["zone"]["name"], *member_zone_name, "{fetched}");
 
-                    let records = app.list_records(member).await;
+                    let records = app.list_records(member_zone_name).await;
 
                     assert!(
                         records.iter().any(|record| record["value"] == "192.0.2.50"),

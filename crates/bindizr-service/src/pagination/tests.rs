@@ -8,7 +8,7 @@ use bindizr_core::model::change::ChangeSource;
 use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordType};
 use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role::{Role, RoleId};
-use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_core::model::zone_version::{VersionFilter, ZoneVersion, ZoneVersionId};
 use bindizr_db::Db;
 use chrono::Utc;
@@ -20,7 +20,7 @@ use crate::error::ErrorCode;
 use crate::types::{
     AuditLogFilter, PageRequest, RecordFilter, TokenFilter, TsigKeyFilter, ZoneFilter,
 };
-use crate::{Context, audit, record, role, zone};
+use crate::{Context, audit, record, role, token, tsig_key, zone};
 
 /// Build real service state over a disposable in-memory database.
 async fn context() -> Context {
@@ -39,7 +39,7 @@ async fn context() -> Context {
     )
 }
 
-/// An omitted limit is unbounded, while explicitly requested pages stay within the cap.
+/// Verify that an omitted limit is unbounded, while explicitly requested pages stay within the cap.
 #[test]
 fn page_limit_accepts_absence_and_rejects_out_of_range() {
     for limit in [None, Some(1), Some(MAX_PAGE_LIMIT)] {
@@ -54,7 +54,7 @@ fn page_limit_accepts_absence_and_rejects_out_of_range() {
     }
 }
 
-/// Collection paging retains the unbounded request and reports offsets without truncating them.
+/// Verify that collection paging retains the unbounded request and reports offsets without truncating them.
 #[test]
 fn build_page_preserves_unbounded_windows_and_metadata() {
     for (limit, offset, expected) in [
@@ -73,7 +73,7 @@ fn build_page_preserves_unbounded_windows_and_metadata() {
     }
 }
 
-/// SQL and collection listings must return every row when a socket caller omits the limit.
+/// Verify that SQL and collection listings return every row when a socket caller omits the limit.
 #[tokio::test]
 async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     let cx = context().await;
@@ -88,15 +88,15 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let zone = bindizr_db::zone::create_tx(
             &mut tx,
             Zone {
-                id: crate::model::zone::ZoneId::UNWRITTEN,
+                id: ZoneId::UNWRITTEN,
                 name: ZoneName::parse(&format!("page{index:04}.example")).unwrap(),
-                mname: "ns1.example".into(),
-                rname: "admin@example".into(),
+                mname: "ns1.example".to_string(),
+                rname: "admin@example".to_string(),
                 default_ttl: Ttl::from_secs(300),
                 serial: Serial::from(1001),
                 refresh: SoaInterval::from_secs(300),
                 retry: SoaInterval::from_secs(60),
-                expire: SoaInterval::from_secs(3600000),
+                expire: SoaInterval::from_secs(3_600_000),
                 minimum_ttl: Ttl::from_secs(300),
                 dnssec_policy_id: None,
                 parent_ns_addrs: None,
@@ -141,24 +141,24 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     }
 
     let zone = first_zone.unwrap();
-    let records = (0..1001)
+    let records: Vec<_> = (0..1001)
         .map(|index| Record {
             id: RecordId::UNWRITTEN,
             name: OwnerName::from_row(&format!("host{index:04}")),
             record_type: RecordType::A,
-            value: "192.0.2.1".into(),
+            value: "192.0.2.1".to_string(),
             ttl: Ttl::from_secs(300),
             priority: None,
             created_at: Utc::now(),
             zone_id: zone.id,
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     bindizr_db::record::create_many_tx(&mut tx, &records)
         .await
         .unwrap();
 
-    let derived = (0..3)
+    let derived: Vec<_> = (0..3)
         .map(|index| DnssecRecord {
             id: DnssecRecordId::UNWRITTEN,
             zone_id: zone.id,
@@ -170,7 +170,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             expires_at: None,
             record_set_digest: None,
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     bindizr_db::dnssec_record::create_many_tx(&mut tx, &derived)
         .await
@@ -184,7 +184,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
                 zone_id: zone.id,
                 serial: Serial::from(serial),
                 mname: zone.mname.clone(),
-                rname: "admin.example".into(),
+                rname: "admin.example".to_string(),
                 default_ttl: zone.default_ttl,
                 refresh: zone.refresh,
                 retry: zone.retry,
@@ -212,10 +212,10 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let zones = zone::list_by_filter(
             &cx,
             &caller,
-            ZoneFilter {
+            &ZoneFilter {
                 limit,
                 offset,
-                ..ZoneFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -223,21 +223,21 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let records = record::list_by_filter_with_zone(
             &cx,
             &caller,
-            RecordFilter {
+            &RecordFilter {
                 limit,
                 offset,
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await
         .unwrap();
-        let audits = audit::list(
+        let logs = audit::list(
             &cx,
             &caller,
-            AuditLogFilter {
+            &AuditLogFilter {
                 limit,
                 offset,
-                ..AuditLogFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -260,7 +260,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         for (count, pagination) in [
             (zones.items.len(), zones.pagination),
             (records.items.len(), records.pagination),
-            (audits.items.len(), audits.pagination),
+            (logs.items.len(), logs.pagination),
             (versions.items.len(), versions.pagination),
             (filtered_versions.items.len(), filtered_versions.pagination),
         ] {
@@ -302,11 +302,11 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let records = record::list_by_filter_with_zone(
             &cx,
             &caller,
-            RecordFilter {
+            &RecordFilter {
                 signed: Some(true),
                 limit,
                 offset,
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -344,7 +344,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
     }
 }
 
-/// Bad page sizes are rejected before an unrelated role lookup can mask the input error.
+/// Verify that bad page sizes are rejected before an unrelated role lookup can mask the input error.
 #[tokio::test]
 async fn collection_listings_reject_invalid_limits_before_role_queries() {
     let cx = context().await;
@@ -352,29 +352,29 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
     let caller = Caller::socket();
 
     for limit in [0, 1001] {
-        let token = crate::token::list(
+        let token_error = token::list(
             &cx,
             &caller,
             &TokenFilter {
-                role_name: Some("missing".into()),
+                role_name: Some("missing".to_string()),
                 limit: Some(limit),
-                ..TokenFilter::default()
+                ..Default::default()
             },
         )
         .await
         .unwrap_err();
-        let tsig = crate::tsig_key::list(
+        let tsig_key_error = tsig_key::list(
             &cx,
             &caller,
             &TsigKeyFilter {
-                role_name: Some("missing".into()),
+                role_name: Some("missing".to_string()),
                 limit: Some(limit),
-                ..TsigKeyFilter::default()
+                ..Default::default()
             },
         )
         .await
         .unwrap_err();
-        let grant = role::grant::list(
+        let grant_error = role::grant::list(
             &cx,
             &caller,
             "missing",
@@ -386,7 +386,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
         .await
         .unwrap_err();
 
-        for error in [token, tsig, grant] {
+        for error in [token_error, tsig_key_error, grant_error] {
             assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }

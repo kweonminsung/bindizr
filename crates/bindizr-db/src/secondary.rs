@@ -1,9 +1,8 @@
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use bindizr_core::model::tsig_key::TsigKeyId;
 
 use crate::error::DatabaseError;
-use crate::model::secondary::Secondary;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
@@ -19,7 +18,7 @@ pub async fn create_tx(
     }
 }
 
-/// Find a secondary by name.
+/// Get a secondary by name.
 pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Secondary>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::secondary::get_by_name(pool, name).await,
@@ -28,7 +27,7 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Secondary>, Datab
     }
 }
 
-/// Find a secondary by name in the current transaction.
+/// Get a secondary by name in the current transaction.
 pub async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
     name: &str,
@@ -45,7 +44,7 @@ pub async fn get_by_name_tx(
     }
 }
 
-/// Find a secondary by address.
+/// Get a secondary by address.
 pub async fn get_by_address(
     db: &Db,
     address: &AddressTarget,
@@ -78,21 +77,21 @@ pub async fn update_tx(
     }
 }
 
-/// Secondaries whose NOTIFY the key signs: the in-use check before a key
-/// delete.
+/// Count the secondaries whose NOTIFY the key signs: the in-use check before a
+/// key delete.
 pub async fn count_by_notify_tsig_key_id(
     db: &Db,
-    tsig_key_id: TsigKeyId,
+    notify_tsig_key_id: TsigKeyId,
 ) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
-            mysql::secondary::count_by_notify_tsig_key_id(pool, tsig_key_id).await
+            mysql::secondary::count_by_notify_tsig_key_id(pool, notify_tsig_key_id).await
         }
         Backend::Postgres(pool) => {
-            postgres::secondary::count_by_notify_tsig_key_id(pool, tsig_key_id).await
+            postgres::secondary::count_by_notify_tsig_key_id(pool, notify_tsig_key_id).await
         }
         Backend::Sqlite(pool) => {
-            sqlite::secondary::count_by_notify_tsig_key_id(pool, tsig_key_id).await
+            sqlite::secondary::count_by_notify_tsig_key_id(pool, notify_tsig_key_id).await
         }
     }
 }

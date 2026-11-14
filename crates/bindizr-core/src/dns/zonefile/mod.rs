@@ -2,19 +2,25 @@
 
 mod wks;
 
+use std::{fmt, str};
+
 use domain::base::ToName;
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
 use domain::base::rdata::ParseRecordData;
 use domain::dep::octseq::parse::Parser;
 use domain::rdata::ZoneRecordData;
-use domain::zonefile::inplace::{self, Entry, Zonefile};
+use domain::zonefile::inplace;
+use domain::zonefile::inplace::{Entry, Zonefile};
 
 use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;
 use crate::dns::record::{NaptrRecordValue, WksRecordValue};
-use crate::dns::{Serial, SoaInterval, Ttl, name};
+use crate::dns::{Serial, SoaInterval, Ttl, name, record};
 use crate::model::record::RecordType;
+
+/// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.
+const PRELUDE_LINES: usize = 2;
 
 /// A record's value as the zone file spells it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +149,7 @@ impl ParsedZoneFile {
             soa: None,
             errors: Vec::new(),
         };
-        let origin = zone_name.to_fqdn();
+        let origin_fqdn = zone_name.to_fqdn();
 
         for (index, record) in records.iter().enumerate() {
             if matches!(
@@ -177,7 +183,7 @@ impl ParsedZoneFile {
 
             match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(record.rtype, &mut parser) {
                 Ok(Some(data)) if parser.remaining() == 0 => parsed.push_record(
-                    &origin,
+                    &origin_fqdn,
                     record.name.clone(),
                     record.rtype,
                     record.ttl,
@@ -186,7 +192,7 @@ impl ParsedZoneFile {
                 Ok(_) => parsed
                     .errors
                     .push(format!("{}: trailing RDATA bytes", record.name)),
-                Err(error) => parsed.errors.push(format!("{}: {}", record.name, error)),
+                Err(error) => parsed.errors.push(format!("{}: {error}", record.name)),
             }
         }
 
@@ -194,7 +200,7 @@ impl ParsedZoneFile {
     }
 
     /// Convert decoded fields into import records, preserving TXT character strings.
-    fn push_record<Octs: AsRef<[u8]>, N: ToName + std::fmt::Display>(
+    fn push_record<Octs: AsRef<[u8]>, N: ToName + fmt::Display>(
         &mut self,
         origin_fqdn: &str,
         owner: String,
@@ -213,11 +219,10 @@ impl ParsedZoneFile {
             let mut parser = Parser::from_ref(unknown.data().as_ref());
             return match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(rtype, &mut parser) {
                 Ok(Some(typed)) if parser.remaining() == 0 => {
-                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed)
+                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed);
                 }
                 _ => self.errors.push(format!(
-                    "generic RDATA for '{}' does not encode a {} record",
-                    owner, rtype
+                    "generic RDATA for '{owner}' does not encode a {rtype} record"
                 )),
             };
         }
@@ -227,18 +232,16 @@ impl ParsedZoneFile {
             Rtype::SOA => {
                 if name::to_fqdn_lowercase(&owner) != origin_fqdn {
                     self.errors.push(format!(
-                        "SOA for '{}' does not belong to zone '{}'",
-                        owner, origin_fqdn
+                        "SOA for '{owner}' does not belong to zone '{origin_fqdn}'"
                     ));
                 } else if self.soa.is_some() {
                     self.errors
-                        .push(format!("zone '{}' carries more than one SOA", origin_fqdn));
+                        .push(format!("zone '{origin_fqdn}' carries more than one SOA"));
                 } else {
                     match to_zone_file_soa(data) {
                         Some(soa) => self.soa = Some(soa),
                         None => self.errors.push(format!(
-                            "SOA for '{}' has a refresh, retry or expire past {} seconds",
-                            owner,
+                            "SOA for '{owner}' has a refresh, retry or expire past {} seconds",
                             SoaInterval::MAX
                         )),
                     }
@@ -249,10 +252,8 @@ impl ParsedZoneFile {
             other => match RecordType::try_from(other) {
                 Ok(record_type) => record_type,
                 Err(_) => {
-                    self.errors.push(format!(
-                        "unsupported record type '{}' for '{}'",
-                        other, owner
-                    ));
+                    self.errors
+                        .push(format!("unsupported record type '{other}' for '{owner}'"));
                     return;
                 }
             },
@@ -268,7 +269,7 @@ impl ParsedZoneFile {
                 Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
                 Err(error) => {
                     self.errors
-                        .push(format!("WKS value for '{}': {}", owner, error));
+                        .push(format!("WKS value for '{owner}': {error}"));
                     return;
                 }
             }
@@ -304,7 +305,7 @@ impl ParsedZoneFile {
                     Ok(text) => (ZoneFileValue::Rdata(text), None),
                     Err(error) => {
                         self.errors
-                            .push(format!("NAPTR value for '{}': {}", owner, error));
+                            .push(format!("NAPTR value for '{owner}': {error}"));
                         return;
                     }
                 },
@@ -325,7 +326,7 @@ impl ParsedZoneFile {
                     // RFC 1035, Section 3.3.14: TXT character-strings are octets.
                     match txt
                         .iter()
-                        .map(std::str::from_utf8)
+                        .map(str::from_utf8)
                         .collect::<Result<Vec<_>, _>>()
                     {
                         Ok(segments) => (
@@ -337,7 +338,7 @@ impl ParsedZoneFile {
                         Err(_) => (
                             ZoneFileValue::Rdata(
                                 txt.iter()
-                                    .map(crate::dns::record::to_quoted_charstr)
+                                    .map(record::to_quoted_charstr)
                                     .collect::<Vec<_>>()
                                     .join(" "),
                             ),
@@ -361,7 +362,7 @@ impl ParsedZoneFile {
 
 /// Read an SOA record's fields, or `None` when a timer does not fit the i32
 /// columns a zone stores them in.
-fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
+fn to_zone_file_soa<Octs, N: ToName + fmt::Display>(
     data: &ZoneRecordData<Octs, N>,
 ) -> Option<ZoneFileSoa> {
     let ZoneRecordData::Soa(soa) = data else {
@@ -382,9 +383,6 @@ fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
     })
 }
 
-/// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.
-const PRELUDE_LINES: usize = 2;
-
 /// Restate a parser error in the submitted text's line numbering. `Error` keeps
 /// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
 fn to_input_line_message(error: &inplace::Error) -> String {
@@ -392,7 +390,7 @@ fn to_input_line_message(error: &inplace::Error) -> String {
 
     match message.split_once(':') {
         Some((line, rest)) => match line.parse::<usize>() {
-            Ok(line) if line > PRELUDE_LINES => format!("{}:{}", line - PRELUDE_LINES, rest),
+            Ok(line) if line > PRELUDE_LINES => format!("{}:{rest}", line - PRELUDE_LINES),
             _ => message,
         },
         None => message,

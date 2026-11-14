@@ -12,7 +12,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing API tokens.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum TokenCommand {
     /// Create a new API token in a role; the plaintext token is shown once, here
     #[command(after_help = "\
@@ -69,9 +69,9 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
     match subcommand {
         TokenCommand::Create {
             name,
+            role,
             description,
             expires_in_days,
-            role,
             output,
         } => {
             let response = client::send_command::<CreateTokenResponse>(DaemonCommand::CreateToken(
@@ -83,9 +83,9 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 },
             ))
             .await?;
-            log::debug!("Token creation result: {:?}", response);
-            output::print_response(&response.data, output, |created| {
-                vec![TokenRow::from(created)]
+            log::debug!("Token creation result: {response:?}");
+            output::print_response(&response.data, output, |response| {
+                vec![TokenRow::from(response)]
             })?;
         }
         TokenCommand::List {
@@ -102,19 +102,19 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 }),
             )
             .await?;
-            log::debug!("Token list result: {:?}", response);
-            output::print_page(&response.data, output, |item| TokenRow::from(item))?;
+            log::debug!("Token list result: {response:?}");
+            output::print_page(&response.data, output, |token| TokenRow::from(token))?;
         }
         TokenCommand::Delete { name, output } => {
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteToken { name })
                     .await?;
-            log::debug!("Token deletion result: {:?}", response);
+            log::debug!("Token deletion result: {response:?}");
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }

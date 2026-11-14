@@ -1,11 +1,16 @@
+use std::collections::HashSet;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use reqwest::{Client, Method, StatusCode, header};
 use serde_json::{Value, json};
+use tokio::time;
 
 use crate::common;
 use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
+
+/// The ExternalDNS webhook media type, versioned.
+const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
 /// A spawned bindizr-external-dns adapter process, killed on drop.
 #[derive(Debug)]
@@ -61,7 +66,7 @@ impl ExternalDnsAdapter {
                 };
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            time::sleep(Duration::from_millis(100)).await;
         }
 
         panic!("bindizr-external-dns did not become ready");
@@ -76,15 +81,13 @@ impl Drop for ExternalDnsAdapter {
     }
 }
 
-const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
-
 /// Grant the test token access to a zone.
-async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
+async fn grant_zone(app: &TestApp, zone_name: &str, role_name: &str) {
     app.run_cli_success(
         &[
             "role",
             "grant",
-            token_name,
+            role_name,
             "--zone",
             zone_name,
             "--actions",
@@ -139,25 +142,25 @@ async fn external_dns_domain_listing_reflects_role_grants() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    let granted_zone = app.zone_name("granted.com");
-    let other_zone = app.zone_name("other.com");
+    let granted_zone_name = app.zone_name("granted.com");
+    let other_zone_name = app.zone_name("other.com");
 
-    app.create_named_zone(&granted_zone).await;
-    app.create_named_zone(&other_zone).await;
+    app.create_named_zone(&granted_zone_name).await;
+    app.create_named_zone(&other_zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    grant_zone(&app, &granted_zone, &scoped_name).await;
+    grant_zone(&app, &granted_zone_name, &scoped_name).await;
 
     // The built-in role sees all zones.
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let domains = body["domains"].as_array().expect("domains array");
 
-    assert!(domains.contains(&json!(granted_zone)));
-    assert!(domains.contains(&json!(other_zone)));
+    assert!(domains.contains(&json!(granted_zone_name)));
+    assert!(domains.contains(&json!(other_zone_name)));
 
     // A scoped token sees only its grants (this feeds the DomainFilter).
     app.set_auth_token(scoped_token);
@@ -166,8 +169,8 @@ async fn external_dns_domain_listing_reflects_role_grants() {
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["domains"], json!([granted_zone]));
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["domains"], json!([granted_zone_name]));
 }
 
 /// Verify that the domain filter unions a role's grants, so sync actions split
@@ -184,15 +187,15 @@ async fn external_dns_domain_listing_unions_split_grants() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    let split_zone = app.zone_name("split.com");
-    let partial_zone = app.zone_name("partial.com");
+    let split_zone_name = app.zone_name("split.com");
+    let partial_zone_name = app.zone_name("partial.com");
 
-    app.create_named_zone(&split_zone).await;
-    app.create_named_zone(&partial_zone).await;
+    app.create_named_zone(&split_zone_name).await;
+    app.create_named_zone(&partial_zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    let grant = |zone: String, actions: &'static str, pattern: &'static str| {
-        let role = scoped_name.clone();
+    let grant = |zone_name: String, actions: &'static str, pattern: &'static str| {
+        let role_name = scoped_name.clone();
         let app = &app;
 
         async move {
@@ -200,9 +203,9 @@ async fn external_dns_domain_listing_unions_split_grants() {
                 &[
                     "role",
                     "grant",
-                    &role,
+                    &role_name,
                     "--zone",
-                    &zone,
+                    &zone_name,
                     "--actions",
                     actions,
                     "--pattern",
@@ -215,12 +218,17 @@ async fn external_dns_domain_listing_unions_split_grants() {
     };
 
     // Reading in all zones and writing in a subtree syncs that subtree.
-    grant(split_zone.clone(), "record:read", "*").await;
-    grant(split_zone.clone(), "record:create,record:delete", "*.k8s").await;
+    grant(split_zone_name.clone(), "record:read", "*").await;
+    grant(
+        split_zone_name.clone(),
+        "record:create,record:delete",
+        "*.k8s",
+    )
+    .await;
 
     // Without record:delete no sync can finish, so the zone stays out.
-    grant(partial_zone.clone(), "record:read", "*").await;
-    grant(partial_zone.clone(), "record:create", "*").await;
+    grant(partial_zone_name.clone(), "record:read", "*").await;
+    grant(partial_zone_name.clone(), "record:create", "*").await;
 
     app.set_auth_token(scoped_token);
 
@@ -228,10 +236,10 @@ async fn external_dns_domain_listing_unions_split_grants() {
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["domains"],
-        json!([format!("k8s.{split_zone}")]),
+        json!([format!("k8s.{split_zone_name}")]),
         "{body}"
     );
 }
@@ -326,6 +334,7 @@ async fn external_dns_domain_filter_respects_subtree_grant() {
         None,
     )
     .await;
+
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
@@ -352,30 +361,30 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     app.create_named_zone(&zone_name).await;
     let base_serial = app.read_zone_serial(&zone_name).await;
 
-    let create = json!({
+    let request = json!({
         "creates": [
-            {"name": format!("app.{zone_name}"), "type": "A", "ttl": 300,
-             "values": ["192.0.2.2", "192.0.2.1"]},
-            {"name": format!("app.{zone_name}"), "type": "TXT",
-             "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
+            { "name": format!("app.{zone_name}"), "type": "A", "ttl": 300,
+              "values": ["192.0.2.2", "192.0.2.1"] },
+            { "name": format!("app.{zone_name}"), "type": "TXT",
+              "values": ["\"heritage=external-dns,external-dns/owner=default\""] }
         ]
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/external-dns/changes", Some(create.clone()))
+        .send_request(Method::POST, "/external-dns/changes", Some(request.clone()))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["changed_zones"], json!([zone_name]));
-    assert_eq!(body["added"], json!(3));
+    assert_eq!(body["added"], 3);
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
     // Same create again: no-op, no serial bump.
     let (status, body) = app
-        .send_request(Method::POST, "/external-dns/changes", Some(create))
+        .send_request(Method::POST, "/external-dns/changes", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["changed_zones"], json!([]));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
@@ -383,18 +392,18 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .send_request(Method::GET, "/external-dns/records", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let app_fqdn = format!("app.{zone_name}");
 
     assert_eq!(
         record_values(&body, &app_fqdn, "A"),
-        vec!["192.0.2.1", "192.0.2.2"]
+        ["192.0.2.1", "192.0.2.2"]
     );
 
     // Ownership TXT round-trips in its quoted presentation form.
     assert_eq!(
         record_values(&body, &app_fqdn, "TXT"),
-        vec!["\"heritage=external-dns,external-dns/owner=default\""]
+        ["\"heritage=external-dns,external-dns/owner=default\""]
     );
 
     // Update replacing one target: one more serial bump.
@@ -404,39 +413,39 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
             "/external-dns/changes",
             Some(json!({
                 "updates": [{
-                    "old": {"name": app_fqdn, "type": "A", "ttl": 300,
-                             "values": ["192.0.2.1", "192.0.2.2"]},
-                    "new": {"name": app_fqdn, "type": "A", "ttl": 300,
-                             "values": ["192.0.2.1", "192.0.2.3"]}
+                    "old": { "name": app_fqdn, "type": "A", "ttl": 300,
+                              "values": ["192.0.2.1", "192.0.2.2"] },
+                    "new": { "name": app_fqdn, "type": "A", "ttl": 300,
+                              "values": ["192.0.2.1", "192.0.2.3"] }
                 }]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["added"], json!(1));
-    assert_eq!(body["deleted"], json!(1));
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["added"], 1);
+    assert_eq!(body["deleted"], 1);
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 2);
 
     // Delete, then delete again as a no-op.
-    let delete = json!({
-        "deletes": [{"name": app_fqdn, "type": "A",
-                     "values": ["192.0.2.1", "192.0.2.3"]}]
+    let request = json!({
+        "deletes": [{ "name": app_fqdn, "type": "A",
+                      "values": ["192.0.2.1", "192.0.2.3"] }]
     });
 
     let (status, body) = app
-        .send_request(Method::POST, "/external-dns/changes", Some(delete.clone()))
+        .send_request(Method::POST, "/external-dns/changes", Some(request.clone()))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["deleted"], json!(2));
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"], 2);
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 
     let (status, body) = app
-        .send_request(Method::POST, "/external-dns/changes", Some(delete))
+        .send_request(Method::POST, "/external-dns/changes", Some(request))
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["changed_zones"], json!([]));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 }
@@ -454,15 +463,15 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token.clone());
 
-    let granted_zone = app.zone_name("granted.com");
-    let ungranted_zone = app.zone_name("blocked.com");
+    let granted_zone_name = app.zone_name("granted.com");
+    let ungranted_zone_name = app.zone_name("blocked.com");
 
-    app.create_named_zone(&granted_zone).await;
-    app.create_named_zone(&ungranted_zone).await;
-    let base_serial = app.read_zone_serial(&granted_zone).await;
+    app.create_named_zone(&granted_zone_name).await;
+    app.create_named_zone(&ungranted_zone_name).await;
+    let base_serial = app.read_zone_serial(&granted_zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    grant_zone(&app, &granted_zone, &scoped_name).await;
+    grant_zone(&app, &granted_zone_name, &scoped_name).await;
 
     app.set_auth_token(scoped_token);
 
@@ -472,32 +481,32 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
             "/external-dns/changes",
             Some(json!({
                 "creates": [
-                    {"name": format!("a.{granted_zone}"), "type": "A", "values": ["192.0.2.1"]},
-                    {"name": format!("b.{ungranted_zone}"), "type": "A", "values": ["192.0.2.2"]}
+                    { "name": format!("a.{granted_zone_name}"), "type": "A", "values": ["192.0.2.1"] },
+                    { "name": format!("b.{ungranted_zone_name}"), "type": "A", "values": ["192.0.2.2"] }
                 ]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 
     // Worded as for a name no zone covers, so the hidden zone stays hidden.
     assert_eq!(
         body["error"],
-        json!(format!("no zone is authoritative for 'b.{ungranted_zone}'"))
+        format!("no zone is authoritative for 'b.{ungranted_zone_name}'")
     );
 
     // Nothing was applied for the granted zone either.
     app.set_auth_token(admin_token);
 
-    assert_eq!(app.read_zone_serial(&granted_zone).await, base_serial);
+    assert_eq!(app.read_zone_serial(&granted_zone_name).await, base_serial);
 
     let (_, body) = app
         .send_request(Method::GET, "/external-dns/records", None)
         .await;
 
-    assert!(record_values(&body, &format!("a.{granted_zone}"), "A").is_empty());
+    assert!(record_values(&body, &format!("a.{granted_zone_name}"), "A").is_empty());
 }
 
 /// Verify that external DNS never falls back from ungranted subzone to granted parent.
@@ -513,14 +522,14 @@ async fn external_dns_rejects_ungranted_subzone_without_parent_fallback() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    let parent_zone = app.zone_name("example.com");
-    let child_zone = format!("internal.{parent_zone}");
+    let parent_zone_name = app.zone_name("example.com");
+    let child_zone_name = format!("internal.{parent_zone_name}");
 
-    app.create_named_zone(&parent_zone).await;
-    app.create_named_zone(&child_zone).await;
+    app.create_named_zone(&parent_zone_name).await;
+    app.create_named_zone(&child_zone_name).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    grant_zone(&app, &parent_zone, &scoped_name).await;
+    grant_zone(&app, &parent_zone_name, &scoped_name).await;
 
     // The name resolves to the (ungranted) child zone, never the parent.
     app.set_auth_token(scoped_token);
@@ -530,18 +539,18 @@ async fn external_dns_rejects_ungranted_subzone_without_parent_fallback() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("api.{child_zone}"), "type": "A",
-                             "values": ["192.0.2.1"]}]
+                "creates": [{ "name": format!("api.{child_zone_name}"), "type": "A",
+                              "values": ["192.0.2.1"] }]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert!(
         body["error"]
             .as_str()
             .unwrap()
-            .contains(child_zone.as_str())
+            .contains(child_zone_name.as_str())
     );
 
     // A name with no authoritative zone is rejected, not auto-created.
@@ -550,13 +559,13 @@ async fn external_dns_rejects_ungranted_subzone_without_parent_fallback() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": "app.unmanaged-zone.org", "type": "A",
-                             "values": ["192.0.2.1"]}]
+                "creates": [{ "name": "app.unmanaged-zone.org", "type": "A",
+                              "values": ["192.0.2.1"] }]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
@@ -578,8 +587,8 @@ async fn external_dns_changes_enforce_record_validation() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("www.{zone_name}"), "type": "A",
-                             "values": ["192.0.2.1"]}]
+                "creates": [{ "name": format!("www.{zone_name}"), "type": "A",
+                              "values": ["192.0.2.1"] }]
             })),
         )
         .await;
@@ -592,13 +601,13 @@ async fn external_dns_changes_enforce_record_validation() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("www.{zone_name}"), "type": "CNAME",
-                             "values": ["cdn.example.net"]}]
+                "creates": [{ "name": format!("www.{zone_name}"), "type": "CNAME",
+                              "values": ["cdn.example.net"] }]
             })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "RECORD_CONFLICT");
 
     // Unsupported record types are rejected explicitly.
@@ -607,8 +616,8 @@ async fn external_dns_changes_enforce_record_validation() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("mail.{zone_name}"), "type": "MX",
-                             "values": ["10 mail.example.com."]}]
+                "creates": [{ "name": format!("mail.{zone_name}"), "type": "MX",
+                              "values": ["10 mail.example.com."] }]
             })),
         )
         .await;
@@ -638,17 +647,17 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     grant_zone(&app, &zone_name, &scoped_name).await;
 
     // Without a token, the provider API itself rejects the request.
-    let unauthenticated = reqwest::Client::new()
+    let unauthenticated = Client::new()
         .get(format!("{}/external-dns/domains", app.base_url()))
         .send()
         .await
         .unwrap();
 
-    assert_eq!(unauthenticated.status().as_u16(), 401);
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
 
     let adapter = ExternalDnsAdapter::spawn(app.base_url(), &scoped_token).await;
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     // Negotiation: exact media type and the granted zones as DomainFilter.
     let response = client
@@ -658,7 +667,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response
             .headers()
@@ -677,8 +686,8 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .header(header::CONTENT_TYPE, MEDIA_TYPE)
         .body(
             json!({
-                "create": [{"dnsName": format!("app.{zone_name}"), "targets": ["192.0.2.1"],
-                            "recordType": "A", "recordTTL": 300}]
+                "create": [{ "dnsName": format!("app.{zone_name}"), "targets": ["192.0.2.1"],
+                             "recordType": "A", "recordTTL": 300 }]
             })
             .to_string(),
         )
@@ -686,7 +695,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 204);
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     // Records through the adapter come back as grouped endpoints.
     let response = client
@@ -696,20 +705,20 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let endpoints: Value = response.json().await.unwrap();
     let endpoint = endpoints
         .as_array()
-        .unwrap()
+        .expect("endpoints array")
         .iter()
-        .find(|error| {
-            error["dnsName"] == json!(format!("app.{zone_name}")) && error["recordType"] == "A"
+        .find(|endpoint| {
+            endpoint["dnsName"] == format!("app.{zone_name}") && endpoint["recordType"] == "A"
         })
         .expect("created endpoint is listed");
 
     assert_eq!(endpoint["targets"], json!(["192.0.2.1"]));
-    assert_eq!(endpoint["recordTTL"], json!(300));
+    assert_eq!(endpoint["recordTTL"], 300);
 
     // AdjustEndpoints canonicalizes on the server: type case, address
     // spelling, and equivalent duplicates resolve to the stored form.
@@ -717,22 +726,22 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .post(format!("{}/adjustendpoints", adapter.base_url))
         .header(header::CONTENT_TYPE, MEDIA_TYPE)
         .body(
-            json!([{"dnsName": format!("v6.{zone_name}"), "recordType": "aaaa",
-                    "targets": ["2001:0DB8::1", "2001:db8:0:0:0:0:0:1"], "recordTTL": 300}])
+            json!([{ "dnsName": format!("v6.{zone_name}"), "recordType": "aaaa",
+                     "targets": ["2001:0DB8::1", "2001:db8:0:0:0:0:0:1"], "recordTTL": 300 }])
             .to_string(),
         )
         .send()
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let adjusted: Value = response.json().await.unwrap();
 
     assert_eq!(
         adjusted,
-        json!([{"dnsName": format!("v6.{zone_name}"), "recordType": "AAAA",
-                "targets": ["2001:db8::1"], "recordTTL": 300}])
+        json!([{ "dnsName": format!("v6.{zone_name}"), "recordType": "AAAA",
+                 "targets": ["2001:db8::1"], "recordTTL": 300 }])
     );
 
     // A wrong token answers 503, not the upstream 401: external-dns retries
@@ -746,7 +755,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 503);
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     // The same token failure turns the adapter unready, instead of leaving it
     // green on bindizr's unauthenticated health endpoint.
@@ -756,13 +765,16 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
 
-    assert_eq!(health.status().as_u16(), 503);
+    assert_eq!(health.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 /// Verify that external DNS record listing spans read pages.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_record_listing_spans_read_pages() {
+    // Past the read page, so the listing has to tile without dropping a row.
+    const RECORDS: usize = 5100;
+
     let app = TestApp::start_with_options(TestAppOptions {
         external_dns_enabled: true,
         ..Default::default()
@@ -772,8 +784,6 @@ async fn external_dns_record_listing_spans_read_pages() {
 
     app.create_named_zone(&zone_name).await;
 
-    // Past the read page, so the listing has to tile without dropping a row.
-    const RECORDS: usize = 5_100;
     let zone_file: String = (0..RECORDS)
         .map(|i| {
             format!(
@@ -800,14 +810,14 @@ async fn external_dns_record_listing_spans_read_pages() {
         .send_request(Method::GET, "/external-dns/records", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
 
     let listed = body["records"].as_array().expect("records array");
     let a_records = listed.iter().filter(|record| record["type"] == "A").count();
 
     assert_eq!(a_records, RECORDS, "{}", listed.len());
 
-    let names: std::collections::HashSet<&str> = listed
+    let names: HashSet<&str> = listed
         .iter()
         .filter_map(|record| record["name"].as_str())
         .collect();

@@ -1,5 +1,7 @@
 //! Listing policy: validate query windows, page collections, and assemble metadata.
 
+use std::str::FromStr;
+
 use bindizr_db::ParseSortError;
 
 use crate::error::ServiceError;
@@ -14,8 +16,7 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
         && (limit == 0 || limit > MAX_PAGE_LIMIT)
     {
         return Err(ServiceError::invalid_input(format!(
-            "limit must be between 1 and {}",
-            MAX_PAGE_LIMIT
+            "limit must be between 1 and {MAX_PAGE_LIMIT}"
         )));
     }
 
@@ -25,17 +26,15 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
 /// Parse a listing's sort or order using its query enum, or take the default.
 pub(crate) fn parse_setting<T>(value: Option<&str>) -> Result<T, ServiceError>
 where
-    T: Default + std::str::FromStr<Err = ParseSortError>,
+    T: Default + FromStr<Err = ParseSortError>,
 {
     match value {
+        Some(value) => value.parse::<T>().map_err(ServiceError::invalid_input),
         None => Ok(T::default()),
-        Some(value) => value
-            .parse()
-            .map_err(|error: ParseSortError| ServiceError::invalid_input(error.to_string())),
     }
 }
 
-/// A page already limited and offset at the query layer; an omitted limit
+/// Build a page already limited and offset at the query layer; an omitted limit
 /// reports the whole `total`, saturating at `u32::MAX`.
 pub(crate) fn build_paginated_response<T>(
     items: Vec<T>,
@@ -46,7 +45,7 @@ pub(crate) fn build_paginated_response<T>(
     PaginatedResponse {
         items,
         pagination: PaginationResponse {
-            limit: limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32),
+            limit: limit.unwrap_or_else(|| u32::try_from(total).unwrap_or(u32::MAX)),
             offset: offset.unwrap_or(0),
             total,
         },

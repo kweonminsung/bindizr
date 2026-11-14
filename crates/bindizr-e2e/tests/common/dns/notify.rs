@@ -5,8 +5,8 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use domain::base::iana::{Class, Opcode, Rcode};
-use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, Ttl};
+use domain::base::iana::{Class, Opcode, Rcode, Rtype};
+use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
 use domain::rdata::Soa;
 use domain::rdata::tsig::Time48;
 use domain::tsig::{Key, ServerTransaction};
@@ -17,9 +17,9 @@ use crate::common::dns::tsig::SigningKey;
 pub(crate) const SERVED_SERIAL: u32 = 1;
 
 /// One NOTIFY as the fake secondary saw it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReceivedNotify {
-    pub(crate) zone: String,
+    pub(crate) zone_name: String,
     /// The request carried a TSIG record.
     pub(crate) signed: bool,
     /// The TSIG verified under the fake's key; a signature under another key
@@ -27,6 +27,7 @@ pub(crate) struct ReceivedNotify {
     pub(crate) verified: bool,
 }
 
+/// A UDP secondary on an ephemeral port that answers NOTIFY and SOA queries.
 #[derive(Debug)]
 pub(crate) struct FakeSecondary {
     addr: SocketAddr,
@@ -49,25 +50,25 @@ impl FakeSecondary {
         let seen = Arc::clone(&received);
 
         thread::spawn(move || {
-            let mut buffer = [0_u8; 4096];
+            let mut buffer = [0; 4096];
 
             loop {
                 let Ok((len, peer)) = socket.recv_from(&mut buffer) else {
                     return;
                 };
-                let Ok(mut request) = Message::from_octets(buffer[..len].to_vec()) else {
+                let Ok(mut query) = Message::from_octets(buffer[..len].to_vec()) else {
                     continue;
                 };
-                let Ok(question) = request.sole_question() else {
+                let Ok(question) = query.sole_question() else {
                     continue;
                 };
                 let qname = question.qname().to_name::<Vec<u8>>();
-                let zone = qname.to_string();
+                let zone_name = qname.to_string();
 
                 // A probe: answer the SOA with the fixed serial.
-                if request.header().opcode() == Opcode::QUERY {
+                if query.header().opcode() == Opcode::QUERY {
                     let mut answer = MessageBuilder::new_vec()
-                        .start_answer(&request, Rcode::NOERROR)
+                        .start_answer(&query, Rcode::NOERROR)
                         .expect("start the answer");
                     answer.header_mut().set_aa(true);
 
@@ -81,7 +82,7 @@ impl FakeSecondary {
                                 Soa::new(
                                     mname.clone(),
                                     mname,
-                                    Serial(SERVED_SERIAL),
+                                    Serial::from(SERVED_SERIAL),
                                     Ttl::from_secs(60),
                                     Ttl::from_secs(60),
                                     Ttl::from_secs(60),
@@ -96,30 +97,27 @@ impl FakeSecondary {
                     continue;
                 }
 
-                let signed = request
-                    .additional()
-                    .map(|section| {
-                        section
-                            .flatten()
-                            .any(|record| record.rtype() == Rtype::TSIG)
-                    })
-                    .unwrap_or(false);
+                let signed = query.additional().is_ok_and(|section| {
+                    section
+                        .flatten()
+                        .any(|record| record.rtype() == Rtype::TSIG)
+                });
 
                 // With a key, the signature decides the answer.
                 let mut signer = None;
 
                 if let Some(key) = &key {
-                    match ServerTransaction::request(key, &mut request, Time48::now()) {
+                    match ServerTransaction::request(key, &mut query, Time48::now()) {
                         Ok(context) => signer = context,
                         Err(error) => {
                             seen.lock().expect("received lock").push(ReceivedNotify {
-                                zone,
+                                zone_name,
                                 signed,
                                 verified: false,
                             });
 
                             if let Ok(response) =
-                                error.build_message(&request, MessageBuilder::new_vec())
+                                error.build_message(&query, MessageBuilder::new_vec())
                             {
                                 let _ = socket.send_to(&response.finish(), peer);
                             }
@@ -130,13 +128,13 @@ impl FakeSecondary {
                 }
 
                 seen.lock().expect("received lock").push(ReceivedNotify {
-                    zone,
+                    zone_name,
                     signed,
                     verified: signer.is_some(),
                 });
 
                 let mut answer = MessageBuilder::new_vec()
-                    .start_answer(&request, Rcode::NOERROR)
+                    .start_answer(&query, Rcode::NOERROR)
                     .expect("start the answer")
                     .additional();
 
@@ -153,12 +151,12 @@ impl FakeSecondary {
         Self { addr, received }
     }
 
-    /// The `host:port` to register the fake as a secondary under.
+    /// Return the `host:port` to register the fake as a secondary under.
     pub(crate) fn addr(&self) -> String {
         self.addr.to_string()
     }
 
-    /// Every NOTIFY received so far, in order.
+    /// Return every NOTIFY received so far, in order.
     pub(crate) fn received(&self) -> Vec<ReceivedNotify> {
         self.received.lock().expect("received lock").clone()
     }

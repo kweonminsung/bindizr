@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::Serial;
+use bindizr_core::model::record::{Record, RecordData, RecordKey};
 use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use bindizr_db::LockLevel;
 
 use crate::Transaction;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData, RecordKey};
-use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 
 /// Rewind current records through journal `(target_serial, current_serial]`.
 /// Skip SOA rows; `zone_versions` restores SOA state.
@@ -41,7 +41,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
         state
             .entry(record.match_key())
             .or_default()
-            .push(record.into());
+            .push(RecordData::from(record));
     }
 
     for change in changes.iter().rev() {
@@ -90,7 +90,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
     records
 }
 
-/// The records at `serial`: the live records when it is the current serial,
+/// List the records at `serial`: the live records when it is the current serial,
 /// otherwise rewound from the journal.
 pub(crate) async fn list_records_at_serial_tx(
     tx: &mut Transaction<'_>,
@@ -113,7 +113,8 @@ pub(crate) async fn list_records_at_serial_tx(
     }
 }
 
-/// Deterministic output order (hash-map iteration order is not).
+/// Sort records into a deterministic output order (hash-map iteration order
+/// is not).
 fn sort_records(records: &mut [RecordData]) {
     records.sort_by(|left, right| {
         (&left.name, left.record_type.as_str(), &left.value).cmp(&(

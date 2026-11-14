@@ -1,10 +1,10 @@
 use crate::cli::common;
 use crate::common::TestApp;
 
-/// Verify zone-file export through the CLI.
+/// Verify that the CLI exports a zone file.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_export_returns_zone_file_via_cli() {
+async fn zone_export_returns_zone_file() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("export.example");
 
@@ -108,7 +108,7 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
     // Rdata ties break as text, so 192.0.2.10 sorts before 192.0.2.2.
     assert_eq!(
         ordered,
-        vec![
+        [
             "a\t3600\tIN\tA\t192.0.2.10",
             "a\t3600\tIN\tA\t192.0.2.2",
             "a\t3600\tIN\tMX\t10 mail.example.com.",

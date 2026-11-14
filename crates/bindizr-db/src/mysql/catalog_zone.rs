@@ -4,11 +4,11 @@ use sqlx::{MySql, Transaction};
 
 use crate::error::DatabaseError;
 
-/// Store a catalog digest and advance its serial when the digest changes in the current
-/// transaction.
+/// Upsert the catalog digest, advancing the serial only when `digest` changed;
+/// return the serial in effect after the upsert.
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, MySql>,
-    name: &ZoneName,
+    catalog_zone_name: &ZoneName,
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, DatabaseError> {
@@ -23,21 +23,22 @@ pub(crate) async fn upsert_tx(
             digest = VALUES(digest)
         "#,
     )
-    .bind(name)
+    .bind(catalog_zone_name)
     .bind(digest)
     .bind(base_serial)
     .execute(&mut **tx)
     .await?;
 
-    sqlx::query_scalar::<_, Serial>(
+    let serial = sqlx::query_scalar::<_, Serial>(
         r#"
         SELECT serial
         FROM catalog_zones
         WHERE name = ?
         "#,
     )
-    .bind(name)
+    .bind(catalog_zone_name)
     .fetch_one(&mut **tx)
-    .await
-    .map_err(DatabaseError::from)
+    .await?;
+
+    Ok(serial)
 }

@@ -4,15 +4,17 @@
 use std::sync::Arc;
 
 use bindizr_core::metrics::SchedulerResult;
+use bindizr_core::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time;
+use tokio::time::{Interval, MissedTickBehavior};
 
-use crate::Context;
 use crate::dnssec::maintenance;
-use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use crate::zone::history;
+use crate::{Context, notify};
 
 /// A scheduler task whose current pass finishes before shutdown returns.
 #[derive(Debug)]
@@ -78,7 +80,7 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> Scheduler
             if let Err(error) =
                 tokio::spawn(async move { run_scheduler_pass(&pass_cx).await }).await
             {
-                log::error!("Scheduler pass did not finish: {}", error);
+                log::error!("Scheduler pass did not finish: {error}");
                 cx.metrics()
                     .track_dnssec_scheduler(SchedulerResult::Panicked);
             }
@@ -93,13 +95,13 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> Scheduler
 
 /// Create the scheduler timer; a zero period never ticks, and `spawn` guards
 /// the arm so a disabled scheduler waits only for a reload.
-fn scheduler_interval(period_secs: u64) -> tokio::time::Interval {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(period_secs.max(1)));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+fn scheduler_interval(period_secs: u64) -> Interval {
+    let mut interval = time::interval(time::Duration::from_secs(period_secs.max(1)));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     interval
 }
 
-/// One scheduler pass: journal retention, signature refresh, and rollover
+/// Run one scheduler pass: journal retention, signature refresh, and rollover
 /// advancement. Failures are logged, never fatal.
 async fn run_scheduler_pass(cx: &Context) {
     let config = cx.config();
@@ -125,10 +127,9 @@ async fn run_scheduler_pass(cx: &Context) {
                         Err(error) => {
                             failed = true;
                             log::error!(
-                                "Zone history pruning for zone id {} failed: {}",
-                                zone.id,
-                                error
-                            )
+                                "Zone history pruning for zone id {} failed: {error}",
+                                zone.id
+                            );
                         }
                     }
                 }
@@ -136,16 +137,12 @@ async fn run_scheduler_pass(cx: &Context) {
                 cx.metrics().track_pruned_rows(journal_rows, version_rows);
 
                 if journal_rows > 0 || version_rows > 0 {
-                    log::info!(
-                        "Pruned {} journal and {} version rows",
-                        journal_rows,
-                        version_rows
-                    );
+                    log::info!("Pruned {journal_rows} journal and {version_rows} version rows");
                 }
             }
             Err(error) => {
                 failed = true;
-                log::error!("Zone history pruning scan failed: {}", error)
+                log::error!("Zone history pruning scan failed: {error}");
             }
         }
     }
@@ -157,15 +154,15 @@ async fn run_scheduler_pass(cx: &Context) {
         let cutoff = Utc::now() - Duration::days(i64::from(audit_max_days));
 
         match bindizr_db::audit_log::prune_older_than(cx.db(), cutoff).await {
-            Ok(rows) => {
-                cx.metrics().track_pruned_audit_log_rows(rows);
-                if rows > 0 {
-                    log::info!("Pruned {} audit log rows", rows);
+            Ok(pruned) => {
+                cx.metrics().track_pruned_audit_log_rows(pruned);
+                if pruned > 0 {
+                    log::info!("Pruned {pruned} audit log rows");
                 }
             }
             Err(error) => {
                 failed = true;
-                log::error!("Audit log pruning failed: {}", error)
+                log::error!("Audit log pruning failed: {error}");
             }
         }
     }
@@ -178,15 +175,15 @@ async fn run_scheduler_pass(cx: &Context) {
         let cutoff = Utc::now() - Duration::days(i64::from(transfer_max_days));
 
         match bindizr_db::transfer_log::prune_older_than(cx.db(), cutoff).await {
-            Ok(rows) => {
-                cx.metrics().track_pruned_transfer_log_rows(rows);
-                if rows > 0 {
-                    log::info!("Pruned {} transfer log rows", rows);
+            Ok(pruned) => {
+                cx.metrics().track_pruned_transfer_log_rows(pruned);
+                if pruned > 0 {
+                    log::info!("Pruned {pruned} transfer log rows");
                 }
             }
             Err(error) => {
                 failed = true;
-                log::error!("Transfer log pruning failed: {}", error)
+                log::error!("Transfer log pruning failed: {error}");
             }
         }
     }
@@ -199,20 +196,20 @@ async fn run_scheduler_pass(cx: &Context) {
             for zone_id in zone_ids {
                 match maintenance::resign_zone_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log::info!("Re-signed zone {} ahead of signature expiry", zone_name);
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        log::info!("Re-signed zone {zone_name} ahead of signature expiry");
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("Re-signing zone id {} failed: {}", zone_id, error)
+                        log::error!("Re-signing zone id {zone_id} failed: {error}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("Re-signing scan failed: {}", error)
+            log::error!("Re-signing scan failed: {error}");
         }
     }
 
@@ -230,24 +227,20 @@ async fn run_scheduler_pass(cx: &Context) {
             for zone_id in zone_ids {
                 match maintenance::start_zsk_rollover_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log::info!("Started scheduled ZSK rollover for zone {}", zone_name);
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        log::info!("Started scheduled ZSK rollover for zone {zone_name}");
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!(
-                            "Scheduled ZSK rollover for zone id {} failed: {}",
-                            zone_id,
-                            error
-                        )
+                        log::error!("Scheduled ZSK rollover for zone id {zone_id} failed: {error}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("ZSK lifetime scan failed: {}", error)
+            log::error!("ZSK lifetime scan failed: {error}");
         }
     }
 
@@ -271,13 +264,13 @@ async fn run_scheduler_pass(cx: &Context) {
             for zone_id in zone_ids {
                 match maintenance::promote_zsks_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log::info!("Promoted pre-published ZSK for zone {}", zone_name);
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        log::info!("Promoted pre-published ZSK for zone {zone_name}");
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!("ZSK promotion for zone id {} failed: {}", zone_id, error)
+                        log::error!("ZSK promotion for zone id {zone_id} failed: {error}");
                     }
                 }
             }
@@ -295,26 +288,21 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::promote_sep_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!(
-                            "Promoted pre-published SEP key for zone {}: the parent serves its DS",
-                            zone_name
+                            "Promoted pre-published SEP key for zone {zone_name}: the parent serves its DS"
                         );
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!(
-                            "SEP key promotion for zone id {} failed: {}",
-                            zone_id,
-                            error
-                        )
+                        log::error!("SEP key promotion for zone id {zone_id} failed: {error}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("Rollover promotion scan failed: {}", error)
+            log::error!("Rollover promotion scan failed: {error}");
         }
     }
 
@@ -334,24 +322,20 @@ async fn run_scheduler_pass(cx: &Context) {
             for zone_id in zone_ids {
                 match maintenance::prune_retired_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log::info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        log::info!("Removed retired DNSSEC key(s) for zone {zone_name}");
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
                         failed = true;
-                        log::error!(
-                            "Retired-key removal for zone id {} failed: {}",
-                            zone_id,
-                            error
-                        )
+                        log::error!("Retired-key removal for zone id {zone_id} failed: {error}");
                     }
                 }
             }
         }
         Err(error) => {
             failed = true;
-            log::error!("Retired-key scan failed: {}", error)
+            log::error!("Retired-key scan failed: {error}");
         }
     }
 

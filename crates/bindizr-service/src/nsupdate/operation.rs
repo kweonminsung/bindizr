@@ -3,17 +3,16 @@
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::{Serial, Ttl};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::NsupdateError;
-use crate::Transaction;
 use crate::authorization::{Caller, RecordAccess};
-use crate::model::record::{Record, RecordType};
-use crate::model::zone::Zone;
-use crate::record::{self, AddResult};
+use crate::nsupdate::NsupdateError;
+use crate::record::AddResult;
+use crate::{Transaction, record};
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names have passed the zone prescan.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,31 +42,30 @@ pub(crate) enum RecordOperation {
 }
 
 impl RecordOperation {
-    /// The grant action this operation needs: an add creates, both deletes delete.
+    /// Return the grant action this operation needs: an add creates, both deletes delete.
     pub(crate) fn action(&self) -> Action {
         match self {
-            RecordOperation::AddRecord { .. } => Action::RecordCreate,
-            RecordOperation::DeleteRecordSet { .. } | RecordOperation::DeleteRecord { .. } => {
-                Action::RecordDelete
-            }
+            Self::AddRecord { .. } => Action::RecordCreate,
+            Self::DeleteRecordSet { .. } | Self::DeleteRecord { .. } => Action::RecordDelete,
         }
     }
 
     /// Return the owner name targeted by this update operation.
     pub(crate) fn name(&self) -> &OwnerName {
         match self {
-            RecordOperation::AddRecord { name, .. }
-            | RecordOperation::DeleteRecordSet { name, .. }
-            | RecordOperation::DeleteRecord { name, .. } => name,
+            Self::AddRecord { name, .. }
+            | Self::DeleteRecordSet { name, .. }
+            | Self::DeleteRecord { name, .. } => name,
         }
     }
 
-    /// The type this update touches; `None` for a whole-name delete.
-    pub(crate) fn record_type(&self) -> Option<&RecordType> {
+    /// Return the type this update touches; `None` for a whole-name delete.
+    pub(crate) fn record_type(&self) -> Option<RecordType> {
         match self {
-            RecordOperation::AddRecord { record_type, .. }
-            | RecordOperation::DeleteRecord { record_type, .. } => Some(record_type),
-            RecordOperation::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
+            Self::AddRecord { record_type, .. } | Self::DeleteRecord { record_type, .. } => {
+                Some(*record_type)
+            }
+            Self::DeleteRecordSet { record_type, .. } => *record_type,
         }
     }
 }
@@ -91,7 +89,7 @@ pub(crate) async fn apply_record_operation_tx(
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
             let value = if *record_type == RecordType::Txt {
-                value.to_string()
+                value.clone()
             } else {
                 record_type
                     .encoded_value(value, *priority)
@@ -138,7 +136,7 @@ pub(crate) async fn apply_record_operation_tx(
                     &[RecordAccess {
                         action: Action::RecordDelete,
                         relative_name: owner.clone(),
-                        record_type: Some(record_type),
+                        record_type: Some(*record_type),
                     }],
                 )?;
 
@@ -166,7 +164,7 @@ pub(crate) async fn apply_record_operation_tx(
                     &[RecordAccess {
                         action: Action::RecordUpdate,
                         relative_name: owner.clone(),
-                        record_type: Some(record_type),
+                        record_type: Some(*record_type),
                     }],
                 )?;
 
@@ -188,11 +186,11 @@ pub(crate) async fn apply_record_operation_tx(
             }
 
             let outcome =
-                record::validate_add_tx(tx, zone, owner, record_type, &value, *ttl, *priority)
+                record::validate_add_tx(tx, zone, owner, *record_type, &value, *ttl, *priority)
                     .await?;
 
             // An rdata-identical add changes nothing beyond the TTL above.
-            if matches!(outcome, AddResult::Duplicate) {
+            if outcome == AddResult::Duplicate {
                 return Ok(changed);
             }
 
@@ -215,11 +213,12 @@ pub(crate) async fn apply_record_operation_tx(
 
             Ok(true)
         }
-        RecordOperation::DeleteRecordSet { name, record_type } => {
-            delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
-        }
+        RecordOperation::DeleteRecordSet {
+            name: owner,
+            record_type,
+        } => delete_matching_tx(tx, zone, owner, *record_type, None, None, new_serial).await,
         RecordOperation::DeleteRecord {
-            name,
+            name: owner,
             record_type,
             value,
             priority,
@@ -227,8 +226,8 @@ pub(crate) async fn apply_record_operation_tx(
             delete_matching_tx(
                 tx,
                 zone,
-                name,
-                Some(record_type),
+                owner,
+                Some(*record_type),
                 Some(value.as_str()),
                 *priority,
                 new_serial,
@@ -244,16 +243,16 @@ async fn delete_matching_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     owner: &OwnerName,
-    record_type: Option<&RecordType>,
+    record_type: Option<RecordType>,
     value: Option<&str>,
     priority: Option<i32>,
     new_serial: Serial,
 ) -> Result<bool, NsupdateError> {
     // Only records at the owner name can match, so lock just those.
-    let owner_records =
+    let records_at_name =
         bindizr_db::record::list_by_name_tx(tx, zone.id, owner, LockLevel::Exclusive).await?;
 
-    let mut matched: Vec<Record> = owner_records
+    let mut matched: Vec<Record> = records_at_name
         .iter()
         .filter(|record| record.matches(record_type, value, priority))
         .cloned()
@@ -262,17 +261,17 @@ async fn delete_matching_tx(
     // RFC 2136, Sections 3.4.2.3 and 3.4.2.4: at the apex the NS set outlives
     // a delete, and one NS goes only while another remains; the SOA is no row.
     if owner.is_apex() {
-        let ns_total = owner_records
+        let ns_total = records_at_name
             .iter()
             .filter(|record| record.record_type == RecordType::Ns)
             .count();
 
         match value {
-            None => matched.retain(|record| record.record_type != RecordType::Ns),
             Some(_) if ns_total <= 1 => {
-                matched.retain(|record| record.record_type != RecordType::Ns)
+                matched.retain(|record| record.record_type != RecordType::Ns);
             }
             Some(_) => {}
+            None => matched.retain(|record| record.record_type != RecordType::Ns),
         }
     }
 

@@ -1,7 +1,8 @@
 //! Write all bindizr output without panicking on a closed pipe.
 //! Early readers such as `head` must not crash a command or the daemon.
 
-use std::io::{self, ErrorKind, Write};
+use std::io;
+use std::io::{ErrorKind, Write};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -17,12 +18,12 @@ static WRITE_FAILURE: OnceLock<io::Error> = OnceLock::new();
 /// Write to stdout, ignoring a closed pipe. Both writers are `pub` only
 /// because `outln!`/`errln!` expand to them in other crates.
 pub fn write_stdout(text: &str) {
-    write(&STDOUT_CLOSED, &mut std::io::stdout(), text);
+    write(&STDOUT_CLOSED, &mut io::stdout(), text);
 }
 
 /// Write to stderr on the same terms; `2>&1` puts both on one pipe.
 pub fn write_stderr(text: &str) {
-    write(&STDERR_CLOSED, &mut std::io::stderr(), text);
+    write(&STDERR_CLOSED, &mut io::stderr(), text);
 }
 
 /// Write unless this stream's reader already left.
@@ -43,8 +44,8 @@ fn write(closed: &AtomicBool, sink: &mut impl Write, text: &str) {
     }
 }
 
-/// The failure that lost output, for the entry point to report; a closed pipe
-/// is not one.
+/// Return the failure that lost output, for the entry point to report; a closed
+/// pipe is not one.
 pub fn write_failure() -> Option<&'static io::Error> {
     WRITE_FAILURE.get()
 }
@@ -78,23 +79,20 @@ macro_rules! errln {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Error, ErrorKind, Write};
-    use std::sync::atomic::AtomicBool;
-
     use super::*;
 
     /// A sink whose every write fails with one kind.
-    #[derive(Debug, Clone, PartialEq, Eq, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct FailingSink(ErrorKind);
 
     impl Write for FailingSink {
         /// Fail with this sink's kind.
-        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
-            Err(Error::new(self.0, "sink failed"))
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(self.0, "sink failed"))
         }
 
-        /// Nothing is buffered.
-        fn flush(&mut self) -> std::io::Result<()> {
+        /// Return at once; nothing is buffered.
+        fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
     }

@@ -2,28 +2,28 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::Action;
 use chrono::{DateTime, Duration, Utc};
 use rand::RngExt;
 use rand::distr::Alphanumeric;
+use ring::digest;
 use ring::digest::SHA256;
 
-use super::error::ServiceError;
 use crate::authorization::Caller;
-use crate::model::api_token::ApiToken;
+use crate::error::ServiceError;
 use crate::text::MAX_COLUMN_TEXT_LEN;
 use crate::types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResponse};
 use crate::{Context, audit, pagination, role, text, transaction};
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
-const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
+const MAX_EXPIRES_IN_DAYS: i64 = 36500;
 
 /// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
-    hex::encode(ring::digest::digest(&SHA256, token.as_bytes()))
+    hex::encode(digest::digest(&SHA256, token.as_bytes()))
 }
 
 /// Create an API token in the request's role; the secret is shown this once.
@@ -34,7 +34,7 @@ pub async fn create(
 ) -> Result<(TokenResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let name = normalize_token_name(&request.name)?;
+    let name = normalize_name(&request.name)?;
 
     let role = role::lookup_by_name(cx, &request.role_name).await?;
 
@@ -59,7 +59,8 @@ pub async fn create(
     let token_hash = hash_token(&raw_token);
 
     let mut tx = transaction::begin_tx(cx, "failed to create token").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -108,9 +109,10 @@ pub async fn create(
         Ok(token)
     }
     .await;
-    let created = transaction::finish_tx(tx, result, "failed to create token").await?;
 
-    Ok((TokenResponse::from_token(&created, &role.name), raw_token))
+    let token = transaction::finish_tx(tx, apply_result, "failed to create token").await?;
+
+    Ok((TokenResponse::from_token(&token, &role.name), raw_token))
 }
 
 /// List the API tokens, every one or one role's.
@@ -148,7 +150,7 @@ pub async fn list(
     ))
 }
 
-/// Describe `token` with its role's name; any token may read itself.
+/// Get `token` described with its role's name; any token may read itself.
 pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, ServiceError> {
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
@@ -156,7 +158,7 @@ pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<TokenResponse, S
     Ok(TokenResponse::from_token(token, &role.name))
 }
 
-/// The number of API tokens, read for the daemon's startup hint.
+/// Count the API tokens, read for the daemon's startup hint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(bindizr_db::api_token::list_all(cx.db()).await?.len() as u64)
 }
@@ -169,7 +171,8 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     let token = lookup_by_name(cx, name).await?;
 
     let mut tx = transaction::begin_tx(cx, "failed to delete token").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -192,20 +195,21 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to delete token").await
+    transaction::finish_tx(tx, apply_result, "failed to delete token").await
 }
 
-/// Load an API token by name or return a not-found error.
+/// Look up an API token by name or return a not-found error.
 async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
-    bindizr_db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
+    bindizr_db::api_token::get_by_name(cx.db(), &normalize_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
 }
 
-/// Lowercased so one name means one token on every backend (MySQL compares
-/// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
-pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
-    let name = text::normalize_identifier(name, "token name", MAX_COLUMN_TEXT_LEN)?;
+/// Normalize a token name: lowercased so one name means one token on every
+/// backend (MySQL compares case-insensitively), and kept to one URL path
+/// segment for `/tokens/{name}`.
+pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
+    let name = text::normalize_identifier(value, "token name", MAX_COLUMN_TEXT_LEN)?;
 
     // Dot segments get normalized away; `self` is the lookup route.
     if name == "." || name == ".." || name == "self" {
@@ -217,7 +221,7 @@ pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
     Ok(name)
 }
 
-/// When a token created now expires; `None` never does.
+/// Normalize when a token created now expires; `None` never does.
 fn normalize_expires_at(
     expires_in_days: Option<i64>,
 ) -> Result<Option<DateTime<Utc>>, ServiceError> {
@@ -240,50 +244,44 @@ mod tests {
     use super::*;
     use crate::error::ErrorCode;
 
-    /// Verify that `normalize_token_name` trims and folds case.
+    /// Verify that `normalize_name` trims and folds case.
     #[test]
-    fn normalize_token_name_trims_and_folds_case() {
+    fn normalize_name_trims_and_folds_case() {
+        assert_eq!(normalize_name(" external-dns ").unwrap(), "external-dns");
+        assert_eq!(normalize_name("Deploy").unwrap(), "deploy");
         assert_eq!(
-            normalize_token_name(" external-dns ").unwrap(),
-            "external-dns"
-        );
-        assert_eq!(normalize_token_name("Deploy").unwrap(), "deploy");
-        assert_eq!(
-            normalize_token_name("DEPLOY").unwrap(),
-            normalize_token_name("deploy").unwrap()
+            normalize_name("DEPLOY").unwrap(),
+            normalize_name("deploy").unwrap()
         );
     }
 
-    /// Verify that `normalize_token_name` rejects empty and whitespace names.
+    /// Verify that `normalize_name` rejects empty and whitespace names.
     #[test]
-    fn normalize_token_name_rejects_empty_and_whitespace_names() {
+    fn normalize_name_rejects_empty_and_whitespace_names() {
         for name in ["", "   ", "bad name", "bad\tname"] {
-            let error = normalize_token_name(name).unwrap_err();
+            let error = normalize_name(name).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }
 
-    /// Verify rejection of token names that cannot remain one URL path segment.
+    /// Verify that token names that cannot remain one URL path segment are rejected.
     ///
     /// `/` splits segments, `?` and `#` terminate them, and URL normalization removes dot segments.
     #[test]
-    fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
+    fn normalize_name_rejects_names_that_are_not_one_path_segment() {
         for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
-            let error = normalize_token_name(name).unwrap_err();
+            let error = normalize_name(name).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput, "{name}");
         }
 
-        assert_eq!(
-            normalize_token_name("ci.prod_v2-x").unwrap(),
-            "ci.prod_v2-x"
-        );
+        assert_eq!(normalize_name("ci.prod_v2-x").unwrap(), "ci.prod_v2-x");
     }
 
     /// Verify that `normalize_expires_at` is none without days and ahead of now with them.
     #[test]
     fn normalize_expires_at_returns_optional_future_deadline() {
         assert!(normalize_expires_at(None).unwrap().is_none());
-        assert!(normalize_expires_at(Some(1)).unwrap().unwrap() > chrono::Utc::now());
+        assert!(normalize_expires_at(Some(1)).unwrap().unwrap() > Utc::now());
         assert!(normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
     }
 

@@ -10,13 +10,13 @@ use std::collections::HashSet;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::zonefile::ParsedZoneFile;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 pub use multiple::import_many;
 pub use single::import;
 
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
 use crate::types::{ImportMode, ImportZoneResponse, Run};
 use crate::{Context, zone};
 
@@ -49,7 +49,7 @@ async fn import_transfer(
     caller: &Caller,
     zone_name: &ZoneName,
     client: &mut AxfrClient,
-    server: &str,
+    address: &str,
     options: ImportOptions,
 ) -> Result<ImportZoneResponse, ServiceError> {
     // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
@@ -65,7 +65,7 @@ async fn import_transfer(
         .await
         .map_err(|error| {
             ServiceError::invalid_input_with_source(
-                format!("AXFR from {} failed: {}", server, error),
+                format!("AXFR from {address} failed: {error}"),
                 error,
             )
         })?;
@@ -74,7 +74,7 @@ async fn import_transfer(
     apply::apply_import(cx, caller, zone_name, source, options).await
 }
 
-/// The zones a bulk import names, in request order without repeats.
+/// Normalize the zones a bulk import names, in request order without repeats.
 fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError> {
     if names.is_empty() {
         return Err(ServiceError::invalid_input(
@@ -95,7 +95,7 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
     Ok(zone_names)
 }
 
-/// The record actions an import mode performs.
+/// Return the record actions an import mode performs.
 fn import_actions(mode: ImportMode) -> &'static [Action] {
     match mode {
         ImportMode::Append => &[Action::RecordCreate],

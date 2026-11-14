@@ -10,7 +10,7 @@ use bindizr_service::{Context, record, zone};
 
 use crate::socket::types::DaemonResponse;
 
-/// Return the requested record.
+/// Get the requested record.
 pub(crate) async fn get_record(
     cx: &Context,
     id: RecordId,
@@ -22,10 +22,10 @@ pub(crate) async fn get_record(
     })
 }
 
-/// Return records matching the request filters.
+/// List records matching the request filters.
 pub(crate) async fn list_records(
     cx: &Context,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<RecordResponse>>, ServiceError> {
     let response = record::list_by_filter_with_zone(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
@@ -127,9 +127,9 @@ pub(crate) async fn delete_record(
 
     Ok(DaemonResponse {
         message: if response.dry_run {
-            format!("Record {} would be deleted", id)
+            format!("Record {id} would be deleted")
         } else {
-            format!("Record {} deleted successfully", id)
+            format!("Record {id} deleted successfully")
         },
         data: response,
     })

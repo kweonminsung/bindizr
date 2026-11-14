@@ -1,9 +1,9 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone_change::ZoneChange;
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
-use crate::model::zone_change::ZoneChange;
 use crate::tx::TransactionKind;
 use crate::{LockLevel, Transaction, mysql, postgres, sqlite};
 
@@ -19,8 +19,8 @@ pub async fn create_many_tx(
     }
 }
 
-/// How many rows `list_between_serials` would return, so a caller can
-/// weigh the delta before loading it.
+/// Count the rows `list_between_serials_tx` would return, so a caller can weigh
+/// the delta before loading it.
 pub async fn count_between_serials_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -41,8 +41,8 @@ pub async fn count_between_serials_tx(
     }
 }
 
-/// Read journal entries in `(from_serial, to_serial]` consistently with mutations in the
-/// current transaction.
+/// List journal entries in `(from_serial, to_serial]` consistently with
+/// mutations in the current transaction.
 pub async fn list_between_serials_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -84,8 +84,8 @@ pub async fn list_between_serials_tx(
     }
 }
 
-/// Delete expired whole serials, retaining a contiguous IXFR chain.
-/// Older requests use AXFR; return the deleted row count.
+/// Prune expired whole serials, retaining a contiguous IXFR chain. Older
+/// requests use AXFR; return the deleted row count.
 pub async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -104,21 +104,24 @@ pub async fn prune_by_zone_id_older_than_tx(
     }
 }
 
-/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
-pub async fn prune_outside_serial_window_tx(
+/// Prune history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     current: Serial,
 ) -> Result<u64, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
-            mysql::zone_change::prune_outside_serial_window_tx(tx, zone_id, current).await
+            mysql::zone_change::prune_by_zone_id_outside_serial_window_tx(tx, zone_id, current)
+                .await
         }
         TransactionKind::Postgres(tx) => {
-            postgres::zone_change::prune_outside_serial_window_tx(tx, zone_id, current).await
+            postgres::zone_change::prune_by_zone_id_outside_serial_window_tx(tx, zone_id, current)
+                .await
         }
         TransactionKind::Sqlite(tx) => {
-            sqlite::zone_change::prune_outside_serial_window_tx(tx, zone_id, current).await
+            sqlite::zone_change::prune_by_zone_id_outside_serial_window_tx(tx, zone_id, current)
+                .await
         }
     }
 }

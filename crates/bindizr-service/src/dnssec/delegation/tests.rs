@@ -1,4 +1,5 @@
-use bindizr_core::dns::name::ZoneName;
+use std::slice;
+
 use bindizr_core::dns::query::DsRecord;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole};
@@ -6,30 +7,31 @@ use bindizr_core::model::dnssec_policy::PolicyId;
 use bindizr_core::model::zone::ZoneId;
 
 use super::*;
-use crate::types::DsState;
+use crate::error::ErrorCode;
 
-/// Missing parent configuration keeps its service-owned cause and established message.
+/// Verify that missing parent configuration keeps its service-owned cause and established message.
 #[test]
 fn missing_parent_nameservers_remains_a_typed_service_error() {
     use std::error::Error;
+
     let error = ServiceError::dnssec_ds_unverified(
         "example.com",
         ProbeDelegationError::NoParentNameservers,
     );
 
-    assert_eq!(error.code(), crate::error::ErrorCode::DnssecDsUnverified);
+    assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
     assert_eq!(
         error.to_string(),
         "could not verify that the parent zone serves no DS for zone 'example.com': \
          the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'; \
-         set the zone's parent nameserver addresses, or skip the DS check",
+         set the zone's parent nameserver addresses, or skip the DS check"
     );
     assert!(matches!(
         error
             .source()
             .unwrap()
             .downcast_ref::<ProbeDelegationError>(),
-        Some(ProbeDelegationError::NoParentNameservers),
+        Some(ProbeDelegationError::NoParentNameservers)
     ));
 }
 
@@ -44,7 +46,7 @@ fn zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: Some("192.0.2.1,192.0.2.2".to_string()),
@@ -68,7 +70,7 @@ fn csk() -> DnssecKey {
     .unwrap()
 }
 
-/// The DS the parent would serve for `key`, in the digest type given.
+/// Build the DS the parent would serve for `key`, in the digest type given.
 fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
     let apex = zone().name.to_wire_name().unwrap();
     DsRecord {
@@ -100,7 +102,7 @@ fn delegation_response(
     key: &DnssecKey,
     answers: Vec<Option<DsRecordSet>>,
 ) -> DnssecDelegationResponse {
-    build_delegation_response(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
+    build_delegation_response(&zone(), slice::from_ref(key), parent(answers)).unwrap()
 }
 
 /// Verify that promotion waits until every server serves the DS.
@@ -109,7 +111,7 @@ fn promotion_waits_until_every_server_serves_the_ds() {
     let key = csk();
     let served = delegation_response(
         &key,
-        vec![record_set(vec![ds_of(&key, 2)]), record_set(vec![])],
+        vec![record_set(vec![ds_of(&key, 2)]), record_set(Vec::new())],
     );
 
     assert!(!served.keys[0].ds_published);

@@ -2,10 +2,10 @@ use serde_json::Value;
 
 use crate::common::TestApp;
 
-/// Verify DNSSEC policy management through the CLI.
+/// Verify that the CLI manages DNSSEC policies.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
+async fn dnssec_policy_supports_create_update_and_delete() {
     let app = TestApp::start().await;
     let policy_name = format!("{}-cli", app.namespace());
 
@@ -76,11 +76,11 @@ async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
     assert_eq!(updated["signature_validity_days"], 21);
     assert_eq!(updated["signature_refresh_days"], 7);
 
-    let got = app
+    let fetched = app
         .run_cli_success(&["dnssec", "policy", "get", &policy_name], None)
         .await;
 
-    assert!(got.contains("60d"), "{got}");
+    assert!(fetched.contains("60d"), "{fetched}");
 
     let deleted = app
         .run_cli_success(&["dnssec", "policy", "delete", &policy_name], None)

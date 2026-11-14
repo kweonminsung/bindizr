@@ -3,24 +3,23 @@
 
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
+use bindizr_core::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecKeyLayout};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::status;
 use crate::authorization::Caller;
-use crate::dnssec::SignedZone;
+use crate::dnssec::{SignedZone, status};
 use crate::error::ServiceError;
-use crate::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
-use crate::model::dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecKeyLayout};
-use crate::model::zone::Zone;
 use crate::types::{
     DnssecKeyMaterialResponse, DnssecStatusResponse, ExportDnssecKeysResponse,
     ImportDnssecKeysRequest,
 };
-use crate::{Context, dnssec_policy, transaction, zone};
+use crate::{Context, dnssec, dnssec_policy, notify, transaction, zone};
 
-/// The zone's keys as BIND file contents (`K*.key` / `K*.private`).
+/// Export the zone's keys as BIND file contents (`K*.key` / `K*.private`).
 pub async fn export_keys(
     cx: &Context,
     caller: &Caller,
@@ -29,8 +28,9 @@ pub async fn export_keys(
     // One locked transaction: a rename cannot split the rendered name
     // from the keys.
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
-    let result = async {
-        let SignedZone { zone, keys, .. } = super::get_signed_zone_tx(
+
+    let result: Result<_, ServiceError> = async {
+        let SignedZone { zone, keys, .. } = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -40,7 +40,7 @@ pub async fn export_keys(
         .await?;
 
         Ok(ExportDnssecKeysResponse {
-            zone_name: zone.name.as_str().to_string(),
+            zone_name: zone.name.to_string(),
             keys: keys
                 .iter()
                 .map(|key| DnssecKeyMaterialResponse {
@@ -49,7 +49,7 @@ pub async fn export_keys(
                     key_tag: key.key_tag,
                     dnskey_record: format!(
                         "{}. IN DNSKEY {} 3 {} {}",
-                        zone.name.as_str(),
+                        zone.name,
                         key.role.flags(),
                         key.algorithm.as_i32(),
                         key.public_key
@@ -70,13 +70,13 @@ pub async fn import_keys(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    request: ImportDnssecKeysRequest,
+    request: &ImportDnssecKeysRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     if request.keys.is_empty() {
         return Err(ServiceError::invalid_input("no key pair to import"));
     }
 
-    let policy_name = dnssec_policy::normalize_policy_name(
+    let policy_name = dnssec_policy::normalize_name(
         request
             .policy_name
             .as_deref()
@@ -84,7 +84,8 @@ pub async fn import_keys(
     )?;
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
-    let result = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
@@ -93,7 +94,7 @@ pub async fn import_keys(
             .await?
             .is_empty()
         {
-            return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
+            return Err(ServiceError::dnssec_already_enabled(&zone.name));
         }
 
         let policy =
@@ -174,7 +175,7 @@ pub async fn import_keys(
             keys: stored,
         };
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
@@ -183,7 +184,7 @@ pub async fn import_keys(
         .await?
         .unwrap_or(signed.zone.serial);
 
-        let response = status::load_status_tx(
+        let response = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -195,8 +196,9 @@ pub async fn import_keys(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
+
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
+        transaction::finish_tx(tx, apply_result, "failed to import DNSSEC keys").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -206,7 +208,7 @@ pub async fn import_keys(
 
     // Announce the imported keys only after their signed records are committed.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)

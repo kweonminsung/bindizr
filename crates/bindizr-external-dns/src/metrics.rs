@@ -1,7 +1,13 @@
 //! Adapter-local Prometheus metrics, served on the health listener and held
 //! by the adapter's state.
 
-use prometheus::{HistogramVec, IntCounterVec, Registry, TextEncoder};
+use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
+use thiserror::Error;
+
+/// Failure to register an adapter metric collector.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub(crate) struct RegisterMetricsError(#[from] prometheus::Error);
 
 /// The adapter's Prometheus registry and the request metrics registered in it.
 #[derive(Debug)]
@@ -18,7 +24,7 @@ impl AdapterMetrics {
         let registry = Registry::new();
 
         let requests_total = IntCounterVec::new(
-            prometheus::Opts::new(
+            Opts::new(
                 "bindizr_external_dns_requests_total",
                 "Webhook requests handled by the bindizr ExternalDNS adapter",
             ),
@@ -27,7 +33,7 @@ impl AdapterMetrics {
         registry.register(Box::new(requests_total.clone()))?;
 
         let request_duration_seconds = HistogramVec::new(
-            prometheus::HistogramOpts::new(
+            HistogramOpts::new(
                 "bindizr_external_dns_request_duration_seconds",
                 "Webhook request duration in the bindizr ExternalDNS adapter",
             ),
@@ -51,7 +57,7 @@ impl AdapterMetrics {
             request_duration_seconds.with_label_values(&[endpoint]);
         }
 
-        Ok(AdapterMetrics {
+        Ok(Self {
             registry,
             requests_total,
             request_duration_seconds,
@@ -65,8 +71,3 @@ impl AdapterMetrics {
             .unwrap_or_default()
     }
 }
-
-/// Failure to register an adapter metric collector.
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub(crate) struct RegisterMetricsError(#[from] prometheus::Error);

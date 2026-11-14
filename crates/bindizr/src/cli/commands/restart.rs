@@ -4,8 +4,8 @@ use bindizr_core::outln;
 use bindizr_service::types::MessageResponse;
 
 use crate::cli::error::CliError;
-use crate::cli::output;
 use crate::cli::output::OutputFormat;
+use crate::cli::{commands, output};
 use crate::socket::client;
 use crate::socket::types::{DaemonCommand, DaemonStatusResponse};
 
@@ -28,7 +28,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
     }
 
     // exec keeps the PID, so a changed start time is the restart signal.
-    let replaced = super::poll_with_deadline(RESTART_DEADLINE, async || {
+    let replaced = commands::poll_with_deadline(RESTART_DEADLINE, async || {
         client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
             .await
             .ok()
@@ -44,13 +44,9 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
 
             if output == OutputFormat::Table {
-                outln!(
-                    "Bindizr restarted: pid {} (version {})",
-                    pid,
-                    status.version
-                )
+                outln!("Bindizr restarted: pid {pid} (version {})", status.version);
             } else {
-                output::print_payload(&status, output)?
+                output::print_payload(&status, output)?;
             }
 
             Ok(())

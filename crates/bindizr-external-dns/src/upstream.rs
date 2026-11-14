@@ -1,8 +1,13 @@
 //! Authenticated HTTP client for the bindizr `/external-dns` API.
 
+use std::borrow::Cow;
 use std::time::Duration;
+use std::{fs, io};
 
-use serde::Deserialize;
+use reqwest::{Certificate, Client, Method, RequestBuilder, Response};
+use rustls::crypto::ring;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::wire::{ApplyExternalDnsChangesRequest, BindizrRecord};
@@ -31,7 +36,7 @@ pub(crate) enum BuildClientError {
     ReadCa {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("invalid CA certificate '{path}': {source}")]
     InvalidCa {
@@ -44,7 +49,7 @@ pub(crate) enum BuildClientError {
 }
 
 /// The `error` message a bindizr API error response carries.
-#[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct UpstreamErrorResponse {
     error: String,
 }
@@ -53,7 +58,7 @@ struct UpstreamErrorResponse {
 /// with every request.
 #[derive(Debug)]
 pub(crate) struct UpstreamClient {
-    http: reqwest::Client,
+    http: Client,
     base_url: String,
     token: Option<String>,
 }
@@ -68,18 +73,18 @@ impl UpstreamClient {
     ) -> Result<Self, BuildClientError> {
         // reqwest builds no rustls client without a process-level provider;
         // Err means one is installed already.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
+        let _ = ring::default_provider().install_default();
+        let mut builder = Client::builder().timeout(Duration::from_secs(timeout_secs));
 
         // Added to the system roots rather than replacing them, so one private
         // CA does not cut off a publicly issued certificate beside it.
         if let Some(path) = ca_file {
-            let pem = std::fs::read(path).map_err(|source| BuildClientError::ReadCa {
+            let pem = fs::read(path).map_err(|source| BuildClientError::ReadCa {
                 path: path.to_string(),
                 source,
             })?;
 
-            for certificate in reqwest::Certificate::from_pem_bundle(&pem).map_err(|source| {
+            for certificate in Certificate::from_pem_bundle(&pem).map_err(|source| {
                 BuildClientError::InvalidCa {
                     path: path.to_string(),
                     source,
@@ -91,7 +96,7 @@ impl UpstreamClient {
 
         let http = builder.build().map_err(BuildClientError::Build)?;
 
-        Ok(UpstreamClient {
+        Ok(Self {
             http,
             base_url,
             token,
@@ -100,7 +105,7 @@ impl UpstreamClient {
 
     /// Fetch domain names available to the adapter's token.
     pub(crate) async fn list_domains(&self) -> Result<Vec<String>, UpstreamError> {
-        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct ListExternalDnsDomainsResponse {
             domains: Vec<String>,
         }
@@ -110,7 +115,7 @@ impl UpstreamClient {
 
     /// Fetch the records visible through the bindizr external-dns API.
     pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
-        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct ListExternalDnsRecordsResponse {
             records: Vec<BindizrRecord>,
         }
@@ -124,7 +129,7 @@ impl UpstreamClient {
         changes: &ApplyExternalDnsChangesRequest,
     ) -> Result<(), UpstreamError> {
         let request = self
-            .build_request(reqwest::Method::POST, "/external-dns/changes")
+            .build_request(Method::POST, "/external-dns/changes")
             .json(changes);
         self.send(request).await?;
         Ok(())
@@ -136,16 +141,16 @@ impl UpstreamClient {
         &self,
         records: &[BindizrRecord],
     ) -> Result<Vec<BindizrRecord>, UpstreamError> {
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct AdjustExternalDnsRecordsRequest<'a> {
-            records: std::borrow::Cow<'a, [BindizrRecord]>,
+            records: Cow<'a, [BindizrRecord]>,
         }
-        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct AdjustExternalDnsRecordsResponse {
             records: Vec<BindizrRecord>,
         }
         let request = self
-            .build_request(reqwest::Method::POST, "/external-dns/adjust")
+            .build_request(Method::POST, "/external-dns/adjust")
             .json(&AdjustExternalDnsRecordsRequest {
                 records: records.into(),
             });
@@ -161,20 +166,16 @@ impl UpstreamClient {
 
     /// Check token access to at least one manageable name; unauthenticated `/health` cannot prove it.
     pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
-        match self.list_domains().await?.is_empty() {
-            true => Err(UpstreamError::NoManageableNames),
-            false => Ok(()),
+        if self.list_domains().await?.is_empty() {
+            Err(UpstreamError::NoManageableNames)
+        } else {
+            Ok(())
         }
     }
 
     /// Fetch and deserialize a JSON response from a bindizr API path.
-    async fn fetch_json<T: serde::de::DeserializeOwned>(
-        &self,
-        path: &str,
-    ) -> Result<T, UpstreamError> {
-        let response = self
-            .send(self.build_request(reqwest::Method::GET, path))
-            .await?;
+    async fn fetch_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, UpstreamError> {
+        let response = self.send(self.build_request(Method::GET, path)).await?;
 
         response
             .json::<T>()
@@ -183,10 +184,10 @@ impl UpstreamClient {
     }
 
     /// Build an authenticated request to a bindizr API path.
-    fn build_request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+    fn build_request(&self, method: Method, path: &str) -> RequestBuilder {
         let mut request = self
             .http
-            .request(method, format!("{}{}", self.base_url, path));
+            .request(method, format!("{}{path}", self.base_url));
 
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);
@@ -196,10 +197,7 @@ impl UpstreamClient {
     }
 
     /// Send an upstream request and translate transport or HTTP failures.
-    async fn send(
-        &self,
-        request: reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, UpstreamError> {
+    async fn send(&self, request: RequestBuilder) -> Result<Response, UpstreamError> {
         let response = request.send().await.map_err(UpstreamError::Unreachable)?;
 
         let status = response.status();
@@ -209,17 +207,15 @@ impl UpstreamClient {
         }
 
         // Surface the bindizr error body's message; never the token.
-        let message = response
-            .json::<UpstreamErrorResponse>()
-            .await
-            .map(|body| body.error)
-            .unwrap_or_else(|_| format!("bindizr responded with status {}", status.as_u16()));
+        let message = response.json::<UpstreamErrorResponse>().await.map_or_else(
+            |_| format!("bindizr responded with status {}", status.as_u16()),
+            |body| body.error,
+        );
 
         if status.as_u16() == 401 || status.as_u16() == 403 {
             log::error!(
-                "bindizr rejected the request with {} ({}); check the API token and its grants",
-                status.as_u16(),
-                message
+                "bindizr rejected the request with {} ({message}); check the API token and its grants",
+                status.as_u16()
             );
         }
 

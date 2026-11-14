@@ -1,6 +1,9 @@
-use std::io::ErrorKind;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::{io, iter};
 
 use bindizr_core::dns::message;
+use tokio::io::ReadBuf;
 
 use super::*;
 
@@ -53,28 +56,29 @@ async fn framing_accepts_connection_close_between_messages() {
     // transfers reads as EOF rather than a malformed length prefix.
     let error = read(b"").await.unwrap_err();
 
-    assert!(matches!(error, DnsError::PeerClosed), "{error:?}");
+    assert!(matches!(&error, DnsError::PeerClosed), "{error:?}");
 }
 
 /// An `AsyncRead` whose peer left without close_notify, as rustls
 /// reports it.
+#[derive(Debug)]
 struct AbruptEof;
 
 impl AsyncRead for AbruptEof {
     /// Fail every read the way rustls does when close_notify never came.
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        _task_cx: &mut std::task::Context<'_>,
-        _buffer: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Err(std::io::Error::new(
-            ErrorKind::UnexpectedEof,
+        self: Pin<&mut Self>,
+        _task_cx: &mut Context<'_>,
+        _buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Poll::Ready(Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
             "peer closed connection without sending TLS close_notify",
         )))
     }
 }
 
-/// An abrupt TLS EOF is a transport failure even between frames.
+/// Verify that an abrupt TLS EOF is a transport failure even between frames.
 #[tokio::test]
 async fn framing_rejects_peer_close_without_close_notify() {
     let error = read_tcp_message(&mut AbruptEof, &mut Vec::new())
@@ -82,7 +86,7 @@ async fn framing_rejects_peer_close_without_close_notify() {
         .unwrap_err();
 
     assert!(
-        matches!(error, DnsError::Io(ref source) if source.kind() == ErrorKind::UnexpectedEof),
+        matches!(&error, DnsError::Io(source) if source.kind() == io::ErrorKind::UnexpectedEof),
         "{error:?}"
     );
 }
@@ -111,7 +115,7 @@ async fn framing_reports_expected_length_when_body_is_truncated() {
 async fn framing_accepts_maximum_length_prefix() {
     // Two octets of prefix make this the largest frame there is.
     let mut framed = u16::MAX.to_be_bytes().to_vec();
-    framed.extend(std::iter::repeat_n(0u8, usize::from(u16::MAX)));
+    framed.extend(iter::repeat_n(0, usize::from(u16::MAX)));
 
     assert_eq!(read(&framed).await.unwrap().len(), usize::from(u16::MAX));
 }
@@ -122,12 +126,10 @@ async fn framing_times_out_when_peer_does_not_read() {
     // One byte of buffer, and nothing draining the far end.
     let (mut writer, _unread) = tokio::io::duplex(1);
 
-    let error = write_frame(&mut writer, &vec![0u8; 4096])
-        .await
-        .expect_err("the write should have timed out");
+    let error = write_frame(&mut writer, &vec![0; 4096]).await.unwrap_err();
 
     assert!(
         matches!(&error, DnsError::WriteTimeout { secs: 30 }),
-        "{error}"
+        "{error:?}"
     );
 }

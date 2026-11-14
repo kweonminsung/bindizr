@@ -8,6 +8,7 @@ mod transfer;
 
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::base::{Message, Name, ToName};
+use domain::rdata::AllRecordData;
 pub use ds::{DsRecord, DsRecordSet, extract_ds_record_set};
 pub use keepalive::extract_tcp_keepalive_timeout;
 pub use notify::validate_notify_response;
@@ -38,8 +39,8 @@ pub enum ParseResponseError {
     OtherQuestion,
     #[error("response is not authoritative")]
     NotAuthoritative,
-    #[error("RCODE {}", .0.to_int())]
-    Rcode(OptRcode),
+    #[error("RCODE {}", .rcode.to_int())]
+    Rcode { rcode: OptRcode },
     #[error("malformed response OPT record")]
     MalformedEdns,
     #[error("malformed answer section: {0}")]
@@ -52,9 +53,9 @@ pub enum ParseResponseError {
     Rdata(#[from] EncodeRdataError),
     /// The NOTIFY acknowledgement did not read as one; the source says why.
     #[error("NOTIFY {0}")]
-    Notify(#[source] Box<ParseResponseError>),
-    #[error("NOTIFY response returned RCODE {}", .0.to_int())]
-    NotifyRcode(OptRcode),
+    Notify(#[source] Box<Self>),
+    #[error("NOTIFY response returned RCODE {}", .rcode.to_int())]
+    NotifyRcode { rcode: OptRcode },
     #[error("no SOA record in answer")]
     NoSoa,
     #[error("malformed authority section: {0}")]
@@ -65,16 +66,14 @@ pub enum ParseResponseError {
     NoParentSoa,
 }
 
-/// Read TC to decide whether UDP needs a TCP retry (RFC 1035, Section 4.2.1).
+/// Return whether TC is set, so UDP needs a TCP retry (RFC 1035, Section 4.2.1).
 pub fn is_truncated(response: &[u8]) -> bool {
     Message::from_octets(response).is_ok_and(|message| message.header().tc())
 }
 
-/// Match and structurally validate an incoming datagram before trusting its flags
-/// (RFC 1035, Section 7.3; RFC 5452, Section 9.1).
+/// Return whether an incoming datagram matches and structurally validates before
+/// trusting its flags (RFC 1035, Section 7.3; RFC 5452, Section 9.1).
 pub fn matches_response_to_request(request: &[u8], response: &[u8]) -> bool {
-    use domain::rdata::AllRecordData;
-
     let (Ok(request), Ok(response)) = (
         Message::from_octets(request),
         Message::from_octets(response),
@@ -137,11 +136,11 @@ fn parse_question_response<'a>(
     query_id: u16,
     opcode: Opcode,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
     let message = parse_response(query_id, opcode, response)?;
-    validate_question(&message, qname, rtype)?;
+    validate_question(&message, qname, qtype)?;
     Ok(message)
 }
 
@@ -149,14 +148,14 @@ fn parse_question_response<'a>(
 fn validate_question(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
 ) -> Result<(), ParseResponseError> {
     let question = message
         .sole_question()
         .map_err(|error| ParseResponseError::MalformedQuestion(Box::new(error)))?;
 
     if !question.qname().name_eq(qname)
-        || question.qtype() != rtype
+        || question.qtype() != qtype
         || question.qclass() != Class::IN
     {
         return Err(ParseResponseError::OtherQuestion);
@@ -169,10 +168,10 @@ fn validate_question(
 fn parse_authoritative_response<'a>(
     query_id: u16,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
     response: &'a [u8],
 ) -> Result<Message<&'a [u8]>, ParseResponseError> {
-    let message = parse_question_response(query_id, Opcode::QUERY, qname, rtype, response)?;
+    let message = parse_question_response(query_id, Opcode::QUERY, qname, qtype, response)?;
     if !message.header().aa() {
         return Err(ParseResponseError::NotAuthoritative);
     }

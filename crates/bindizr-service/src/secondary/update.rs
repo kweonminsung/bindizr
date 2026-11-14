@@ -2,14 +2,14 @@
 
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::secondary::Secondary;
+use bindizr_core::model::tsig_key::TsigKey;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
-use crate::model::tsig_key::TsigKey;
 use crate::types::{SecondaryResponse, UpdateSecondaryRequest};
-use crate::{Context, audit, transaction, tsig_key};
+use crate::{Context, audit, secondary, transaction, tsig_key};
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
 /// key name sends NOTIFY unsigned again.
@@ -17,15 +17,15 @@ pub async fn update(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    request: UpdateSecondaryRequest,
+    request: &UpdateSecondaryRequest,
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = super::normalize_secondary_name(name)?;
+    let name = secondary::normalize_name(name)?;
     let address = request
         .address
         .as_deref()
-        .map(super::normalize_secondary_address)
+        .map(crate::secondary::normalize_address)
         .transpose()?;
 
     if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
@@ -36,9 +36,9 @@ pub async fn update(
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
-        None => None,
         Some("") => Some(None),
-        Some(key_name) => Some(Some(tsig_key::lookup_by_name(cx, key_name).await?)),
+        Some(notify_key_name) => Some(Some(tsig_key::lookup_by_name(cx, notify_key_name).await?)),
+        None => None,
     };
 
     // Friendly pre-check; the UNIQUE(address) backstop covers the race.
@@ -47,15 +47,16 @@ pub async fn update(
         && other.name != name
     {
         return Err(ServiceError::secondary_conflict(format!(
-            "secondary with address '{}' already exists (name '{}')",
-            address, other.name
+            "secondary with address '{address}' already exists (name '{}')",
+            other.name
         )));
     }
 
     // Read and write under the row lock, or two partial updates would
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -70,22 +71,24 @@ pub async fn update(
         // The detail names keys, so the replaced one is read by id; gone
         // meanwhile, it reads as the id.
         let notify_key_change = match &notify_tsig_key {
-            None => None,
             Some(next) => {
                 let previous = match secondary.notify_tsig_key_id {
+                    Some(tsig_key_id) => {
+                        bindizr_db::tsig_key::get_tx(&mut tx, tsig_key_id, LockLevel::Unlocked)
+                            .await?
+                            .map_or_else(|| format!("key {tsig_key_id}"), |tsig_key| tsig_key.name)
+                    }
                     None => "none".to_string(),
-                    Some(id) => bindizr_db::tsig_key::get_tx(&mut tx, id, LockLevel::Unlocked)
-                        .await?
-                        .map_or_else(|| format!("key {id}"), |key| key.name),
                 };
 
                 audit::changed(
                     "notify_key_name",
                     previous,
                     next.as_ref()
-                        .map_or("none".to_string(), |key| key.name.clone()),
+                        .map_or("none".to_string(), |tsig_key| tsig_key.name.clone()),
                 )
             }
+            None => None,
         };
         let detail = audit::join_changes([
             audit::changed("address", &secondary.address, &address),
@@ -110,8 +113,7 @@ pub async fn update(
             // The UNIQUE(address) backstop for the pre-check above.
             if error.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
-                    "secondary with address '{}' already exists",
-                    address
+                    "secondary with address '{address}' already exists"
                 ))
             } else {
                 error.into()
@@ -130,7 +132,8 @@ pub async fn update(
         Ok(secondary)
     }
     .await;
-    let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
 
-    super::load_response(cx, secondary).await
+    let secondary = transaction::finish_tx(tx, apply_result, "failed to update secondary").await?;
+
+    secondary::lookup_response(cx, &secondary).await
 }

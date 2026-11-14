@@ -1,16 +1,15 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::tsig_key::TsigKey;
+use crate::{LockLevel, sqlite};
 
 /// Insert a TSIG key.
 pub(crate) async fn create_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    mut key: TsigKey,
+    mut tsig_key: TsigKey,
 ) -> Result<TsigKey, DatabaseError> {
     let now = Utc::now();
 
@@ -20,82 +19,81 @@ pub(crate) async fn create_tx(
         VALUES (?, ?, ?, ?, ?)
         "#,
     )
-    .bind(&key.name)
-    .bind(key.algorithm.as_str())
-    .bind(&key.secret)
-    .bind(key.role_id)
+    .bind(&tsig_key.name)
+    .bind(tsig_key.algorithm.as_str())
+    .bind(&tsig_key.secret)
+    .bind(tsig_key.role_id)
     .bind(now)
     .execute(&mut **tx)
     .await?;
 
-    key.id = TsigKeyId::from(super::last_insert_id(&result)?);
-    key.created_at = now;
+    tsig_key.id = TsigKeyId::from(sqlite::last_insert_id(&result)?);
+    tsig_key.created_at = now;
 
-    Ok(key)
+    Ok(tsig_key)
 }
 
-/// Find a TSIG key by ID.
+/// Get a TSIG key by ID.
 pub(crate) async fn get(
     pool: &Pool<Sqlite>,
     id: TsigKeyId,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let key = sqlx::query_as::<_, TsigKey>(
+    let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&mut *connection)
     .await?;
 
-    Ok(key)
+    Ok(tsig_key)
 }
 
-/// A TSIG key by id in the current transaction; SQLite's writer
-/// reservation stands in for a row lock.
+/// Get a TSIG key by ID in the current transaction, locked at `lock_level`.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
     id: TsigKeyId,
     _lock_level: LockLevel,
 ) -> Result<Option<TsigKey>, DatabaseError> {
-    let row = sqlx::query_as::<_, TsigKey>(
+    let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&mut **tx)
     .await?;
 
-    Ok(row)
+    Ok(tsig_key)
 }
 
-/// Find a TSIG key by name.
+/// Get a TSIG key by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
     name: &str,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let key = sqlx::query_as::<_, TsigKey>(
+    let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE name = ?",
     )
     .bind(name)
     .fetch_optional(&mut *connection)
     .await?;
 
-    Ok(key)
+    Ok(tsig_key)
 }
 
 /// List all TSIG keys.
 pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let keys = sqlx::query_as::<_, TsigKey>(
+    let tsig_keys = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys ORDER BY name",
     )
     .fetch_all(&mut *connection)
     .await?;
 
-    Ok(keys)
+    Ok(tsig_keys)
 }
 
 /// Delete a TSIG key by ID.
@@ -119,12 +117,12 @@ pub(crate) async fn list_by_role_id(
 ) -> Result<Vec<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let rows = sqlx::query_as::<_, TsigKey>(
+    let tsig_keys = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE role_id = ? ORDER BY name",
     )
     .bind(role_id)
     .fetch_all(&mut *connection)
     .await?;
 
-    Ok(rows)
+    Ok(tsig_keys)
 }

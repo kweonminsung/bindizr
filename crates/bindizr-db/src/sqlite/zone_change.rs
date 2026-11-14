@@ -1,19 +1,19 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::model::zone::ZoneId;
-use chrono::Utc;
+use bindizr_core::model::zone_change::ZoneChange;
+use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Sqlite, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::zone_change::ZoneChange;
 
-/// Insert a batch of journal entries in the current transaction.
+/// Insert many zone changes in one statement (chunked). Ids are not returned.
 pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     changes: &[ZoneChange],
 ) -> Result<(), DatabaseError> {
     // One journal row per record, so size it like the record insert:
-    // 11 binds per row, leaving room under SQLite's 32766 limit.
+    // 11 binds per row, leaving room under SQLite's 32766 bind-variable limit.
     const CHUNK: usize = 400;
     const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -38,9 +38,9 @@ pub(crate) async fn create_many_tx(
                 .bind(change.serial)
                 .bind(change.operation)
                 .bind(&change.record_name)
-                .bind(change.record_type.clone())
-                .bind(change.record_value.clone())
-                .bind(change.record_rdata.clone())
+                .bind(&change.record_type)
+                .bind(&change.record_value)
+                .bind(&change.record_rdata)
                 .bind(change.record_ttl)
                 .bind(change.record_priority)
                 .bind(change.derived)
@@ -53,7 +53,8 @@ pub(crate) async fn create_many_tx(
     Ok(())
 }
 
-/// Count journal entries in the interval `(from_serial, to_serial]`.
+/// Count the rows `list_between_serials_tx` would return, so a caller can weigh
+/// the delta before loading it.
 pub(crate) async fn count_between_serials_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
@@ -80,8 +81,8 @@ pub(crate) async fn count_between_serials_tx(
     Ok(count as u64)
 }
 
-/// List journal entries in the interval `(from_serial, to_serial]` in the current
-/// transaction.
+/// List journal entries in `(from_serial, to_serial]` consistently with
+/// mutations in the current transaction.
 pub(crate) async fn list_between_serials_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
@@ -89,13 +90,13 @@ pub(crate) async fn list_between_serials_tx(
     to_serial: Serial,
     _lock_level: LockLevel,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
-    sqlx::query_as::<_, ZoneChange>(
+    let changes = sqlx::query_as::<_, ZoneChange>(
         r#"
         SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
         FROM zone_journal
         WHERE zone_id = ? AND ((serial > ? AND serial <= ?) OR (? > ? AND (serial > ? OR serial <= ?)))
         ORDER BY id
-        "#
+        "#,
     )
     .bind(zone_id)
     .bind(from_serial)
@@ -105,18 +106,20 @@ pub(crate) async fn list_between_serials_tx(
     .bind(from_serial)
     .bind(to_serial)
     .fetch_all(&mut **tx)
-    .await
-    .map_err(DatabaseError::from)
+    .await?;
+
+    Ok(changes)
 }
 
-/// Prune one zone's journal rows older than `cutoff` in the current transaction.
+/// Prune expired whole serials, retaining a contiguous IXFR chain. Older
+/// requests use AXFR; return the deleted row count.
 pub(crate) async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
-    cutoff: chrono::DateTime<chrono::Utc>,
+    cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
-    // Prune whole serials to keep IXFR steps complete. SQLite sorts sqlx
-    // RFC 3339 timestamps chronologically as text.
+    // Delete whole serials only, so the remaining IXFR steps stay complete.
+    // SQLite sorts sqlx's RFC 3339 timestamp text chronologically.
     let result = sqlx::query(
         r#"
         DELETE FROM zone_journal
@@ -136,16 +139,19 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     Ok(result.rows_affected())
 }
 
-/// Drop history outside the unambiguous RFC 1982 half-range behind the current serial.
-pub(crate) async fn prune_outside_serial_window_tx(
+/// Prune history outside the unambiguous RFC 1982 half-range behind the current serial.
+pub(crate) async fn prune_by_zone_id_outside_serial_window_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
     current: Serial,
 ) -> Result<u64, DatabaseError> {
-    let result = sqlx::query("DELETE FROM zone_journal WHERE zone_id = ? AND ((? - serial + 4294967296) % 4294967296) >= 2147483648")
-        .bind(zone_id)
-        .bind(current)
-        .execute(&mut **tx)
-        .await?;
+    let result = sqlx::query(
+        "DELETE FROM zone_journal WHERE zone_id = ? AND ((? - serial + 4294967296) % 4294967296) >= 2147483648",
+    )
+    .bind(zone_id)
+    .bind(current)
+    .execute(&mut **tx)
+    .await?;
+
     Ok(result.rows_affected())
 }

@@ -1,6 +1,6 @@
 use std::net::Ipv6Addr;
 
-use super::ParseRecordValueError;
+use crate::dns::record::ParseRecordValueError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AaaaRecordValue(Ipv6Addr);
@@ -17,7 +17,7 @@ impl AaaaRecordValue {
     }
 
     /// Render the AAAA value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         self.0.to_string()
     }
 }

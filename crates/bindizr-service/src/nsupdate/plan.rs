@@ -3,11 +3,11 @@
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::record::{SoaMailbox, SoaRecordValue};
 use bindizr_core::dns::{Serial, Ttl};
+use bindizr_core::model::zone::Zone;
 
-use super::NsupdateError;
-use super::operation::RecordOperation;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
+use crate::nsupdate::NsupdateError;
+use crate::nsupdate::operation::RecordOperation;
 use crate::zone::validation;
 use crate::{serial, ttl};
 
@@ -44,11 +44,15 @@ impl UpdatePlan {
 
         for update in updates {
             match update {
-                UpdateOperation::Record(record) => plan.records.push(record),
-                UpdateOperation::ReplaceSoa { name, ttl, value } => {
+                UpdateOperation::Record(operation) => plan.records.push(operation),
+                UpdateOperation::ReplaceSoa {
+                    name: owner,
+                    ttl,
+                    value,
+                } => {
                     // RFC 2136, Section 3.4.2.2: SOA exists only at the apex;
                     // equal, older, and RFC 1982-undefined serials cannot replace it.
-                    if !name.is_apex()
+                    if !owner.is_apex()
                         || !Serial::from(value.serial).is_newer_than(plan.zone.serial)
                     {
                         continue;

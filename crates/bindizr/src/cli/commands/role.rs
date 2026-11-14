@@ -13,7 +13,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing roles and their grants.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum RoleCommand {
     /// Create a role holding no grants yet
     #[command(after_help = "\
@@ -174,7 +174,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 DaemonCommand::ListRoles(PageRequest { limit, offset }),
             )
             .await?;
-            output::print_page(&response.data, output, |item| RoleRow::from(item))?;
+            output::print_page(&response.data, output, |role| RoleRow::from(role))?;
         }
         RoleCommand::Get { name, output } => {
             let response =
@@ -188,9 +188,9 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteRole { name }).await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
         RoleCommand::Grant {
@@ -229,7 +229,7 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 },
             )
             .await?;
-            output::print_page(&response.data, output, |item| RoleGrantRow::from(item))?;
+            output::print_page(&response.data, output, |grant| RoleGrantRow::from(grant))?;
         }
         RoleCommand::Revoke { name, id, output } => {
             let response =
@@ -240,9 +240,9 @@ pub(crate) async fn handle_command(subcommand: RoleCommand) -> Result<(), CliErr
                 .await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }

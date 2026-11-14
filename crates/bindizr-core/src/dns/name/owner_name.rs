@@ -1,6 +1,16 @@
 //! A record's owner name, held as decoded labels.
 
-use super::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
+use std::{fmt, mem};
+
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
+use crate::dns::name;
+use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
+
+/// Escape separators, backslashes, the origin marker `@`, and master-file
+/// metacharacters (RFC 1035, Section 5.1).
+const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
 
 /// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
 /// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
@@ -17,7 +27,7 @@ impl OwnerName {
         Self(Vec::new())
     }
 
-    /// Check whether this owner names the zone apex.
+    /// Return whether this owner names the zone apex.
     pub fn is_apex(&self) -> bool {
         self.0.is_empty()
     }
@@ -27,10 +37,10 @@ impl OwnerName {
         &self.0
     }
 
-    /// Parse `@`, relative names, or absolute names inside `zone` into octet labels.
+    /// Parse `@`, relative names, or absolute names inside `zone_name` into octet labels.
     /// Validate wire lengths without imposing hostname character rules.
-    pub fn parse_in_zone(input: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(input);
+    pub fn parse_in_zone(value: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
+        let trimmed = name::trim_presentation_name(value);
 
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
@@ -55,13 +65,13 @@ impl OwnerName {
         }
     }
 
-    /// Parse an absolute name inside `zone`, even without a trailing root dot.
+    /// Parse an absolute name inside `zone_name`, even without a trailing root dot.
     /// Relative client input belongs to [`Self::parse_in_zone`].
     pub fn parse_absolute_in_zone(
-        input: &str,
+        value: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(input);
+        let trimmed = name::trim_presentation_name(value);
 
         if trimmed == Self::APEX {
             return Ok(Self::apex());
@@ -69,7 +79,7 @@ impl OwnerName {
 
         let (labels, _) = decode_name_labels(trimmed)?;
 
-        relative_labels(&labels, zone_name.labels().as_slice())
+        relative_labels(&labels, &zone_name.labels())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
     }
@@ -85,18 +95,14 @@ impl OwnerName {
             // An externally corrupted row becomes one literal label; splitting it
             // would invent a different name.
             Err(error) => {
-                log::error!(
-                    "undecodable owner name in a record row: {} ({})",
-                    value,
-                    error
-                );
+                log::error!("undecodable owner name in a record row: {value} ({error})");
                 Self(vec![value.as_bytes().to_ascii_lowercase()])
             }
         }
     }
 
-    /// The form rows store: empty at the apex, so no label can collide with it,
-    /// otherwise the escaped labels joined with `.`.
+    /// Return the form rows store: empty at the apex, so no label can collide with
+    /// it, otherwise the escaped labels joined with `.`.
     pub fn to_stored(&self) -> String {
         if self.is_apex() {
             return String::new();
@@ -105,11 +111,11 @@ impl OwnerName {
         self.to_presentation()
     }
 
-    /// The wire form within `zone`: this owner's labels, the zone's, then the
-    /// root.
+    /// Encode the wire form within `zone_name`: this owner's labels, the zone's,
+    /// then the root.
     pub fn to_wire(&self, zone_name: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
         let zone_labels = zone_name.labels();
-        super::labels_to_wire(
+        name::labels_to_wire(
             self.0
                 .iter()
                 .map(Vec::as_slice)
@@ -117,7 +123,7 @@ impl OwnerName {
         )
     }
 
-    /// The absolute form within `zone`.
+    /// Return the absolute form within `zone_name`.
     pub fn to_fqdn(&self, zone_name: &ZoneName) -> String {
         if self.is_apex() {
             return zone_name.to_fqdn();
@@ -126,12 +132,12 @@ impl OwnerName {
         format!("{}.{}", self.to_presentation(), zone_name.to_fqdn())
     }
 
-    /// This owner's labels in presentation form, with the required escapes.
+    /// Render this owner's labels in presentation form, with the required escapes.
     fn to_presentation(&self) -> String {
-        super::labels_to_presentation(&self.0)
+        name::labels_to_presentation(&self.0)
     }
 
-    /// Whether this owner is `other` or sits under it, compared label by label.
+    /// Return whether this owner is `other` or sits under it, compared label by label.
     pub fn is_same_or_under(&self, other: &Self) -> bool {
         is_label_suffix(&self.0, &other.0)
     }
@@ -148,7 +154,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -162,7 +168,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_stored().encode_by_ref(buffer)
     }
 }
@@ -173,9 +179,7 @@ where
     &'r str: sqlx::Decode<'r, DB>,
 {
     /// Read the row form.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::from_row(<&str as sqlx::Decode<'r, DB>>::decode(
             value,
         )?))
@@ -184,9 +188,9 @@ where
 
 /// Presentation form, as input spells it: `@` at the apex; rows take
 /// [`OwnerName::to_stored`].
-impl std::fmt::Display for OwnerName {
+impl fmt::Display for OwnerName {
     /// Write the owner name in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_apex() {
             return f.write_str(Self::APEX);
         }
@@ -237,11 +241,10 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
             ch if ch.is_ascii_whitespace() || ch.is_ascii_control() => {
                 return Err(ParseNameError::Whitespace);
             }
-            '.' => labels.push(std::mem::take(&mut label)),
+            '.' => labels.push(mem::take(&mut label)),
             '\\' => match chars.peek() {
-                None => return Err(ParseNameError::DanglingEscape),
-                Some(d) if d.is_ascii_digit() => {
-                    let mut octet: u32 = 0;
+                Some(digit) if digit.is_ascii_digit() => {
+                    let mut octet = 0u32;
 
                     for _ in 0..3 {
                         let digit = chars
@@ -255,12 +258,13 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
                 }
                 Some(&escaped) => {
                     chars.next();
-                    let mut buffer = [0u8; 4];
+                    let mut buffer = [0; 4];
                     label.extend_from_slice(escaped.encode_utf8(&mut buffer).as_bytes());
                 }
+                None => return Err(ParseNameError::DanglingEscape),
             },
             ch => {
-                let mut buffer = [0u8; 4];
+                let mut buffer = [0; 4];
                 label.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
             }
         }
@@ -286,7 +290,7 @@ fn classify_owner_label(label: &[u8]) -> Result<(), ParseNameError> {
 /// Check the DNS wire-length limit in RFC 1035, Section 2.3.4, including each label's length
 /// octet and the root terminator.
 fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNameError> {
-    let wire_len: usize = owner
+    let wire_len = owner
         .iter()
         .chain(zone)
         .map(|label| label.len() + 1)
@@ -299,10 +303,6 @@ fn classify_wire_len(owner: &[Vec<u8>], zone: &[Vec<u8>]) -> Result<(), ParseNam
 
     Ok(())
 }
-
-/// Escape separators, backslashes, the origin marker `@`, and master-file
-/// metacharacters (RFC 1035, Section 5.1).
-const ESCAPED_IN_LABEL: &[u8] = b".\\@;()\"$";
 
 /// Escape a label without changing its octets; dots use decimal escapes so
 /// a stored dot is always a label boundary (RFC 1035, Section 5.1).
@@ -324,13 +324,13 @@ pub(crate) fn escape_label(label: &[u8]) -> String {
     escaped
 }
 
-/// Whether `suffix` is a label-wise suffix of `name` (the same name or under it).
+/// Return whether `suffix` is a label-wise suffix of `name` (the same name or under it).
 pub fn is_label_suffix(name: &[Vec<u8>], suffix: &[Vec<u8>]) -> bool {
     name.len() >= suffix.len() && name[name.len() - suffix.len()..] == *suffix
 }
 
-/// The labels left after removing `zone` from the end of `name`, or `None`
-/// when `name` does not sit inside `zone`.
+/// Return the labels left after removing `zone` from the end of `name`, or
+/// `None` when `name` does not sit inside `zone`.
 fn relative_labels(name: &[Vec<u8>], zone: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
     is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
 }

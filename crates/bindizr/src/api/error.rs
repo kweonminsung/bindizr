@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::api::middleware::body_parser::{DEFAULT_BODY_BYTES, MAX_UPLOAD_BODY_BYTES};
 
-/// The HTTP status each error code answers with. Every code is spelled out,
+/// Return the HTTP status each error code answers with. Every code is spelled out,
 /// so a new one has to choose its status here.
 pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
     match code {
@@ -66,8 +66,8 @@ pub(crate) struct ApiError(pub(crate) ServiceError);
 
 impl From<ServiceError> for ApiError {
     /// Wrap a service error for HTTP response conversion.
-    fn from(value: ServiceError) -> Self {
-        ApiError(value)
+    fn from(error: ServiceError) -> Self {
+        Self(error)
     }
 }
 
@@ -98,7 +98,7 @@ impl IntoResponse for ApiError {
 impl From<JsonRejection> for ApiError {
     /// Translate a JSON extraction failure into an API error.
     fn from(rejection: JsonRejection) -> Self {
-        log::error!("JSON Rejection: {:?}", rejection);
+        log::error!("JSON Rejection: {rejection:?}");
 
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
@@ -125,7 +125,7 @@ impl From<JsonRejection> for ApiError {
             _ => ServiceError::internal_with_source("failed to read request body", rejection),
         };
 
-        ApiError(error)
+        Self(error)
     }
 }
 
@@ -144,7 +144,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         axum::extract::Query::from_request_parts(parts, state)
             .await
-            .map(|axum::extract::Query(value)| Query(value))
+            .map(|axum::extract::Query(value)| Self(value))
             .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
     }
 }
@@ -164,7 +164,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         axum::extract::Path::from_request_parts(parts, state)
             .await
-            .map(|axum::extract::Path(value)| Path(value))
+            .map(|axum::extract::Path(value)| Self(value))
             .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
     }
 }
@@ -189,10 +189,9 @@ mod tests {
             .unwrap()
             .into_parts();
 
-        let Err(error) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &()).await
-        else {
-            panic!("an unknown query key must be rejected");
-        };
+        let error = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap_err();
 
         assert_eq!(error.0.code(), ErrorCode::InvalidInput);
         assert!(
@@ -211,14 +210,12 @@ mod tests {
             .unwrap()
             .into_parts();
 
-        let Ok(Query(filter)) =
-            Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &()).await
-        else {
-            panic!("the spelled-out filter must parse");
-        };
+        let Query(request) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
 
-        assert_eq!(filter.record_type.as_deref(), Some("A"));
-        assert!(filter.dry_run);
+        assert_eq!(request.record_type.as_deref(), Some("A"));
+        assert!(request.dry_run);
     }
 
     /// Verify that an unknown body field is rejected, naming the field.
@@ -233,9 +230,9 @@ mod tests {
             ))
             .unwrap();
 
-        let Err(rejection) = Json::<CreateRecordRequest>::from_request(request, &()).await else {
-            panic!("an unknown body field must be rejected");
-        };
+        let rejection = Json::<CreateRecordRequest>::from_request(request, &())
+            .await
+            .unwrap_err();
         let error = ApiError::from(rejection);
 
         assert_eq!(error.0.code(), ErrorCode::InvalidJsonBody);

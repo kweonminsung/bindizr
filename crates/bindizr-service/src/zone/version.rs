@@ -1,12 +1,11 @@
 use bindizr_core::dns::Serial;
-use bindizr_core::model::zone_version::ZoneVersionId;
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_version::{ZoneVersion, ZoneVersionId};
 use chrono::Utc;
 
 use crate::Transaction;
 use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
-use crate::model::zone_version::ZoneVersion;
 
 /// Advance the zone serial so IXFR consumers detect the change, and
 /// version it in the same transaction.
@@ -19,7 +18,7 @@ pub(crate) async fn advance_serial_tx(
     bindizr_db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
         .map_err(|error| {
-            log::error!("Failed to update zone serial: {}", error);
+            log::error!("Failed to update zone serial: {error}");
             ServiceError::internal_with_source("failed to update zone serial", error)
         })?;
 
@@ -34,8 +33,9 @@ pub(crate) async fn save_version_tx(
     origin: &ChangeOrigin,
 ) -> Result<(), ServiceError> {
     // Retire ambiguous history before serial values can be reused after wrapping.
-    bindizr_db::zone_change::prune_outside_serial_window_tx(tx, zone.id, serial).await?;
-    bindizr_db::zone_version::prune_outside_serial_window_tx(tx, zone.id, serial).await?;
+    bindizr_db::zone_change::prune_by_zone_id_outside_serial_window_tx(tx, zone.id, serial).await?;
+    bindizr_db::zone_version::prune_by_zone_id_outside_serial_window_tx(tx, zone.id, serial)
+        .await?;
     bindizr_db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
@@ -59,7 +59,7 @@ pub(crate) async fn save_version_tx(
     )
     .await
     .map_err(|error| {
-        log::error!("Failed to save SOA version: {}", error);
+        log::error!("Failed to save SOA version: {error}");
         ServiceError::internal_with_source("failed to save SOA version", error)
     })?;
 

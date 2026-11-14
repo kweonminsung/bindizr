@@ -8,7 +8,7 @@ use bindizr_db::record::RecordFilter;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{DeleteZoneResponse, Run, ZoneResponse};
-use crate::{Context, audit, transaction};
+use crate::{Context, audit, notify, transaction, zone};
 
 /// Delete a zone, records, and rollback history; NOTIFY the catalog after commit.
 /// A dry run reports the contents without removing them.
@@ -22,16 +22,16 @@ pub async fn delete(
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        let caller = caller.reauthenticate_tx(&mut tx).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneDelete, &zone)?;
 
         // Counted for the report, not acted on, so they run unlocked.
         let records = bindizr_db::record::count_by_filter(
             cx.db(),
-            RecordFilter {
+            &RecordFilter {
                 zone_name: Some(zone.name.clone()),
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await?;
@@ -53,7 +53,7 @@ pub async fn delete(
         bindizr_db::zone::delete_tx(&mut tx, zone.id)
             .await
             .map_err(|error| {
-                log::error!("Failed to delete zone: {}", error);
+                log::error!("Failed to delete zone: {error}");
                 ServiceError::internal_with_source("failed to delete zone", error)
             })?;
 
@@ -77,8 +77,7 @@ pub async fn delete(
     let response = transaction::finish_tx(tx, apply_result, "failed to delete zone").await?;
 
     log::info!(
-        "event=zone_delete zone={} applied={}",
-        zone_name,
+        "event=zone_delete zone={zone_name} applied={}",
         response.applied
     );
 
@@ -86,7 +85,7 @@ pub async fn delete(
     let config = cx.config();
 
     if response.applied {
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     Ok(response)

@@ -4,8 +4,11 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use super::name;
-use super::name::MAX_DOMAIN_LEN;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
+use crate::dns::name;
+use crate::dns::name::MAX_DOMAIN_LEN;
 
 /// The port a `host` without one is taken to serve DNS on.
 pub const DEFAULT_DNS_PORT: u16 = 53;
@@ -22,11 +25,11 @@ impl AddressTarget {
     /// Parse an address target and supply the default port when needed.
     pub fn parse(value: &str, default_port: u16) -> Self {
         if let Ok(addr) = value.parse::<SocketAddr>() {
-            return AddressTarget::Socket(addr);
+            return Self::Socket(addr);
         }
 
         if let Ok(ip) = value.parse::<IpAddr>() {
-            return AddressTarget::Socket(SocketAddr::new(ip, default_port));
+            return Self::Socket(SocketAddr::new(ip, default_port));
         }
 
         if let Some(bracketed) = value
@@ -34,22 +37,22 @@ impl AddressTarget {
             .and_then(|value| value.strip_suffix(']'))
             && let Ok(ip) = bracketed.parse::<IpAddr>()
         {
-            return AddressTarget::Socket(SocketAddr::new(ip, default_port));
+            return Self::Socket(SocketAddr::new(ip, default_port));
         }
 
         let host_port = if has_explicit_port(value) || value.contains(':') {
             value.to_string()
         } else {
-            format!("{}:{}", value, default_port)
+            format!("{value}:{default_port}")
         };
 
         // A trailing root dot names the same host, so one server has one spelling.
         let host_port = match host_port.rsplit_once(':') {
-            Some((host, port)) => format!("{}:{}", host.strip_suffix('.').unwrap_or(host), port),
+            Some((host, port)) => format!("{}:{port}", host.strip_suffix('.').unwrap_or(host)),
             None => host_port,
         };
 
-        AddressTarget::HostPort(host_port.to_ascii_lowercase())
+        Self::HostPort(host_port.to_ascii_lowercase())
     }
 }
 
@@ -58,8 +61,8 @@ impl fmt::Display for AddressTarget {
     /// Write the address target in its canonical form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AddressTarget::Socket(addr) => fmt::Display::fmt(addr, f),
-            AddressTarget::HostPort(host_port) => f.pad(host_port),
+            Self::Socket(addr) => fmt::Display::fmt(addr, f),
+            Self::HostPort(host_port) => f.pad(host_port),
         }
     }
 }
@@ -75,7 +78,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -89,7 +92,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_string().encode_by_ref(buffer)
     }
 }
@@ -100,9 +103,7 @@ where
     &'r str: sqlx::Decode<'r, DB>,
 {
     /// Read the row form.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::parse(
             <&str as sqlx::Decode<'r, DB>>::decode(value)?,
             DEFAULT_DNS_PORT,
@@ -110,17 +111,18 @@ where
     }
 }
 
-/// A wildcard listen address is not connectable; probe it via loopback.
-pub fn loopback_if_unspecified(addr: IpAddr) -> IpAddr {
-    match addr {
-        IpAddr::V4(a) if a.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
-        IpAddr::V6(a) if a.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
-        addr => addr,
+/// Replace a wildcard listen address, which is not connectable, with loopback
+/// so it can be probed.
+pub fn loopback_if_unspecified(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ip => ip,
     }
 }
 
-/// `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH labels (`_` allowed)
-/// and a numeric, non-zero port, as the resolver takes them.
+/// Return whether text is `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH
+/// labels (`_` allowed) and a numeric, non-zero port, as the resolver takes them.
 pub fn is_address_target(value: &str) -> bool {
     if value.parse::<IpAddr>().is_ok() {
         return true;
@@ -141,7 +143,7 @@ pub fn is_address_target(value: &str) -> bool {
     }
 }
 
-/// Check whether a hostname uses valid domain labels. A resolver target is an
+/// Return whether a hostname uses valid domain labels. A resolver target is an
 /// LDH name with no escapes, so the dot is always a label boundary here.
 fn is_hostname(value: &str) -> bool {
     let name = value.strip_suffix('.').unwrap_or(value);
@@ -152,7 +154,7 @@ fn is_hostname(value: &str) -> bool {
             .all(|label| name::classify_domain_label(label).is_ok())
 }
 
-/// Check whether an address target includes a valid explicit port.
+/// Return whether an address target includes a valid explicit port.
 fn has_explicit_port(value: &str) -> bool {
     if let Some((_, rest)) = value
         .strip_prefix('[')
@@ -167,7 +169,7 @@ fn has_explicit_port(value: &str) -> bool {
     }
 }
 
-/// Check whether text represents a nonzero 16-bit port.
+/// Return whether text represents a nonzero 16-bit port.
 fn is_valid_port(value: &str) -> bool {
     value.parse::<u16>().is_ok_and(|port| port != 0)
 }

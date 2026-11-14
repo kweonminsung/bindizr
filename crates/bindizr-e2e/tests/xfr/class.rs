@@ -2,20 +2,18 @@
 
 use domain::base::iana::{Class, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{Message, MessageBuilder, Ttl};
+use domain::base::{Message, MessageBuilder, Serial, Ttl};
 use domain::rdata::Soa;
 use domain::rdata::tsig::Tsig;
-use serial_test::serial;
 
-use super::tls;
-use crate::common;
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::{TestApp, TestAppOptions, dns};
+use crate::xfr::tls;
 
-/// An IN IXFR query cannot take its client serial from another class's SOA.
+/// Verify that an IN IXFR query cannot take its client serial from another class's SOA.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn ixfr_rejects_foreign_soa_classes() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -29,7 +27,7 @@ async fn ixfr_rejects_foreign_soa_classes() {
     app.create_secondary("class-loopback", "127.0.0.1").await;
     let key = tsig::create_tsig_key(&app, "ixfr-record-class", KeyRole::Admin).await;
 
-    let name = dns::parse_name(zone_name).unwrap();
+    let qname = dns::parse_name(zone_name).unwrap();
 
     for class in [
         Class::IN,
@@ -45,17 +43,17 @@ async fn ixfr_rejects_foreign_soa_classes() {
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_id(1995);
         let mut question = builder.question();
-        question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
+        question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
         let mut authority = question.authority();
         authority
             .push((
-                &name,
+                &qname,
                 class,
                 Ttl::ZERO,
                 Soa::new(
-                    name.clone(),
-                    name.clone(),
-                    serial.into(),
+                    qname.clone(),
+                    qname.clone(),
+                    Serial::from(serial),
                     Ttl::ZERO,
                     Ttl::ZERO,
                     Ttl::ZERO,
@@ -63,8 +61,8 @@ async fn ixfr_rejects_foreign_soa_classes() {
                 ),
             ))
             .unwrap();
-        let mut request = authority.additional();
-        request
+        let mut query = authority.additional();
+        query
             .opt(|opt| {
                 opt.set_udp_payload_size(512);
                 opt.set_dnssec_ok(true);
@@ -79,14 +77,14 @@ async fn ixfr_rejects_foreign_soa_classes() {
             }
 
             for response in [
-                dns::exchange_request(request.clone(), key, |wire| {
-                    dns::exchange_udp(app.dns_port(), wire)
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_udp(app.dns_port(), message)
                 }),
-                dns::exchange_request(request.clone(), key, |wire| {
-                    common::exchange_tcp(app.dns_port(), wire)
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_tcp(app.dns_port(), message)
                 }),
-                dns::exchange_request(request.clone(), key, |wire| {
-                    common::exchange_xot(app.dns_tls_port(), wire, tls::dot_client(&app))
+                dns::exchange_request(query.clone(), key, |message| {
+                    dns::exchange_tls(app.dns_tls_port(), message, tls::dot_client(&app))
                 }),
             ] {
                 let response = response.unwrap();
@@ -117,6 +115,7 @@ async fn ixfr_rejects_foreign_soa_classes() {
     }
 }
 
+/// The message section that carries the foreign-class record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
     Answer,
@@ -124,17 +123,17 @@ enum Section {
     Additional,
 }
 
-/// Include a foreign RR after a valid IN SOA where applicable.
+/// Build a query with a foreign-class record after a valid IN SOA where applicable.
 fn build_query_with_foreign_record(
     section: Section,
     questions: usize,
     version: u8,
 ) -> AdditionalBuilder<Vec<u8>> {
-    let name = dns::parse_name("example.com").unwrap();
+    let qname = dns::parse_name("example.com").unwrap();
     let soa = Soa::new(
-        name.clone(),
-        name.clone(),
-        1.into(),
+        qname.clone(),
+        qname.clone(),
+        Serial::from(1),
         Ttl::ZERO,
         Ttl::ZERO,
         Ttl::ZERO,
@@ -145,27 +144,31 @@ fn build_query_with_foreign_record(
     let mut question = builder.question();
 
     for _ in 0..questions {
-        question.push((&name, Rtype::SOA, Class::IN)).unwrap();
+        question.push((&qname, Rtype::SOA, Class::IN)).unwrap();
     }
 
     let mut answer = question.answer();
 
     if section == Section::Answer {
-        answer.push((&name, Class::CH, Ttl::ZERO, &soa)).unwrap();
+        answer.push((&qname, Class::CH, Ttl::ZERO, &soa)).unwrap();
     }
 
     let mut authority = answer.authority();
-    authority.push((&name, Class::IN, Ttl::ZERO, &soa)).unwrap();
+    authority
+        .push((&qname, Class::IN, Ttl::ZERO, &soa))
+        .unwrap();
 
     if section == Section::Authority {
-        authority.push((&name, Class::CH, Ttl::ZERO, &soa)).unwrap();
+        authority
+            .push((&qname, Class::CH, Ttl::ZERO, &soa))
+            .unwrap();
     }
 
     let mut additional = authority.additional();
 
     if section == Section::Additional {
         additional
-            .push((&name, Class::CH, Ttl::ZERO, &soa))
+            .push((&qname, Class::CH, Ttl::ZERO, &soa))
             .unwrap();
     }
 
@@ -181,9 +184,10 @@ fn build_query_with_foreign_record(
     additional
 }
 
-/// Every ordinary QUERY section is IN-only; count and EDNS errors keep their order.
+/// Verify that every ordinary QUERY section is IN-only and that count and EDNS errors keep
+/// their order.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn queries_reject_foreign_classes_in_every_section() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -195,18 +199,18 @@ async fn queries_reject_foreign_classes_in_every_section() {
     for section in [Section::Answer, Section::Authority, Section::Additional] {
         for questions in [1, 2] {
             for version in [0, 1] {
-                let request = build_query_with_foreign_record(section, questions, version);
+                let query = build_query_with_foreign_record(section, questions, version);
 
                 for key in [None, Some(&key)] {
                     for response in [
-                        dns::exchange_request(request.clone(), key, |wire| {
-                            dns::exchange_udp(app.dns_port(), wire)
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_udp(app.dns_port(), message)
                         }),
-                        dns::exchange_request(request.clone(), key, |wire| {
-                            common::exchange_tcp(app.dns_port(), wire)
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_tcp(app.dns_port(), message)
                         }),
-                        dns::exchange_request(request.clone(), key, |wire| {
-                            common::exchange_xot(app.dns_tls_port(), wire, tls::dot_client(&app))
+                        dns::exchange_request(query.clone(), key, |message| {
+                            dns::exchange_tls(app.dns_tls_port(), message, tls::dot_client(&app))
                         }),
                     ] {
                         let response = response.unwrap();
@@ -232,9 +236,9 @@ async fn queries_reject_foreign_classes_in_every_section() {
     }
 }
 
-/// Class errors cannot bypass TSIG validation, including alongside BADVERS.
+/// Verify that class errors cannot bypass TSIG validation, including alongside BADVERS.
 #[tokio::test]
-#[serial]
+#[serial_test::serial(bindizr_e2e)]
 async fn foreign_record_classes_keep_tsig_error_precedence() {
     let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
@@ -250,21 +254,21 @@ async fn foreign_record_classes_keep_tsig_error_precedence() {
             signing_key.name = "unknown-record-class".to_string();
         }
 
-        let mut request = build_query_with_foreign_record(Section::Authority, 1, 1);
-        tsig::sign(&mut request, &signing_key).unwrap();
-        let mut request = request.finish();
+        let mut query = build_query_with_foreign_record(Section::Authority, 1, 1);
+        tsig::sign(&mut query, &signing_key).unwrap();
+        let mut query = query.finish();
 
         if !unknown {
-            let mac_end = request.len() - 7;
-            request[mac_end] ^= 1;
+            let mac_end = query.len() - 7;
+            query[mac_end] ^= 1;
         }
 
-        for wire in [
-            dns::exchange_udp(app.dns_port(), &request),
-            common::exchange_tcp(app.dns_port(), &request),
-            common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app)),
+        for response in [
+            dns::exchange_udp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &query).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &query, tls::dot_client(&app)).unwrap(),
         ] {
-            let response = Message::from_octets(wire.unwrap()).unwrap();
+            let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().rcode(), Rcode::NOTAUTH);
             assert!(response.opt().unwrap().dnssec_ok());

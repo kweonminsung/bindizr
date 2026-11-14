@@ -1,13 +1,14 @@
 //! TSIG keys and request signing shared by DNS tests.
 
-use std::str::FromStr;
-
 use base64::Engine;
+use base64::engine::general_purpose;
+use domain::base::Message;
+use domain::base::iana::Rtype;
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{Message, Rtype};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::{Algorithm, ClientTransaction, Key, KeyName};
 use ring::hmac;
+use serde_json::Value;
 
 use crate::common::TestApp;
 
@@ -27,7 +28,9 @@ impl SigningKey {
 
     /// Construct a client key that emits the requested MAC length.
     pub(crate) fn to_tsig_key_with_mac_len(&self, mac_len: usize) -> Result<Key, String> {
-        let secret = base64::engine::general_purpose::STANDARD
+        use std::str::FromStr;
+
+        let secret = general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(|error| format!("TSIG secret is not base64: {error}"))?;
         let key_name = KeyName::from_str(&self.name).map_err(|error| error.to_string())?;
@@ -36,7 +39,7 @@ impl SigningKey {
     }
 }
 
-/// Whether the response carries a TSIG record.
+/// Return whether the response carries a TSIG record.
 pub(crate) fn parse_tsig_presence(response: &Message<Vec<u8>>) -> Result<bool, String> {
     Ok(response
         .additional()
@@ -46,10 +49,10 @@ pub(crate) fn parse_tsig_presence(response: &Message<Vec<u8>>) -> Result<bool, S
 
 /// Sign a request using a client transaction.
 pub(crate) fn sign(
-    builder: &mut AdditionalBuilder<Vec<u8>>,
+    request: &mut AdditionalBuilder<Vec<u8>>,
     key: &SigningKey,
 ) -> Result<(), String> {
-    ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
+    ClientTransaction::request(key.to_tsig_key()?, request, Time48::now())
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -116,10 +119,10 @@ pub(crate) fn verify_response_mac(
         .to_vec();
     digest.extend_from_slice(request_mac);
     digest.extend_from_slice(&unsigned);
-    tsig.owner().compose_canonical(&mut digest).unwrap();
+    let Ok(()) = tsig.owner().compose_canonical(&mut digest);
     digest.extend_from_slice(&tsig.class().to_int().to_be_bytes());
     digest.extend_from_slice(&tsig.ttl().as_secs().to_be_bytes());
-    data.algorithm().compose_canonical(&mut digest).unwrap();
+    let Ok(()) = data.algorithm().compose_canonical(&mut digest);
     digest.extend_from_slice(&data.time_signed().into_octets());
     digest.extend_from_slice(&data.fudge().to_be_bytes());
     digest.extend_from_slice(&data.error().to_int().to_be_bytes());
@@ -129,7 +132,7 @@ pub(crate) fn verify_response_mac(
             .to_be_bytes(),
     );
     digest.extend_from_slice(data.other());
-    let secret = base64::engine::general_purpose::STANDARD
+    let secret = general_purpose::STANDARD
         .decode(&key.secret)
         .map_err(|error| error.to_string())?;
     let algorithm = match key.algorithm {
@@ -166,8 +169,7 @@ pub(crate) async fn create_tsig_key(app: &TestApp, name: &str, role: KeyRole) ->
     let fetched = app
         .run_cli_success(&["tsig-key", "get", name, "--output", "json"], None)
         .await;
-    let fetched: serde_json::Value =
-        serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
 
     SigningKey {
         name: name.to_string(),

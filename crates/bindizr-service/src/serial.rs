@@ -12,7 +12,7 @@ pub(crate) fn generate_serial(current_serial: Option<Serial>) -> Serial {
 mod tests {
     use super::*;
 
-    /// Generation advances across both signed and unsigned integer boundaries.
+    /// Verify that generation advances across both signed and unsigned integer boundaries.
     #[test]
     fn serials_advance_through_the_entire_wire_range() {
         assert_eq!(generate_serial(None), Serial::from(1));

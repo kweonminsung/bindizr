@@ -1,15 +1,16 @@
 //! Checks run from this process when no daemon is up: the database and the
 //! listen ports.
 
-use std::io::{self, ErrorKind};
+use std::io;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;
 
 use bindizr_core::config::{Config, DatabaseType};
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::time;
 
-use super::Report;
+use crate::cli::commands::doctor::Report;
 
 /// A database that does not answer must become a failed check, not a hang;
 /// longer than the daemon's probe budget since this connects from scratch.
@@ -39,9 +40,9 @@ pub(crate) async fn check_database(config: &Config, report: &mut Report) {
         }
     }
 
-    match tokio::time::timeout(DB_CHECK_TIMEOUT, bindizr_db::probe_connection(database)).await {
+    match time::timeout(DB_CHECK_TIMEOUT, bindizr_db::probe_connection(database)).await {
         Ok(Ok(())) => report.ok(format!("Database reachable: {}", database.database_type)),
-        Ok(Err(error)) => report.fail(format!("Database not reachable: {}", error)),
+        Ok(Err(error)) => report.fail(format!("Database not reachable: {error}")),
         Err(_) => report.fail(format!(
             "Database not reachable: timed out after {} seconds",
             DB_CHECK_TIMEOUT.as_secs()
@@ -51,38 +52,38 @@ pub(crate) async fn check_database(config: &Config, report: &mut Report) {
 
 /// Try binding the DNS and API listen addresses.
 pub(crate) async fn check_listen_ports(config: &Config, report: &mut Report) {
-    let dns = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
+    let dns_addr = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
 
     let bound = async {
-        let _tcp = TcpListener::bind(dns).await?;
-        let _udp = UdpSocket::bind(dns).await?;
+        let _tcp = TcpListener::bind(dns_addr).await?;
+        let _udp = UdpSocket::bind(dns_addr).await?;
         Ok::<(), io::Error>(())
     };
     check_port(
         report,
         "DNS",
-        dns,
+        dns_addr,
         bound.await,
         "BIND on this host? change dns.listen_port",
     );
 
     if config.dns.tls.tls_files().is_some() {
-        let dns_tls = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
+        let dns_tls_addr = SocketAddr::new(config.dns.listen_addr, config.dns.tls.listen_port);
 
-        let bound = TcpListener::bind(dns_tls).await.map(|_| ());
+        let bound = TcpListener::bind(dns_tls_addr).await.map(|_| ());
         check_port(
             report,
             "DNS TLS",
-            dns_tls,
+            dns_tls_addr,
             bound,
             "change dns.tls.listen_port",
         );
     }
 
-    let api = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
+    let api_addr = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
 
-    let bound = TcpListener::bind(api).await.map(|_| ());
-    check_port(report, "API", api, bound, "change api.listen_port");
+    let bound = TcpListener::bind(api_addr).await.map(|_| ());
+    check_port(report, "API", api_addr, bound, "change api.listen_port");
 }
 
 /// Check one listen address by its bind result; a taken port carries `in_use_hint`.
@@ -94,14 +95,13 @@ fn check_port(
     in_use_hint: &str,
 ) {
     match bound {
-        Ok(()) => report.ok(format!("{} port free: {}", label, addr)),
-        Err(error) if error.kind() == ErrorKind::AddrInUse => {
-            report.fail(format!("{} port in use: {} ({})", label, addr, in_use_hint))
+        Ok(()) => report.ok(format!("{label} port free: {addr}")),
+        Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+            report.fail(format!("{label} port in use: {addr} ({in_use_hint})"));
         }
-        Err(error) if error.kind() == ErrorKind::PermissionDenied => report.skip(format!(
-            "{} port check skipped: binding {} needs root",
-            label, addr
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => report.skip(format!(
+            "{label} port check skipped: binding {addr} needs root"
         )),
-        Err(error) => report.fail(format!("{} port not bindable: {} ({})", label, addr, error)),
+        Err(error) => report.fail(format!("{label} port not bindable: {addr} ({error})")),
     }
 }

@@ -1,8 +1,4 @@
-//! The Sqlite SQL, one module per entity; the crate root dispatches here.
-
-use sqlx::sqlite::SqliteQueryResult;
-
-use crate::error::DatabaseError;
+//! The SQLite SQL, one module per entity; the crate root dispatches here.
 
 pub(crate) mod api_token;
 pub(crate) mod audit_log;
@@ -22,11 +18,16 @@ pub(crate) mod zone;
 pub(crate) mod zone_change;
 pub(crate) mod zone_version;
 
-#[cfg(test)]
-mod tests;
+use sqlx::sqlite::SqliteQueryResult;
 
-/// The id SQLite assigned the inserted row, refused rather than truncated past `i32`.
+use crate::error::DatabaseError;
+
+/// Return the id SQLite assigned the inserted row, refused rather than
+/// truncated past `i32`.
 pub(crate) fn last_insert_id(result: &SqliteQueryResult) -> Result<i32, DatabaseError> {
     let id = result.last_insert_rowid();
     i32::try_from(id).map_err(|_| DatabaseError::IdOutOfRange { id })
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,15 +1,12 @@
 //! Unit tests of the DNS harness itself: the response parser the e2e assertions rely on.
 
-use std::str::FromStr;
-
-use domain::base::iana::{Class, Rcode};
-use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
+use domain::base::iana::Class;
+use domain::base::{Record, Ttl, UnknownRecordData};
 use domain::rdata::{A, Cname, Mx, Srv, Txt};
-use serde_json::{Value, json};
 
 use super::*;
 
-/// Verify that parse DNS response renders values in harness comparison format.
+/// Verify that `extract_dns_records` renders values in harness comparison format.
 #[test]
 fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let mut builder = MessageBuilder::new_vec();
@@ -59,7 +56,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
 
     for rdata in [
         b"\x00\x05issue".as_slice(),
-        b"\x80\x06custom\x00\xFF\x0A\"\\",
+        b"\x80\x06custom\x00\xff\x0a\"\\",
     ] {
         answer
             .push(Record::new(
@@ -84,7 +81,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
         ))
         .unwrap();
 
-    for bytes in [
+    for rdata in [
         b"".as_slice(),
         &[0, 255, 192, 12],
         &[192, 0, 2, 1, 6, 0x81, 0x80],
@@ -94,7 +91,7 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
                 &owner,
                 Class::IN,
                 ttl,
-                UnknownRecordData::from_octets(Rtype::from_int(65280), bytes).unwrap(),
+                UnknownRecordData::from_octets(Rtype::from_int(65280), rdata).unwrap(),
             ))
             .unwrap();
     }
@@ -102,22 +99,31 @@ fn extract_dns_records_renders_values_in_harness_comparison_format() {
     let records = extract_dns_records(7, &answer.finish()).unwrap();
     let values: Vec<(u16, Option<Value>)> = records
         .into_iter()
-        .map(|answer| (answer.record_type, answer.value))
+        .map(|record| (record.record_type, record.value))
         .collect();
 
     assert_eq!(
         values,
-        vec![
-            (1, Some(json!("192.0.2.1"))),
-            (15, Some(json!("5 mail.example.com."))),
-            (33, Some(json!("1 2 8080 mail.example.com."))),
-            (16, Some(json!("hello"))),
-            (16, Some(json!(["ab", "c"]))),
-            (257, Some(json!(r#"0 issue """#))),
-            (257, Some(json!(r#"128 custom "\000\255\010\"\\""#))),
-            (5, Some(json!(r"a\046b.\255.caf\195\169.\;meta.example."))),
+        [
+            (Rtype::A.to_int(), Some(json!("192.0.2.1"))),
+            (Rtype::MX.to_int(), Some(json!("5 mail.example.com."))),
             (
-                16,
+                Rtype::SRV.to_int(),
+                Some(json!("1 2 8080 mail.example.com."))
+            ),
+            (Rtype::TXT.to_int(), Some(json!("hello"))),
+            (Rtype::TXT.to_int(), Some(json!(["ab", "c"]))),
+            (Rtype::CAA.to_int(), Some(json!(r#"0 issue """#))),
+            (
+                Rtype::CAA.to_int(),
+                Some(json!(r#"128 custom "\000\255\010\"\\""#))
+            ),
+            (
+                Rtype::CNAME.to_int(),
+                Some(json!(r"a\046b.\255.caf\195\169.\;meta.example."))
+            ),
+            (
+                Rtype::TXT.to_int(),
                 Some(json!({ "presentation": r#""\000\255" "\195" "\169" """# }))
             ),
             (65280, Some(json!(r"\# 0"))),
@@ -147,7 +153,7 @@ fn build_wks_response(rdata: Vec<u8>) -> Vec<u8> {
     answer.finish()
 }
 
-/// WKS values match the API's numeric fields, including bitmap boundaries and empty services.
+/// Verify that WKS values match the API's numeric fields, including bitmap boundaries and empty services.
 #[test]
 fn extract_dns_records_decodes_wks_service_bitmaps() {
     // The captured BIND response advertises ports 22, 80, and 443.
@@ -175,7 +181,7 @@ fn extract_dns_records_decodes_wks_service_bitmaps() {
     }
 }
 
-/// Incomplete fixed fields and service bits beyond port 65535 fail response decoding.
+/// Verify that incomplete fixed fields and service bits beyond port 65535 fail response decoding.
 #[test]
 fn extract_dns_records_rejects_invalid_wks_rdata() {
     for length in [0, 1, 2, 3, 4, 8198] {

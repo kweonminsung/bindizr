@@ -6,12 +6,14 @@ use bindizr_core::config::Config;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::MessageResponse;
 use bindizr_service::{Context, secondary, zone};
+use tokio::time;
 
+use crate::daemon;
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 use crate::socket::server::SocketContext;
 use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
-/// Return the daemon's current status as JSON.
+/// Get the daemon's current status as JSON.
 pub(crate) async fn get_daemon_status(
     cx: &Context,
 ) -> Result<DaemonResponse<DaemonStatusResponse>, ServiceError> {
@@ -19,35 +21,35 @@ pub(crate) async fn get_daemon_status(
 
     let counts = async {
         let zones = zone::count_all(cx).await?;
-        let secondaries = secondary::list_enabled(cx).await?.len();
+        let secondaries = secondary::list_enabled(cx).await?.len() as u64;
         Ok::<_, ServiceError>((zones, secondaries))
     };
-    let (zones, secondaries, database_error) =
-        match tokio::time::timeout(DB_PROBE_TIMEOUT, counts).await {
-            Ok(Ok((zones, secondaries))) => (Some(zones), Some(secondaries), None),
-            Ok(Err(error)) => (None, None, Some(error.to_string())),
-            Err(_) => (
-                None,
-                None,
-                Some(format!(
-                    "timed out after {} seconds",
-                    DB_PROBE_TIMEOUT.as_secs()
-                )),
-            ),
-        };
+    let (zones, secondaries, database_error) = match time::timeout(DB_PROBE_TIMEOUT, counts).await {
+        Ok(Ok((zones, secondaries))) => (Some(zones), Some(secondaries), None),
+        Ok(Err(error)) => (None, None, Some(error.to_string())),
+        Err(_) => (
+            None,
+            None,
+            Some(format!(
+                "timed out after {} seconds",
+                DB_PROBE_TIMEOUT.as_secs()
+            )),
+        ),
+    };
 
     let scheme = if config.api.tls.tls_files().is_some() {
         "https"
     } else {
         "http"
     };
-    let status = DaemonStatusResponse {
+    let response = DaemonStatusResponse {
         pid: Some(process::id()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        started_at_ms: cx.started_at().map_or(0, |at| at.timestamp_millis() as u64),
+        started_at_ms: cx
+            .started_at()
+            .map_or(0, |at| u64::try_from(at.timestamp_millis()).unwrap_or(0)),
         api_url: format!(
-            "{}://{}",
-            scheme,
+            "{scheme}://{}",
             SocketAddr::new(config.api.listen_addr, config.api.listen_port)
         ),
         api_authentication: config.api.authentication_required,
@@ -63,7 +65,7 @@ pub(crate) async fn get_daemon_status(
 
     Ok(DaemonResponse {
         message: "Status retrieved successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
@@ -71,7 +73,7 @@ pub(crate) async fn get_daemon_status(
 pub(crate) fn reload_config(
     socket_cx: &SocketContext,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    let changed = crate::daemon::reload_config(socket_cx.daemon(), socket_cx.tls())?;
+    let changed = daemon::reload_config(socket_cx.daemon(), socket_cx.tls())?;
 
     let message = if changed.is_empty() {
         "Configuration reloaded; nothing changed".to_string()
@@ -86,7 +88,7 @@ pub(crate) fn reload_config(
     })
 }
 
-/// Return the daemon's effective configuration.
+/// Get the daemon's effective configuration.
 pub(crate) fn get_config(cx: &Context) -> DaemonResponse<Arc<Config>> {
     DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),

@@ -59,11 +59,8 @@ pub(crate) async fn list_external_dns_domains(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let domains = external_dns::list_managed_domains(&cx, &caller).await?;
-    Ok((
-        StatusCode::OK,
-        Json(ListExternalDnsDomainsResponse { domains }),
-    )
-        .into_response())
+    let response = ListExternalDnsDomainsResponse { domains };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// List the records of all zones the ExternalDNS caller may manage.
@@ -84,11 +81,8 @@ pub(crate) async fn list_external_dns_records(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let records = external_dns::list_records(&cx, &caller).await?;
-    Ok((
-        StatusCode::OK,
-        Json(ListExternalDnsRecordsResponse { records }),
-    )
-        .into_response())
+    let response = ListExternalDnsRecordsResponse { records };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Canonicalize desired records for the ExternalDNS adapter's adjust step.

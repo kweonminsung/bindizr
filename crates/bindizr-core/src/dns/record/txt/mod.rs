@@ -1,5 +1,7 @@
-use super::ParseRecordValueError;
-use super::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
+use std::str;
+
+use crate::dns::record::ParseRecordValueError;
+use crate::dns::record::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
 
 /// The content of a TXT value: a single string or multiple character-strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +36,7 @@ impl TxtRecordValue {
         if rdata.is_empty() || char_strings(rdata).is_none() {
             return Err(ParseRecordValueError::TxtRdata);
         }
+
         Ok(Self(rdata.to_vec()))
     }
 
@@ -56,13 +59,12 @@ impl TxtRecordValue {
         for bytes in segments {
             has_segments = true;
 
-            if bytes.len() > MAX_CHARACTER_STRING_LEN {
-                return Err(ParseRecordValueError::CharStringTooLong {
+            let len = u8::try_from(bytes.len()).map_err(|_| {
+                ParseRecordValueError::CharStringTooLong {
                     field: "TXT character-string",
-                });
-            }
-
-            rdata.push(bytes.len() as u8);
+                }
+            })?;
+            rdata.push(len);
             rdata.extend_from_slice(bytes);
         }
 
@@ -80,13 +82,13 @@ impl TxtRecordValue {
         let mut chunk_start = 0usize;
         let mut chunk_len = 0usize;
 
-        for (idx, ch) in value.char_indices() {
+        for (index, ch) in value.char_indices() {
             let char_len = ch.len_utf8();
 
             if chunk_len + char_len > MAX_CHARACTER_STRING_LEN {
                 rdata.push(chunk_len as u8);
-                rdata.extend_from_slice(&value.as_bytes()[chunk_start..idx]);
-                chunk_start = idx;
+                rdata.extend_from_slice(&value.as_bytes()[chunk_start..index]);
+                chunk_start = index;
                 chunk_len = 0;
             }
 
@@ -99,8 +101,8 @@ impl TxtRecordValue {
         Self(rdata)
     }
 
-    /// Bounded so the record fits one transfer message; enforced here so a
-    /// stored row cannot poison an AXFR.
+    /// Validate the length bound that lets the record fit one transfer message;
+    /// enforced here so a stored row cannot poison an AXFR.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         if self.0.len() > MAX_RECORD_RDATA {
             return Err(ParseRecordValueError::TxtTooLong {
@@ -112,10 +114,10 @@ impl TxtRecordValue {
         Ok(())
     }
 
-    /// Strict row-form parse: space-separated quoted character-strings only;
-    /// `None` if the value is not in that form.
-    pub fn from_presentation(stored: &str) -> Option<Self> {
-        let segments = parse_quoted_segments(stored.trim()).ok()?;
+    /// Parse the row form strictly: space-separated quoted character-strings
+    /// only; `None` if the value is not in that form.
+    pub fn from_presentation(value: &str) -> Option<Self> {
+        let segments = parse_quoted_segments(value.trim()).ok()?;
         Self::from_octet_segments(segments.iter().map(Vec::as_slice)).ok()
     }
 
@@ -129,7 +131,7 @@ impl TxtRecordValue {
         let mut segments = Vec::new();
 
         for chunk in char_strings(&self.0)? {
-            segments.push(std::str::from_utf8(chunk).ok()?.to_string());
+            segments.push(str::from_utf8(chunk).ok()?.to_string());
         }
 
         match segments.as_slice() {
@@ -138,8 +140,8 @@ impl TxtRecordValue {
         }
     }
 
-    /// The row form: each character-string quoted, space-separated, escaped
-    /// per RFC 1035, Section 5.1; canonical, so rows compare as text.
+    /// Render the row form: each character-string quoted, space-separated,
+    /// escaped per RFC 1035, Section 5.1; canonical, so rows compare as text.
     pub fn to_presentation(&self) -> String {
         // Every constructor validated the chain, so the walk cannot fail.
         let chunks = char_strings(&self.0).expect("TXT RDATA validated at construction");
@@ -185,13 +187,10 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                             + u16::from(tens - b'0') * 10
                             + u16::from(ones - b'0');
 
-                        if code > u16::from(u8::MAX) {
-                            return Err(ParseRecordValueError::InvalidEscape {
-                                field: "TXT value",
-                            });
-                        }
-
-                        segment.push(code as u8);
+                        let byte = u8::try_from(code).map_err(|_| {
+                            ParseRecordValueError::InvalidEscape { field: "TXT value" }
+                        })?;
+                        segment.push(byte);
                     }
                     Some(escaped) => segment.push(escaped),
                     None => return Err(ParseRecordValueError::TxtDanglingEscape),
@@ -211,7 +210,6 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
 
         // Require spaces between quoted strings while preserving each wire segment.
         match bytes.next() {
-            None => break,
             Some(b' ') => {
                 while bytes.peek() == Some(&b' ') {
                     bytes.next();
@@ -220,9 +218,8 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<Vec<u8>>, ParseRecordValue
                     break;
                 }
             }
-            Some(_) => {
-                return Err(ParseRecordValueError::TxtUnseparated);
-            }
+            Some(_) => return Err(ParseRecordValueError::TxtUnseparated),
+            None => break,
         }
     }
 
@@ -251,14 +248,14 @@ fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
 /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
 /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
 pub fn to_quoted_charstr(bytes: &[u8]) -> String {
-    let mut text = String::from("\"");
+    let mut text = "\"".to_string();
 
     for &byte in bytes {
         match byte {
             b'"' => text.push_str("\\\""),
             b'\\' => text.push_str("\\\\"),
-            0x20..=0x7e => text.push(byte as char),
-            _ => text.push_str(&format!("\\{:03}", byte)),
+            0x20..=0x7e => text.push(char::from(byte)),
+            _ => text.push_str(&format!("\\{byte:03}")),
         }
     }
 

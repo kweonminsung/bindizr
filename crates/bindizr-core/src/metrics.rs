@@ -1,6 +1,7 @@
 //! The daemon's Prometheus registry, held by its `Context` and shared by the
 //! HTTP API and DNS layers.
 
+use domain::base::iana::{Rcode, Rtype};
 use prometheus::core::Collector;
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
@@ -8,12 +9,12 @@ use prometheus::{
 };
 use thiserror::Error;
 
-use crate::dns::message::{Rcode, Rtype};
 use crate::model::transfer::TransferTransport;
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 
+/// The daemon's registered collectors, one set per process.
 #[derive(Debug)]
 pub struct Metrics {
     registry: Registry,
@@ -303,7 +304,6 @@ impl Metrics {
 
         Ok(Self {
             registry,
-            started_at_seconds,
             database_up,
             db_connections,
             db_connections_max,
@@ -325,6 +325,7 @@ impl Metrics {
             zone_cache_lookups_total,
             zone_cache_evictions_total,
             zone_cache_records,
+            started_at_seconds,
         })
     }
 
@@ -336,6 +337,7 @@ impl Metrics {
     }
 }
 
+/// How a zone transfer request ended, as the transfer counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XfrResult {
     Ok,
@@ -356,8 +358,8 @@ impl XfrResult {
         Self::Failed,
     ];
 
-    /// The metric label value of this xfr result.
-    fn label(&self) -> &'static str {
+    /// Return the metric label value of this xfr result.
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -368,6 +370,7 @@ impl XfrResult {
     }
 }
 
+/// How an SOA query ended, as the SOA counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoaResult {
     Ok,
@@ -379,8 +382,8 @@ pub enum SoaResult {
 impl SoaResult {
     const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
 
-    /// The metric label value of this SOA result.
-    fn label(&self) -> &'static str {
+    /// Return the metric label value of this SOA result.
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -390,6 +393,7 @@ impl SoaResult {
     }
 }
 
+/// How an UPDATE request ended, as the nsupdate counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NsupdateResult {
     /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
@@ -416,11 +420,10 @@ impl NsupdateResult {
         Self::Rcode(Rcode::NOTIMP),
     ];
 
-    /// The metric label value of this nsupdate result.
-    fn label(&self) -> &'static str {
-        let rcode = match self {
-            Self::TsigFailed => return "tsig_failed",
-            Self::Rcode(rcode) => *rcode,
+    /// Return the metric label value of this nsupdate result.
+    fn label(self) -> &'static str {
+        let Self::Rcode(rcode) = self else {
+            return "tsig_failed";
         };
 
         match rcode {
@@ -439,6 +442,7 @@ impl NsupdateResult {
     }
 }
 
+/// How an outbound NOTIFY ended, as the NOTIFY counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyResult {
     Ok,
@@ -451,8 +455,8 @@ pub enum NotifyResult {
 impl NotifyResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::ResolveFailed];
 
-    /// The metric label value of this notify result.
-    fn label(&self) -> &'static str {
+    /// Return the metric label value of this notify result.
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Failed => "failed",
@@ -461,6 +465,7 @@ impl NotifyResult {
     }
 }
 
+/// How a scheduler pass ended, as the scheduler counter labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerResult {
     Ok,
@@ -472,8 +477,8 @@ pub enum SchedulerResult {
 impl SchedulerResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panicked];
 
-    /// The metric label value of this scheduler result.
-    fn label(&self) -> &'static str {
+    /// Return the metric label value of this scheduler result.
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Failed => "failed",
@@ -483,7 +488,7 @@ impl SchedulerResult {
 }
 
 impl Metrics {
-    /// A zone transfer's outcome by query type and transport; a non-transfer
+    /// Count a zone transfer's outcome by query type and transport; a non-transfer
     /// type is not counted, so the caller passes what it was asked for.
     pub fn track_xfr(&self, qtype: Rtype, transport: TransferTransport, result: XfrResult) {
         let xfr_type = match qtype {
@@ -496,22 +501,22 @@ impl Metrics {
             .inc();
     }
 
-    /// Secondaries poll SOA on their refresh timer, so this is the question
-    /// bindizr answers most; the result says whether they are getting a serial.
+    /// Count an SOA answer: secondaries poll SOA on their refresh timer, so this is
+    /// the question bindizr answers most; the result says whether they are getting a serial.
     pub fn track_soa(&self, result: SoaResult) {
         self.soa_queries_total
             .with_label_values(&[result.label()])
             .inc();
     }
 
-    /// Increment the counter for an nsupdate result.
+    /// Count an nsupdate result.
     pub fn track_nsupdate(&self, result: NsupdateResult) {
         self.nsupdate_requests_total
             .with_label_values(&[result.label()])
             .inc();
     }
 
-    /// Track a NOTIFY send result.
+    /// Count a NOTIFY send result.
     pub fn track_notify(&self, result: NotifyResult) {
         self.notify_sent_total
             .with_label_values(&[result.label()])
@@ -548,14 +553,14 @@ impl Metrics {
         self.zone_serial_bumps_total.inc_by(count);
     }
 
-    /// Increment the counter for a DNSSEC scheduler pass result.
+    /// Count a DNSSEC scheduler pass result.
     pub fn track_dnssec_scheduler(&self, result: SchedulerResult) {
         self.dnssec_scheduler_runs_total
             .with_label_values(&[result.label()])
             .inc();
     }
 
-    /// The pool's occupancy at scrape time.
+    /// Set the pool's occupancy at scrape time.
     pub fn set_db_pool_gauges(&self, connections: u32, idle: u32, max: u32) {
         self.db_connections
             .with_label_values(&["idle"])
@@ -566,7 +571,7 @@ impl Metrics {
         self.db_connections_max.set(i64::from(max));
     }
 
-    /// Record a zone-cache hit or miss.
+    /// Count a zone-cache hit or miss.
     pub fn track_zone_cache_lookup(&self, hit: bool) {
         self.zone_cache_lookups_total
             .with_label_values(&[if hit {
@@ -577,7 +582,7 @@ impl Metrics {
             .inc();
     }
 
-    /// What the cache holds after a store, and what it dropped to fit.
+    /// Count what the cache dropped to fit after a store, and set what it now holds.
     pub fn track_zone_cache_store(&self, records: usize, evicted: usize) {
         self.zone_cache_records.set(records as i64);
         self.zone_cache_evictions_total.inc_by(evicted as u64);

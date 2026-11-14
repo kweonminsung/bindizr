@@ -1,10 +1,20 @@
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use bindizr_core::dns::message::{Name, OptRcode};
-use bindizr_core::dns::query;
-use bindizr_core::dns::tsig::TsigSigningKey;
+use base64::Engine;
+use base64::engine::general_purpose;
+use bindizr_core::dns::message::{Class, Edns, Keepalive, Name, OptRcode, ParsedQuery, Rtype};
+use bindizr_core::dns::tsig::{TransferSigner, TsigSigningKey};
+use bindizr_core::dns::{query, tsig};
+use bindizr_core::model::role::RoleId;
+use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
+use chrono::Utc;
+use ring::hmac;
+use tokio::net::UdpSocket;
+use tokio::time;
 
 use super::*;
 
@@ -15,24 +25,19 @@ async fn send_notify_to_server(
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
-    tsig_key: Option<&TsigSigningKey>,
+    key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     client
-        .start(qname, server_addr, timeout, retries, tsig_key)
+        .send(qname, server_addr, timeout, retries, key)
         .await?
         .wait()
         .await
 }
 
-/// Only oversized signed queries need EDNS; their signature includes the OPT.
+/// Verify that only oversized signed queries need EDNS and that their signature includes
+/// the OPT.
 #[tokio::test]
 async fn signed_notify_advertises_edns_for_long_names() {
-    use base64::Engine;
-    use bindizr_core::dns::message::{Edns, Keepalive, ParsedQuery};
-    use bindizr_core::dns::tsig;
-    use bindizr_core::dns::tsig::TransferSigner;
-    use bindizr_core::model::role::RoleId;
-    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
     let long_name = |label: &str| {
         format!(
             "{}.{}.{}.{}",
@@ -53,7 +58,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
             let qname = Name::<Vec<u8>>::from_str(&if long {
                 long_name("z")
             } else {
-                "example.com".into()
+                "example.com".to_string()
             })
             .unwrap();
             let key = TsigKey {
@@ -61,17 +66,17 @@ async fn signed_notify_advertises_edns_for_long_names() {
                 name: if long {
                     long_name("k")
                 } else {
-                    "notify-key".into()
+                    "notify-key".to_string()
                 },
                 algorithm,
-                secret: base64::engine::general_purpose::STANDARD.encode([1u8; 64]),
+                secret: general_purpose::STANDARD.encode([1u8; 64]),
                 role_id: RoleId::from(1),
-                created_at: chrono::Utc::now(),
+                created_at: Utc::now(),
             }
             .to_signing_key()
             .unwrap();
 
-            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr = socket.local_addr().unwrap();
             let server_key = key.clone();
 
@@ -120,7 +125,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
     }
 }
 
-/// A NOTIFY response with `flags`, echoing a SOA question for `qname`.
+/// Build a NOTIFY response with `flags`, echoing a SOA question for `qname`.
 fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     let mut response = Vec::new();
     response.extend_from_slice(&query_id.to_be_bytes());
@@ -130,34 +135,33 @@ fn build_notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     response.extend_from_slice(&0u16.to_be_bytes());
     response.extend_from_slice(&0u16.to_be_bytes());
     crate::dns_client::ds::tests::encode_name(qname, &mut response);
-    response.extend_from_slice(&6u16.to_be_bytes());
-    response.extend_from_slice(&1u16.to_be_bytes());
+    response.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    response.extend_from_slice(&Class::IN.to_int().to_be_bytes());
 
     response
 }
 
 /// Return the test zone's wire name.
-fn zone() -> Name<Vec<u8>> {
+fn qname() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
 }
 
-/// Many silent zones share a socket; wrong or old ACKs cannot finish a different request.
+/// Verify that many silent zones share a socket and that wrong or old ACKs cannot finish a
+/// different request.
 #[tokio::test]
 async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies() {
-    use std::collections::HashSet;
-
     let client = NotifyClient::default();
 
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = socket.local_addr().unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
     let mut handles = Vec::new();
 
     for index in 0..64 {
-        let name = Name::from_str(&format!("zone-{index}.example")).unwrap();
+        let qname = Name::from_str(&format!("zone-{index}.example")).unwrap();
 
         handles.push(
             client
-                .start(&name, address, Duration::from_secs(3), 0, None)
+                .send(&qname, addr, Duration::from_secs(3), 0, None)
                 .await
                 .unwrap(),
         );
@@ -169,11 +173,10 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     let mut buffer = [0; 4096];
 
     for _ in 0..64 {
-        let (len, peer) =
-            tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-                .await
-                .unwrap()
-                .unwrap();
+        let (len, peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+            .await
+            .unwrap()
+            .unwrap();
 
         assert!(ids.insert(u16::from_be_bytes([buffer[0], buffer[1]])));
         peers.insert(peer);
@@ -192,17 +195,9 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     }
 
     for (request, peer) in requests.iter().rev() {
-        let query = bindizr_core::dns::message::ParsedQuery::parse(
-            request,
-            bindizr_core::dns::message::Keepalive::None,
-        )
-        .unwrap();
+        let query = ParsedQuery::parse(request, Keepalive::None).unwrap();
         let response = query
-            .build_signed_error_response(
-                bindizr_core::dns::message::Rcode::NOERROR.into(),
-                None,
-                None,
-            )
+            .build_signed_error_response(OptRcode::NOERROR, None, None)
             .unwrap();
 
         socket.send_to(&response, peer).await.unwrap();
@@ -214,16 +209,16 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     }
 }
 
-/// Retries retain the bytes and socket while a later zone completes independently.
+/// Verify that retries retain the bytes and socket while a later zone completes independently.
 #[tokio::test]
 async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() {
     let client = NotifyClient::default();
 
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = socket.local_addr().unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
 
     let first = client
-        .start(&zone(), address, Duration::from_millis(80), 1, None)
+        .send(&qname(), addr, Duration::from_millis(80), 1, None)
         .await
         .unwrap();
 
@@ -234,54 +229,37 @@ async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() 
     let other = Name::from_str("other.example").unwrap();
 
     let second = client
-        .start(&other, address, Duration::from_secs(1), 0, None)
+        .send(&other, addr, Duration::from_secs(1), 0, None)
         .await
         .unwrap();
     let (len, second_peer) = socket.recv_from(&mut buffer).await.unwrap();
 
     assert_eq!(peer, second_peer);
-    let query = bindizr_core::dns::message::ParsedQuery::parse(
-        &buffer[..len],
-        bindizr_core::dns::message::Keepalive::None,
-    )
-    .unwrap();
+    let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
 
     socket
         .send_to(
             &query
-                .build_signed_error_response(
-                    bindizr_core::dns::message::Rcode::NOERROR.into(),
-                    None,
-                    None,
-                )
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
                 .unwrap(),
             peer,
         )
         .await
         .unwrap();
     second.wait().await.unwrap();
-    let (len, retry_peer) =
-        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-            .await
-            .unwrap()
-            .unwrap();
+    let (len, retry_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(&buffer[..len], &request);
     assert_eq!(peer, retry_peer);
-    let query = bindizr_core::dns::message::ParsedQuery::parse(
-        &request,
-        bindizr_core::dns::message::Keepalive::None,
-    )
-    .unwrap();
+    let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
 
     socket
         .send_to(
             &query
-                .build_signed_error_response(
-                    bindizr_core::dns::message::Rcode::NOERROR.into(),
-                    None,
-                    None,
-                )
+                .build_signed_error_response(OptRcode::NOERROR, None, None)
                 .unwrap(),
             peer,
         )
@@ -292,7 +270,6 @@ async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() 
 
 /// Encode an independent HMAC-SHA256 acknowledgement.
 fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u8> {
-    use ring::hmac;
     let id = u16::from_be_bytes([request[0], request[1]]);
     let mut response = build_notify_response(
         id,
@@ -307,8 +284,8 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     crate::dns_client::ds::tests::encode_name("notify-key", &mut owner);
     let mut algorithm = Vec::new();
     crate::dns_client::ds::tests::encode_name("hmac-sha256", &mut algorithm);
-    let seconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
     let time = &seconds.to_be_bytes()[2..];
@@ -350,34 +327,30 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     response
 }
 
-/// Ignore untrusted replies; accept valid ACKs or authenticated errors.
+/// Verify that untrusted replies are ignored and valid ACKs or authenticated errors
+/// accepted.
 #[tokio::test]
 async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
-    use base64::Engine;
-    use bindizr_core::model::role::RoleId;
-    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
-    use tokio::net::UdpSocket;
     let key = TsigKey {
         id: TsigKeyId::from(1),
-        name: "notify-key".into(),
+        name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
-        secret: base64::engine::general_purpose::STANDARD
-            .encode(b"notify-test-secret-at-least-32-bytes"),
+        secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
-        created_at: chrono::Utc::now(),
+        created_at: Utc::now(),
     }
     .to_signing_key()
     .unwrap();
 
     for noise in ["bad-mac", "unsigned", "notauth", "badtime", "badtrunc"] {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let address = socket.local_addr().unwrap();
+        let addr = socket.local_addr().unwrap();
 
         let server = tokio::spawn(async move {
-            let mut request = [0; 4096];
+            let mut buffer = [0; 4096];
 
-            let (len, peer) = socket.recv_from(&mut request).await.unwrap();
-            let request = &request[..len];
+            let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+            let request = &buffer[..len];
             let response = build_signed_notify_response(
                 request,
                 match noise {
@@ -406,15 +379,15 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
             };
 
             socket.send_to(&invalid, peer).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            time::sleep(Duration::from_millis(20)).await;
             socket.send_to(&response, peer).await.unwrap();
         });
-        let result = tokio::time::timeout(
+        let result = time::timeout(
             Duration::from_millis(500),
             send_notify_to_server(
                 &NotifyClient::default(),
-                &zone(),
-                address,
+                &qname(),
+                addr,
                 Duration::from_secs(1),
                 0,
                 Some(&key),
@@ -435,15 +408,10 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
     }
 }
 
-/// Any matching reply ends the transaction after one attempt (RFC 1996,
-/// Sections 3.6 and 4.8); only silence retains the configured retries.
+/// Verify that any matching reply ends the transaction after one attempt (RFC 1996,
+/// Sections 3.6 and 4.8) and that only silence retains the configured retries.
 #[tokio::test]
 async fn notify_completes_on_any_reply_and_retries_silence() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use tokio::net::UdpSocket;
-
     for (rcode, attempts, ok) in [
         (Some(0), 1, true),
         (Some(4), 1, true),
@@ -451,20 +419,20 @@ async fn notify_completes_on_any_reply_and_retries_silence() {
         (None, 3, false),
     ] {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let address = socket.local_addr().unwrap();
+        let addr = socket.local_addr().unwrap();
         let count = Arc::new(AtomicUsize::new(0));
         let received = count.clone();
 
         let server = tokio::spawn(async move {
-            let mut request = [0; 4096];
+            let mut buffer = [0; 4096];
 
             loop {
-                let (_, peer) = socket.recv_from(&mut request).await.unwrap();
+                let (_, peer) = socket.recv_from(&mut buffer).await.unwrap();
 
                 received.fetch_add(1, Ordering::SeqCst);
 
                 if let Some(code) = rcode {
-                    let id = u16::from_be_bytes([request[0], request[1]]);
+                    let id = u16::from_be_bytes([buffer[0], buffer[1]]);
 
                     socket
                         .send_to(
@@ -478,8 +446,8 @@ async fn notify_completes_on_any_reply_and_retries_silence() {
         });
         let result = send_notify_to_server(
             &NotifyClient::default(),
-            &zone(),
-            address,
+            &qname(),
+            addr,
             Duration::from_millis(50),
             2,
             None,
@@ -493,47 +461,38 @@ async fn notify_completes_on_any_reply_and_retries_silence() {
     }
 }
 
-/// Only a valid signature can make NOTIMP complete a signed transaction.
+/// Verify that only a valid signature can make NOTIMP complete a signed transaction.
 #[tokio::test]
 async fn signed_notify_requires_authenticated_notimp_before_completing() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use base64::Engine;
-    use bindizr_core::model::role::RoleId;
-    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
-    use tokio::net::UdpSocket;
-
     let key = TsigKey {
         id: TsigKeyId::from(1),
-        name: "notify-key".into(),
+        name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
-        secret: base64::engine::general_purpose::STANDARD
-            .encode(b"notify-test-secret-at-least-32-bytes"),
+        secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
-        created_at: chrono::Utc::now(),
+        created_at: Utc::now(),
     }
     .to_signing_key()
     .unwrap();
 
     for (mode, expected) in [("valid", 1), ("unsigned", 3), ("bad-mac", 3)] {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let address = socket.local_addr().unwrap();
+        let addr = socket.local_addr().unwrap();
         let count = Arc::new(AtomicUsize::new(0));
         let received = count.clone();
 
         let server = tokio::spawn(async move {
-            let mut request = [0; 4096];
+            let mut buffer = [0; 4096];
 
             loop {
-                let (len, peer) = socket.recv_from(&mut request).await.unwrap();
+                let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
 
                 received.fetch_add(1, Ordering::SeqCst);
-                let mut response = build_signed_notify_response(&request[..len], 0, 4);
+                let mut response = build_signed_notify_response(&buffer[..len], 0, 4);
 
                 match mode {
                     "unsigned" => {
-                        let id = u16::from_be_bytes([request[0], request[1]]);
+                        let id = u16::from_be_bytes([buffer[0], buffer[1]]);
                         response = build_notify_response(id, 0xa004, "example.com");
                     }
                     "bad-mac" => {
@@ -548,8 +507,8 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
         });
         let result = send_notify_to_server(
             &NotifyClient::default(),
-            &zone(),
-            address,
+            &qname(),
+            addr,
             Duration::from_millis(50),
             2,
             Some(&key),
@@ -563,48 +522,43 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
     }
 }
 
-/// Unsigned replies cannot extend the NOTIFY deadline.
+/// Verify that unsigned replies cannot extend the NOTIFY deadline.
 #[tokio::test]
 async fn signed_notify_times_out_under_unsigned_response_flood() {
-    use base64::Engine;
-    use bindizr_core::model::role::RoleId;
-    use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
-    use tokio::net::UdpSocket;
     let key = TsigKey {
         id: TsigKeyId::from(1),
-        name: "notify-key".into(),
+        name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
-        secret: base64::engine::general_purpose::STANDARD
-            .encode(b"notify-test-secret-at-least-32-bytes"),
+        secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
-        created_at: chrono::Utc::now(),
+        created_at: Utc::now(),
     }
     .to_signing_key()
     .unwrap();
 
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = socket.local_addr().unwrap();
+    let addr = socket.local_addr().unwrap();
 
     let server = tokio::spawn(async move {
-        let mut request = [0; 4096];
+        let mut buffer = [0; 4096];
 
-        let (len, peer) = socket.recv_from(&mut request).await.unwrap();
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
 
         assert!(len > 12);
-        let id = u16::from_be_bytes([request[0], request[1]]);
+        let id = u16::from_be_bytes([buffer[0], buffer[1]]);
         let response = build_notify_response(id, 0xa000, "example.com");
 
         loop {
             socket.send_to(&response, peer).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            time::sleep(Duration::from_millis(5)).await;
         }
     });
-    let result = tokio::time::timeout(
+    let result = time::timeout(
         Duration::from_secs(1),
         send_notify_to_server(
             &NotifyClient::default(),
-            &zone(),
-            address,
+            &qname(),
+            addr,
             Duration::from_millis(80),
             0,
             Some(&key),
@@ -629,7 +583,7 @@ fn validate_notify_response_accepts_matching_noerror_response() {
     // 0xa000 = QR set + opcode NOTIFY, NOERROR.
     let response = build_notify_response(1234, 0xa000, "example.com");
 
-    assert!(query::validate_notify_response(1234, &zone(), &response).is_ok());
+    assert!(query::validate_notify_response(1234, &qname(), &response).is_ok());
 }
 
 /// Verify that `validate_notify_response` rejects id mismatch.
@@ -637,7 +591,7 @@ fn validate_notify_response_accepts_matching_noerror_response() {
 fn validate_notify_response_rejects_id_mismatch() {
     let response = build_notify_response(1234, 0xa000, "example.com");
 
-    let error = query::validate_notify_response(5678, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(5678, &qname(), &response).unwrap_err();
 
     assert!(error.to_string().contains("ID mismatch"));
 }
@@ -648,7 +602,7 @@ fn validate_notify_response_rejects_error_rcode() {
     // 0xa005 adds RCODE 5 (REFUSED).
     let response = build_notify_response(1234, 0xa005, "example.com");
 
-    let error = query::validate_notify_response(1234, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
 
     assert!(error.to_string().contains("RCODE 5"));
 }
@@ -663,7 +617,7 @@ fn validate_notify_response_reports_rcode_without_question() {
     response.truncate(12);
     response[4..6].copy_from_slice(&0u16.to_be_bytes());
 
-    let error = query::validate_notify_response(1234, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
 
     assert!(error.to_string().contains("RCODE 9"), "{error}");
 }
@@ -673,7 +627,7 @@ fn validate_notify_response_reports_rcode_without_question() {
 fn validate_notify_response_rejects_another_question() {
     let response = build_notify_response(1234, 0xa000, "other.com");
 
-    let error = query::validate_notify_response(1234, &zone(), &response).unwrap_err();
+    let error = query::validate_notify_response(1234, &qname(), &response).unwrap_err();
 
     assert!(error.to_string().contains("another question"), "{error}");
 }

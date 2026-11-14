@@ -1,39 +1,41 @@
 //! The wire RDATA a key implies: DNSKEY and its DS digests.
 
-use base64::Engine;
+use base64::engine::general_purpose;
+use base64::{DecodeError, Engine};
 use domain::base::iana::SecurityAlgorithm;
+use domain::rdata::Dnskey;
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
 
-use super::WireName;
 use crate::dns::LibraryError;
+use crate::dns::dnssec::WireName;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::model::dnssec_key::DnssecKey;
-
-/// A stored key whose RDATA could not be rebuilt.
-#[derive(Debug, Error)]
-pub enum EncodeKeyRdataError {
-    #[error("stored public key is not base64: {0}")]
-    PublicKeyNotBase64(#[source] base64::DecodeError),
-    #[error("stored public key is invalid: {0}")]
-    InvalidPublicKey(#[source] LibraryError),
-    #[error("unsupported DS digest type {0}")]
-    UnsupportedDigestType(u8),
-    #[error(transparent)]
-    Rdata(#[from] EncodeRdataError),
-}
 
 /// Supported DS digests: SHA-1 only matches existing parent DS records (RFC 9905,
 /// Section 5); new DS/CDS use `DS_DIGEST_TYPE`, SHA-256 (RFC 9904, Section 4).
 pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 
+/// A stored key whose RDATA could not be rebuilt.
+#[derive(Debug, Error)]
+pub enum EncodeKeyRdataError {
+    #[error("stored public key is not base64: {0}")]
+    PublicKeyNotBase64(#[source] DecodeError),
+    #[error("stored public key is invalid: {0}")]
+    InvalidPublicKey(#[source] LibraryError),
+    #[error("unsupported DS digest type {digest_type}")]
+    UnsupportedDigestType { digest_type: u8 },
+    #[error(transparent)]
+    Rdata(#[from] EncodeRdataError),
+}
+
 impl DnssecKey {
-    /// The key's DNSKEY RDATA rebuilt from its stored public half.
-    pub(crate) fn to_dnskey(&self) -> Result<domain::rdata::Dnskey<Vec<u8>>, EncodeKeyRdataError> {
-        let public_key = base64::engine::general_purpose::STANDARD
+    /// Rebuild the key's DNSKEY RDATA from its stored public half.
+    pub(crate) fn to_dnskey(&self) -> Result<Dnskey<Vec<u8>>, EncodeKeyRdataError> {
+        let public_key = general_purpose::STANDARD
             .decode(&self.public_key)
             .map_err(EncodeKeyRdataError::PublicKeyNotBase64)?;
-        domain::rdata::Dnskey::new(
+        Dnskey::new(
             self.role.flags(),
             3,
             SecurityAlgorithm::from_int(self.algorithm.as_i32() as u8),
@@ -42,7 +44,7 @@ impl DnssecKey {
         .map_err(|error| EncodeKeyRdataError::InvalidPublicKey(Box::new(error)))
     }
 
-    /// The key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
+    /// Build the key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
     /// `DS_DIGEST_TYPES`; the zone publishes `DS_DIGEST_TYPE`.
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, EncodeKeyRdataError> {
         use domain::base::rdata::ComposeRecordData;
@@ -55,7 +57,7 @@ impl DnssecKey {
             1 => &SHA1_FOR_LEGACY_USE_ONLY,
             2 => &SHA256,
             4 => &SHA384,
-            other => return Err(EncodeKeyRdataError::UnsupportedDigestType(other)),
+            _ => return Err(EncodeKeyRdataError::UnsupportedDigestType { digest_type }),
         };
         let mut hasher = Context::new(algorithm);
         hasher.update(apex.as_slice());

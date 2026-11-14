@@ -22,7 +22,8 @@ pub(crate) async fn prune_by_zone_id(
     cutoff: DateTime<Utc>,
 ) -> Result<PruneSummary, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to prune zone history").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         if bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
             .await?
             .is_none()
@@ -40,12 +41,12 @@ pub(crate) async fn prune_by_zone_id(
             bindizr_db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
                 .await?;
 
-        Ok::<_, ServiceError>(PruneSummary {
+        Ok(PruneSummary {
             journal_rows,
             version_rows,
         })
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to prune zone history").await
+    transaction::finish_tx(tx, apply_result, "failed to prune zone history").await
 }

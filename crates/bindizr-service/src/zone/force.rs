@@ -1,11 +1,11 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
-use crate::{Context, dnssec, serial, transaction};
+use crate::{Context, dnssec, serial, transaction, zone};
 
 /// Advance a named zone's serial and save its signed version atomically.
 pub(crate) async fn force_increment_serial(
@@ -15,12 +15,10 @@ pub(crate) async fn force_increment_serial(
 ) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to force increment zone serial").await?;
 
-    let apply_result = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        caller
-            .reauthenticate_tx(&mut tx)
-            .await?
-            .authorize_zone_action(Action::ZoneUpdate, &zone)?;
+    let apply_result: Result<_, ServiceError> = async {
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
@@ -33,16 +31,16 @@ pub(crate) async fn force_increment_serial(
         )
         .await
         .map_err(|error| {
-            log::error!("Failed to force increment zone serial: {}", error);
+            log::error!("Failed to force increment zone serial: {error}");
             ServiceError::internal_with_source("failed to force increment zone serial", error)
         })?;
 
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
+        zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<Zone, ServiceError>(updated_zone)
+        Ok(updated_zone)
     }
     .await;
 

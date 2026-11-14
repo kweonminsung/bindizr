@@ -1,29 +1,29 @@
-use reqwest::{Method, StatusCode};
-use serde_json::json;
-
-use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
-
 mod delegation;
 mod rollover;
 
-/// Verify the DNSSEC enable, status, re-sign, and disable lifecycle.
+use reqwest::{Method, StatusCode};
+use serde_json::{Value, json};
+
+use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
+
+/// Verify that DNSSEC can be enabled, reported, re-signed, and disabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    let serial_before = zone["serial"].as_i64().unwrap();
+    let base_serial = zone["serial"].as_i64().unwrap();
 
     let (status, body) = app
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let dnssec = &body;
 
     assert_eq!(dnssec["zone_name"], zone_name);
@@ -37,7 +37,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
 
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0]["algorithm"], "ecdsap256sha256");
-    let key_tag = keys[0]["key_tag"].as_i64().unwrap();
+    let key_tag = keys[0]["key_tag"].as_u64().unwrap();
 
     assert!(key_tag > 0, "key tag must be positive: {key_tag}");
 
@@ -53,7 +53,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
     );
 
     // Signing changes the zone content, so it rides the serial/IXFR mechanics.
-    assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
+    assert_eq!(dnssec["serial"], base_serial + 1);
 
     // The healthy case status has to be able to show.
     assert!(dnssec["signatures"].as_u64().unwrap() > 0, "{dnssec}");
@@ -68,18 +68,18 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_ALREADY_ENABLED");
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["enabled"], true);
     assert_eq!(body["keys"][0]["key_tag"], key_tag);
 
@@ -92,23 +92,23 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(app.read_zone_serial(zone_name).await, serial_before + 2);
+    assert_eq!(app.read_zone_serial(zone_name).await, base_serial + 2);
 
     // The enable serial carried only signer-generated changes, so once it is
     // no longer current the default version listing hides it; `all` shows it.
-    let signer_serial = serial_before + 1;
+    let signer_serial = base_serial + 1;
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    let listed_serials = |body: &serde_json::Value| -> Vec<i64> {
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let listed_serials = |body: &Value| -> Vec<i64> {
         body["items"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|item| item["serial"].as_i64().unwrap())
+            .map(|version| version["serial"].as_i64().unwrap())
             .collect()
     };
     let default_serials = listed_serials(&body);
@@ -118,7 +118,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         "signer-only serial should be hidden by default: {default_serials:?}"
     );
     assert!(
-        default_serials.contains(&(serial_before + 2)),
+        default_serials.contains(&(base_serial + 2)),
         "the current serial is always listed: {default_serials:?}"
     );
 
@@ -130,7 +130,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let all_serials = listed_serials(&body);
 
     assert!(
@@ -189,7 +189,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let signed_export = body.as_str().unwrap().to_string();
 
     assert!(
@@ -216,7 +216,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert!(!body.as_str().unwrap().contains("RRSIG"), "{body}");
 
     let (status, _) = app
@@ -233,7 +233,7 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["enabled"], false);
 
     // Absent values are null, never a missing key.
@@ -244,11 +244,11 @@ async fn dnssec_supports_enable_sign_and_disable_lifecycle() {
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
 
-    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_NOT_ENABLED");
 }
 
-/// Verify DNSSEC enablement with NSEC3 and separate key roles.
+/// Verify that DNSSEC can be enabled with NSEC3 and separate key roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_supports_nsec3_with_split_keys() {
@@ -272,11 +272,11 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "policy_name": policy_name, "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let dnssec = &body;
 
     assert_eq!(dnssec["policy"]["denial"], "nsec3");
@@ -320,7 +320,7 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let keys = body["keys"].as_array().unwrap();
 
     assert_eq!(keys.len(), 3);
@@ -350,7 +350,7 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
 async fn dnssec_enable_requires_dnssec_manage() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
-        ..TestAppOptions::default()
+        ..Default::default()
     })
     .await;
     let (_, admin_token) = app.create_api_token().await;
@@ -382,10 +382,10 @@ async fn dnssec_enable_requires_dnssec_manage() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert_eq!(body["code"], "FORBIDDEN");
 }

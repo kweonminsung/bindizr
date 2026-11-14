@@ -1,11 +1,10 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::role_grant::RoleGrant;
 
 /// Insert a role grant.
 pub(crate) async fn create_tx(
@@ -14,7 +13,7 @@ pub(crate) async fn create_tx(
 ) -> Result<RoleGrant, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO role_grants (role_id, zone_id, actions, record_name_pattern, record_types, created_at)
         VALUES ($1, $2, $3, $4, $5, $6)
@@ -30,13 +29,13 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    grant.id = RoleGrantId::from(result.get::<i32, _>(0));
+    grant.id = RoleGrantId::from(row.get::<i32, _>(0));
     grant.created_at = now;
 
     Ok(grant)
 }
 
-/// Find a role grant by ID.
+/// Get a role grant by ID.
 pub(crate) async fn get(
     pool: &Pool<Postgres>,
     id: RoleGrantId,
@@ -66,7 +65,7 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<RoleGrant>, Da
     Ok(grants)
 }
 
-/// List every grant of a role.
+/// List every grant of a role, which bounds what a credential of it may see.
 pub(crate) async fn list_by_role_id(
     pool: &Pool<Postgres>,
     role_id: RoleId,
@@ -83,7 +82,8 @@ pub(crate) async fn list_by_role_id(
     Ok(grants)
 }
 
-/// List every grant of a role in the current transaction.
+/// List every grant of a role in the current transaction, locked at
+/// `lock_level`, for a mutation to authorize against.
 pub(crate) async fn list_by_role_id_tx(
     tx: &mut Transaction<'_, Postgres>,
     role_id: RoleId,

@@ -33,8 +33,8 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/tokens",
         tag = "Token",
         summary = "List API tokens",
-        params(TokenFilter),
         description = "Lists API tokens without their secrets, every one or only those authenticating into `role_name`; a secret is shown once, in the create response.",
+        params(TokenFilter),
         responses(
             (status = 200, description = "All API tokens", body = PaginatedResponse<TokenResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -98,9 +98,8 @@ pub(crate) async fn get_self_token(
     State(cx): State<Arc<Context>>,
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
-    let response = SingleTokenResponse {
-        token: token::get_self(&cx, &token).await?,
-    };
+    let token = token::get_self(&cx, &token).await?;
+    let response = SingleTokenResponse { token };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -110,8 +109,8 @@ pub(crate) async fn get_self_token(
         path = "/tokens/self/grants",
         tag = "Token",
         summary = "List the grants of the calling API token's role",
-        params(PageRequest),
         description = "The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 404.",
+        params(PageRequest),
         responses(
             (status = 200, description = "The calling token's grants", body = PaginatedResponse<RoleGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

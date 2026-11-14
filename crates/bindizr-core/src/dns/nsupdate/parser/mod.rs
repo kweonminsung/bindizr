@@ -13,6 +13,47 @@ use crate::dns::record::{ParseRdataError, ParseRecordValueError};
 use crate::dns::{name, tsig};
 use crate::model::record::ParseRecordTypeError;
 
+/// Why an UPDATE message could not be parsed into its sections.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseUpdateError {
+    #[error("DNS message is too short")]
+    TooShort,
+    #[error("not a DNS UPDATE opcode")]
+    InvalidOpcode,
+    #[error("invalid DNS UPDATE header")]
+    InvalidHeader,
+    #[error("invalid DNS UPDATE zone section")]
+    InvalidZoneSection,
+    #[error("invalid compressed domain name")]
+    InvalidName,
+    #[error("invalid record in UPDATE section")]
+    InvalidRecord,
+    #[error("invalid TSIG record")]
+    InvalidTsig,
+    /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
+    #[error("invalid {record_type} rdata")]
+    Rdata { record_type: &'static str },
+    #[error("invalid prerequisite rdata: {0}")]
+    PrerequisiteRdata(#[from] ParseRdataError),
+    /// A name inside the RDATA does not read back into presentation form.
+    #[error("invalid {record_type} rdata: {source}")]
+    RdataName {
+        record_type: &'static str,
+        #[source]
+        source: Box<Self>,
+    },
+    /// The `domain` TXT reader's error implements no `Error`, so its text
+    /// is what is kept.
+    #[error("invalid TXT rdata: {reason}")]
+    TxtRdata { reason: String },
+    #[error("invalid TXT rdata: {0}")]
+    TxtValue(#[source] ParseRecordValueError),
+    #[error(transparent)]
+    RecordType(#[from] ParseRecordTypeError),
+    #[error(transparent)]
+    Value(#[from] ParseRecordValueError),
+}
+
 /// A parsed UPDATE message: its zone, prerequisites, updates, TSIG, and OPT.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRequest {
@@ -32,50 +73,10 @@ pub struct TsigRecord {
     pub fudge: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ParseUpdateError {
-    #[error("DNS message is too short")]
-    TooShort,
-    #[error("not a DNS UPDATE opcode")]
-    InvalidOpcode,
-    #[error("invalid DNS UPDATE header")]
-    InvalidHeader,
-    #[error("invalid DNS UPDATE zone section")]
-    InvalidZoneSection,
-    #[error("invalid compressed domain name")]
-    InvalidName,
-    #[error("invalid record in UPDATE section")]
-    InvalidRecord,
-    #[error("invalid TSIG record")]
-    InvalidTsig,
-    /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
-    #[error("invalid {record_type} rdata")]
-    Rdata { record_type: String },
-    #[error("invalid prerequisite rdata: {0}")]
-    PrerequisiteRdata(#[from] ParseRdataError),
-    /// A name inside the RDATA does not read back into presentation form.
-    #[error("invalid {record_type} rdata: {source}")]
-    RdataName {
-        record_type: String,
-        #[source]
-        source: Box<ParseUpdateError>,
-    },
-    /// The `domain` TXT reader's error implements no `Error`, so its text
-    /// is what is kept.
-    #[error("invalid TXT rdata: {reason}")]
-    TxtRdata { reason: String },
-    #[error("invalid TXT rdata: {0}")]
-    TxtValue(#[source] ParseRecordValueError),
-    #[error(transparent)]
-    RecordType(#[from] ParseRecordTypeError),
-    #[error(transparent)]
-    Value(#[from] ParseRecordValueError),
-}
-
 impl UpdateRequest {
     /// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
-    pub fn parse(data: &[u8]) -> Result<Self, ParseUpdateError> {
-        let message = Message::from_octets(data).map_err(|_| ParseUpdateError::TooShort)?;
+    pub fn parse(query_data: &[u8]) -> Result<Self, ParseUpdateError> {
+        let message = Message::from_octets(query_data).map_err(|_| ParseUpdateError::TooShort)?;
 
         if message.header().opcode() != Opcode::UPDATE {
             return Err(ParseUpdateError::InvalidOpcode);
@@ -87,14 +88,14 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidHeader);
         }
 
-        let mut parser = Parser::from_ref(data);
+        let mut parser = Parser::from_ref(query_data);
         parser
             .advance(DNS_HEADER_LEN)
             .map_err(|_| ParseUpdateError::TooShort)?;
 
         // RFC 2136, Section 3.1.1 requires SOA; authority over ZCLASS is
         // decided by the service, not by the wire parser.
-        let zone = ParsedName::parse(&mut parser).map_err(|_| ParseUpdateError::InvalidName)?;
+        let zname = ParsedName::parse(&mut parser).map_err(|_| ParseUpdateError::InvalidName)?;
         let ztype = parser
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidZoneSection)?;
@@ -106,20 +107,20 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidZoneSection);
         }
 
-        let zone_name = to_presentation_name(&zone)?;
+        let zone_name = to_presentation_name(&zname)?;
 
         // UPDATE uses the answer count for prerequisites and the authority count
         // for changes; these are not ordinary response sections.
         let mut prerequisites = Vec::with_capacity(usize::from(counts.ancount()));
 
         for _ in 0..counts.ancount() {
-            prerequisites.push(parse_record(&mut parser, data)?);
+            prerequisites.push(parse_record(&mut parser, query_data)?);
         }
 
         let mut updates = Vec::with_capacity(usize::from(counts.nscount()));
 
         for _ in 0..counts.nscount() {
-            updates.push(parse_record(&mut parser, data)?);
+            updates.push(parse_record(&mut parser, query_data)?);
         }
 
         let tsig = parse_additional_section(&mut parser, usize::from(counts.arcount()))?;
@@ -128,7 +129,7 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidHeader);
         }
 
-        Ok(UpdateRequest {
+        Ok(Self {
             zone_name,
             zone_class: Class::from_int(zclass),
             prerequisites,
@@ -142,19 +143,19 @@ impl UpdateRequest {
 /// Read one update record from the DNS wire message.
 fn parse_record(
     parser: &mut Parser<'_, [u8]>,
-    data: &[u8],
+    query_data: &[u8],
 ) -> Result<UpdateRecord, ParseUpdateError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
     let name = to_presentation_name(&name)?;
 
-    let record_type = Rtype::from_int(
+    let rtype = Rtype::from_int(
         parser
             .parse_u16_be()
             .map_err(|_| ParseUpdateError::InvalidRecord)?,
     );
 
     // RFC 8945, Section 5.2 confines TSIG to the Additional section.
-    if record_type == Rtype::TSIG {
+    if rtype == Rtype::TSIG {
         return Err(ParseUpdateError::InvalidTsig);
     }
 
@@ -179,10 +180,10 @@ fn parse_record(
 
     Ok(UpdateRecord {
         name,
-        record_type,
+        record_type: rtype,
         class,
         ttl,
-        rdata: data[rdata_start..rdata_start + rdlen].to_vec(),
+        rdata: query_data[rdata_start..rdata_start + rdlen].to_vec(),
         rdata_start,
     })
 }
@@ -196,13 +197,13 @@ fn parse_additional_section(
 
     for index in 0..count {
         let owner = ParsedName::parse(parser).map_err(|_| ParseUpdateError::InvalidName)?;
-        let record_type = Rtype::from_int(
+        let rtype = Rtype::from_int(
             parser
                 .parse_u16_be()
                 .map_err(|_| ParseUpdateError::InvalidRecord)?,
         );
 
-        if record_type == Rtype::TSIG {
+        if rtype == Rtype::TSIG {
             if tsig.is_some() || index + 1 != count {
                 return Err(ParseUpdateError::InvalidTsig);
             }
@@ -227,7 +228,7 @@ fn parse_additional_section(
     Ok(tsig)
 }
 
-/// Parses a TSIG record from its CLASS field on (owner and TYPE already consumed).
+/// Parse a TSIG record from its CLASS field on (owner and TYPE already consumed).
 fn parse_tsig_record(
     parser: &mut Parser<'_, [u8]>,
     owner: &ParsedName<&[u8]>,
@@ -265,12 +266,12 @@ fn parse_tsig_record(
     })
 }
 
-/// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
+/// Render a parsed name in presentation form, escaping a `.` or `\` inside a
 /// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateError> {
     let mut labels = Vec::new();
 
-    for label in name.iter() {
+    for label in name {
         if label.is_root() {
             break;
         }

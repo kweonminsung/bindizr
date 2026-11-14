@@ -1,19 +1,20 @@
 //! Record payloads, in three groups: the string-or-segments value form, the
 //! request/filter/patch shapes, and the response shapes.
 
+use std::fmt;
+
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::{ParseRecordValueError, TxtContent, TxtRecordValue};
 use bindizr_core::model::dnssec_record::DnssecRecordType;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::ZoneId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 
-use super::version::RecordDiffResponse;
-use crate::model::record::{Record, RecordType};
+use crate::types::version::RecordDiffResponse;
 
 /// A request value that has no record-row form.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -28,7 +29,7 @@ pub(crate) enum EncodeRecordValueError {
 
 /// A record value as the API spells it, in requests and responses alike:
 /// a single string, TXT segments, or explicit TXT presentation with DNS escapes.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(untagged)]
 pub enum RecordValue {
     #[schema(example = "192.168.1.100")]
@@ -40,13 +41,13 @@ pub enum RecordValue {
 }
 
 impl RecordValue {
-    /// The value as one string; TXT segments concatenate into the text they
+    /// Return the value as one string; TXT segments concatenate into the text they
     /// encode.
     pub fn to_text(&self) -> String {
         match self {
-            RecordValue::Text(value) => value.clone(),
-            RecordValue::Segments(segments) => segments.concat(),
-            RecordValue::Presentation { presentation } => presentation.clone(),
+            Self::Text(value) => value.clone(),
+            Self::Segments(segments) => segments.concat(),
+            Self::Presentation { presentation } => presentation.clone(),
         }
     }
 
@@ -54,36 +55,34 @@ impl RecordValue {
     /// content (never presentation form), so quotes carry no special meaning.
     pub(crate) fn to_encoded_value(
         &self,
-        record_type: &RecordType,
+        record_type: RecordType,
         priority: Option<i32>,
     ) -> Result<String, EncodeRecordValueError> {
         match (record_type, self) {
-            (RecordType::Txt, RecordValue::Text(value)) => {
+            (RecordType::Txt, Self::Text(value)) => {
                 Ok(TxtRecordValue::from_string(value).to_presentation())
             }
-            (RecordType::Txt, RecordValue::Segments(segments)) => Ok(
-                TxtRecordValue::from_segments(segments.iter().map(String::as_str))
-                    .map(|parsed| parsed.to_presentation())?,
-            ),
-            (RecordType::Txt, RecordValue::Presentation { presentation }) => {
+            (RecordType::Txt, Self::Segments(segments)) => Ok(TxtRecordValue::from_segments(
+                segments.iter().map(String::as_str),
+            )
+            .map(|parsed| parsed.to_presentation())?),
+            (RecordType::Txt, Self::Presentation { presentation }) => {
                 let parsed = TxtRecordValue::from_presentation(presentation)
                     .ok_or(ParseRecordValueError::TxtRdata)?;
                 parsed.validate()?;
                 Ok(parsed.to_presentation())
             }
-            (_, RecordValue::Text(value)) => Ok(record_type.encoded_value(value, priority)?),
-            (_, RecordValue::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
-            (_, RecordValue::Presentation { .. }) => {
-                Err(EncodeRecordValueError::PresentationNotTxt)
-            }
+            (_, Self::Text(value)) => Ok(record_type.encoded_value(value, priority)?),
+            (_, Self::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
+            (_, Self::Presentation { .. }) => Err(EncodeRecordValueError::PresentationNotTxt),
         }
     }
 }
 
-/// A stored value as the record APIs display it: TXT decoded to string/segments,
+/// Build a stored value as the record APIs display it: TXT decoded to string/segments,
 /// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
-pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> RecordValue {
-    if *record_type != RecordType::Txt {
+pub(crate) fn build_display_value(record_type: RecordType, value: &str) -> RecordValue {
+    if record_type != RecordType::Txt {
         return RecordValue::Text(record_type.display_value(value));
     }
 
@@ -97,7 +96,7 @@ pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> Reco
 }
 
 /// Request body for creating a record in a named zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRecordRequest {
     #[schema(example = "sub")]
@@ -123,7 +122,7 @@ pub struct CreateRecordRequest {
 
 /// A record's data fields for a bulk insertion; the zone comes from the
 /// request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BulkRecordItem {
     #[schema(example = "sub")]
@@ -142,7 +141,7 @@ pub struct BulkRecordItem {
 }
 
 /// Request body for bulk-inserting records into a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateBulkRecordsRequest {
     #[schema(example = "example.com")]
@@ -156,7 +155,7 @@ pub struct CreateBulkRecordsRequest {
 /// Request body for updating a record; an omitted field keeps the current
 /// value, merged inside the update transaction. `value` is required when
 /// `type` changes.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateRecordRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -183,7 +182,7 @@ pub struct UpdateRecordRequest {
 
 /// Delete or preview records at a required `zone_name` and `name`
 /// (RFC 2136, Section 2.5.2); whole-zone deletion belongs to `DELETE /zones/{name}`.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteRecordsRequest {
@@ -211,7 +210,7 @@ pub struct DeleteRecordsRequest {
 }
 
 /// Deleted records or their preview; no matches leave the serial unchanged and send no NOTIFY.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DeleteRecordsResponse {
     /// Whether this call wrote; a filter that matched nothing still ran, and
     /// says so with `deleted: 0`.
@@ -227,7 +226,7 @@ pub struct DeleteRecordsResponse {
 }
 
 /// Query filters and pagination for listing records.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct RecordFilter {
@@ -290,7 +289,7 @@ pub struct RecordFilter {
 }
 
 /// Record data with absolute, trailing-dot owner/RDATA names and a bare `zone_name`.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
     /// addressable records.
@@ -317,13 +316,13 @@ pub struct RecordResponse {
 }
 
 impl RecordResponse {
-    /// Render a record response with absolute names and the caller's actions.
+    /// Build a record response with absolute names and the caller's actions.
     pub(crate) fn from_record(record: &Record, zone_name: &ZoneName, actions: Vec<Action>) -> Self {
-        RecordResponse {
+        Self {
             id: record.id.written(),
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.into(),
-            value: build_display_value(&record.value, &record.record_type),
+            value: build_display_value(record.record_type, &record.value),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
@@ -334,14 +333,14 @@ impl RecordResponse {
 }
 
 /// A single record wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleRecordResponse {
     pub record: RecordResponse,
 }
 
 /// What a record write left behind, in the shape every previewable operation
 /// answers with: whether it wrote, and the change as a record diff.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WriteRecordResponse {
     /// Whether this call wrote; a dry run answers `false`.
     #[schema(example = true)]
@@ -354,7 +353,7 @@ pub struct WriteRecordResponse {
 }
 
 /// Bulk-create result; previews contain validated records with placeholder IDs and write nothing.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateBulkRecordsResponse {
     #[schema(example = true)]
     pub applied: bool,
@@ -380,40 +379,42 @@ impl ServedRecordType {
     /// Render the canonical API mnemonic.
     pub fn to_text(self) -> String {
         match self {
-            Self::User(value) => value.as_str().to_owned(),
-            Self::Derived(value) => value.as_str().to_owned(),
+            Self::User(record_type) => record_type.to_string(),
+            Self::Derived(record_type) => record_type.to_string(),
         }
     }
 }
 
-impl std::fmt::Display for ServedRecordType {
-    /// Display the canonical DNS mnemonic.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ServedRecordType {
+    /// Write the canonical DNS mnemonic.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(&self.to_text())
     }
 }
 
 impl From<RecordType> for ServedRecordType {
-    /// Wrap a stored user record type for a record response.
-    fn from(value: RecordType) -> Self {
-        Self::User(value)
+    /// Build a record response type from a stored user record type.
+    fn from(record_type: RecordType) -> Self {
+        Self::User(record_type)
     }
 }
 
 impl From<DnssecRecordType> for ServedRecordType {
-    /// Wrap a generated DNSSEC record type for a record response.
-    fn from(value: DnssecRecordType) -> Self {
-        Self::Derived(value)
+    /// Build a record response type from a generated DNSSEC record type.
+    fn from(record_type: DnssecRecordType) -> Self {
+        Self::Derived(record_type)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Keep signed and plain record responses compatible with DNS mnemonic strings.
+    /// Verify that `ServedRecordType` has one spelling across `to_text`, `Display`, and serde.
     #[test]
-    fn record_type_response_spells_itself_once() {
+    fn served_record_type_spells_itself_once() {
         for (value, expected) in [
             (ServedRecordType::from(RecordType::A), "A"),
             (ServedRecordType::from(RecordType::Aaaa), "AAAA"),
@@ -443,20 +444,15 @@ mod tests {
         ] {
             assert_eq!(value.to_text(), expected);
             assert_eq!(value.to_string(), expected);
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<ServedRecordType>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<ServedRecordType>(json!(expected)).unwrap(),
                 value
             );
         }
 
         for invalid in ["SOA", "ANY", "AAAAA"] {
-            assert!(
-                serde_json::from_value::<ServedRecordType>(serde_json::json!(invalid)).is_err()
-            );
+            assert!(serde_json::from_value::<ServedRecordType>(json!(invalid)).is_err());
         }
     }
 }

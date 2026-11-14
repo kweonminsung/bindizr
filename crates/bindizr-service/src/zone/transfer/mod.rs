@@ -1,22 +1,21 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
 //! to the caller its key became, decided on the locked row it will serve.
 
-use bindizr_core::dns::CatalogZone;
-use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::role_grant::Action;
-use bindizr_db::LockLevel;
-
 mod ixfr;
 
+use bindizr_core::dns::CatalogZone;
+use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_record::DnssecRecord;
+use bindizr_core::model::record::Record;
+use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
+use bindizr_core::model::zone_version::ZoneVersionId;
+use bindizr_db::LockLevel;
 pub use ixfr::{IxfrPlan, authorize_ixfr_plan_by_name};
 
 use crate::authorization::Caller;
 use crate::error::{ErrorCode, ServiceError};
-use crate::model::dnssec_record::DnssecRecord;
-use crate::model::record::Record;
-use crate::model::zone::Zone;
-use crate::model::zone_version::ZoneVersionId;
-use crate::{Context, Transaction, transaction};
+use crate::{Context, Transaction, transaction, zone};
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
 /// the DNS plane owes instead.
@@ -31,11 +30,11 @@ pub enum TransferAccess<T> {
 
 impl<T> TransferAccess<T> {
     /// Carry a granted value into another shape, leaving a denial as it is.
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TransferAccess<U> {
+    pub fn map<U>(self, transform: impl FnOnce(T) -> U) -> TransferAccess<U> {
         match self {
-            TransferAccess::Granted(value) => TransferAccess::Granted(f(value)),
-            TransferAccess::NotAuth => TransferAccess::NotAuth,
-            TransferAccess::Refused(reason) => TransferAccess::Refused(reason),
+            Self::Granted(value) => TransferAccess::Granted(transform(value)),
+            Self::NotAuth => TransferAccess::NotAuth,
+            Self::Refused(reason) => TransferAccess::Refused(reason),
         }
     }
 }
@@ -57,7 +56,8 @@ pub async fn authorize_soa_content_by_name(
     include_signatures: bool,
 ) -> Result<TransferAccess<(Zone, Vec<DnssecRecord>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load SOA content").await?;
-    let result = async {
+
+    let result: Result<_, ServiceError> = async {
         let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
@@ -77,7 +77,7 @@ pub async fn authorize_soa_content_by_name(
     transaction::finish_tx(tx, result, "failed to load SOA content").await
 }
 
-/// The enabled zone `zone_name` names, if `caller` may transfer it. Decided
+/// Authorize the enabled zone `zone_name` names, if `caller` may transfer it. Decided
 /// on the row this transaction share-locks, with the grants re-read beside it.
 pub async fn authorize_transfer_by_name(
     cx: &Context,
@@ -85,7 +85,8 @@ pub async fn authorize_transfer_by_name(
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<(Zone, ZoneVersionId)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
-    let result = async {
+
+    let result: Result<_, ServiceError> = async {
         match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => {
                 let version_id = lookup_current_version_id_tx(&mut tx, &zone).await?;
@@ -107,6 +108,7 @@ pub async fn refresh_catalog_content(
     caller: &Caller,
 ) -> Result<TransferAccess<(CatalogZone, Vec<String>)>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
+
     let result: Result<_, ServiceError> = async {
         let caller = match reauthenticate_transfer_tx(&mut tx, caller).await? {
             TransferAccess::Granted(caller) => caller,
@@ -128,7 +130,7 @@ pub async fn refresh_catalog_content(
 
     match transaction::finish_tx(tx, result, "failed to load catalog content").await? {
         TransferAccess::Granted(zones) => Ok(TransferAccess::Granted(
-            super::refresh_catalog_from_zones(cx, zones).await?,
+            zone::refresh_catalog_from_zones(cx, zones).await?,
         )),
         TransferAccess::NotAuth => Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => Ok(TransferAccess::Refused(reason)),
@@ -142,7 +144,8 @@ pub async fn authorize_transfer_content_by_name(
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<TransferContent>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load transfer content").await?;
-    let result = async {
+
+    let result: Result<_, ServiceError> = async {
         let zone = match authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
@@ -165,7 +168,7 @@ pub async fn authorize_transfer_content_by_name(
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
-/// Read the immutable version identity, which remains distinct when serials wrap.
+/// Look up the immutable version identity, which remains distinct when serials wrap.
 async fn lookup_current_version_id_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -183,7 +186,7 @@ async fn authorize_transfer_tx(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
-    let Some(zone) = super::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {
+    let Some(zone) = zone::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {
         return Ok(TransferAccess::NotAuth);
     };
     let caller = match reauthenticate_transfer_tx(tx, caller).await? {

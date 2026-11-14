@@ -4,15 +4,17 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use base64::Engine;
-use domain::base::iana::{Class, DigestAlgorithm, OptRcode, SecurityAlgorithm};
-use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl};
+use base64::engine::general_purpose;
+use domain::base::iana::{Class, DigestAlgorithm, OptRcode, Rtype, SecurityAlgorithm};
+use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
 use domain::rdata::{Ds, Soa};
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
 
+use crate::common::dns;
+
 /// A DS record for the fake parent to serve.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DsRecord {
     key_tag: u16,
     algorithm: u8,
@@ -22,7 +24,7 @@ pub(crate) struct DsRecord {
 }
 
 impl DsRecord {
-    /// The DS of key `key_tag` as a status payload's `ds_records` lists it.
+    /// Build the DS of key `key_tag` as a status payload's `ds_records` lists it.
     pub(crate) fn from_status(dnssec: &Value, key_tag: u16, ttl: u32) -> Self {
         let record = dnssec["ds_records"]
             .as_array()
@@ -34,8 +36,10 @@ impl DsRecord {
 
         Self {
             key_tag,
-            algorithm: record["algorithm"].as_u64().expect("DS algorithm") as u8,
-            digest_type: record["digest_type"].as_u64().expect("DS digest type") as u8,
+            algorithm: u8::try_from(record["algorithm"].as_u64().expect("DS algorithm"))
+                .expect("DS algorithm fits an octet"),
+            digest_type: u8::try_from(record["digest_type"].as_u64().expect("DS digest type"))
+                .expect("DS digest type fits an octet"),
             digest: (0..digest.len())
                 .step_by(2)
                 .map(|i| u8::from_str_radix(&digest[i..i + 2], 16).expect("hex digest"))
@@ -51,7 +55,7 @@ impl DsRecord {
         key_tag: u16,
         ttl: u32,
     ) -> Self {
-        use std::str::FromStr;
+        use base64::Engine;
 
         let dnskey = dnssec["keys"]
             .as_array()
@@ -62,19 +66,19 @@ impl DsRecord {
             .as_str()
             .expect("DNSKEY presentation");
         let fields: Vec<&str> = dnskey.split(' ').collect();
-        let flags: u16 = fields[0].parse().expect("DNSKEY flags");
-        let algorithm: u8 = fields[2].parse().expect("DNSKEY algorithm");
+        let flags = fields[0].parse::<u16>().expect("DNSKEY flags");
+        let algorithm = fields[2].parse::<u8>().expect("DNSKEY algorithm");
         let mut rdata = flags.to_be_bytes().to_vec();
         rdata.extend_from_slice(&[3, algorithm]);
         rdata.extend(
-            base64::engine::general_purpose::STANDARD
+            general_purpose::STANDARD
                 .decode(fields[3])
                 .expect("DNSKEY public key is base64"),
         );
 
         // RFC 4034, Section 5.1.4: the digest covers the wire owner name,
         // then the DNSKEY RDATA.
-        let apex = Name::<Vec<u8>>::from_str(zone_name).expect("zone name");
+        let apex = dns::parse_name(zone_name).expect("zone name");
         let mut hasher = Context::new(&SHA1_FOR_LEGACY_USE_ONLY);
         hasher.update(apex.as_slice());
         hasher.update(&rdata);
@@ -88,7 +92,7 @@ impl DsRecord {
         }
     }
 
-    /// The same DS with a digest of no key: another key sharing the tag.
+    /// Return the same DS with a digest of no key: another key sharing the tag.
     pub(crate) fn with_wrong_digest(mut self) -> Self {
         self.digest = vec![0xab; self.digest.len()];
         self
@@ -102,7 +106,7 @@ impl DsRecord {
 }
 
 /// The records and response metadata the fake parent serves.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ParentResponse {
     records: Vec<DsRecord>,
     rcode: OptRcode,
@@ -119,6 +123,8 @@ pub(crate) struct FakeParent {
 impl FakeParent {
     /// Start on an ephemeral port, serving no DS records yet.
     pub(crate) fn start() -> Self {
+        use domain::base::ToName;
+
         let socket = UdpSocket::bind(("127.0.0.1", 0)).expect("failed to bind the fake parent");
         let addr = socket
             .local_addr()
@@ -131,7 +137,7 @@ impl FakeParent {
         let served = Arc::clone(&response);
 
         thread::spawn(move || {
-            let mut buffer = [0_u8; 4096];
+            let mut buffer = [0; 4096];
 
             loop {
                 let Ok((len, peer)) = socket.recv_from(&mut buffer) else {
@@ -177,8 +183,7 @@ impl FakeParent {
                     // A negative answer needs the parent's SOA (RFC 2308, Section 2).
                     let parent = qname
                         .parent()
-                        .map(|parent| parent.to_name::<Vec<u8>>())
-                        .unwrap_or_else(Name::root_vec);
+                        .map_or_else(Name::root_vec, |parent| parent.to_name::<Vec<u8>>());
                     authority
                         .push((
                             &parent,
@@ -187,7 +192,7 @@ impl FakeParent {
                             Soa::new(
                                 parent.clone(),
                                 parent.clone(),
-                                Serial(1),
+                                Serial::from(1),
                                 Ttl::from_secs(60),
                                 Ttl::from_secs(60),
                                 Ttl::from_secs(60),

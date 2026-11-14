@@ -8,7 +8,7 @@ use bindizr_service::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, Holddown, MessageResponse,
     StartDnssecRolloverRequest, UpdateDnssecSettingsRequest,
 };
-use clap::Subcommand;
+use clap::{ArgGroup, Subcommand};
 pub(crate) use keys::DnssecKeysCommand;
 pub(crate) use policy::DnssecPolicyCommand;
 
@@ -19,7 +19,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing a zone's DNSSEC signing.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum DnssecCommand {
     /// Enable DNSSEC: generate the signing key(s) a policy prescribes and
     /// sign the zone
@@ -51,7 +51,7 @@ publish the DS itself — hand the DS from `dnssec status` to the registrar.")]
     /// Change a zone's signing settings: the policy it signs under and/or
     /// the parent nameservers asked for its DS record
     #[command(
-        group = clap::ArgGroup::new("setting").required(true).multiple(true),
+        group = ArgGroup::new("setting").required(true).multiple(true),
         after_help = "\
 Examples:
   bindizr dnssec set example.com --policy stronger
@@ -143,7 +143,7 @@ the chain, and a new algorithm starts a rollover."
 }
 
 /// Subcommands for rolling a zone's signing keys.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum DnssecRolloverCommand {
     /// Publish a replacement key with the same algorithm. After the publish
     /// wait, the scheduler promotes ZSKs automatically and CSK/KSKs once the
@@ -196,7 +196,7 @@ still caching the previous keys fail until the hold-down would have expired.")]
 }
 
 /// Subcommands for a zone's DS withdrawal.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum DnssecWithdrawCommand {
     /// Publish the delete pair (`CDS 0 0 0 00`) to request DS removal
     /// from a parent that processes CDS records
@@ -219,7 +219,7 @@ pub(crate) enum DnssecWithdrawCommand {
     },
 }
 
-/// Run the requested DNSSEC lifecycle command.
+/// Handle the `dnssec` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
     match subcommand {
         DnssecCommand::Enable {
@@ -237,12 +237,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     },
                 })
                 .await?;
-            print_status(&response.data, output)?;
-        }
-        DnssecCommand::CheckDs { name, output } => {
-            let response =
-                client::send_command::<DnssecStatusResponse>(DaemonCommand::CheckDnssecDs { name })
-                    .await?;
             print_status(&response.data, output)?;
         }
         DnssecCommand::Set {
@@ -275,8 +269,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             let response = client::send_command::<DnssecStatusResponse>(command).await?;
             print_status(&response.data, output)?;
         }
-        DnssecCommand::Keys { subcommand } => keys::handle_command(subcommand).await?,
-        DnssecCommand::Policy { subcommand } => policy::handle_command(subcommand).await?,
         DnssecCommand::Disable {
             name,
             skip_ds_check,
@@ -289,10 +281,16 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             .await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
+        }
+        DnssecCommand::CheckDs { name, output } => {
+            let response =
+                client::send_command::<DnssecStatusResponse>(DaemonCommand::CheckDnssecDs { name })
+                    .await?;
+            print_status(&response.data, output)?;
         }
         DnssecCommand::Status { name, output } => {
             let response =
@@ -307,9 +305,9 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 client::send_command::<MessageResponse>(DaemonCommand::SignZone { name }).await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
@@ -340,6 +338,8 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 print_status(&response.data, output)?;
             }
         },
+        DnssecCommand::Keys { subcommand } => keys::handle_command(subcommand).await?,
+        DnssecCommand::Policy { subcommand } => policy::handle_command(subcommand).await?,
     }
 
     Ok(())
@@ -382,10 +382,10 @@ fn print_status(
             let servers = delegation.parent_ns_addrs.join(", ");
 
             if delegation.ds_key_tags.is_empty() {
-                outln!("Parent DS: none served by {}", servers);
+                outln!("Parent DS: none served by {servers}");
             } else {
                 outln!(
-                    "Parent DS: key tag{} {} served by {} (TTL {}s)",
+                    "Parent DS: key tag{} {} served by {servers} (TTL {}s)",
                     if delegation.ds_key_tags.len() == 1 {
                         ""
                     } else {
@@ -397,7 +397,6 @@ fn print_status(
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", "),
-                    servers,
                     delegation.ds_ttl.unwrap_or(0)
                 );
             }
@@ -422,7 +421,7 @@ fn print_status(
                     ));
                 }
 
-                outln!("{}", line);
+                outln!("{line}");
             }
         }
 

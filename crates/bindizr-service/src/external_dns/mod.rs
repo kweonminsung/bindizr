@@ -4,27 +4,32 @@
 mod apply;
 mod change_set;
 mod policy;
-#[cfg(test)]
-mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
 use bindizr_core::dns::Ttl;
+use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::record::RecordFilter;
 use bindizr_db::zone::ZoneFilter;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey};
 use crate::types::{
     AdjustExternalDnsRecordsRequest, AdjustExternalDnsRecordsResponse, ExternalDnsRecord,
 };
 use crate::{Context, grant_pattern};
 
 /// DB read page size; the protocol still returns all endpoints in one response.
-const RECORD_READ_PAGE: u32 = 5_000;
+const RECORD_READ_PAGE: u32 = 5000;
+
+/// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
+const SYNC_ACTIONS: [Action; 3] = [
+    Action::RecordRead,
+    Action::RecordCreate,
+    Action::RecordDelete,
+];
 
 /// Normalize desired records with the apply flow's rules for AdjustEndpoints.
 /// No caller is needed: only the request's own payload is read.
@@ -39,13 +44,6 @@ pub fn adjust_records(
     Ok(AdjustExternalDnsRecordsResponse { records })
 }
 
-/// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
-const SYNC_ACTIONS: [Action; 3] = [
-    Action::RecordRead,
-    Action::RecordCreate,
-    Action::RecordDelete,
-];
-
 /// List manageable subtrees as ExternalDNS domain filters.
 /// Narrow grants contribute their subtree so planning stays within apply permissions.
 pub async fn list_managed_domains(
@@ -54,9 +52,9 @@ pub async fn list_managed_domains(
 ) -> Result<Vec<String>, ServiceError> {
     let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
-        ZoneFilter {
+        &ZoneFilter {
             scope_role_id: caller.scope_role_id(),
-            ..ZoneFilter::default()
+            ..Default::default()
         },
     )
     .await?;
@@ -98,11 +96,11 @@ pub async fn list_records(
         // they build. The query's name-and-id order is total, so pages tile.
         let records_with_zones = bindizr_db::record::list_by_filter_with_zone(
             cx.db(),
-            RecordFilter {
+            &RecordFilter {
                 scope_role_id: caller.scope_role_id(),
                 limit: Some(RECORD_READ_PAGE),
                 offset: Some(offset),
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await?;
@@ -146,7 +144,7 @@ pub async fn list_records(
                 values.sort();
                 ExternalDnsRecord {
                     name: key.name.clone(),
-                    record_type: key.record_type.as_str().to_owned(),
+                    record_type: key.record_type.to_string(),
                     ttl: Some(i64::from(ttl)),
                     values,
                 }
@@ -154,3 +152,6 @@ pub async fn list_records(
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests;

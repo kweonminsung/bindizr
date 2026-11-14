@@ -1,6 +1,18 @@
+use std::fs;
 use std::os::unix::fs::MetadataExt;
+use std::time::Duration;
 
-use serde_json::json;
+use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
+use bindizr_core::metrics::Metrics;
+use bindizr_db::Db;
+use bindizr_service::authorization::Caller;
+use bindizr_service::secondary;
+use bindizr_service::types::{CreateSecondaryRequest, CreateZoneRequest, UpdateZoneRequest};
+use serde_json::{Value, json};
+use tokio::net::UdpSocket;
+use tokio::sync::watch;
+use tokio::{task, time};
 
 use super::*;
 
@@ -9,7 +21,7 @@ use super::*;
 fn command_rejects_wrongly_typed_fields() {
     let ok: DaemonCommand = serde_json::from_value(json!({
         "command": "create_tsig_key",
-        "data": { "name": "k", "algorithm": null, "secret": null, "role_name": "admin" },
+        "data": { "name": "k", "algorithm": null, "secret": null, "role_name": "admin" }
     }))
     .unwrap();
 
@@ -18,14 +30,14 @@ fn command_rejects_wrongly_typed_fields() {
     // Defaulting invalid input could generate an unwanted key or apply a preview.
     serde_json::from_value::<DaemonCommand>(json!({
         "command": "create_tsig_key",
-        "data": { "name": "k", "secret": 123, "role_name": "admin" },
+        "data": { "name": "k", "secret": 123, "role_name": "admin" }
     }))
     .unwrap_err();
 
     for run in [json!("true"), json!(true), json!(1)] {
         serde_json::from_value::<DaemonCommand>(json!({
             "command": "rollback_zone",
-            "data": { "name": "z", "serial": 7, "run": run },
+            "data": { "name": "z", "serial": 7, "run": run }
         }))
         .unwrap_err();
     }
@@ -35,14 +47,12 @@ fn command_rejects_wrongly_typed_fields() {
 /// payload nested under the command name.
 #[test]
 fn command_round_trips_between_client_and_server() {
-    use bindizr_service::types::UpdateZoneRequest;
-
     let sent = DaemonCommand::UpdateZone {
         zone_name: "example.com".to_string(),
         request: UpdateZoneRequest {
             name: Some("new.example.com".to_string()),
             default_ttl: Some(300),
-            ..UpdateZoneRequest::default()
+            ..Default::default()
         },
     };
     let line = serde_json::to_string(&sent).unwrap();
@@ -62,13 +72,13 @@ fn command_round_trips_between_client_and_server() {
 /// Verify that `prepare_socket_path` creates the parent directory owner-only.
 #[tokio::test]
 async fn prepare_socket_path_creates_parent_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("run").join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("run").join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
 
     prepare_socket_path(socket_path).await.unwrap();
 
-    let parent = std::fs::metadata(Path::new(socket_path).parent().unwrap()).unwrap();
+    let parent = fs::metadata(Path::new(socket_path).parent().unwrap()).unwrap();
 
     assert!(parent.is_dir());
     assert_eq!(parent.mode() & 0o777, 0o700);
@@ -77,10 +87,11 @@ async fn prepare_socket_path_creates_parent_directory() {
 /// Verify that `prepare_socket_path` refuses a parent reached through a symlink.
 #[tokio::test]
 async fn prepare_socket_path_rejects_symlinked_parent_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("real")).unwrap();
-    std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
-    let socket_path = dir.path().join("link").join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(directory.path().join("real"), directory.path().join("link"))
+        .unwrap();
+    let socket_path = directory.path().join("link").join("bindizr.sock");
 
     let error = prepare_socket_path(socket_path.to_str().unwrap())
         .await
@@ -92,16 +103,16 @@ async fn prepare_socket_path_rejects_symlinked_parent_directory() {
     );
 }
 
-/// Verify the socket's owner and the UID both ends read for peer authorization.
+/// Verify that the socket's owner and the UID both ends read for peer authorization agree.
 #[tokio::test]
 async fn accepted_connection_returns_peer_uid() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
 
     let listener = bind_socket(socket_path).await.unwrap();
 
-    let metadata = std::fs::metadata(socket_path).unwrap();
+    let metadata = fs::metadata(socket_path).unwrap();
     let own_uid = socket::read_own_uid().unwrap();
 
     assert_eq!(own_uid, metadata.uid());
@@ -120,10 +131,10 @@ async fn accepted_connection_returns_peer_uid() {
 /// Verify that `prepare_socket_path` removes stale socket.
 #[tokio::test]
 async fn prepare_socket_path_removes_stale_socket() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    let listener = UnixListener::bind(socket_path).expect("failed to bind test socket");
+    let listener = UnixListener::bind(socket_path).unwrap();
     drop(listener);
 
     prepare_socket_path(socket_path).await.unwrap();
@@ -134,10 +145,10 @@ async fn prepare_socket_path_removes_stale_socket() {
 /// Verify that `prepare_socket_path` rejects active socket.
 #[tokio::test]
 async fn prepare_socket_path_rejects_active_socket() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    let listener = UnixListener::bind(socket_path).expect("failed to bind test socket");
+    let listener = UnixListener::bind(socket_path).unwrap();
 
     let error = prepare_socket_path(socket_path).await.unwrap_err();
 
@@ -149,10 +160,10 @@ async fn prepare_socket_path_rejects_active_socket() {
 /// Verify that `prepare_socket_path` rejects non socket file.
 #[tokio::test]
 async fn prepare_socket_path_rejects_non_socket_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket_path = dir.path().join("bindizr.sock");
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    std::fs::write(socket_path, "not a socket").unwrap();
+    fs::write(socket_path, "not a socket").unwrap();
 
     let error = prepare_socket_path(socket_path).await.unwrap_err();
 
@@ -160,30 +171,19 @@ async fn prepare_socket_path_rejects_non_socket_file() {
     assert!(Path::new(socket_path).exists());
 }
 
-/// Shutdown waits for committed commands and closes clients still waiting for input.
+/// Verify that shutdown waits for committed commands and closes clients still waiting for input.
 #[tokio::test]
 async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use bindizr_core::config::Config;
-    use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
-    use bindizr_core::metrics::Metrics;
-    use bindizr_service::authorization::Caller;
-    use bindizr_service::{Context, secondary};
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
-    use tokio::net::UdpSocket;
-    use tokio::sync::watch;
-    use tokio::time;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.notify.batch_ms = 0;
     config.dns.notify.timeout_secs = 3;
     config.dns.notify.retries = 0;
     let tls = TlsCertificates::load(&config).unwrap();
 
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
+    let db = Db::connect(&config.database).await.unwrap();
     let cx = Arc::new(Context::new(
         config,
         String::new(),
@@ -194,11 +194,11 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     ));
 
     let secondary_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let secondary_request = serde_json::from_value(json!({
-        "name": "ack-gate",
-        "address": secondary_socket.local_addr().unwrap().to_string(),
-    }))
-    .unwrap();
+    let secondary_request = CreateSecondaryRequest {
+        name: "ack-gate".to_string(),
+        address: secondary_socket.local_addr().unwrap().to_string(),
+        notify_key_name: None,
+    };
 
     secondary::create(&cx, &Caller::socket(), &secondary_request)
         .await
@@ -215,12 +215,20 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     let mut client = UnixStream::connect(&path).await.unwrap();
     let mut idle_client = UnixStream::connect(&path).await.unwrap();
 
-    let request = serde_json::from_value(json!({
-        "name": "example.com",
-        "mname": "ns1.example.com",
-        "rname": "admin@example.com",
-    }))
-    .unwrap();
+    let request = CreateZoneRequest {
+        name: "example.com".to_string(),
+        mname: "ns1.example.com".to_string(),
+        rname: "admin@example.com".to_string(),
+        default_ttl: None,
+        serial: None,
+        refresh: None,
+        retry: None,
+        expire: None,
+        minimum_ttl: None,
+        description: None,
+        apex_ns: true,
+        dry_run: false,
+    };
     let command = serde_json::to_string(&DaemonCommand::CreateZone(request)).unwrap();
 
     client
@@ -228,18 +236,18 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
         .await
         .unwrap();
 
-    let mut notify = [0; 4096];
+    let mut buffer = [0; 4096];
 
     let (len, peer) = time::timeout(
         Duration::from_secs(2),
-        secondary_socket.recv_from(&mut notify),
+        secondary_socket.recv_from(&mut buffer),
     )
     .await
     .unwrap()
     .unwrap();
     time::timeout(Duration::from_secs(2), async {
         while Arc::strong_count(&socket_cx) < 4 {
-            tokio::task::yield_now().await;
+            task::yield_now().await;
         }
     })
     .await
@@ -252,7 +260,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
             .await
             .is_err()
     );
-    let response = ParsedQuery::parse(&notify[..len], Keepalive::None)
+    let response = ParsedQuery::parse(&buffer[..len], Keepalive::None)
         .unwrap()
         .build_signed_error_response(OptRcode::NOERROR, None, None)
         .unwrap();
@@ -269,7 +277,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     .unwrap()
     .unwrap();
 
-    let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+    let response: Value = serde_json::from_str(&response).unwrap();
 
     assert_eq!(response["data"]["zone"]["name"], "example.com");
 

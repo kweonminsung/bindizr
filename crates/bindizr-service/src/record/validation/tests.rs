@@ -1,19 +1,17 @@
-use bindizr_core::dns::Ttl;
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use std::slice;
+
 use bindizr_core::dns::record::TxtRecordValue;
-use bindizr_core::model::record::RecordId;
 use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 
 use super::*;
-use crate::error::{ErrorCode, ServiceError};
-use crate::model::record::{Record, RecordType};
+use crate::error::ErrorCode;
 
 /// TTL of every [`test_record`], so adds under test share their record set's TTL
 /// instead of tripping the record set TTL rule.
 const RECORD_SET_TTL: i64 = 3600;
 
-/// WKS values may coexist only when their IPv4 address or protocol differs.
+/// Verify that WKS values may coexist only when their IPv4 address or protocol differs.
 #[test]
 fn add_rejects_duplicate_wks_address_and_protocol() {
     let existing = [test_record(
@@ -28,7 +26,7 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
         validate_add(
             &existing,
             "host",
-            &RecordType::Wks,
+            RecordType::Wks,
             "192.0.2.1 6 80",
             RECORD_SET_TTL,
             None
@@ -43,7 +41,7 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
             validate_add(
                 &existing,
                 "host",
-                &RecordType::Wks,
+                RecordType::Wks,
                 value,
                 RECORD_SET_TTL,
                 None
@@ -57,15 +55,15 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
 #[test]
 fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     // Core owns the parsing; this layer owns the code and the message.
-    let zone = ZoneName::from_row("test.example.com");
+    let zone_name = ZoneName::parse("test.example.com").unwrap();
 
-    let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
+    let outside = normalize_record_owner_name("a1.other.com.", &zone_name).unwrap_err();
 
     assert_eq!(outside.code(), ErrorCode::InvalidRecordName);
     assert!(outside.to_string().contains("a1.other.com."));
-    assert!(outside.to_string().contains(zone.as_str()));
+    assert!(outside.to_string().contains(zone_name.as_str()));
 
-    let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
+    let empty = normalize_record_owner_name("  ", &zone_name).unwrap_err();
 
     assert_eq!(empty.code(), ErrorCode::InvalidRecordName);
     assert!(empty.to_string().starts_with("record name "));
@@ -75,7 +73,7 @@ fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
 fn validate_add(
     records: &[Record],
     stored_name: &str,
-    record_type: &RecordType,
+    record_type: RecordType,
     value: &str,
     ttl: i64,
     priority: Option<i32>,
@@ -97,13 +95,13 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     const DS_VALUE: &str =
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
-    let at_apex = validate_add(&[], "", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+    let at_apex = validate_add(&[], "", RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
 
     assert_eq!(at_apex.unwrap_err().code(), ErrorCode::InvalidRecordName);
 
     // The NS coupling is a final-state rule, enforced when the zone is
     // versioned — a lone DS passes the per-add shape checks.
-    let without_ns = validate_add(&[], "sub", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+    let without_ns = validate_add(&[], "sub", RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
 
     assert!(without_ns.is_ok());
 }
@@ -114,7 +112,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_at_apex = validate_add(
         &[],
         "",
-        &RecordType::Cname,
+        RecordType::Cname,
         "target.example.com",
         RECORD_SET_TTL,
         None,
@@ -128,7 +126,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let delegation_ns = validate_add(
         &[],
         "child",
-        &RecordType::Ns,
+        RecordType::Ns,
         "ns.example.com",
         RECORD_SET_TTL,
         None,
@@ -140,7 +138,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_conflict = validate_add(
         &[existing_a],
         "www",
-        &RecordType::Cname,
+        RecordType::Cname,
         "target.example.com",
         RECORD_SET_TTL,
         None,
@@ -160,7 +158,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     let duplicate_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         "Mail.Example.Com.",
         RECORD_SET_TTL,
         Some(10),
@@ -178,7 +176,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     let duplicate_srv = validate_add(
         &[existing_srv],
         "_sip._tcp",
-        &RecordType::Srv,
+        RecordType::Srv,
         "5 5060 Sip.Example.Com.",
         RECORD_SET_TTL,
         Some(10),
@@ -196,7 +194,7 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
     let duplicate_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         "mail.example.com.",
         RECORD_SET_TTL,
         Some(10),
@@ -212,7 +210,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     let null_mx_with_existing_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         ".",
         RECORD_SET_TTL,
         Some(0),
@@ -227,7 +225,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     let mx_with_existing_null_mx = validate_add(
         &[existing_null_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         "mail.example.com",
         RECORD_SET_TTL,
         Some(10),
@@ -239,15 +237,15 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     );
 }
 
-/// Verify that `add` enforces one TTL per RRSET.
+/// Verify that `add` enforces one TTL per record set.
 #[test]
 fn add_enforces_one_ttl_per_record_set() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
     let differing_ttl = validate_add(
-        std::slice::from_ref(&existing_a),
+        slice::from_ref(&existing_a),
         "www",
-        &RecordType::A,
+        RecordType::A,
         "192.0.2.11",
         600,
         None,
@@ -256,9 +254,9 @@ fn add_enforces_one_ttl_per_record_set() {
     assert_eq!(differing_ttl.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
-        std::slice::from_ref(&existing_a),
+        slice::from_ref(&existing_a),
         "www",
-        &RecordType::A,
+        RecordType::A,
         "192.0.2.11",
         RECORD_SET_TTL,
         None,
@@ -269,9 +267,9 @@ fn add_enforces_one_ttl_per_record_set() {
     // A different type at the same owner name is a different record set.
     let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     let other_record_set = validate_add(
-        std::slice::from_ref(&existing_a),
+        slice::from_ref(&existing_a),
         "www",
-        &RecordType::Txt,
+        RecordType::Txt,
         &encoded_txt,
         600,
         None,
@@ -314,7 +312,7 @@ fn add_enforces_the_dname_rules() {
     let second = validate_add(
         &dname_at_sub,
         "sub",
-        &RecordType::Dname,
+        RecordType::Dname,
         "two.example.net.",
         RECORD_SET_TTL,
         None,
@@ -325,7 +323,7 @@ fn add_enforces_the_dname_rules() {
     let ns_beside = validate_add(
         &dname_at_sub,
         "sub",
-        &RecordType::Ns,
+        RecordType::Ns,
         "ns.example.net.",
         RECORD_SET_TTL,
         None,
@@ -335,15 +333,17 @@ fn add_enforces_the_dname_rules() {
     assert_eq!(ns_beside.code(), ErrorCode::RecordConflict);
 
     // Other data at the DNAME's own name is allowed; only names below it are not.
-    validate_add(
-        &dname_at_sub,
-        "sub",
-        &RecordType::A,
-        "192.0.2.1",
-        RECORD_SET_TTL,
-        None,
-    )
-    .unwrap();
+    assert!(
+        validate_add(
+            &dname_at_sub,
+            "sub",
+            RecordType::A,
+            "192.0.2.1",
+            RECORD_SET_TTL,
+            None,
+        )
+        .is_ok()
+    );
 
     let ns_at_del = [test_record(
         2,
@@ -355,7 +355,7 @@ fn add_enforces_the_dname_rules() {
     let dname_beside = validate_add(
         &ns_at_del,
         "del",
-        &RecordType::Dname,
+        RecordType::Dname,
         "one.example.net.",
         RECORD_SET_TTL,
         None,
@@ -366,13 +366,15 @@ fn add_enforces_the_dname_rules() {
 
     // The apex NS set is the zone's own, not a delegation.
     let ns_at_apex = [test_record(3, "", RecordType::Ns, "ns.example.net.", None)];
-    validate_add(
-        &ns_at_apex,
-        "",
-        &RecordType::Dname,
-        "one.example.net.",
-        RECORD_SET_TTL,
-        None,
-    )
-    .unwrap();
+    assert!(
+        validate_add(
+            &ns_at_apex,
+            "",
+            RecordType::Dname,
+            "one.example.net.",
+            RECORD_SET_TTL,
+            None,
+        )
+        .is_ok()
+    );
 }

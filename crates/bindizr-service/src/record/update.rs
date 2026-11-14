@@ -1,21 +1,21 @@
+use std::slice;
+
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordData, RecordId, RecordType};
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 
-use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData, RecordType};
-use crate::model::zone::Zone;
-use crate::types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse};
+use crate::record::validation;
+use crate::types::{RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, transaction, ttl, zone};
+use crate::{Context, dnssec, notify, record, serial, transaction, ttl, zone};
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LockTarget<'a> {
     Id {
         record_id: RecordId,
@@ -32,7 +32,7 @@ enum LockTarget<'a> {
 /// Resolve a replacement; omitted fields require read access to the stored record.
 fn resolve_update(
     zone: &Zone,
-    existing: &Record,
+    existing_record: &Record,
     request: &UpdateRecordRequest,
     can_read: bool,
 ) -> Result<Record, ServiceError> {
@@ -77,23 +77,22 @@ fn resolve_update(
         }
     }
 
-    let record_type = record_type?.unwrap_or(existing.record_type);
+    let record_type = record_type?.unwrap_or(existing_record.record_type);
 
     // Each type has its own stored grammar (TXT uses quoted presentation),
     // so a type change requires a fresh value.
-    if record_type != existing.record_type && request.value.is_none() {
+    if record_type != existing_record.record_type && request.value.is_none() {
         return Err(ServiceError::invalid_input(
-            "value is required when changing a record's type".to_string(),
+            "value is required when changing a record's type",
         ));
     }
 
     // Reject explicit priority outside MX/SRV; changing away from them clears it.
     let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
-        record_type.stored_priority(request.priority.or(existing.priority))
+        record_type.stored_priority(request.priority.or(existing_record.priority))
     } else if request.priority.is_some() {
         return Err(ServiceError::invalid_record_value(format!(
-            "{} records do not take a priority",
-            record_type
+            "{record_type} records do not take a priority"
         )));
     } else {
         None
@@ -101,34 +100,34 @@ fn resolve_update(
     let encoded_value = match &request.value {
         Some(value) => {
             let encoded = value
-                .to_encoded_value(&record_type, priority)
+                .to_encoded_value(record_type, priority)
                 .map_err(ServiceError::invalid_record_value)?;
             validation::validate_management_value(record_type, &encoded)?;
             encoded
         }
-        None => existing.value.clone(),
+        None => existing_record.value.clone(),
     };
 
     let ttl = match request.ttl {
         Some(ttl) => ttl::validate_record_ttl(ttl)?,
-        None => existing.ttl,
+        None => existing_record.ttl,
     };
 
     // An omitted name keeps the stored owner, which needs no reparse.
-    let owner_name = match &request.name {
+    let owner = match &request.name {
         Some(name) => validation::normalize_record_owner_name(name, &zone.name)?,
-        None => existing.name.clone(),
+        None => existing_record.name.clone(),
     };
 
     Ok(Record {
-        id: existing.id,
-        name: owner_name,
+        id: existing_record.id,
+        name: owner,
         record_type,
         value: encoded_value,
         ttl,
         priority,
         zone_id: zone.id,
-        created_at: existing.created_at,
+        created_at: existing_record.created_at,
     })
 }
 
@@ -145,7 +144,7 @@ pub async fn update(
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {}", error);
+            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,
@@ -178,7 +177,7 @@ async fn update_locked(
 ) -> Result<WriteRecordResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let (zone, existing_record, caller) = match target {
             LockTarget::Id { record_id, zone_id } => {
                 let zone =
@@ -186,12 +185,11 @@ async fn update_locked(
                         Ok(Some(zone)) => zone,
                         Ok(None) => {
                             return Err(ServiceError::ZoneNotFound(format!(
-                                "zone with id '{}' not found",
-                                zone_id
+                                "zone with id '{zone_id}' not found"
                             )));
                         }
                         Err(error) => {
-                            log::error!("Failed to fetch zone: {}", error);
+                            log::error!("Failed to fetch zone: {error}");
                             return Err(ServiceError::internal_with_source(
                                 "failed to fetch zone",
                                 error,
@@ -208,11 +206,9 @@ async fn update_locked(
                 .await
                 {
                     Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_)) | Ok(None) => {
-                        return Err(ServiceError::record_not_found(record_id));
-                    }
+                    Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                     Err(error) => {
-                        log::error!("Failed to fetch record: {}", error);
+                        log::error!("Failed to fetch record: {error}");
                         return Err(ServiceError::internal_with_source(
                             "failed to fetch record",
                             error,
@@ -226,7 +222,7 @@ async fn update_locked(
                     Action::RecordUpdate,
                     zone.id,
                     &existing_record.name,
-                    Some(&existing_record.record_type),
+                    Some(existing_record.record_type),
                 ) {
                     return Err(ServiceError::record_not_found(record_id));
                 }
@@ -254,16 +250,14 @@ async fn update_locked(
                         Action::RecordUpdate,
                         zone.id,
                         &record.name,
-                        Some(&record.record_type),
+                        Some(record.record_type),
                     )
                 })
                 .collect();
 
                 match matched.len() {
                     1 => (zone, matched.remove(0), caller),
-                    0 => {
-                        return Err(ServiceError::record_not_found_at_name(&zone.name, &owner));
-                    }
+                    0 => return Err(ServiceError::record_not_found_at_name(&zone.name, &owner)),
                     matches => {
                         return Err(ServiceError::record_name_ambiguous(
                             &zone.name, &owner, matches,
@@ -279,7 +273,7 @@ async fn update_locked(
         let can_read = caller.sees_record(
             zone.id,
             &existing_record.name,
-            Some(&existing_record.record_type),
+            Some(existing_record.record_type),
         );
         let candidate = resolve_update(&zone, &existing_record, request, can_read)?;
 
@@ -291,40 +285,34 @@ async fn update_locked(
                 RecordAccess {
                     action: Action::RecordUpdate,
                     relative_name: existing_record.name.clone(),
-                    record_type: Some(&existing_record.record_type),
+                    record_type: Some(existing_record.record_type),
                 },
                 RecordAccess {
                     action: Action::RecordUpdate,
                     relative_name: candidate.name.clone(),
-                    record_type: Some(&candidate.record_type),
+                    record_type: Some(candidate.record_type),
                 },
             ],
         )?;
 
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = match bindizr_db::record::list_by_name_tx(
+        let records_at_name = bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &candidate.name,
             LockLevel::Exclusive,
         )
         .await
-        {
-            Ok(records) => records,
-            Err(error) => {
-                log::error!("Failed to load records: {}", error);
-                return Err(ServiceError::internal_with_source(
-                    "failed to update record",
-                    error,
-                ));
-            }
-        };
+        .map_err(|error| {
+            log::error!("Failed to load records: {error}");
+            ServiceError::internal_with_source("failed to update record", error)
+        })?;
 
         validation::validate_record_constraints(
             &records_at_name,
             &candidate.name,
-            &candidate.record_type,
+            candidate.record_type,
             &candidate.value,
             candidate.ttl,
             candidate.priority,
@@ -362,38 +350,32 @@ async fn update_locked(
         zone::validate_record_changes_tx(
             &mut tx,
             &zone,
-            std::slice::from_ref(&existing_record),
-            std::slice::from_ref(&candidate),
+            slice::from_ref(&existing_record),
+            slice::from_ref(&candidate),
         )
         .await?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
-        let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
+        let actions = caller.record_actions(zone.id, &candidate.name, candidate.record_type);
 
         // The merge is resolved and validated, so a dry run stops here.
         if request.dry_run {
-            return Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
-                candidate, zone.name, diff, actions,
-            ));
+            return Ok((candidate, zone.name, diff, actions));
         }
 
         // Store the validated replacement, signatures, and journal under one serial.
         let zone_name = zone.name.clone();
 
         let updated_record =
-            super::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate).await?;
+            record::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate)
+                .await?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
         // Advance the serial once so IXFR consumers detect the change
         zone::advance_serial_tx(&mut tx, &zone, new_serial, caller.change_origin()).await?;
 
-        Ok::<(Record, ZoneName, RecordDiffResponse, Vec<Action>), ServiceError>((
-            updated_record,
-            zone_name,
-            diff,
-            actions,
-        ))
+        Ok((updated_record, zone_name, diff, actions))
     }
     .await;
 
@@ -401,8 +383,7 @@ async fn update_locked(
         transaction::finish_tx(tx, apply_result, "failed to update record").await?;
 
     log::info!(
-        "event=record_update zone={} name={} type={} ttl={} priority={} record_id={} dry_run={}",
-        zone_name,
+        "event=record_update zone={zone_name} name={} type={} ttl={} priority={} record_id={} dry_run={}",
         updated_record.name,
         updated_record.record_type,
         updated_record.ttl,
@@ -416,7 +397,7 @@ async fn update_locked(
     // Request secondary transfers only after the replacement is committed.
     if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(WriteRecordResponse {

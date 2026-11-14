@@ -15,7 +15,7 @@ use chrono::Utc;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateRoleGrantRequest, PageRequest, PaginatedResponse, RoleGrantResponse};
-use crate::{Context, audit, grant_pattern, pagination, transaction, zone};
+use crate::{Context, audit, grant_pattern, pagination, role, transaction, zone};
 
 /// Grant `role_name` the request's actions in its zone, or in all zones
 /// when it names none.
@@ -27,8 +27,8 @@ pub async fn create(
 ) -> Result<RoleGrantResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let role = super::lookup_by_name(cx, role_name).await?;
-    super::refuse_builtin(&role)?;
+    let role = role::lookup_by_name(cx, role_name).await?;
+    role::refuse_builtin(&role)?;
 
     let actions = request
         .actions
@@ -55,21 +55,21 @@ pub async fn create(
     }
 
     let zone = match request.zone_name.as_deref() {
-        None => None,
         Some(zone_name) => {
             if let Some(action) = actions.iter().find(|action| action.needs_all_zones()) {
                 return Err(ServiceError::invalid_input(format!(
-                    "'{}' acts on no zone, so its grant must cover all zones: omit zone_name",
-                    action
+                    "'{action}' acts on no zone, so its grant must cover all zones: omit zone_name"
                 )));
             }
 
             Some(zone::lookup_by_name(cx, &zone::normalize_name(zone_name)?).await?)
         }
+        None => None,
     };
 
     let mut tx = transaction::begin_tx(cx, "failed to create role grant").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -114,7 +114,8 @@ pub async fn create(
         Ok(grant)
     }
     .await;
-    let grant = transaction::finish_tx(tx, result, "failed to create role grant").await?;
+
+    let grant = transaction::finish_tx(tx, apply_result, "failed to create role grant").await?;
 
     Ok(RoleGrantResponse::from_grant(
         &grant,
@@ -123,7 +124,7 @@ pub async fn create(
     ))
 }
 
-/// Every grant of `role_name`, with the zone each covers.
+/// List every grant of `role_name`, with the zone each covers.
 pub async fn list(
     cx: &Context,
     caller: &Caller,
@@ -133,17 +134,18 @@ pub async fn list(
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(page.limit)?;
 
-    let role = super::lookup_by_name(cx, role_name).await?;
+    let role = role::lookup_by_name(cx, role_name).await?;
     list_by_role(cx, &role, page).await
 }
 
-/// The grants of `token`'s role; any token may read its own.
+/// List the grants of `token`'s role; any token may read its own.
 pub async fn list_self(
     cx: &Context,
     token: &ApiToken,
     page: PageRequest,
 ) -> Result<PaginatedResponse<RoleGrantResponse>, ServiceError> {
     pagination::validate_page_limit(page.limit)?;
+
     let role = bindizr_db::role::get(cx.db(), token.role_id)
         .await?
         .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
@@ -160,8 +162,8 @@ pub async fn revoke(
 ) -> Result<(), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let role = super::lookup_by_name(cx, role_name).await?;
-    super::refuse_builtin(&role)?;
+    let role = role::lookup_by_name(cx, role_name).await?;
+    role::refuse_builtin(&role)?;
 
     let grant = bindizr_db::role_grant::get(cx.db(), grant_id)
         .await?
@@ -169,13 +171,13 @@ pub async fn revoke(
         .ok_or_else(|| ServiceError::role_grant_not_found(grant_id))?;
 
     let mut tx = transaction::begin_tx(cx, "failed to revoke role grant").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_action(Action::AccessManage)?;
 
-        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         // Read for the audit row's detail alone; a zone gone meanwhile reads as its id.
         let zone_name = match grant.zone_scope.zone_id() {
             Some(zone_id) => Some(
@@ -186,6 +188,7 @@ pub async fn revoke(
             None => None,
         };
 
+        // Removed meanwhile: not found, and no audit row for a deletion that was not one.
         if !bindizr_db::role_grant::delete_tx(&mut tx, grant.id).await? {
             return Err(ServiceError::role_grant_not_found(grant.id));
         }
@@ -202,10 +205,10 @@ pub async fn revoke(
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to revoke role grant").await
+    transaction::finish_tx(tx, apply_result, "failed to revoke role grant").await
 }
 
-/// A grant's audit detail, in the request's field names.
+/// Describe a grant for its audit detail, in the request's field names.
 fn describe_grant(grant: &RoleGrant, zone_name: Option<&str>) -> String {
     format!(
         "zone_name {}, actions {}, record_name_pattern {}, record_types {}",
@@ -216,7 +219,7 @@ fn describe_grant(grant: &RoleGrant, zone_name: Option<&str>) -> String {
     )
 }
 
-/// A role's grants as responses, each with the name of the zone it covers.
+/// List a role's grants as responses, each with the name of the zone it covers.
 async fn list_by_role(
     cx: &Context,
     role: &Role,

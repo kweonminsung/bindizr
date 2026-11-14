@@ -4,12 +4,9 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
-
-/// An SOA interval in seconds, 0 through 2^31 - 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "u32", into = "u32")]
-pub struct SoaInterval(u32);
 
 /// An SOA interval outside the range both forms hold.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -22,11 +19,16 @@ pub enum ConvertSoaIntervalError {
     TooLarge { secs: u32 },
 }
 
+/// An SOA interval in seconds, 0 through 2^31 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct SoaInterval(u32);
+
 impl SoaInterval {
     /// The largest interval the row form holds.
-    pub const MAX: SoaInterval = SoaInterval(i32::MAX as u32);
+    pub const MAX: Self = Self(i32::MAX as u32);
 
-    /// An interval known to be in range, such as a literal; wire input goes
+    /// Build an interval known to be in range, such as a literal; wire input goes
     /// through `TryFrom` instead.
     ///
     /// # Panics
@@ -34,10 +36,10 @@ impl SoaInterval {
     /// Past [`SoaInterval::MAX`].
     pub const fn from_secs(secs: u32) -> Self {
         assert!(secs <= Self::MAX.0, "SOA interval exceeds 2^31 - 1");
-        SoaInterval(secs)
+        Self(secs)
     }
 
-    /// The interval in seconds, as the wire carries it.
+    /// Return the interval in seconds, as the wire carries it.
     pub const fn as_secs(self) -> u32 {
         self.0
     }
@@ -47,11 +49,11 @@ impl TryFrom<u32> for SoaInterval {
     type Error = ConvertSoaIntervalError;
 
     /// Take a wire interval, refused past the maximum.
-    fn try_from(secs: u32) -> Result<Self, Self::Error> {
-        if secs > Self::MAX.0 {
-            return Err(ConvertSoaIntervalError::TooLarge { secs });
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value > Self::MAX.0 {
+            return Err(ConvertSoaIntervalError::TooLarge { secs: value });
         }
-        Ok(SoaInterval(secs))
+        Ok(Self(value))
     }
 }
 
@@ -59,24 +61,24 @@ impl TryFrom<i32> for SoaInterval {
     type Error = ConvertSoaIntervalError;
 
     /// Read a row's interval; a negative one is corrupt data.
-    fn try_from(secs: i32) -> Result<Self, Self::Error> {
-        u32::try_from(secs)
-            .map(SoaInterval)
-            .map_err(|_| ConvertSoaIntervalError::Negative { secs })
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertSoaIntervalError::Negative { secs: value })
     }
 }
 
 impl From<SoaInterval> for u32 {
-    /// The wire form.
+    /// Convert to the wire form.
     fn from(interval: SoaInterval) -> Self {
         interval.0
     }
 }
 
 impl From<SoaInterval> for i32 {
-    /// The row form; the range invariant makes it exact.
+    /// Convert to the row form; the range invariant makes it exact.
     fn from(interval: SoaInterval) -> Self {
-        interval.0 as i32
+        interval.0 as Self
     }
 }
 
@@ -91,12 +93,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for SoaInterval
 where
     i32: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -106,11 +108,11 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for SoaInterval
 where
     i32: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i32::from(*self).encode_by_ref(buffer)
     }
 }
@@ -120,11 +122,9 @@ where
     i32: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a negative column fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(SoaInterval::try_from(
-            <i32 as sqlx::Decode<'r, DB>>::decode(value)?,
-        )?)
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+            value,
+        )?)?)
     }
 }

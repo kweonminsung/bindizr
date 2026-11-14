@@ -2,13 +2,12 @@
 
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::{Record, RecordId, RecordType};
-use bindizr_core::model::zone::ZoneId;
-use bindizr_core::model::zone_version::ZoneVersionId;
+use bindizr_core::model::record::{RecordId, RecordType};
 use chrono::Utc;
 
 use super::*;
 
+/// Record budget the cache is given in these tests.
 const MAX_RECORDS: usize = 500_000;
 
 /// Build cached zone content with the requested record count.
@@ -19,7 +18,7 @@ fn zone_content(records: usize) -> CachedTransferContent {
             name: OwnerName::from_row("www"),
             record_type: RecordType::A,
             value: "192.0.2.1".to_string(),
-            ttl: Ttl::try_from(3600).unwrap(),
+            ttl: Ttl::from_secs(3600),
             priority: None,
             created_at: Utc::now(),
             zone_id: ZoneId::from(1),
@@ -27,8 +26,8 @@ fn zone_content(records: usize) -> CachedTransferContent {
         .collect();
     CachedTransferContent {
         version_id: ZoneVersionId::from(1),
-        records: std::sync::Arc::new(records),
-        dnssec_records: std::sync::Arc::new(Vec::new()),
+        records: Arc::new(records),
+        dnssec_records: Arc::new(Vec::new()),
     }
 }
 

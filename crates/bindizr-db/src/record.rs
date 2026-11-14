@@ -1,15 +1,16 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::zone::ZoneId;
 
 use crate::error::DatabaseError;
-use crate::model::record::{Record, RecordType, RecordWithZone};
 use crate::sql::{RecordSortField, SortOrder};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Select records by zone, owner, type, value, TTL, priority, a search term
+/// and a role scope, with sort and paging.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RecordFilter {
     /// Resolve `zones.name` in the query while filtering `records.zone_id`
     /// through `idx_records_zone_name`.
@@ -45,7 +46,7 @@ pub async fn create_many_tx(
     }
 }
 
-/// Find a record by ID.
+/// Get a record by ID.
 pub async fn get(db: &Db, id: RecordId) -> Result<Option<Record>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::get(pool, id).await,
@@ -54,7 +55,7 @@ pub async fn get(db: &Db, id: RecordId) -> Result<Option<Record>, DatabaseError>
     }
 }
 
-/// Find a record with its zone metadata.
+/// Get a record with its zone metadata.
 pub async fn get_with_zone(db: &Db, id: RecordId) -> Result<Option<RecordWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::get_with_zone(pool, id).await,
@@ -63,7 +64,7 @@ pub async fn get_with_zone(db: &Db, id: RecordId) -> Result<Option<RecordWithZon
     }
 }
 
-/// Find a record by ID in the current transaction.
+/// Get a record by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: RecordId,
@@ -129,7 +130,7 @@ pub async fn list_by_record_types_tx(
     }
 }
 
-/// List the owner names of a zone, each once.
+/// List the owner names of a zone, each once, in the current transaction.
 pub async fn list_names_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -141,8 +142,8 @@ pub async fn list_names_tx(
     }
 }
 
-/// Load records whose owner name is any of `names` (lowercased match). Used
-/// by bulk insert to fetch only the rows that could conflict with the batch.
+/// List the records whose owner name is any of `names`. Used by bulk insert to
+/// fetch only the rows that could conflict with the batch.
 pub async fn list_by_names_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -165,7 +166,7 @@ pub async fn list_by_names_tx(
 /// List matching records with their zone metadata.
 pub async fn list_by_filter_with_zone(
     db: &Db,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::list_by_filter_with_zone(pool, filter).await,
@@ -174,7 +175,7 @@ pub async fn list_by_filter_with_zone(
     }
 }
 
-/// How many records a zone holds, in the caller's transaction.
+/// Count the records a zone holds, in the current transaction.
 pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::record::count_tx(tx, zone_id).await,
@@ -184,7 +185,7 @@ pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, 
 }
 
 /// Count records matching the filter.
-pub async fn count_by_filter(db: &Db, filter: RecordFilter) -> Result<u64, DatabaseError> {
+pub async fn count_by_filter(db: &Db, filter: &RecordFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::count_by_filter(pool, filter).await,
         Backend::Postgres(pool) => postgres::record::count_by_filter(pool, filter).await,

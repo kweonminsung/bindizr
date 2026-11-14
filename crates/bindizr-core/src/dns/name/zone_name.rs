@@ -1,6 +1,13 @@
 //! A zone's name, canonical by construction.
 
-use super::ParseNameError;
+use std::fmt;
+
+use serde::de::Error;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
+use crate::dns::name;
+use crate::dns::name::ParseNameError;
 
 /// A zone's name as rows store it: escaped octet labels, ASCII-folded, without a trailing dot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -9,12 +16,12 @@ pub struct ZoneName(String);
 impl ZoneName {
     /// Parse a zone name using DNS octet and length rules (RFC 2181, Section 11).
     pub fn parse(value: &str) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(value);
+        let trimmed = name::trim_presentation_name(value);
         if trimmed.is_empty() || trimmed == "." {
             return Err(ParseNameError::Empty);
         }
-        let (labels, _) = super::decode_name_labels(trimmed)?;
-        Ok(Self(super::labels_to_presentation(&labels)))
+        let (labels, _) = name::decode_name_labels(trimmed)?;
+        Ok(Self(name::labels_to_presentation(&labels)))
     }
 
     /// Wrap a name already in stored form, as read from a row.
@@ -22,26 +29,26 @@ impl ZoneName {
         Self::parse(value).expect("zone name validated before storage")
     }
 
-    /// Return the text representation of this zone name.
+    /// Return the canonical wire spelling.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// The zone's decoded, case-folded octet labels.
+    /// Return the zone's decoded, case-folded octet labels.
     pub fn labels(&self) -> Vec<Vec<u8>> {
-        super::decode_name_labels(&self.0)
+        name::decode_name_labels(&self.0)
             .expect("validated zone name")
             .0
     }
 
-    /// The absolute form, with the trailing dot.
+    /// Return the absolute form, with the trailing dot.
     pub fn to_fqdn(&self) -> String {
-        super::to_fqdn(&self.0)
+        name::to_fqdn(&self.0)
     }
 
     /// Encode the zone name as an absolute DNS wire-format name.
     pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
-        super::labels_to_wire(self.labels().iter().map(Vec::as_slice))
+        name::labels_to_wire(self.labels().iter().map(Vec::as_slice))
     }
 }
 
@@ -56,7 +63,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -70,7 +77,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.0.encode_by_ref(buffer)
     }
 }
@@ -81,9 +88,7 @@ where
     &'r str: sqlx::Decode<'r, DB>,
 {
     /// Read the row form.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::parse(<&str as sqlx::Decode<'r, DB>>::decode(value)?)?)
     }
 }
@@ -101,13 +106,13 @@ impl<'de> serde::Deserialize<'de> for ZoneName {
     /// Deserialize a zone name from its text, rejecting one that does not parse.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        ZoneName::parse(&value).map_err(serde::de::Error::custom)
+        Self::parse(&value).map_err(Error::custom)
     }
 }
 
-impl std::fmt::Display for ZoneName {
+impl fmt::Display for ZoneName {
     /// Write the zone name in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }

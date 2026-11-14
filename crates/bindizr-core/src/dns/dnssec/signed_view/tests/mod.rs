@@ -1,3 +1,8 @@
+mod keys;
+mod reuse;
+mod rollover;
+mod signing;
+
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Duration, Utc};
@@ -35,14 +40,14 @@ fn fixed_now() -> DateTime<Utc> {
         .to_utc()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComputeArgs<'a> {
     zone: &'a Zone,
     records: &'a [Record],
     keys: &'a [DnssecKey],
     prev: &'a [DnssecRecord],
     denial: DnssecDenial,
-    new_serial: i32,
+    new_serial: u32,
     expiration: DateTime<Utc>,
     /// `0` pins every record set to `expiration`; the spread has its own test.
     expiration_jitter_secs: i64,
@@ -54,7 +59,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
     SignedViewParams {
         zone: args.zone,
-        new_serial: Serial::try_from(args.new_serial).unwrap(),
+        new_serial: Serial::from(args.new_serial),
         records: args.records,
         keys: args.keys,
         prev: args.prev,
@@ -63,7 +68,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         inception: now - Duration::hours(1),
         expiration: args.expiration,
         expiration_jitter_secs: args.expiration_jitter_secs,
-        refresh_secs: 5 * 86_400,
+        refresh_secs: 5 * 86400,
         pass: args.pass,
         withdraw_parent_ds: false,
     }
@@ -76,8 +81,8 @@ fn default_expiration() -> DateTime<Utc> {
     fixed_now() + Duration::days(14)
 }
 
-/// Stored form of a computed plane: rows get distinct ids like the database
-/// would assign.
+/// Convert a computed plane to its stored form: rows get distinct ids like the
+/// database would assign.
 fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
     records
         .iter()
@@ -112,13 +117,3 @@ fn rrsigs_covering<'a>(
         })
         .collect()
 }
-
-const RECORD_TYPE_SOA: i32 = 6;
-const RECORD_TYPE_NS: i32 = 2;
-const RECORD_TYPE_A: i32 = 1;
-const RECORD_TYPE_DS: i32 = 43;
-
-mod keys;
-mod reuse;
-mod rollover;
-mod signing;

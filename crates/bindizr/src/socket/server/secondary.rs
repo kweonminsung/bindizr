@@ -49,7 +49,7 @@ pub(crate) async fn get_secondary(
 pub(crate) async fn update_secondary(
     cx: &Context,
     name: &str,
-    request: UpdateSecondaryRequest,
+    request: &UpdateSecondaryRequest,
 ) -> Result<DaemonResponse<SingleSecondaryResponse>, ServiceError> {
     let secondary = secondary::update(cx, &Caller::socket(), name, request).await?;
     Ok(DaemonResponse {
@@ -64,7 +64,7 @@ pub(crate) async fn delete_secondary(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     secondary::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Secondary '{}' deleted successfully", name);
+    let message = format!("Secondary '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },
@@ -76,33 +76,32 @@ pub(crate) async fn check_secondary(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<CheckSecondaryResponse>, ServiceError> {
-    let check = secondary::check(cx, &Caller::socket(), name).await?;
-    let message = if check.is_healthy() {
-        format!("Secondary '{}' passed the check", name)
+    let response = secondary::check(cx, &Caller::socket(), name).await?;
+    let message = if response.is_healthy() {
+        format!("Secondary '{name}' passed the check")
     } else {
-        format!("Secondary '{}' failed the check", name)
+        format!("Secondary '{name}' failed the check")
     };
 
     Ok(DaemonResponse {
         message,
-        data: check,
+        data: response,
     })
 }
 
-/// The transfers Bindizr served one secondary.
+/// List the transfers Bindizr served one secondary.
 pub(crate) async fn list_secondary_transfers(
     cx: &Context,
     name: &str,
-    filter: SecondaryTransferFilter,
+    filter: &SecondaryTransferFilter,
 ) -> Result<DaemonResponse<SecondaryTransfersResponse>, ServiceError> {
-    let transfers = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
+    let response = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
 
     Ok(DaemonResponse {
         message: format!(
-            "{} transfer(s) served to secondary '{}'",
-            transfers.transfers.len(),
-            name
+            "{} transfer(s) served to secondary '{name}'",
+            response.transfers.len()
         ),
-        data: transfers,
+        data: response,
     })
 }

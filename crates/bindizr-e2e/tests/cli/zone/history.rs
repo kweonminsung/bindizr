@@ -3,10 +3,10 @@ use serde_json::Value;
 use crate::common;
 use crate::common::TestApp;
 
-/// Verify zone history inspection and rollback through the CLI.
+/// Verify that the CLI inspects zone history and rolls it back.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_versions_support_diff_and_rollback_via_cli() {
+async fn zone_versions_support_diff_and_rollback() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
 
@@ -28,12 +28,12 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     )
     .await;
 
-    let zone = app
+    let fetched = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
-    let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(zone["zone"]["serial"].as_i64().unwrap(), 1);
+    assert_eq!(fetched["zone"]["serial"], 1);
 
     app.run_cli_success(
         &[
@@ -50,7 +50,8 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     )
     .await;
 
-    let target_serial = "2"; // zone create = 1, record create = 2
+    // zone create = 1, record create = 2
+    let target_serial = "2";
 
     app.run_cli_success(
         &[
@@ -68,18 +69,18 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     .await;
 
     // Inspect the version list and the target snapshot before comparing changes.
-    let versions = app
+    let listed = app
         .run_cli_success(
             &["zone", "version", "list", &zone_name, "--output", "json"],
             None,
         )
         .await;
-    let versions: Value = serde_json::from_str(&versions).expect("CLI did not return valid JSON");
-    let serials: Vec<i64> = versions["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let serials: Vec<i64> = listed["items"]
         .as_array()
-        .expect("missing version items")
+        .unwrap()
         .iter()
-        .map(|item| item["serial"].as_i64().unwrap())
+        .map(|version| version["serial"].as_i64().unwrap())
         .collect();
 
     assert_eq!(serials, [3, 2, 1]);
@@ -166,7 +167,7 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
 
     assert!(rolled_back.contains("Zone rolled back to serial 2 (new serial 4)"));
 
-    let records = app
+    let listed = app
         .run_cli_success(
             &[
                 "record", "list", &zone_name, "--type", "A", "--output", "json",
@@ -174,8 +175,8 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
             None,
         )
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let names: Vec<&str> = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let names: Vec<&str> = listed["items"]
         .as_array()
         .unwrap()
         .iter()
@@ -188,6 +189,6 @@ async fn zone_versions_support_diff_and_rollback_via_cli() {
     // Rolling back to the current serial is rejected with a hint.
     let args = ["zone", "version", "rollback", &zone_name, "4"];
 
-    let output = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &output, "must be less than the current serial");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "must be less than the current serial");
 }

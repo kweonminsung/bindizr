@@ -1,18 +1,19 @@
 use std::error::Error;
+use std::io;
 
 use super::*;
 
-/// Verify that owner in zone reduces an in zone owner to its stored form.
+/// Verify that `parse_update_owner` reduces an in-zone owner to its stored form.
 #[test]
-fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
+fn parse_update_owner_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
-        parse_update_owner("www.example.com.", &ZoneName::from_row("example.com"))
+        parse_update_owner("www.example.com.", &ZoneName::parse("example.com").unwrap())
             .unwrap()
             .to_stored(),
         "www"
     );
     assert!(
-        parse_update_owner("example.com.", &ZoneName::from_row("example.com"))
+        parse_update_owner("example.com.", &ZoneName::parse("example.com").unwrap())
             .unwrap()
             .is_apex()
     );
@@ -21,7 +22,7 @@ fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
         parse_update_owner(
             r"host\.name.example.com.",
-            &ZoneName::from_row("example.com")
+            &ZoneName::parse("example.com").unwrap()
         )
         .unwrap()
         .labels(),
@@ -31,7 +32,7 @@ fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
 
 /// Verify that `parse_update_owner` rejects owners outside the zone.
 #[test]
-fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
+fn parse_update_owner_rejects_owners_outside_the_zone() {
     for owner in [
         "aexample.com.",
         "badexample.com.",
@@ -40,12 +41,13 @@ fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
         // One label spelling the zone is not inside it.
         r"evil\.example.com.",
     ] {
-        let error = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
+        let error =
+            parse_update_owner(owner, &ZoneName::parse("example.com").unwrap()).unwrap_err();
         assert_eq!(error.rcode(), Rcode::NOTZONE, "{owner:?}");
     }
 }
 
-/// Preserve parser failures while retaining their FORMERR classification.
+/// Verify that parser failures are preserved while retaining their FORMERR classification.
 #[test]
 fn parser_errors_retain_their_sources() {
     let shape = ValidateUpdateShapeError::NonzeroTtl;
@@ -60,9 +62,7 @@ fn parser_errors_retain_their_sources() {
         Some(&shape)
     );
 
-    let parse = ParseUpdateError::Rdata {
-        record_type: "A".to_string(),
-    };
+    let parse = ParseUpdateError::Rdata { record_type: "A" };
     let error = NsupdateError::from(parse.clone());
 
     assert_eq!(error.rcode(), Rcode::FORMERR);
@@ -72,24 +72,18 @@ fn parser_errors_retain_their_sources() {
     );
 }
 
-/// Keep caller and backend failures typed, with their original DNS classifications.
+/// Verify that caller and backend failures stay typed, with their original DNS classifications.
 #[test]
 fn service_errors_retain_their_sources_and_classification() {
     for (source, rcode) in [
+        (ServiceError::forbidden("denied"), Rcode::REFUSED),
+        (ServiceError::invalid_input("invalid"), Rcode::REFUSED),
         (
-            ServiceError::forbidden("denied".to_string()),
-            Rcode::REFUSED,
-        ),
-        (
-            ServiceError::invalid_input("invalid".to_string()),
-            Rcode::REFUSED,
-        ),
-        (
-            ServiceError::internal_with_source("storage failed", std::io::Error::other("storage")),
+            ServiceError::internal_with_source("storage failed", io::Error::other("storage")),
             Rcode::SERVFAIL,
         ),
         (
-            ServiceError::dnssec_signing_failed(std::io::Error::other("signer")),
+            ServiceError::dnssec_signing_failed(io::Error::other("signer")),
             Rcode::SERVFAIL,
         ),
     ] {
@@ -105,15 +99,16 @@ fn service_errors_retain_their_sources_and_classification() {
             .unwrap();
 
         if rcode == Rcode::SERVFAIL {
-            assert!(service.source().unwrap().is::<std::io::Error>());
+            assert!(service.source().unwrap().is::<io::Error>());
         }
     }
 }
 
-/// Distinguish an outside-zone owner from malformed names without losing the parser cause.
+/// Verify that an outside-zone owner is distinguished from malformed names without losing the
+/// parser cause.
 #[test]
 fn owner_errors_retain_their_sources_and_classification() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
     for (name, source, rcode) in [
         (
@@ -127,7 +122,7 @@ fn owner_errors_retain_their_sources_and_classification() {
             Rcode::REFUSED,
         ),
     ] {
-        let error = parse_update_owner(name, &zone).unwrap_err();
+        let error = parse_update_owner(name, &zone_name).unwrap_err();
         assert_eq!(error.rcode(), rcode);
         assert_eq!(
             error.source().unwrap().downcast_ref::<ParseNameError>(),

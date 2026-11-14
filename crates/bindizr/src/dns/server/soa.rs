@@ -3,13 +3,16 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::dns::message::{ExtendedErrorCode, OptRcode, Rtype};
+use bindizr_core::dns::message::{
+    DnsMessageBuilder, ExtendedErrorCode, OptRcode, ParsedQuery, QueryMetadata, Rtype,
+};
+use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{RequestSignature, TransferSigner};
-use bindizr_core::dns::{message, tsig};
 use bindizr_core::metrics::{SoaResult, XfrResult};
 use bindizr_core::model::transfer::TransferTransport;
 use bindizr_service::authorization::Caller;
-use bindizr_service::zone::{self, TransferAccess};
+use bindizr_service::zone;
+use bindizr_service::zone::TransferAccess;
 
 use crate::dns::error::DnsError;
 use crate::dns::server::auth::{TransferIdentity, TransferRefusal};
@@ -23,15 +26,15 @@ pub(crate) async fn handle_tcp_soa(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
     client_addr: SocketAddr,
-    query: &message::ParsedQuery,
+    query: &ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
 
     let (response, outcome) = handle_soa_request(
         dns_cx,
-        query,
         client_addr.ip(),
+        query,
         query_data,
         writer.transport(),
     )
@@ -52,15 +55,15 @@ pub(crate) async fn handle_udp_soa(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
     target: ReplyTarget,
-    query: &message::ParsedQuery,
+    query: &ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
 
     let (response, outcome) = handle_soa_request(
         dns_cx,
-        query,
         target.client_addr.ip(),
+        query,
         query_data,
         TransferTransport::Udp,
     )
@@ -82,29 +85,29 @@ pub(crate) async fn handle_udp_ixfr(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
     target: ReplyTarget,
-    query: &message::ParsedQuery,
+    query: &ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
 
     let (response, outcome) = handle_soa_request(
         dns_cx,
-        query,
         target.client_addr.ip(),
+        query,
         query_data,
         TransferTransport::Udp,
     )
     .await
     .inspect_err(|_| {
         cx.metrics()
-            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed);
     })?;
     socket
         .send_to(&response, target, query.response_limit())
         .await
         .inspect_err(|_| {
             cx.metrics()
-                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed);
         })?;
 
     let result = match outcome {
@@ -119,7 +122,8 @@ pub(crate) async fn handle_udp_ixfr(
     Ok(())
 }
 
-/// `bindizr doctor` probes over the wire, reaching a concrete `listen_addr` from it.
+/// Return whether the client is `bindizr doctor` probing over the wire,
+/// reaching a concrete `listen_addr` from it.
 fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
     // IPv4-mapped IPv6 addresses use the same self-probe identity as IPv4.
     let client_ip = client_ip.to_canonical();
@@ -130,8 +134,8 @@ fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
 /// The query carries the response budget, including its transport.
 async fn handle_soa_request(
     dns_cx: &DnsContext,
-    query: &message::ParsedQuery,
     client_ip: IpAddr,
+    query: &ParsedQuery,
     query_data: &[u8],
     transport: TransferTransport,
 ) -> Result<(Vec<u8>, SoaResult), DnsError> {
@@ -140,7 +144,7 @@ async fn handle_soa_request(
 
     // A UDP IXFR is a transfer; a SOA query is not.
     let identity = if query.qtype == Rtype::IXFR {
-        auth::authenticate_transfer(dns_cx, query_data, client_ip, transport)
+        auth::authenticate_transfer(dns_cx, client_ip, query_data, transport)
             .await
             .and_then(|identity| auth::authorize_transport(dns_cx, transport, identity))
     } else {
@@ -155,17 +159,14 @@ async fn handle_soa_request(
                 SoaResult::Refused
             };
             log::warn!(
-                "Refused {} query for {:?} from {}: {}",
-                query.qtype,
-                zone_name_str,
-                client_ip,
-                refusal
+                "Refused {} query for {zone_name_str:?} from {client_ip}: {refusal}",
+                query.qtype
             );
 
-            return match refusal.into_response(query_data, &message::QueryMetadata::from(query)) {
+            return match refusal.into_response(&QueryMetadata::from(query), query_data) {
                 Ok(response) => Ok((response, outcome)),
                 Err(DnsError::Tsig(error)) => {
-                    log::warn!("Failed to encode {} TSIG refusal: {}", query.qtype, error);
+                    log::warn!("Failed to encode {} TSIG refusal: {error}", query.qtype);
                     Ok((
                         query.build_signed_error_response(OptRcode::SERVFAIL, None, None)?,
                         SoaResult::Failed,
@@ -177,19 +178,19 @@ async fn handle_soa_request(
     };
 
     log::info!(
-        "{} query for zone {:?} from {}",
-        query.qtype,
-        zone_name_str,
-        client_ip
+        "{} query for zone {zone_name_str:?} from {client_ip}",
+        query.qtype
     );
 
     // The question is echoed as asked: SOA, or a UDP IXFR answered by it.
     let build = |signer: Option<TransferSigner>| {
-        let builder = message::DnsMessageBuilder::new(query, query.qtype);
-        match signer {
-            Some(signer) => builder.sign_with(signer),
-            None => builder,
+        let mut builder = DnsMessageBuilder::new(query, query.qtype);
+
+        if let Some(signer) = signer {
+            builder = builder.sign_with(signer);
         }
+
+        builder
     };
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
@@ -207,30 +208,29 @@ async fn handle_soa_request(
                     error,
                     identity.signer,
                 )
-                .into_response(query_data, &message::QueryMetadata::from(query))
+                .into_response(&QueryMetadata::from(query), query_data)
                 .map(|response| (response, SoaResult::Failed));
             }
         };
         let (catalog_zone, _) = match access {
-            TransferAccess::Granted(zones) => zones,
+            TransferAccess::Granted(content) => content,
             TransferAccess::NotAuth => {
-                return Ok(query.build_signed_error_response(
-                    OptRcode::NOTAUTH,
-                    Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                    identity.signer.as_mut(),
-                )?)
-                .map(|response| (response, SoaResult::NotAuth));
+                return Ok((
+                    query.build_signed_error_response(
+                        OptRcode::NOTAUTH,
+                        Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+                        identity.signer.as_mut(),
+                    )?,
+                    SoaResult::NotAuth,
+                ));
             }
             TransferAccess::Refused(reason) => {
                 log::warn!(
-                    "Refused {} query for {:?} from {}: {}",
-                    query.qtype,
-                    zone_name_str,
-                    client_ip,
-                    reason
+                    "Refused {} query for {zone_name_str:?} from {client_ip}: {reason}",
+                    query.qtype
                 );
                 return TransferRefusal::refused(reason, identity.signer)
-                    .into_response(query_data, &message::QueryMetadata::from(query))
+                    .into_response(&QueryMetadata::from(query), query_data)
                     .map(|response| (response, SoaResult::Refused));
             }
         };
@@ -259,7 +259,7 @@ async fn handle_soa_request(
                     error,
                     identity.signer,
                 )
-                .into_response(query_data, &message::QueryMetadata::from(query))
+                .into_response(&QueryMetadata::from(query), query_data)
                 .map(|response| (response, SoaResult::Failed));
             }
         },
@@ -268,32 +268,27 @@ async fn handle_soa_request(
     let (zone, signatures) = match access {
         TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => {
-            return Ok(query.build_signed_error_response(
-                OptRcode::NOTAUTH,
-                Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
-                identity.signer.as_mut(),
-            )?)
-            .map(|response| (response, SoaResult::NotAuth));
+            return Ok((
+                query.build_signed_error_response(
+                    OptRcode::NOTAUTH,
+                    Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
+                    identity.signer.as_mut(),
+                )?,
+                SoaResult::NotAuth,
+            ));
         }
         TransferAccess::Refused(reason) => {
             log::warn!(
-                "Refused {} query for {:?} from {}: {}",
-                query.qtype,
-                zone_name_str,
-                client_ip,
-                reason
+                "Refused {} query for {zone_name_str:?} from {client_ip}: {reason}",
+                query.qtype
             );
             return TransferRefusal::refused(reason, identity.signer)
-                .into_response(query_data, &message::QueryMetadata::from(query))
+                .into_response(&QueryMetadata::from(query), query_data)
                 .map(|response| (response, SoaResult::Refused));
         }
     };
 
-    log::info!(
-        "SOA response: zone {} serial={}",
-        zone_name_str,
-        zone.serial
-    );
+    log::info!("SOA response: zone {zone_name_str} serial={}", zone.serial);
 
     let mut builder = build(identity.signer);
     builder.add_soa(&zone, zone.serial)?;
@@ -310,8 +305,8 @@ async fn handle_soa_request(
     Ok((builder.build()?, SoaResult::Ok))
 }
 
-/// `bindizr doctor`'s own probe carries no key and is not a secondary, so it
-/// passes ahead of both gates.
+/// Authenticate an SOA query. `bindizr doctor`'s own probe carries no key and
+/// is not a secondary, so it passes ahead of both gates.
 async fn authenticate_soa(
     dns_cx: &DnsContext,
     client_ip: IpAddr,
@@ -321,10 +316,7 @@ async fn authenticate_soa(
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.
     if is_self_probe(dns_cx, client_ip)
-        && matches!(
-            tsig::request_signature(query_data),
-            RequestSignature::Absent
-        )
+        && tsig::request_signature(query_data) == RequestSignature::Absent
     {
         return Ok(TransferIdentity {
             caller: Caller::unsigned_dns(),
@@ -332,5 +324,5 @@ async fn authenticate_soa(
         });
     }
 
-    auth::authenticate_transfer(dns_cx, query_data, client_ip, transport).await
+    auth::authenticate_transfer(dns_cx, client_ip, query_data, transport).await
 }

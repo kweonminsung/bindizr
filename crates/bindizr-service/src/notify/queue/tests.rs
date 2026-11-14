@@ -1,10 +1,15 @@
 use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
+use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
-use tokio::time;
+use tokio::task;
 
 use super::*;
+use crate::authorization::Caller;
+use crate::secondary;
+use crate::types::CreateSecondaryRequest;
 
 /// Build real service state before pausing time; catalog deadlines need no DB reads.
 async fn context(batch_ms: u64) -> Arc<Context> {
@@ -26,20 +31,16 @@ async fn context(batch_ms: u64) -> Arc<Context> {
     ))
 }
 
-/// A worker must collect later writes while the first NOTIFY waits for an ACK.
+/// Verify that a worker collects later writes while the first NOTIFY waits for an ACK.
 #[tokio::test]
 async fn worker_sends_later_zone_before_silent_secondary_times_out() {
-    use crate::authorization::Caller;
-    use crate::secondary;
-    use crate::types::CreateSecondaryRequest;
-
     let cx = context(10).await;
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     secondary::create(
         &cx,
         &Caller::socket(),
         &CreateSecondaryRequest {
-            name: "silent".into(),
+            name: "silent".to_string(),
             address: socket.local_addr().unwrap().to_string(),
             notify_key_name: None,
         },
@@ -47,44 +48,37 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     .await
     .unwrap();
 
-    let (tx, rx) = mpsc::unbounded_channel();
-    let worker = spawn(cx.clone(), rx);
-    let first = cx.config().dns.catalog_zone_name.clone();
-    tx.send(NotifyJob::new(NotifyTarget::Zone(&first))).unwrap();
+    let (jobs_tx, jobs) = mpsc::unbounded_channel();
+    let worker = spawn(cx.clone(), jobs);
+    let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
+    jobs_tx
+        .send(NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name)))
+        .unwrap();
     let mut buffer = [0; 4096];
 
-    let (len, first_peer) =
-        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-            .await
-            .unwrap()
-            .unwrap();
+    let (len, first_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+        .await
+        .unwrap()
+        .unwrap();
     let first_request = buffer[..len].to_vec();
-    let second = ZoneName::parse("second.example").unwrap();
-    tx.send(NotifyJob::new(NotifyTarget::Zone(&second)))
+    let zone_name = ZoneName::parse("second.example").unwrap();
+    jobs_tx
+        .send(NotifyJob::new(NotifyTarget::Zone(&zone_name)))
         .unwrap();
 
-    let (len, second_peer) =
-        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-            .await
-            .expect("ACK wait must not block the next batch")
-            .unwrap();
+    let (len, second_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+        .await
+        .expect("ACK wait must not block the next batch")
+        .unwrap();
     let second_request = buffer[..len].to_vec();
 
     for (request, peer) in [(first_request, first_peer), (second_request, second_peer)] {
-        let query = bindizr_core::dns::message::ParsedQuery::parse(
-            &request,
-            bindizr_core::dns::message::Keepalive::None,
-        )
-        .unwrap();
+        let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
 
         socket
             .send_to(
                 &query
-                    .build_signed_error_response(
-                        bindizr_core::dns::message::Rcode::NOERROR.into(),
-                        None,
-                        None,
-                    )
+                    .build_signed_error_response(OptRcode::NOERROR, None, None)
                     .unwrap(),
                 peer,
             )
@@ -95,24 +89,26 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     worker.stop().await.unwrap();
 }
 
-/// Later writes coalesce without extending the first write's batching window.
+/// Verify that later writes coalesce without extending the first write's batching window.
 #[tokio::test]
 async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     let cx = context(1000).await;
 
     time::pause();
-    let name = cx.config().dns.catalog_zone_name.clone();
-    let first = NotifyJob::new(NotifyTarget::Zone(&name));
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
+    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let (jobs_tx, mut jobs) = mpsc::unbounded_channel();
     let (_stop_tx, mut stop) = watch::channel(false);
 
-    let task = tokio::spawn(async move { collect_batch(&cx, &mut rx, &mut stop, first).await });
-    tokio::task::yield_now().await;
+    let task = tokio::spawn(async move { collect_batch(&cx, &mut jobs, &mut stop, first).await });
+    task::yield_now().await;
     time::advance(Duration::from_millis(600)).await;
 
-    tx.send(NotifyJob::new(NotifyTarget::Zone(&name))).unwrap();
+    jobs_tx
+        .send(NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name)))
+        .unwrap();
 
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     time::advance(Duration::from_millis(399)).await;
 
     assert!(
@@ -123,19 +119,20 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     time::advance(Duration::from_millis(1)).await;
     let batch = task.await.unwrap();
 
-    assert_eq!(batch.zones, HashSet::from([name]));
+    assert_eq!(batch.zones, HashSet::from([catalog_zone_name]));
 }
 
-/// Backlogged jobs retain their original age, and the catalog uses its served REFRESH.
+/// Verify that backlogged jobs retain their original age and that the catalog uses its
+/// served REFRESH.
 #[tokio::test]
 async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     let cx = context(7_200_000).await;
 
     time::pause();
-    let name = cx.config().dns.catalog_zone_name.clone();
-    let first = NotifyJob::new(NotifyTarget::Zone(&name));
+    let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
+    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
 
-    let deadline = read_batch_deadline(&cx, &first).await;
+    let deadline = lookup_batch_deadline(&cx, &first).await;
 
     assert_eq!(
         deadline - first.enqueued_at,
@@ -146,10 +143,10 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     time::advance(Duration::from_secs(3601)).await;
 
     let started = Instant::now();
-    let (_tx, mut rx) = mpsc::unbounded_channel();
+    let (_jobs_tx, mut jobs) = mpsc::unbounded_channel();
     let (_stop_tx, mut stop) = watch::channel(false);
 
-    let batch = collect_batch(&cx, &mut rx, &mut stop, first).await;
+    let batch = collect_batch(&cx, &mut jobs, &mut stop, first).await;
 
     assert_eq!(
         Instant::now(),
@@ -159,41 +156,44 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
     assert_eq!(batch.zones.len(), 1);
 }
 
-/// A shorter delay advances a pending deadline; shutdown flushes without waiting.
+/// Verify that a shorter delay advances a pending deadline and that shutdown flushes
+/// without waiting.
 #[tokio::test]
 async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
-    let cx = context(10_000).await;
+    let cx = context(10000).await;
 
     time::pause();
-    let name = cx.config().dns.catalog_zone_name.clone();
-    let first = NotifyJob::new(NotifyTarget::Zone(&name));
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let catalog_zone_name = cx.config().dns.catalog_zone_name.clone();
+    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let (jobs_tx, mut jobs) = mpsc::unbounded_channel();
     let (stop_tx, mut stop) = watch::channel(false);
     let worker_cx = cx.clone();
 
     let task =
-        tokio::spawn(async move { collect_batch(&worker_cx, &mut rx, &mut stop, first).await });
-    tokio::task::yield_now().await;
+        tokio::spawn(async move { collect_batch(&worker_cx, &mut jobs, &mut stop, first).await });
+    task::yield_now().await;
     time::advance(Duration::from_millis(500)).await;
 
     let mut config = (*cx.config()).clone();
     config.dns.notify.batch_ms = 100;
     cx.set_config(config);
-    tx.send(NotifyJob::new(NotifyTarget::Zone(&name))).unwrap();
+    jobs_tx
+        .send(NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name)))
+        .unwrap();
 
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     time::advance(Duration::from_millis(100)).await;
 
     assert_eq!(task.await.unwrap().zones.len(), 1);
 
     let started = Instant::now();
-    let first = NotifyJob::new(NotifyTarget::Zone(&name));
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    tx.send(NotifyJob::new(NotifyTarget::All)).unwrap();
+    let first = NotifyJob::new(NotifyTarget::Zone(&catalog_zone_name));
+    let (jobs_tx, mut jobs) = mpsc::unbounded_channel();
+    jobs_tx.send(NotifyJob::new(NotifyTarget::All)).unwrap();
     let mut stop = stop_tx.subscribe();
     stop_tx.send(true).unwrap();
 
-    let batch = collect_batch(&cx, &mut rx, &mut stop, first).await;
+    let batch = collect_batch(&cx, &mut jobs, &mut stop, first).await;
 
     assert!(batch.all_zones);
     assert_eq!(

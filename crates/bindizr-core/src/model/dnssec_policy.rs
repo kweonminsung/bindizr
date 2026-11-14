@@ -1,11 +1,15 @@
 use std::fmt;
+use std::str::FromStr;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
+use utoipa::ToSchema;
 
-use super::dnssec_key::DnssecAlgorithm;
+use crate::model::dnssec_key::DnssecAlgorithm;
 
 /// Name of the policy seeded at startup, used when `enable` names none.
 pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
@@ -18,9 +22,7 @@ pub struct ParseDenialError {
 }
 
 /// How a signed zone proves nonexistence (denial of existence).
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DnssecDenial {
     /// Plain NSEC chain over the zone's names.
@@ -30,33 +32,33 @@ pub enum DnssecDenial {
 }
 
 impl DnssecDenial {
-    /// Storage name, as the columns and the API spell it.
-    pub fn as_str(&self) -> &'static str {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
         match self {
-            DnssecDenial::Nsec => "nsec",
-            DnssecDenial::Nsec3 => "nsec3",
+            Self::Nsec => "nsec",
+            Self::Nsec3 => "nsec3",
         }
     }
 }
 
-impl std::fmt::Display for DnssecDenial {
+impl fmt::Display for DnssecDenial {
     /// Write the denial mode in the upper case the DNSSEC documents use.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            DnssecDenial::Nsec => "NSEC",
-            DnssecDenial::Nsec3 => "NSEC3",
+            Self::Nsec => "NSEC",
+            Self::Nsec3 => "NSEC3",
         })
     }
 }
 
-impl std::str::FromStr for DnssecDenial {
+impl FromStr for DnssecDenial {
     type Err = ParseDenialError;
 
     /// Parse a DNSSEC denial from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "nsec" => Ok(DnssecDenial::Nsec),
-            "nsec3" => Ok(DnssecDenial::Nsec3),
+            "nsec" => Ok(Self::Nsec),
+            "nsec3" => Ok(Self::Nsec3),
             _ => Err(ParseDenialError {
                 value: value.to_string(),
             }),
@@ -69,7 +71,7 @@ impl TryFrom<String> for DnssecDenial {
 
     /// Validate and convert the stored value into a DNSSEC denial.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
@@ -80,7 +82,7 @@ id_newtype!(
 
 /// A named signing policy: key layout, algorithm, and denial mode are fixed
 /// at creation; timing changes take effect on the next signing pass.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecPolicy {
     pub id: PolicyId,
     pub name: String,
@@ -103,12 +105,12 @@ pub struct DnssecPolicy {
 }
 
 impl DnssecPolicy {
-    /// Whether this is the built-in `default` policy, which cannot be deleted.
+    /// Return whether this is the built-in `default` policy, which cannot be deleted.
     pub fn is_builtin(&self) -> bool {
         self.name == DEFAULT_DNSSEC_POLICY_NAME
     }
 
-    /// Describe the policy's key layout for validation errors.
+    /// Return the policy's key layout as validation errors describe it.
     pub fn key_layout(&self) -> &'static str {
         if self.split_keys {
             "split KSK/ZSK keys"
@@ -117,28 +119,22 @@ impl DnssecPolicy {
         }
     }
 
-    /// Spread expirations over half the available window to avoid zone-wide
+    /// Return the expiration jitter, half the available window, to avoid zone-wide
     /// re-signing while keeping the earliest signature outside its refresh window.
     pub fn expiration_jitter_secs(&self) -> i64 {
         (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2
     }
 
-    /// How long a signature stays valid, in seconds.
+    /// Return how long a signature stays valid, in seconds.
     pub fn signature_validity_secs(&self) -> i64 {
         self.signature_validity_days.to_duration().num_seconds()
     }
 
-    /// How long before it expires a signature is renewed, in seconds.
+    /// Return how long before it expires a signature is renewed, in seconds.
     pub fn signature_refresh_secs(&self) -> i64 {
         self.signature_refresh_days.to_duration().num_seconds()
     }
 }
-
-/// A count of days as one value with two forms: the unsigned count a payload
-/// carries and the signed 32-bit column a row stores, 0 through 2^31 - 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "u32", into = "u32")]
-pub struct Days(u32);
 
 /// A day count outside the range both forms hold.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -151,16 +147,22 @@ pub enum ConvertDaysError {
     TooLarge { days: u32 },
 }
 
+/// A count of days as one value with two forms: the unsigned count a payload
+/// carries and the signed 32-bit column a row stores, 0 through 2^31 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Days(u32);
+
 impl Days {
     /// The largest count the row form holds.
-    pub const MAX: Days = Days(i32::MAX as u32);
+    pub const MAX: Self = Self(i32::MAX as u32);
 
-    /// The count of days.
+    /// Return the count of days.
     pub const fn as_days(self) -> u32 {
         self.0
     }
 
-    /// The count as a duration.
+    /// Return the count as a duration.
     pub fn to_duration(self) -> Duration {
         Duration::days(i64::from(self.0))
     }
@@ -170,11 +172,11 @@ impl TryFrom<u32> for Days {
     type Error = ConvertDaysError;
 
     /// Take a payload's count, refused past the maximum.
-    fn try_from(days: u32) -> Result<Self, Self::Error> {
-        if days > Self::MAX.0 {
-            return Err(ConvertDaysError::TooLarge { days });
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value > Self::MAX.0 {
+            return Err(ConvertDaysError::TooLarge { days: value });
         }
-        Ok(Days(days))
+        Ok(Self(value))
     }
 }
 
@@ -182,24 +184,24 @@ impl TryFrom<i32> for Days {
     type Error = ConvertDaysError;
 
     /// Read a row's count; a negative one is corrupt data.
-    fn try_from(days: i32) -> Result<Self, Self::Error> {
-        u32::try_from(days)
-            .map(Days)
-            .map_err(|_| ConvertDaysError::Negative { days })
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertDaysError::Negative { days: value })
     }
 }
 
 impl From<Days> for u32 {
-    /// The payload form.
+    /// Convert to the payload form.
     fn from(days: Days) -> Self {
         days.0
     }
 }
 
 impl From<Days> for i32 {
-    /// The row form; the range invariant makes it exact.
+    /// Convert to the row form; the range invariant makes it exact.
     fn from(days: Days) -> Self {
-        days.0 as i32
+        days.0 as Self
     }
 }
 
@@ -214,12 +216,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for Days
 where
     i32: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -229,11 +231,11 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Days
 where
     i32: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i32::from(*self).encode_by_ref(buffer)
     }
 }
@@ -243,10 +245,8 @@ where
     i32: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a negative column fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(Days::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

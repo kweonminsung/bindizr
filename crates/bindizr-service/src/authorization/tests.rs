@@ -1,28 +1,22 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
-use bindizr_core::model::api_token::{ApiToken, TokenId};
-use bindizr_core::model::role::RoleId;
-use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope};
-use bindizr_core::model::zone::ZoneId;
-use chrono::Utc;
+use bindizr_core::model::role_grant::{RoleGrantId, RoleZoneScope};
 
 use super::*;
 use crate::error::ErrorCode;
-use crate::model::record::RecordType;
-use crate::model::zone::Zone;
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: ZoneId::from(1),
-        name: ZoneName::from_row("example.com"),
+        name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "hostmaster@example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(1),
         refresh: SoaInterval::from_secs(7200),
         retry: SoaInterval::from_secs(3600),
-        expire: SoaInterval::from_secs(604800),
+        expire: SoaInterval::from_secs(604_800),
         minimum_ttl: Ttl::from_secs(86400),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -54,12 +48,12 @@ fn all_zones(actions: &[Action]) -> RoleGrant {
 }
 
 /// Check fixture record writes against the supplied grants.
-fn authorize(grants: &[RoleGrant], writes: &[RecordAccess<'_>]) -> Result<(), ServiceError> {
+fn authorize(grants: &[RoleGrant], writes: &[RecordAccess]) -> Result<(), ServiceError> {
     authorize_with_grants(&RoleGrants::from(grants.to_vec()), &test_zone(), writes)
 }
 
 /// Build a record-create authorization target for the test.
-fn create<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordAccess<'a> {
+fn create(name: &str, record_type: Option<RecordType>) -> RecordAccess {
     RecordAccess {
         action: Action::RecordCreate,
         relative_name: OwnerName::from_row(name),
@@ -129,7 +123,7 @@ fn authorize_zone_action_hides_unreached_zones() {
 
     assert_eq!(error.code(), ErrorCode::Forbidden);
 
-    let error = token(vec![])
+    let error = token(Vec::new())
         .authorize_zone_action(Action::ZoneUpdate, &zone)
         .unwrap_err();
 
@@ -141,17 +135,17 @@ fn authorize_zone_action_hides_unreached_zones() {
 fn authorize_enforces_action_name_and_type() {
     let grants = [grant(&[Action::RecordCreate], "*.dyn", "A,TXT")];
 
-    assert!(authorize(&grants, &[create("host.dyn", Some(&RecordType::A))]).is_ok());
-    assert!(authorize(&grants, &[create("dyn", Some(&RecordType::Txt))]).is_ok());
-    assert!(authorize(&grants, &[create("www", Some(&RecordType::A))]).is_err());
-    assert!(authorize(&grants, &[create("host.dyn", Some(&RecordType::Cname))]).is_err());
+    assert!(authorize(&grants, &[create("host.dyn", Some(RecordType::A))]).is_ok());
+    assert!(authorize(&grants, &[create("dyn", Some(RecordType::Txt))]).is_ok());
+    assert!(authorize(&grants, &[create("www", Some(RecordType::A))]).is_err());
+    assert!(authorize(&grants, &[create("host.dyn", Some(RecordType::Cname))]).is_err());
 
     // A typeless write (whole-name delete) needs a grant constraining no type.
     assert!(authorize(&grants, &[create("host.dyn", None)]).is_err());
 
     let delete = RecordAccess {
         action: Action::RecordDelete,
-        ..create("host.dyn", Some(&RecordType::A))
+        ..create("host.dyn", Some(RecordType::A))
     };
     let error = authorize(&grants, &[delete]).unwrap_err();
 
@@ -167,8 +161,8 @@ fn authorize_rejects_when_any_single_write_is_denied() {
     let error = authorize(
         &grants,
         &[
-            create("app", Some(&RecordType::A)),
-            create("other", Some(&RecordType::A)),
+            create("app", Some(RecordType::A)),
+            create("other", Some(RecordType::A)),
         ],
     )
     .unwrap_err();
@@ -177,8 +171,8 @@ fn authorize_rejects_when_any_single_write_is_denied() {
     assert!(error.to_string().contains("other"));
 }
 
-/// Check whether the test caller may read the requested record.
-fn is_record_visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> bool {
+/// Return whether the test caller may read the requested record.
+fn is_record_visible(caller: &Caller, name: &str, record_type: Option<RecordType>) -> bool {
     caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
 }
 
@@ -191,7 +185,7 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
         "_acme-challenge",
         "TXT",
     )]);
-    let reaches = |action, name: &str, record_type: &RecordType| {
+    let reaches = |action, name: &str, record_type: RecordType| {
         caller.reaches_record(
             action,
             ZoneId::from(1),
@@ -203,25 +197,25 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
     assert!(reaches(
         Action::RecordDelete,
         "_acme-challenge",
-        &RecordType::Txt
+        RecordType::Txt
     ));
 
     // Nothing beyond the grant's own targets, so ids stay unprobeable.
     assert!(!reaches(
         Action::RecordUpdate,
         "_acme-challenge",
-        &RecordType::Txt
+        RecordType::Txt
     ));
-    assert!(!reaches(Action::RecordDelete, "www", &RecordType::Txt));
+    assert!(!reaches(Action::RecordDelete, "www", RecordType::Txt));
     assert!(!reaches(
         Action::RecordDelete,
         "_acme-challenge",
-        &RecordType::A
+        RecordType::A
     ));
     assert!(!is_record_visible(
         &caller,
         "_acme-challenge",
-        Some(&RecordType::Txt)
+        Some(RecordType::Txt)
     ));
 }
 
@@ -230,12 +224,12 @@ fn reaches_record_admits_the_write_action_under_its_constraints() {
 fn sees_record_requires_matching_record_read_grant() {
     let caller = token(vec![grant(&[Action::RecordRead], "*.dyn", "A,TXT")]);
 
-    assert!(is_record_visible(&caller, "host.dyn", Some(&RecordType::A)));
-    assert!(!is_record_visible(&caller, "www", Some(&RecordType::A)));
+    assert!(is_record_visible(&caller, "host.dyn", Some(RecordType::A)));
+    assert!(!is_record_visible(&caller, "www", Some(RecordType::A)));
     assert!(!is_record_visible(
         &caller,
         "host.dyn",
-        Some(&RecordType::Cname)
+        Some(RecordType::Cname)
     ));
 
     // The derived DNSSEC plane carries no type of the grant's vocabulary, so
@@ -247,7 +241,7 @@ fn sees_record_requires_matching_record_read_grant() {
 
     let write_only = token(vec![grant(&[Action::RecordCreate], "*", "*")]);
 
-    assert!(!is_record_visible(&write_only, "app", Some(&RecordType::A)));
+    assert!(!is_record_visible(&write_only, "app", Some(RecordType::A)));
 }
 
 /// Verify that `authorize_whole_zone` rejects a constrained grant.
@@ -270,16 +264,16 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
     assert_eq!(error.code(), ErrorCode::Forbidden);
 
     // A zone with no grant at all keeps reading as absent.
-    let error = token(vec![]).authorize_whole_zone(read, &zone).unwrap_err();
+    let error = token(Vec::new())
+        .authorize_whole_zone(read, &zone)
+        .unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::ZoneNotFound);
 }
 
-/// Equally privileged socket and API callers retain distinct request origins.
+/// Verify that equally privileged socket and API callers retain distinct request origins.
 #[test]
 fn change_origin_preserves_credential_across_access_scopes() {
-    use crate::model::change::{ChangeActor, ChangeSource};
-
     let socket = Caller::socket();
     let api = Caller::unauthenticated_api();
 
@@ -294,7 +288,7 @@ fn change_origin_preserves_credential_across_access_scopes() {
     assert_eq!(api.change_origin().actor, None);
 
     let admin = token(vec![all_zones(&Action::ALL)]);
-    let scoped = token(vec![]);
+    let scoped = token(Vec::new());
 
     assert_eq!(admin.change_origin(), scoped.change_origin());
     assert_eq!(

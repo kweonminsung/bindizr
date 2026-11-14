@@ -21,6 +21,21 @@ use crate::api::error::{ApiError, Path, Query};
 use crate::api::query::DryRunQuery;
 use crate::params::NameParams;
 
+/// The page and content filter of a version listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ListZoneVersionsQuery {
+    /// Versions per page; defaults to 50.
+    #[param(minimum = 1, maximum = 1000)]
+    limit: Option<u32>,
+    /// Number of versions to skip.
+    offset: Option<u64>,
+    /// Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.
+    #[serde(default)]
+    include_signer_serials: bool,
+}
+
 /// List a zone's versions, newest serial first.
 #[utoipa::path(
         get,
@@ -56,6 +71,14 @@ pub(crate) async fn list_zone_versions(
     .await?;
 
     Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+/// One of a zone's versions, by name and serial.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ZoneVersionParams {
+    name: String,
+    serial: Serial,
 }
 
 /// Get one version plus the reconstructed records at that serial.
@@ -132,30 +155,8 @@ pub(crate) async fn rollback_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// The page and content filter of a version listing.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
-#[into_params(parameter_in = Query)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ListZoneVersionsQuery {
-    /// Versions per page; defaults to 50.
-    #[param(minimum = 1, maximum = 1000)]
-    limit: Option<u32>,
-    /// Number of versions to skip.
-    offset: Option<u64>,
-    /// Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.
-    #[serde(default)]
-    include_signer_serials: bool,
-}
-
-/// One of a zone's versions, by name and serial.
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ZoneVersionParams {
-    name: String,
-    serial: Serial,
-}
-
 /// The two serials of a version diff.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DiffZoneVersionsQuery {
@@ -191,7 +192,7 @@ pub(crate) async fn diff_zone_versions(
     Path(params): Path<NameParams>,
     Query(query): Query<DiffZoneVersionsQuery>,
 ) -> Result<Response, ApiError> {
-    let diff = zone::diff_versions(
+    let response = zone::diff_versions(
         &cx,
         &caller,
         &zone::normalize_name(&params.name)?,
@@ -200,5 +201,5 @@ pub(crate) async fn diff_zone_versions(
     )
     .await?;
 
-    Ok((StatusCode::OK, Json(diff)).into_response())
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

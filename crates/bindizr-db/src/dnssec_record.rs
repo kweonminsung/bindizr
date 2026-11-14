@@ -1,17 +1,16 @@
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordWithZone};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 
 use crate::error::DatabaseError;
-use crate::model::dnssec_record::{DnssecRecord, DnssecRecordWithZone};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// A derived row's rdata is wire bytes and its type a number, so only the
 /// name half of a search reaches it, and value and priority not at all.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
     pub zone_name: Option<ZoneName>,
@@ -45,7 +44,7 @@ pub async fn create_many_tx(
     }
 }
 
-/// Read apex SOA signatures in the same snapshot as the locked zone row.
+/// List apex SOA signatures in the same snapshot as the locked zone row.
 pub async fn list_signatures_covering_apex_soa_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -80,8 +79,8 @@ pub async fn list_tx(
     }
 }
 
-/// Delete many derived records in as few statements as the backend's bind
-/// limit allows.
+/// Delete many derived records in as few statements as the backend's bind limit
+/// allows.
 pub async fn delete_many_tx(
     tx: &mut Transaction<'_>,
     ids: &[DnssecRecordId],
@@ -109,7 +108,8 @@ pub async fn delete_by_zone_id_tx(
     }
 }
 
-/// Zones holding a signed view (any derived row): the signed-zone count.
+/// Count the zones holding a signed view (any derived row): the signed-zone
+/// count.
 pub async fn count_zone_ids(db: &Db) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_record::count_zone_ids(pool).await,
@@ -118,7 +118,7 @@ pub async fn count_zone_ids(db: &Db) -> Result<u64, DatabaseError> {
     }
 }
 
-/// Zones holding an RRSIG that expires within their policy's re-sign
+/// List the zones holding an RRSIG that expires within their policy's re-sign
 /// window after `cutoff`: the re-sign work list.
 pub async fn list_zone_ids_expiring_within_refresh(
     db: &Db,
@@ -137,7 +137,7 @@ pub async fn list_zone_ids_expiring_within_refresh(
     }
 }
 
-/// Rows expiring within their zone's policy's re-sign window after
+/// Count the rows expiring within their zone's policy's re-sign window after
 /// `cutoff`; only RRSIG rows carry `expires_at`.
 pub async fn count_expiring_within_refresh(
     db: &Db,
@@ -156,7 +156,7 @@ pub async fn count_expiring_within_refresh(
     }
 }
 
-/// Rows whose expiration has already passed `cutoff`: signatures no
+/// Count the rows whose expiration has already passed `cutoff`: signatures no
 /// resolver will accept any more.
 pub async fn count_expired_before(db: &Db, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
     match &db.0 {
@@ -171,7 +171,7 @@ pub async fn count_expired_before(db: &Db, cutoff: DateTime<Utc>) -> Result<u64,
 /// List matching derived DNSSEC records with their zone metadata.
 pub async fn list_by_filter_with_zone(
     db: &Db,
-    filter: DnssecRecordFilter,
+    filter: &DnssecRecordFilter,
 ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_record::list_by_filter_with_zone(pool, filter).await,
@@ -184,7 +184,7 @@ pub async fn list_by_filter_with_zone(
     }
 }
 
-/// How many derived DNSSEC records a zone holds, in the caller's transaction.
+/// Count the derived DNSSEC records a zone holds, in the current transaction.
 pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::dnssec_record::count_tx(tx, zone_id).await,
@@ -194,7 +194,7 @@ pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, 
 }
 
 /// Count derived DNSSEC records matching the filter.
-pub async fn count_by_filter(db: &Db, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
+pub async fn count_by_filter(db: &Db, filter: &DnssecRecordFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_record::count_by_filter(pool, filter).await,
         Backend::Postgres(pool) => postgres::dnssec_record::count_by_filter(pool, filter).await,

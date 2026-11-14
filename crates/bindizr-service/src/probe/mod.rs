@@ -1,25 +1,22 @@
 //! Secondary SOA status and transfer history.
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::secondary::Secondary;
 use tokio::task::JoinSet;
 
-use crate::dns_client::probe;
 use crate::dns_client::probe::ProbeSoaError;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse};
-use crate::{Context, secondary, transfer};
+use crate::{Context, dns_client, secondary, transfer};
 
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
     fn from(error: ProbeSoaError) -> Self {
-        ServiceError::Internal {
-            message: error.to_string(),
-            source: Some(Box::new(error)),
-        }
+        Self::internal_with_source(error.to_string(), error)
     }
 }
 
@@ -79,12 +76,12 @@ pub async fn probe_secondaries(
         let address = secondary.address.to_string();
 
         let task = tasks.spawn(async move {
-            probe::probe_addresses(&zone_name, &secondary.address, timeout).await
+            dns_client::probe::probe_addresses(&zone_name, &secondary.address, timeout).await
         });
         targets.insert(task.id(), (index, address));
     }
 
-    let mut probes = Vec::new();
+    let mut statuses = Vec::new();
 
     // The set owns every exchange, including when this request is cancelled.
     while let Some(result) = tasks.join_next_with_id().await {
@@ -108,11 +105,11 @@ pub async fn probe_secondaries(
                 last_transfer: None,
             },
         };
-        probes.push((*index, status));
+        statuses.push((*index, status));
     }
 
-    probes.sort_unstable_by_key(|(index, _)| *index);
-    Ok(probes.into_iter().map(|(_, probe)| probe).collect())
+    statuses.sort_unstable_by_key(|(index, _)| *index);
+    Ok(statuses.into_iter().map(|(_, status)| status).collect())
 }
 
 /// Probe one secondary and attach its serial status and transfer history.
@@ -123,7 +120,7 @@ pub async fn probe_secondary(
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
     let timeout = cx.config().dns.notify.timeout();
-    let probe = probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
+    let probe = dns_client::probe::probe_addresses(zone_name, &secondary.address, timeout).await?;
     let status = build_secondary_status(probe.address, expected_serial, probe.serial);
     Ok(attach_last_transfer(cx, zone_name, status, &probe.clients).await)
 }
@@ -132,23 +129,23 @@ pub async fn probe_secondary(
 async fn attach_last_transfer(
     cx: &Context,
     zone_name: &ZoneName,
-    mut probe: SecondaryStatusResponse,
+    mut status: SecondaryStatusResponse,
     clients: &[IpAddr],
 ) -> SecondaryStatusResponse {
     if clients.is_empty() {
-        return probe;
+        return status;
     }
 
-    probe.last_transfer =
+    status.last_transfer =
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
-            Ok(transfer) => transfer.as_ref().map(TransferResponse::from),
+            Ok(transfer_log) => transfer_log.as_ref().map(TransferResponse::from),
             Err(error) => {
-                log::warn!("Failed to read the transfers of {}: {}", zone_name, error);
+                log::warn!("Failed to read the transfers of {zone_name}: {error}");
                 None
             }
         };
 
-    probe
+    status
 }
 
 #[cfg(test)]

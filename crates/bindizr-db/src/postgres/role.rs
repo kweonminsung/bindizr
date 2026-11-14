@@ -1,9 +1,8 @@
-use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role::{Role, RoleId};
 use chrono::Utc;
 use sqlx::{Pool, Postgres, Row, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::role::Role;
 
 /// Insert a role.
 pub(crate) async fn create_tx(
@@ -12,7 +11,7 @@ pub(crate) async fn create_tx(
 ) -> Result<Role, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO roles (name, description, created_at)
         VALUES ($1, $2, $3)
@@ -25,13 +24,13 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    role.id = RoleId::from(result.get::<i32, _>(0));
+    role.id = RoleId::from(row.get::<i32, _>(0));
     role.created_at = now;
 
     Ok(role)
 }
 
-/// Find a role by ID.
+/// Get a role by ID.
 pub(crate) async fn get(pool: &Pool<Postgres>, id: RoleId) -> Result<Option<Role>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -45,7 +44,7 @@ pub(crate) async fn get(pool: &Pool<Postgres>, id: RoleId) -> Result<Option<Role
     Ok(role)
 }
 
-/// Find a role by name.
+/// Get a role by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &str,
@@ -75,8 +74,8 @@ pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<Role>, Databas
     Ok(roles)
 }
 
-/// Delete a role by ID.
-/// Reports `false` when no row had the id.
+/// Delete a role by ID; its grants go with it. Reports `false` when no row had
+/// the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: RoleId,

@@ -16,16 +16,19 @@ pub(crate) async fn create_tx(
     Ok(())
 }
 
-/// Read a zone's DNSSEC withdrawal marker in the current transaction.
+/// Get a zone's DNSSEC withdrawal marker in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
 ) -> Result<Option<ZoneId>, DatabaseError> {
-    sqlx::query_scalar::<_, ZoneId>("SELECT zone_id FROM dnssec_withdrawals WHERE zone_id = $1")
-        .bind(zone_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(DatabaseError::from)
+    let withdrawal = sqlx::query_scalar::<_, ZoneId>(
+        "SELECT zone_id FROM dnssec_withdrawals WHERE zone_id = $1",
+    )
+    .bind(zone_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(withdrawal)
 }
 
 /// Clear a zone's DNSSEC withdrawal marker in the current transaction.

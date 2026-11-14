@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use super::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
+use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
 
 /// Why a name could not be parsed. Callers phrase these for their own layer.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

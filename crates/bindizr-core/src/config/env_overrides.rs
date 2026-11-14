@@ -1,7 +1,9 @@
 //! Apply `BINDIZR_<UPPERCASE_TOML_PATH>` overrides before validation, replacing dots with `_`.
 //! `BINDIZR_DATABASE_URL` is the one convenience outside that mapping.
 
-use super::{Config, ConfigError, DatabaseType};
+use std::str::FromStr;
+
+use crate::config::{Config, ConfigError, DatabaseType};
 use crate::dns::name::ZoneName;
 
 impl Config {
@@ -192,7 +194,7 @@ impl Config {
 /// Read an optional setting from an environment override, treating an empty
 /// value as unset so containers can leave the variable unfilled.
 fn to_optional_setting(value: String) -> Option<String> {
-    Some(value.trim().to_string()).filter(|path| !path.is_empty())
+    Some(value.trim().to_string()).filter(|value| !value.is_empty())
 }
 
 /// Parse a seconds override into its newtype, rejecting values outside its stored range.
@@ -212,7 +214,7 @@ where
 /// Parse an environment override into the field's type, naming the variable on failure.
 fn parse_env_value<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
-    T: std::str::FromStr,
+    T: FromStr,
     T::Err: std::error::Error + Send + Sync + 'static,
 {
     value.parse::<T>().map_err(|error| ConfigError::Env {

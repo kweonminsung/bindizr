@@ -18,7 +18,7 @@ pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;versi
 pub(crate) enum ValidateEndpointError {
     #[error("dnsName must not be empty")]
     EmptyDnsName,
-    #[error("record type '{record_type}' is not supported (supported: {})", EXTERNAL_DNS_RECORD_TYPES.iter().map(RecordType::as_str).collect::<Vec<_>>().join(", "))]
+    #[error("record type '{record_type}' is not supported (supported: {})", EXTERNAL_DNS_RECORD_TYPES.iter().copied().map(RecordType::as_str).collect::<Vec<_>>().join(", "))]
     UnsupportedRecordType { record_type: String },
     #[error("endpoint '{dns_name}' has no targets")]
     NoTargets { dns_name: String },
@@ -42,7 +42,7 @@ pub(crate) enum ConvertChangesError {
 }
 
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Endpoint {
     #[serde(default)]
@@ -60,82 +60,6 @@ pub(crate) struct Endpoint {
     labels: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     provider_specific: Vec<ProviderSpecificProperty>,
-}
-
-/// Check whether an endpoint TTL uses the unset sentinel.
-fn is_ttl_unset(ttl: &i64) -> bool {
-    *ttl == 0
-}
-
-/// JSON shape of external-dns `endpoint.ProviderSpecificProperty`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ProviderSpecificProperty {
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    value: String,
-}
-
-/// JSON shape of external-dns `plan.Changes` (`POST /records` body).
-#[derive(serde::Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Changes {
-    #[serde(default)]
-    pub(crate) create: Vec<Endpoint>,
-    #[serde(default)]
-    pub(crate) update_old: Vec<Endpoint>,
-    #[serde(default)]
-    pub(crate) update_new: Vec<Endpoint>,
-    #[serde(default)]
-    pub(crate) delete: Vec<Endpoint>,
-}
-
-/// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
-#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct DomainFilter {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) include: Vec<String>,
-}
-
-/// One record of the bindizr `/external-dns` API: every value of one name and
-/// type (snake_case, internal shape).
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BindizrRecord {
-    name: String,
-    #[serde(rename = "type")]
-    record_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    ttl: Option<i64>,
-    values: Vec<String>,
-}
-
-/// `POST /external-dns/changes` request body of the bindizr API.
-#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApplyExternalDnsChangesRequest {
-    creates: Vec<BindizrRecord>,
-    updates: Vec<BindizrRecordUpdate>,
-    deletes: Vec<BindizrRecord>,
-}
-
-/// One update of the bindizr change set: the record as stored and its
-/// replacement, paired positionally from `updateOld` and `updateNew`.
-#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BindizrRecordUpdate {
-    old: BindizrRecord,
-    new: BindizrRecord,
-}
-
-impl From<BindizrRecord> for Endpoint {
-    /// An endpoint for one bindizr record; the server already sorts values.
-    fn from(record: BindizrRecord) -> Self {
-        Endpoint {
-            dns_name: record.name,
-            targets: record.values,
-            record_type: record.record_type,
-            record_ttl: record.ttl.unwrap_or(0),
-            ..Endpoint::default()
-        }
-    }
 }
 
 impl Endpoint {
@@ -194,32 +118,108 @@ impl Endpoint {
     pub(crate) fn to_bindizr_record(&self, record_type: RecordType) -> BindizrRecord {
         BindizrRecord {
             name: self.dns_name.clone(),
-            record_type: record_type.as_str().to_owned(),
+            record_type: record_type.as_str().to_string(),
             ttl: (self.record_ttl > 0).then_some(self.record_ttl),
             values: self.targets.clone(),
         }
     }
 }
 
-impl Changes {
-    /// Convert into one bindizr change-set request. `updateOld[i]` and
+/// Return whether an endpoint TTL uses the unset sentinel.
+fn is_ttl_unset(ttl: &i64) -> bool {
+    *ttl == 0
+}
+
+/// JSON shape of external-dns `endpoint.ProviderSpecificProperty`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ProviderSpecificProperty {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    value: String,
+}
+
+/// JSON shape of external-dns `plan.Changes` (`POST /records` body).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Changes {
+    #[serde(default)]
+    pub(crate) create: Vec<Endpoint>,
+    #[serde(default)]
+    pub(crate) update_old: Vec<Endpoint>,
+    #[serde(default)]
+    pub(crate) update_new: Vec<Endpoint>,
+    #[serde(default)]
+    pub(crate) delete: Vec<Endpoint>,
+}
+
+/// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub(crate) struct DomainFilter {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) include: Vec<String>,
+}
+
+/// One record of the bindizr `/external-dns` API: every value of one name and
+/// type (snake_case, internal shape).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct BindizrRecord {
+    name: String,
+    #[serde(rename = "type")]
+    record_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ttl: Option<i64>,
+    values: Vec<String>,
+}
+
+/// `POST /external-dns/changes` request body of the bindizr API.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ApplyExternalDnsChangesRequest {
+    creates: Vec<BindizrRecord>,
+    updates: Vec<BindizrRecordUpdate>,
+    deletes: Vec<BindizrRecord>,
+}
+
+/// One update of the bindizr change set: the record as stored and its
+/// replacement, paired positionally from `updateOld` and `updateNew`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct BindizrRecordUpdate {
+    old: BindizrRecord,
+    new: BindizrRecord,
+}
+
+impl From<BindizrRecord> for Endpoint {
+    /// Build an endpoint for one bindizr record; the server already sorts values.
+    fn from(record: BindizrRecord) -> Self {
+        Self {
+            dns_name: record.name,
+            targets: record.values,
+            record_type: record.record_type,
+            record_ttl: record.ttl.unwrap_or(0),
+            ..Default::default()
+        }
+    }
+}
+
+impl TryFrom<&Changes> for ApplyExternalDnsChangesRequest {
+    type Error = ConvertChangesError;
+
+    /// Convert a plan into one bindizr change-set request. `updateOld[i]` and
     /// `updateNew[i]` pair positionally, per the plan contract.
-    pub(crate) fn to_apply_changes_request(
-        &self,
-    ) -> Result<ApplyExternalDnsChangesRequest, ConvertChangesError> {
-        if self.update_old.len() != self.update_new.len() {
+    fn try_from(changes: &Changes) -> Result<Self, Self::Error> {
+        if changes.update_old.len() != changes.update_new.len() {
             return Err(ConvertChangesError::UnpairedUpdates {
-                old: self.update_old.len(),
-                new: self.update_new.len(),
+                old: changes.update_old.len(),
+                new: changes.update_new.len(),
             });
         }
 
-        Ok(ApplyExternalDnsChangesRequest {
-            creates: to_bindizr_records(&self.create)?,
-            updates: self
+        Ok(Self {
+            creates: to_bindizr_records(&changes.create)?,
+            updates: changes
                 .update_old
                 .iter()
-                .zip(&self.update_new)
+                .zip(&changes.update_new)
                 .map(
                     |(old, new)| -> Result<BindizrRecordUpdate, ConvertChangesError> {
                         Ok(BindizrRecordUpdate {
@@ -229,7 +229,7 @@ impl Changes {
                     },
                 )
                 .collect::<Result<_, _>>()?,
-            deletes: to_bindizr_records(&self.delete)?,
+            deletes: to_bindizr_records(&changes.delete)?,
         })
     }
 }

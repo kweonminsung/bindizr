@@ -1,19 +1,26 @@
 //! Shared CLI cells for absent values, flags, time, truncation, and combined fields.
 //! Use a type's `Display` where available.
 
+use std::fmt;
+
 use bindizr_core::dns::Serial;
 use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
 use bindizr_service::types::{
     RecordValue, SecondaryStatus, TransferResponse, TransferSummaryResponse,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 /// What a cell shows for a value that is absent.
 pub(crate) const MISSING_CELL: &str = "-";
 
-/// An optional value as one cell, absent as `-`.
-pub(crate) fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {
-    opt.as_ref()
+/// The longest value a listing cell shows: one DKIM key would otherwise widen
+/// the column for every row. `record get` and `-o json` carry the whole value.
+const MAX_CELL_CHARS: usize = 48;
+
+/// Render an optional value as one cell, absent as `-`.
+pub(crate) fn display_option<T: fmt::Display>(value: &Option<T>) -> String {
+    value
+        .as_ref()
         .map_or_else(|| MISSING_CELL.to_string(), ToString::to_string)
 }
 
@@ -27,7 +34,8 @@ pub(crate) fn display_yes_no(value: &bool) -> String {
     .to_string()
 }
 
-/// Serial distance behind the zone, negative when ahead; unordered values show `-`.
+/// Render the serial distance behind the zone, negative when ahead; unordered
+/// values show `-`.
 pub(crate) fn display_serial_lag(
     zone_serial: Serial,
     visible_serial: Option<Serial>,
@@ -48,21 +56,17 @@ pub(crate) fn display_serial_lag(
     }
 }
 
-/// The longest value a listing cell shows: one DKIM key would otherwise widen
-/// the column for every row. `record get` and `-o json` carry the whole value.
-const MAX_CELL_CHARS: usize = 48;
-
-/// Format a timestamp for table output; `-o json` carries the full precision.
-pub(crate) fn display_time(at: chrono::DateTime<chrono::Utc>) -> String {
+/// Render a timestamp for table output; `-o json` carries the full precision.
+pub(crate) fn display_time(at: DateTime<Utc>) -> String {
     at.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-/// Format an optional timestamp for table output.
-pub(crate) fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
-    opt.map_or_else(|| MISSING_CELL.to_string(), display_time)
+/// Render an optional timestamp for table output.
+pub(crate) fn display_option_time(value: &Option<DateTime<Utc>>) -> String {
+    value.map_or_else(|| MISSING_CELL.to_string(), display_time)
 }
 
-/// A record value as one listing cell, cut at `MAX_CELL_CHARS` and marked
+/// Render a record value as one listing cell, cut at `MAX_CELL_CHARS` and marked
 /// when it was; counted in characters, so a multi-byte value is not split.
 pub(crate) fn display_record_value(value: &RecordValue) -> String {
     let text = value.to_text();
@@ -72,36 +76,36 @@ pub(crate) fn display_record_value(value: &RecordValue) -> String {
     if chars.next().is_none() {
         head
     } else {
-        format!("{}…", head)
+        format!("{head}…")
     }
 }
 
-/// Format uptime as days, hours, minutes, and seconds; an unset start
+/// Render uptime as days, hours, minutes, and seconds; an unset start
 /// time means the front ends are still starting.
 pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     if started_at_ms == 0 {
         return "starting".to_string();
     }
 
-    let now_ms = Utc::now().timestamp_millis().max(0) as u64;
+    let now_ms = u64::try_from(Utc::now().timestamp_millis()).unwrap_or(0);
     let secs = now_ms.saturating_sub(started_at_ms) / 1000;
     let (days, hours, minutes, seconds) = (
-        secs / 86_400,
-        secs % 86_400 / 3_600,
-        secs % 3_600 / 60,
+        secs / 86400,
+        secs % 86400 / 3600,
+        secs % 3600 / 60,
         secs % 60,
     );
 
     match (days, hours, minutes) {
-        (0, 0, 0) => format!("{}s", seconds),
-        (0, 0, _) => format!("{}m {}s", minutes, seconds),
-        (0, _, _) => format!("{}h {}m", hours, minutes),
-        _ => format!("{}d {}h", days, hours),
+        (0, 0, 0) => format!("{seconds}s"),
+        (0, 0, _) => format!("{minutes}m {seconds}s"),
+        (0, _, _) => format!("{hours}h {minutes}m"),
+        _ => format!("{days}d {hours}h"),
     }
 }
 
-/// What a transfer was: the kind and whether a delta, or that it was refused
-/// or failed.
+/// Render what a transfer was: the kind and whether a delta, or that it was
+/// refused or failed.
 pub(crate) fn display_transfer_kind(transfer: &TransferResponse) -> String {
     match (transfer.result, transfer.kind, transfer.incremental) {
         (TransferResult::Ok, TransferKind::Ixfr, true) => format!("{} delta", transfer.kind),
@@ -111,7 +115,7 @@ pub(crate) fn display_transfer_kind(transfer: &TransferResponse) -> String {
     }
 }
 
-/// A served transfer as one cell: what it was, the serial reached, when, and
+/// Render a served transfer as one cell: what it was, the serial reached, when, and
 /// `over TLS` when it was.
 pub(crate) fn display_transfer(transfer: &TransferResponse) -> String {
     let over_tls = match transfer.transport {
@@ -119,15 +123,14 @@ pub(crate) fn display_transfer(transfer: &TransferResponse) -> String {
         TransferTransport::Udp | TransferTransport::Tcp => "",
     };
     format!(
-        "{} {} at {}{}",
+        "{} {} at {}{over_tls}",
         display_transfer_kind(transfer),
         display_option(&transfer.serial),
-        display_time(transfer.at),
-        over_tls
+        display_time(transfer.at)
     )
 }
 
-/// How a secondary's zones were last served.
+/// Render how a secondary's zones were last served.
 pub(crate) fn display_transfer_summary(summary: &TransferSummaryResponse) -> String {
     if summary.zones == 0 {
         return "no transfers".to_string();
@@ -144,6 +147,6 @@ pub(crate) fn display_transfer_summary(summary: &TransferSummaryResponse) -> Str
         ixfr = TransferKind::Ixfr,
         axfr = TransferKind::Axfr,
         refused = TransferResult::Refused,
-        failed = TransferResult::Failed,
+        failed = TransferResult::Failed
     )
 }

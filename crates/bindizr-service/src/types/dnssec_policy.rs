@@ -1,17 +1,15 @@
 //! DNSSEC policy payloads.
 
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
-use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, DnssecPolicy, PolicyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::dnssec_policy::{DnssecDenial, DnssecPolicy};
-
 /// Request body for creating a DNSSEC policy. The key layout, algorithm,
 /// and denial mode are fixed once created. Omitted fields use the built-in
 /// defaults, independent of edits to the policy named `default`.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateDnssecPolicyRequest {
     #[schema(example = "strict")]
@@ -44,7 +42,7 @@ pub struct CreateDnssecPolicyRequest {
 
 /// Request body for editing a DNSSEC policy's timing; an omitted field keeps
 /// its value. Takes effect on the next signing pass or scheduler scan.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecPolicyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,7 +57,7 @@ pub struct UpdateDnssecPolicyRequest {
 }
 
 /// API representation of a DNSSEC policy.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecPolicyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: PolicyId,
@@ -86,7 +84,7 @@ pub struct DnssecPolicyResponse {
 impl From<&DnssecPolicy> for DnssecPolicyResponse {
     /// Build public policy information from its stored settings.
     fn from(policy: &DnssecPolicy) -> Self {
-        DnssecPolicyResponse {
+        Self {
             id: policy.id,
             name: policy.name.clone(),
             builtin: policy.is_builtin(),
@@ -102,7 +100,7 @@ impl From<&DnssecPolicy> for DnssecPolicyResponse {
 }
 
 /// A DNSSEC policy wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleDnssecPolicyResponse {
     pub dnssec_policy: DnssecPolicyResponse,
 }

@@ -1,28 +1,28 @@
-use serde_json::Value;
-
-use crate::common;
-use crate::common::TestApp;
-
 mod export;
 mod history;
 mod import;
 mod status;
 
-/// Preserve escaped trailing spaces through CLI/socket writes and reject escaped wildcard zones.
+use serde_json::Value;
+
+use crate::common;
+use crate::common::TestApp;
+
+/// Verify that escaped trailing spaces are preserved through CLI/socket writes and escaped wildcard zones are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn escaped_zone_names_follow_the_same_policy_via_cli() {
+async fn escaped_zone_names_follow_the_same_policy() {
     let app = TestApp::start_local().await;
-    let base = app.zone_name("cli-escaped");
-    let simple = format!("{base}\\ ");
-    let canonical = format!(r"{base}\032");
+    let base_zone_name = app.zone_name("cli-escaped");
+    let simple_zone_name = format!("{base_zone_name}\\ ");
+    let canonical_zone_name = format!(r"{base_zone_name}\032");
 
     let created = app
         .run_cli_success(
             &[
                 "zone",
                 "create",
-                &simple,
+                &simple_zone_name,
                 "--mname",
                 "ns.example",
                 "--rname",
@@ -33,29 +33,33 @@ async fn escaped_zone_names_follow_the_same_policy_via_cli() {
             None,
         )
         .await;
-    let created: Value = serde_json::from_str(&created).unwrap();
+    let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
-    assert_eq!(created["zone"]["name"], canonical);
+    assert_eq!(created["zone"]["name"], canonical_zone_name);
 
-    let read = app
-        .run_cli_success(&["zone", "get", &canonical, "--output", "json"], None)
+    let fetched = app
+        .run_cli_success(
+            &["zone", "get", &canonical_zone_name, "--output", "json"],
+            None,
+        )
         .await;
-    let read: Value = serde_json::from_str(&read).unwrap();
+    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(read["zone"]["name"], canonical);
-    let wildcard = format!(r"\042.{base}");
+    assert_eq!(fetched["zone"]["name"], canonical_zone_name);
+
+    let wildcard_zone_name = format!(r"\042.{base_zone_name}");
     let args = [
         "zone",
         "create",
-        &wildcard,
+        &wildcard_zone_name,
         "--mname",
         "ns.example",
         "--rname",
         "admin@example",
     ];
 
-    let output = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &output, "wildcard");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "wildcard");
 }
 
 /// Verify that zone create takes SOA timers.
@@ -98,14 +102,14 @@ async fn zone_create_takes_soa_timers() {
 
     assert_eq!(zone["refresh"], 300);
     assert_eq!(zone["retry"], 60);
-    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["expire"], 1_209_600);
     assert_eq!(zone["minimum_ttl"], 120);
 }
 
-/// Verify zone creation, retrieval, and deletion.
+/// Verify that zones are created, retrieved, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_supports_create_read_and_delete_via_cli() {
+async fn zone_supports_create_read_and_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-zone.example");
     let mname = format!("ns1.{zone_name}");
@@ -114,13 +118,13 @@ async fn zone_supports_create_read_and_delete_via_cli() {
 
     assert!(created.contains(&zone_name), "{created}");
 
-    let zone = app
+    let fetched = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"], None)
         .await;
-    let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
+    let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
 
-    assert_eq!(zone["zone"]["name"], zone_name);
-    assert_eq!(zone["zone"]["mname"], mname);
+    assert_eq!(fetched["zone"]["name"], zone_name);
+    assert_eq!(fetched["zone"]["mname"], mname);
 
     let deleted = app
         .run_cli_success(&["zone", "delete", &zone_name], None)
@@ -141,7 +145,7 @@ async fn zone_supports_create_read_and_delete_via_cli() {
 /// Verify that zone update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_update_changes_only_passed_fields_via_cli() {
+async fn zone_update_changes_only_passed_fields() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-update.example");
 
@@ -172,22 +176,22 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     assert_eq!(updated["mname"], format!("ns1.{zone_name}"));
 }
 
-/// Verify rejection of invalid zone names and TTLs.
+/// Verify that invalid zone names and TTLs are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_rejects_invalid_name_and_ttl_via_cli() {
+async fn zone_rejects_invalid_name_and_ttl() {
     let app = TestApp::start().await;
 
-    for (name, ttl, expected_error) in [
+    for (zone_name, ttl, expected_error) in [
         ("bad..example", "3600", "empty labels"),
         ("low-ttl.example", "0", "ttl must be at least"),
     ] {
-        let mname = format!("ns1.{name}");
-        let rname = format!("hostmaster@{name}");
+        let mname = format!("ns1.{zone_name}");
+        let rname = format!("hostmaster@{zone_name}");
         let args = [
             "zone",
             "create",
-            name,
+            zone_name,
             "--mname",
             &mname,
             "--rname",
@@ -196,27 +200,26 @@ async fn zone_rejects_invalid_name_and_ttl_via_cli() {
             ttl,
         ];
 
-        let output = app.run_cli(&args, None).await;
-        common::assert_cli_failure_contains(&args, &output, expected_error);
+        let refused = app.run_cli(&args, None).await;
+        common::assert_cli_failure_contains(&args, &refused, expected_error);
     }
 
-    let status = app.run_cli(&["status"], None).await;
-    common::assert_cli_success(&["status"], &status);
+    app.run_cli_success(&["status"], None).await;
 }
 
-/// Verify zone filtering and pagination.
+/// Verify that zone listings filter and paginate.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_listing_filters_and_paginates_via_cli() {
+async fn zone_listing_filters_and_paginates() {
     let app = TestApp::start().await;
-    let first_zone = app.zone_name("first.example");
-    let filtered_zone = app.zone_name("filtered.example");
+    let first_zone_name = app.zone_name("first.example");
+    let filtered_zone_name = app.zone_name("filtered.example");
 
-    for (name, ttl) in [(&first_zone, "3600"), (&filtered_zone, "7200")] {
-        app.create_zone_cli(name, ttl).await;
+    for (zone_name, ttl) in [(&first_zone_name, "3600"), (&filtered_zone_name, "7200")] {
+        app.create_zone_cli(zone_name, ttl).await;
     }
 
-    let zones = app
+    let listed = app
         .run_cli_success(
             &[
                 "zone",
@@ -233,15 +236,22 @@ async fn zone_listing_filters_and_paginates_via_cli() {
             None,
         )
         .await;
-    let zones: Value = serde_json::from_str(&zones).expect("CLI did not return valid JSON");
-    let zones = zones["items"].as_array().expect("missing zone items");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let zones = listed["items"].as_array().expect("missing zone items");
 
     assert_eq!(zones.len(), 1);
-    assert_eq!(zones[0]["name"], filtered_zone);
+    assert_eq!(zones[0]["name"], filtered_zone_name);
 
     let by_name = app
         .run_cli_success(
-            &["zone", "list", "--name", &first_zone, "--output", "json"],
+            &[
+                "zone",
+                "list",
+                "--name",
+                &first_zone_name,
+                "--output",
+                "json",
+            ],
             None,
         )
         .await;
@@ -249,7 +259,7 @@ async fn zone_listing_filters_and_paginates_via_cli() {
     let by_name = by_name["items"].as_array().expect("missing zone items");
 
     assert_eq!(by_name.len(), 1);
-    assert_eq!(by_name[0]["name"], first_zone);
+    assert_eq!(by_name[0]["name"], first_zone_name);
 
     let page = app
         .run_cli_success(
@@ -280,7 +290,7 @@ async fn zone_listing_filters_and_paginates_via_cli() {
 /// Verify that `--no-apex-ns` creates a zone with no records.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_omits_apex_ns_when_disabled_via_cli() {
+async fn zone_create_omits_apex_ns_when_disabled() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("bare-cli.example.com");
     let mname = format!("ns1.{zone_name}");
@@ -300,10 +310,10 @@ async fn zone_create_omits_apex_ns_when_disabled_via_cli() {
     )
     .await;
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
 
-    assert_eq!(records["pagination"]["total"], 0, "{records}");
+    assert_eq!(listed["pagination"]["total"], 0, "{listed}");
 }

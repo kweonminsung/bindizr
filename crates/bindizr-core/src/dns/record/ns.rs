@@ -1,5 +1,5 @@
-use super::{ParseRecordValueError, value};
 use crate::dns::name;
+use crate::dns::record::{ParseRecordValueError, value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NsRecordValue<'a> {
@@ -13,21 +13,21 @@ impl<'a> NsRecordValue<'a> {
         if value != "." {
             value::validate_domain_record_value("NS record value", value)?;
         }
+
         Ok(Self { target: value })
     }
 
     /// Render the NS value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         name::to_fqdn_lowercase(self.target)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::NsRecordValue;
-    use crate::dns::name;
+    use super::*;
 
-    /// Root and a literal dot label retain different wire names.
+    /// Verify that the root and a literal dot label retain different wire names.
     #[test]
     fn ns_accepts_root_target_and_preserves_literal_dot() {
         for (input, expected) in [(".", vec![0]), (r"\.", vec![1, b'.', 0])] {

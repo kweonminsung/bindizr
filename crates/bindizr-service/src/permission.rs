@@ -8,8 +8,8 @@ use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 
-/// The caller's actions across all zones and where zone grants add to them;
-/// reading its own rights needs no grant.
+/// Get the caller's actions across all zones and where zone grants add to
+/// them; reading its own rights needs no grant.
 pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, ServiceError> {
     let Some(grants) = caller.grants() else {
         // Nothing bounds the caller, so all zones are covered whole.
@@ -34,9 +34,9 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
 
     let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
-        ZoneFilter {
+        &ZoneFilter {
             scope_role_id: caller.scope_role_id(),
-            ..ZoneFilter::default()
+            ..Default::default()
         },
     )
     .await?;
@@ -66,7 +66,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
     Ok(PermissionsResponse { all_zones, zones })
 }
 
-/// The actions a name or type limit can narrow.
+/// Return the actions a name or type limit can narrow.
 fn record_actions() -> impl Iterator<Item = Action> {
     Action::ALL
         .into_iter()

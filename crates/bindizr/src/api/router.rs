@@ -3,8 +3,8 @@ use std::sync::Arc;
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
-use axum::response::IntoResponse;
-use axum::{Extension, Json, Router, routing};
+use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json, Router, middleware, routing};
 use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
@@ -12,12 +12,13 @@ use bindizr_service::types::MessageResponse;
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::OpenApi;
 
-use super::error::ApiError;
-use super::middleware::body_parser::DEFAULT_BODY_BYTES;
-use super::openapi::ApiDoc;
-use super::{
-    audit, dnssec, dnssec_policy, external_dns, notify, permission, record, role, secondary, token,
-    tsig_key, zone,
+use crate::api::error::ApiError;
+use crate::api::middleware::auth;
+use crate::api::middleware::body_parser::DEFAULT_BODY_BYTES;
+use crate::api::openapi::ApiDoc;
+use crate::api::{
+    audit, dnssec, dnssec_policy, external_dns, health, metrics, notify, permission, record, role,
+    secondary, token, tsig_key, zone,
 };
 
 /// Build the full axum router with auth, CORS, and the optional route groups,
@@ -46,9 +47,9 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
     }
 
     if api_config.authentication_required {
-        api_router = api_router.layer(axum::middleware::from_fn_with_state(
+        api_router = api_router.layer(middleware::from_fn_with_state(
             cx.clone(),
-            super::middleware::auth::auth_middleware,
+            auth::auth_middleware,
         ));
     } else {
         // Attach the API caller explicitly so a missing caller stays a wiring
@@ -59,34 +60,34 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
     let mut router = api_router;
 
     // Outside the auth layer: probes must work without credentials.
-    router = router.route("/health", routing::get(super::health::handle_health));
+    router = router.route("/health", routing::get(health::handle_health));
 
     // Also outside auth: scrapers get only aggregate counts, no zone data.
     if api_config.metrics_enabled {
-        router = router.route("/metrics", routing::get(super::metrics::handle_metrics));
+        router = router.route("/metrics", routing::get(metrics::handle_metrics));
     }
 
     // Also outside auth: the document is the API's own description.
     if api_config.openapi_enabled {
         router = router
-            .route("/openapi.json", routing::get(openapi_json))
-            .route("/openapi.yaml", routing::get(openapi_yaml));
+            .route("/openapi.json", routing::get(handle_openapi_json))
+            .route("/openapi.yaml", routing::get(handle_openapi_yaml));
     } else {
         // A bare 404 reads as "no such endpoint" for a path the docs name.
         router = router
-            .route("/openapi.json", routing::get(openapi_disabled))
-            .route("/openapi.yaml", routing::get(openapi_disabled));
+            .route("/openapi.json", routing::get(handle_openapi_disabled))
+            .route("/openapi.yaml", routing::get(handle_openapi_disabled));
     }
 
     router = router
-        .fallback(not_found)
-        .method_not_allowed_fallback(method_not_allowed);
+        .fallback(handle_not_found)
+        .method_not_allowed_fallback(handle_method_not_allowed);
 
     // Layered after the fallback so every route, including 404s, is measured.
     if api_config.metrics_enabled {
-        router = router.layer(axum::middleware::from_fn_with_state(
+        router = router.layer(middleware::from_fn_with_state(
             cx.clone(),
-            super::middleware::metrics::track_http_metrics,
+            crate::api::middleware::metrics::track_http_metrics,
         ));
     }
 
@@ -107,22 +108,23 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
 }
 
 /// Return the API's running-status message.
-async fn handle_home() -> impl IntoResponse {
+async fn handle_home() -> Response {
     (
         StatusCode::OK,
         Json(MessageResponse {
             message: "bindizr API running".to_string(),
         }),
     )
+        .into_response()
 }
 
 /// Return the OpenAPI document as JSON.
-async fn openapi_json() -> impl IntoResponse {
-    (StatusCode::OK, Json(ApiDoc::openapi()))
+async fn handle_openapi_json() -> Response {
+    (StatusCode::OK, Json(ApiDoc::openapi())).into_response()
 }
 
 /// Return the OpenAPI document as YAML.
-async fn openapi_yaml() -> axum::response::Response {
+async fn handle_openapi_yaml() -> Response {
     match serde_norway::to_string(&ApiDoc::openapi()) {
         Ok(openapi_yaml) => (
             StatusCode::OK,
@@ -139,23 +141,26 @@ async fn openapi_yaml() -> axum::response::Response {
 }
 
 /// Return the API error for an unsupported HTTP method.
-async fn method_not_allowed() -> impl IntoResponse {
+async fn handle_method_not_allowed() -> Response {
     ApiError(ServiceError::MethodNotAllowed(
         "this path does not take that method".to_string(),
     ))
+    .into_response()
 }
 
 /// Return the API error for the OpenAPI document while it is not served.
-async fn openapi_disabled() -> impl IntoResponse {
+async fn handle_openapi_disabled() -> Response {
     ApiError(ServiceError::EndpointNotFound(
         "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
             .to_string(),
     ))
+    .into_response()
 }
 
 /// Return the API error for an unknown route.
-async fn not_found() -> impl IntoResponse {
+async fn handle_not_found() -> Response {
     ApiError(ServiceError::EndpointNotFound(
         "no route matches this path".to_string(),
     ))
+    .into_response()
 }

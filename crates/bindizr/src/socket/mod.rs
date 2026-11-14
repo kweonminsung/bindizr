@@ -1,24 +1,25 @@
 //! Unix-socket control channel between the CLI and the running daemon.
 
-use std::io;
-
-use tokio::net::UnixStream;
-
 pub(crate) mod client;
 pub(crate) mod server;
 pub(crate) mod types;
+
+use std::io;
+
+use tokio::net::UnixStream;
 
 /// Primary path for the daemon's Unix socket.
 pub(crate) const SOCKET_FILE_PATH: &str = "/run/bindizr/bindizr.sock";
 /// Fallback socket path used when the primary path is unavailable.
 pub(crate) const FALLBACK_SOCKET_FILE_PATH: &str = "/tmp/bindizr/bindizr.sock";
 
-/// Whether a socket peer may drive the daemon: its own user, or root.
+/// Return whether a socket peer may drive the daemon: its own user, or root.
 pub(crate) fn is_trusted_peer(peer_uid: u32, own_uid: u32) -> bool {
     peer_uid == own_uid || peer_uid == 0
 }
 
-/// Trust the CLI's daemon peer, allowing root's primary path because only root prepares `/run/bindizr`.
+/// Return whether the CLI may trust its daemon peer, allowing root's primary path because only
+/// root prepares `/run/bindizr`.
 /// The `/tmp` fallback always requires trusted peer credentials.
 pub(crate) fn is_trusted_daemon(peer_uid: u32, own_uid: u32, socket_path: &str) -> bool {
     is_trusted_peer(peer_uid, own_uid) || (own_uid == 0 && socket_path == SOCKET_FILE_PATH)

@@ -1,5 +1,4 @@
 use super::*;
-use crate::dns::name;
 
 /// Verify that `from_email` escapes local part.
 #[test]
@@ -23,9 +22,9 @@ fn to_email_round_trips() {
         "a.b.c@sub.example.com",
         "back\\slash@example.com",
     ] {
-        let mailbox = SoaMailbox::from_email(email).expect("email should convert to mailbox");
+        let mailbox = SoaMailbox::from_email(email).unwrap();
         assert_eq!(
-            mailbox.to_email().expect("mailbox should convert back"),
+            mailbox.to_email().unwrap(),
             email,
             "round trip failed for mailbox '{mailbox}'"
         );
@@ -96,7 +95,8 @@ fn encode_soa_rdata_returns_names_and_five_counters() {
     assert_eq!(rdata.as_bytes(), expected);
 }
 
-/// Preserve arbitrary domain octets while decoding only the mailbox local part as text.
+/// Verify that arbitrary domain octets are preserved while only the mailbox local part decodes as
+/// text.
 #[test]
 fn to_email_preserves_domain_octets() {
     for domain in [

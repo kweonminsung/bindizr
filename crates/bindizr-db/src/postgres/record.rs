@@ -1,20 +1,21 @@
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::record::{Record, RecordType, RecordWithZone};
 use crate::record::RecordFilter;
 use crate::{LockLevel, sql};
 
-/// Insert a batch of records in the current transaction.
+/// Insert many records in one chunked statement, returning them with their
+/// assigned ids in input order.
 pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, Postgres>,
     records: &[Record],
 ) -> Result<Vec<Record>, DatabaseError> {
     const CHUNK: usize = 500;
+
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
@@ -27,17 +28,15 @@ pub(crate) async fn create_many_tx(
             if i > 0 {
                 sql.push(',');
             }
-
             sql.push_str(&format!(
-                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                bind_index,
+                "(${bind_index}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                 bind_index + 1,
                 bind_index + 2,
                 bind_index + 3,
                 bind_index + 4,
                 bind_index + 5,
                 bind_index + 6,
-                bind_index + 7
+                bind_index + 7,
             ));
             bind_index += 8;
         }
@@ -50,8 +49,8 @@ pub(crate) async fn create_many_tx(
         for record in chunk {
             query = query
                 .bind(&record.name)
-                .bind(record.record_type.as_str())
-                .bind(record.value.clone())
+                .bind(record.record_type)
+                .bind(&record.value)
                 .bind(record.record_type.display_value(&record.value))
                 .bind(record.ttl)
                 .bind(record.priority)
@@ -73,23 +72,24 @@ pub(crate) async fn create_many_tx(
     Ok(created_records)
 }
 
-/// Find a record by ID.
+/// Get a record by ID.
 pub(crate) async fn get(
     pool: &Pool<Postgres>,
     id: RecordId,
 ) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *connection)
-        .await
-        ?;
+    let record = sqlx::query_as::<_, Record>(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&mut *connection)
+    .await?;
 
     Ok(record)
 }
 
-/// Find a record with its zone metadata.
+/// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<Postgres>,
     id: RecordId,
@@ -112,16 +112,19 @@ pub(crate) async fn get_with_zone(
     Ok(record)
 }
 
-/// Find a record by ID in the current transaction.
+/// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: RecordId,
     lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
-    let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",lock_level.clause())))
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
 
     Ok(record)
 }
@@ -132,8 +135,8 @@ pub(crate) async fn list_tx(
     zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
-    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-        format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name, id{}",
+    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name, id{}",
         lock_level.clause(),
     )))
     .bind(zone_id)
@@ -152,8 +155,8 @@ pub(crate) async fn list_by_name_tx(
 ) -> Result<Vec<Record>, DatabaseError> {
     // Bind the canonical stored form as given: re-folding it here would miss
     // its own row, and the bare column lets idx_records_zone_name apply.
-    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-        format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id{}",
+    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id{}",
         lock_level.clause(),
     )))
     .bind(zone_id)
@@ -164,7 +167,8 @@ pub(crate) async fn list_by_name_tx(
     Ok(records)
 }
 
-/// List the records of the given types in the current transaction.
+/// List the records of the given types, in the current transaction; the
+/// cross-owner validation reads only the types it relates.
 pub(crate) async fn list_by_record_types_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
@@ -190,7 +194,7 @@ pub(crate) async fn list_by_record_types_tx(
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
 
     for record_type in record_types {
-        query = query.bind(record_type.as_str());
+        query = query.bind(record_type);
     }
 
     let records = query.fetch_all(&mut **tx).await?;
@@ -198,7 +202,7 @@ pub(crate) async fn list_by_record_types_tx(
     Ok(records)
 }
 
-/// List the distinct owner names of a zone in the current transaction.
+/// List the owner names of a zone, each once, in the current transaction.
 pub(crate) async fn list_names_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
@@ -212,20 +216,18 @@ pub(crate) async fn list_names_tx(
     Ok(names)
 }
 
-/// List records at the requested owner names in a zone in the current transaction.
+/// List the records whose owner name is any of `names`. Used by bulk insert to
+/// fetch only the rows that could conflict with the batch.
 pub(crate) async fn list_by_names_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
     names: &[OwnerName],
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
-    if names.is_empty() {
-        return Ok(Vec::new());
-    }
-
     // Lock only conflicting names; 5000-name chunks reduce round trips
     // without reaching the 65535-placeholder limit.
     const CHUNK: usize = 5000;
+
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
@@ -249,8 +251,7 @@ pub(crate) async fn list_by_names_tx(
             query = query.bind(name);
         }
 
-        let mut rows = query.fetch_all(&mut **tx).await?;
-        records.append(&mut rows);
+        records.extend(query.fetch_all(&mut **tx).await?);
     }
 
     Ok(records)
@@ -259,7 +260,7 @@ pub(crate) async fn list_by_names_tx(
 /// List matching records with their zone metadata.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Postgres>,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -341,12 +342,11 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
     .bind(
         filter
             .offset
-            .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-            .unwrap_or(0),
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
     )
     .bind(filter.scope_role_id)
     .bind(value_exact)
@@ -356,7 +356,7 @@ pub(crate) async fn list_by_filter_with_zone(
     Ok(records)
 }
 
-/// Count a zone's records in the current transaction.
+/// Count the records a zone holds, in the current transaction.
 pub(crate) async fn count_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone_id: ZoneId,
@@ -372,7 +372,7 @@ pub(crate) async fn count_tx(
 /// Count records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -381,7 +381,6 @@ pub(crate) async fn count_by_filter(
     let search = sql::like_pattern(filter.search.as_deref());
     let name_like_types = sql::name_like_types_sql();
     let apex_owner = sql::apex_owner_sql();
-
     let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_pipes);
 
     let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
@@ -470,7 +469,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.as_str())
+    .bind(record.record_type)
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)
@@ -483,7 +482,7 @@ pub(crate) async fn update_tx(
     Ok(record)
 }
 
-/// Delete the records with the supplied IDs in the current transaction.
+/// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Postgres>,
     ids: &[RecordId],

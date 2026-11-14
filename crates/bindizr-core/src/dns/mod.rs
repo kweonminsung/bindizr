@@ -19,11 +19,11 @@ pub use soa_interval::{ConvertSoaIntervalError, SoaInterval};
 pub use ttl::{ConvertTtlError, Ttl};
 
 /// SOA REFRESH of the generated catalog, also bounding its NOTIFY batching delay.
-pub const CATALOG_SOA_REFRESH: SoaInterval = SoaInterval::from_secs(3_600);
+pub const CATALOG_SOA_REFRESH: SoaInterval = SoaInterval::from_secs(3600);
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix,
 /// RFC 1035, Section 4.2.2). The record-value size caps derive from it.
-pub const DNS_TCP_MAX_SIZE: usize = 65_535;
+pub const DNS_TCP_MAX_SIZE: usize = 65535;
 
 /// An error of the `domain` crate, carried boxed: its error types vary across
 /// versions and nothing here matches on them, so only the chain is kept.

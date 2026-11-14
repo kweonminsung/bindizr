@@ -1,14 +1,12 @@
 //! API token payloads.
 
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::model::api_token::ApiToken;
-
 /// Request body for creating an API token.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateTokenRequest {
     /// Letters, digits, `.`, `_`, and `-`: one URL path segment.
@@ -26,7 +24,7 @@ pub struct CreateTokenRequest {
 }
 
 /// Query parameters of the API tokens listing: one role's, or every one.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct TokenFilter {
@@ -42,7 +40,7 @@ pub struct TokenFilter {
 }
 
 /// API representation of an API token; never carries the secret.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TokenResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: TokenId,
@@ -60,7 +58,7 @@ pub struct TokenResponse {
 impl TokenResponse {
     /// Build token information with its role name, without its stored hash.
     pub(crate) fn from_token(token: &ApiToken, role_name: &str) -> Self {
-        TokenResponse {
+        Self {
             id: token.id,
             name: token.name.clone(),
             description: token.description.clone(),
@@ -73,13 +71,13 @@ impl TokenResponse {
 }
 
 /// One token without its secret: the self lookup.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleTokenResponse {
     pub token: TokenResponse,
 }
 
 /// The create response: the token and its secret, the one time it is shown.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateTokenResponse {
     pub token: TokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]

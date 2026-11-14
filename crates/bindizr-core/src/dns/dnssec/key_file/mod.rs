@@ -1,11 +1,12 @@
 //! Read and write BIND `K*.key` / `K*.private` files, preserving rollover timings.
 
-#[cfg(test)]
-mod tests;
-
-use base64::Engine;
+use base64::engine::general_purpose;
+use base64::{DecodeError, Engine};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use domain::base::iana::SecurityAlgorithm;
+use domain::crypto::sign::{KeyPair, SecretKeyBytes};
+use domain::rdata::Dnskey;
+use thiserror::Error;
 
 use crate::dns::dnssec::KeyTag;
 use crate::dns::{LibraryError, Ttl};
@@ -19,11 +20,17 @@ use crate::model::zone::Zone;
 #[derive(Debug, Error)]
 pub enum ImportKeyError {
     #[error("invalid {field} time '{value}' in the private key file")]
-    InvalidTime { field: String, value: String },
-    #[error("this key's Delete time ({at}) has passed, so BIND no longer serves it")]
-    Deleted { at: String },
-    #[error("this key is not published until {at}, so BIND does not serve it yet")]
-    NotYetPublished { at: String },
+    InvalidTime { field: &'static str, value: String },
+    #[error(
+        "this key's Delete time ({}) has passed, so BIND no longer serves it",
+        at.format("%Y-%m-%dT%H:%M:%SZ")
+    )]
+    Deleted { at: DateTime<Utc> },
+    #[error(
+        "this key is not published until {}, so BIND does not serve it yet",
+        at.format("%Y-%m-%dT%H:%M:%SZ")
+    )]
+    NotYetPublished { at: DateTime<Utc> },
     #[error("DNSKEY record needs flags, protocol, algorithm, and key")]
     DnskeyShape,
     #[error("invalid DNSKEY flags '{value}'")]
@@ -33,7 +40,7 @@ pub enum ImportKeyError {
     #[error("unsupported DNSKEY algorithm '{value}'")]
     Algorithm { value: String },
     #[error("DNSKEY public key is not base64: {0}")]
-    PublicKeyNotBase64(#[source] base64::DecodeError),
+    PublicKeyNotBase64(#[source] DecodeError),
     #[error("a 256-flag key is a ZSK, which a single-CSK layout does not use")]
     ZskInCskLayout,
     #[error("unsupported DNSKEY flags {flags} (expected 256 or 257)")]
@@ -45,10 +52,9 @@ pub enum ImportKeyError {
     #[error("private key does not match the DNSKEY: {0}")]
     KeyMismatch(#[source] LibraryError),
 }
-use thiserror::Error;
 
 impl DnssecKey {
-    /// The key's `K*.private` contents, including BIND timing fields so
+    /// Render the key's `K*.private` contents, including BIND timing fields so
     /// [`DnssecKey::import`] restores its rollover state.
     pub fn to_bind_private_file(&self) -> String {
         let timing = match self.state {
@@ -73,7 +79,7 @@ impl DnssecKey {
         let mut file = self.private_key.trim_end().to_string();
 
         for (field, at) in [("Created", self.created_at)].into_iter().chain(timing) {
-            file.push_str(&format!("\n{}: {}", field, at.format("%Y%m%d%H%M%S")));
+            file.push_str(&format!("\n{field}: {}", at.format("%Y%m%d%H%M%S")));
         }
 
         file.push('\n');
@@ -82,11 +88,11 @@ impl DnssecKey {
     }
 }
 
-/// One of BIND's key timing fields from a `K*.private` file, written by
+/// Parse one of BIND's key timing fields from a `K*.private` file, written by
 /// `dnssec-keygen` and `dnssec-settime` as UTC `YYYYMMDDHHMMSS`.
 fn parse_bind_key_time(
     private_key: &str,
-    field: &str,
+    field: &'static str,
 ) -> Result<Option<DateTime<Utc>>, ImportKeyError> {
     let Some(value) = private_key.lines().find_map(|line| {
         line.split_once(':')
@@ -98,14 +104,14 @@ fn parse_bind_key_time(
     NaiveDateTime::parse_from_str(value, "%Y%m%d%H%M%S")
         .map(|time| Some(time.and_utc()))
         .map_err(|_| ImportKeyError::InvalidTime {
-            field: field.to_string(),
+            field,
             value: value.to_string(),
         })
 }
 
 /// Where an imported key stands in its rollover: the state it is in, when it
 /// entered it, and when it may move on.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DnssecKeyPhase {
     state: DnssecKeyState,
     state_changed_at: DateTime<Utc>,
@@ -129,9 +135,7 @@ fn bind_key_phase(
     let passed = |at: Option<DateTime<Utc>>| at.filter(|at| *at <= now);
 
     if let Some(delete) = passed(delete) {
-        return Err(ImportKeyError::Deleted {
-            at: delete.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        });
+        return Err(ImportKeyError::Deleted { at: delete });
     }
 
     // The DNSKEY record set's own TTL bounds how long a resolver can hold an answer
@@ -163,9 +167,7 @@ fn bind_key_phase(
     }
 
     match publish.or(activate) {
-        Some(at) => Err(ImportKeyError::NotYetPublished {
-            at: at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        }),
+        Some(at) => Err(ImportKeyError::NotYetPublished { at }),
         None => Ok(DnssecKeyPhase {
             state: DnssecKeyState::Active,
             state_changed_at: now,
@@ -201,7 +203,7 @@ impl DnssecKey {
             _ => return Err(ImportKeyError::DnskeyShape),
         };
 
-        let flags: u16 = flags.parse().map_err(|_| ImportKeyError::Flags {
+        let flags = flags.parse::<u16>().map_err(|_| ImportKeyError::Flags {
             value: flags.to_string(),
         })?;
 
@@ -214,11 +216,11 @@ impl DnssecKey {
         let algorithm = algorithm
             .parse::<i32>()
             .ok()
-            .and_then(DnssecAlgorithm::from_i32)
+            .and_then(|value| DnssecAlgorithm::try_from(value).ok())
             .ok_or_else(|| ImportKeyError::Algorithm {
                 value: algorithm.to_string(),
             })?;
-        let public_key = base64::engine::general_purpose::STANDARD
+        let public_key = general_purpose::STANDARD
             .decode(&public)
             .map_err(ImportKeyError::PublicKeyNotBase64)?;
 
@@ -232,16 +234,16 @@ impl DnssecKey {
         };
 
         // Reconstruct the pair to reject a private key for a different DNSKEY.
-        let dnskey = domain::rdata::Dnskey::new(
+        let dnskey = Dnskey::new(
             flags,
             3,
             SecurityAlgorithm::from_int(algorithm.as_i32() as u8),
             public_key,
         )
         .map_err(|error| ImportKeyError::Dnskey(Box::new(error)))?;
-        let secret = domain::crypto::sign::SecretKeyBytes::parse_from_bind(private_key)
+        let secret = SecretKeyBytes::parse_from_bind(private_key)
             .map_err(|error| ImportKeyError::PrivateKey(Box::new(error)))?;
-        domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
+        KeyPair::from_bytes(&secret, &dnskey)
             .map_err(|error| ImportKeyError::KeyMismatch(Box::new(error)))?;
 
         // Preserve the rollover phase encoded by the private file's timing fields.
@@ -251,13 +253,13 @@ impl DnssecKey {
             eligible_at,
         } = bind_key_phase(private_key, zone.default_ttl, now)?;
 
-        Ok(DnssecKey {
+        Ok(Self {
             id: DnssecKeyId::UNWRITTEN,
             zone_id: zone.id,
             role,
             algorithm,
             key_tag: KeyTag::from(dnskey.key_tag()),
-            public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
+            public_key: general_purpose::STANDARD.encode(dnskey.public_key()),
             private_key: secret.display_as_bind().to_string(),
             state,
             state_changed_at,
@@ -267,3 +269,6 @@ impl DnssecKey {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

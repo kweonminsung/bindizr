@@ -1,9 +1,17 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::fmt;
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use domain::base::iana::Rtype;
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
+use utoipa::openapi::RefOr;
+use utoipa::openapi::schema::{ObjectBuilder, Schema, Type};
 
 use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::record::{
@@ -15,13 +23,32 @@ use crate::dns::record::{
 use crate::dns::{Ttl, name};
 use crate::model::zone::ZoneId;
 
+/// Return domain-name value types for case-insensitive comparison (RFC 4343).
+/// Record-filter SQL shares this list across backends.
+pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
+    RecordType::Cname,
+    RecordType::Dname,
+    RecordType::Ns,
+    RecordType::Ptr,
+    RecordType::Mx,
+    RecordType::Srv,
+];
+
+/// Record types shared by the API server and ExternalDNS adapter.
+pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
+    RecordType::A,
+    RecordType::Aaaa,
+    RecordType::Cname,
+    RecordType::Txt,
+];
+
 id_newtype!(
     /// The id of a record row.
     RecordId
 );
 
 /// One stored DNS record of a zone.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Record {
     pub id: RecordId,
     pub name: OwnerName,
@@ -44,15 +71,15 @@ pub struct RecordKey {
 }
 
 impl RecordKey {
-    /// The identity of a record with these fields, canonicalizing its value once.
+    /// Build the identity of a record with these fields, canonicalizing its value once.
     pub fn new(
-        name: &OwnerName,
+        owner: &OwnerName,
         record_type: RecordType,
         value: &str,
         priority: Option<i32>,
     ) -> Self {
-        RecordKey {
-            name: name.clone(),
+        Self {
+            name: owner.clone(),
             record_type,
             rdata: record_type.canonical_value(value, priority).into_owned(),
         }
@@ -62,18 +89,19 @@ impl RecordKey {
 impl Record {
     /// Encode RDATA using the transfer and signer encoder.
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
-        Ok(EncodedRdata::from_columns(&self.record_type, &self.value, self.priority)?.rdata)
+        Ok(EncodedRdata::from_columns(self.record_type, &self.value, self.priority)?.rdata)
     }
 
-    /// Match an RFC 2136, Section 2.5.2 delete by type, canonical value, and priority.
+    /// Return whether an RFC 2136, Section 2.5.2 delete by type, canonical value, and
+    /// priority selects this record.
     /// MX and SRV priorities narrow separately because they occupy their own column.
     pub fn matches(
         &self,
-        record_type: Option<&RecordType>,
+        record_type: Option<RecordType>,
         value: Option<&str>,
         priority: Option<i32>,
     ) -> bool {
-        if record_type.is_some_and(|wanted| *wanted != self.record_type) {
+        if record_type.is_some_and(|wanted| wanted != self.record_type) {
             return false;
         }
         if value.is_some_and(|value| {
@@ -87,14 +115,14 @@ impl Record {
         priority.is_none_or(|wanted| self.priority == Some(wanted))
     }
 
-    /// Whether this row holds `value` as its rdata (with `priority`, for MX
+    /// Return whether this row holds `value` as its rdata (with `priority`, for MX
     /// and SRV), compared canonically under the row's own type.
     pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
         self.record_type
             .values_equal(&self.value, self.priority, value, priority)
     }
 
-    /// Test UPDATE replacement by singleton type or WKS address/protocol.
+    /// Return whether an UPDATE replaces this record by singleton type or WKS address/protocol.
     pub fn is_replaced_by(&self, value: &str, priority: Option<i32>) -> bool {
         if self.has_rdata(value, priority) {
             return false;
@@ -114,14 +142,14 @@ impl Record {
         }
     }
 
-    /// This record's identity for set matching, shared with [`RecordData`].
+    /// Return this record's identity for set matching, shared with [`RecordData`].
     pub fn match_key(&self) -> RecordKey {
         RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
     }
 }
 
 /// The owner name and type identifying a record set.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RecordSetKey {
     pub name: String,
     pub record_type: RecordType,
@@ -138,10 +166,17 @@ pub struct RecordData {
     pub priority: Option<i32>,
 }
 
+impl RecordData {
+    /// Return this record's identity for set matching, shared with [`Record`].
+    pub fn match_key(&self) -> RecordKey {
+        RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
+    }
+}
+
 impl From<Record> for RecordData {
     /// Drop a stored record's row identity.
     fn from(record: Record) -> Self {
-        RecordData {
+        Self {
             name: record.name,
             record_type: record.record_type,
             value: record.value,
@@ -151,15 +186,8 @@ impl From<Record> for RecordData {
     }
 }
 
-impl RecordData {
-    /// This record's identity for set matching, shared with [`Record`].
-    pub fn match_key(&self) -> RecordKey {
-        RecordKey::new(&self.name, self.record_type, &self.value, self.priority)
-    }
-}
-
 /// A [`Record`] joined with the name of its owning zone.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct RecordWithZone {
     pub id: RecordId,
     pub name: OwnerName,
@@ -189,8 +217,18 @@ impl RecordWithZone {
     }
 }
 
+/// A record type outside the user records bindizr stores, by mnemonic or by
+/// wire type.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseRecordTypeError {
+    #[error("invalid record type: {value}")]
+    Unknown { value: String },
+    #[error("unsupported record type: {value}")]
+    Unsupported { value: Rtype },
+}
+
 /// The record types bindizr stores.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum RecordType {
     A,
@@ -210,200 +248,88 @@ pub enum RecordType {
     Wks,
 }
 
-impl std::fmt::Display for RecordType {
-    /// Write the record type in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.pad(self.as_str())
-    }
-}
-
-/// A record type outside the user records bindizr stores, by mnemonic or by
-/// wire type.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ParseRecordTypeError {
-    #[error("invalid record type: {0}")]
-    Unknown(String),
-    #[error("unsupported record type: {0}")]
-    Unsupported(Rtype),
-}
-
-impl TryFrom<String> for RecordType {
-    type Error = ParseRecordTypeError;
-
-    /// Validate and convert the stored value into a record type.
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
-/// The write half: binding renders the canonical mnemonic, the row form
-/// `TryFrom<String>` parses.
-impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
-where
-    String: sqlx::Type<DB>,
-{
-    /// Return the SQL type used to store this value.
-    fn type_info() -> DB::TypeInfo {
-        <String as sqlx::Type<DB>>::type_info()
-    }
-
-    /// Check whether the SQL type can store this value.
-    fn compatible(ty: &DB::TypeInfo) -> bool {
-        <String as sqlx::Type<DB>>::compatible(ty)
-    }
-}
-
-impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
-where
-    String: sqlx::Encode<'q, DB>,
-{
-    /// Encode this value using its database representation.
-    fn encode_by_ref(
-        &self,
-        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.as_str().to_owned().encode_by_ref(buffer)
-    }
-}
-
-impl std::str::FromStr for RecordType {
-    type Err = ParseRecordTypeError;
-
-    /// Parse a record type from its text representation.
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.to_uppercase().as_str() {
-            "A" => Ok(RecordType::A),
-            "AAAA" => Ok(RecordType::Aaaa),
-            "CAA" => Ok(RecordType::Caa),
-            "CNAME" => Ok(RecordType::Cname),
-            "DNAME" => Ok(RecordType::Dname),
-            "DS" => Ok(RecordType::Ds),
-            "MX" => Ok(RecordType::Mx),
-            "NAPTR" => Ok(RecordType::Naptr),
-            "TXT" => Ok(RecordType::Txt),
-            "NS" => Ok(RecordType::Ns),
-            "SRV" => Ok(RecordType::Srv),
-            "PTR" => Ok(RecordType::Ptr),
-            "SSHFP" => Ok(RecordType::Sshfp),
-            "TLSA" => Ok(RecordType::Tlsa),
-            "WKS" => Ok(RecordType::Wks),
-            _ => value
-                .parse::<Rtype>()
-                .map_err(|_| ParseRecordTypeError::Unknown(value.to_string()))
-                .and_then(Self::try_from),
-        }
-    }
-}
-
-impl TryFrom<Rtype> for RecordType {
-    type Error = ParseRecordTypeError;
-
-    /// The record types bindizr stores as user records, keyed by wire record type.
-    /// SOA is excluded because it is managed through the zone's own fields.
-    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        match rtype {
-            Rtype::A => Ok(RecordType::A),
-            Rtype::NS => Ok(RecordType::Ns),
-            Rtype::CNAME => Ok(RecordType::Cname),
-            Rtype::DNAME => Ok(RecordType::Dname),
-            Rtype::PTR => Ok(RecordType::Ptr),
-            Rtype::CAA => Ok(RecordType::Caa),
-            Rtype::DS => Ok(RecordType::Ds),
-            Rtype::SSHFP => Ok(RecordType::Sshfp),
-            Rtype::TLSA => Ok(RecordType::Tlsa),
-            Rtype::MX => Ok(RecordType::Mx),
-            Rtype::NAPTR => Ok(RecordType::Naptr),
-            Rtype::TXT => Ok(RecordType::Txt),
-            Rtype::AAAA => Ok(RecordType::Aaaa),
-            Rtype::SRV => Ok(RecordType::Srv),
-            Rtype::WKS => Ok(RecordType::Wks),
-            _ => Err(ParseRecordTypeError::Unsupported(rtype)),
-        }
-    }
-}
-
 impl RecordType {
-    /// Render the stored and API mnemonic.
-    pub fn as_str(&self) -> &'static str {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
         match self {
-            RecordType::A => "A",
-            RecordType::Aaaa => "AAAA",
-            RecordType::Caa => "CAA",
-            RecordType::Cname => "CNAME",
-            RecordType::Dname => "DNAME",
-            RecordType::Ds => "DS",
-            RecordType::Mx => "MX",
-            RecordType::Naptr => "NAPTR",
-            RecordType::Txt => "TXT",
-            RecordType::Ns => "NS",
-            RecordType::Srv => "SRV",
-            RecordType::Ptr => "PTR",
-            RecordType::Sshfp => "SSHFP",
-            RecordType::Tlsa => "TLSA",
-            RecordType::Wks => "WKS",
+            Self::A => "A",
+            Self::Aaaa => "AAAA",
+            Self::Caa => "CAA",
+            Self::Cname => "CNAME",
+            Self::Dname => "DNAME",
+            Self::Ds => "DS",
+            Self::Mx => "MX",
+            Self::Naptr => "NAPTR",
+            Self::Txt => "TXT",
+            Self::Ns => "NS",
+            Self::Srv => "SRV",
+            Self::Ptr => "PTR",
+            Self::Sshfp => "SSHFP",
+            Self::Tlsa => "TLSA",
+            Self::Wks => "WKS",
         }
     }
 
-    /// The record TYPE number this type's records carry on the wire.
-    pub fn wire_type(&self) -> u16 {
+    /// Return the record TYPE number this type's records carry on the wire.
+    pub fn wire_type(self) -> u16 {
         match self {
-            RecordType::A => 1,
-            RecordType::Ns => 2,
-            RecordType::Cname => 5,
-            RecordType::Dname => 39,
-            RecordType::Ds => 43,
-            RecordType::Ptr => 12,
-            RecordType::Mx => 15,
-            RecordType::Naptr => 35,
-            RecordType::Txt => 16,
-            RecordType::Aaaa => 28,
-            RecordType::Srv => 33,
-            RecordType::Sshfp => 44,
-            RecordType::Tlsa => 52,
-            RecordType::Caa => 257,
-            RecordType::Wks => 11,
+            Self::A => 1,
+            Self::Ns => 2,
+            Self::Cname => 5,
+            Self::Dname => 39,
+            Self::Ds => 43,
+            Self::Ptr => 12,
+            Self::Mx => 15,
+            Self::Naptr => 35,
+            Self::Txt => 16,
+            Self::Aaaa => 28,
+            Self::Srv => 33,
+            Self::Sshfp => 44,
+            Self::Tlsa => 52,
+            Self::Caa => 257,
+            Self::Wks => 11,
         }
     }
 
     /// Validate a stored value (and its priority column) for this record type.
     pub fn validate_value(
-        &self,
+        self,
         value: &str,
         priority: Option<i32>,
     ) -> Result<(), ParseRecordValueError> {
         // Only MX and SRV encode a priority
-        if priority.is_some() && !matches!(self, RecordType::Mx | RecordType::Srv) {
-            return Err(ParseRecordValueError::PriorityNotTaken { record_type: *self });
+        if priority.is_some() && !matches!(self, Self::Mx | Self::Srv) {
+            return Err(ParseRecordValueError::PriorityNotTaken { record_type: self });
         }
 
         match self {
-            RecordType::A => ARecordValue::parse(value).map(|_| ()),
-            RecordType::Aaaa => AaaaRecordValue::parse(value).map(|_| ()),
-            RecordType::Caa => CaaRecordValue::parse(value)?.validate(),
-            RecordType::Cname => CnameRecordValue::parse(value).map(|_| ()),
-            RecordType::Dname => DnameRecordValue::parse(value).map(|_| ()),
-            RecordType::Ds => DsRecordValue::parse(value)?.validate(),
-            RecordType::Mx => MxRecordValue::parse(value, priority)?.validate(),
-            RecordType::Naptr => NaptrRecordValue::parse(value)?.validate(),
+            Self::A => ARecordValue::parse(value).map(|_| ()),
+            Self::Aaaa => AaaaRecordValue::parse(value).map(|_| ()),
+            Self::Caa => CaaRecordValue::parse(value)?.validate(),
+            Self::Cname => CnameRecordValue::parse(value).map(|_| ()),
+            Self::Dname => DnameRecordValue::parse(value).map(|_| ()),
+            Self::Ds => DsRecordValue::parse(value)?.validate(),
+            Self::Mx => MxRecordValue::parse(value, priority)?.validate(),
+            Self::Naptr => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
-            RecordType::Txt => TxtRecordValue::from_presentation(value)
+            Self::Txt => TxtRecordValue::from_presentation(value)
                 .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
                     value: value.to_string(),
                 })?
                 .validate(),
-            RecordType::Ns => NsRecordValue::parse(value).map(|_| ()),
-            RecordType::Srv => SrvRecordValue::parse(value, priority)?.validate(),
-            RecordType::Ptr => PtrRecordValue::parse(value).map(|_| ()),
-            RecordType::Sshfp => SshfpRecordValue::parse(value)?.validate(),
-            RecordType::Tlsa => TlsaRecordValue::parse(value)?.validate(),
-            RecordType::Wks => WksRecordValue::parse(value).map(|_| ()),
+            Self::Ns => NsRecordValue::parse(value).map(|_| ()),
+            Self::Srv => SrvRecordValue::parse(value, priority)?.validate(),
+            Self::Ptr => PtrRecordValue::parse(value).map(|_| ()),
+            Self::Sshfp => SshfpRecordValue::parse(value)?.validate(),
+            Self::Tlsa => TlsaRecordValue::parse(value)?.validate(),
+            Self::Wks => WksRecordValue::parse(value).map(|_| ()),
         }
     }
 
-    /// Whether two stored values (with their priority columns) name the same
+    /// Return whether two stored values (with their priority columns) name the same
     /// rdata for this record type.
     pub fn values_equal(
-        &self,
+        self,
         left: &str,
         left_priority: Option<i32>,
         right: &str,
@@ -412,20 +338,19 @@ impl RecordType {
         self.canonical_value(left, left_priority) == self.canonical_value(right, right_priority)
     }
 
-    /// MX and SRV encode a preference in their rdata, so an omitted one takes
-    /// the default serving applies; other types pass through to be rejected.
-    pub fn stored_priority(&self, priority: Option<i32>) -> Option<i32> {
+    /// Return the stored priority: MX and SRV encode a preference in their rdata, so
+    /// an omitted one takes the default serving applies; other types pass through
+    /// to be rejected.
+    pub fn stored_priority(self, priority: Option<i32>) -> Option<i32> {
         match self {
-            RecordType::Mx | RecordType::Srv => {
-                Some(priority.unwrap_or(i32::from(DEFAULT_PRIORITY)))
-            }
+            Self::Mx | Self::Srv => Some(priority.unwrap_or(i32::from(DEFAULT_PRIORITY))),
             _ => priority,
         }
     }
 
-    /// Canonical form used only to compare two values, never to store them.
+    /// Return the canonical form used only to compare two values, never to store them.
     pub fn canonical_value<'a>(
-        &self,
+        self,
         value: &'a str,
         fallback_priority: Option<i32>,
     ) -> Cow<'a, str> {
@@ -445,7 +370,7 @@ impl RecordType {
     /// Render storage text, distinct from [`Self::canonical_value`]'s comparison form.
     /// TXT input uses presentation form; parse other grammars through [`TxtRecordValue`].
     pub fn encoded_value(
-        &self,
+        self,
         value: &str,
         priority: Option<i32>,
     ) -> Result<String, ParseRecordValueError> {
@@ -454,45 +379,45 @@ impl RecordType {
         let name = name::trim_presentation_name(value);
 
         match self {
-            RecordType::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
-            RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::Caa => {
+            Self::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
+            Self::A => ARecordValue::parse(trimmed).map(ARecordValue::canonical),
+            Self::Aaaa => AaaaRecordValue::parse(trimmed).map(AaaaRecordValue::canonical),
+            Self::Caa => {
                 let parsed = CaaRecordValue::parse(value)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::Cname => CnameRecordValue::parse(name).map(|parsed| parsed.canonical()),
-            RecordType::Dname => DnameRecordValue::parse(name).map(|parsed| parsed.canonical()),
-            RecordType::Ds => {
+            Self::Cname => CnameRecordValue::parse(name).map(CnameRecordValue::canonical),
+            Self::Dname => DnameRecordValue::parse(name).map(DnameRecordValue::canonical),
+            Self::Ds => {
                 let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::Mx => {
+            Self::Mx => {
                 let parsed = MxRecordValue::parse(value, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            RecordType::Naptr => {
+            Self::Naptr => {
                 let parsed = NaptrRecordValue::parse(value)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::Txt => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
-            RecordType::Ns => NsRecordValue::parse(name).map(|parsed| parsed.canonical()),
-            RecordType::Srv => {
+            Self::Txt => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
+            Self::Ns => NsRecordValue::parse(name).map(NsRecordValue::canonical),
+            Self::Srv => {
                 let parsed = SrvRecordValue::parse(value, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            RecordType::Ptr => PtrRecordValue::parse(name).map(|parsed| parsed.canonical()),
-            RecordType::Sshfp => {
+            Self::Ptr => PtrRecordValue::parse(name).map(PtrRecordValue::canonical),
+            Self::Sshfp => {
                 let parsed = SshfpRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::Tlsa => {
+            Self::Tlsa => {
                 let parsed = TlsaRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
@@ -501,36 +426,36 @@ impl RecordType {
     }
 
     /// Format a stored value of this record type for display.
-    pub fn display_value(&self, value: &str) -> String {
-        if *self == RecordType::Txt {
+    pub fn display_value(self, value: &str) -> String {
+        if self == Self::Txt {
             return match TxtRecordValue::from_presentation(value)
                 .and_then(|rdata| rdata.to_content())
             {
-                Some(TxtContent::Single(value)) => to_display_text(&value),
-                Some(TxtContent::Segments(segments)) => to_display_text(&segments.join("")),
+                Some(TxtContent::Single(value)) => display_text(&value),
+                Some(TxtContent::Segments(segments)) => display_text(&segments.join("")),
                 None => value.to_string(),
             };
         }
 
         match self {
-            RecordType::Mx => display_last_name_field(value, 1),
-            RecordType::Srv => display_last_name_field(value, 3),
-            _ if self.is_name_like() => crate::dns::name::to_fqdn(value),
+            Self::Mx => display_last_name_field(value, 1),
+            Self::Srv => display_last_name_field(value, 3),
+            _ if self.is_name_like() => name::to_fqdn(value),
             _ => value.to_string(),
         }
     }
 
-    /// Whether this type's display form is a domain name.
-    fn is_name_like(&self) -> bool {
-        NAME_LIKE_RECORD_TYPES.contains(self)
+    /// Return whether this type's display form is a domain name.
+    fn is_name_like(self) -> bool {
+        NAME_LIKE_RECORD_TYPES.contains(&self)
     }
 
     /// Render zone-file RDATA, adding MX/SRV priority (default 10).
     /// TXT retains its stored presentation; other types use their display form.
-    pub fn presentation_rdata(&self, value: &str, priority: Option<i32>) -> String {
+    pub fn presentation_rdata(self, value: &str, priority: Option<i32>) -> String {
         match self {
-            RecordType::Txt => value.to_string(),
-            RecordType::Mx | RecordType::Srv => {
+            Self::Txt => value.to_string(),
+            Self::Mx | Self::Srv => {
                 format!(
                     "{} {}",
                     priority.unwrap_or(i32::from(DEFAULT_PRIORITY)),
@@ -541,23 +466,160 @@ impl RecordType {
         }
     }
 
-    /// Whether the ExternalDNS provider manages records of this type
+    /// Return whether the ExternalDNS provider manages records of this type
     /// ([`EXTERNAL_DNS_RECORD_TYPES`]).
-    pub fn is_external_dns_supported(&self) -> bool {
-        EXTERNAL_DNS_RECORD_TYPES.contains(self)
+    pub fn is_external_dns_supported(self) -> bool {
+        EXTERNAL_DNS_RECORD_TYPES.contains(&self)
     }
 
     /// Parse a type name the ExternalDNS provider manages; `None` for an
     /// unknown or unsupported one.
     pub fn parse_external_dns_supported(value: &str) -> Option<Self> {
-        let parsed = value.parse::<RecordType>().ok()?;
+        let parsed = value.parse::<Self>().ok()?;
         parsed.is_external_dns_supported().then_some(parsed)
     }
 }
 
-/// TXT text for the display column: control characters as `\DDD`, since a
+impl fmt::Display for RecordType {
+    /// Write the record type in its display form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.as_str())
+    }
+}
+
+impl FromStr for RecordType {
+    type Err = ParseRecordTypeError;
+
+    /// Parse a record type from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_uppercase().as_str() {
+            "A" => Ok(Self::A),
+            "AAAA" => Ok(Self::Aaaa),
+            "CAA" => Ok(Self::Caa),
+            "CNAME" => Ok(Self::Cname),
+            "DNAME" => Ok(Self::Dname),
+            "DS" => Ok(Self::Ds),
+            "MX" => Ok(Self::Mx),
+            "NAPTR" => Ok(Self::Naptr),
+            "TXT" => Ok(Self::Txt),
+            "NS" => Ok(Self::Ns),
+            "SRV" => Ok(Self::Srv),
+            "PTR" => Ok(Self::Ptr),
+            "SSHFP" => Ok(Self::Sshfp),
+            "TLSA" => Ok(Self::Tlsa),
+            "WKS" => Ok(Self::Wks),
+            _ => Rtype::from_str(value)
+                .map_err(|_| ParseRecordTypeError::Unknown {
+                    value: value.to_string(),
+                })
+                .and_then(Self::try_from),
+        }
+    }
+}
+
+impl TryFrom<String> for RecordType {
+    type Error = ParseRecordTypeError;
+
+    /// Validate and convert the stored value into a record type.
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse::<Self>()
+    }
+}
+
+/// The write half: binding renders the canonical mnemonic, the row form
+/// `TryFrom<String>` parses.
+impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
+where
+    String: sqlx::Type<DB>,
+{
+    /// Return the SQL type used to store this value.
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Return whether the SQL type can store this value.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    /// Encode this value using its database representation.
+    fn encode_by_ref(
+        &self,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
+        self.as_str().to_string().encode_by_ref(buffer)
+    }
+}
+
+impl From<RecordType> for String {
+    /// Render the canonical mnemonic for serde.
+    fn from(record_type: RecordType) -> Self {
+        record_type.as_str().to_string()
+    }
+}
+
+impl TryFrom<Rtype> for RecordType {
+    type Error = ParseRecordTypeError;
+
+    /// Convert a wire record type to one of the record types bindizr stores as user records.
+    /// SOA is excluded because it is managed through the zone's own fields.
+    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
+        match rtype {
+            Rtype::A => Ok(Self::A),
+            Rtype::NS => Ok(Self::Ns),
+            Rtype::CNAME => Ok(Self::Cname),
+            Rtype::DNAME => Ok(Self::Dname),
+            Rtype::PTR => Ok(Self::Ptr),
+            Rtype::CAA => Ok(Self::Caa),
+            Rtype::DS => Ok(Self::Ds),
+            Rtype::SSHFP => Ok(Self::Sshfp),
+            Rtype::TLSA => Ok(Self::Tlsa),
+            Rtype::MX => Ok(Self::Mx),
+            Rtype::NAPTR => Ok(Self::Naptr),
+            Rtype::TXT => Ok(Self::Txt),
+            Rtype::AAAA => Ok(Self::Aaaa),
+            Rtype::SRV => Ok(Self::Srv),
+            Rtype::WKS => Ok(Self::Wks),
+            _ => Err(ParseRecordTypeError::Unsupported { value: rtype }),
+        }
+    }
+}
+
+impl Ord for RecordType {
+    /// Preserve mnemonic ordering in record lists and diffs.
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl PartialOrd for RecordType {
+    /// Compare record types by their canonical mnemonic.
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl utoipa::PartialSchema for RecordType {
+    /// Describe the closed list of supported user record types.
+    fn schema() -> RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .enum_values(Some(["A", "AAAA", "CAA", "CNAME", "DNAME", "DS", "MX", "NAPTR", "TXT", "NS", "SRV", "PTR", "SSHFP", "TLSA", "WKS"]))
+            .description(Some("Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts."))
+            .into()
+    }
+}
+
+impl utoipa::ToSchema for RecordType {}
+
+/// Render TXT text for the display column: control characters as `\DDD`, since a
 /// text column cannot hold a NUL, and everything else as typed, for search.
-fn to_display_text(text: &str) -> String {
+fn display_text(text: &str) -> String {
     if !text.chars().any(|ch| ch.is_ascii_control()) {
         return text.to_string();
     }
@@ -575,32 +637,10 @@ fn to_display_text(text: &str) -> String {
     display
 }
 
-/// Return domain-name value types for case-insensitive comparison (RFC 4343).
-/// Record-filter SQL shares this list across backends.
-pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
-    RecordType::Cname,
-    RecordType::Dname,
-    RecordType::Ns,
-    RecordType::Ptr,
-    RecordType::Mx,
-    RecordType::Srv,
-];
-
-/// Record types shared by the API server and ExternalDNS adapter.
-pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
-    RecordType::A,
-    RecordType::Aaaa,
-    RecordType::Cname,
-    RecordType::Txt,
-];
-
 /// Render the stored trailing domain name; MX priority is stored separately,
 /// and SRV retains only weight, port, and target in its value.
 fn display_last_name_field(value: &str, field_count: usize) -> String {
-    let mut fields = value
-        .split_whitespace()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let mut fields: Vec<String> = value.split_whitespace().map(str::to_string).collect();
 
     if fields.len() != field_count {
         return value.to_string();
@@ -609,44 +649,10 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
     let Some(last) = fields.pop() else {
         return value.to_string();
     };
-    fields.push(crate::dns::name::to_fqdn(&last));
+    fields.push(name::to_fqdn(&last));
 
     fields.join(" ")
 }
 
 #[cfg(test)]
 mod tests;
-
-impl Ord for RecordType {
-    /// Preserve mnemonic ordering in record lists and diffs.
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.as_str().cmp(other.as_str())
-    }
-}
-
-impl PartialOrd for RecordType {
-    /// Compare record types by their canonical mnemonic.
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl From<RecordType> for String {
-    /// Render the canonical mnemonic for serde.
-    fn from(value: RecordType) -> Self {
-        value.as_str().to_owned()
-    }
-}
-
-impl utoipa::PartialSchema for RecordType {
-    /// Describe the closed list of supported user record types.
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        utoipa::openapi::schema::ObjectBuilder::new()
-            .schema_type(utoipa::openapi::schema::Type::String)
-            .enum_values(Some(["A", "AAAA", "CAA", "CNAME", "DNAME", "DS", "MX", "NAPTR", "TXT", "NS", "SRV", "PTR", "SSHFP", "TLSA", "WKS"]))
-            .description(Some("Supported user record type. WKS values use <IPv4> <protocol> [ports...]. Unsupported types are rejected; SOA and signer-managed DNSSEC records have separate contracts."))
-            .into()
-    }
-}
-
-impl utoipa::ToSchema for RecordType {}

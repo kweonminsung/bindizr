@@ -1,7 +1,6 @@
-use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role::{Role, RoleId};
 
 use crate::error::DatabaseError;
-use crate::model::role::Role;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, Transaction, mysql, postgres, sqlite};
 
@@ -14,7 +13,7 @@ pub async fn create_tx(tx: &mut Transaction<'_>, role: Role) -> Result<Role, Dat
     }
 }
 
-/// Find a role by ID.
+/// Get a role by ID.
 pub async fn get(db: &Db, id: RoleId) -> Result<Option<Role>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::role::get(pool, id).await,
@@ -23,7 +22,7 @@ pub async fn get(db: &Db, id: RoleId) -> Result<Option<Role>, DatabaseError> {
     }
 }
 
-/// Find a role by name.
+/// Get a role by name.
 pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Role>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::role::get_by_name(pool, name).await,
@@ -41,8 +40,8 @@ pub async fn list_all(db: &Db) -> Result<Vec<Role>, DatabaseError> {
     }
 }
 
-/// Delete a role by ID; its grants go with it.
-/// Reports `false` when no row had the id.
+/// Delete a role by ID; its grants go with it. Reports `false` when no row had
+/// the id.
 pub async fn delete_tx(tx: &mut Transaction<'_>, id: RoleId) -> Result<bool, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::role::delete_tx(tx, id).await,

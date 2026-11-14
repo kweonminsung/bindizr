@@ -1,23 +1,24 @@
 //! What a listing sorts by, as a closed vocabulary: the query renders its
 //! `ORDER BY` from these, so no caller text reaches the SQL.
 
+use std::str::FromStr;
+
 use thiserror::Error;
 
 /// A sort parameter a listing did not recognise.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseSortError {
     #[error("unknown sort field '{value}': expected {expected}")]
     UnknownField {
         value: String,
         expected: &'static str,
     },
-
     #[error("unknown sort order '{value}': expected asc or desc")]
     UnknownOrder { value: String },
 }
 
 /// The column a zone listing sorts by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ZoneSortField {
     #[default]
     Name,
@@ -26,8 +27,44 @@ pub enum ZoneSortField {
     CreatedAt,
 }
 
+impl ZoneSortField {
+    /// Return the SQL column for this sort field.
+    fn column(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Serial => "serial",
+            Self::DefaultTtl => "default_ttl",
+            Self::CreatedAt => "created_at",
+        }
+    }
+
+    /// Return the `ORDER BY` a zone listing pages under, with id as the
+    /// tie-breaker, preventing tied rows from moving between pages.
+    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
+        format!("ORDER BY {} {}, id", self.column(), order.keyword())
+    }
+}
+
+impl FromStr for ZoneSortField {
+    type Err = ParseSortError;
+
+    /// Parse a zone sort from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "name" => Ok(Self::Name),
+            "serial" => Ok(Self::Serial),
+            "default_ttl" => Ok(Self::DefaultTtl),
+            "created_at" => Ok(Self::CreatedAt),
+            other => Err(ParseSortError::UnknownField {
+                value: other.to_string(),
+                expected: "name, serial, default_ttl, or created_at",
+            }),
+        }
+    }
+}
+
 /// The column a record listing sorts by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecordSortField {
     #[default]
     Name,
@@ -37,140 +74,36 @@ pub enum RecordSortField {
     CreatedAt,
 }
 
-/// The column an audit log listing sorts by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AuditLogSortField {
-    #[default]
-    CreatedAt,
-    Entity,
-    EntityName,
-    Operation,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SortOrder {
-    #[default]
-    Asc,
-    Desc,
-}
-
-impl SortOrder {
-    /// Return the text representation of this sort order.
-    fn as_str(self) -> &'static str {
-        match self {
-            SortOrder::Asc => "ASC",
-            SortOrder::Desc => "DESC",
-        }
-    }
-}
-
-impl ZoneSortField {
-    /// Return the SQL column for this sort field.
-    fn column(self) -> &'static str {
-        match self {
-            ZoneSortField::Name => "name",
-            ZoneSortField::Serial => "serial",
-            ZoneSortField::DefaultTtl => "default_ttl",
-            ZoneSortField::CreatedAt => "created_at",
-        }
-    }
-
-    /// Build a zone listing order with id as the tie-breaker, preventing tied
-    /// rows from moving between pages.
-    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
-        format!("ORDER BY {} {}, id", self.column(), order.as_str())
-    }
-}
-
 impl RecordSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            RecordSortField::Name => "r.name",
-            RecordSortField::RecordType => "r.record_type",
-            RecordSortField::Ttl => "r.ttl",
-            RecordSortField::Priority => "r.priority",
-            RecordSortField::CreatedAt => "r.created_at",
+            Self::Name => "r.name",
+            Self::RecordType => "r.record_type",
+            Self::Ttl => "r.ttl",
+            Self::Priority => "r.priority",
+            Self::CreatedAt => "r.created_at",
         }
     }
 
-    /// The `ORDER BY` a record listing pages under; see
+    /// Return the `ORDER BY` a record listing pages under; see
     /// [`ZoneSortField::order_by_sql`].
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
-        format!("ORDER BY {} {}, r.id", self.column(), order.as_str())
+        format!("ORDER BY {} {}, r.id", self.column(), order.keyword())
     }
 }
 
-impl AuditLogSortField {
-    /// Return the SQL column for this sort field.
-    fn column(self) -> &'static str {
-        match self {
-            AuditLogSortField::CreatedAt => "created_at",
-            AuditLogSortField::Entity => "entity",
-            AuditLogSortField::EntityName => "entity_name",
-            AuditLogSortField::Operation => "operation",
-        }
-    }
-
-    /// The `ORDER BY` an audit listing pages under; the id tie-breaker
-    /// follows the direction.
-    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
-        format!(
-            "ORDER BY {} {}, id {}",
-            self.column(),
-            order.as_str(),
-            order.as_str()
-        )
-    }
-}
-
-impl std::str::FromStr for AuditLogSortField {
-    type Err = ParseSortError;
-
-    /// Parse an audit sort from its text representation.
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "created_at" => Ok(AuditLogSortField::CreatedAt),
-            "entity" => Ok(AuditLogSortField::Entity),
-            "entity_name" => Ok(AuditLogSortField::EntityName),
-            "operation" => Ok(AuditLogSortField::Operation),
-            other => Err(ParseSortError::UnknownField {
-                value: other.to_string(),
-                expected: "created_at, entity, entity_name, or operation",
-            }),
-        }
-    }
-}
-
-impl std::str::FromStr for ZoneSortField {
-    type Err = ParseSortError;
-
-    /// Parse a zone sort from its text representation.
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "name" => Ok(ZoneSortField::Name),
-            "serial" => Ok(ZoneSortField::Serial),
-            "default_ttl" => Ok(ZoneSortField::DefaultTtl),
-            "created_at" => Ok(ZoneSortField::CreatedAt),
-            other => Err(ParseSortError::UnknownField {
-                value: other.to_string(),
-                expected: "name, serial, default_ttl, or created_at",
-            }),
-        }
-    }
-}
-
-impl std::str::FromStr for RecordSortField {
+impl FromStr for RecordSortField {
     type Err = ParseSortError;
 
     /// Parse a record sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "name" => Ok(RecordSortField::Name),
-            "type" => Ok(RecordSortField::RecordType),
-            "ttl" => Ok(RecordSortField::Ttl),
-            "priority" => Ok(RecordSortField::Priority),
-            "created_at" => Ok(RecordSortField::CreatedAt),
+            "name" => Ok(Self::Name),
+            "type" => Ok(Self::RecordType),
+            "ttl" => Ok(Self::Ttl),
+            "priority" => Ok(Self::Priority),
+            "created_at" => Ok(Self::CreatedAt),
             other => Err(ParseSortError::UnknownField {
                 value: other.to_string(),
                 expected: "name, type, ttl, priority, or created_at",
@@ -179,14 +112,83 @@ impl std::str::FromStr for RecordSortField {
     }
 }
 
-impl std::str::FromStr for SortOrder {
+/// The column an audit log listing sorts by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AuditLogSortField {
+    #[default]
+    CreatedAt,
+    Entity,
+    EntityName,
+    Operation,
+}
+
+impl AuditLogSortField {
+    /// Return the SQL column for this sort field.
+    fn column(self) -> &'static str {
+        match self {
+            Self::CreatedAt => "created_at",
+            Self::Entity => "entity",
+            Self::EntityName => "entity_name",
+            Self::Operation => "operation",
+        }
+    }
+
+    /// Return the `ORDER BY` an audit listing pages under; the id tie-breaker
+    /// follows the direction.
+    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
+        format!(
+            "ORDER BY {} {}, id {}",
+            self.column(),
+            order.keyword(),
+            order.keyword(),
+        )
+    }
+}
+
+impl FromStr for AuditLogSortField {
+    type Err = ParseSortError;
+
+    /// Parse an audit sort from its text representation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "created_at" => Ok(Self::CreatedAt),
+            "entity" => Ok(Self::Entity),
+            "entity_name" => Ok(Self::EntityName),
+            "operation" => Ok(Self::Operation),
+            other => Err(ParseSortError::UnknownField {
+                value: other.to_string(),
+                expected: "created_at, entity, entity_name, or operation",
+            }),
+        }
+    }
+}
+
+/// The direction a listing sorts its column in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortOrder {
+    #[default]
+    Asc,
+    Desc,
+}
+
+impl SortOrder {
+    /// Return the SQL keyword for this direction.
+    fn keyword(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
+
+impl FromStr for SortOrder {
     type Err = ParseSortError;
 
     /// Parse a sort order from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "asc" => Ok(SortOrder::Asc),
-            "desc" => Ok(SortOrder::Desc),
+            "asc" => Ok(Self::Asc),
+            "desc" => Ok(Self::Desc),
             other => Err(ParseSortError::UnknownOrder {
                 value: other.to_string(),
             }),

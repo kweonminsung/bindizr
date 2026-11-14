@@ -21,8 +21,8 @@ use bindizr_service::types::{
 };
 use tabled::Tabled;
 
-use super::display;
-use super::display::MISSING_CELL;
+use crate::cli::output::display;
+use crate::cli::output::display::MISSING_CELL;
 
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ZoneRow {
@@ -55,7 +55,7 @@ pub(crate) struct ZoneRow {
 impl From<&ZoneResponse> for ZoneRow {
     /// Build a CLI table row from the zone response.
     fn from(zone: &ZoneResponse) -> Self {
-        ZoneRow {
+        Self {
             id: zone.id,
             name: zone.name.clone(),
             mname: zone.mname.clone(),
@@ -92,21 +92,10 @@ pub(crate) struct RecordRow {
     pub(crate) zone_name: String,
 }
 
-impl From<&RecordResponse> for RecordRow {
-    /// Build a listing row, with the value shortened so one long record does
-    /// not widen the column.
-    fn from(record: &RecordResponse) -> Self {
-        RecordRow {
-            value: display::display_record_value(&record.value),
-            ..Self::whole(record)
-        }
-    }
-}
-
 impl RecordRow {
     /// Build the row for a single record, whose whole value is the point.
     pub(crate) fn whole(record: &RecordResponse) -> Self {
-        RecordRow {
+        Self {
             id: record.id,
             name: record.name.clone(),
             record_type: record.record_type.to_string(),
@@ -115,6 +104,17 @@ impl RecordRow {
             priority: record.priority,
             zone_id: record.zone_id,
             zone_name: record.zone_name.clone(),
+        }
+    }
+}
+
+impl From<&RecordResponse> for RecordRow {
+    /// Build a CLI table row from the record response, with the value shortened
+    /// so one long record does not widen the column.
+    fn from(record: &RecordResponse) -> Self {
+        Self {
+            value: display::display_record_value(&record.value),
+            ..Self::whole(record)
         }
     }
 }
@@ -144,7 +144,7 @@ pub(crate) struct DnssecKeyRow {
 impl From<&DnssecKeyResponse> for DnssecKeyRow {
     /// Build a CLI table row from the DNSSEC key info.
     fn from(key: &DnssecKeyResponse) -> Self {
-        DnssecKeyRow {
+        Self {
             id: key.id,
             role: key.role.to_string(),
             state: key.state.to_string(),
@@ -183,7 +183,7 @@ pub(crate) struct DnssecPolicyRow {
 impl From<&DnssecPolicyResponse> for DnssecPolicyRow {
     /// Build a CLI table row from the DNSSEC policy response.
     fn from(policy: &DnssecPolicyResponse) -> Self {
-        DnssecPolicyRow {
+        Self {
             id: policy.id,
             name: policy.name.clone(),
             algorithm: policy.algorithm.to_string(),
@@ -225,7 +225,7 @@ pub(crate) struct SecondaryRow {
 impl From<&SecondaryResponse> for SecondaryRow {
     /// Build a CLI table row from the secondary response.
     fn from(secondary: &SecondaryResponse) -> Self {
-        SecondaryRow {
+        Self {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.clone(),
@@ -265,7 +265,7 @@ pub(crate) struct VersionRow {
 impl From<&ZoneVersionResponse> for VersionRow {
     /// Build a CLI table row from the zone version response.
     fn from(version: &ZoneVersionResponse) -> Self {
-        VersionRow {
+        Self {
             serial: version.serial,
             mname: version.mname.clone(),
             rname: version.rname.clone(),
@@ -299,7 +299,7 @@ pub(crate) struct VersionRecordRow {
 impl From<&VersionRecordResponse> for VersionRecordRow {
     /// Build a CLI table row from the version record response.
     fn from(record: &VersionRecordResponse) -> Self {
-        VersionRecordRow {
+        Self {
             name: record.name.clone(),
             record_type: record.record_type.to_string(),
             value: display::display_record_value(&record.value),
@@ -325,14 +325,14 @@ pub(crate) struct RollbackSummaryRow {
     pub(crate) deleted: u64,
     #[tabled(rename = "UNCHANGED")]
     pub(crate) unchanged: u64,
-    #[tabled(rename = "SOA-CHANGED")]
+    #[tabled(rename = "SOA-CHANGED", display = "display::display_yes_no")]
     pub(crate) soa_changed: bool,
 }
 
 impl From<&RollbackZoneResponse> for RollbackSummaryRow {
     /// Build a CLI table row from the zone rollback summary.
     fn from(response: &RollbackZoneResponse) -> Self {
-        RollbackSummaryRow {
+        Self {
             target_serial: response.target_serial.as_u32(),
             new_serial: response.new_serial.as_u32(),
             applied: response.applied,
@@ -360,7 +360,7 @@ pub(crate) struct SecondaryStatusRow {
 }
 
 impl SecondaryStatusRow {
-    /// One row per secondary, with the lag behind the zone serial that its
+    /// Build one row per secondary, with the lag behind the zone serial that its
     /// `status` was classified against.
     pub(crate) fn rows_from_status(status: &ZoneStatusResponse) -> Vec<Self> {
         status
@@ -370,15 +370,15 @@ impl SecondaryStatusRow {
             .collect()
     }
 
-    /// Build a table row from a secondary server's status.
+    /// Build a CLI table row from a secondary server's status.
     fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: Serial) -> Self {
         let detail = match secondary.error.as_deref() {
             Some(error) if secondary.is_unreachable() => {
-                format!("{} ({})", secondary.status, error)
+                format!("{} ({error})", secondary.status)
             }
             _ => secondary.status.to_string(),
         };
-        SecondaryStatusRow {
+        Self {
             address: secondary.address.clone(),
             status: detail,
             visible_serial: display::display_option(&secondary.visible_serial),
@@ -420,7 +420,7 @@ impl From<&ImportZoneResponse> for ImportSummaryRow {
     /// Build a CLI table row from the import result.
     fn from(response: &ImportZoneResponse) -> Self {
         let summary = &response.summary;
-        ImportSummaryRow {
+        Self {
             applied: response.applied,
             dry_run: response.dry_run,
             parsed: summary.parsed,
@@ -457,12 +457,12 @@ pub(crate) struct ImportZonesRow {
 }
 
 impl From<&ImportZonesItemResponse> for ImportZonesRow {
-    /// Build a table row from one zone's outcome.
+    /// Build a CLI table row from one zone's outcome.
     fn from(item: &ImportZonesItemResponse) -> Self {
         let summary = item.import.as_ref().map(|import| import.summary);
         let count = |value: Option<u64>| display::display_option(&value);
 
-        ImportZonesRow {
+        Self {
             zone_name: item.zone_name.clone(),
             result: item.result.to_string(),
             parsed: count(summary.map(|summary| summary.parsed)),
@@ -500,7 +500,7 @@ pub(crate) struct TokenRow {
 impl From<&TokenResponse> for TokenRow {
     /// Build a CLI table row from the token response.
     fn from(token: &TokenResponse) -> Self {
-        TokenRow {
+        Self {
             id: token.id,
             name: token.name.clone(),
             token: MISSING_CELL.to_string(),
@@ -509,8 +509,7 @@ impl From<&TokenResponse> for TokenRow {
             created_at: display::display_time(token.created_at),
             expires_at: token
                 .expires_at
-                .map(display::display_time)
-                .unwrap_or_else(|| "Never".to_string()),
+                .map_or_else(|| "Never".to_string(), display::display_time),
             last_used_at: display::display_option_time(&token.last_used_at),
         }
     }
@@ -519,9 +518,9 @@ impl From<&TokenResponse> for TokenRow {
 impl From<&CreateTokenResponse> for TokenRow {
     /// Build a CLI table row from the newly created token.
     fn from(created: &CreateTokenResponse) -> Self {
-        TokenRow {
+        Self {
             token: created.secret.clone(),
-            ..TokenRow::from(&created.token)
+            ..Self::from(&created.token)
         }
     }
 }
@@ -545,24 +544,24 @@ pub(crate) struct TsigKeyRow {
 
 impl From<&TsigKeyResponse> for TsigKeyRow {
     /// Build a CLI table row from the TSIG key response.
-    fn from(key: &TsigKeyResponse) -> Self {
-        TsigKeyRow {
-            id: key.id,
-            name: key.name.clone(),
-            algorithm: key.algorithm.to_string(),
+    fn from(tsig_key: &TsigKeyResponse) -> Self {
+        Self {
+            id: tsig_key.id,
+            name: tsig_key.name.clone(),
+            algorithm: tsig_key.algorithm.to_string(),
             secret: MISSING_CELL.to_string(),
-            role_name: key.role_name.clone(),
-            created_at: display::display_time(key.created_at),
+            role_name: tsig_key.role_name.clone(),
+            created_at: display::display_time(tsig_key.created_at),
         }
     }
 }
 
 impl From<&SingleTsigKeyResponse> for TsigKeyRow {
     /// Build a CLI table row from the TSIG key response.
-    fn from(key: &SingleTsigKeyResponse) -> Self {
-        TsigKeyRow {
-            secret: key.secret.clone(),
-            ..TsigKeyRow::from(&key.tsig_key)
+    fn from(response: &SingleTsigKeyResponse) -> Self {
+        Self {
+            secret: response.secret.clone(),
+            ..Self::from(&response.tsig_key)
         }
     }
 }
@@ -590,7 +589,7 @@ pub(crate) struct RoleRow {
 impl From<&RoleResponse> for RoleRow {
     /// Build a CLI table row from the role response.
     fn from(role: &RoleResponse) -> Self {
-        RoleRow {
+        Self {
             id: role.id,
             name: role.name.clone(),
             builtin: display::display_yes_no(&role.builtin),
@@ -625,7 +624,7 @@ pub(crate) struct RoleGrantRow {
 impl From<&RoleGrantResponse> for RoleGrantRow {
     /// Build a CLI table row from the role grant response.
     fn from(grant: &RoleGrantResponse) -> Self {
-        RoleGrantRow {
+        Self {
             id: grant.id,
             role_name: grant.role_name.clone(),
             zone_name: grant.zone_name.clone().unwrap_or_else(|| "*".to_string()),
@@ -663,9 +662,9 @@ pub(crate) struct TransferRow {
 }
 
 impl From<&TransferResponse> for TransferRow {
-    /// Build a table row from one served transfer.
+    /// Build a CLI table row from one served transfer.
     fn from(transfer: &TransferResponse) -> Self {
-        TransferRow {
+        Self {
             zone_name: transfer.zone_name.clone(),
             transfer: display::display_transfer_kind(transfer),
             transport: transfer.transport.to_string(),
@@ -697,9 +696,9 @@ pub(crate) struct AuditLogRow {
 }
 
 impl From<&AuditLogResponse> for AuditLogRow {
-    /// Build a table row from one audit log row.
+    /// Build a CLI table row from one audit log row.
     fn from(log: &AuditLogResponse) -> Self {
-        AuditLogRow {
+        Self {
             at: display::display_time(log.created_at),
             entity: log.entity.to_string(),
             entity_name: log.entity_name.clone(),
@@ -713,15 +712,13 @@ impl From<&AuditLogResponse> for AuditLogRow {
 
 #[cfg(test)]
 mod tests {
-    use bindizr_service::types::SecondaryStatus;
+    use bindizr_service::types::SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};
 
     use super::*;
 
-    /// Display serial lag using wraparound-aware secondary status.
+    /// Verify that serial lag is displayed using wraparound-aware secondary status.
     #[test]
     fn secondary_status_row_displays_serial_lag_across_wraparound() {
-        use SecondaryStatus::{Ahead, InSync, Lagging, Reachable, Unreachable};
-
         for (zone_serial, visible_serial, status, lag) in [
             (10, Some(10), InSync, "0"),
             (11, Some(10), Lagging, "1"),

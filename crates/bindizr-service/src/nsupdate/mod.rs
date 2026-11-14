@@ -7,23 +7,23 @@ mod plan;
 mod prerequisite;
 
 use bindizr_core::dns::message::{Class, Rcode, Rtype};
+use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName};
 use bindizr_core::dns::nsupdate::parser::{
     ParseUpdateError, UpdateRecord, ValidateUpdateShapeError,
 };
 use bindizr_core::dns::record::ParseRecordValueError;
-use bindizr_core::dns::{Serial, name};
+use bindizr_core::model::record::RecordType;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
+use bindizr_db::error::DatabaseError;
 use plan::UpdateOperation;
-use prerequisite::{Prerequisite, RecordSets};
+use prerequisite::RecordSets;
 use thiserror::Error;
 
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::RecordType;
-use crate::model::zone::Zone;
-use crate::{Context, dnssec, transaction, zone};
+use crate::{Context, dnssec, notify, transaction, zone};
 
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
@@ -99,10 +99,10 @@ impl NsupdateError {
 }
 
 /// A database failure is a backend fault, classified through the service error.
-impl From<bindizr_db::error::DatabaseError> for NsupdateError {
+impl From<DatabaseError> for NsupdateError {
     /// Map a database failure to SERVFAIL.
-    fn from(error: bindizr_db::error::DatabaseError) -> Self {
-        NsupdateError::from(ServiceError::from(error))
+    fn from(error: DatabaseError) -> Self {
+        Self::from(ServiceError::from(error))
     }
 }
 
@@ -135,7 +135,7 @@ pub async fn apply(
 
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
-    let apply_result: Result<(bool, Zone, Serial), NsupdateError> = async {
+    let apply_result: Result<_, NsupdateError> = async {
         let zone = zone::find_served_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| {
@@ -152,8 +152,8 @@ pub async fn apply(
             ));
         }
 
-        // Prerequisites are decoded and evaluated in wire order (Section 3.2.5);
-        // value-dependent sets are compared whole after the section (Section 3.2.3).
+        // Prerequisites are decoded and evaluated in wire order (RFC 2136, Section 3.2.5);
+        // value-dependent sets are compared whole after the section (RFC 2136, Section 3.2.3).
         let served = if update.prerequisites.is_empty() {
             RecordSets::new()
         } else {
@@ -165,8 +165,8 @@ pub async fn apply(
         for record in update.prerequisites {
             let prerequisite = decode::decode_prerequisite(record, &zone.name, update.message)?;
 
-            // A prerequisite reads what it names, so its read grant precedes its
-            // evaluation (Section 3.3.1); SOA and DNSSEC need one without a type restriction.
+            // A prerequisite reads what it names, so its read grant precedes its evaluation
+            // (RFC 2136, Section 3.3.1); SOA and DNSSEC need one without a type restriction.
             let record_type = prerequisite
                 .record_type()
                 .and_then(|rtype| RecordType::try_from(rtype).ok());
@@ -175,7 +175,7 @@ pub async fn apply(
                 &[RecordAccess {
                     action: Action::RecordRead,
                     relative_name: prerequisite.name().clone(),
-                    record_type: record_type.as_ref(),
+                    record_type,
                 }],
             )?;
             prerequisite::evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;
@@ -221,9 +221,10 @@ pub async fn apply(
                 bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
             }
 
-            let updated = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
-            dnssec::sign_zone_tx(&mut tx, &updated, new_serial).await?;
-            zone::save_version_tx(&mut tx, &updated, new_serial, caller.change_origin()).await?;
+            let updated_zone = bindizr_db::zone::update_tx(&mut tx, plan.zone).await?;
+            dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
+            zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin())
+                .await?;
         }
 
         Ok((changed, zone, new_serial))
@@ -236,20 +237,19 @@ pub async fn apply(
     if changed {
         cx.metrics().track_serial_bumps(1);
         log::info!(
-            "event=nsupdate_apply zone={} serial={}",
-            zone.name,
-            new_serial
+            "event=nsupdate_apply zone={} serial={new_serial}",
+            zone.name
         );
 
         // Queue through the service like every other mutation path, so
         // `dns.notify.batch_ms` governs RFC 2136 writes too.
-        crate::notify::notify_after_update(cx, &zone.name).await;
+        notify::notify_after_update(cx, &zone.name).await;
     }
 
     Ok(changed)
 }
 
-/// The owner of an update record. The wire carries owners absolutely, so a name
+/// Parse the owner of an update record. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
 fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, NsupdateError> {
     if name.trim_end_matches('.').is_empty() {

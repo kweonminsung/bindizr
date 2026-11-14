@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
-/// Verify TSIG key creation, retrieval, and deletion.
+/// Verify that TSIG keys can be created, retrieved, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_supports_create_read_and_delete() {
@@ -17,7 +17,7 @@ async fn tsig_key_supports_create_read_and_delete() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["tsig_key"]["name"], "update-key");
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha256");
     let generated_secret = body["secret"].as_str().unwrap().to_string();
@@ -29,22 +29,22 @@ async fn tsig_key_supports_create_read_and_delete() {
         .send_request(Method::GET, "/tsig-keys/update-key", None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["secret"], generated_secret.as_str());
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["secret"], generated_secret);
 
     // ...but omitted from the list response, which the compose stack's own
     // key may share.
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
 
-    assert_eq!(status, StatusCode::OK);
-    let listed = body["items"]
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let tsig_key = body["items"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|key| key["name"] == "update-key")
+        .find(|tsig_key| tsig_key["name"] == "update-key")
         .expect("the key is listed");
 
-    assert!(listed.get("secret").is_none());
+    assert!(tsig_key.get("secret").is_none());
 
     let (status, _) = app
         .send_request(
@@ -80,15 +80,15 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
             Method::POST,
             "/tsig-keys",
             Some(json!({
-                           "role_name": "admin",
-            "name": "imported-key",
-                           "algorithm": "hmac-sha512",
-                           "secret": "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=",
-                       })),
+                "role_name": "admin",
+                "name": "imported-key",
+                "algorithm": "hmac-sha512",
+                "secret": "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
+            })),
         )
         .await;
 
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha512");
     assert_eq!(
         body["secret"],
@@ -116,7 +116,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // hmac-md5 is a valid TSIG algorithm on the wire (RFC 8945) but is
+    // hmac-md5 is a valid TSIG algorithm on the wire (RFC 8945, Section 6) but is
     // deliberately unsupported here.
     let (status, _) = app
         .send_request(
@@ -158,11 +158,14 @@ async fn tsig_key_names_its_role() {
 
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
 
-    assert_eq!(status, StatusCode::OK);
-    let keys = body["items"].as_array().unwrap();
-    let key = keys.iter().find(|key| key["name"] == "admin-key").unwrap();
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let tsig_keys = body["items"].as_array().unwrap();
+    let tsig_key = tsig_keys
+        .iter()
+        .find(|tsig_key| tsig_key["name"] == "admin-key")
+        .unwrap();
 
-    assert_eq!(key["role_name"], "admin");
+    assert_eq!(tsig_key["role_name"], "admin");
 
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/admin-key", None)

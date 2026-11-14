@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
+use tokio::time;
 
 use crate::socket::server::SocketContext;
 use crate::socket::types::DaemonResponse;
@@ -13,7 +14,7 @@ pub(crate) enum DaemonControl {
     Restart,
 }
 
-/// The control channel: the sender lives in the socket server, the daemon's
+/// Build the control channel: the sender lives in the socket server, the daemon's
 /// lifecycle loop awaits the receiver.
 pub(crate) fn channel() -> (mpsc::Sender<DaemonControl>, mpsc::Receiver<DaemonControl>) {
     mpsc::channel(1)
@@ -42,10 +43,10 @@ pub(crate) fn restart(socket_cx: &SocketContext) -> DaemonResponse<MessageRespon
 /// Send the transition after a short delay so the command response reaches
 /// the client before the daemon tears down.
 fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
-    let tx = socket_cx.control().clone();
+    let control_tx = socket_cx.control().clone();
 
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let _ = tx.send(control).await;
+        time::sleep(Duration::from_millis(100)).await;
+        let _ = control_tx.send(control).await;
     });
 }

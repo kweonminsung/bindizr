@@ -1,7 +1,6 @@
-use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::dnssec_policy::{DnssecPolicy, PolicyId};
 
 use crate::error::DatabaseError;
-use crate::model::dnssec_policy::DnssecPolicy;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
@@ -17,7 +16,7 @@ pub async fn create_tx(
     }
 }
 
-/// Find a DNSSEC policy by ID in the current transaction.
+/// Get a DNSSEC policy by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: PolicyId,
@@ -30,7 +29,7 @@ pub async fn get_tx(
     }
 }
 
-/// Find a DNSSEC policy by name.
+/// Get a DNSSEC policy by name.
 pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<DnssecPolicy>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_policy::get_by_name(pool, name).await,
@@ -39,7 +38,7 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<DnssecPolicy>, Da
     }
 }
 
-/// Find a DNSSEC policy by name in the current transaction.
+/// Get a DNSSEC policy by name in the current transaction.
 pub async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
     name: &str,
@@ -67,8 +66,8 @@ pub async fn list_all(db: &Db) -> Result<Vec<DnssecPolicy>, DatabaseError> {
     }
 }
 
-/// Write the editable timing fields; the
-/// key layout, algorithm, and denial mode are fixed at creation.
+/// Write the editable timing fields; the key layout, algorithm, and denial mode
+/// are fixed at creation.
 pub async fn update_tx(
     tx: &mut Transaction<'_>,
     policy: DnssecPolicy,

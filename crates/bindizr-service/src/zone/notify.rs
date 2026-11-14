@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use bindizr_core::model::role_grant::Action;
 
-use crate::Context;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::notify::NotifyTarget;
 use crate::types::{MessageResponse, NotifySerial};
+use crate::{Context, notify, zone};
 
 /// Send a manual NOTIFY for one zone or all zones, bumping the serial
 /// first when `serial` says to; an all-zones round runs the zones concurrently.
@@ -21,35 +21,35 @@ pub async fn notify(
     let mut serial_bumped = false;
     match target {
         // The virtual catalog zone has no row to bump and lists all zones.
-        NotifyTarget::Zone(name) if name == &cx.config().dns.catalog_zone_name => {
+        NotifyTarget::Zone(zone_name) if zone_name == &cx.config().dns.catalog_zone_name => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
                 log::info!("Skipping forced serial increment for virtual catalog zone");
             }
         }
-        NotifyTarget::Zone(name) => {
-            let zone = super::lookup_by_name(cx, name).await?;
+        NotifyTarget::Zone(zone_name) => {
+            let zone = zone::lookup_by_name(cx, zone_name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, caller, name).await?;
+                zone::force_increment_serial(cx, caller, zone_name).await?;
                 serial_bumped = true;
             }
         }
         NotifyTarget::All => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
-                for zone in super::list(cx).await? {
-                    super::force_increment_serial(cx, caller, &zone.name).await?;
+                for zone in zone::list(cx).await? {
+                    zone::force_increment_serial(cx, caller, &zone.name).await?;
                     serial_bumped = true;
                 }
             }
         }
     }
 
-    crate::notify::send_notify(cx, target).await?;
+    notify::send_notify(cx, target).await?;
 
     let scope = match target {
-        NotifyTarget::Zone(zone_name) => format!("zone: {}", zone_name),
+        NotifyTarget::Zone(zone_name) => format!("zone: {zone_name}"),
         NotifyTarget::All => "all zones".to_string(),
     };
     let suffix = if serial_bumped {
@@ -59,34 +59,36 @@ pub async fn notify(
     };
 
     Ok(MessageResponse {
-        message: format!("NOTIFY sent successfully for {}{}", scope, suffix),
+        message: format!("NOTIFY sent successfully for {scope}{suffix}"),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use bindizr_core::config::Config;
+    use bindizr_core::dns::name::ZoneName;
     use bindizr_core::metrics::Metrics;
+    use bindizr_db::Db;
+    use tokio::sync::{mpsc, watch};
 
     use super::*;
+    use crate::types::CreateZoneRequest;
+    use crate::zone;
 
-    /// Messages describe completed increments, including requests whose target has none.
+    /// Verify that messages describe completed increments, including requests whose target has
+    /// none.
     #[tokio::test]
     async fn notify_reports_only_serials_it_advanced() {
-        let config: Config = serde_json::from_value(serde_json::json!({
-            "database": { "sqlite": { "file_path": "sqlite::memory:" } },
-        }))
-        .unwrap();
-        let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-        let (jobs, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let (period, _period_rx) = tokio::sync::watch::channel(0);
+        let mut config: Config = serde_json::from_str("{}").unwrap();
+        config.database.sqlite.file_path = "sqlite::memory:".to_string();
+        let db = Db::connect(&config.database).await.unwrap();
         let cx = Arc::new(Context::new(
             config,
             String::new(),
             db,
             Metrics::new().unwrap(),
-            jobs,
-            period,
+            mpsc::unbounded_channel().0,
+            watch::channel(0).0,
         ));
         let caller = Caller::socket();
 
@@ -95,46 +97,61 @@ mod tests {
             .unwrap();
         assert_eq!(empty.message, "NOTIFY sent successfully for all zones");
 
-        let (catalog, _) = crate::zone::refresh_catalog(&cx).await.unwrap();
+        let (catalog_zone, _) = zone::refresh_catalog(&cx).await.unwrap();
         let response = notify(
             &cx,
             &caller,
-            NotifyTarget::Zone(&catalog.name),
+            NotifyTarget::Zone(&catalog_zone.name),
             NotifySerial::Bump,
         )
         .await
         .unwrap();
         assert_eq!(
             response.message,
-            format!("NOTIFY sent successfully for zone: {}", catalog.name)
+            format!("NOTIFY sent successfully for zone: {}", catalog_zone.name)
         );
         assert_eq!(
-            crate::zone::refresh_catalog(&cx).await.unwrap().0.serial,
-            catalog.serial
+            zone::refresh_catalog(&cx).await.unwrap().0.serial,
+            catalog_zone.serial
         );
 
-        let request = serde_json::from_value(serde_json::json!({
-            "name": "example.test", "mname": "ns.example.test", "rname": "hostmaster@example.test",
-        }))
-        .unwrap();
-        crate::zone::create(&cx, &caller, &request).await.unwrap();
-        let name = crate::zone::normalize_name("example.test").unwrap();
-        let original = crate::zone::get_by_name(&cx, &caller, &name).await.unwrap();
+        let request = CreateZoneRequest {
+            name: "example.test".to_string(),
+            mname: "ns.example.test".to_string(),
+            rname: "hostmaster@example.test".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: true,
+            dry_run: false,
+        };
+        zone::create(&cx, &caller, &request).await.unwrap();
+        let zone_name = ZoneName::parse("example.test").unwrap();
+        let original = zone::get_by_name(&cx, &caller, &zone_name).await.unwrap();
 
-        let kept = notify(&cx, &caller, NotifyTarget::Zone(&name), NotifySerial::Keep)
-            .await
-            .unwrap();
+        let kept = notify(
+            &cx,
+            &caller,
+            NotifyTarget::Zone(&zone_name),
+            NotifySerial::Keep,
+        )
+        .await
+        .unwrap();
         assert!(!kept.message.contains("serial bumped"));
         assert_eq!(
-            crate::zone::get_by_name(&cx, &caller, &name)
+            zone::get_by_name(&cx, &caller, &zone_name)
                 .await
                 .unwrap()
                 .serial,
             original.serial
         );
 
-        for target in [NotifyTarget::Zone(&name), NotifyTarget::All] {
-            let before = crate::zone::get_by_name(&cx, &caller, &name)
+        for target in [NotifyTarget::Zone(&zone_name), NotifyTarget::All] {
+            let before = zone::get_by_name(&cx, &caller, &zone_name)
                 .await
                 .unwrap()
                 .serial;
@@ -143,7 +160,7 @@ mod tests {
                 .unwrap();
             assert!(response.message.ends_with(" (serial bumped)"));
             assert!(
-                crate::zone::get_by_name(&cx, &caller, &name)
+                zone::get_by_name(&cx, &caller, &zone_name)
                     .await
                     .unwrap()
                     .serial

@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::io;
 
 use bindizr_core::config::Config;
 use bindizr_core::dns::message::{Keepalive, OptRcode, ParsedQuery};
@@ -10,14 +11,14 @@ use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::authorization::Caller;
-use crate::dns_client::notify;
 use crate::types::CreateSecondaryRequest;
 
-/// A failed ACK remains typed for propagation while reports render the same error text.
+/// Verify that a failed ACK remains typed for propagation while reports render the same
+/// error text.
 #[tokio::test]
 async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.notify.timeout_secs = 1;
     config.dns.notify.retries = 0;
 
@@ -48,7 +49,7 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
             &cx,
             &Caller::socket(),
             &CreateSecondaryRequest {
-                name: name.into(),
+                name: name.to_string(),
                 address,
                 notify_key_name: None,
             },
@@ -74,20 +75,22 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
 
     let error = send_zone_notify(&cx, &zone_name).await.unwrap_err();
     let NotifyZoneError::TargetsFailed {
-        zone_name: failed_zone,
+        zone_name: failed_zone_name,
         failures,
     } = &error
     else {
         panic!("unexpected NOTIFY failure: {error}");
     };
 
-    assert_eq!(failed_zone, "example.com");
+    assert_eq!(failed_zone_name, "example.com");
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].0, failed_address);
     assert!(matches!(
         &failures[0].1,
-        SendNotifyError::Send(notify::SendNotifyError::Response(
-            ParseResponseError::NotifyRcode(OptRcode::SERVFAIL)
+        SendNotifyError::Send(dns_client::notify::SendNotifyError::Response(
+            ParseResponseError::NotifyRcode {
+                rcode: OptRcode::SERVFAIL
+            }
         ))
     ));
     assert!(matches!(
@@ -95,9 +98,11 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
             .1
             .source()
             .unwrap()
-            .downcast_ref::<notify::SendNotifyError>(),
-        Some(notify::SendNotifyError::Response(
-            ParseResponseError::NotifyRcode(OptRcode::SERVFAIL)
+            .downcast_ref::<dns_client::notify::SendNotifyError>(),
+        Some(dns_client::notify::SendNotifyError::Response(
+            ParseResponseError::NotifyRcode {
+                rcode: OptRcode::SERVFAIL
+            }
         ))
     ));
     let expected_message = failures[0].1.to_string();
@@ -132,12 +137,12 @@ async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     }
 }
 
-/// Signing-key preparation keeps its service and underlying storage cause.
+/// Verify that signing-key preparation keeps its service and underlying storage cause.
 #[test]
 fn notify_key_failure_preserves_service_source() {
     let error = SendNotifyError::Key(ServiceError::internal_with_source(
         "failed to read NOTIFY key",
-        std::io::Error::from_raw_os_error(5),
+        io::Error::from_raw_os_error(5),
     ));
     let service = error
         .source()
@@ -149,10 +154,10 @@ fn notify_key_failure_preserves_service_source() {
         service
             .source()
             .unwrap()
-            .downcast_ref::<std::io::Error>()
+            .downcast_ref::<io::Error>()
             .unwrap()
             .raw_os_error(),
-        Some(5),
+        Some(5)
     );
     assert_eq!(error.to_string(), "failed to read NOTIFY key");
 }

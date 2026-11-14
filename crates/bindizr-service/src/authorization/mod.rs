@@ -2,120 +2,29 @@
 //! Socket callers are unrestricted; DNS callers use TSIG or explicitly admitted unsigned access.
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::api_token::{ApiToken, TokenId};
+use bindizr_core::model::change::{ChangeActor, ChangeSource};
+use bindizr_core::model::record::{Record, RecordData, RecordType};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::{Action, RoleGrant, RoleGrants};
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
-use crate::model::api_token::ApiToken;
-use crate::model::change::{ChangeActor, ChangeSource};
-use crate::model::record::{Record, RecordData, RecordType};
-use crate::model::tsig_key::{TsigKey, TsigKeyId};
-use crate::model::zone::Zone;
 use crate::{Context, Transaction, token};
+
+/// How long a `last_used_at` stamp stays fresh; stamping every request would
+/// put a database write on the hot path for no added precision.
+const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 
 /// A request's access rights and change origin, kept as independent facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
     scope: CallerScope,
     origin: ChangeOrigin,
-}
-
-/// Which resources the caller may access; transport and credential names do not decide it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CallerScope {
-    Global,
-    /// A role's caller, through the credential that authenticated it.
-    Role {
-        id: RoleId,
-        credential: Credential,
-        grants: RoleGrants,
-    },
-}
-
-/// The credential a role's caller proved itself with, re-read by every
-/// transaction that acts for it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Credential {
-    Token(TokenId),
-    TsigKey(TsigKeyId),
-}
-
-/// One record action to authorize, its owner relative to the zone (stored
-/// form). A `None` type matches only grants that constrain no type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordAccess<'a> {
-    pub(crate) action: Action,
-    pub(crate) relative_name: OwnerName,
-    pub(crate) record_type: Option<&'a RecordType>,
-}
-
-/// A record as grants see it: an owner name and a type.
-pub(crate) trait GrantedRecord {
-    /// The owner name, relative to its zone (stored form).
-    fn name(&self) -> &OwnerName;
-
-    /// The record's type.
-    fn record_type(&self) -> &RecordType;
-}
-
-impl GrantedRecord for Record {
-    /// The stored owner name.
-    fn name(&self) -> &OwnerName {
-        &self.name
-    }
-
-    /// The stored type.
-    fn record_type(&self) -> &RecordType {
-        &self.record_type
-    }
-}
-
-impl GrantedRecord for RecordData {
-    /// The owner name.
-    fn name(&self) -> &OwnerName {
-        &self.name
-    }
-
-    /// The type.
-    fn record_type(&self) -> &RecordType {
-        &self.record_type
-    }
-}
-
-/// Zone records authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
-/// Responses render existing records only through this checked type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReadableRecords<T>(Vec<T>);
-
-impl<T> ReadableRecords<T> {
-    /// Add a record the caller is writing: what it sends is its own to see.
-    pub(crate) fn push_written(&mut self, record: T) {
-        self.0.push(record);
-    }
-
-    /// The readable records.
-    pub(crate) fn as_slice(&self) -> &[T] {
-        &self.0
-    }
-}
-
-/// Proof that the caller may read a zone's records whole, from
-/// [`Caller::authorize_whole_zone_read`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WholeZoneRead {
-    _proof: (),
-}
-
-impl WholeZoneRead {
-    /// Every record of the zone, unfiltered: the proof covers them all.
-    pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
-        ReadableRecords(records)
-    }
 }
 
 impl Caller {
@@ -153,7 +62,7 @@ impl Caller {
         }
     }
 
-    /// Whether this is the unsigned DNS caller: a request no TSIG key named,
+    /// Return whether this is the unsigned DNS caller: a request no TSIG key named,
     /// which the policy on unsigned requests may still refuse.
     pub fn is_unsigned_dns(&self) -> bool {
         self.origin.source == ChangeSource::Nsupdate && self.origin.actor.is_none()
@@ -204,18 +113,14 @@ impl Caller {
     pub async fn authenticate_token(
         cx: &Context,
         bearer_token: &str,
-    ) -> Result<(Caller, ApiToken), ServiceError> {
+    ) -> Result<(Self, ApiToken), ServiceError> {
         let token_hash = token::hash_token(bearer_token);
 
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
             Ok(Some(token)) => token,
-            Ok(None) => {
-                return Err(ServiceError::invalid_token(
-                    "invalid or expired token".to_string(),
-                ));
-            }
+            Ok(None) => return Err(ServiceError::invalid_token("invalid or expired token")),
             Err(error) => {
-                log::error!("Failed to validate token: {}", error);
+                log::error!("Failed to validate token: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to validate token",
                     error,
@@ -223,8 +128,8 @@ impl Caller {
             }
         };
 
-        if let Some(expires_at) = &stored_token.expires_at
-            && Utc::now() >= *expires_at
+        if let Some(expires_at) = stored_token.expires_at
+            && Utc::now() >= expires_at
         {
             return Err(ServiceError::invalid_token("token has expired"));
         }
@@ -241,7 +146,7 @@ impl Caller {
             bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
                 .await
                 .map_err(|error| {
-                    log::error!("Failed to update last_used_at: {}", error);
+                    log::error!("Failed to update last_used_at: {error}");
                     ServiceError::internal_with_source("failed to update last_used_at", error)
                 })?;
 
@@ -253,7 +158,7 @@ impl Caller {
 
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), token.role_id).await?;
 
-        Ok((Caller::from_token(&token, grants), token))
+        Ok((Self::from_token(&token, grants), token))
     }
 
     /// Preload the grants of a key whose signature verified, as
@@ -261,9 +166,9 @@ impl Caller {
     pub async fn authenticate_tsig_key(
         cx: &Context,
         tsig_key: &TsigKey,
-    ) -> Result<Caller, ServiceError> {
+    ) -> Result<Self, ServiceError> {
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), tsig_key.role_id).await?;
-        Ok(Caller::from_tsig_key(tsig_key, grants))
+        Ok(Self::from_tsig_key(tsig_key, grants))
     }
 
     /// Authorize an action on something no zone owns, which only an all-zones grant carries.
@@ -276,8 +181,7 @@ impl Caller {
         }
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' in all zones",
-            action
+            "role does not permit '{action}' in all zones"
         )))
     }
 
@@ -297,12 +201,12 @@ impl Caller {
         self.authorize_zone_visible(zone)?;
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' in zone '{}'",
-            action, zone.name
+            "role does not permit '{action}' in zone '{}'",
+            zone.name
         )))
     }
 
-    /// The role whose grants bound the caller's visibility; `None` means
+    /// Return the role whose grants bound the caller's visibility; `None` means
     /// unrestricted. List queries join it against the grants in SQL.
     pub(crate) fn scope_role_id(&self) -> Option<RoleId> {
         match &self.scope {
@@ -311,7 +215,7 @@ impl Caller {
         }
     }
 
-    /// The grants that bound the caller, or `None` when nothing does.
+    /// Return the grants that bound the caller, or `None` when nothing does.
     pub(crate) fn grants(&self) -> Option<&RoleGrants> {
         match &self.scope {
             CallerScope::Global => None,
@@ -319,20 +223,20 @@ impl Caller {
         }
     }
 
-    /// Whether the caller may see `zone_id`: any grant reaching it, whatever its actions.
+    /// Return whether the caller may see `zone_id`: any grant reaching it, whatever its actions.
     pub(crate) fn sees_zone(&self, zone_id: ZoneId) -> bool {
         self.grants()
             .is_none_or(|grants| grants.reaches_zone(zone_id))
     }
 
-    /// 404 for zones the caller cannot see, so a role cannot probe zone
-    /// existence.
+    /// Authorize the zone's visibility: 404 for zones the caller cannot see,
+    /// so a role cannot probe zone existence.
     pub(crate) fn authorize_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
         if self.sees_zone(zone.id) {
-            Ok(())
-        } else {
-            Err(ServiceError::zone_not_found(zone.name.as_str()))
+            return Ok(());
         }
+
+        Err(ServiceError::zone_not_found(&zone.name))
     }
 
     /// Re-read the credential and grants in `tx`, after locking the zone.
@@ -340,15 +244,15 @@ impl Caller {
     pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
-    ) -> Result<Caller, ServiceError> {
+    ) -> Result<Self, ServiceError> {
         let (role_id, credential) = match &self.scope {
             CallerScope::Global => return Ok(self.clone()),
             CallerScope::Role {
-                credential: Credential::TsigKey(key_id),
+                credential: Credential::TsigKey(tsig_key_id),
                 ..
             } => {
                 // Lock the key so deletion waits for this transaction.
-                let tsig_key = bindizr_db::tsig_key::get_tx(tx, *key_id, LockLevel::Shared)
+                let tsig_key = bindizr_db::tsig_key::get_tx(tx, *tsig_key_id, LockLevel::Shared)
                     .await?
                     .ok_or_else(|| ServiceError::invalid_token("TSIG key no longer exists"))?;
                 (tsig_key.role_id, Credential::TsigKey(tsig_key.id))
@@ -372,7 +276,7 @@ impl Caller {
         let grants =
             bindizr_db::role_grant::list_by_role_id_tx(tx, role_id, LockLevel::Shared).await?;
 
-        Ok(Caller {
+        Ok(Self {
             scope: CallerScope::Role {
                 id: role_id,
                 credential,
@@ -387,7 +291,7 @@ impl Caller {
     pub(crate) fn authorize_record_access(
         &self,
         zone: &Zone,
-        writes: &[RecordAccess<'_>],
+        writes: &[RecordAccess],
     ) -> Result<(), ServiceError> {
         let Some(grants) = self.grants() else {
             return Ok(());
@@ -396,38 +300,38 @@ impl Caller {
         // Ahead of the per-write loop, which a batch resolving to no writes
         // would otherwise pass vacuously.
         if !grants.reaches_zone(zone.id) {
-            return Err(ServiceError::zone_not_found(zone.name.as_str()));
+            return Err(ServiceError::zone_not_found(&zone.name));
         }
 
         authorize_with_grants(grants, zone, writes)
     }
 
-    /// Whether `record:read` or the write `action` covers a record of this
+    /// Return whether `record:read` or the write `action` covers a record of this
     /// name and type, so a write-only grant finds what it may change.
     pub(crate) fn reaches_record(
         &self,
         action: Action,
         zone_id: ZoneId,
-        name: &OwnerName,
-        record_type: Option<&RecordType>,
+        owner: &OwnerName,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.grants()
-            .is_none_or(|grants| grants.reaches_record(action, zone_id, name, record_type))
+            .is_none_or(|grants| grants.reaches_record(action, zone_id, owner, record_type))
     }
 
-    /// Whether a `record:read` grant covers a record of this name and type.
+    /// Return whether a `record:read` grant covers a record of this name and type.
     pub(crate) fn sees_record(
         &self,
         zone_id: ZoneId,
-        name: &OwnerName,
-        record_type: Option<&RecordType>,
+        owner: &OwnerName,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.grants().is_none_or(|grants| {
-            grants.covers_record(Action::RecordRead, zone_id, name, record_type)
+            grants.covers_record(Action::RecordRead, zone_id, owner, record_type)
         })
     }
 
-    /// The records a `record:read` grant covers; the rest are dropped, so a
+    /// Return the records a `record:read` grant covers; the rest are dropped, so a
     /// write-only grant learns what it writes and nothing already there.
     pub(crate) fn readable_records<T: GrantedRecord>(
         &self,
@@ -444,13 +348,13 @@ impl Caller {
         )
     }
 
-    /// The record actions the caller may take on one record, so a client
+    /// Return the record actions the caller may take on one record, so a client
     /// offers exactly the ones the service would allow.
     pub(crate) fn record_actions(
         &self,
         zone_id: ZoneId,
-        name: &OwnerName,
-        record_type: &RecordType,
+        owner: &OwnerName,
+        record_type: RecordType,
     ) -> Vec<Action> {
         [
             Action::RecordRead,
@@ -459,8 +363,9 @@ impl Caller {
         ]
         .into_iter()
         .filter(|&action| {
-            self.grants()
-                .is_none_or(|grants| grants.covers_record(action, zone_id, name, Some(record_type)))
+            self.grants().is_none_or(|grants| {
+                grants.covers_record(action, zone_id, owner, Some(record_type))
+            })
         })
         .collect()
     }
@@ -486,8 +391,7 @@ impl Caller {
         }
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' over all zones whole",
-            action
+            "role does not permit '{action}' over all zones whole"
         )))
     }
 
@@ -508,17 +412,110 @@ impl Caller {
         self.authorize_zone_visible(zone)?;
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' over zone '{}' whole",
-            action, zone.name
+            "role does not permit '{action}' over zone '{}' whole",
+            zone.name
         )))
     }
 }
 
-/// Check whether the supplied grants cover every action at its name and type.
+/// Which resources the caller may access; transport and credential names do not decide it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CallerScope {
+    Global,
+    /// A role's caller, through the credential that authenticated it.
+    Role {
+        id: RoleId,
+        credential: Credential,
+        grants: RoleGrants,
+    },
+}
+
+/// The credential a role's caller proved itself with, re-read by every
+/// transaction that acts for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Credential {
+    Token(TokenId),
+    TsigKey(TsigKeyId),
+}
+
+/// One record action to authorize, its owner relative to the zone (stored
+/// form). A `None` type matches only grants that constrain no type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordAccess {
+    pub(crate) action: Action,
+    pub(crate) relative_name: OwnerName,
+    pub(crate) record_type: Option<RecordType>,
+}
+
+/// A record as grants see it: an owner name and a type.
+pub(crate) trait GrantedRecord {
+    /// Return the owner name, relative to its zone (stored form).
+    fn name(&self) -> &OwnerName;
+
+    /// Return the record's type.
+    fn record_type(&self) -> RecordType;
+}
+
+impl GrantedRecord for Record {
+    /// Return the stored owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// Return the stored type.
+    fn record_type(&self) -> RecordType {
+        self.record_type
+    }
+}
+
+impl GrantedRecord for RecordData {
+    /// Return the owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// Return the type.
+    fn record_type(&self) -> RecordType {
+        self.record_type
+    }
+}
+
+/// Zone records authorized by [`Caller::readable_records`] or [`WholeZoneRead`].
+/// Responses render existing records only through this checked type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadableRecords<T>(Vec<T>);
+
+impl<T> ReadableRecords<T> {
+    /// Add a record the caller is writing: what it sends is its own to see.
+    pub(crate) fn push_written(&mut self, record: T) {
+        self.0.push(record);
+    }
+
+    /// Return the readable records.
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+/// Proof that the caller may read a zone's records whole, from
+/// [`Caller::authorize_whole_zone_read`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WholeZoneRead {
+    _proof: (),
+}
+
+impl WholeZoneRead {
+    /// Return every record of the zone, unfiltered: the proof covers them all.
+    pub(crate) fn readable_records<T>(self, records: Vec<T>) -> ReadableRecords<T> {
+        ReadableRecords(records)
+    }
+}
+
+/// Authorize every action at its name and type against the supplied grants.
 fn authorize_with_grants(
     grants: &RoleGrants,
     zone: &Zone,
-    writes: &[RecordAccess<'_>],
+    writes: &[RecordAccess],
 ) -> Result<(), ServiceError> {
     for write in writes {
         if !grants.covers_record(
@@ -533,8 +530,7 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map(|record_type| record_type.as_str().to_owned())
-                    .unwrap_or("records".into()),
+                    .map_or("records".to_string(), |record_type| record_type.to_string()),
                 zone.name
             )));
         }
@@ -542,10 +538,6 @@ fn authorize_with_grants(
 
     Ok(())
 }
-
-/// How long a `last_used_at` stamp stays fresh; stamping every request would
-/// put a database write on the hot path for no added precision.
-const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 
 #[cfg(test)]
 mod tests;

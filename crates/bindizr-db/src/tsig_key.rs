@@ -1,21 +1,23 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
 
 use crate::error::DatabaseError;
-use crate::model::tsig_key::TsigKey;
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
 /// Insert a TSIG key.
-pub async fn create_tx(tx: &mut Transaction<'_>, key: TsigKey) -> Result<TsigKey, DatabaseError> {
+pub async fn create_tx(
+    tx: &mut Transaction<'_>,
+    tsig_key: TsigKey,
+) -> Result<TsigKey, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::tsig_key::create_tx(tx, key).await,
-        TransactionKind::Postgres(tx) => postgres::tsig_key::create_tx(tx, key).await,
-        TransactionKind::Sqlite(tx) => sqlite::tsig_key::create_tx(tx, key).await,
+        TransactionKind::MySql(tx) => mysql::tsig_key::create_tx(tx, tsig_key).await,
+        TransactionKind::Postgres(tx) => postgres::tsig_key::create_tx(tx, tsig_key).await,
+        TransactionKind::Sqlite(tx) => sqlite::tsig_key::create_tx(tx, tsig_key).await,
     }
 }
 
-/// Find a TSIG key by ID.
+/// Get a TSIG key by ID.
 pub async fn get(db: &Db, id: TsigKeyId) -> Result<Option<TsigKey>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_key::get(pool, id).await,
@@ -24,7 +26,7 @@ pub async fn get(db: &Db, id: TsigKeyId) -> Result<Option<TsigKey>, DatabaseErro
     }
 }
 
-/// A TSIG key by id inside the caller's transaction, locked at `lock_level`.
+/// Get a TSIG key by ID in the current transaction, locked at `lock_level`.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
     id: TsigKeyId,
@@ -37,7 +39,7 @@ pub async fn get_tx(
     }
 }
 
-/// Find a TSIG key by name.
+/// Get a TSIG key by name.
 pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<TsigKey>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_key::get_by_name(pool, name).await,

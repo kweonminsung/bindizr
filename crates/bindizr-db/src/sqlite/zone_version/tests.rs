@@ -1,9 +1,12 @@
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{SoaInterval, Ttl};
 use bindizr_core::model::change::ChangeSource;
 use bindizr_core::model::zone_version::ZoneVersionId;
 use sqlx::sqlite::SqlitePoolOptions;
 
 use super::*;
+use crate::schema::sqlite;
+use crate::sqlite::{catalog_zone, zone_change};
 
 /// Build the real SQLite schema with a parent zone and an unwritten version.
 async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
@@ -13,7 +16,7 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
         .await
         .unwrap();
 
-    for query in crate::schema::sqlite::table_creation_queries() {
+    for query in sqlite::table_creation_queries() {
         sqlx::query(query).execute(&pool).await.unwrap();
     }
 
@@ -30,12 +33,12 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
         id: ZoneVersionId::UNWRITTEN,
         zone_id: ZoneId::from(1),
         serial: Serial::from(1),
-        mname: "ns1.example.com".into(),
-        rname: "admin.example.com".into(),
+        mname: "ns1.example.com".to_string(),
+        rname: "admin.example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(86400),
         change_source: ChangeSource::Socket,
         changed_by: None,
@@ -45,7 +48,8 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
     (pool, version)
 }
 
-/// Insert and replace both actor columns, including clearing a previous identity.
+/// Verify that upserts insert and replace both actor columns, including
+/// clearing a previous identity.
 #[tokio::test]
 async fn actor_columns_round_trip_through_upsert_and_reads() {
     let (pool, mut version) = fixture().await;
@@ -54,7 +58,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         (
             ChangeSource::Api,
             Some(ChangeActor::Token {
-                name: "admin".into(),
+                name: "admin".to_string(),
             }),
             Some("token"),
             Some("admin"),
@@ -62,7 +66,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         (
             ChangeSource::Nsupdate,
             Some(ChangeActor::TsigKey {
-                name: "updater".into(),
+                name: "updater".to_string(),
             }),
             Some("tsig_key"),
             Some("updater"),
@@ -80,11 +84,12 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
 
         tx.commit().await.unwrap();
 
-        let columns: (Option<String>, Option<String>) =
-            sqlx::query_as("SELECT changed_by_kind, changed_by_name FROM zone_versions")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let columns = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT changed_by_kind, changed_by_name FROM zone_versions",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
         assert_eq!(columns.0.as_deref(), expected_kind);
         assert_eq!(columns.1.as_deref(), expected_name);
@@ -105,7 +110,8 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
     }
 }
 
-/// SQL rejects partial identities and unknown kinds before they can be persisted.
+/// Verify that SQL rejects partial identities and unknown kinds before they
+/// can be persisted.
 #[tokio::test]
 async fn actor_columns_reject_partial_or_unknown_identities() {
     let (pool, version) = fixture().await;
@@ -133,17 +139,24 @@ async fn actor_columns_reject_partial_or_unknown_identities() {
     }
 }
 
-/// Cyclic queries span MAX to zero; pruning retains only unambiguous history.
+/// Verify that cyclic queries span MAX to zero and that pruning retains only
+/// unambiguous history.
 #[tokio::test]
-async fn history_ranges_and_catalog_serials_wrap() {
+async fn history_ranges_wrap_and_prune_to_the_unambiguous_half_range() {
     let (pool, mut version) = fixture().await;
     let mut tx = pool.begin().await.unwrap();
 
     for serial in [u32::MAX - 1, u32::MAX, 0, 1, 0x8000_0001] {
         version.serial = Serial::from(serial);
         upsert_tx(&mut tx, version.clone()).await.unwrap();
-        sqlx::query("INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES (1, ?, 'ADD', 'www', 'A', '192.0.2.1', NULL, 300, NULL, FALSE, ?)")
-            .bind(version.serial).bind(Utc::now()).execute(&mut *tx).await.unwrap();
+        sqlx::query(
+            "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES (1, ?, 'ADD', 'www', 'A', '192.0.2.1', NULL, 300, NULL, FALSE, ?)",
+        )
+        .bind(version.serial)
+        .bind(Utc::now())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     }
 
     let from = Serial::from(u32::MAX);
@@ -159,7 +172,7 @@ async fn history_ranges_and_catalog_serials_wrap() {
 
     assert_eq!(versions, [0, 1, u32::MAX]);
 
-    let journal = crate::sqlite::zone_change::list_between_serials_tx(
+    let journal = zone_change::list_between_serials_tx(
         &mut tx,
         version.zone_id,
         from,
@@ -177,36 +190,43 @@ async fn history_ranges_and_catalog_serials_wrap() {
         [0, 1]
     );
     assert_eq!(
-        prune_outside_serial_window_tx(&mut tx, version.zone_id, to)
+        prune_by_zone_id_outside_serial_window_tx(&mut tx, version.zone_id, to)
             .await
             .unwrap(),
         1
     );
     assert_eq!(
-        crate::sqlite::zone_change::prune_outside_serial_window_tx(&mut tx, version.zone_id, to)
+        zone_change::prune_by_zone_id_outside_serial_window_tx(&mut tx, version.zone_id, to)
             .await
             .unwrap(),
         1
     );
-    let catalog = bindizr_core::dns::name::ZoneName::parse("catalog.example").unwrap();
+}
+
+/// Verify that a changed catalog digest past the maximum serial wraps it to
+/// one, never zero (RFC 2136, Section 7.11), and the same digest keeps it.
+#[tokio::test]
+async fn catalog_serial_wraps_to_one_when_the_digest_changes_past_max() {
+    let (pool, _) = fixture().await;
+    let mut tx = pool.begin().await.unwrap();
+    let from = Serial::from(u32::MAX);
+    let catalog_zone_name = ZoneName::parse("catalog.example").unwrap();
 
     assert_eq!(
-        crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "one", from)
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "one", from)
             .await
             .unwrap(),
         from
     );
 
-    // A changed digest past the maximum wraps to one, never zero (RFC 2136,
-    // Section 7.11); the same digest keeps it.
     assert_eq!(
-        crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "two", from)
             .await
             .unwrap(),
         Serial::from(1)
     );
     assert_eq!(
-        crate::sqlite::catalog_zone::upsert_tx(&mut tx, &catalog, "two", from)
+        catalog_zone::upsert_tx(&mut tx, &catalog_zone_name, "two", from)
             .await
             .unwrap(),
         Serial::from(1)

@@ -1,19 +1,22 @@
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordId, RecordType, RecordWithZone};
 use bindizr_core::model::zone::ZoneId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::record::{Record, RecordType, RecordWithZone};
 use crate::record::RecordFilter;
 use crate::{LockLevel, sql};
 
-/// Insert a batch of records in the current transaction.
+/// Insert many records in one chunked statement, returning them with their
+/// assigned ids in input order.
 pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, MySql>,
     records: &[Record],
 ) -> Result<Vec<Record>, DatabaseError> {
+    const CHUNK: usize = 500;
+    const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
+
     // Ids in a multi-row insert step by @@auto_increment_increment,
     // which is >1 on multi-primary replication setups.
     let increment =
@@ -22,7 +25,6 @@ pub(crate) async fn create_many_tx(
             .await?
             .max(1) as i32;
 
-    const CHUNK: usize = 500;
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
@@ -31,11 +33,10 @@ pub(crate) async fn create_many_tx(
         );
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "(?, ?, ?, ?, ?, ?, ?, ?)"
-            } else {
-                ",(?, ?, ?, ?, ?, ?, ?, ?)"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push_str(ROW);
         }
 
         let now = Utc::now();
@@ -44,8 +45,8 @@ pub(crate) async fn create_many_tx(
         for record in chunk {
             query = query
                 .bind(&record.name)
-                .bind(record.record_type.as_str())
-                .bind(record.value.clone())
+                .bind(record.record_type)
+                .bind(&record.value)
                 .bind(record.record_type.display_value(&record.value))
                 .bind(record.ttl)
                 .bind(record.priority)
@@ -70,20 +71,21 @@ pub(crate) async fn create_many_tx(
     Ok(created_records)
 }
 
-/// Find a record by ID.
+/// Get a record by ID.
 pub(crate) async fn get(pool: &Pool<MySql>, id: RecordId) -> Result<Option<Record>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&mut *connection)
-        .await
-        ?;
+    let record = sqlx::query_as::<_, Record>(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&mut *connection)
+    .await?;
 
     Ok(record)
 }
 
-/// Find a record with its zone metadata.
+/// Get a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<MySql>,
     id: RecordId,
@@ -106,16 +108,19 @@ pub(crate) async fn get_with_zone(
     Ok(record)
 }
 
-/// Find a record by ID in the current transaction.
+/// Get a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, MySql>,
     id: RecordId,
     lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
-    let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?{}",lock_level.clause())))
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
 
     Ok(record)
 }
@@ -126,8 +131,8 @@ pub(crate) async fn list_tx(
     zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
-    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-        format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name, id{}",
+    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name, id{}",
         lock_level.clause(),
     )))
     .bind(zone_id)
@@ -146,8 +151,8 @@ pub(crate) async fn list_by_name_tx(
 ) -> Result<Vec<Record>, DatabaseError> {
     // Bind the canonical stored form as given: re-folding it here would miss
     // its own row, and the bare column lets idx_records_zone_name apply.
-    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-        format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name, id{}",
+    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(format!(
+        "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name, id{}",
         lock_level.clause(),
     )))
     .bind(zone_id)
@@ -158,7 +163,8 @@ pub(crate) async fn list_by_name_tx(
     Ok(records)
 }
 
-/// List the records of the given types in the current transaction.
+/// List the records of the given types, in the current transaction; the
+/// cross-owner validation reads only the types it relates.
 pub(crate) async fn list_by_record_types_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
@@ -173,11 +179,10 @@ pub(crate) async fn list_by_record_types_tx(
     );
 
     for i in 0..record_types.len() {
-        sql.push_str(if i == 0 {
-            "?"
-        } else {
-            ",?"
-        });
+        if i > 0 {
+            sql.push(',');
+        }
+        sql.push('?');
     }
 
     sql.push_str(") ORDER BY name, id");
@@ -185,7 +190,7 @@ pub(crate) async fn list_by_record_types_tx(
     let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
 
     for record_type in record_types {
-        query = query.bind(record_type.as_str());
+        query = query.bind(record_type);
     }
 
     let records = query.fetch_all(&mut **tx).await?;
@@ -193,7 +198,7 @@ pub(crate) async fn list_by_record_types_tx(
     Ok(records)
 }
 
-/// List the distinct owner names of a zone in the current transaction.
+/// List the owner names of a zone, each once, in the current transaction.
 pub(crate) async fn list_names_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
@@ -207,20 +212,18 @@ pub(crate) async fn list_names_tx(
     Ok(names)
 }
 
-/// List records at the requested owner names in a zone in the current transaction.
+/// List the records whose owner name is any of `names`. Used by bulk insert to
+/// fetch only the rows that could conflict with the batch.
 pub(crate) async fn list_by_names_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
     names: &[OwnerName],
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
-    if names.is_empty() {
-        return Ok(Vec::new());
-    }
-
     // Lock only conflicting names; 5000-name chunks reduce round trips
     // without reaching MySQL's 65535-placeholder limit.
     const CHUNK: usize = 5000;
+
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
@@ -229,11 +232,10 @@ pub(crate) async fn list_by_names_tx(
         );
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "?"
-            } else {
-                ",?"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push('?');
         }
 
         sql.push(')');
@@ -245,8 +247,7 @@ pub(crate) async fn list_by_names_tx(
             query = query.bind(name);
         }
 
-        let mut rows = query.fetch_all(&mut **tx).await?;
-        records.append(&mut rows);
+        records.extend(query.fetch_all(&mut **tx).await?);
     }
 
     Ok(records)
@@ -255,7 +256,7 @@ pub(crate) async fn list_by_names_tx(
 /// List matching records with their zone metadata.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<MySql>,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -268,7 +269,8 @@ pub(crate) async fn list_by_filter_with_zone(
     // Only fixed SQL fragments are interpolated; caller values stay in bindings.
     let order_by = filter.sort.order_by_sql(filter.order);
     let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_fn);
-    let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
+
+    let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
         r#"
         SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                r.zone_id, z.name AS zone_name
@@ -336,25 +338,22 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(&search);
-
-    let records = query
-        .bind(filter.scope_role_id)
-        .bind(filter.scope_role_id)
-        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
-        .bind(
-            filter
-                .offset
-                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-                .unwrap_or(0),
-        )
-        .fetch_all(&mut *connection)
-        .await?;
+    .bind(&search)
+    .bind(filter.scope_role_id)
+    .bind(filter.scope_role_id)
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
+    .bind(
+        filter
+            .offset
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
+    )
+    .fetch_all(&mut *connection)
+    .await?;
 
     Ok(records)
 }
 
-/// Count a zone's records in the current transaction.
+/// Count the records a zone holds, in the current transaction.
 pub(crate) async fn count_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
@@ -370,7 +369,7 @@ pub(crate) async fn count_tx(
 /// Count records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -380,7 +379,8 @@ pub(crate) async fn count_by_filter(
     let name_like_types = sql::name_like_types_sql();
     let apex_owner = sql::apex_owner_sql();
     let grant_match = sql::grant_record_match_sql("r", Some("record_type"), sql::concat_fn);
-    let query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+
+    let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
         r#"
         SELECT COUNT(*)
         FROM records r
@@ -447,9 +447,9 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(filter.scope_role_id)
-    .bind(filter.scope_role_id);
-
-    let count = query.fetch_one(&mut *connection).await?;
+    .bind(filter.scope_role_id)
+    .fetch_one(&mut *connection)
+    .await?;
 
     Ok(count as u64)
 }
@@ -467,7 +467,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.as_str())
+    .bind(record.record_type)
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)
@@ -480,26 +480,21 @@ pub(crate) async fn update_tx(
     Ok(record)
 }
 
-/// Delete the records with the supplied IDs in the current transaction.
+/// Delete many records in as few statements as the backend's bind limit allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
     ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-
     const CHUNK: usize = 2000;
 
     for chunk in ids.chunks(CHUNK) {
-        let mut sql = String::from("DELETE FROM records WHERE id IN (");
+        let mut sql = "DELETE FROM records WHERE id IN (".to_string();
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "?"
-            } else {
-                ",?"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push('?');
         }
 
         sql.push(')');

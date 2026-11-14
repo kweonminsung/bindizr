@@ -2,14 +2,13 @@
 
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use chrono::Utc;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::{CreateSecondaryRequest, SecondaryResponse};
-use crate::{Context, audit, transaction, tsig_key};
+use crate::{Context, audit, secondary, transaction, tsig_key};
 
 /// Register a secondary by name and `host[:port]` address; with
 /// `notify_key_name`, NOTIFY to it is signed with that TSIG key.
@@ -20,12 +19,12 @@ pub async fn create(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = super::normalize_secondary_name(&request.name)?;
-    let address = super::normalize_secondary_address(&request.address)?;
+    let name = secondary::normalize_name(&request.name)?;
+    let address = secondary::normalize_address(&request.address)?;
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {
-        Some(key_name) => Some(tsig_key::lookup_by_name(cx, key_name).await?),
+        Some(notify_key_name) => Some(tsig_key::lookup_by_name(cx, notify_key_name).await?),
         None => None,
     };
 
@@ -35,19 +34,19 @@ pub async fn create(
         .is_some()
     {
         return Err(ServiceError::secondary_conflict(format!(
-            "secondary with name '{}' already exists",
-            name
+            "secondary with name '{name}' already exists"
         )));
     }
     if let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), &address).await? {
         return Err(ServiceError::secondary_conflict(format!(
-            "secondary with address '{}' already exists (name '{}')",
-            address, other.name
+            "secondary with address '{address}' already exists (name '{}')",
+            other.name
         )));
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create secondary").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -68,8 +67,7 @@ pub async fn create(
             // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
             if error.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
-                    "secondary with name '{}' or address '{}' already exists",
-                    name, address
+                    "secondary with name '{name}' or address '{address}' already exists"
                 ))
             } else {
                 error.into()
@@ -94,7 +92,8 @@ pub async fn create(
         Ok(secondary)
     }
     .await;
-    let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
+
+    let secondary = transaction::finish_tx(tx, apply_result, "failed to create secondary").await?;
 
     Ok(SecondaryResponse::from_secondary(
         &secondary,

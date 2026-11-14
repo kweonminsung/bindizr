@@ -12,7 +12,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing TSIG update and transfer credentials.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key in a role (generates a secret unless one is provided)
     #[command(after_help = "\
@@ -85,9 +85,9 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
     match subcommand {
         TsigKeyCommand::Create {
             name,
+            role,
             algorithm,
             secret,
-            role,
             output,
         } => {
             let response = client::send_command::<SingleTsigKeyResponse>(
@@ -99,8 +99,10 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key creation result: {:?}", response);
-            output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            log::debug!("TSIG key creation result: {response:?}");
+            output::print_response(&response.data, output, |response| {
+                vec![TsigKeyRow::from(response)]
+            })?;
         }
         TsigKeyCommand::List {
             role,
@@ -116,15 +118,19 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key list result: {:?}", response);
-            output::print_page(&response.data, output, |item| TsigKeyRow::from(item))?;
+            log::debug!("TSIG key list result: {response:?}");
+            output::print_page(&response.data, output, |tsig_key| {
+                TsigKeyRow::from(tsig_key)
+            })?;
         }
         TsigKeyCommand::Get { name, output } => {
             let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
-            log::debug!("TSIG key get result: {:?}", response);
-            output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
+            log::debug!("TSIG key get result: {response:?}");
+            output::print_response(&response.data, output, |response| {
+                vec![TsigKeyRow::from(response)]
+            })?;
         }
         TsigKeyCommand::Export { name } => {
             let response =
@@ -136,12 +142,12 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigKey { name })
                     .await?;
-            log::debug!("TSIG key deletion result: {:?}", response);
+            log::debug!("TSIG key deletion result: {response:?}");
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }
@@ -149,11 +155,11 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
     Ok(())
 }
 
-/// The `key` statement BIND, Knot and NSD all read a TSIG key from, so the
-/// secret reaches a secondary as something to paste rather than reformat.
-fn print_bind_key(key: &SingleTsigKeyResponse) {
-    outln!("key \"{}\" {{", key.tsig_key.name);
-    outln!("    algorithm {};", key.tsig_key.algorithm);
-    outln!("    secret \"{}\";", key.secret);
+/// Print the `key` statement BIND, Knot and NSD all read a TSIG key from, so
+/// the secret reaches a secondary as something to paste rather than reformat.
+fn print_bind_key(response: &SingleTsigKeyResponse) {
+    outln!("key \"{}\" {{", response.tsig_key.name);
+    outln!("    algorithm {};", response.tsig_key.algorithm);
+    outln!("    secret \"{}\";", response.secret);
     outln!("}};");
 }

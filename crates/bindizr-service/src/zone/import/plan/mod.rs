@@ -3,9 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_core::model::record::RecordKey;
+use bindizr_core::model::record::{Record, RecordData, RecordKey, RecordType};
 
-use crate::model::record::{Record, RecordData, RecordType};
 use crate::types::ImportMode;
 
 /// A record the import wants present, with its owner name already normalized so
@@ -107,7 +106,7 @@ impl<'a> ImportPlan<'a> {
             }
         }
 
-        ImportPlan {
+        Self {
             deletes,
             ttl_deletes,
             adds,

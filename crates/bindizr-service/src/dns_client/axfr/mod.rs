@@ -1,20 +1,25 @@
 //! Client-side AXFR: pull a whole zone from another server, the fetch half
 //! of `zone import --from-server`.
 
+use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use bindizr_core::config::ImportConfig;
 use bindizr_core::dns::dnssec::EncodeWireNameError;
-use bindizr_core::dns::message::{Name, Rtype};
-use bindizr_core::dns::name::ZoneName;
-use bindizr_core::dns::query::{TransferMessagePosition, TransferRecord};
+use bindizr_core::dns::message::{EncodeMessageError, Name, Rtype};
+use bindizr_core::dns::name::{ParseNameError, ZoneName};
+use bindizr_core::dns::query::{ParseResponseError, TransferMessagePosition, TransferRecord};
+use bindizr_core::dns::record::ParseRdataError;
 use bindizr_core::dns::{message, name, query};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
+use tokio::time;
+use tokio::time::Instant;
 
-use super::{ReadTcpMessageError, ResolveAddressError};
+use crate::dns_client;
+use crate::dns_client::{ReadTcpMessageError, ResolveAddressError};
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -34,24 +39,24 @@ pub(crate) enum FetchZoneError {
     Server {
         addr: SocketAddr,
         #[source]
-        source: Box<FetchZoneError>,
+        source: Box<Self>,
     },
     #[error("{addr}: transfer timed out")]
     TimedOut { addr: SocketAddr },
     #[error("no server address to transfer from")]
     NoAddress,
     #[error("connect failed: {0}")]
-    Connect(#[source] std::io::Error),
+    Connect(#[source] io::Error),
     #[error("send failed: {0}")]
-    Send(#[source] std::io::Error),
+    Send(#[source] io::Error),
     #[error(transparent)]
-    Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
+    Encode(#[from] EncodeMessageError),
     #[error("read failed before the closing SOA: {0}")]
     Read(#[source] ReadTcpMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    Response(#[from] ParseResponseError),
     #[error(transparent)]
-    Rdata(#[from] bindizr_core::dns::record::ParseRdataError),
+    Rdata(#[from] ParseRdataError),
     #[error("transfer does not start with the zone's SOA")]
     NoOpeningSoa,
     #[error("transfer opens with the SOA of {found}, not {expected}")]
@@ -66,7 +71,7 @@ pub(crate) enum FetchZoneError {
     OwnerName {
         name: String,
         #[source]
-        source: bindizr_core::dns::name::ParseNameError,
+        source: ParseNameError,
     },
 }
 
@@ -94,13 +99,13 @@ enum Connection {
 impl Connection {
     /// Close at the advertised deadline even while the importer is applying the previous zone.
     fn spawn(stream: TcpStream, timeout: Duration) -> Self {
-        let deadline = tokio::time::Instant::now() + timeout;
+        let deadline = Instant::now() + timeout;
         let (resume, requested) = oneshot::channel();
         let (returned, receive) = oneshot::channel();
         tokio::spawn(async move {
             tokio::select! {
                 biased;
-                () = tokio::time::sleep_until(deadline) => {},
+                () = time::sleep_until(deadline) => {},
 
                 result = requested => {
                     if result.is_ok() {
@@ -130,9 +135,9 @@ impl Connection {
 
 impl AxfrClient {
     /// Name the primary; nothing is resolved or connected until a transfer asks.
-    pub(crate) fn new(server: &str) -> AxfrClient {
-        AxfrClient {
-            server: server.to_string(),
+    pub(crate) fn new(address: &str) -> Self {
+        Self {
+            server: address.to_string(),
             addr: None,
             connection: None,
         }
@@ -146,7 +151,7 @@ impl AxfrClient {
         import: &ImportConfig,
     ) -> Result<Vec<TransferRecord>, FetchZoneError> {
         let qname = zone_name.to_wire_name()?;
-        let deadline = tokio::time::Instant::now() + import.timeout();
+        let deadline = Instant::now() + import.timeout();
 
         let transfer = async {
             let previous = match self.connection.take() {
@@ -182,10 +187,10 @@ impl AxfrClient {
                 }),
             };
 
-            result.map(|(records, timeout)| (records, timeout, stream))
+            result.map(|(records, idle_timeout)| (records, idle_timeout, stream))
         };
 
-        match tokio::time::timeout_at(deadline, transfer).await {
+        match time::timeout_at(deadline, transfer).await {
             Ok(Ok((records, idle_timeout, stream))) => {
                 // A zero timeout closes after the outstanding transfer completes (RFC 7828, Section 3.2.2).
                 self.connection = match idle_timeout {
@@ -209,15 +214,15 @@ impl AxfrClient {
     }
 }
 
-/// Resolve `server` and connect to the first of its addresses that accepts,
+/// Resolve `address` and connect to the first of its addresses that accepts,
 /// reporting the last refusal when none does.
 async fn connect_to_server(
-    server: &str,
+    address: &str,
     import: &ImportConfig,
 ) -> Result<(SocketAddr, TcpStream), FetchZoneError> {
-    let entries = super::resolve_address_entries(server, import.timeout()).await;
+    let entries = dns_client::resolve_address_entries(address, import.timeout()).await;
 
-    let mut last = None;
+    let mut last_error = None;
 
     for (entry, result) in entries {
         let addrs = result.map_err(|source| FetchZoneError::Unresolved { entry, source })?;
@@ -226,19 +231,19 @@ async fn connect_to_server(
             match TcpStream::connect(addr).await {
                 Ok(stream) => return Ok((addr, stream)),
                 Err(error) => {
-                    last = Some(FetchZoneError::Server {
+                    last_error = Some(FetchZoneError::Server {
                         addr,
                         source: Box::new(FetchZoneError::Connect(error)),
-                    })
+                    });
                 }
             }
         }
     }
 
-    Err(last.unwrap_or(FetchZoneError::NoAddress))
+    Err(last_error.unwrap_or(FetchZoneError::NoAddress))
 }
 
-/// One AXFR on an open connection: read length-prefixed messages until the
+/// Fetch one AXFR on an open connection: read length-prefixed messages until the
 /// closing SOA repeats the opening one.
 async fn fetch_zone_on_stream(
     stream: &mut TcpStream,
@@ -260,7 +265,7 @@ async fn fetch_zone_on_stream(
     let mut idle_timeout = None;
 
     loop {
-        let response = super::read_tcp_message(stream)
+        let response = dns_client::read_tcp_message(stream)
             .await
             .map_err(FetchZoneError::Read)?;
 
@@ -319,7 +324,8 @@ async fn fetch_zone_on_stream(
     }
 }
 
-/// Owner names compare as labels, never as text (RFC 4343 case, escapes).
+/// Return an owner name's labels: owner names compare as labels, never as
+/// text (RFC 4343 case, escapes).
 fn owner_labels(name: &str) -> Result<Vec<Vec<u8>>, FetchZoneError> {
     name::decode_name_labels(name)
         .map(|(labels, _)| labels)

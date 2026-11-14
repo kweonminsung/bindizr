@@ -1,5 +1,6 @@
 //! DNS exchanges shared by the protocol tests.
 
+use std::io;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use domain::tsig::ClientTransaction;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 
-use super::tsig::SigningKey;
+use crate::common::dns::tsig::SigningKey;
 
 /// Return the original response after checking its ID and optional TSIG.
 pub(crate) fn exchange_request(
@@ -53,13 +54,13 @@ pub(crate) fn exchange_udp(port: u16, message: &[u8]) -> Result<Vec<u8>, String>
     socket
         .send_to(message, ("127.0.0.1", port))
         .map_err(|error| error.to_string())?;
-    let mut response = vec![0u8; usize::from(u16::MAX)];
+    let mut buffer = vec![0; usize::from(u16::MAX)];
     let (len, _) = socket
-        .recv_from(&mut response)
+        .recv_from(&mut buffer)
         .map_err(|error| error.to_string())?;
-    response.truncate(len);
+    buffer.truncate(len);
 
-    Ok(response)
+    Ok(buffer)
 }
 
 /// Send one TCP message and return the first response frame.
@@ -68,7 +69,7 @@ pub(crate) fn exchange_tcp(port: u16, message: &[u8]) -> Result<Vec<u8>, String>
 }
 
 /// Send one TLS message and return the first response frame.
-pub(crate) fn exchange_xot(
+pub(crate) fn exchange_tls(
     port: u16,
     message: &[u8],
     client: ClientConfig,
@@ -100,32 +101,32 @@ pub(crate) fn connect_tls(
     port: u16,
     client: ClientConfig,
 ) -> Result<StreamOwned<ClientConnection, TcpStream>, String> {
-    let tcp = connect_tcp(port)?;
-    let server = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let stream = connect_tcp(port)?;
+    let server_name = ServerName::from(IpAddr::V4(Ipv4Addr::LOCALHOST));
     let session =
-        ClientConnection::new(Arc::new(client), server).map_err(|error| error.to_string())?;
-    Ok(StreamOwned::new(session, tcp))
+        ClientConnection::new(Arc::new(client), server_name).map_err(|error| error.to_string())?;
+    Ok(StreamOwned::new(session, stream))
 }
 
 /// Write a DNS message with its two-byte TCP length prefix.
 pub(crate) fn write_frame<W: Write>(stream: &mut W, message: &[u8]) -> Result<(), String> {
-    let length = u16::try_from(message.len()).map_err(|error| error.to_string())?;
-    let mut frame = length.to_be_bytes().to_vec();
+    let len = u16::try_from(message.len()).map_err(|error| error.to_string())?;
+    let mut frame = len.to_be_bytes().to_vec();
     frame.extend_from_slice(message);
     stream.write_all(&frame).map_err(|error| error.to_string())
 }
 
 /// Read the next length-prefixed DNS frame.
 pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, String> {
-    let mut len = [0u8; 2];
+    let mut len = [0; 2];
 
     match stream.read_exact(&mut len) {
         Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error.to_string()),
     }
 
-    let mut frame = vec![0u8; usize::from(u16::from_be_bytes(len))];
+    let mut frame = vec![0; usize::from(u16::from_be_bytes(len))];
     stream
         .read_exact(&mut frame)
         .map_err(|error| error.to_string())?;

@@ -3,12 +3,9 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
-
-/// A key tag, 0 through 65535.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct KeyTag(u16);
 
 /// A row's key tag outside the 16 bits the wire carries: corrupt data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -17,8 +14,13 @@ pub struct ConvertKeyTagError {
     key_tag: i32,
 }
 
+/// A key tag, 0 through 65535.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct KeyTag(u16);
+
 impl KeyTag {
-    /// The key tag as the wire carries it.
+    /// Return the key tag as the wire carries it.
     pub const fn as_u16(self) -> u16 {
         self.0
     }
@@ -26,8 +28,8 @@ impl KeyTag {
 
 impl From<u16> for KeyTag {
     /// Take a wire key tag.
-    fn from(key_tag: u16) -> Self {
-        KeyTag(key_tag)
+    fn from(value: u16) -> Self {
+        Self(value)
     }
 }
 
@@ -35,24 +37,24 @@ impl TryFrom<i32> for KeyTag {
     type Error = ConvertKeyTagError;
 
     /// Read a row's key tag; one outside 16 bits is corrupt data.
-    fn try_from(key_tag: i32) -> Result<Self, Self::Error> {
-        u16::try_from(key_tag)
-            .map(KeyTag)
-            .map_err(|_| ConvertKeyTagError { key_tag })
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u16::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertKeyTagError { key_tag: value })
     }
 }
 
 impl From<KeyTag> for u16 {
-    /// The wire form.
+    /// Convert to the wire form.
     fn from(key_tag: KeyTag) -> Self {
         key_tag.0
     }
 }
 
 impl From<KeyTag> for i32 {
-    /// The row form.
+    /// Convert to the row form.
     fn from(key_tag: KeyTag) -> Self {
-        i32::from(key_tag.0)
+        Self::from(key_tag.0)
     }
 }
 
@@ -67,12 +69,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for KeyTag
 where
     i32: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -82,11 +84,11 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for KeyTag
 where
     i32: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i32::from(*self).encode_by_ref(buffer)
     }
 }
@@ -96,10 +98,8 @@ where
     i32: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a column outside 16 bits fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(KeyTag::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

@@ -1,8 +1,8 @@
 //! SSHFP record values (RFC 4255): SSH host-key fingerprints, verifiable
 //! only from a signed zone.
 
-use super::value::MAX_RECORD_RDATA;
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use crate::dns::record::value::MAX_RECORD_RDATA;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SshfpRecordValue {
@@ -12,7 +12,7 @@ pub struct SshfpRecordValue {
 }
 
 impl SshfpRecordValue {
-    /// The value is `<algorithm> <fingerprint type> <fingerprint>`; the hex
+    /// Parse `<algorithm> <fingerprint type> <fingerprint>`; the hex
     /// fingerprint may be split into whitespace-separated groups.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
@@ -34,6 +34,10 @@ impl SshfpRecordValue {
 
     /// Validate the fields of this SSHFP value.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+        // Bounded so the record fits one transfer message beside its 2 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_FINGERPRINT: usize = MAX_RECORD_RDATA - 2;
+
         // Fingerprint lengths are fixed per type: SHA-1 and SHA-256.
         let expected = match self.fingerprint_type {
             1 => Some(20),
@@ -51,10 +55,6 @@ impl SshfpRecordValue {
             });
         }
 
-        // Bounded so the record fits one transfer message beside its 2 fixed
-        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
-        const MAX_FINGERPRINT: usize = MAX_RECORD_RDATA - 2;
-
         if self.fingerprint.len() > MAX_FINGERPRINT {
             return Err(ParseRecordValueError::SshfpFingerprintTooLong {
                 max: MAX_FINGERPRINT,
@@ -71,23 +71,24 @@ impl SshfpRecordValue {
             "{} {} {}",
             self.algorithm,
             self.fingerprint_type,
-            value::hex_upper(&self.fingerprint)
+            hex::encode_upper(&self.fingerprint)
         )
     }
 
-    /// The wire-format RDATA of a stored value (RFC 4255, Section 3.1).
+    /// Encode the stored value as wire RDATA (RFC 4255, Section 3.1).
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(2 + self.fingerprint.len());
         rdata.push(self.algorithm);
         rdata.push(self.fingerprint_type);
         rdata.extend_from_slice(&self.fingerprint);
+
         Rdata::new(rdata)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SshfpRecordValue;
+    use super::*;
 
     /// Verify that `parse` drops rfc1035 parens around the fingerprint.
     #[test]
@@ -115,12 +116,13 @@ mod tests {
     fn validate_pins_the_fingerprint_length_per_type() {
         let short = SshfpRecordValue::parse("4 2 4B9B").unwrap();
 
-        assert!(
-            short
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("32-byte")
+        assert_eq!(
+            short.validate(),
+            Err(ParseRecordValueError::SshfpFingerprintLength {
+                fingerprint_type: 2,
+                expected: 32,
+                len: 2,
+            })
         );
         assert!(
             SshfpRecordValue::parse("4 9 4B9B")

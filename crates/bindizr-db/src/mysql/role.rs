@@ -1,9 +1,8 @@
-use bindizr_core::model::role::RoleId;
+use bindizr_core::model::role::{Role, RoleId};
 use chrono::Utc;
 use sqlx::{MySql, Pool, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::role::Role;
 
 /// Insert a role.
 pub(crate) async fn create_tx(
@@ -30,7 +29,7 @@ pub(crate) async fn create_tx(
     Ok(role)
 }
 
-/// Find a role by ID.
+/// Get a role by ID.
 pub(crate) async fn get(pool: &Pool<MySql>, id: RoleId) -> Result<Option<Role>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -44,7 +43,7 @@ pub(crate) async fn get(pool: &Pool<MySql>, id: RoleId) -> Result<Option<Role>, 
     Ok(role)
 }
 
-/// Find a role by name.
+/// Get a role by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<MySql>,
     name: &str,
@@ -74,8 +73,8 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<Role>, DatabaseEr
     Ok(roles)
 }
 
-/// Delete a role by ID.
-/// Reports `false` when no row had the id.
+/// Delete a role by ID; its grants go with it. Reports `false` when no row had
+/// the id.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, MySql>,
     id: RoleId,

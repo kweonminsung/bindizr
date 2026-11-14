@@ -1,7 +1,10 @@
 //! Stored records, SOA versions, and catalog members as response answers.
 
-use super::{DnsMessageBuilder, EncodeMessageError, Name};
+use domain::base::iana::Rtype;
+
+use crate::dns;
 use crate::dns::dnssec::EncodeWireNameError;
+use crate::dns::message::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::record::{EncodedRdata, SoaRecordValue, TxtRecordValue};
 use crate::dns::{CatalogZone, Serial, Ttl, name};
@@ -9,9 +12,7 @@ use crate::model::dnssec_record::DnssecRecord;
 use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
 use crate::model::zone_change::{JournalRecordType, ZoneChange};
-
-/// SOA is synthesized rather than stored as a user record.
-const SOA_WIRE_TYPE: u16 = 6;
+use crate::model::zone_version::ZoneVersion;
 
 impl DnsMessageBuilder {
     /// Append one journal change to a DNS transfer message.
@@ -39,9 +40,9 @@ impl DnsMessageBuilder {
                     .as_deref()
                     .ok_or(EncodeMessageError::MissingValue)?;
                 self.add_record_parts(
-                    zone_name,
                     &change.record_name,
-                    record_type,
+                    zone_name,
+                    *record_type,
                     value,
                     change.record_ttl,
                     change.record_priority,
@@ -57,95 +58,97 @@ impl DnsMessageBuilder {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
             zone.name.to_wire_name()?,
-            SOA_WIRE_TYPE,
+            Rtype::SOA.to_int(),
             zone.default_ttl.as_secs(),
             rdata,
         )
     }
 
-    /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub fn add_catalog_soa(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
+    /// Add a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
+    pub fn add_catalog_soa(
+        &mut self,
+        catalog_zone: &CatalogZone,
+    ) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
-            serial: zone.serial.as_u32(),
-            refresh: zone.refresh.as_secs(),
-            retry: zone.retry.as_secs(),
-            expire: zone.expire.as_secs(),
-            minimum: zone.minimum_ttl.as_secs(),
+            serial: catalog_zone.serial.as_u32(),
+            refresh: catalog_zone.refresh.as_secs(),
+            retry: catalog_zone.retry.as_secs(),
+            expire: catalog_zone.expire.as_secs(),
+            minimum: catalog_zone.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
         self.add_raw_rdata(
-            zone.name.to_wire_name()?,
-            SOA_WIRE_TYPE,
-            zone.default_ttl.as_secs(),
+            catalog_zone.name.to_wire_name()?,
+            Rtype::SOA.to_int(),
+            catalog_zone.default_ttl.as_secs(),
             rdata,
         )
     }
 
-    /// Adds an SOA from a serial-specific version.
-    pub fn add_version_soa(
-        &mut self,
-        soa: &crate::model::zone_version::ZoneVersion,
-    ) -> Result<(), EncodeMessageError> {
+    /// Add an SOA from a serial-specific version.
+    pub fn add_version_soa(&mut self, version: &ZoneVersion) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
-            mname: &soa.mname,
-            rname: &soa.rname,
-            serial: soa.serial.as_u32(),
-            refresh: soa.refresh.as_secs(),
-            retry: soa.retry.as_secs(),
-            expire: soa.expire.as_secs(),
-            minimum: soa.minimum_ttl.as_secs(),
+            mname: &version.mname,
+            rname: &version.rname,
+            serial: version.serial.as_u32(),
+            refresh: version.refresh.as_secs(),
+            retry: version.retry.as_secs(),
+            expire: version.expire.as_secs(),
+            minimum: version.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
 
         // IXFR SOA owner is the transfer QNAME.
         self.add_raw_rdata(
             self.qname.clone(),
-            SOA_WIRE_TYPE,
-            soa.default_ttl.as_secs(),
+            Rtype::SOA.to_int(),
+            version.default_ttl.as_secs(),
             rdata,
         )
     }
 
-    /// Adds one answer of any supported stored type at an absolute owner name.
+    /// Add one answer of any supported stored type at an absolute owner name.
     pub fn add_text_rdata(
         &mut self,
         name: &str,
-        ttl: u32,
-        record_type: &RecordType,
+        record_type: RecordType,
         value: &str,
+        ttl: u32,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
+        let EncodedRdata {
+            record_type: rtype,
+            rdata,
+        } = EncodedRdata::from_columns(record_type, value, priority)?;
+        self.add_raw_rdata(parse_name(name)?, rtype, ttl, rdata)
     }
 
-    /// Adds the catalog-zone NS record, which is the placeholder "invalid".
-    pub fn add_catalog_ns(&mut self, zone: &CatalogZone) -> Result<(), EncodeMessageError> {
-        let owner_name = zone.name.to_fqdn();
+    /// Add the catalog-zone NS record, which is the placeholder "invalid".
+    pub fn add_catalog_ns(&mut self, catalog_zone: &CatalogZone) -> Result<(), EncodeMessageError> {
+        let apex_name = catalog_zone.name.to_fqdn();
         self.add_text_rdata(
-            &owner_name,
-            zone.default_ttl.as_secs(),
-            &RecordType::Ns,
+            &apex_name,
+            RecordType::Ns,
             "invalid",
+            catalog_zone.default_ttl.as_secs(),
             None,
         )
     }
 
-    /// Adds the catalog-zone version TXT record.
+    /// Add the catalog-zone version TXT record.
     pub fn add_catalog_schema_version(
         &mut self,
-        zone: &CatalogZone,
+        catalog_zone: &CatalogZone,
     ) -> Result<(), EncodeMessageError> {
-        let version_name = format!("version.{}.", zone.name);
+        let version_name = format!("version.{}.", catalog_zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
             &version_name,
-            zone.default_ttl.as_secs(),
-            &RecordType::Txt,
+            RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
+            catalog_zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -153,17 +156,17 @@ impl DnsMessageBuilder {
     /// Append a catalog membership PTR answer.
     pub fn add_catalog_ptr(
         &mut self,
-        zone: &CatalogZone,
-        member_zone: &str,
+        catalog_zone: &CatalogZone,
+        zone_name: &str,
     ) -> Result<(), EncodeMessageError> {
-        let ptr_name = crate::dns::catalog_member_owner_name(&zone.name, member_zone);
-        let ptr_target = name::to_fqdn(member_zone);
+        let ptr_name = dns::catalog_member_owner_name(&catalog_zone.name, zone_name);
+        let ptr_target = name::to_fqdn(zone_name);
 
         self.add_text_rdata(
             &ptr_name,
-            zone.default_ttl.as_secs(),
-            &RecordType::Ptr,
+            RecordType::Ptr,
             &ptr_target,
+            catalog_zone.default_ttl.as_secs(),
             None,
         )
     }
@@ -175,37 +178,34 @@ impl DnsMessageBuilder {
         zone_name: &ZoneName,
     ) -> Result<(), EncodeMessageError> {
         self.add_record_parts(
-            zone_name,
             &record.name,
-            &record.record_type,
+            zone_name,
+            record.record_type,
             &record.value,
             record.ttl,
             record.priority,
         )
     }
 
-    /// Adds an answer from stored record columns (records and journal
+    /// Add an answer from stored record columns (records and journal
     /// rows share this shape). Unsupported types are skipped.
     pub fn add_record_parts(
         &mut self,
+        owner: &OwnerName,
         zone_name: &ZoneName,
-        name: &OwnerName,
-        record_type: &RecordType,
+        record_type: RecordType,
         value: &str,
         ttl: Ttl,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(
-            name.to_wire_name(zone_name)?,
-            record_type,
-            ttl.as_secs(),
+        let EncodedRdata {
+            record_type: rtype,
             rdata,
-        )
+        } = EncodedRdata::from_columns(record_type, value, priority)?;
+        self.add_raw_rdata(owner.to_wire_name(zone_name)?, rtype, ttl.as_secs(), rdata)
     }
 
-    /// Adds a derived DNSSEC record; its RDATA is stored in wire form.
+    /// Add a derived DNSSEC record; its RDATA is stored in wire form.
     pub fn add_dnssec_record(
         &mut self,
         record: &DnssecRecord,
@@ -220,7 +220,7 @@ impl DnsMessageBuilder {
     }
 }
 
-/// Parses a presentation-form name through the one core name encoding.
+/// Parse a presentation-form name through the one core name encoding.
 fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
     let wire = name::encode_name(name)?;
     Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)).into())

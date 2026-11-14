@@ -16,10 +16,10 @@ use crate::socket::client;
 use crate::socket::types::{DaemonCommand, DoctorCheckResponse, DoctorCheckStatus};
 
 /// The whole run, as `--output json` reports it.
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct DoctorResponse {
     healthy: bool,
-    failures: usize,
+    failures: u64,
     checks: Vec<DoctorCheckResponse>,
 }
 
@@ -27,9 +27,9 @@ struct DoctorResponse {
 /// unless the caller asked for one document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Report {
-    format: OutputFormat,
+    output: OutputFormat,
     checks: Vec<DoctorCheckResponse>,
-    failures: usize,
+    failures: u64,
 }
 
 impl Report {
@@ -63,14 +63,14 @@ impl Report {
             self.failures += 1;
         }
 
-        if self.format == OutputFormat::Table {
+        if self.output == OutputFormat::Table {
             let text = check.status.to_string();
             let label = match check.status {
                 DoctorCheckStatus::Ok => color::green(&text),
                 DoctorCheckStatus::Failed => color::red(&text),
                 DoctorCheckStatus::Skipped => color::yellow(&text),
             };
-            outln!("[{}] {}", label, check.message);
+            outln!("[{label}] {}", check.message);
         }
 
         self.checks.push(check);
@@ -79,28 +79,28 @@ impl Report {
 
 /// Handle the `doctor` subcommand by verifying the installation end to end.
 pub(crate) async fn handle_command(
-    config_file: Option<String>,
-    format: OutputFormat,
+    config_file: Option<&str>,
+    output: OutputFormat,
 ) -> Result<(), CliError> {
-    if format == OutputFormat::Table {
+    if output == OutputFormat::Table {
         outln!("Bindizr Doctor");
         outln!();
     }
 
     let mut report = Report {
-        format,
+        output,
         checks: Vec::new(),
         failures: 0,
     };
 
-    let path = config::resolve_config_path(config_file.as_deref());
+    let path = config::resolve_config_path(config_file);
     let file_config = match Config::load(&path) {
         Ok(config) => {
-            report.ok(format!("Config valid: {}", path));
+            report.ok(format!("Config valid: {path}"));
             Some(config)
         }
         Err(error) => {
-            report.fail(format!("Config invalid: {}", error));
+            report.fail(format!("Config invalid: {error}"));
             None
         }
     };
@@ -125,7 +125,7 @@ pub(crate) async fn handle_command(
         report.skip("API, database, and port checks skipped: no valid configuration");
     }
 
-    if format == OutputFormat::Table {
+    if output == OutputFormat::Table {
         outln!();
         if report.failures == 0 {
             outln!("Result: installation looks {}", color::green("healthy"));
@@ -136,7 +136,7 @@ pub(crate) async fn handle_command(
             failures: report.failures,
             checks: report.checks,
         };
-        output::print_payload(&document, format)?;
+        output::print_payload(&document, output)?;
     }
 
     if report.failures == 0 {

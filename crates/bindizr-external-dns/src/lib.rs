@@ -9,14 +9,22 @@ mod wire;
 
 use std::sync::Arc;
 use std::time::Duration;
+use std::{io, process};
 
 use bindizr_core::config::{LogFormat, LoggingConfig};
 use bindizr_core::errln;
 use bindizr_core::logger::Logger;
+use tokio::net::TcpListener;
 use tokio::signal::unix;
 use tokio::signal::unix::SignalKind;
 use tokio::sync::watch;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
+use tokio::{signal, time};
+
+use crate::config::{AdapterConfig, Cli};
+use crate::metrics::AdapterMetrics;
+use crate::server::AppState;
+use crate::upstream::UpstreamClient;
 
 /// How long in-flight requests get once the adapter is asked to stop, bounded
 /// well inside the grace period Kubernetes allows before SIGKILL.
@@ -28,10 +36,10 @@ const EXIT_CONFIG: i32 = 6;
 
 /// Supervised adapter tasks paired with their names; `join_next` removes
 /// finished tasks so shutdown never awaits a handle twice.
-type Servers = JoinSet<(&'static str, Result<std::io::Result<()>, JoinError>)>;
+type Servers = JoinSet<(&'static str, Result<io::Result<()>, JoinError>)>;
 
 /// Put a spawned listener under the adapter's supervision.
-fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Result<()>>) {
+fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<io::Result<()>>) {
     servers.spawn(async move { (name, task.await) });
 }
 
@@ -41,13 +49,13 @@ pub async fn execute() {
 
     use clap::Parser;
 
-    let cli = config::Cli::parse();
-    let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|error| {
-        errln!("Error: {}", error);
-        std::process::exit(EXIT_CONFIG);
+    let cli = Cli::parse();
+    let adapter_config = AdapterConfig::load(cli).unwrap_or_else(|error| {
+        errln!("Error: {error}");
+        process::exit(EXIT_CONFIG);
     });
 
-    Logger::init(&LoggingConfig {
+    Logger::init(LoggingConfig {
         level: adapter_config.log_level,
         format: LogFormat::Text,
     });
@@ -59,40 +67,39 @@ pub async fn execute() {
     }
 
     // Prepare the upstream connection settings before accepting webhook requests.
-    let upstream = upstream::UpstreamClient::new(
+    let upstream = UpstreamClient::new(
         adapter_config.bindizr_url.clone(),
         adapter_config.token,
         adapter_config.timeout_secs,
         adapter_config.ca_file.as_deref(),
     )
     .unwrap_or_else(|error| {
-        errln!("Error: {}", error);
-        std::process::exit(EXIT_CONFIG);
+        errln!("Error: {error}");
+        process::exit(EXIT_CONFIG);
     });
-    let state = Arc::new(server::AppState {
+    let state = Arc::new(AppState {
         upstream,
-        metrics: metrics::AdapterMetrics::new().unwrap_or_else(|error| {
-            errln!("Error: {}", error);
-            std::process::exit(1);
+        metrics: AdapterMetrics::new().unwrap_or_else(|error| {
+            errln!("Error: {error}");
+            process::exit(1);
         }),
     });
 
     // Bind both endpoints before either server starts accepting requests.
-    let webhook_listener = tokio::net::TcpListener::bind(adapter_config.listen_addr)
+    let webhook_listener = TcpListener::bind(adapter_config.listen_addr)
         .await
         .unwrap_or_else(|error| {
-            log::error!("Failed to bind {}: {:?}", adapter_config.listen_addr, error);
-            std::process::exit(1);
+            log::error!("Failed to bind {}: {error:?}", adapter_config.listen_addr);
+            process::exit(1);
         });
-    let health_listener = tokio::net::TcpListener::bind(adapter_config.health_listen_addr)
+    let health_listener = TcpListener::bind(adapter_config.health_listen_addr)
         .await
         .unwrap_or_else(|error| {
             log::error!(
-                "Failed to bind {}: {:?}",
-                adapter_config.health_listen_addr,
-                error
+                "Failed to bind {}: {error:?}",
+                adapter_config.health_listen_addr
             );
-            std::process::exit(1);
+            process::exit(1);
         });
 
     log::info!(
@@ -106,7 +113,7 @@ pub async fn execute() {
     );
 
     // Both servers watch one flag, so a signal or a failed server stops both.
-    let (stop, _) = watch::channel(false);
+    let stop = watch::channel(false).0;
     let webhook = axum::serve(webhook_listener, server::webhook_router(state.clone()))
         .with_graceful_shutdown(wait_for_stop(stop.subscribe()));
     let health = axum::serve(health_listener, server::health_router(state))
@@ -131,7 +138,7 @@ pub async fn execute() {
     // leaves it unable to tell an applied change from a dropped one.
     let _ = stop.send(true);
 
-    let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
+    let drained = time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
     })
     .await;
@@ -146,7 +153,7 @@ pub async fn execute() {
     // A listener stopping on its own is a failure, so a supervisor set to
     // restart only what failed brings the adapter back.
     if failed {
-        std::process::exit(1);
+        process::exit(1);
     }
 }
 
@@ -165,22 +172,22 @@ async fn wait_for_signal() {
     let mut terminate = match unix::signal(SignalKind::terminate()) {
         Ok(terminate) => terminate,
         Err(error) => {
-            log::error!("Failed to listen for SIGTERM: {}", error);
+            log::error!("Failed to listen for SIGTERM: {error}");
             return;
         }
     };
     tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
+        _ = signal::ctrl_c() => {}
 
         _ = terminate.recv() => {}
     }
 }
 
 /// Log the server that stopped on its own, which stops the adapter with it.
-fn log_server_stopped(name: &str, result: Result<std::io::Result<()>, tokio::task::JoinError>) {
+fn log_server_stopped(name: &str, result: Result<io::Result<()>, JoinError>) {
     match result {
-        Ok(Ok(())) => log::error!("{} server stopped", name),
-        Ok(Err(error)) => log::error!("{} server error: {:?}", name, error),
-        Err(error) => log::error!("{} server task failed: {}", name, error),
+        Ok(Ok(())) => log::error!("{name} server stopped"),
+        Ok(Err(error)) => log::error!("{name} server error: {error:?}"),
+        Err(error) => log::error!("{name} server task failed: {error}"),
     }
 }

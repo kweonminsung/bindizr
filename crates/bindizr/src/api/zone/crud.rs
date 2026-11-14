@@ -38,7 +38,7 @@ pub(crate) async fn list_zones(
     Query(mut filter): Query<ZoneFilter>,
 ) -> Result<Response, ApiError> {
     filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = zone::list_by_filter(&cx, &caller, filter).await?;
+    let response = zone::list_by_filter(&cx, &caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -65,14 +65,8 @@ pub(crate) async fn get_zone(
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let zone = zone::get_by_name(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
-
-    Ok((
-        StatusCode::OK,
-        Json(SingleZoneResponse {
-            zone: ZoneResponse::from(&zone),
-        }),
-    )
-        .into_response())
+    let response = SingleZoneResponse { zone };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Create a new DNS zone.
@@ -83,8 +77,8 @@ pub(crate) async fn get_zone(
         summary = "Create a new DNS zone",
         request_body = CreateZoneRequest,
         responses(
-            (status = 201, description = "DNS zone created successfully", body = WriteZoneResponse),
             (status = 200, description = "Dry run validated successfully, nothing applied", body = WriteZoneResponse),
+            (status = 201, description = "DNS zone created successfully", body = WriteZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),

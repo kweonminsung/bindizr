@@ -1,29 +1,46 @@
+use std::io;
+use std::time::Duration;
+
 use bindizr_service::types::ErrorResponse;
 use serde::de::DeserializeOwned;
+use thiserror::Error;
 use tokio::io::BufReader;
 use tokio::net::UnixStream;
+use tokio::time;
 
 use crate::cli::error::CliError;
 use crate::socket;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
 use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 
-/// True only when nothing listens on either socket path; a timeout or
+/// Failed connection attempts to the primary and optional fallback socket.
+#[derive(Debug, Error)]
+#[error(
+    "could not connect to the daemon socket at '{SOCKET_FILE_PATH}': {source}{}; is the bindizr daemon running?",
+    fallback.as_ref().map(|error| format!("; fallback '{FALLBACK_SOCKET_FILE_PATH}': {error}")).unwrap_or_default()
+)]
+struct ConnectDaemonSocketError {
+    #[source]
+    source: io::Error,
+    fallback: Option<io::Error>,
+}
+
+/// Return whether nothing listens on either socket path; a timeout or
 /// garbled response may come from a live but wedged daemon.
 pub(crate) async fn is_daemon_socket_gone() -> bool {
-    /// Check whether a connection error means no daemon is listening.
-    fn is_missing_listener(error: &std::io::Error) -> bool {
+    /// Return whether a connection error means no daemon is listening.
+    fn is_missing_listener(error: &io::Error) -> bool {
         matches!(
             error.kind(),
-            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
         )
     }
 
     match try_connect_daemon_socket().await {
         Ok(_) => false,
         // An owner-only socket this user cannot open is a live daemon.
-        Err(ConnectDaemonSocketError { primary: error, .. })
-            if error.kind() == std::io::ErrorKind::PermissionDenied =>
+        Err(ConnectDaemonSocketError { source: error, .. })
+            if error.kind() == io::ErrorKind::PermissionDenied =>
         {
             false
         }
@@ -34,7 +51,7 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         }) => is_missing_listener(&fallback_error),
         // Primary failed in an unexpected way; the fallback was not tried.
         Err(ConnectDaemonSocketError {
-            primary: error,
+            source: error,
             fallback: None,
         }) => is_missing_listener(&error),
     }
@@ -45,9 +62,9 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
 pub(crate) async fn send_control_command<T: DeserializeOwned>(
     command: DaemonCommand,
 ) -> Result<DaemonResponse<T>, CliError> {
-    const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+    const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
-    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command))
+    time::timeout(CONTROL_TIMEOUT, send_command(command))
         .await
         .map_err(|error| {
             CliError::request_with_source(
@@ -70,24 +87,21 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
     let mut stream = connect_to_daemon_socket().await?;
 
     let json = serde_json::to_string(&command).map_err(|error| {
-        CliError::request_with_source(format!("failed to serialize command: {}", error), error)
+        CliError::request_with_source(format!("failed to serialize command: {error}"), error)
     })?;
 
     stream.write_all(json.as_bytes()).await.map_err(|error| {
-        CliError::request_with_source(format!("failed to write to socket: {}", error), error)
+        CliError::request_with_source(format!("failed to write to socket: {error}"), error)
     })?;
     stream.write_all(b"\n").await.map_err(|error| {
-        CliError::request_with_source(
-            format!("failed to write newline to socket: {}", error),
-            error,
-        )
+        CliError::request_with_source(format!("failed to write newline to socket: {error}"), error)
     })?;
 
     let mut reader = BufReader::new(stream);
     let mut response = String::new();
 
     reader.read_line(&mut response).await.map_err(|error| {
-        CliError::request_with_source(format!("failed to read from socket: {}", error), error)
+        CliError::request_with_source(format!("failed to read from socket: {error}"), error)
     })?;
 
     // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
@@ -97,45 +111,49 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
     }
 
     serde_json::from_str(&response).map_err(|error| {
-        CliError::request_with_source(format!("failed to parse response: {}", error), error)
+        CliError::request_with_source(format!("failed to parse response: {error}"), error)
     })
 }
+
 /// Open a connection to the daemon's control socket, refusing a daemon this
 /// user may not drive (a socket another user planted in /tmp).
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
-    let (socket_path, stream) = try_connect_daemon_socket()
-        .await
-        .map_err(|error| {
-            let denied_path = if error.primary.kind() == std::io::ErrorKind::PermissionDenied {
-                Some(SOCKET_FILE_PATH)
-            } else if error.fallback.as_ref().is_some_and(|fallback| fallback.kind() == std::io::ErrorKind::PermissionDenied) {
-                Some(FALLBACK_SOCKET_FILE_PATH)
-            } else {
-                None
-            };
+    let (socket_path, stream) = try_connect_daemon_socket().await.map_err(|error| {
+        let denied_path = if error.source.kind() == io::ErrorKind::PermissionDenied {
+            Some(SOCKET_FILE_PATH)
+        } else if error
+            .fallback
+            .as_ref()
+            .is_some_and(|fallback| fallback.kind() == io::ErrorKind::PermissionDenied)
+        {
+            Some(FALLBACK_SOCKET_FILE_PATH)
+        } else {
+            None
+        };
 
-            match denied_path {
-                Some(path) => CliError::request_with_source(format!(
-                    "permission denied on the daemon socket at '{}'. Run the CLI as the daemon's user (for a package install, `sudo bindizr ...`).", path
-                ), error),
-                None => CliError::daemon_unreachable(error),
-            }
-        })?;
+        match denied_path {
+            Some(path) => CliError::request_with_source(
+                format!(
+                    "permission denied on the daemon socket at '{path}'; run the CLI as the \
+                         daemon's user (for a package install, `sudo bindizr ...`)"
+                ),
+                error,
+            ),
+            None => CliError::daemon_unreachable(error),
+        }
+    })?;
 
     let peer_uid = stream
         .peer_cred()
         .map_err(|error| {
             CliError::request_with_source(
-                format!("could not identify the daemon behind its socket: {}", error),
+                format!("could not identify the daemon behind its socket: {error}"),
                 error,
             )
         })?
         .uid();
     let own_uid = socket::read_own_uid().map_err(|error| {
-        CliError::request_with_source(
-            format!("could not read this process's uid: {}", error),
-            error,
-        )
+        CliError::request_with_source(format!("could not read this process's uid: {error}"), error)
     })?;
 
     // Root drives another user's daemon on the primary socket only, as `sudo bindizr` does.
@@ -158,7 +176,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     Ok(stream)
 }
 
-/// Io-level connect attempt, naming the path that answered and preserving
+/// Attempt an io-level connect, naming the path that answered and preserving
 /// the error(s) so callers can tell a vanished socket apart from other failures.
 async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), ConnectDaemonSocketError>
 {
@@ -167,34 +185,22 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
         Err(error)
             if matches!(
                 error.kind(),
-                std::io::ErrorKind::PermissionDenied
-                    | std::io::ErrorKind::ConnectionRefused
-                    | std::io::ErrorKind::NotFound
+                io::ErrorKind::PermissionDenied
+                    | io::ErrorKind::ConnectionRefused
+                    | io::ErrorKind::NotFound
             ) =>
         {
             match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
                 Ok(stream) => Ok((FALLBACK_SOCKET_FILE_PATH, stream)),
                 Err(fallback_error) => Err(ConnectDaemonSocketError {
-                    primary: error,
+                    source: error,
                     fallback: Some(fallback_error),
                 }),
             }
         }
         Err(error) => Err(ConnectDaemonSocketError {
-            primary: error,
+            source: error,
             fallback: None,
         }),
     }
-}
-
-/// Failed connection attempts to the primary and optional fallback socket.
-#[derive(Debug, thiserror::Error)]
-#[error(
-    "could not connect to the daemon socket at '{SOCKET_FILE_PATH}': {primary}{}; is the bindizr daemon running?",
-    fallback.as_ref().map(|error| format!("; fallback '{FALLBACK_SOCKET_FILE_PATH}': {error}")).unwrap_or_default()
-)]
-struct ConnectDaemonSocketError {
-    #[source]
-    primary: std::io::Error,
-    fallback: Option<std::io::Error>,
 }

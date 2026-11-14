@@ -1,40 +1,41 @@
 use super::*;
 use crate::dns::record;
-use crate::dns::record::ParseRecordValueError;
 
-/// Reject invalid flags with either replacement form.
+/// Verify that invalid flags are rejected with either replacement form.
 #[test]
 fn naptr_flags_reject_non_alphanumeric_characters() {
     let invalid = (0..=127u8)
         .filter(|byte| !byte.is_ascii_alphanumeric())
-        .map(|byte| String::from(char::from(byte)))
+        .map(|byte| char::from(byte).to_string())
         .chain(["é".to_string(), "한".to_string(), "９".to_string()]);
 
     for flags in invalid {
         for replacement in [".", "next.example."] {
             let text = format!(
                 "1 1 {} \"app\" \"\" {replacement}",
-                record::to_quoted_charstr(flags.as_bytes()),
+                record::to_quoted_charstr(flags.as_bytes())
             );
             let parsed = NaptrRecordValue::parse(&text).unwrap();
 
-            assert!(
-                matches!(parsed.validate(), Err(ParseRecordValueError::NaptrFlags)),
+            assert_eq!(
+                parsed.validate(),
+                Err(ParseRecordValueError::NaptrFlags),
                 "{text} was accepted"
             );
             let wire =
                 NaptrRecordValue::from_wire(1, 1, flags.as_bytes(), b"app", b"", replacement)
                     .unwrap();
 
-            assert!(
-                matches!(wire.validate(), Err(ParseRecordValueError::NaptrFlags)),
+            assert_eq!(
+                wire.validate(),
+                Err(ParseRecordValueError::NaptrFlags),
                 "wire flags {flags:?} were accepted"
             );
         }
     }
 }
 
-/// Preserve empty and application-defined flags.
+/// Verify that empty and application-defined flags are preserved.
 #[test]
 fn naptr_flags_allow_empty_and_application_defined_values() {
     for flags in [
@@ -62,7 +63,7 @@ fn naptr_flags_allow_empty_and_application_defined_values() {
     assert_eq!(escaped.canonical(), r#"1 1 "uZ9" "app" "" ."#);
 }
 
-/// Verify NAPTR parsing and replacement-name canonicalization.
+/// Verify that NAPTR parsing canonicalizes the replacement name.
 #[test]
 fn naptr_parse_canonicalizes_replacement_name() {
     let parsed =
@@ -84,7 +85,7 @@ fn naptr_accepts_root_replacement() {
     assert_eq!(parsed.canonical(), value);
 }
 
-/// Verify conversion of NAPTR wire data into its stored form.
+/// Verify that NAPTR wire data converts into its stored form and back.
 #[test]
 fn naptr_round_trips_wire_data_through_stored_form() {
     assert_eq!(
@@ -132,7 +133,7 @@ fn naptr_validation_rejects_regexp_with_replacement_name() {
     assert!(parsed.validate().is_err());
 }
 
-/// Verify rejection of NAPTR values with missing fields.
+/// Verify that NAPTR values with missing fields are rejected.
 #[test]
 fn naptr_parse_rejects_missing_fields() {
     for value in [

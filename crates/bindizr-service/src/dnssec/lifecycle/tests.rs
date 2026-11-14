@@ -1,4 +1,3 @@
-use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::dnssec_key::DnssecAlgorithm;
 use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
@@ -17,7 +16,7 @@ fn zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
@@ -86,12 +85,8 @@ fn policy_move_rejects_key_layout_change() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.to_string().contains("key layout"), "{}", error);
-    assert!(
-        error.to_string().contains("split KSK/ZSK keys"),
-        "{}",
-        error
-    );
+    assert!(error.to_string().contains("key layout"), "{error}");
+    assert!(error.to_string().contains("split KSK/ZSK keys"), "{error}");
 }
 
 /// Verify that the key layout is still refused when the denial chain moves with it.
@@ -104,5 +99,5 @@ fn policy_move_rejects_combined_key_layout_and_denial_change() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.to_string().contains("key layout"), "{}", error);
+    assert!(error.to_string().contains("key layout"), "{error}");
 }

@@ -5,24 +5,27 @@ pub mod parser;
 use domain::base::Message;
 use domain::base::iana::{Opcode, OptRcode};
 use domain::rdata::tsig::Time48;
+use thiserror::Error;
 
-use crate::dns::message;
 use crate::dns::message::{Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit};
+use crate::dns::tsig::ResponseSigner;
+use crate::dns::{LibraryError, message};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945, Section 10 suggested default).
 pub const DEFAULT_FUDGE: u16 = 300;
 
-/// Check whether a DNS message uses the UPDATE opcode.
-pub fn is_nsupdate(message: &[u8]) -> bool {
-    Message::from_octets(message).is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
+/// Return whether a DNS message uses the UPDATE opcode.
+pub fn is_nsupdate(query_data: &[u8]) -> bool {
+    Message::from_octets(query_data)
+        .is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
 }
 
 /// Why an UPDATE response could not be encoded.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum BuildResponseError {
     #[error("invalid UPDATE message: {0}")]
-    Malformed(#[source] crate::dns::LibraryError),
+    Malformed(#[source] LibraryError),
     #[error(transparent)]
     Encode(#[from] EncodeMessageError),
 }
@@ -33,7 +36,7 @@ pub fn build_response(
     query_data: &[u8],
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
-    signer: Option<crate::dns::tsig::ResponseSigner>,
+    signer: Option<ResponseSigner>,
     fudge: u16,
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, BuildResponseError> {
@@ -47,7 +50,7 @@ pub fn build_response(
         } else {
             rcode
         };
-        let mut builder = crate::dns::message::build_response();
+        let mut builder = message::build_response();
         let mut answer = if readable {
             builder
                 .start_answer(&message, rcode.rcode())

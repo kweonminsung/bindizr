@@ -3,20 +3,20 @@
 use std::time::Duration;
 
 pub use domain::base::iana::exterr::ExtendedErrorCode;
-use domain::base::iana::{Class, Opcode, OptRcode};
+use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::opt::exterr::ExtendedError;
 use domain::base::opt::keepalive::{IdleTimeout, TcpKeepalive};
 use domain::base::opt::{Opt, OptRecord};
 use domain::base::wire::Composer;
-use domain::base::{Message, Name, Rtype};
+use domain::base::{Message, Name};
 use domain::rdata::Soa;
 use thiserror::Error;
 
-use super::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
-use crate::dns::LibraryError;
+use crate::dns::message::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
 use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TransferSigner;
+use crate::dns::{LibraryError, message};
 
 /// A UDP answer to a query without EDNS is at most 512 octets (RFC 1035,
 /// Section 4.2.1).
@@ -32,18 +32,18 @@ pub(crate) const KEEPALIVE_OPTION_LEN: usize = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edns {
     Absent,
-    /// One readable OPT; sizes under 512 read as 512 (Section 6.2.3).
+    /// One readable OPT; sizes under 512 read as 512 (RFC 6891, Section 6.2.3).
     Present {
         udp_payload_size: u16,
         version: u8,
         dnssec_ok: bool,
     },
-    /// More than one OPT, or one that does not parse: FORMERR (Section 6.1.1).
+    /// More than one OPT, or one that does not parse: FORMERR (RFC 6891, Section 6.1.1).
     Malformed,
 }
 
 impl Edns {
-    /// Whether the requester asks for DNSSEC records (RFC 3225).
+    /// Return whether the requester asks for DNSSEC records (RFC 3225).
     pub fn dnssec_ok(self) -> bool {
         matches!(
             self,
@@ -74,7 +74,6 @@ impl Edns {
         };
         let mut opts = additional.limit_to::<Opt<_>>();
         let first = match opts.next() {
-            None => return Self::Absent,
             Some(Err(_)) => return Self::Malformed,
             Some(Ok(record)) => {
                 if !record.owner().is_root() {
@@ -82,6 +81,7 @@ impl Edns {
                 }
                 OptRecord::from(record)
             }
+            None => return Self::Absent,
         };
 
         if opts.next().is_some() {
@@ -105,9 +105,9 @@ impl Edns {
     }
 
     /// Append response EDNS metadata and options when requested (RFC 6891, Section 6.1.1).
-    pub(crate) fn push_response_opt<Target: Composer>(
+    pub(crate) fn push_response_opt<T: Composer>(
         self,
-        additional: &mut AdditionalBuilder<Target>,
+        additional: &mut AdditionalBuilder<T>,
         rcode: OptRcode,
         ede: Option<ExtendedErrorCode>,
         keepalive: Option<TcpKeepalive>,
@@ -122,13 +122,7 @@ impl Edns {
                 opt.set_rcode(rcode);
 
                 // RFC 3225, Section 3: copy DO, leaving reserved flags clear.
-                opt.set_dnssec_ok(matches!(
-                    self,
-                    Self::Present {
-                        dnssec_ok: true,
-                        ..
-                    }
-                ));
+                opt.set_dnssec_ok(self.dnssec_ok());
 
                 if let Some(code) = ede {
                     opt.push(&ExtendedError::<Vec<u8>>::from(code))?;
@@ -151,23 +145,21 @@ pub enum Keepalive {
 }
 
 impl Keepalive {
-    /// Advertise the TCP idle timeout (RFC 7828, Section 3.3.2); none over UDP.
+    /// Return the TCP idle timeout to advertise (RFC 7828, Section 3.3.2); none over UDP.
     pub(crate) fn tcp_keepalive(self) -> Option<TcpKeepalive> {
-        let Keepalive::IdleTimeout(idle_timeout) = self else {
+        let Self::IdleTimeout(idle_timeout) = self else {
             return None;
         };
-        let Ok(timeout) = IdleTimeout::try_from(idle_timeout) else {
-            return None;
-        };
+        let timeout = IdleTimeout::try_from(idle_timeout).ok()?;
 
         Some(TcpKeepalive::new(Some(timeout)))
     }
 
-    /// Use the request's transport and EDNS advertisement for every response encoder.
+    /// Return every response encoder's budget from the request's transport and EDNS advertisement.
     pub(crate) fn response_limit(self, edns: Edns) -> ResponseLimit {
         match self {
-            Keepalive::IdleTimeout(_) => ResponseLimit::STREAM,
-            Keepalive::None => match edns {
+            Self::IdleTimeout(_) => ResponseLimit::STREAM,
+            Self::None => match edns {
                 Edns::Present {
                     udp_payload_size, ..
                 } => ResponseLimit::udp(udp_payload_size),
@@ -183,9 +175,9 @@ pub enum ParseQueryError {
     #[error("failed to parse DNS message: {0}")]
     Malformed(#[source] LibraryError),
     #[error("no question in DNS query")]
-    NoQuestion(Box<QueryMetadata>),
+    NoQuestion { query_metadata: Box<QueryMetadata> },
     #[error("unreadable DNS message sections")]
-    UnreadableSections(Box<QueryMetadata>),
+    UnreadableSections { query_metadata: Box<QueryMetadata> },
     #[error("non-IN class {class} in DNS QUERY record")]
     ForeignRecordClass {
         class: Class,
@@ -194,11 +186,11 @@ pub enum ParseQueryError {
 }
 
 impl ParseQueryError {
-    /// Preserve readable metadata so the listener can authenticate before replying.
+    /// Return readable metadata so the listener can authenticate before replying.
     pub fn query_metadata(&self) -> Option<&QueryMetadata> {
         match self {
-            Self::NoQuestion(query_metadata)
-            | Self::UnreadableSections(query_metadata)
+            Self::NoQuestion { query_metadata }
+            | Self::UnreadableSections { query_metadata }
             | Self::ForeignRecordClass { query_metadata, .. } => Some(query_metadata),
             Self::Malformed(_) => None,
         }
@@ -211,15 +203,15 @@ fn question_count_error(opcode: Opcode, count: u16) -> Option<OptRcode> {
 }
 
 /// Read an opcode without requiring any particular body layout.
-pub fn extract_opcode(message: &[u8]) -> Option<Opcode> {
-    Message::from_octets(message)
+pub fn extract_opcode(query_data: &[u8]) -> Option<Opcode> {
+    Message::from_octets(query_data)
         .ok()
         .map(|message| message.header().opcode())
 }
 
-/// Detect QR=1 replies, which must not trigger another reply to a spoofed source.
-pub fn is_response(message: &[u8]) -> bool {
-    Message::from_octets(message).is_ok_and(|message| message.header().qr())
+/// Return whether the message is a QR=1 reply, which must not trigger another reply to a spoofed source.
+pub fn is_response(query_data: &[u8]) -> bool {
+    Message::from_octets(query_data).is_ok_and(|message| message.header().qr())
 }
 
 /// A query's question, EDNS metadata, and transfer parameters.
@@ -244,16 +236,16 @@ pub struct ParsedQuery {
 
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
-    pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<ParsedQuery, ParseQueryError> {
+    pub fn parse(query_data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
         use domain::base::ToName;
 
-        let message = Message::from_octets(data)
+        let message = Message::from_octets(query_data)
             .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
 
-        if !super::has_readable_sections(data) {
-            return Err(ParseQueryError::UnreadableSections(Box::new(
-                QueryMetadata::from_message(&message, keepalive),
-            )));
+        if !message::has_readable_sections(query_data) {
+            return Err(ParseQueryError::UnreadableSections {
+                query_metadata: Box::new(QueryMetadata::from_message(&message, keepalive)),
+            });
         }
 
         let query_id = message.header().id();
@@ -261,9 +253,11 @@ impl ParsedQuery {
         let rd = message.header().rd();
         let edns = Edns::from_message(&message);
 
-        let question = message.first_question().ok_or_else(|| {
-            ParseQueryError::NoQuestion(Box::new(QueryMetadata::from_message(&message, keepalive)))
-        })?;
+        let question = message
+            .first_question()
+            .ok_or_else(|| ParseQueryError::NoQuestion {
+                query_metadata: Box::new(QueryMetadata::from_message(&message, keepalive)),
+            })?;
 
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
@@ -298,7 +292,7 @@ impl ParsedQuery {
             None
         };
 
-        Ok(ParsedQuery {
+        Ok(Self {
             qname,
             zone_name,
             qtype,
@@ -313,17 +307,17 @@ impl ParsedQuery {
         })
     }
 
-    /// Advertise the TCP idle timeout (RFC 7828, Section 3.3.2); none over UDP.
+    /// Return the TCP idle timeout to advertise (RFC 7828, Section 3.3.2); none over UDP.
     pub(crate) fn tcp_keepalive(&self) -> Option<TcpKeepalive> {
         self.keepalive.tcp_keepalive()
     }
 
-    /// Use the request's transport and EDNS advertisement for every response encoder.
+    /// Return every response encoder's budget from the request's transport and EDNS advertisement.
     pub fn response_limit(&self) -> ResponseLimit {
         self.keepalive.response_limit(self.edns)
     }
 
-    /// The response code for an invalid question count or EDNS record.
+    /// Return the response code for an invalid question count or EDNS record.
     pub fn format_error(&self) -> Option<OptRcode> {
         if let Some(rcode) = question_count_error(self.opcode, self.question_count) {
             return Some(rcode);
@@ -331,7 +325,7 @@ impl ParsedQuery {
         self.edns.format_error()
     }
 
-    /// The truncated answer, signed when the question was.
+    /// Build the truncated answer, signed when the question was.
     pub fn build_signed_truncated_response(
         &self,
         signer: Option<&mut TransferSigner>,
@@ -350,7 +344,8 @@ impl ParsedQuery {
     }
 }
 
-/// General QUERY records are IN; OPT and TSIG have their own CLASS semantics.
+/// Return the first non-IN class of an ordinary record: general QUERY records are
+/// IN; OPT and TSIG have their own CLASS semantics.
 fn foreign_record_class(message: &Message<&[u8]>) -> Option<Class> {
     for section in [message.answer(), message.authority(), message.additional()] {
         let Ok(section) = section else {

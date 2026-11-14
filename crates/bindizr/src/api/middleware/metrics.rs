@@ -6,19 +6,18 @@ use axum::middleware::Next;
 use axum::response::Response;
 use bindizr_service::Context;
 
-/// Record request count and latency, labeled by the route pattern
+/// Count requests and their latency, labeled by the route pattern
 /// (`/zones/{zone_name}`, not the concrete path) to bound label cardinality.
 pub(crate) async fn track_http_metrics(
     State(cx): State<Arc<Context>>,
     request: Request,
     next: Next,
 ) -> Response {
-    let method = request.method().as_str().to_owned();
+    let method = request.method().to_string();
     let route = request
         .extensions()
         .get::<MatchedPath>()
-        .map(|path| path.as_str().to_owned())
-        .unwrap_or_else(|| "unmatched".to_owned());
+        .map_or_else(|| "unmatched".to_string(), |path| path.as_str().to_string());
     let started = Instant::now();
 
     let response = next.run(request).await;

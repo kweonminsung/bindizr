@@ -1,40 +1,42 @@
-//! Load the TSIG key a registered secondary uses for outbound NOTIFY.
+//! Look up the TSIG key a registered secondary uses for outbound NOTIFY.
 
 use bindizr_core::dns::tsig::TsigSigningKey;
+use bindizr_core::model::secondary::Secondary;
+use bindizr_core::model::tsig_key::TsigKey;
 
 use crate::Context;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
-use crate::model::tsig_key::TsigKey;
 
-/// The key a secondary's NOTIFY is signed with, ready to sign; `None`
+/// Find the key a secondary's NOTIFY is signed with, ready to sign; `None`
 /// for one notified unsigned. The FK keeps a referenced key present.
 pub(crate) async fn find_notify_signing_key(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<Option<TsigSigningKey>, ServiceError> {
-    match find_notify_tsig_key(cx, secondary).await? {
-        Some(tsig_key) => tsig_key.to_signing_key().map(Some).map_err(|error| {
-            ServiceError::internal_with_source(
-                format!("NOTIFY key '{}' is unusable: {:?}", tsig_key.name, error),
-                error,
-            )
-        }),
-        None => Ok(None),
-    }
+    let Some(tsig_key) = find_notify_tsig_key(cx, secondary).await? else {
+        return Ok(None);
+    };
+
+    tsig_key.to_signing_key().map(Some).map_err(|error| {
+        ServiceError::internal_with_source(
+            format!("NOTIFY key '{}' is unusable: {error:?}", tsig_key.name),
+            error,
+        )
+    })
 }
 
-/// The stored key a secondary's NOTIFY is signed with, if any.
+/// Find the stored key a secondary's NOTIFY is signed with, if any.
 pub(crate) async fn find_notify_tsig_key(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<Option<TsigKey>, ServiceError> {
-    match secondary.notify_tsig_key_id {
-        Some(id) => Ok(Some(
-            bindizr_db::tsig_key::get(cx.db(), id)
-                .await?
-                .ok_or_else(|| ServiceError::internal(format!("TSIG key {} is missing", id)))?,
-        )),
-        None => Ok(None),
-    }
+    let Some(tsig_key_id) = secondary.notify_tsig_key_id else {
+        return Ok(None);
+    };
+
+    Ok(Some(
+        bindizr_db::tsig_key::get(cx.db(), tsig_key_id)
+            .await?
+            .ok_or_else(|| ServiceError::internal(format!("TSIG key {tsig_key_id} is missing")))?,
+    ))
 }

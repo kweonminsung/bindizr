@@ -1,36 +1,41 @@
-use std::env;
+mod assertions;
+mod compose;
+pub(crate) mod dns;
+mod local;
+mod verify;
+
+use std::env::VarError;
 use std::net::TcpListener;
-use std::process::{Child, Command, Stdio};
+use std::path::PathBuf;
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::SystemTime;
+use std::{env, process, time};
 
+pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
+use compose::ComposeStack;
+use domain::base::iana::Rtype;
 use reqwest::{Client, Method, StatusCode};
+use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
-
-mod assertions;
-mod compose;
-mod local;
-
-use compose::ComposeStack;
-pub(crate) mod dns;
-mod verify;
-
-pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
-pub(crate) use dns::{
-    DsRecord, FakeParent, TransferResult, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
-    probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
-};
 use verify::PreviousRecordKey;
 
-/// The most a listing returns in one call; the HTTP API refuses more.
 /// Every record action, the grant a test role needs to read and change a zone's records.
 pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update,record:delete";
 
+/// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
+
+/// The switch that runs the suite against the Docker Compose DNS stack.
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
+
+/// The next test's sequence number within this run.
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+/// This run's identifier, shared by every test namespace it generates.
 static RUN_ID: OnceLock<String> = OnceLock::new();
 
 /// One bindizr under test, reached over its HTTP API and CLI, plus the DNS ports it serves.
@@ -96,7 +101,7 @@ enum TestRuntime {
 
 /// Install ring as the process's TLS provider; Err means a test already did.
 fn install_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _ = ring::default_provider().install_default();
 }
 
 impl TestApp {
@@ -109,7 +114,7 @@ impl TestApp {
         }
     }
 
-    /// A locally spawned daemon with the default config, even in compose
+    /// Start a locally spawned daemon with the default config, even in compose
     /// mode — for tests bound to this host's filesystem or default config.
     pub(crate) async fn start_local() -> Self {
         Self::start_with_options(TestAppOptions::default()).await
@@ -120,27 +125,27 @@ impl TestApp {
         &self.base_url
     }
 
-    /// Port bindizr's own DNS listener is bound to; only the local runtime
+    /// Return the port bindizr's own DNS listener is bound to; only the local runtime
     /// picks one, the compose stack fixes it.
     pub(crate) fn dns_port(&self) -> u16 {
         self.dns_port.expect("local runtime binds a DNS port")
     }
 
-    /// Port of bindizr's XoT listener; only a local daemon started with
+    /// Return the port of bindizr's XoT listener; only a local daemon started with
     /// `dns_tls` has one.
     pub(crate) fn dns_tls_port(&self) -> u16 {
         self.dns_tls_port
             .expect("the daemon was started with dns_tls")
     }
 
-    /// The certificate this run's TLS listeners present, for a client to trust.
+    /// Return the certificate this run's TLS listeners present, for a client to trust.
     pub(crate) fn tls_cert(&self) -> &CertificateDer<'static> {
         self.tls_cert
             .as_ref()
             .expect("the daemon was started with TLS")
     }
 
-    /// Bearer token attached to every subsequent HTTP request.
+    /// Set the bearer token attached to every subsequent HTTP request.
     pub(crate) fn set_auth_token(&mut self, token: String) {
         self.auth_token = Some(token);
     }
@@ -192,32 +197,33 @@ impl TestApp {
         &self.namespace
     }
 
-    /// The config file the local daemon was started from, for tests that
-    /// rewrite it and reload.
-    pub(crate) fn config_path(&self) -> std::path::PathBuf {
-        match &self.runtime {
-            TestRuntime::Local { temp_dir, .. } => temp_dir.path().join("bindizr.conf.toml"),
-            _ => panic!("only the local runtime owns its config file"),
-        }
+    /// Return the config file the local daemon was started from, for tests
+    /// that rewrite it and reload.
+    pub(crate) fn config_path(&self) -> PathBuf {
+        let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
+            panic!("only the local runtime owns its config file");
+        };
+
+        temp_dir.path().join("bindizr.conf.toml")
     }
 
-    /// Check whether this test application includes DNS secondaries.
+    /// Return whether this test application includes DNS secondaries.
     pub(crate) fn has_dns_secondaries(&self) -> bool {
         !self.dns_secondary_ports.is_empty()
     }
 
-    /// Ports of the compose stack's BIND9 secondaries; empty in local mode.
+    /// Return the ports of the compose stack's BIND9 secondaries; empty in local mode.
     pub(crate) fn dns_secondary_ports(&self) -> &[u16] {
         &self.dns_secondary_ports
     }
 
-    /// One API request; in compose mode every mutating call also asserts the
-    /// DNS secondaries match the API.
+    /// Send one API request; in compose mode every mutating call also asserts
+    /// the DNS secondaries match the API.
     pub(crate) async fn send_request(
         &self,
         method: Method,
         path: &str,
-        body: Option<Value>,
+        request: Option<Value>,
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
 
@@ -227,20 +233,20 @@ impl TestApp {
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
 
-        let response = self.send_http(method, path, body).await;
+        let (status, body) = self.send_http(method, path, request).await;
 
         if let Some(previous_zone_name) = updated_zone_name
-            && response.0.is_success()
-            && response.1["zone"]["name"].as_str() == Some(previous_zone_name)
+            && status.is_success()
+            && body["zone"]["name"].as_str() == Some(previous_zone_name)
         {
             previous_record_key = None;
         }
 
-        if should_verify_dns && response.0.is_success() {
+        if should_verify_dns && status.is_success() {
             self.assert_dns_matches_api(previous_record_key).await;
         }
 
-        response
+        (status, body)
     }
 
     /// Send an authenticated API request and decode its JSON response.
@@ -248,19 +254,19 @@ impl TestApp {
         &self,
         method: Method,
         path: &str,
-        body: Option<Value>,
+        request: Option<Value>,
     ) -> (StatusCode, Value) {
-        let url = format!("{}{}", self.base_url, path);
-        let mut request = self.client.request(method, url);
+        let url = format!("{}{path}", self.base_url);
+        let mut builder = self.client.request(method, url);
 
         if let Some(token) = &self.auth_token {
-            request = request.bearer_auth(token);
+            builder = builder.bearer_auth(token);
         }
-        if let Some(body) = body {
-            request = request.json(&body);
+        if let Some(request) = request {
+            builder = builder.json(&request);
         }
 
-        let response = request.send().await.expect("failed to send HTTP request");
+        let response = builder.send().await.expect("failed to send HTTP request");
         let status = response.status();
 
         let bytes = response
@@ -294,7 +300,7 @@ impl TestApp {
                 )
                 .await;
 
-            assert_eq!(status, StatusCode::OK);
+            assert_eq!(status, StatusCode::OK, "{body}");
             let page = body["items"]
                 .as_array()
                 .expect("record list response did not contain items")
@@ -320,7 +326,7 @@ impl TestApp {
             .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
             .await;
 
-        assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::OK, "{body}");
 
         body["zone"]["serial"]
             .as_i64()
@@ -354,7 +360,7 @@ impl TestApp {
             "serial": 10,
             "refresh": 7200,
             "retry": 3600,
-            "expire": 604800,
+            "expire": 604_800,
             "minimum_ttl": 86400
         });
 
@@ -363,13 +369,13 @@ impl TestApp {
             .send_request(Method::POST, "/zones", Some(request))
             .await;
 
-        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(status, StatusCode::CREATED, "{body}");
 
         body["zone"].clone()
     }
 
-    /// CLI-side twin of `create_test_zone`: create a zone via `zone create` and
-    /// return the CLI output.
+    /// Create a zone via `zone create` and return the CLI output, as the CLI-side
+    /// twin of `create_test_zone`.
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
@@ -393,7 +399,7 @@ impl TestApp {
 
     /// Run the CLI with optional stdin; after selected zone/record writes,
     /// wait for configured secondaries to match the API.
-    pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
+    pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> Output {
         use std::io::Write;
 
         // Remember deleted names before the API can no longer return their identity.
@@ -405,7 +411,7 @@ impl TestApp {
             ["zone", "delete", zone_name, ..] => Some(PreviousRecordKey {
                 zone_name: verify::to_fqdn(zone_name),
                 name: verify::to_fqdn(zone_name),
-                record_type: 6,
+                record_type: Rtype::SOA.to_int(),
             }),
             _ => None,
         };
@@ -460,7 +466,7 @@ impl TestApp {
     pub(crate) async fn run_cli_success(&self, args: &[&str], input: Option<&str>) -> String {
         let output = self.run_cli(args, input).await;
         assert_cli_success(args, &output);
-        String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
+        String::from_utf8_lossy(&output.stdout).into_owned()
     }
 }
 
@@ -477,10 +483,10 @@ impl Drop for TestApp {
 /// Generate an isolated namespace for a test application.
 fn test_namespace() -> String {
     let run_id = RUN_ID.get_or_init(|| {
-        let elapsed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let elapsed = SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
             .expect("system clock is before the Unix epoch");
-        format!("e2e-{}-{}", elapsed.as_millis(), std::process::id())
+        format!("e2e-{}-{}", elapsed.as_millis(), process::id())
     });
     let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
 
@@ -490,7 +496,7 @@ fn test_namespace() -> String {
 /// Read a boolean test setting from the environment.
 fn read_env_flag(name: &str) -> bool {
     match env::var(name) {
-        Err(env::VarError::NotPresent) => false,
+        Err(VarError::NotPresent) => false,
         Err(error) => panic!("failed to read {name}: {error}"),
         Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
             "1" | "true" | "yes" | "on" => true,

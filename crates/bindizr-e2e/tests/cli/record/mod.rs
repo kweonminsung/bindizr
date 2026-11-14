@@ -1,76 +1,90 @@
-use serde_json::Value;
+mod bulk;
+
+use serde_json::{Value, json};
 
 use crate::common;
 use crate::common::TestApp;
 
-mod bulk;
-
-/// Round-trip root targets through CLI writes and listing.
+/// Verify that root targets round-trip through CLI writes and listing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn root_record_targets_round_trip_via_cli() {
+async fn root_record_targets_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
-    for kind in ["NS", "CNAME", "PTR", "DNAME"] {
-        let owner = kind.to_ascii_lowercase();
+    for record_type in ["NS", "CNAME", "PTR", "DNAME"] {
+        let owner = record_type.to_ascii_lowercase();
 
-        let output = app
+        let created = app
             .run_cli_success(
                 &[
-                    "record", "create", name, &owner, "--type", kind, "--value", ".", "--output",
+                    "record",
+                    "create",
+                    zone_name,
+                    &owner,
+                    "--type",
+                    record_type,
+                    "--value",
+                    ".",
+                    "--output",
                     "json",
                 ],
                 None,
             )
             .await;
-        let output: Value = serde_json::from_str(&output).unwrap();
+        let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
-        assert_eq!(output["record"]["value"], ".");
-        let id = output["record"]["id"].as_i64().unwrap().to_string();
+        assert_eq!(created["record"]["value"], ".");
+        let record_id = created["record"]["id"]
+            .as_i64()
+            .expect("created record did not contain an ID")
+            .to_string();
 
         app.run_cli_success(
             &[
                 "record",
                 "update",
                 "--id",
-                &id,
+                &record_id,
                 "--value",
                 "target.example.net.",
             ],
             None,
         )
         .await;
-        app.run_cli_success(&["record", "update", "--id", &id, "--value", "."], None)
-            .await;
+        app.run_cli_success(
+            &["record", "update", "--id", &record_id, "--value", "."],
+            None,
+        )
+        .await;
     }
 
-    let output = app
-        .run_cli_success(&["record", "list", name, "--output", "json"], None)
+    let listed = app
+        .run_cli_success(&["record", "list", zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&output).unwrap();
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
 
-    for kind in ["NS", "CNAME", "PTR", "DNAME"] {
+    for record_type in ["NS", "CNAME", "PTR", "DNAME"] {
         assert!(
-            records["items"]
+            listed["items"]
                 .as_array()
-                .unwrap()
+                .expect("items")
                 .iter()
-                .any(|record| record["type"] == kind && record["value"] == ".")
+                .any(|record| record["type"] == record_type && record["value"] == ".")
         );
     }
 }
 
-/// Preserve name escapes in CLI arguments across the daemon socket and record listing.
+/// Verify that name escapes in CLI arguments are preserved across the daemon socket and record listing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn escaped_record_targets_round_trip_via_cli() {
+async fn escaped_record_targets_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
-    for (kind, prefix) in [
+    for (record_type, prefix) in [
         ("CNAME", ""),
         ("DNAME", ""),
         ("NS", ""),
@@ -81,40 +95,50 @@ async fn escaped_record_targets_round_trip_via_cli() {
     ] {
         let input = format!("{prefix}tail\\ ");
         let expected = format!(r"{prefix}tail\032.");
-        let owner = kind.to_ascii_lowercase();
+        let owner = record_type.to_ascii_lowercase();
 
-        let output = app
+        let created = app
             .run_cli_success(
                 &[
-                    "record", "create", name, &owner, "--type", kind, "--value", &input,
-                    "--output", "json",
+                    "record",
+                    "create",
+                    zone_name,
+                    &owner,
+                    "--type",
+                    record_type,
+                    "--value",
+                    &input,
+                    "--output",
+                    "json",
                 ],
                 None,
             )
             .await;
-        let output: Value = serde_json::from_str(&output).unwrap();
+        let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
-        assert_eq!(output["record"]["value"], expected);
+        assert_eq!(created["record"]["value"], expected);
 
         let listed = app
-            .run_cli_success(&["record", "list", name, "--output", "json"], None)
+            .run_cli_success(&["record", "list", zone_name, "--output", "json"], None)
             .await;
-        let listed: Value = serde_json::from_str(&listed).unwrap();
+        let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
         let record = listed["items"]
             .as_array()
-            .unwrap()
+            .expect("items")
             .iter()
-            .find(|record| record["type"] == kind && record["name"] == format!("{owner}.{name}."))
-            .unwrap();
+            .find(|record| {
+                record["type"] == record_type && record["name"] == format!("{owner}.{zone_name}.")
+            })
+            .expect("CLI did not return the created record");
 
         assert_eq!(record["value"], expected);
     }
 }
 
-/// Verify record creation, retrieval, and deletion.
+/// Verify that records are created, retrieved, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_supports_create_read_and_delete_via_cli() {
+async fn record_supports_create_read_and_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli.example");
 
@@ -146,14 +170,14 @@ async fn record_supports_create_read_and_delete_via_cli() {
         "{created_record}"
     );
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record = records
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record = listed
         .get("items")
         .and_then(Value::as_array)
-        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "A"))
         .expect("CLI did not return the created record");
 
     assert_eq!(record["name"], format!("www.{zone_name}."));
@@ -179,7 +203,7 @@ async fn record_supports_create_read_and_delete_via_cli() {
 /// Verify that record update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_changes_only_passed_fields_via_cli() {
+async fn record_update_changes_only_passed_fields() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-record-update.example");
 
@@ -202,13 +226,13 @@ async fn record_update_changes_only_passed_fields_via_cli() {
     )
     .await;
 
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record_id = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record_id = listed["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "A"))
         .and_then(|record| record["id"].as_i64())
         .expect("created record did not contain an ID")
         .to_string();
@@ -240,7 +264,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
 /// Verify that record update retype clears incompatible priority via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_retype_clears_incompatible_priority_via_cli() {
+async fn record_update_retype_clears_incompatible_priority() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype.example");
 
@@ -262,13 +286,13 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
         None,
     )
     .await;
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record_id = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record_id = listed["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["type"] == "MX"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "MX"))
         .and_then(|record| record["id"].as_i64())
         .expect("created MX record did not contain an ID")
         .to_string();
@@ -304,7 +328,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
     );
 }
 
-/// Verify creation of TXT segments from repeated CLI value options.
+/// Verify that repeated CLI value options create TXT segments.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_create_builds_txt_segments_from_repeated_values() {
@@ -324,11 +348,11 @@ async fn record_create_builds_txt_segments_from_repeated_values() {
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
 
-    assert_eq!(
-        created["record"]["value"],
-        serde_json::json!(["v=spf1", "~all"])
-    );
-    let record_id = created["record"]["id"].as_i64().unwrap().to_string();
+    assert_eq!(created["record"]["value"], json!(["v=spf1", "~all"]));
+    let record_id = created["record"]["id"]
+        .as_i64()
+        .expect("created record did not contain an ID")
+        .to_string();
 
     // A single --value is the plain value again.
     let updated = app
@@ -397,8 +421,7 @@ async fn record_delete_by_name_narrows_by_type() {
     let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let listed: serde_json::Value =
-        serde_json::from_str(&listed).expect("record list did not print JSON");
+    let listed: Value = serde_json::from_str(&listed).expect("record list did not print JSON");
     let types: Vec<&str> = listed["items"]
         .as_array()
         .expect("items")
@@ -457,8 +480,7 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
             None,
         )
         .await;
-    let listed: serde_json::Value =
-        serde_json::from_str(&listed).expect("record list did not print JSON");
+    let listed: Value = serde_json::from_str(&listed).expect("record list did not print JSON");
     let values: Vec<&str> = listed["items"]
         .as_array()
         .expect("items")
@@ -466,7 +488,7 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
         .filter_map(|record| record["value"].as_str())
         .collect();
 
-    assert_eq!(values, vec!["keep me"], "{listed}");
+    assert_eq!(values, ["keep me"], "{listed}");
 }
 
 /// Verify that `record get` takes an owner name and lists every record there.
@@ -512,7 +534,7 @@ async fn record_get_by_name_lists_every_record_at_the_name() {
         .collect();
     types.sort_unstable();
 
-    assert_eq!(types, vec!["A", "TXT"], "{listed}");
+    assert_eq!(types, ["A", "TXT"], "{listed}");
 }
 
 /// Verify that `record update` takes an owner name when the name holds one record.
@@ -558,10 +580,10 @@ async fn record_update_by_name_changes_the_one_record_at_the_name() {
     assert_eq!(updated["record"]["value"], "192.0.2.2", "{updated}");
 }
 
-/// Verify that `record update` refuses an owner name holding several records.
+/// Verify that `record update` rejects an owner name holding several records.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_by_name_refuses_a_name_holding_several_records() {
+async fn record_update_by_name_rejects_a_name_holding_several_records() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("update-ambiguous.example");
 
@@ -594,28 +616,33 @@ async fn record_update_by_name_refuses_a_name_holding_several_records() {
     common::assert_cli_failure_contains(&args, &refused, "address one by its id");
 }
 
-/// Verify record filtering by zone and type through the CLI.
+/// Verify that the CLI filters records by zone and type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_listing_filters_by_zone_and_type() {
     let app = TestApp::start().await;
-    let one_zone = app.zone_name("one.example");
-    let two_zone = app.zone_name("two.example");
+    let first_zone_name = app.zone_name("one.example");
+    let second_zone_name = app.zone_name("two.example");
 
-    for zone in [&one_zone, &two_zone] {
-        app.create_zone_cli(zone, "3600").await;
+    for zone_name in [&first_zone_name, &second_zone_name] {
+        app.create_zone_cli(zone_name, "3600").await;
     }
 
-    for (name, record_type, value, zone) in [
-        ("www", "A", "192.0.2.1", one_zone.as_str()),
-        ("alias", "CNAME", "www.one.example", one_zone.as_str()),
-        ("www", "A", "192.0.2.2", two_zone.as_str()),
+    for (name, record_type, value, zone_name) in [
+        ("www", "A", "192.0.2.1", first_zone_name.as_str()),
+        (
+            "alias",
+            "CNAME",
+            "www.one.example",
+            first_zone_name.as_str(),
+        ),
+        ("www", "A", "192.0.2.2", second_zone_name.as_str()),
     ] {
         app.run_cli_success(
             &[
                 "record",
                 "create",
-                zone,
+                zone_name,
                 name,
                 "--type",
                 record_type,
@@ -629,26 +656,32 @@ async fn record_listing_filters_by_zone_and_type() {
         .await;
     }
 
-    let records = app
+    let listed = app
         .run_cli_success(
             &[
-                "record", "list", &one_zone, "--type", "A", "--output", "json",
+                "record",
+                "list",
+                &first_zone_name,
+                "--type",
+                "A",
+                "--output",
+                "json",
             ],
             None,
         )
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let records = records["items"].as_array().expect("missing record items");
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let records = listed["items"].as_array().expect("missing record items");
 
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["name"], format!("www.{one_zone}."));
+    assert_eq!(records[0]["name"], format!("www.{first_zone_name}."));
     assert_eq!(records[0]["value"], "192.0.2.1");
 }
 
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_rejects_invalid_values_via_cli() {
+async fn record_rejects_invalid_values() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("validation.example");
 
@@ -671,15 +704,15 @@ async fn record_rejects_invalid_values_via_cli() {
             "300",
         ];
 
-        let output = app.run_cli(&args, None).await;
-        common::assert_cli_failure_contains(&args, &output, expected_error);
+        let refused = app.run_cli(&args, None).await;
+        common::assert_cli_failure_contains(&args, &refused, expected_error);
     }
 }
 
 /// Verify that record update retype without value is rejected via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_rejects_retype_without_value_via_cli() {
+async fn record_update_rejects_retype_without_value() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype-noval.example");
 
@@ -699,13 +732,13 @@ async fn record_update_rejects_retype_without_value_via_cli() {
         None,
     )
     .await;
-    let records = app
+    let listed = app
         .run_cli_success(&["record", "list", &zone_name, "--output", "json"], None)
         .await;
-    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    let record_id = records["items"]
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let record_id = listed["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
+        .and_then(|listed| listed.iter().find(|record| record["type"] == "A"))
         .and_then(|record| record["id"].as_i64())
         .expect("created A record did not contain an ID")
         .to_string();
@@ -714,6 +747,6 @@ async fn record_update_rejects_retype_without_value_via_cli() {
     // the old type is invalid for the new one — retyping must supply a fresh value.
     let args = ["record", "update", "--id", &record_id, "--type", "TXT"];
 
-    let output = app.run_cli(&args, None).await;
-    common::assert_cli_failure_contains(&args, &output, "value is required when changing");
+    let refused = app.run_cli(&args, None).await;
+    common::assert_cli_failure_contains(&args, &refused, "value is required when changing");
 }

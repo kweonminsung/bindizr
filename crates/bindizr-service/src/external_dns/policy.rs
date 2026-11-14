@@ -2,14 +2,14 @@
 
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::zone::Zone;
 
 use crate::error::ServiceError;
-use crate::model::zone::Zone;
 
 /// Normalize a request DNS name into zone-lookup form.
 pub(crate) fn normalize_lookup_name(name: &str) -> Result<String, ServiceError> {
     name::parse_lookup_name(name)
-        .map_err(|error| ServiceError::invalid_record_name(format!("record name {}", error)))
+        .map_err(|error| ServiceError::invalid_record_name(format!("record name {error}")))
 }
 
 /// Find the most-specific authoritative zone by label boundaries before

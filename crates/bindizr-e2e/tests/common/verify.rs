@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use domain::base::iana::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
@@ -56,7 +57,7 @@ impl TestApp {
             return Some(PreviousRecordKey {
                 zone_name: to_fqdn(zone_name),
                 name: to_fqdn(zone_name),
-                record_type: 6,
+                record_type: Rtype::SOA.to_int(),
             });
         }
 
@@ -91,7 +92,7 @@ impl TestApp {
             assert_eq!(
                 status,
                 StatusCode::OK,
-                "failed to list records for DNS verification"
+                "failed to list records for DNS verification: {body}"
             );
             let page = body["items"]
                 .as_array()
@@ -117,20 +118,20 @@ impl TestApp {
                 .map(|name| name.trim_end_matches('.'))
                 == record["zone_name"].as_str()
         };
-        let served_zones = records
+        let served_zone_names: HashSet<_> = records
             .iter()
             .filter(|record| record["type"] == "NS" && is_apex(record))
             .filter_map(|record| record["zone_name"].as_str().map(str::to_string))
-            .collect::<HashSet<_>>();
+            .collect();
 
-        let mut expected = HashMap::<(String, u16), Vec<Value>>::new();
+        let mut expected: HashMap<(String, u16), Vec<Value>> = HashMap::new();
 
         for record in &records {
             let zone_name = record["zone_name"]
                 .as_str()
                 .expect("record did not contain a zone name");
 
-            if !served_zones.contains(zone_name) {
+            if !served_zone_names.contains(zone_name) {
                 continue;
             }
 
@@ -140,7 +141,7 @@ impl TestApp {
                 .to_string();
             let record_type = record["type"]
                 .as_str()
-                .and_then(dns::dns_record_type)
+                .and_then(dns::parse_record_type)
                 .expect("record contained an unsupported DNS type");
             expected
                 .entry((name, record_type))
@@ -157,7 +158,7 @@ impl TestApp {
 
         // A deleted name/type is absent from the API list but must also disappear in DNS.
         if let Some(previous) = previous_record_key
-            && served_zones.contains(&previous.zone_name)
+            && served_zone_names.contains(&previous.zone_name)
             && !expected.contains_key(&(previous.name.clone(), previous.record_type))
         {
             for port in &self.dns_secondary_ports {

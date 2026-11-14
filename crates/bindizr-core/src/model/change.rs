@@ -1,8 +1,12 @@
 //! Change provenance shared by zone versions and management audit rows.
 
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 /// A change-source column holding none of the known sources.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -12,9 +16,7 @@ pub struct ParseChangeSourceError {
 }
 
 /// The request path or background process that produced a managed change.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ChangeSource {
     /// An HTTP API request, including requests made with authentication disabled.
@@ -28,34 +30,34 @@ pub enum ChangeSource {
 }
 
 impl ChangeSource {
-    /// Return the text representation of this change source.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            ChangeSource::Api => "api",
-            ChangeSource::Socket => "socket",
-            ChangeSource::Nsupdate => "nsupdate",
-            ChangeSource::System => "system",
+            Self::Api => "api",
+            Self::Socket => "socket",
+            Self::Nsupdate => "nsupdate",
+            Self::System => "system",
         }
     }
 }
 
-impl std::fmt::Display for ChangeSource {
+impl fmt::Display for ChangeSource {
     /// Write the change source in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for ChangeSource {
+impl FromStr for ChangeSource {
     type Err = ParseChangeSourceError;
 
     /// Parse the stored text of a change source.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "api" => Ok(ChangeSource::Api),
-            "socket" => Ok(ChangeSource::Socket),
-            "nsupdate" => Ok(ChangeSource::Nsupdate),
-            "system" => Ok(ChangeSource::System),
+            "api" => Ok(Self::Api),
+            "socket" => Ok(Self::Socket),
+            "nsupdate" => Ok(Self::Nsupdate),
+            "system" => Ok(Self::System),
             other => Err(ParseChangeSourceError {
                 value: other.to_string(),
             }),
@@ -68,34 +70,8 @@ impl TryFrom<String> for ChangeSource {
 
     /// Validate and convert the stored value into a change source.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
-}
-
-/// The named credential behind a change, copied so deleting it preserves the history.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ChangeActor {
-    Token { name: String },
-    TsigKey { name: String },
-}
-
-impl ChangeActor {
-    /// Borrow the kind and name stored in the two actor columns.
-    pub fn as_columns(&self) -> (&'static str, &str) {
-        match self {
-            ChangeActor::Token { name } => ("token", name),
-            ChangeActor::TsigKey { name } => ("tsig_key", name),
-        }
-    }
-}
-
-/// The nullable SQL columns decoded into one optional actor at the row
-/// boundary, by every row that carries an actor.
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
-pub(crate) struct ChangeActorColumns {
-    changed_by_kind: Option<String>,
-    changed_by_name: Option<String>,
 }
 
 /// An actor's stored columns do not describe a complete, known credential.
@@ -105,6 +81,40 @@ pub(crate) enum DecodeChangeActorError {
     Incomplete,
     #[error("unknown change actor kind '{value}'")]
     UnknownKind { value: String },
+}
+
+/// The named credential behind a change, copied so deleting it preserves the history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChangeActor {
+    Token { name: String },
+    TsigKey { name: String },
+}
+
+impl ChangeActor {
+    /// Return the kind and name stored in the two actor columns.
+    pub fn as_columns(&self) -> (&'static str, &str) {
+        match self {
+            Self::Token { name } => ("token", name),
+            Self::TsigKey { name } => ("tsig_key", name),
+        }
+    }
+}
+
+impl fmt::Display for ChangeActor {
+    /// Write the credential kind with its name so equal names remain distinguishable.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (kind, name) = self.as_columns();
+        write!(f, "{kind}:{name}")
+    }
+}
+
+/// The nullable SQL columns decoded into one optional actor at the row
+/// boundary, by every row that carries an actor.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub(crate) struct ChangeActorColumns {
+    changed_by_kind: Option<String>,
+    changed_by_name: Option<String>,
 }
 
 impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
@@ -124,29 +134,21 @@ impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
     }
 }
 
-impl std::fmt::Display for ChangeActor {
-    /// Show the credential kind with its name so equal names remain distinguishable.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (kind, name) = self.as_columns();
-        write!(f, "{kind}:{name}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
 
-    /// The scalar columns and API object preserve the same actor kind and name.
+    /// Verify that the scalar columns and API object preserve the same actor kind and name.
     #[test]
     fn actor_columns_match_the_api_identity() {
         for actor in [
             ChangeActor::Token {
-                name: "admin".into(),
+                name: "admin".to_string(),
             },
             ChangeActor::TsigKey {
-                name: "admin".into(),
+                name: "admin".to_string(),
             },
         ] {
             let (kind, name) = actor.as_columns();
@@ -156,8 +158,8 @@ mod tests {
                 json!({ "kind": kind, "name": name })
             );
             let decoded = Option::<ChangeActor>::try_from(ChangeActorColumns {
-                changed_by_kind: Some(kind.into()),
-                changed_by_name: Some(name.into()),
+                changed_by_kind: Some(kind.to_string()),
+                changed_by_name: Some(name.to_string()),
             })
             .unwrap();
 
@@ -165,7 +167,7 @@ mod tests {
         }
     }
 
-    /// Corrupt column pairs fail decoding instead of dropping or inventing an identity.
+    /// Verify that corrupt column pairs fail decoding instead of dropping or inventing an identity.
     #[test]
     fn actor_columns_decode_only_complete_known_identities() {
         assert_eq!(
@@ -184,16 +186,17 @@ mod tests {
                 Some("unknown"),
                 Some("admin"),
                 DecodeChangeActorError::UnknownKind {
-                    value: "unknown".into(),
+                    value: "unknown".to_string(),
                 },
             ),
         ] {
-            let error = Option::<ChangeActor>::try_from(ChangeActorColumns {
-                changed_by_kind: kind.map(str::to_string),
-                changed_by_name: name.map(str::to_string),
-            })
-            .unwrap_err();
-            assert_eq!(error, expected);
+            assert_eq!(
+                Option::<ChangeActor>::try_from(ChangeActorColumns {
+                    changed_by_kind: kind.map(str::to_string),
+                    changed_by_name: name.map(str::to_string),
+                }),
+                Err(expected)
+            );
         }
     }
 

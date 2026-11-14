@@ -32,6 +32,5 @@ pub(crate) mod ttl;
 pub mod types;
 pub mod zone;
 
-pub(crate) use bindizr_core::model;
 pub(crate) use bindizr_db::Transaction;
 pub use context::Context;

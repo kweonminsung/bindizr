@@ -3,14 +3,14 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bindizr_core::dns::address::AddressTarget;
 use bindizr_service::error::ServiceError;
 use bindizr_service::{dns_client, secondary};
 
-use super::DnsContext;
+use crate::dns::server::DnsContext;
 
 /// How long a resolved hostname is reused; an address changes rarely.
 const RESOLVED_TTL: Duration = Duration::from_secs(60);
@@ -21,6 +21,7 @@ const RESOLVE_FAILURE_TTL: Duration = Duration::from_secs(5);
 /// A resolver that never answers must not hold a DNS request open.
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// One hostname's resolved addresses, kept until they expire.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedAddrs {
     addrs: Vec<IpAddr>,
@@ -34,7 +35,7 @@ pub(crate) struct AddressCache {
 }
 
 impl AddressCache {
-    /// An empty resolution cache.
+    /// Build an empty resolution cache.
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -50,9 +51,7 @@ impl AddressCache {
     /// Lock the resolution cache, recovering a poisoned lock because a panic
     /// cannot leave a map of addresses inconsistent.
     fn locked(&self) -> MutexGuard<'_, HashMap<String, CachedAddrs>> {
-        self.cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -72,7 +71,8 @@ pub(crate) async fn evaluate_client_access(
     .await)
 }
 
-/// Match literal IPs first, then resolve hostnames through the ACL cache.
+/// Return whether the client IP matches one of the addresses. Literal IPs are
+/// matched first, then hostnames are resolved through the ACL cache.
 async fn matches_client_address<'a>(
     cache: &AddressCache,
     addresses: impl Iterator<Item = &'a AddressTarget> + Clone,
@@ -135,7 +135,7 @@ mod tests {
             .collect()
     }
 
-    /// Match either IP family regardless of port, without resolving earlier hostnames.
+    /// Verify that either IP family matches regardless of port, without resolving earlier hostnames.
     #[tokio::test]
     async fn acl_matches_literal_addresses_without_resolving_hostnames() {
         let addresses = targets(&[
@@ -146,27 +146,30 @@ mod tests {
         let cache = AddressCache::new();
 
         for ip in ["192.0.2.10", "2001:db8::10"] {
-            assert!(matches_client_address(&cache, addresses.iter(), ip.parse().unwrap()).await);
+            assert!(
+                matches_client_address(&cache, addresses.iter(), ip.parse::<IpAddr>().unwrap())
+                    .await
+            );
         }
 
         assert!(cache.locked().is_empty());
     }
 
-    /// Deny unmatched clients, including when the registry is empty.
+    /// Verify that unmatched clients are denied, including when the registry is empty.
     #[tokio::test]
     async fn acl_rejects_unconfigured_addresses() {
         let cache = AddressCache::new();
-        let client_ip = "192.0.2.11".parse().unwrap();
+        let client_ip = "192.0.2.11".parse::<IpAddr>().unwrap();
         assert!(!matches_client_address(&cache, targets(&[]).iter(), client_ip).await);
         assert!(!matches_client_address(&cache, targets(&["192.0.2.10"]).iter(), client_ip).await);
     }
 
-    /// Reuse successful and failed resolutions under the canonical hostname key.
+    /// Verify that successful and failed resolutions are reused under the canonical hostname key.
     #[tokio::test]
     async fn hostname_entries_reuse_cached_resolutions() {
         let addresses = targets(&["Missing.Example.", "Bind9.Example."]);
         let cache = AddressCache::new();
-        let client_ip = "192.0.2.10".parse().unwrap();
+        let client_ip = "192.0.2.10".parse::<IpAddr>().unwrap();
         let expires_at = Instant::now() + RESOLVED_TTL;
         cache.locked().extend([
             (
@@ -187,7 +190,12 @@ mod tests {
 
         assert!(matches_client_address(&cache, addresses.iter(), client_ip).await);
         assert!(
-            !matches_client_address(&cache, addresses.iter(), "192.0.2.11".parse().unwrap()).await
+            !matches_client_address(
+                &cache,
+                addresses.iter(),
+                "192.0.2.11".parse::<IpAddr>().unwrap()
+            )
+            .await
         );
         assert_eq!(cache.locked()["missing.example:53"].expires_at, expires_at);
         assert_eq!(cache.locked()["bind9.example:53"].expires_at, expires_at);

@@ -3,23 +3,22 @@
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
-use bindizr_core::model::dnssec_key::DS_DIGEST_TYPE;
+use bindizr_core::model::dnssec_key::{DS_DIGEST_TYPE, DnssecKey, DnssecKeyState};
+use bindizr_core::model::dnssec_policy::DnssecPolicy;
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
-use super::parent_ns_addrs;
 use crate::authorization::Caller;
+use crate::dnssec::parent_ns_addrs;
 use crate::error::ServiceError;
-use crate::model::dnssec_key::{DnssecKey, DnssecKeyState};
-use crate::model::dnssec_policy::DnssecPolicy;
-use crate::model::zone::Zone;
 use crate::types::{
     DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse, DnssecStatusResponse,
 };
-use crate::{Context, Transaction, transaction, zone};
+use crate::{Context, Transaction, dnssec, transaction, zone};
 
-/// DNSSEC signing state of a zone; `enabled: false` with no policy and
+/// Get the DNSSEC signing state of a zone; `enabled: false` with no policy and
 /// empty key and DS lists for an unsigned zone.
 pub async fn get_status(
     cx: &Context,
@@ -29,34 +28,34 @@ pub async fn get_status(
     // The DS records are derived from the apex name and the keys, so they
     // are read together under the zone lock.
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
-    let result = async {
+
+    let result: Result<_, ServiceError> = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
             .await?
             .authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
-        let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
+        let policy = dnssec::find_zone_policy_tx(&mut tx, &zone).await?;
 
-        load_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
+        lookup_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
     .await;
 
     transaction::finish_tx(tx, result, "failed to read DNSSEC status").await
 }
 
-/// Zones serving a signed view, for the unauthenticated metrics endpoint.
+/// Count the zones serving a signed view, for the unauthenticated metrics endpoint.
 pub async fn count_signed_zones(cx: &Context) -> Result<u64, ServiceError> {
     Ok(bindizr_db::dnssec_record::count_zone_ids(cx.db()).await?)
 }
 
-/// Keys in `state` across all zones, for the metrics endpoint.
+/// Count the keys in `state` across all zones, for the metrics endpoint.
 pub async fn count_keys_by_state(cx: &Context, state: DnssecKeyState) -> Result<u64, ServiceError> {
     Ok(bindizr_db::dnssec_key::count_by_state(cx.db(), state).await?)
 }
 
-/// Count signatures inside their policy's re-sign window across every
-/// zone.
+/// Count signatures inside their policy's re-sign window across all zones.
 pub async fn count_rrsigs_expiring_within_refresh(
     cx: &Context,
     now: DateTime<Utc>,
@@ -64,15 +63,15 @@ pub async fn count_rrsigs_expiring_within_refresh(
     Ok(bindizr_db::dnssec_record::count_expiring_within_refresh(cx.db(), now).await?)
 }
 
-/// Signatures already past their expiration across all zones; any at all
-/// mean resolvers are failing part of one right now.
+/// Count the signatures already past their expiration across all zones; any
+/// at all mean resolvers are failing part of one right now.
 pub async fn count_rrsigs_expired(cx: &Context, now: DateTime<Utc>) -> Result<u64, ServiceError> {
     Ok(bindizr_db::dnssec_record::count_expired_before(cx.db(), now).await?)
 }
 
-/// Assemble the zone's status on the caller's transaction: the earliest
+/// Look up the zone's status on the caller's transaction: the earliest
 /// signature expiry and any pending withdrawal join the rows already loaded.
-pub(crate) async fn load_status_tx(
+pub(crate) async fn lookup_status_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: Option<&DnssecPolicy>,
@@ -109,7 +108,7 @@ pub(crate) async fn load_status_tx(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(DnssecStatusResponse {
-        zone_name: zone.name.as_str().to_string(),
+        zone_name: zone.name.to_string(),
         enabled: !keys.is_empty(),
         policy: policy.map(DnssecPolicyResponse::from),
         keys: keys
@@ -138,18 +137,15 @@ pub(crate) async fn load_status_tx(
         next_resign_at,
         serial,
         withdrawing,
-        parent_ns_addrs: zone
-            .parent_ns_addrs
-            .as_deref()
-            .map(parent_ns_addrs::parent_ns_addr_entries),
+        parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addrs::split),
         delegation: None,
     })
 }
 
-/// The key's DS form, decoded from the same RDATA the CDS records carry.
+/// Build the key's DS form, decoded from the same RDATA the CDS records carry.
 fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, ServiceError> {
     let apex = zone.name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone apex: {}", error), error)
+        ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
     })?;
     let rdata = key
         .ds_rdata(&apex, DS_DIGEST_TYPE)
@@ -162,12 +158,10 @@ fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, S
         digest_type: DS_DIGEST_TYPE,
         digest: digest.clone(),
         presentation: format!(
-            "{} IN DS {} {} {} {}",
+            "{} IN DS {} {} {DS_DIGEST_TYPE} {digest}",
             zone.name.to_fqdn(),
             key.key_tag,
-            key.algorithm.as_i32(),
-            DS_DIGEST_TYPE,
-            digest
+            key.algorithm.as_i32()
         ),
     })
 }

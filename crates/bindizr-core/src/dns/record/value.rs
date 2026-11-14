@@ -1,9 +1,11 @@
 //! Shared field parsing/validation helpers for stored record values.
 
-use super::ParseRecordValueError;
+use std::iter;
+
 use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 use crate::dns::message::{DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN};
 use crate::dns::name::MAX_WIRE_NAME_LEN;
+use crate::dns::record::ParseRecordValueError;
 use crate::dns::tsig::MAX_TSIG_RECORD;
 use crate::dns::{DNS_TCP_MAX_SIZE, name};
 
@@ -27,7 +29,7 @@ pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
 /// Split bare fields on unescaped whitespace, preserving DNS presentation escapes.
 pub(crate) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
     let mut rest = value;
-    std::iter::from_fn(move || {
+    iter::from_fn(move || {
         rest = rest.trim_start();
 
         if rest.is_empty() {
@@ -35,20 +37,17 @@ pub(crate) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
         }
 
         let mut escaped = false;
-        let end = rest
-            .char_indices()
-            .find_map(|(index, ch)| {
-                if escaped {
-                    escaped = false;
-                    None
-                } else if ch == '\\' {
-                    escaped = true;
-                    None
-                } else {
-                    ch.is_whitespace().then_some(index)
-                }
-            })
-            .unwrap_or(rest.len());
+        let mut end = rest.len();
+        for (index, ch) in rest.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch.is_whitespace() {
+                end = index;
+                break;
+            }
+        }
         let (field, remaining) = rest.split_at(end);
         rest = remaining;
 
@@ -103,18 +102,13 @@ pub(crate) fn parse_hex_record_field<'a>(
     hex.as_bytes()
         .chunks(2)
         .map(|pair| {
-            let hi = (pair[0] as char).to_digit(16);
-            let lo = (pair[1] as char).to_digit(16);
+            let hi = char::from(pair[0]).to_digit(16);
+            let lo = char::from(pair[1]).to_digit(16);
             hi.zip(lo)
-                .map(|(hi, lo)| (hi * 16 + lo) as u8)
+                .and_then(|(hi, lo)| u8::try_from(hi * 16 + lo).ok())
                 .ok_or(ParseRecordValueError::NotHex { field })
         })
         .collect()
-}
-
-/// Encode bytes as uppercase hexadecimal text.
-pub(crate) fn hex_upper(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
 /// Parse an unsigned 16-bit record field.
@@ -157,7 +151,7 @@ pub(crate) fn parse_string_octets<'a>(
             b'"' => {
                 return Err(ParseRecordValueError::NotQuoted {
                     field,
-                    input: input.to_string(),
+                    value: input.to_string(),
                 });
             }
             b'\\' => match bytes.next() {
@@ -202,7 +196,7 @@ pub(crate) fn parse_char_string<'a>(
     if !input.starts_with('"') {
         return Err(ParseRecordValueError::NotQuoted {
             field,
-            input: input.to_string(),
+            value: input.to_string(),
         });
     }
 
@@ -240,6 +234,7 @@ pub(crate) fn validate_domain_record_value(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     /// Verify that record-value names accept non-LDH owner labels under
     /// RFC 2181, Section 11.
@@ -253,12 +248,12 @@ mod tests {
             "_dmarc.example.com.",
             "host-name.example.com",
         ] {
-            super::validate_domain_record_value("CNAME record value", value)
+            validate_domain_record_value("CNAME record value", value)
                 .unwrap_or_else(|error| panic!("{value} was rejected: {error}"));
         }
     }
 
-    /// Verify rejection of record names that cannot round-trip through presentation text.
+    /// Verify that record names that cannot round-trip through presentation text are rejected.
     #[test]
     fn record_value_rejects_names_without_reversible_presentation() {
         for value in [
@@ -272,7 +267,7 @@ mod tests {
             r"short\09.example.com",
         ] {
             assert!(
-                super::validate_domain_record_value("CNAME record value", value).is_err(),
+                validate_domain_record_value("CNAME record value", value).is_err(),
                 "{value} was accepted"
             );
         }

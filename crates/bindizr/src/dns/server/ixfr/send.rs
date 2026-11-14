@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
 use bindizr_core::dns::tsig::TransferSigner;
-use bindizr_core::dns::{Serial, message};
 use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::{ChangeOperation, ZoneChange};
 use bindizr_core::model::zone_version::ZoneVersion;
@@ -16,11 +16,11 @@ use crate::dns::stream::ResponseWriter;
 /// Send the current SOA alone (RFC 1995, Section 2).
 pub(crate) async fn send_soa_response(
     writer: &ResponseWriter,
-    query: &message::ParsedQuery,
+    query: &ParsedQuery,
     zone: &Zone,
     signer: Option<TransferSigner>,
 ) -> Result<(), DnsError> {
-    let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
+    let mut builder = DnsMessageBuilder::new(query, Rtype::IXFR);
 
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
@@ -37,18 +37,18 @@ pub(crate) async fn send_soa_response(
 #[derive(Debug, Error)]
 pub(crate) enum SendIxfrError {
     /// No bytes sent; AXFR may reuse the signer.
-    #[error("{error}")]
+    #[error("{source}")]
     NotStarted {
         #[source]
-        error: DnsError,
+        source: DnsError,
         /// Boxed: a signing context dwarfs the error beside it.
         signer: Option<Box<TransferSigner>>,
     },
     /// Bytes may have been sent; AXFR would corrupt the stream.
-    #[error("{error}")]
+    #[error("{source}")]
     Partial {
         #[source]
-        error: DnsError,
+        source: DnsError,
         signer: Option<Box<TransferSigner>>,
     },
 }
@@ -56,14 +56,14 @@ pub(crate) enum SendIxfrError {
 /// Stream IXFR within the message limit, reporting whether failure permits AXFR.
 pub(crate) async fn send_ixfr_response(
     writer: &ResponseWriter,
-    query: &message::ParsedQuery,
+    query: &ParsedQuery,
     zone: &Zone,
     client_serial: Serial,
     changes: &[ZoneChange],
     versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
 ) -> Result<(), SendIxfrError> {
-    let mut builder = message::DnsMessageBuilder::new(query, Rtype::IXFR);
+    let mut builder = DnsMessageBuilder::new(query, Rtype::IXFR);
 
     if let Some(signer) = signer {
         builder = builder.sign_with(signer);
@@ -71,7 +71,7 @@ pub(crate) async fn send_ixfr_response(
 
     let mut messages_sent = 0usize;
 
-    let result = async {
+    let streamed = async {
         let current_version =
             versions_by_serial
                 .get(&zone.serial)
@@ -97,13 +97,13 @@ pub(crate) async fn send_ixfr_response(
         let mut serials: Vec<Serial> = changes_by_serial.keys().copied().collect();
         serials.sort_by_key(|serial| serial.as_u32().wrapping_sub(client_serial.as_u32()));
 
-        for (idx, &serial) in serials.iter().enumerate() {
+        for (index, &serial) in serials.iter().enumerate() {
             let serial_changes = &changes_by_serial[&serial];
 
-            let old_serial = if idx == 0 {
+            let old_serial = if index == 0 {
                 client_serial
             } else {
-                serials[idx - 1]
+                serials[index - 1]
             };
 
             // Old SOA (deletion section marker).
@@ -169,9 +169,9 @@ pub(crate) async fn send_ixfr_response(
     }
     .await;
 
-    match result {
+    match streamed {
         Ok(()) => {
-            log::info!("IXFR: sent response in {} DNS message(s)", messages_sent);
+            log::info!("IXFR: sent response in {messages_sent} DNS message(s)");
             Ok(())
         }
         // A failure after the first flush leaves the stream mid-transfer, and
@@ -181,12 +181,12 @@ pub(crate) async fn send_ixfr_response(
                 || matches!(error, DnsError::Io(_) | DnsError::WriteTimeout { .. }) =>
         {
             Err(SendIxfrError::Partial {
-                error,
+                source: error,
                 signer: builder.take_signer().map(Box::new),
             })
         }
         Err(error) => Err(SendIxfrError::NotStarted {
-            error,
+            source: error,
             signer: builder.take_signer().map(Box::new),
         }),
     }

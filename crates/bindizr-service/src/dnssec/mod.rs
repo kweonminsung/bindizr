@@ -14,9 +14,12 @@ mod withdraw;
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::{SignedViewParams, SigningPass};
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::model::dnssec_key::DnssecKey;
+use bindizr_core::model::dnssec_policy::DnssecPolicy;
 use bindizr_core::model::dnssec_record::DnssecRecordId;
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
+use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 pub use delegation::check_ds;
@@ -36,11 +39,7 @@ pub use withdraw::{cancel_withdrawal, withdraw};
 use crate::authorization::Caller;
 use crate::change::ChangeOrigin;
 use crate::error::ServiceError;
-use crate::model::dnssec_key::DnssecKey;
-use crate::model::dnssec_policy::DnssecPolicy;
-use crate::model::zone::Zone;
-use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
-use crate::{Transaction, zone};
+use crate::{Transaction, serial, zone};
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
 /// sane offset.
@@ -82,7 +81,7 @@ async fn resign_zone_tx(
     pass: SigningPass,
     origin: &ChangeOrigin,
 ) -> Result<Option<Serial>, ServiceError> {
-    let new_serial = crate::serial::generate_serial(Some(signed.zone.serial));
+    let new_serial = serial::generate_serial(Some(signed.zone.serial));
 
     if !apply_signed_view_tx(
         tx,
@@ -102,7 +101,7 @@ async fn resign_zone_tx(
     Ok(Some(new_serial))
 }
 
-/// Read the signing policy unlocked, or `None` for unsigned zones.
+/// Find the signing policy unlocked, or `None` for unsigned zones.
 /// The FK prevents deletion while in use; editable fields need no lock.
 async fn find_zone_policy_tx(
     tx: &mut Transaction<'_>,
@@ -117,13 +116,13 @@ async fn find_zone_policy_tx(
         .ok_or_else(|| {
             ServiceError::internal(format!(
                 "zone {} references a missing DNSSEC policy",
-                zone.name.as_str()
+                zone.name
             ))
         })
 }
 
-/// The policy a signed zone signs under; a signed zone without one is a
-/// broken invariant, never a caller error.
+/// Look up the policy a signed zone signs under; a signed zone without one
+/// is a broken invariant, never a caller error.
 async fn lookup_zone_policy_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -131,12 +130,12 @@ async fn lookup_zone_policy_tx(
     find_zone_policy_tx(tx, zone).await?.ok_or_else(|| {
         ServiceError::internal(format!(
             "zone {} is signed but has no DNSSEC policy",
-            zone.name.as_str()
+            zone.name
         ))
     })
 }
 
-/// Load the zone (locked at `lock_level`), authorized for `action`, with its
+/// Get the zone (locked at `lock_level`), authorized for `action`, with its
 /// policy and keys; a zone with no keys reads as not DNSSEC-enabled.
 async fn get_signed_zone_tx(
     tx: &mut Transaction<'_>,
@@ -153,7 +152,7 @@ async fn get_signed_zone_tx(
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
 
     if keys.is_empty() {
-        return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+        return Err(ServiceError::dnssec_not_enabled(&zone.name));
     }
 
     let policy = lookup_zone_policy_tx(tx, &zone).await?;
@@ -161,8 +160,8 @@ async fn get_signed_zone_tx(
     Ok(SignedZone { zone, policy, keys })
 }
 
-/// The scheduler's form of [`get_signed_zone_tx`]: `None` when the
-/// zone was deleted or unsigned since its id was listed.
+/// Find a signed zone by id, the scheduler's form of [`get_signed_zone_tx`]:
+/// `None` when the zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -294,9 +293,8 @@ async fn apply_signed_view_tx(
 mod tests {
     use bindizr_core::model::dnssec_key::DnssecAlgorithm;
     use bindizr_core::model::dnssec_policy::{Days, DnssecDenial, PolicyId};
-    use chrono::Utc;
 
-    use super::DnssecPolicy;
+    use super::*;
 
     /// Build a policy fixture with the requested signature timing.
     fn policy(signature_validity_days: u32, signature_refresh_days: u32) -> DnssecPolicy {
@@ -319,7 +317,7 @@ mod tests {
         // The built-in default: 14 days of validity re-signed with 5 left.
         assert_eq!(
             policy(14, 5).expiration_jitter_secs(),
-            (9 * 86_400) / 2,
+            (9 * 86400) / 2,
             "a fixed window would come due for the whole zone at once"
         );
     }
@@ -329,10 +327,10 @@ mod tests {
     fn jitter_keeps_signatures_outside_refresh_window() {
         for (validity, refresh) in [(14, 5), (30, 7), (7, 6), (2, 1)] {
             let policy = policy(validity, refresh);
-            let earliest = i64::from(validity) * 86_400 - policy.expiration_jitter_secs();
+            let earliest = i64::from(validity) * 86400 - policy.expiration_jitter_secs();
 
             assert!(
-                earliest > i64::from(refresh) * 86_400,
+                earliest > i64::from(refresh) * 86400,
                 "validity {validity}, refresh {refresh}: signing would land inside the window"
             );
         }

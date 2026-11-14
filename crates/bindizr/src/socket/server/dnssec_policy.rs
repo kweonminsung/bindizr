@@ -8,17 +8,17 @@ use bindizr_service::{Context, dnssec_policy};
 
 use crate::socket::types::DaemonResponse;
 
-/// Create DNSSEC policy from the control request.
+/// Create a DNSSEC policy from the control request.
 pub(crate) async fn create_dnssec_policy(
     cx: &Context,
-    request: CreateDnssecPolicyRequest,
+    request: &CreateDnssecPolicyRequest,
 ) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
     let policy = dnssec_policy::create(cx, &Caller::socket(), request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy created successfully".to_string(),
         data: SingleDnssecPolicyResponse {
-            dnssec_policy: DnssecPolicyResponse::from(&policy),
+            dnssec_policy: policy,
         },
     })
 }
@@ -45,7 +45,7 @@ pub(crate) async fn get_dnssec_policy(
     Ok(DaemonResponse {
         message: "DNSSEC policy retrieved successfully".to_string(),
         data: SingleDnssecPolicyResponse {
-            dnssec_policy: DnssecPolicyResponse::from(&policy),
+            dnssec_policy: policy,
         },
     })
 }
@@ -54,14 +54,14 @@ pub(crate) async fn get_dnssec_policy(
 pub(crate) async fn update_dnssec_policy(
     cx: &Context,
     name: &str,
-    request: UpdateDnssecPolicyRequest,
+    request: &UpdateDnssecPolicyRequest,
 ) -> Result<DaemonResponse<SingleDnssecPolicyResponse>, ServiceError> {
     let policy = dnssec_policy::update(cx, &Caller::socket(), name, request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy updated successfully".to_string(),
         data: SingleDnssecPolicyResponse {
-            dnssec_policy: DnssecPolicyResponse::from(&policy),
+            dnssec_policy: policy,
         },
     })
 }
@@ -72,7 +72,7 @@ pub(crate) async fn delete_dnssec_policy(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     dnssec_policy::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("DNSSEC policy '{}' deleted successfully", name);
+    let message = format!("DNSSEC policy '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

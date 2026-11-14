@@ -8,17 +8,14 @@ use crate::cli::commands::ReadInputError;
 use crate::cli::output::RenderOutputError;
 use crate::daemon::DaemonError;
 
-/// Error surfaced to the CLI user: the daemon's message plus, when the daemon
-/// sent a machine-readable code, an actionable hint derived from it.
-#[derive(Debug, Error)]
-#[error("{message}")]
-pub(crate) struct CliError {
-    pub(crate) code: Option<ErrorCode>,
-    failure: Failure,
-    pub(crate) message: String,
-    #[source]
-    source: Option<Box<dyn std::error::Error + Send + Sync>>,
-}
+/// 2 is left to clap's usage errors. The daemon is a systemd service, so 6
+/// and 7 keep the meanings it prints for them: `NOTCONFIGURED`, `NOTRUNNING`.
+const EXIT_FAILURE: i32 = 1;
+const EXIT_NOT_FOUND: i32 = 3;
+const EXIT_CONFLICT: i32 = 4;
+const EXIT_DENIED: i32 = 5;
+const EXIT_CONFIG: i32 = 6;
+const EXIT_UNAVAILABLE: i32 = 7;
 
 /// The kinds of failure that exit differently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,56 +29,23 @@ enum Failure {
     Configuration,
 }
 
-/// Output that could not be rendered fails the command it was for.
-impl From<RenderOutputError> for CliError {
-    /// Report the rendering failure as a failed request.
-    fn from(error: RenderOutputError) -> Self {
-        CliError::request_with_source(error.to_string(), error)
-    }
+/// Error surfaced to the CLI user: the daemon's message plus, when the daemon
+/// sent a machine-readable code, an actionable hint derived from it.
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub(crate) struct CliError {
+    pub(crate) code: Option<ErrorCode>,
+    failure: Failure,
+    pub(crate) message: String,
+    #[source]
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
-
-/// Input that could not be read fails the command it was for.
-impl From<ReadInputError> for CliError {
-    /// Report the read failure as a failed request.
-    fn from(error: ReadInputError) -> Self {
-        CliError::request_with_source(error.to_string(), error)
-    }
-}
-
-/// A configuration the CLI itself loaded and refused.
-impl From<ConfigError> for CliError {
-    /// Report the configuration failure with its exit class.
-    fn from(error: ConfigError) -> Self {
-        CliError::configuration(error)
-    }
-}
-
-/// The daemon's own failure, classed so a supervisor knows whether to retry.
-impl From<DaemonError> for CliError {
-    /// A configuration or TLS failure is permanent; anything else may pass.
-    fn from(error: DaemonError) -> Self {
-        if error.is_configuration() {
-            CliError::configuration(error)
-        } else {
-            CliError::request_with_source(error.to_string(), error)
-        }
-    }
-}
-
-/// 2 is left to clap's usage errors. The daemon is a systemd service, so 6
-/// and 7 keep the meanings it prints for them: `NOTCONFIGURED`, `NOTRUNNING`.
-const EXIT_FAILURE: i32 = 1;
-const EXIT_NOT_FOUND: i32 = 3;
-const EXIT_CONFLICT: i32 = 4;
-const EXIT_DENIED: i32 = 5;
-const EXIT_CONFIG: i32 = 6;
-const EXIT_UNAVAILABLE: i32 = 7;
 
 impl CliError {
-    /// A request that failed before or after reaching the daemon, with no
-    /// code to hint from.
+    /// Build the error of a request that failed before or after reaching the
+    /// daemon, with no code to hint from.
     pub(crate) fn request(message: impl fmt::Display) -> Self {
-        CliError {
+        Self {
             code: None,
             failure: Failure::Request,
             message: message.to_string(),
@@ -102,9 +66,9 @@ impl CliError {
         }
     }
 
-    /// An error reply from the daemon, carrying whatever code it sent.
+    /// Build the error of a daemon's error reply, carrying whatever code it sent.
     pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
-        CliError {
+        Self {
             code,
             failure: Failure::Request,
             message,
@@ -112,12 +76,12 @@ impl CliError {
         }
     }
 
-    /// The daemon could not be reached. Exits distinctly so a script can
+    /// Report that the daemon could not be reached. Exits distinctly so a script can
     /// retry, where a rejected request would fail the same way again.
     pub(crate) fn daemon_unreachable(
         source: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        CliError {
+        Self {
             code: None,
             failure: Failure::Unreachable,
             message: source.to_string(),
@@ -125,10 +89,10 @@ impl CliError {
         }
     }
 
-    /// The configuration is unusable. Exits distinctly so a supervisor can
+    /// Report that the configuration is unusable. Exits distinctly so a supervisor can
     /// stop retrying a start that will fail the same way every time.
     pub(crate) fn configuration(source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        CliError {
+        Self {
             code: None,
             failure: Failure::Configuration,
             message: source.to_string(),
@@ -136,7 +100,7 @@ impl CliError {
         }
     }
 
-    /// The exit status a script branches on. Every code is spelled out, so a
+    /// Return the exit status a script branches on. Every code is spelled out, so a
     /// new one has to choose its class here.
     pub(crate) fn exit_code(&self) -> i32 {
         match self.failure {
@@ -196,8 +160,9 @@ impl CliError {
         }
     }
 
-    /// Every code is spelled out, so a new one has to decide whether it can
-    /// point at a command instead of silently defaulting to no hint.
+    /// Return an actionable hint for the daemon's code. Every code is spelled
+    /// out, so a new one has to decide whether it can point at a command
+    /// instead of silently defaulting to no hint.
     pub(crate) fn hint(&self) -> Option<&'static str> {
         match self.code? {
             ErrorCode::ZoneNotFound => Some("Run 'bindizr zone list' to see available zones."),
@@ -278,8 +243,47 @@ impl CliError {
     }
 }
 
+/// Output that could not be rendered fails the command it was for.
+impl From<RenderOutputError> for CliError {
+    /// Report the rendering failure as a failed request.
+    fn from(error: RenderOutputError) -> Self {
+        Self::request_with_source(error.to_string(), error)
+    }
+}
+
+/// Input that could not be read fails the command it was for.
+impl From<ReadInputError> for CliError {
+    /// Report the read failure as a failed request.
+    fn from(error: ReadInputError) -> Self {
+        Self::request_with_source(error.to_string(), error)
+    }
+}
+
+/// A configuration the CLI itself loaded and refused.
+impl From<ConfigError> for CliError {
+    /// Report the configuration failure with its exit class.
+    fn from(error: ConfigError) -> Self {
+        Self::configuration(error)
+    }
+}
+
+/// The daemon's own failure, classed so a supervisor knows whether to retry.
+impl From<DaemonError> for CliError {
+    /// Classify a configuration or TLS failure as permanent; anything else may
+    /// pass.
+    fn from(error: DaemonError) -> Self {
+        if error.is_configuration() {
+            Self::configuration(error)
+        } else {
+            Self::request_with_source(error.to_string(), error)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
 
     /// Verify that exit codes separate the classes a script branches on.
@@ -303,7 +307,7 @@ mod tests {
         // LSB reserves 7 for NOTRUNNING and 6 for NOTCONFIGURED;
         // the systemd unit also depends on RestartPreventExitStatus=6.
         assert_eq!(
-            CliError::daemon_unreachable(std::io::Error::other("connection refused")).exit_code(),
+            CliError::daemon_unreachable(io::Error::other("connection refused")).exit_code(),
             7
         );
         assert_eq!(
@@ -311,27 +315,24 @@ mod tests {
             EXIT_FAILURE
         );
         assert_eq!(
-            CliError::configuration(std::io::Error::other("missing field `mname`")).exit_code(),
+            CliError::configuration(io::Error::other("missing field `mname`")).exit_code(),
             6
         );
     }
 
-    /// Local rendering and transport failures retain an inspectable cause.
+    /// Verify that local rendering and transport failures retain an inspectable cause.
     #[test]
     fn local_failure_preserves_the_source() {
         use std::error::Error;
+
         let error = CliError::request_with_source(
             "failed to read the response",
-            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "socket closed"),
+            io::Error::new(io::ErrorKind::UnexpectedEof, "socket closed"),
         );
 
         assert_eq!(error.exit_code(), EXIT_FAILURE);
-        let source = error
-            .source()
-            .unwrap()
-            .downcast_ref::<std::io::Error>()
-            .unwrap();
+        let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
 
-        assert_eq!(source.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert_eq!(source.kind(), io::ErrorKind::UnexpectedEof);
     }
 }

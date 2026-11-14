@@ -15,7 +15,7 @@ pub(crate) async fn enable_dnssec(
     zone_name: &str,
     request: &EnableDnssecRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::enable(
+    let response = dnssec::enable(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -25,7 +25,7 @@ pub(crate) async fn enable_dnssec(
 
     Ok(DaemonResponse {
         message: "DNSSEC enabled successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
@@ -51,24 +51,25 @@ pub(crate) async fn disable_dnssec(
     })
 }
 
-/// Return the requested zone's DNSSEC status.
+/// Get the requested zone's DNSSEC status.
 pub(crate) async fn get_dnssec_status(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::get_status(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let response =
+        dnssec::get_status(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     Ok(DaemonResponse {
         message: "DNSSEC status retrieved successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
 /// Re-sign the requested zone.
 pub(crate) async fn sign_zone(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    dnssec::sign(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    dnssec::sign(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     let message = "Zone signed successfully".to_string();
     Ok(DaemonResponse {
         message: message.clone(),
@@ -82,7 +83,7 @@ pub(crate) async fn start_dnssec_rollover(
     zone_name: &str,
     request: &StartDnssecRolloverRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::start_rollover(
+    let response = dnssec::start_rollover(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -92,7 +93,7 @@ pub(crate) async fn start_dnssec_rollover(
 
     Ok(DaemonResponse {
         message: "Key rollover started successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
@@ -103,7 +104,7 @@ pub(crate) async fn advance_dnssec_rollover(
     ds_check: DsCheck,
     holddown: Holddown,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::advance_rollover(
+    let response = dnssec::advance_rollover(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -114,19 +115,20 @@ pub(crate) async fn advance_dnssec_rollover(
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
 /// Begin withdrawal of the requested zone's parent DS records.
 pub(crate) async fn withdraw_dnssec(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::withdraw(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let response =
+        dnssec::withdraw(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     Ok(DaemonResponse {
         message: "DS withdrawal published successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
@@ -136,7 +138,7 @@ pub(crate) async fn update_dnssec_settings(
     zone_name: &str,
     request: &UpdateDnssecSettingsRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::update_settings(
+    let response = dnssec::update_settings(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -146,16 +148,17 @@ pub(crate) async fn update_dnssec_settings(
 
     Ok(DaemonResponse {
         message: "DNSSEC settings changed successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
 /// Export the requested zone's DNSSEC key files.
 pub(crate) async fn export_dnssec_keys(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<ExportDnssecKeysResponse>, ServiceError> {
-    let response = dnssec::export_keys(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let response =
+        dnssec::export_keys(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     Ok(DaemonResponse {
         message: "DNSSEC keys exported successfully".to_string(),
         data: response,
@@ -166,9 +169,9 @@ pub(crate) async fn export_dnssec_keys(
 pub(crate) async fn import_dnssec_keys(
     cx: &Context,
     zone_name: &str,
-    request: ImportDnssecKeysRequest,
+    request: &ImportDnssecKeysRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::import_keys(
+    let response = dnssec::import_keys(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
@@ -178,31 +181,32 @@ pub(crate) async fn import_dnssec_keys(
 
     Ok(DaemonResponse {
         message: "DNSSEC key imported successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
 /// Cancel the requested zone's parent DS withdrawal.
 pub(crate) async fn cancel_dnssec_withdrawal(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status =
-        dnssec::cancel_withdrawal(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let response =
+        dnssec::cancel_withdrawal(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),
-        data: status,
+        data: response,
     })
 }
 
 /// Probe the parent servers for the requested zone's DS records.
 pub(crate) async fn check_dnssec_ds(
     cx: &Context,
-    name: &str,
+    zone_name: &str,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let status = dnssec::check_ds(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
+    let response =
+        dnssec::check_ds(cx, &Caller::socket(), &zone::normalize_name(zone_name)?).await?;
     Ok(DaemonResponse {
         message: "Parent DS checked successfully".to_string(),
-        data: status,
+        data: response,
     })
 }

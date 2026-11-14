@@ -18,7 +18,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<U
         state,
         state_changed_at: eligible,
         eligible_at: eligible,
-        max_signed_ttl: Ttl::try_from(300).unwrap(),
+        max_signed_ttl: Ttl::from_secs(300),
         created_at: eligible,
     }
 }

@@ -8,15 +8,15 @@ use bindizr_service::{Context, tsig_key};
 
 use crate::socket::types::DaemonResponse;
 
-/// Create TSIG key from the control request.
+/// Create a TSIG key from the control request.
 pub(crate) async fn create_tsig_key(
     cx: &Context,
     request: &CreateTsigKeyRequest,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let data = tsig_key::create(cx, &Caller::socket(), request).await?;
+    let (tsig_key, secret) = tsig_key::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
-        data,
+        data: SingleTsigKeyResponse { tsig_key, secret },
     })
 }
 
@@ -37,10 +37,10 @@ pub(crate) async fn get_tsig_key(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<SingleTsigKeyResponse>, ServiceError> {
-    let data = tsig_key::get(cx, &Caller::socket(), name).await?;
+    let (tsig_key, secret) = tsig_key::get(cx, &Caller::socket(), name).await?;
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
-        data,
+        data: SingleTsigKeyResponse { tsig_key, secret },
     })
 }
 
@@ -50,7 +50,7 @@ pub(crate) async fn delete_tsig_key(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     tsig_key::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("TSIG key '{}' deleted successfully", name);
+    let message = format!("TSIG key '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

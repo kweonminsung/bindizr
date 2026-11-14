@@ -1,5 +1,7 @@
 //! Per-zone DNSSEC maintenance transactions for signing and rollover.
 
+use std::mem;
+
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
@@ -20,29 +22,27 @@ pub(crate) async fn resign_zone_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         let Some(signed) =
             dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
 
-        if dnssec::resign_zone_tx(
+        let serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
             &ChangeOrigin::system(),
         )
-        .await?
-        .is_none()
-        {
-            return Ok(None);
-        }
+        .await?;
 
-        Ok(Some(signed.zone.name.clone()))
+        Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to sign zone").await?;
+
+    let changed = transaction::finish_tx(tx, apply_result, "failed to sign zone").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -58,7 +58,8 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -103,7 +104,8 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+
+    let changed = transaction::finish_tx(tx, apply_result, "failed to start key rollover").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -119,7 +121,8 @@ pub(crate) async fn promote_zsks_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -158,7 +161,9 @@ pub(crate) async fn promote_zsks_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+
+    let changed =
+        transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -174,7 +179,8 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -190,9 +196,8 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             Ok(delegation) => delegation,
             Err(error) => {
                 log::warn!(
-                    "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
-                    signed.zone.name.as_str(),
-                    error
+                    "Parent of zone {} could not be asked for its DS, so the rollover waits: {error}",
+                    signed.zone.name
                 );
                 return Ok(None);
             }
@@ -210,7 +215,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
                 log::warn!(
                     "Parent of zone {} answers only in a DS digest bindizr cannot compute, so \
                      the rollover waits",
-                    signed.zone.name.as_str()
+                    signed.zone.name
                 );
             }
 
@@ -236,7 +241,9 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+
+    let changed =
+        transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -277,7 +284,8 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to remove retired keys").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -294,7 +302,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
 
         let mut remaining = Vec::with_capacity(signed.keys.len());
 
-        for key in std::mem::take(&mut signed.keys) {
+        for key in mem::take(&mut signed.keys) {
             if removable.contains(&key.id) {
                 bindizr_db::dnssec_key::delete_tx(&mut tx, key.id).await?;
             } else {
@@ -315,7 +323,8 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to remove retired keys").await?;
+
+    let changed = transaction::finish_tx(tx, apply_result, "failed to remove retired keys").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);

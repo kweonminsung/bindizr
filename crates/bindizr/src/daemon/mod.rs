@@ -2,32 +2,40 @@
 
 pub(crate) mod db_probe;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{env, io};
 
-use bindizr_core::config::{self, Config, ConfigError};
-use bindizr_core::logger::{self, Logger};
+use bindizr_core::config::{Config, ConfigError};
+use bindizr_core::logger::Logger;
 use bindizr_core::metrics::{Metrics, RegisterMetricsError};
+use bindizr_core::{config, logger};
 use bindizr_db::Db;
 use bindizr_db::error::DatabaseError;
 use bindizr_service::context::ReloadConfigError;
 use bindizr_service::error::ServiceError;
 use bindizr_service::notify::queue;
+use bindizr_service::notify::queue::NotifyWorker;
+use bindizr_service::scheduler::SchedulerWorker;
 use bindizr_service::{Context, scheduler, token, zone};
 use chrono::Utc;
 use thiserror::Error;
 use tokio::signal::unix;
 use tokio::signal::unix::SignalKind;
-use tokio::sync;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
+use tokio::{signal, sync, time};
 
 use crate::api::StartApiError;
 use crate::dns::StartDnsError;
 use crate::shutdown::Shutdown;
-use crate::socket::server::{BindSocketError, ServeSocketError};
+use crate::socket::server;
+use crate::socket::server::control::DaemonControl;
+use crate::socket::server::{BindSocketError, ServeSocketError, SocketContext, control};
 use crate::tls::{LoadCertificateError, TlsCertificates};
-use crate::{api, dns, socket};
+use crate::{api, dns};
 
 /// How long the servers that can finish on their own get before the daemon
 /// exits anyway.
@@ -61,7 +69,7 @@ pub(crate) enum DaemonError {
     Signal {
         signal: &'static str,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("the {name} stopped")]
     ServerStopped { name: &'static str },
@@ -69,19 +77,19 @@ pub(crate) enum DaemonError {
     ServerFailed {
         name: &'static str,
         #[source]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
     #[error("failed to locate the bindizr executable")]
     ExecutableUnknown,
     #[error("failed to re-execute bindizr: {0}")]
-    Reexec(#[source] std::io::Error),
+    Reexec(#[source] io::Error),
 }
 
 impl DaemonError {
-    /// Whether running the same thing again would fail the same way: the
+    /// Return whether running the same thing again would fail the same way: the
     /// exit class a supervisor stops retrying on.
     pub(crate) fn is_configuration(&self) -> bool {
-        matches!(self, DaemonError::Config(_) | DaemonError::Tls(_))
+        matches!(self, Self::Config(_) | Self::Tls(_))
     }
 }
 
@@ -109,8 +117,8 @@ impl From<ReloadError> for ServiceError {
     /// Classify the reload failure for the error payload.
     fn from(error: ReloadError) -> Self {
         match error {
-            ReloadError::Config(error) => ServiceError::from(error),
-            tls @ ReloadError::Tls(_) => ServiceError::invalid_input(tls),
+            ReloadError::Config(error) => Self::from(error),
+            tls @ ReloadError::Tls(_) => Self::invalid_input(tls),
         }
     }
 }
@@ -145,20 +153,20 @@ pub(crate) fn reload_config(
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonError> {
     // Captured at startup: after a package upgrade /proc/self/exe reads as a
     // "(deleted)" path, while this path points at the replacement.
-    let daemon_exe = std::env::current_exe().ok();
+    let daemon_exe = env::current_exe().ok();
 
     let config_path = config::resolve_config_path(config_file);
     let config = Config::load(&config_path)?;
 
-    Logger::init(&config.logging);
+    Logger::init(config.logging);
 
     // Reported after the logger exists, so it carries the configured format.
-    log::info!("Configuration loaded from {}", config_path);
+    log::info!("Configuration loaded from {config_path}");
 
     // Bind the control socket first so a second daemon fails before
     // opening the database or claiming DNS ports.
-    let (socket_path, socket_listener) = socket::server::bind().await?;
-    log::info!("Daemon socket server listening on {}", socket_path);
+    let (socket_path, socket_listener) = server::bind().await?;
+    log::info!("Daemon socket server listening on {socket_path}");
 
     // Read before the database opens: a pair that does not load is a
     // configuration failure.
@@ -191,7 +199,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --role admin`"
             ),
             Ok(_) => {}
-            Err(error) => log::warn!("Could not count API tokens: {}", error),
+            Err(error) => log::warn!("Could not count API tokens: {error}"),
         }
     }
 
@@ -201,13 +209,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
     let dns_servers = dns::start(cx.clone(), &shutdown, tls.dns.clone()).await?;
 
-    let (control_tx, mut control_rx) = socket::server::control::channel();
-    let socket_cx = Arc::new(socket::server::SocketContext::new(
-        cx.clone(),
-        control_tx,
-        tls.clone(),
-    ));
-    let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
+    let (control_tx, mut control_rx) = control::channel();
+    let socket_cx = Arc::new(SocketContext::new(cx.clone(), control_tx, tls.clone()));
+    let socket_task = server::serve(socket_cx, socket_listener, &shutdown)?;
 
     let api_task = api::start(cx.clone(), &shutdown, tls.api.clone()).await?;
 
@@ -241,7 +245,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // Handle process signals and socket control commands in one lifecycle loop.
     let outcome = loop {
         let control = tokio::select! {
-            result = tokio::signal::ctrl_c() => {
+            result = signal::ctrl_c() => {
                 result.map_err(|source| DaemonError::Signal {
                     signal: "shutdown signal",
                     source,
@@ -257,13 +261,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 
             _ = hangup.recv() => {
                 match reload_config(&cx, &tls) {
-                    Ok(changed) if changed.is_empty() => {
-                        log::info!("SIGHUP received, nothing changed.")
-                    }
-                    Ok(changed) => {
-                        log::info!("SIGHUP received, reloaded: {}", changed.join(", "))
-                    }
-                    Err(error) => log::error!("SIGHUP received, nothing reloaded: {}", error),
+                    Ok(changed) if changed.is_empty() => log::info!("SIGHUP received, nothing changed."),
+                    Ok(changed) => log::info!("SIGHUP received, reloaded: {}", changed.join(", ")),
+                    Err(error) => log::error!("SIGHUP received, nothing reloaded: {error}"),
                 }
 
                 continue;
@@ -277,7 +277,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         };
 
         match control {
-            Some(socket::server::control::DaemonControl::Restart) => {
+            Some(DaemonControl::Restart) => {
                 log::info!("Restart requested, re-executing bindizr...");
                 break RunResult::Restart;
             }
@@ -289,7 +289,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     };
 
     drain(&shutdown, servers, scheduler_worker, notify_worker).await;
-    socket::server::remove_socket_file(&socket_path).await;
+    server::remove_socket_file(&socket_path).await;
 
     match outcome {
         RunResult::Stop => Ok(()),
@@ -309,10 +309,10 @@ enum RunResult {
 }
 
 impl RunResult {
-    /// The result of a server that stopped on its own, so the exit says what
+    /// Build the result of a server that stopped on its own, so the exit says what
     /// failed.
-    fn server_stopped(name: &'static str, result: Result<(), tokio::task::JoinError>) -> Self {
-        RunResult::Failed(match result {
+    fn server_stopped(name: &'static str, result: Result<(), JoinError>) -> Self {
+        Self::Failed(match result {
             Ok(()) => DaemonError::ServerStopped { name },
             Err(source) => DaemonError::ServerFailed { name, source },
         })
@@ -324,17 +324,17 @@ impl RunResult {
 async fn drain(
     shutdown: &Shutdown,
     mut servers: Servers,
-    scheduler_worker: scheduler::SchedulerWorker,
-    notify_worker: queue::NotifyWorker,
+    scheduler_worker: SchedulerWorker,
+    notify_worker: NotifyWorker,
 ) {
     shutdown.trigger();
 
-    let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
+    let drained = time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
 
         // The scheduler is a write producer too; its last pass may enqueue NOTIFY.
         if let Err(error) = scheduler_worker.stop().await {
-            log::warn!("DNSSEC scheduler did not stop cleanly: {}", error);
+            log::warn!("DNSSEC scheduler did not stop cleanly: {error}");
         }
 
         // Flush only after every NOTIFY producer has stopped.
@@ -343,10 +343,7 @@ async fn drain(
     .await;
 
     if drained.is_err() {
-        log::error!(
-            "Servers did not finish within {:?}, exiting anyway.",
-            DRAIN_TIMEOUT
-        );
+        log::error!("Servers did not finish within {DRAIN_TIMEOUT:?}, exiting anyway.");
     }
 }
 
@@ -358,7 +355,7 @@ fn reexec(daemon_exe: Option<PathBuf>) -> DaemonError {
     let Some(exe) = daemon_exe else {
         return DaemonError::ExecutableUnknown;
     };
-    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
-    DaemonError::Reexec(std::process::Command::new(exe).args(args).exec())
+    DaemonError::Reexec(Command::new(exe).args(args).exec())
 }

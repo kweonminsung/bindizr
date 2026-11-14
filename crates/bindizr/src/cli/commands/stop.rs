@@ -4,8 +4,8 @@ use bindizr_core::outln;
 use bindizr_service::types::MessageResponse;
 
 use crate::cli::error::CliError;
-use crate::cli::output;
 use crate::cli::output::OutputFormat;
+use crate::cli::{commands, output};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
@@ -24,7 +24,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
         outln!("{}", response.message);
     }
 
-    let stopped = super::poll_with_deadline(STOP_DEADLINE, async || {
+    let stopped = commands::poll_with_deadline(STOP_DEADLINE, async || {
         client::is_daemon_socket_gone().await.then_some(())
     })
     .await;
@@ -32,9 +32,9 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
     match stopped {
         Some(()) => {
             if output == OutputFormat::Table {
-                outln!("Bindizr stopped.")
+                outln!("Bindizr stopped.");
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
             Ok(())
         }

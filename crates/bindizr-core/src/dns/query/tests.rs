@@ -1,3 +1,4 @@
+use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -5,7 +6,7 @@ use domain::base::iana::{
     Class, DigestAlgorithm, Opcode, OptRcode, Rcode, Rtype, SecurityAlgorithm,
 };
 use domain::base::opt::AllOptData;
-use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
+use domain::base::{Message, MessageBuilder, Name};
 use domain::rdata::{A, Ds, Soa};
 
 use super::*;
@@ -16,7 +17,7 @@ fn name(value: &str) -> Name<Vec<u8>> {
     Name::from_str(value).unwrap()
 }
 
-/// Keepalive responses carry one two-octet timeout; zero is a valid close request.
+/// Verify that keepalive responses carry one two-octet timeout and zero is a valid close request.
 #[test]
 fn extract_tcp_keepalive_checks_timeout_units_and_option_shape() {
     for (data, expected) in [
@@ -26,7 +27,7 @@ fn extract_tcp_keepalive_checks_timeout_units_and_option_shape() {
             vec![0, 11, 0, 2, 255, 255],
             Some(Duration::from_millis(6_553_500)),
         ),
-        (vec![], None),
+        (Vec::new(), None),
     ] {
         let mut response = build_soa_response(1, &name("example.com"), Class::IN);
 
@@ -85,7 +86,7 @@ fn build_ds_response(
             .push((
                 &name(owner),
                 *class,
-                Ttl::from_secs(*ttl),
+                domain::base::Ttl::from_secs(*ttl),
                 Ds::new(
                     *key_tag,
                     SecurityAlgorithm::ECDSAP256SHA256,
@@ -104,15 +105,15 @@ fn build_ds_response(
             .push((
                 &name(owner),
                 class,
-                Ttl::from_secs(3600),
+                domain::base::Ttl::from_secs(3600),
                 Soa::new(
                     name("ns.parent.example"),
                     name("hostmaster.parent.example"),
-                    Serial(1),
-                    Ttl::from_secs(3600),
-                    Ttl::from_secs(600),
-                    Ttl::from_secs(86400),
-                    Ttl::from_secs(300),
+                    domain::base::Serial(1),
+                    domain::base::Ttl::from_secs(3600),
+                    domain::base::Ttl::from_secs(600),
+                    domain::base::Ttl::from_secs(86400),
+                    domain::base::Ttl::from_secs(300),
                 ),
             ))
             .unwrap();
@@ -145,15 +146,15 @@ fn build_soa_response(query_id: u16, qname: &Name<Vec<u8>>, class: Class) -> Vec
         .push((
             qname,
             class,
-            Ttl::from_secs(300),
+            domain::base::Ttl::from_secs(300),
             Soa::new(
                 name("ns.example.com"),
                 name("admin.example.com"),
-                Serial(2026),
-                Ttl::from_secs(300),
-                Ttl::from_secs(60),
-                Ttl::from_secs(86400),
-                Ttl::from_secs(300),
+                domain::base::Serial(2026),
+                domain::base::Ttl::from_secs(300),
+                domain::base::Ttl::from_secs(60),
+                domain::base::Ttl::from_secs(86400),
+                domain::base::Ttl::from_secs(300),
             ),
         ))
         .unwrap();
@@ -161,7 +162,7 @@ fn build_soa_response(query_id: u16, qname: &Name<Vec<u8>>, class: Class) -> Vec
     answer.finish()
 }
 
-/// The record `build_ds_response` serves for `key_tag`, as parsed.
+/// Build the record `build_ds_response` serves for `key_tag`, as parsed.
 fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
@@ -175,24 +176,29 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
 }
 
 /// Build an IN A transfer response with configurable question and AA flag.
-fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: bool) -> Vec<u8> {
+fn build_transfer_message(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    question: bool,
+    aa: bool,
+) -> Vec<u8> {
     let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(id);
+    builder.header_mut().set_id(query_id);
     builder.header_mut().set_qr(true);
     builder.header_mut().set_aa(aa);
     let mut answer = if question {
         let mut question = builder.question();
-        question.push((apex, Rtype::AXFR)).unwrap();
+        question.push((qname, Rtype::AXFR)).unwrap();
         question.answer()
     } else {
         builder.answer()
     };
     answer
         .push((
-            apex,
+            qname,
             Class::IN,
-            Ttl::from_secs(300),
-            A::new("192.0.2.1".parse().unwrap()),
+            domain::base::Ttl::from_secs(300),
+            A::new("192.0.2.1".parse::<Ipv4Addr>().unwrap()),
         ))
         .unwrap();
 
@@ -202,7 +208,7 @@ fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: boo
 /// Verify that a transfer rejects a record of a class other than IN.
 #[test]
 fn transfer_rejects_a_non_in_record() {
-    let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
+    let name = name("example.com");
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(7);
     builder.header_mut().set_qr(true);
@@ -211,22 +217,21 @@ fn transfer_rejects_a_non_in_record() {
         .push((
             &name,
             Class::CH,
-            Ttl::from_secs(300),
-            A::new("192.0.2.1".parse().unwrap()),
+            domain::base::Ttl::from_secs(300),
+            A::new("192.0.2.1".parse::<Ipv4Addr>().unwrap()),
         ))
         .unwrap();
     let wire = answer.finish();
 
-    let error =
-        extract_transfer_records(7, &name, TransferMessagePosition::Following, &wire).unwrap_err();
+    let result = extract_transfer_records(7, &name, TransferMessagePosition::Following, &wire);
 
     assert!(
-        matches!(error, ParseResponseError::ForeignClass { .. }),
-        "{error}"
+        matches!(result, Err(ParseResponseError::ForeignClass { .. })),
+        "{result:?}"
     );
 }
 
-/// AXFR requires its question but ignores AA and TC without relaxing ordinary queries.
+/// Verify that AXFR requires its question but ignores AA and TC without relaxing ordinary queries.
 #[test]
 fn transfer_requires_question_and_ignores_aa_and_tc() {
     let apex = name("example.com");
@@ -270,15 +275,15 @@ fn transfer_requires_question_and_ignores_aa_and_tc() {
     let other = build_transfer_message(7, &name("other.com"), true, true);
 
     assert!(matches!(
-        extract_transfer_records(7, &apex, TransferMessagePosition::Following, &other).unwrap_err(),
-        ParseResponseError::OtherQuestion
+        extract_transfer_records(7, &apex, TransferMessagePosition::Following, &other),
+        Err(ParseResponseError::OtherQuestion)
     ));
 }
 
 /// Verify that a question advertises the requested EDNS payload size.
 #[test]
 fn build_question_advertises_edns_payload_size() {
-    let (query_id, builder) = build_question(
+    let (query_id, additional) = build_question(
         Opcode::QUERY,
         false,
         true,
@@ -286,7 +291,7 @@ fn build_question_advertises_edns_payload_size() {
         Rtype::DS,
         Some(EDNS_UDP_PAYLOAD_SIZE),
     );
-    let wire = builder.finish();
+    let wire = additional.finish();
 
     let message = Message::from_octets(wire.as_slice()).unwrap();
 
@@ -295,15 +300,13 @@ fn build_question_advertises_edns_payload_size() {
     let question = message.sole_question().unwrap();
 
     assert_eq!(question.qtype(), Rtype::DS);
-    let opt = message
-        .opt()
-        .expect("an OPT record in the additional section");
+    let opt = message.opt().unwrap();
 
     assert_eq!(opt.udp_payload_size(), EDNS_UDP_PAYLOAD_SIZE);
     assert_eq!(opt.opt().iter::<AllOptData<_, _>>().count(), 0);
 }
 
-/// DS parsing normalizes record order, duplicates, and TTL.
+/// Verify that DS parsing normalizes record order, duplicates, and TTL.
 #[test]
 fn extract_ds_record_set_reads_the_records_and_the_record_set_ttl() {
     let child = name("example.com");
@@ -389,8 +392,8 @@ fn extract_ds_record_set_rejects_a_negative_answer_without_a_parent_soa() {
 
         assert!(
             matches!(
-                extract_ds_record_set(42, &child, &response).unwrap_err(),
-                ParseResponseError::NoParentSoa
+                extract_ds_record_set(42, &child, &response),
+                Err(ParseResponseError::NoParentSoa)
             ),
             "{authority_soa:?}"
         );
@@ -417,8 +420,8 @@ fn extract_ds_record_set_rejects_an_answer_to_another_question() {
     );
 
     assert!(matches!(
-        extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ParseResponseError::OtherQuestion
+        extract_ds_record_set(42, &child, &response),
+        Err(ParseResponseError::OtherQuestion)
     ));
 }
 
@@ -456,8 +459,8 @@ fn extract_ds_record_set_rejects_a_non_authoritative_answer() {
     );
 
     assert!(matches!(
-        extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ParseResponseError::NotAuthoritative
+        extract_ds_record_set(42, &child, &response),
+        Err(ParseResponseError::NotAuthoritative)
     ));
 }
 
@@ -477,8 +480,8 @@ fn extract_ds_record_set_rejects_a_truncated_answer() {
     );
 
     assert!(matches!(
-        extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ParseResponseError::Truncated
+        extract_ds_record_set(42, &child, &response),
+        Err(ParseResponseError::Truncated)
     ));
 }
 
@@ -498,8 +501,10 @@ fn extract_ds_record_set_rejects_an_error_rcode() {
     );
 
     assert!(matches!(
-        extract_ds_record_set(42, &child, &response).unwrap_err(),
-        ParseResponseError::Rcode(OptRcode::REFUSED)
+        extract_ds_record_set(42, &child, &response),
+        Err(ParseResponseError::Rcode {
+            rcode: OptRcode::REFUSED
+        })
     ));
 }
 
@@ -518,15 +523,13 @@ fn extract_ds_record_set_rejects_id_mismatch() {
         Some(("com", Class::IN)),
     );
 
-    assert!(
-        extract_ds_record_set(7, &child, &response)
-            .unwrap_err()
-            .to_string()
-            .contains("ID mismatch")
-    );
+    assert!(matches!(
+        extract_ds_record_set(7, &child, &response),
+        Err(ParseResponseError::IdMismatch { .. })
+    ));
 }
 
-/// Extended errors cannot become successful DS, SOA, AXFR, or NOTIFY responses.
+/// Verify that extended errors cannot become successful DS, SOA, AXFR, or NOTIFY responses.
 #[test]
 fn responses_reject_extended_rcodes() {
     let child = name("example.com");
@@ -546,7 +549,7 @@ fn responses_reject_extended_rcodes() {
         append_opt(&mut ds, rcode, 0);
 
         assert!(
-            matches!(extract_ds_record_set(42, &child, &ds), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            matches!(extract_ds_record_set(42, &child, &ds), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
             "DS did not preserve {code}"
         );
 
@@ -554,7 +557,7 @@ fn responses_reject_extended_rcodes() {
         append_opt(&mut soa, rcode, 0);
 
         assert!(
-            matches!(extract_soa_serial(42, &child, &soa), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            matches!(extract_soa_serial(42, &child, &soa), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
             "SOA did not preserve {code}"
         );
 
@@ -562,15 +565,16 @@ fn responses_reject_extended_rcodes() {
         append_opt(&mut transfer, rcode, 0);
 
         assert!(
-            matches!(extract_transfer_records(42, &child, TransferMessagePosition::First, &transfer), Err(ParseResponseError::Rcode(got)) if got == rcode),
+            matches!(extract_transfer_records(42, &child, TransferMessagePosition::First, &transfer), Err(ParseResponseError::Rcode { rcode: got }) if got == rcode),
             "AXFR did not preserve {code}"
         );
 
-        let (id, builder) = build_question(Opcode::NOTIFY, true, false, &child, Rtype::SOA, None);
-        let mut notify = builder.finish();
+        let (query_id, additional) =
+            build_question(Opcode::NOTIFY, true, false, &child, Rtype::SOA, None);
+        let mut notify = additional.finish();
         notify[2] |= 0x80;
         append_opt(&mut notify, rcode, 0);
-        let error = validate_notify_response(id, &child, &notify).unwrap_err();
+        let error = validate_notify_response(query_id, &child, &notify).unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -579,7 +583,7 @@ fn responses_reject_extended_rcodes() {
     }
 }
 
-/// Responses may advertise a newer EDNS version.
+/// Verify that responses may advertise a newer EDNS version.
 #[test]
 fn responses_accept_advertised_edns_versions() {
     let child = name("example.com");
@@ -590,14 +594,15 @@ fn responses_accept_advertised_edns_versions() {
     }
 }
 
-/// Malformed OPT cannot justify an answer or TCP retry.
+/// Verify that malformed OPT cannot justify an answer or TCP retry.
 #[test]
 fn responses_reject_malformed_opt_records() {
     let child = name("example.com");
-    let (id, builder) = build_question(Opcode::QUERY, false, false, &child, Rtype::DS, Some(1232));
-    let request = builder.finish();
+    let (query_id, additional) =
+        build_question(Opcode::QUERY, false, false, &child, Rtype::DS, Some(1232));
+    let request = additional.finish();
     let mut response = build_ds_response(
-        id,
+        query_id,
         true,
         true,
         false,
@@ -620,7 +625,16 @@ fn responses_reject_malformed_opt_records() {
     let mut misplaced = Vec::new();
 
     for count_offset in [6, 8] {
-        let mut wire = build_ds_response(id, true, true, false, Rcode::NOERROR, &child, &[], None);
+        let mut wire = build_ds_response(
+            query_id,
+            true,
+            true,
+            false,
+            Rcode::NOERROR,
+            &child,
+            &[],
+            None,
+        );
         append_opt(&mut wire, OptRcode::NOERROR, 0);
         wire[10..12].copy_from_slice(&0u16.to_be_bytes());
         wire[count_offset..count_offset + 2].copy_from_slice(&1u16.to_be_bytes());
@@ -632,7 +646,7 @@ fn responses_reject_malformed_opt_records() {
         .chain(misplaced)
     {
         assert!(matches!(
-            extract_ds_record_set(id, &child, &wire),
+            extract_ds_record_set(query_id, &child, &wire),
             Err(ParseResponseError::MalformedEdns)
         ));
         assert!(!matches_response_to_request(&request, &wire));
@@ -642,7 +656,7 @@ fn responses_reject_malformed_opt_records() {
     }
 }
 
-/// Foreign-class DS is rejected even beside an IN parent SOA.
+/// Verify that foreign-class DS is rejected even beside an IN parent SOA.
 #[test]
 fn extract_ds_record_set_rejects_foreign_classes() {
     let child = name("example.com");
@@ -666,7 +680,7 @@ fn extract_ds_record_set_rejects_foreign_classes() {
     }
 }
 
-/// Foreign-class SOA cannot prove IN DS absence.
+/// Verify that foreign-class SOA cannot prove IN DS absence.
 #[test]
 fn extract_ds_record_set_rejects_foreign_parent_soa_classes() {
     let child = name("example.com");
@@ -690,7 +704,7 @@ fn extract_ds_record_set_rejects_foreign_parent_soa_classes() {
     }
 }
 
-/// SOA polling uses only the queried class's serial.
+/// Verify that SOA polling uses only the queried class's serial.
 #[test]
 fn extract_soa_serial_rejects_foreign_classes() {
     let apex = name("example.com");

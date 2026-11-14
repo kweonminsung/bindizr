@@ -15,7 +15,7 @@ fn test_zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -27,13 +27,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -90,9 +90,12 @@ fn published_key_cosigns_key_record_sets_but_not_zone_data() {
         .len(),
         2
     );
-    assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
 }
@@ -145,7 +148,10 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     );
 
     // And it signs no zone data.
-    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
+        1
+    );
 }
 
 /// Verify that split keys partition key record sets from zone data.
@@ -203,10 +209,13 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
-    assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
 }
 
 /// Verify that algorithm rollover double signs zone data while published.
@@ -244,7 +253,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     let apex = OwnerName::apex();
 
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
         2
     );
 }
@@ -284,7 +293,7 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     let apex = OwnerName::apex();
 
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
         2
     );
 }

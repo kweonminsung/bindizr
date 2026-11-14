@@ -7,8 +7,8 @@ id_newtype!(
 );
 
 /// A named set of rights that API tokens and TSIG keys authenticate into; the
-/// rights are its [`super::role_grant::RoleGrant`] rows.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+/// rights are its [`crate::model::role_grant::RoleGrant`] rows.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Role {
     pub id: RoleId,
     /// Unique human-facing identifier; credentials and the CLI reference a role by name.
@@ -22,7 +22,7 @@ impl Role {
     /// startup so the first token has something to authenticate into.
     pub const ADMIN: &str = "admin";
 
-    /// Whether this is the built-in role, which can be neither changed nor deleted.
+    /// Return whether this is the built-in role, which can be neither changed nor deleted.
     pub fn is_builtin(&self) -> bool {
         self.name == Self::ADMIN
     }

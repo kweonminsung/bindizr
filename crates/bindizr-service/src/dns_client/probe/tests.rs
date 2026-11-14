@@ -1,56 +1,56 @@
-use bindizr_core::dns::message::{Name, OptRcode};
-use bindizr_core::dns::query;
-use bindizr_core::dns::query::ParseResponseError;
+use bindizr_core::dns::message::{Class, OptRcode};
+use tokio::net::{TcpListener, UdpSocket};
+use tokio::time;
 
 use super::*;
 
-/// Build the test zone or its DNS name.
-fn zone() -> Name<Vec<u8>> {
+/// Build the test zone's DNS name.
+fn qname() -> Name<Vec<u8>> {
     use std::str::FromStr;
 
     Name::from_str("example.com").unwrap()
 }
 
-/// SOA probes retry truncated UDP answers over TCP.
+/// Verify that SOA probes retry truncated UDP answers over TCP.
 #[tokio::test]
 async fn soa_probe_returns_serial_after_tcp_fallback() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, UdpSocket};
 
-    let (tcp, udp) = loop {
-        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        if let Ok(udp) = UdpSocket::bind(tcp.local_addr().unwrap()).await {
-            break (tcp, udp);
+    let (listener, socket) = loop {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        if let Ok(socket) = UdpSocket::bind(listener.local_addr().unwrap()).await {
+            break (listener, socket);
         }
     };
-    let address = tcp.local_addr().unwrap();
+    let addr = listener.local_addr().unwrap();
 
     let server = tokio::spawn(async move {
-        let mut query = [0; 4096];
+        let mut buffer = [0; 4096];
 
-        let (len, peer) = udp.recv_from(&mut query).await.unwrap();
+        let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
 
-        let id = u16::from_be_bytes([query[0], query[1]]);
+        let id = u16::from_be_bytes([buffer[0], buffer[1]]);
 
-        udp.send_to(
-            &build_soa_response(id, 0x8600, "example.com", false, 0),
-            peer,
-        )
-        .await
-        .unwrap();
-        let (mut stream, _) = tcp.accept().await.unwrap();
+        socket
+            .send_to(
+                &build_soa_response(id, 0x8600, "example.com", false, 0),
+                peer,
+            )
+            .await
+            .unwrap();
+        let (mut stream, _) = listener.accept().await.unwrap();
         let tcp_len = stream.read_u16().await.unwrap();
         let mut request = vec![0; usize::from(tcp_len)];
 
         stream.read_exact(&mut request).await.unwrap();
 
-        assert_eq!(request, query[..len]);
+        assert_eq!(request, buffer[..len]);
         let response = build_soa_response(id, 0x8400, "example.com", true, 2026);
 
         stream.write_u16(response.len() as u16).await.unwrap();
         stream.write_all(&response).await.unwrap();
     });
-    let result = probe_address(&zone(), address, Duration::from_secs(1))
+    let result = probe_address(&qname(), addr, Duration::from_secs(1))
         .await
         .unwrap();
 
@@ -76,13 +76,13 @@ fn build_soa_response(
     buffer.extend_from_slice(&0u16.to_be_bytes());
 
     crate::dns_client::ds::tests::encode_name(qname, &mut buffer);
-    buffer.extend_from_slice(&6u16.to_be_bytes());
-    buffer.extend_from_slice(&1u16.to_be_bytes());
+    buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
 
     if with_answer {
         crate::dns_client::ds::tests::encode_name(qname, &mut buffer);
-        buffer.extend_from_slice(&6u16.to_be_bytes());
-        buffer.extend_from_slice(&1u16.to_be_bytes());
+        buffer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+        buffer.extend_from_slice(&Class::IN.to_int().to_be_bytes());
         buffer.extend_from_slice(&3600u32.to_be_bytes());
 
         let mut rdata = Vec::new();
@@ -91,7 +91,7 @@ fn build_soa_response(
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&7200u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
-        rdata.extend_from_slice(&604800u32.to_be_bytes());
+        rdata.extend_from_slice(&604_800u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
 
         buffer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
@@ -107,7 +107,7 @@ fn extract_soa_serial_reads_the_answer_serial() {
     // 0x8400 = QR + AA, NOERROR.
     let response = build_soa_response(42, 0x8400, "example.com", true, 2026);
     assert_eq!(
-        query::extract_soa_serial(42, &zone(), &response).unwrap(),
+        query::extract_soa_serial(42, &qname(), &response).unwrap(),
         2026
     );
 }
@@ -118,7 +118,7 @@ fn extract_soa_serial_rejects_id_mismatch() {
     let response = build_soa_response(42, 0x8400, "example.com", true, 2026);
 
     assert!(
-        query::extract_soa_serial(7, &zone(), &response)
+        query::extract_soa_serial(7, &qname(), &response)
             .unwrap_err()
             .to_string()
             .contains("ID mismatch")
@@ -131,8 +131,10 @@ fn extract_soa_serial_rejects_error_rcode() {
     // RCODE 5 (REFUSED)
     let response = build_soa_response(42, 0x8405, "example.com", true, 2026);
     assert!(matches!(
-        query::extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        ParseResponseError::Rcode(OptRcode::REFUSED)
+        query::extract_soa_serial(42, &qname(), &response),
+        Err(ParseResponseError::Rcode {
+            rcode: OptRcode::REFUSED
+        })
     ));
 }
 
@@ -142,7 +144,7 @@ fn extract_soa_serial_rejects_missing_qr_bit() {
     let response = build_soa_response(42, 0x0400, "example.com", true, 2026);
 
     assert!(
-        query::extract_soa_serial(42, &zone(), &response)
+        query::extract_soa_serial(42, &qname(), &response)
             .unwrap_err()
             .to_string()
             .contains("QR bit")
@@ -154,8 +156,8 @@ fn extract_soa_serial_rejects_missing_qr_bit() {
 fn extract_soa_serial_rejects_truncated_response() {
     let response = build_soa_response(42, 0x8600, "example.com", true, 2026);
     assert!(matches!(
-        query::extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        ParseResponseError::Truncated
+        query::extract_soa_serial(42, &qname(), &response),
+        Err(ParseResponseError::Truncated)
     ));
 }
 
@@ -164,8 +166,8 @@ fn extract_soa_serial_rejects_truncated_response() {
 fn extract_soa_serial_rejects_answer_without_soa() {
     let response = build_soa_response(42, 0x8400, "example.com", false, 0);
     assert!(matches!(
-        query::extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        ParseResponseError::NoSoa
+        query::extract_soa_serial(42, &qname(), &response),
+        Err(ParseResponseError::NoSoa)
     ));
 }
 
@@ -176,29 +178,30 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
     let cached = build_soa_response(42, 0x8000, "example.com", true, 2026);
 
     assert!(matches!(
-        query::extract_soa_serial(42, &zone(), &cached).unwrap_err(),
-        ParseResponseError::NotAuthoritative
+        query::extract_soa_serial(42, &qname(), &cached),
+        Err(ParseResponseError::NotAuthoritative)
     ));
     let other = build_soa_response(42, 0x8400, "other.com", true, 2026);
 
     assert!(matches!(
-        query::extract_soa_serial(42, &zone(), &other).unwrap_err(),
-        ParseResponseError::OtherQuestion
+        query::extract_soa_serial(42, &qname(), &other),
+        Err(ParseResponseError::OtherQuestion)
     ));
 }
 
-/// A malformed, unrelated or wrong-opcode datagram cannot end a live UDP probe.
+/// Verify that a malformed, unrelated or wrong-opcode datagram cannot end a live UDP
+/// probe.
 #[tokio::test]
 async fn udp_probe_discards_invalid_datagrams_without_resending() {
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let address = socket.local_addr().unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap();
 
     let server = tokio::spawn(async move {
-        let mut request = [0; 4096];
+        let mut buffer = [0; 4096];
 
-        let (_, peer) = socket.recv_from(&mut request).await.unwrap();
+        let (_, peer) = socket.recv_from(&mut buffer).await.unwrap();
 
-        let id = u16::from_be_bytes([request[0], request[1]]);
+        let id = u16::from_be_bytes([buffer[0], buffer[1]]);
 
         for response in [
             vec![0],
@@ -211,14 +214,14 @@ async fn udp_probe_discards_invalid_datagrams_without_resending() {
         }
 
         assert!(
-            tokio::time::timeout(Duration::from_millis(100), socket.recv_from(&mut request))
+            time::timeout(Duration::from_millis(100), socket.recv_from(&mut buffer))
                 .await
                 .is_err()
         );
     });
 
     assert_eq!(
-        probe_address(&zone(), address, Duration::from_secs(1))
+        probe_address(&qname(), addr, Duration::from_secs(1))
             .await
             .unwrap(),
         Serial::from(99)

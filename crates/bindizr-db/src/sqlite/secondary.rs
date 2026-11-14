@@ -1,12 +1,11 @@
 use bindizr_core::dns::address::AddressTarget;
-use bindizr_core::model::secondary::SecondaryId;
+use bindizr_core::model::secondary::{Secondary, SecondaryId};
 use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::secondary::Secondary;
+use crate::{LockLevel, sqlite};
 
 /// Insert a secondary.
 pub(crate) async fn create_tx(
@@ -29,13 +28,13 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    secondary.id = SecondaryId::from(super::last_insert_id(&result)?);
+    secondary.id = SecondaryId::from(sqlite::last_insert_id(&result)?);
     secondary.created_at = now;
 
     Ok(secondary)
 }
 
-/// Find a secondary by name.
+/// Get a secondary by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
     name: &str,
@@ -52,7 +51,7 @@ pub(crate) async fn get_by_name(
     Ok(secondary)
 }
 
-/// Find a secondary by name in the current transaction.
+/// Get a secondary by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
     name: &str,
@@ -68,7 +67,7 @@ pub(crate) async fn get_by_name_tx(
     Ok(secondary)
 }
 
-/// Find a secondary by address.
+/// Get a secondary by address.
 pub(crate) async fn get_by_address(
     pool: &Pool<Sqlite>,
     address: &AddressTarget,
@@ -116,18 +115,18 @@ pub(crate) async fn update_tx(
     Ok(secondary)
 }
 
-/// Secondaries whose NOTIFY the key signs: the in-use check before a key
-/// delete.
+/// Count the secondaries whose NOTIFY the key signs: the in-use check before a
+/// key delete.
 pub(crate) async fn count_by_notify_tsig_key_id(
     pool: &Pool<Sqlite>,
-    tsig_key_id: TsigKeyId,
+    notify_tsig_key_id: TsigKeyId,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM secondaries WHERE notify_tsig_key_id = ?",
     )
-    .bind(tsig_key_id)
+    .bind(notify_tsig_key_id)
     .fetch_one(&mut *connection)
     .await?;
 

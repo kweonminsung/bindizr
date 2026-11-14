@@ -1,8 +1,13 @@
+use std::fs;
 use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use tokio::time;
 
 use crate::common;
 use crate::common::TestApp;
 
+/// A configuration file that passes validation.
 const VALID_CONFIG: &str = r#"
 [api]
 listen_addr = "127.0.0.1"
@@ -31,7 +36,7 @@ async fn doctor_reports_healthy_installation() {
 
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
+    fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
     let path = config_path.to_str().expect("config path was not UTF-8");
 
     // Compose mode runs the CLI inside the container, where the default
@@ -44,59 +49,52 @@ async fn doctor_reports_healthy_installation() {
 
     // Secondaries transfer asynchronously after NOTIFY, so behind a burst of
     // zone writes doctor can catch them one catalog serial short.
-    let mut result = app.run_cli(&args, None).await;
+    let mut output = app.run_cli(&args, None).await;
 
     for _ in 0..30 {
-        if result.status.success() {
+        if output.status.success() {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        result = app.run_cli(&args, None).await;
+        time::sleep(Duration::from_secs(1)).await;
+        output = app.run_cli(&args, None).await;
     }
 
-    common::assert_cli_success(&args, &result);
-    let output = String::from_utf8(result.stdout).expect("CLI stdout was not UTF-8");
+    common::assert_cli_success(&args, &output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert!(output.contains("Config valid"));
-    assert!(output.contains("Daemon running"));
-    assert!(output.contains("API reachable"));
-    assert!(output.contains("Database connected"));
-    assert!(output.contains("DNS server reachable"));
-    assert!(output.contains("installation looks"));
+    assert!(stdout.contains("Config valid"));
+    assert!(stdout.contains("Daemon running"));
+    assert!(stdout.contains("API reachable"));
+    assert!(stdout.contains("Database connected"));
+    assert!(stdout.contains("DNS server reachable"));
+    assert!(stdout.contains("installation looks"));
 
     if app.has_dns_secondaries() {
-        assert!(output.contains("Secondary in sync"));
-        assert!(output.contains("NOTIFY accepted"));
+        assert!(stdout.contains("Secondary in sync"));
+        assert!(stdout.contains("NOTIFY accepted"));
     } else {
-        assert!(output.contains("No enabled secondaries"));
+        assert!(stdout.contains("No enabled secondaries"));
     }
 }
 
 /// Verify that `doctor` runs the offline checks when no daemon is up.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
-fn doctor_without_a_daemon_runs_the_offline_checks() {
+fn doctor_runs_the_offline_checks_when_no_daemon_runs() {
     // Ports nothing on this host holds, so the port checks have a pass to report.
-    let free_port = || {
-        std::net::TcpListener::bind("127.0.0.1:0")
-            .expect("bind an ephemeral port")
-            .local_addr()
-            .expect("local address")
-            .port()
-    };
     let config = VALID_CONFIG
         .replace(
             "listen_port = 8000",
-            &format!("listen_port = {}", free_port()),
+            &format!("listen_port = {}", common::reserve_tcp_port()),
         )
         .replace(
             "listen_port = 5300",
-            &format!("listen_port = {}", free_port()),
+            &format!("listen_port = {}", common::reserve_tcp_port()),
         );
 
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, config).expect("failed to write config");
+    fs::write(&config_path, config).expect("failed to write config");
     let path = config_path.to_str().expect("config path was not UTF-8");
 
     // The host binary, like `config check`: no daemon answers its socket.

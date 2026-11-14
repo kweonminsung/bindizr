@@ -1,17 +1,16 @@
 use std::collections::HashSet;
+use std::slice;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData};
+use crate::record::validation;
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, transaction, zone};
 
 /// Delete a record by id, bumping the zone serial and recording a DEL
 /// change for IXFR. `caller` is authorized against the row this tx locked.
@@ -26,11 +25,9 @@ pub async fn delete(
     // record (the create/bulk/import order); the reverse can deadlock.
     let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
-        Ok(None) => {
-            return Err(ServiceError::record_not_found(record_id));
-        }
+        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {}", error);
+            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,
@@ -40,17 +37,16 @@ pub async fn delete(
 
     let mut tx = transaction::begin_tx(cx, "failed to delete record").await?;
 
-    let apply_result: Result<(DeleteRecordsResponse, ZoneName), ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ServiceError::ZoneNotFound(format!(
-                    "zone with id '{}' not found",
-                    zone_id
+                    "zone with id '{zone_id}' not found"
                 )));
             }
             Err(error) => {
-                log::error!("Failed to fetch zone: {}", error);
+                log::error!("Failed to fetch zone: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to fetch zone",
                     error,
@@ -63,11 +59,9 @@ pub async fn delete(
         let existing_record =
             match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
-                Ok(Some(_)) | Ok(None) => {
-                    return Err(ServiceError::record_not_found(record_id));
-                }
+                Ok(Some(_) | None) => return Err(ServiceError::record_not_found(record_id)),
                 Err(error) => {
-                    log::error!("Failed to fetch record: {}", error);
+                    log::error!("Failed to fetch record: {error}");
                     return Err(ServiceError::internal_with_source(
                         "failed to fetch record",
                         error,
@@ -81,7 +75,7 @@ pub async fn delete(
             Action::RecordDelete,
             zone.id,
             &existing_record.name,
-            Some(&existing_record.record_type),
+            Some(existing_record.record_type),
         ) {
             return Err(ServiceError::record_not_found(record_id));
         }
@@ -91,7 +85,7 @@ pub async fn delete(
             &[RecordAccess {
                 action: Action::RecordDelete,
                 relative_name: existing_record.name.clone(),
-                record_type: Some(&existing_record.record_type),
+                record_type: Some(existing_record.record_type),
             }],
         )?;
 
@@ -129,20 +123,15 @@ pub async fn delete(
                     RecordResponse::from_record(
                         record,
                         &zone.name,
-                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                        caller.record_actions(zone.id, &record.name, record.record_type),
                     )
                 })
                 .collect(),
             diff: diff::build_record_diff(&zone, &before, &after),
         };
 
-        zone::validate_record_changes_tx(
-            &mut tx,
-            &zone,
-            std::slice::from_ref(&existing_record),
-            &[],
-        )
-        .await?;
+        zone::validate_record_changes_tx(&mut tx, &zone, slice::from_ref(&existing_record), &[])
+            .await?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
@@ -150,11 +139,11 @@ pub async fn delete(
             return Ok((response, zone.name));
         }
 
-        super::delete_with_changes_tx(
+        record::delete_with_changes_tx(
             &mut tx,
             zone.id,
             new_serial,
-            std::slice::from_ref(&existing_record),
+            slice::from_ref(&existing_record),
         )
         .await?;
 
@@ -171,20 +160,19 @@ pub async fn delete(
         transaction::finish_tx(tx, apply_result, "failed to delete record").await?;
 
     log::info!(
-        "event=record_delete zone={} record_id={} applied={}",
-        zone_name,
-        record_id,
+        "event=record_delete zone={zone_name} record_id={record_id} applied={}",
         response.applied
     );
 
     // Announce only a committed deletion, never a preview.
     if response.applied {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)
 }
+
 /// Delete the selected records atomically, advancing the serial once
 /// so secondaries cannot observe a partly removed set.
 pub async fn delete_matching(
@@ -206,7 +194,7 @@ pub async fn delete_matching(
     }
 
     // Encoded the way a create encodes it, so a value finds the row it made.
-    let match_value = match (&request.value, record_type.as_ref()) {
+    let match_value = match (&request.value, record_type) {
         (Some(value), Some(record_type)) => Some(
             value
                 .to_encoded_value(record_type, request.priority)
@@ -217,7 +205,7 @@ pub async fn delete_matching(
 
     let mut tx = transaction::begin_tx(cx, "failed to delete records").await?;
 
-    let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -231,7 +219,7 @@ pub async fn delete_matching(
             &[RecordAccess {
                 action: Action::RecordDelete,
                 relative_name: owner.clone(),
-                record_type: record_type.as_ref(),
+                record_type,
             }],
         )?;
 
@@ -240,13 +228,7 @@ pub async fn delete_matching(
                 .await?;
         let matched: Vec<Record> = records_at_name
             .iter()
-            .filter(|record| {
-                record.matches(
-                    record_type.as_ref(),
-                    match_value.as_deref(),
-                    request.priority,
-                )
-            })
+            .filter(|record| record.matches(record_type, match_value.as_deref(), request.priority))
             .cloned()
             .collect();
 
@@ -256,12 +238,12 @@ pub async fn delete_matching(
             zone.id,
             records_at_name.iter().cloned().map(RecordData::from),
         );
-        let removed: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
+        let deleted_ids: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
         let after = caller.readable_records(
             zone.id,
             records_at_name
                 .iter()
-                .filter(|record| !removed.contains(&record.id))
+                .filter(|record| !deleted_ids.contains(&record.id))
                 .cloned()
                 .map(RecordData::from),
         );
@@ -278,7 +260,7 @@ pub async fn delete_matching(
                     RecordResponse::from_record(
                         record,
                         &zone.name,
-                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                        caller.record_actions(zone.id, &record.name, record.record_type),
                     )
                 })
                 .collect(),
@@ -298,7 +280,7 @@ pub async fn delete_matching(
         }
 
         // Apply the complete deletion and refresh signatures in the same transaction.
-        super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
+        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
         // Once for the whole set, so IXFR consumers see one step.
@@ -308,13 +290,11 @@ pub async fn delete_matching(
     }
     .await;
 
-    let (response, owner) = transaction::finish_tx(tx, result, "failed to delete records").await?;
+    let (response, owner) =
+        transaction::finish_tx(tx, apply_result, "failed to delete records").await?;
 
     log::info!(
-        "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",
-        zone_name,
-        owner,
-        record_type,
+        "event=record_delete_matching zone={zone_name} name={owner} type={record_type:?} deleted={} applied={}",
         response.deleted,
         response.applied
     );
@@ -323,7 +303,7 @@ pub async fn delete_matching(
     // match — which applies, but writes nothing and leaves the serial.
     if response.applied && response.deleted > 0 {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)

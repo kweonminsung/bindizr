@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-/// Milliseconds elapsed since `start`, fractional.
-pub(crate) fn elapsed_ms(start: Instant) -> f64 {
-    start.elapsed().as_secs_f64() * 1000.0
+/// Return the milliseconds elapsed since `started`, fractional.
+pub(crate) fn elapsed_ms(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1000.0
 }

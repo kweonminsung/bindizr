@@ -1,8 +1,13 @@
 //! Management-change history: who changed what and when, beyond zone-version history.
 
+use std::fmt;
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::model::change::{ChangeActor, ChangeActorColumns, ChangeSource};
 
@@ -21,9 +26,7 @@ pub enum ParseAuditLogError {
 }
 
 /// What a management change was made to.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditEntity {
     Token,
@@ -50,33 +53,33 @@ impl AuditEntity {
         Self::Zone,
     ];
 
-    /// Storage and API form.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            AuditEntity::Token => "token",
-            AuditEntity::Role => "role",
-            AuditEntity::RoleGrant => "role_grant",
-            AuditEntity::TsigKey => "tsig_key",
-            AuditEntity::Secondary => "secondary",
-            AuditEntity::DnssecPolicy => "dnssec_policy",
-            AuditEntity::Zone => "zone",
+            Self::Token => "token",
+            Self::Role => "role",
+            Self::RoleGrant => "role_grant",
+            Self::TsigKey => "tsig_key",
+            Self::Secondary => "secondary",
+            Self::DnssecPolicy => "dnssec_policy",
+            Self::Zone => "zone",
         }
     }
 
-    /// The names an entity parses from, for messages that list them.
+    /// List the names an entity parses from, for messages that list them.
     pub fn supported_names() -> Vec<&'static str> {
-        Self::ALL.iter().map(|entity| entity.as_str()).collect()
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
-impl std::fmt::Display for AuditEntity {
+impl fmt::Display for AuditEntity {
     /// Write the entity in its storage form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for AuditEntity {
+impl FromStr for AuditEntity {
     type Err = ParseAuditLogError;
 
     /// Parse an entity from its storage form, ignoring case.
@@ -95,14 +98,12 @@ impl TryFrom<String> for AuditEntity {
 
     /// Validate and convert the stored value into an entity.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 
 /// What was done to the entity.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AuditOperation {
     Create,
@@ -111,32 +112,32 @@ pub enum AuditOperation {
 }
 
 impl AuditOperation {
-    /// Storage and API form.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            AuditOperation::Create => "create",
-            AuditOperation::Update => "update",
-            AuditOperation::Delete => "delete",
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Delete => "delete",
         }
     }
 }
 
-impl std::fmt::Display for AuditOperation {
+impl fmt::Display for AuditOperation {
     /// Write the operation in its storage form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for AuditOperation {
+impl FromStr for AuditOperation {
     type Err = ParseAuditLogError;
 
     /// Parse an operation from its storage form, ignoring case.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "create" => Ok(AuditOperation::Create),
-            "update" => Ok(AuditOperation::Update),
-            "delete" => Ok(AuditOperation::Delete),
+            "create" => Ok(Self::Create),
+            "update" => Ok(Self::Update),
+            "delete" => Ok(Self::Delete),
             _ => Err(ParseAuditLogError::Operation {
                 value: value.to_string(),
             }),
@@ -149,7 +150,7 @@ impl TryFrom<String> for AuditOperation {
 
     /// Validate and convert the stored value into an operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
     }
 }
 

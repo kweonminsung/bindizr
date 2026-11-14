@@ -1,26 +1,17 @@
 //! Catalog member identities and schema-2 member extraction (RFC 9432).
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use ring::digest::{self, SHA256};
+use domain::base::Name;
+use domain::base::iana::Rtype;
+use ring::digest;
+use ring::digest::SHA256;
 use thiserror::Error;
 
-use crate::dns::message::{Name, Rtype};
 use crate::dns::name::{MAX_WIRE_NAME_LEN, OwnerName, ParseNameError, ZoneName};
 use crate::dns::query::TransferRecord;
 use crate::dns::{Serial, SoaInterval, Ttl};
-
-/// The virtual catalog's SOA metadata, without a managed-zone row or signing settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CatalogZone {
-    pub name: ZoneName,
-    pub serial: Serial,
-    pub default_ttl: Ttl,
-    pub refresh: SoaInterval,
-    pub retry: SoaInterval,
-    pub expire: SoaInterval,
-    pub minimum_ttl: Ttl,
-}
 
 /// Digest octets retained in stable catalog member IDs.
 const MEMBER_ID_DIGEST_LEN: usize = 16;
@@ -34,10 +25,22 @@ const MEMBER_PREFIX_WIRE_LEN: usize = 1 + MEMBER_ID_DIGEST_LEN * 2 + 1 + MEMBER_
 /// Longest catalog name allowing every generated owner; the member prefix exceeds "version.".
 pub(crate) const MAX_CATALOG_ZONE_WIRE_LEN: usize = MAX_WIRE_NAME_LEN - MEMBER_PREFIX_WIRE_LEN;
 
+/// The virtual catalog's SOA metadata, without a managed-zone row or signing settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogZone {
+    pub name: ZoneName,
+    pub serial: Serial,
+    pub default_ttl: Ttl,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
+    pub minimum_ttl: Ttl,
+}
+
 /// Build a schema-2 member PTR owner using the same prefix startup validates.
-pub(crate) fn catalog_member_owner_name(catalog: &ZoneName, member_zone: &str) -> String {
-    let member_id = zone_name_to_member_id(member_zone);
-    format!("{member_id}.{MEMBER_SUBTREE}.{catalog}.")
+pub(crate) fn catalog_member_owner_name(catalog_zone_name: &ZoneName, zone_name: &str) -> String {
+    let member_id = zone_name_to_member_id(zone_name);
+    format!("{member_id}.{MEMBER_SUBTREE}.{catalog_zone_name}.")
 }
 
 /// Build a stable member label from truncated SHA-256 (RFC 9432, Section 4.1).
@@ -82,7 +85,7 @@ pub enum ExtractMemberZonesError {
 /// Reject conflicting versions, targets, or member nodes (RFC 9432, Sections 4.1–4.3).
 pub fn extract_member_zones(
     records: &[TransferRecord],
-    catalog: &ZoneName,
+    catalog_zone_name: &ZoneName,
 ) -> Result<Vec<ZoneName>, ExtractMemberZonesError> {
     let mut version = None;
     let mut apex_ns = false;
@@ -90,12 +93,12 @@ pub fn extract_member_zones(
     let mut listed: HashSet<&ZoneName> = HashSet::new();
 
     for record in records {
-        let owner = OwnerName::parse_absolute_in_zone(&record.name, catalog).map_err(|source| {
-            ExtractMemberZonesError::OwnerName {
+        let owner = OwnerName::parse_absolute_in_zone(&record.name, catalog_zone_name).map_err(
+            |source| ExtractMemberZonesError::OwnerName {
                 name: record.name.clone(),
                 source,
-            }
-        })?;
+            },
+        )?;
         let labels = owner.labels();
 
         match record.rtype {
@@ -110,7 +113,7 @@ pub fn extract_member_zones(
 
                 version = Some(record.rdata.as_bytes().to_vec());
             }
-            Rtype::PTR if labels.len() == 2 && labels[1] == b"zones" => {
+            Rtype::PTR if labels.len() == 2 && labels[1] == MEMBER_SUBTREE.as_bytes() => {
                 let target = Name::<Vec<u8>>::from_octets(record.rdata.as_bytes().to_vec())
                     .map_err(|_| ExtractMemberZonesError::MemberRdata {
                         name: record.name.clone(),
@@ -124,15 +127,13 @@ pub fn extract_member_zones(
                 })?;
 
                 match member_nodes.entry(labels[0].clone()) {
-                    std::collections::hash_map::Entry::Occupied(entry)
-                        if entry.get() != &member =>
-                    {
+                    Entry::Occupied(entry) if entry.get() != &member => {
                         return Err(ExtractMemberZonesError::MemberNodeNotSingular {
                             name: record.name.clone(),
                         });
                     }
-                    std::collections::hash_map::Entry::Occupied(_) => {}
-                    std::collections::hash_map::Entry::Vacant(entry) => {
+                    Entry::Occupied(_) => {}
+                    Entry::Vacant(entry) => {
                         entry.insert(member);
                     }
                 }
@@ -142,7 +143,6 @@ pub fn extract_member_zones(
     }
 
     match version {
-        None => return Err(ExtractMemberZonesError::MissingVersion),
         // One character-string, "2": the rdata is its length byte and the digit.
         Some(rdata) if rdata == [1, b'2'] => {}
         Some(rdata) => {
@@ -154,6 +154,7 @@ pub fn extract_member_zones(
                 .into_owned();
             return Err(ExtractMemberZonesError::UnsupportedVersion { found });
         }
+        None => return Err(ExtractMemberZonesError::MissingVersion),
     }
 
     // Different member IDs must not provision the same zone twice.

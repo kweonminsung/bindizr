@@ -3,19 +3,21 @@
 
 use bindizr_core::model::role_grant::Action;
 
-/// String concatenation for the backends that spell it `||`.
-pub(crate) fn concat_pipes(parts: &[&str]) -> String {
-    parts.join(" || ")
-}
-
-/// String concatenation for MySQL, where `||` is logical OR.
-pub(crate) fn concat_fn(parts: &[&str]) -> String {
-    format!("CONCAT({})", parts.join(", "))
-}
+use crate::sql;
 
 /// Use `#` for LIKE escaping so stored backslashes remain data (RFC 1035, Section 5.1).
 /// It needs no SQL-literal escaping on any backend.
 const LIKE_ESCAPE: char = '#';
+
+/// Concatenate strings for the backends that spell it `||`.
+pub(crate) fn concat_pipes(parts: &[&str]) -> String {
+    parts.join(" || ")
+}
+
+/// Concatenate strings for MySQL, where `||` is logical OR.
+pub(crate) fn concat_fn(parts: &[&str]) -> String {
+    format!("CONCAT({})", parts.join(", "))
+}
 
 /// Escape a stored name for use as a `LIKE` pattern: the escape character
 /// first, so the ones it adds are not escaped again.
@@ -36,7 +38,7 @@ pub(crate) fn grant_record_match_sql(
 ) -> String {
     let actions = concat(&["','", "p.actions", "','"]);
     let read = format!("{actions} LIKE '%,{},%'", Action::RecordRead.as_str());
-    let apex = super::apex_owner_sql();
+    let apex = sql::apex_owner_sql();
     let suffix = "SUBSTR(p.record_name_pattern, 3)";
     let under = concat(&["'%.'", &like_escaped_sql(suffix)]);
     let name = format!(
@@ -48,12 +50,12 @@ pub(crate) fn grant_record_match_sql(
           OR {alias}.name = p.record_name_pattern)"
     );
     let types = match record_type_column {
-        None => "p.record_types = '*'".to_string(),
         Some(column) => {
             let haystack = concat(&["','", "p.record_types", "','"]);
             let needle = concat(&["'%,'", &format!("{alias}.{column}"), "',%'"]);
             format!("(p.record_types = '*' OR {haystack} LIKE {needle})")
         }
+        None => "p.record_types = '*'".to_string(),
     };
 
     format!("{read} AND {name} AND {types}")
@@ -86,9 +88,9 @@ mod tests {
         assert!(sql.ends_with("AND p.record_types = '*'"));
     }
 
-    /// Verify that mysql concatenates with a function.
+    /// Verify that the MySQL fragment concatenates with a function.
     #[test]
-    fn mysql_concatenates_with_a_function() {
+    fn grant_sql_concatenates_with_a_function_when_mysql() {
         // `||` is logical OR there, so the fragment must not use it.
         let sql = grant_record_match_sql("r", Some("record_type"), concat_fn);
 

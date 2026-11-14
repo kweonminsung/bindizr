@@ -1,27 +1,24 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use domain::base::iana::Rtype;
+use domain::base::Message;
 use domain::base::opt::exterr::ExtendedError;
-use domain::base::{Message, MessageBuilder, Name};
-use domain::rdata::tsig::Time48;
-use domain::tsig::ClientSequence;
+use domain::tsig::{ClientSequence, ClientTransaction};
 
 use super::*;
+use crate::dns;
+use crate::dns::name::{OwnerName, ZoneName};
+use crate::dns::query::TransferMessagePosition;
+use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
 use crate::dns::tsig::TsigSigningKey;
-use crate::dns::{DNS_TCP_MAX_SIZE, tsig};
+use crate::dns::{CatalogZone, DNS_TCP_MAX_SIZE, Serial, SoaInterval, Ttl, query};
 use crate::model::record::RecordType;
-use crate::model::tsig_key::TsigAlgorithm;
+use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
-/// Virtual catalog metadata retains its SOA, schema version and member wire records.
+/// Verify that virtual catalog metadata retains its SOA, schema version and member wire records.
 #[test]
 fn catalog_response_preserves_metadata_and_member_records() {
-    use crate::dns;
-    use crate::dns::name::ZoneName;
-    use crate::dns::query::TransferMessagePosition;
-    use crate::dns::{CatalogZone, Serial, SoaInterval, Ttl, query};
-
-    let catalog = CatalogZone {
+    let catalog_zone = CatalogZone {
         name: ZoneName::parse("catalog.example").unwrap(),
         serial: Serial::from(42),
         default_ttl: Ttl::from_secs(3600),
@@ -30,17 +27,19 @@ fn catalog_response_preserves_metadata_and_member_records() {
         expire: SoaInterval::from_secs(86400),
         minimum_ttl: Ttl::from_secs(60),
     };
-    let qname = catalog.name.to_wire_name().unwrap();
+    let qname = catalog_zone.name.to_wire_name().unwrap();
     let mut question = build_response().question();
     question.push((qname.clone(), Rtype::AXFR)).unwrap();
-    let request = question.finish().into_target();
-    let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
+    let query_data = question.finish().into_target();
+    let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR);
-    builder.add_catalog_soa(&catalog).unwrap();
-    builder.add_catalog_ns(&catalog).unwrap();
-    builder.add_catalog_schema_version(&catalog).unwrap();
-    builder.add_catalog_ptr(&catalog, "member.example").unwrap();
-    builder.add_catalog_soa(&catalog).unwrap();
+    builder.add_catalog_soa(&catalog_zone).unwrap();
+    builder.add_catalog_ns(&catalog_zone).unwrap();
+    builder.add_catalog_schema_version(&catalog_zone).unwrap();
+    builder
+        .add_catalog_ptr(&catalog_zone, "member.example")
+        .unwrap();
+    builder.add_catalog_soa(&catalog_zone).unwrap();
     let response = builder.build().unwrap();
     let records = query::extract_transfer_records(
         query.query_id,
@@ -62,16 +61,14 @@ fn catalog_response_preserves_metadata_and_member_records() {
     assert_eq!(records[1].rdata.as_bytes(), b"\x07invalid\0");
     assert_eq!(records[2].rdata.as_bytes(), b"\x012");
     assert_eq!(
-        dns::extract_member_zones(&records, &catalog.name).unwrap(),
+        dns::extract_member_zones(&records, &catalog_zone.name).unwrap(),
         vec![ZoneName::parse("member.example").unwrap()]
     );
 }
 
-/// Signed replies with long keys fit the UDP limit without breaking their MAC.
+/// Verify that signed replies with long keys fit the UDP limit without breaking their MAC.
 #[test]
 fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
-    use domain::tsig::ClientTransaction;
-
     let long_name = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -79,9 +76,9 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         "c".repeat(63),
         "d".repeat(61)
     );
-    let key = crate::model::tsig_key::TsigKey {
+    let key = TsigKey {
         name: long_name.clone(),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -104,11 +101,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
 
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-        let request = additional.finish().into_target();
+        let query_data = additional.finish().into_target();
 
-        assert!(request.len() < 512);
-        let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
-        let signer: TransferSigner = tsig::verify_tsig(&request, Some(key.clone()))
+        assert!(query_data.len() < 512);
+        let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
+        let signer: TransferSigner = tsig::verify_tsig(&query_data, Some(key.clone()))
             .unwrap()
             .into();
 
@@ -140,11 +137,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                     Time48::now(),
                 )
                 .unwrap();
-            crate::dns::tsig::tests::assert_response_mac(
-                &request,
-                &response,
-                TsigAlgorithm::HmacSha512,
-            );
+            tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
         }
 
         let response = query
@@ -158,17 +151,13 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
                 .header()
                 .tc()
         );
-        crate::dns::tsig::tests::assert_response_mac(
-            &request,
-            &response,
-            TsigAlgorithm::HmacSha512,
-        );
+        tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
 
         let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA).sign_with(signer);
         builder
             .add_raw_rdata(
                 query.qname.clone(),
-                16,
+                Rtype::TXT.to_int(),
                 3600,
                 Rdata::new(vec![0; 1400]).unwrap(),
             )
@@ -180,15 +169,11 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         assert_eq!(message.header_counts().ancount(), 0);
         assert!(response.len() <= query.response_limit().max_len());
         client.answer(&mut message.clone(), Time48::now()).unwrap();
-        crate::dns::tsig::tests::assert_response_mac(
-            &request,
-            &response,
-            TsigAlgorithm::HmacSha512,
-        );
+        tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
     }
 }
 
-/// A question for example.com and `qtype`, with one OPT record per entry
+/// Build a question for example.com and `qtype`, with one OPT record per entry
 /// of `opt_versions`, each advertising 4096 octets.
 fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
@@ -211,24 +196,24 @@ fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
     additional.finish()
 }
 
-/// The parsed form of a plain AXFR question.
+/// Build the parsed form of a plain AXFR question.
 fn axfr_query() -> ParsedQuery {
     ParsedQuery::parse(
         &build_question(Rtype::AXFR, &[]),
-        Keepalive::IdleTimeout(std::time::Duration::ZERO),
+        Keepalive::IdleTimeout(Duration::ZERO),
     )
     .unwrap()
 }
 
-/// Unreadable section boundaries cannot establish an OPT or a usable question.
+/// Verify that unreadable section boundaries cannot establish an OPT or a usable question.
 #[test]
 fn unreadable_query_bodies_receive_header_only_formerr() {
     for section in [4, 6, 8, 10] {
-        let mut wire = build_question(Rtype::SOA, &[]);
-        wire[section..section + 2].copy_from_slice(&2u16.to_be_bytes());
+        let mut query_data = build_question(Rtype::SOA, &[]);
+        query_data[section..section + 2].copy_from_slice(&2u16.to_be_bytes());
 
         for keepalive in [Keepalive::None, Keepalive::IdleTimeout(Duration::ZERO)] {
-            let error = ParsedQuery::parse(&wire, keepalive).unwrap_err();
+            let error = ParsedQuery::parse(&query_data, keepalive).unwrap_err();
             let response = error
                 .query_metadata()
                 .unwrap()
@@ -264,14 +249,14 @@ fn encoding_splits_overflowing_answers_into_frames() {
         let frame = builder
             .add_answer_or_overflow(|builder| {
                 builder.add_text_rdata(
-                    &format!("host-{}.example.com.", index),
-                    3600,
-                    &RecordType::A,
+                    &format!("host-{index}.example.com."),
+                    RecordType::A,
                     &format!("192.0.2.{}", index % 255),
+                    3600,
                     None,
                 )
             })
-            .unwrap_or_else(|error| panic!("{}", error));
+            .unwrap_or_else(|error| panic!("{error}"));
 
         if let Some(frame) = frame {
             wire.extend_from_slice(&frame);
@@ -300,7 +285,7 @@ fn encoding_splits_overflowing_answers_into_frames() {
     assert!(frame_count > 1);
 }
 
-/// Verify that `build_truncated_response` echoes the question with tc set.
+/// Verify that `build_signed_truncated_response` echoes the question with tc set.
 #[test]
 fn truncated_response_echoes_the_question_with_tc_set() {
     let mut builder = MessageBuilder::new_vec();
@@ -328,19 +313,20 @@ fn truncated_response_echoes_the_question_with_tc_set() {
 /// Verify that `is_response` separates a reply from a query.
 #[test]
 fn is_response_separates_a_reply_from_a_query() {
-    let query = build_question(Rtype::A, &[]);
+    let query_data = build_question(Rtype::A, &[]);
 
-    assert!(!is_response(&query));
+    assert!(!is_response(&query_data));
 
-    let parsed = ParsedQuery::parse(&query, Keepalive::None).expect("a question-only query parses");
-    let reply = parsed
-        .build_signed_error_response(super::Rcode::REFUSED.into(), None, None)
+    let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
+    let response = query
+        .build_signed_error_response(Rcode::REFUSED.into(), None, None)
         .unwrap();
 
-    assert!(is_response(&reply));
+    assert!(is_response(&response));
 }
 
-/// Enforce QUERY's question limit; an unreadable body receives a header-only error.
+/// Verify that QUERY's question limit is enforced and an unreadable body receives a header-only
+/// error.
 #[test]
 fn multi_question_headers_receive_formerr_only_for_query() {
     for (opcode, count, expected) in [
@@ -348,22 +334,22 @@ fn multi_question_headers_receive_formerr_only_for_query() {
         (Opcode::QUERY, 2, Some(OptRcode::FORMERR)),
         (Opcode::STATUS, 2, None),
     ] {
-        let mut query = Message::from_octets(build_question(Rtype::SOA, &[])).unwrap();
-        query.header_mut().set_opcode(opcode);
-        let mut wire = query.into_octets();
-        wire[4..6].copy_from_slice(&count.to_be_bytes());
+        let mut message = Message::from_octets(build_question(Rtype::SOA, &[])).unwrap();
+        message.header_mut().set_opcode(opcode);
+        let mut query_data = message.into_octets();
+        query_data[4..6].copy_from_slice(&count.to_be_bytes());
 
         if count == 2 {
-            wire.extend_from_within(12..);
+            query_data.extend_from_within(12..);
         }
 
-        let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+        let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
 
-        assert_eq!(parsed.question_count, count);
-        assert_eq!(parsed.format_error(), expected, "{opcode} QDCOUNT={count}");
+        assert_eq!(query.question_count, count);
+        assert_eq!(query.format_error(), expected, "{opcode} QDCOUNT={count}");
 
         if let Some(rcode) = expected {
-            let response = parsed
+            let response = query
                 .build_signed_error_response(rcode, None, None)
                 .unwrap();
             let response = Message::from_octets(response).unwrap();
@@ -374,7 +360,7 @@ fn multi_question_headers_receive_formerr_only_for_query() {
         }
 
         for body in [&[][..], &[0xc0, 0x0c][..]] {
-            let mut unreadable = wire[..12].to_vec();
+            let mut unreadable = query_data[..12].to_vec();
             unreadable.extend_from_slice(body);
             let error = ParsedQuery::parse(&unreadable, Keepalive::None).unwrap_err();
             let response = Message::from_octets(
@@ -395,13 +381,13 @@ fn multi_question_headers_receive_formerr_only_for_query() {
     }
 }
 
-/// A QUERY without a question is answered FORMERR, not dropped (RFC 9619,
+/// Verify that a QUERY without a question is answered FORMERR, not dropped (RFC 9619,
 /// Section 4 leaves QDCOUNT = 0 to the server).
 #[test]
 fn question_less_queries_receive_formerr() {
-    let mut wire = build_question(Rtype::SOA, &[])[..12].to_vec();
-    wire[4..6].copy_from_slice(&0u16.to_be_bytes());
-    let error = ParsedQuery::parse(&wire, Keepalive::None).unwrap_err();
+    let mut query_data = build_question(Rtype::SOA, &[])[..12].to_vec();
+    query_data[4..6].copy_from_slice(&0u16.to_be_bytes());
+    let error = ParsedQuery::parse(&query_data, Keepalive::None).unwrap_err();
     let response = Message::from_octets(
         error
             .query_metadata()
@@ -418,7 +404,7 @@ fn question_less_queries_receive_formerr() {
 
     // A header shorter than twelve octets names no query to answer.
     assert!(
-        ParsedQuery::parse(&wire[..11], Keepalive::None)
+        ParsedQuery::parse(&query_data[..11], Keepalive::None)
             .unwrap_err()
             .query_metadata()
             .is_none()
@@ -466,14 +452,14 @@ fn strip_frame_length(frame: Vec<u8>) -> Vec<u8> {
 /// Verify that every envelope of a signed transfer carries a verifiable mac.
 #[test]
 fn signed_transfer_authenticates_every_envelope() {
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let (query, mut client) = build_signed_axfr_query(key.clone(), Some(true));
-    let parsed = ParsedQuery::parse(&query, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let (query_data, mut client) = build_signed_axfr_query(key.clone(), Some(true));
+    let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
-    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::AXFR)
-        .sign_with(tsig::verify_tsig(&query, Some(key)).unwrap().into());
+    let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR)
+        .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
 
     // Two envelopes, so the second is checked against the MAC chain the first
     // started rather than against the request alone (RFC 8945, Section 5.3.1).
@@ -483,14 +469,14 @@ fn signed_transfer_authenticates_every_envelope() {
         let frame = builder
             .add_answer_or_overflow(|builder| {
                 builder.add_text_rdata(
-                    &format!("host-{}.example.com.", index),
-                    3600,
-                    &RecordType::A,
+                    &format!("host-{index}.example.com."),
+                    RecordType::A,
                     &format!("192.0.2.{}", index % 255),
+                    3600,
                     None,
                 )
             })
-            .unwrap_or_else(|error| panic!("{}", error));
+            .unwrap_or_else(|error| panic!("{error}"));
 
         if let Some(frame) = frame {
             frames.push(frame);
@@ -504,37 +490,32 @@ fn signed_transfer_authenticates_every_envelope() {
     for frame in frames {
         let mut message = Message::from_octets(strip_frame_length(frame)).unwrap();
         assert!(message.opt().unwrap().dnssec_ok());
-        client
-            .answer(&mut message, Time48::now())
-            .expect("envelope did not verify against the request's key");
+        client.answer(&mut message, Time48::now()).unwrap();
     }
 
-    client.done().expect("the sequence did not close cleanly");
+    client.done().unwrap();
 }
 
 /// Verify that a signed message reserves room for its TSIG record.
 #[test]
 fn signed_message_reserves_space_for_tsig() {
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let (query, _) = build_signed_axfr_query(key.clone(), None);
+    let (query_data, _) = build_signed_axfr_query(key.clone(), None);
     let unsigned = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR);
     let signed = DnsMessageBuilder::new(&axfr_query(), Rtype::AXFR)
-        .sign_with(tsig::verify_tsig(&query, Some(key)).unwrap().into());
+        .sign_with(tsig::verify_tsig(&query_data, Some(key)).unwrap().into());
 
     // Without the reservation an envelope could fill to the wire limit and
     // then overflow it once the TSIG record is appended.
     assert!(signed.message_len() > unsigned.message_len());
 }
 
-/// Every storable variable-size record fits a signed EDNS TCP envelope,
+/// Verify that every storable variable-size record fits a signed EDNS TCP envelope,
 /// including maximal, unrelated question and key names.
 #[test]
 fn maximum_record_values_fit_signed_edns_transfer_frames() {
-    use crate::dns::name::{OwnerName, ZoneName};
-    use crate::dns::record::{MAX_RECORD_RDATA, TxtRecordValue};
-
     let longest_name = |labels: [char; 4]| {
         labels
             .into_iter()
@@ -543,11 +524,11 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
             .collect::<Vec<_>>()
             .join(".")
     };
-    let zone = ZoneName::parse(&longest_name(['a', 'b', 'c', 'd'])).unwrap();
-    let qname = zone.to_wire_name().unwrap();
-    let key = crate::model::tsig_key::TsigKey {
+    let zone_name = ZoneName::parse(&longest_name(['a', 'b', 'c', 'd'])).unwrap();
+    let qname = zone_name.to_wire_name().unwrap();
+    let key = TsigKey {
         name: longest_name(['k', 'l', 'm', 'n']),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -598,11 +579,12 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
             .unwrap();
         let mut client =
             ClientSequence::request(key.clone(), &mut additional, Time48::now()).unwrap();
-        let request = additional.finish();
+        let query_data = additional.finish();
         let query =
-            ParsedQuery::parse(&request, Keepalive::IdleTimeout(Duration::from_secs(30))).unwrap();
+            ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::from_secs(30)))
+                .unwrap();
         let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(
-            tsig::verify_tsig(&request, Some(key.clone()))
+            tsig::verify_tsig(&query_data, Some(key.clone()))
                 .unwrap()
                 .into(),
         );
@@ -612,11 +594,11 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
             if let Some(frame) = builder
                 .add_answer_or_overflow(|builder| {
                     builder.add_record_parts(
-                        &zone,
                         &OwnerName::apex(),
-                        &record_type,
+                        &zone_name,
+                        record_type,
                         &value,
-                        crate::dns::Ttl::from_secs(300),
+                        Ttl::from_secs(300),
                         None,
                     )
                 })
@@ -650,31 +632,31 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
     }
 }
 
-/// Verify the OPT handling of RFC 6891, Sections 6.1.1 and 6.1.3: echoed
+/// Verify that OPT follows RFC 6891, Sections 6.1.1 and 6.1.3: echoed
 /// with the extended error, FORMERR when doubled, BADVERS for a newer version.
 #[test]
 fn edns_query_returns_opt() {
-    let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
+    let query = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
 
     assert_eq!(
-        parsed.edns,
+        query.edns,
         Edns::Present {
             udp_payload_size: 4096,
             version: 0,
             dnssec_ok: false,
         }
     );
-    assert_eq!(parsed.response_limit().max_len(), 1232);
-    assert!(parsed.format_error().is_none());
-    let reply = parsed
+    assert_eq!(query.response_limit().max_len(), 1232);
+    assert!(query.format_error().is_none());
+    let response = query
         .build_signed_error_response(
             Rcode::REFUSED.into(),
             Some(ExtendedErrorCode::PROHIBITED),
             None,
         )
         .unwrap();
-    let reply = Message::from_octets(reply.as_slice()).unwrap();
-    let opt = reply.opt().expect("an EDNS query is answered with an OPT");
+    let response = Message::from_octets(response.as_slice()).unwrap();
+    let opt = response.opt().unwrap();
 
     assert_eq!(opt.version(), 0);
     assert_eq!(opt.udp_payload_size(), 1232);
@@ -682,7 +664,7 @@ fn edns_query_returns_opt() {
         .opt()
         .iter::<ExtendedError<_>>()
         .next()
-        .expect("the refusal names its reason")
+        .unwrap()
         .unwrap();
 
     assert_eq!(ede.code(), ExtendedErrorCode::PROHIBITED);
@@ -691,13 +673,13 @@ fn edns_query_returns_opt() {
         ParsedQuery::parse(&build_question(Rtype::SOA, &[0, 0]), Keepalive::None).unwrap();
 
     assert_eq!(doubled.edns, Edns::Malformed);
-    let reply = doubled
+    let response = doubled
         .build_signed_error_response(doubled.format_error().unwrap(), None, None)
         .unwrap();
-    let reply = Message::from_octets(reply.as_slice()).unwrap();
+    let response = Message::from_octets(response.as_slice()).unwrap();
 
-    assert_eq!(reply.header().rcode(), Rcode::FORMERR);
-    assert!(reply.opt().is_some());
+    assert_eq!(response.header().rcode(), Rcode::FORMERR);
+    assert!(response.opt().is_some());
 
     let newer = ParsedQuery::parse(&build_question(Rtype::SOA, &[1]), Keepalive::None).unwrap();
 
@@ -709,13 +691,13 @@ fn edns_query_returns_opt() {
             dnssec_ok: false,
         }
     );
-    let reply = newer
+    let response = newer
         .build_signed_error_response(newer.format_error().unwrap(), None, None)
         .unwrap();
-    let reply = Message::from_octets(reply.as_slice()).unwrap();
-    let opt = reply.opt().unwrap();
+    let response = Message::from_octets(response.as_slice()).unwrap();
+    let opt = response.opt().unwrap();
 
-    assert_eq!(opt.rcode(reply.header()), OptRcode::BADVERS);
+    assert_eq!(opt.rcode(response.header()), OptRcode::BADVERS);
     assert_eq!(opt.version(), 0);
 
     // Without EDNS the limit is RFC 1035's.
@@ -728,21 +710,21 @@ fn edns_query_returns_opt() {
     );
 }
 
-/// Echo DO while clearing reserved EDNS flags in error and truncated responses.
+/// Verify that error and truncated responses echo DO while clearing reserved EDNS flags.
 #[test]
 fn response_encoding_preserves_edns_dnssec_ok() {
     for version in [0, 1] {
         for flags in [0u16, 0x8000, 0x7fff, 0xffff] {
-            let mut wire = build_question(Rtype::SOA, &[version]);
-            let offset = wire.len() - 4;
-            wire[offset..offset + 2].copy_from_slice(&flags.to_be_bytes());
-            let parsed = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
-            let rcode = parsed.format_error().unwrap_or(OptRcode::REFUSED);
+            let mut query_data = build_question(Rtype::SOA, &[version]);
+            let offset = query_data.len() - 4;
+            query_data[offset..offset + 2].copy_from_slice(&flags.to_be_bytes());
+            let query = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
+            let rcode = query.format_error().unwrap_or(OptRcode::REFUSED);
             let responses = [
-                parsed
+                query
                     .build_signed_error_response(rcode, Some(ExtendedErrorCode::PROHIBITED), None)
                     .unwrap(),
-                parsed.build_signed_truncated_response(None).unwrap(),
+                query.build_signed_truncated_response(None).unwrap(),
             ];
 
             for response in responses {
@@ -765,8 +747,8 @@ fn response_encoding_preserves_edns_dnssec_ok() {
 #[test]
 fn udp_response_truncates_answers_above_limit() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
-    let parsed = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
-    let mut builder = DnsMessageBuilder::new(&parsed, Rtype::SOA);
+    let query = ParsedQuery::parse(&build_question(Rtype::SOA, &[0]), Keepalive::None).unwrap();
+    let mut builder = DnsMessageBuilder::new(&query, Rtype::SOA);
 
     for _ in 0..100 {
         builder
@@ -795,16 +777,16 @@ fn response_encoding_preserves_question_class() {
     builder.header_mut().set_id(5);
     let mut question = builder.question();
     question.push((&qname, Rtype::SOA, Class::CH)).unwrap();
-    let parsed = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
+    let query = ParsedQuery::parse(&question.finish(), Keepalive::None).unwrap();
 
-    assert_eq!(parsed.qclass, Class::CH);
+    assert_eq!(query.qclass, Class::CH);
 
-    let reply = parsed
+    let response = query
         .build_signed_error_response(Rcode::NOTAUTH.into(), None, None)
         .unwrap();
-    let reply = Message::from_octets(reply.as_slice()).unwrap();
+    let response = Message::from_octets(response.as_slice()).unwrap();
 
-    assert_eq!(reply.first_question().unwrap().qclass(), Class::CH);
+    assert_eq!(response.first_question().unwrap().qclass(), Class::CH);
 }
 
 /// Verify that only TCP answers advertise edns-tcp-keepalive
@@ -820,12 +802,7 @@ fn tcp_response_advertises_idle_timeout() {
         .build_signed_error_response(Rcode::REFUSED.into(), None, None)
         .unwrap();
     let message = Message::from_octets(response.as_slice()).unwrap();
-    let keepalive = message
-        .opt()
-        .unwrap()
-        .opt()
-        .tcp_keepalive()
-        .expect("a TCP answer advertises its idle timeout");
+    let keepalive = message.opt().unwrap().opt().tcp_keepalive().unwrap();
 
     assert_eq!(keepalive.timeout().map(u16::from), Some(300));
 
@@ -838,14 +815,14 @@ fn tcp_response_advertises_idle_timeout() {
     assert!(message.opt().unwrap().opt().tcp_keepalive().is_none());
 }
 
-/// OPT is unique, root-owned, and confined to Additional (RFC 6891, Section 6.1.1).
+/// Verify that OPT is unique, root-owned, and confined to Additional (RFC 6891, Section 6.1.1).
 #[test]
 fn query_validation_rejects_invalid_opt_owner_and_section() {
     let plain = build_question(Rtype::SOA, &[]);
-    let wire = build_question(Rtype::SOA, &[0]);
+    let query_data = build_question(Rtype::SOA, &[0]);
     let start = plain.len();
-    let mut named = wire.clone();
-    named.splice(start..start + 1, [1, b'x', 0]);
+    let mut named = query_data.clone();
+    named.splice(start..=start, [1, b'x', 0]);
 
     assert_eq!(
         ParsedQuery::parse(&named, Keepalive::None)
@@ -855,7 +832,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
     );
 
     for count in [6, 8] {
-        let mut misplaced = wire.clone();
+        let mut misplaced = query_data.clone();
         misplaced[count..count + 2].copy_from_slice(&1u16.to_be_bytes());
         misplaced[10..12].fill(0);
 
@@ -866,7 +843,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
             Some(OptRcode::FORMERR)
         );
         misplaced[10..12].copy_from_slice(&1u16.to_be_bytes());
-        misplaced.extend_from_slice(&wire[start..]);
+        misplaced.extend_from_slice(&query_data[start..]);
 
         assert_eq!(
             ParsedQuery::parse(&misplaced, Keepalive::None)
@@ -877,7 +854,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
     }
 }
 
-/// EDNS cannot lower the UDP floor or raise the server ceiling; streams ignore it.
+/// Verify that EDNS cannot lower the UDP floor or raise the server ceiling, and streams ignore it.
 #[test]
 fn response_limits_follow_transport_and_edns() {
     for (advertised, expected) in [
@@ -895,7 +872,7 @@ fn response_limits_follow_transport_and_edns() {
         assert!(
             matches!(limit.validate_len(expected + 1), Err(EncodeMessageError::TooLarge { len, max_len }) if len == expected + 1 && max_len == expected)
         );
-        let (_, wire) = crate::dns::query::build_question(
+        let (_, additional) = query::build_question(
             Opcode::QUERY,
             false,
             false,
@@ -903,9 +880,10 @@ fn response_limits_follow_transport_and_edns() {
             Rtype::SOA,
             Some(advertised),
         );
-        let wire = wire.finish();
-        let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
-        let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+        let query_data = additional.finish();
+        let udp = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
+        let stream =
+            ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
 
         assert_eq!(udp.response_limit(), limit);
         assert_eq!(stream.response_limit(), ResponseLimit::STREAM);
@@ -915,11 +893,9 @@ fn response_limits_follow_transport_and_edns() {
     assert!(ResponseLimit::STREAM.validate_len(65536).is_err());
 }
 
-/// A failed final size check must not consume the next MAC in a response chain.
+/// Verify that a failed final size check does not consume the next MAC in a response chain.
 #[test]
 fn oversized_response_does_not_advance_the_signer() {
-    use domain::tsig::ClientTransaction;
-
     let qname = Name::<Vec<u8>>::from_str(&format!(
         "{}.{}.{}.q",
         "a".repeat(63),
@@ -927,24 +903,18 @@ fn oversized_response_does_not_advance_the_signer() {
         "c".repeat(63)
     ))
     .unwrap();
-    let key = crate::model::tsig_key::TsigKey {
+    let key = TsigKey {
         name: format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63)),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
-    let (_, mut additional) = crate::dns::query::build_question(
-        Opcode::QUERY,
-        false,
-        false,
-        &qname,
-        Rtype::SOA,
-        Some(512),
-    );
+    let (_, mut additional) =
+        query::build_question(Opcode::QUERY, false, false, &qname, Rtype::SOA, Some(512));
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-    let wire = additional.finish();
-    let mut signer: TransferSigner = tsig::verify_tsig(&wire, Some(key)).unwrap().into();
-    let udp = ParsedQuery::parse(&wire, Keepalive::None).unwrap();
+    let query_data = additional.finish();
+    let mut signer: TransferSigner = tsig::verify_tsig(&query_data, Some(key)).unwrap().into();
+    let udp = ParsedQuery::parse(&query_data, Keepalive::None).unwrap();
 
     assert!(matches!(
         udp.build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer)),
@@ -953,7 +923,7 @@ fn oversized_response_does_not_advance_the_signer() {
             max_len: 512
         })
     ));
-    let stream = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let stream = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
     let response = stream
         .build_signed_error_response(OptRcode::REFUSED, None, Some(&mut signer))
         .unwrap();
@@ -962,27 +932,19 @@ fn oversized_response_does_not_advance_the_signer() {
         .unwrap();
 }
 
-/// A rejected TCP frame leaves the signer usable for the following error response.
+/// Verify that a rejected TCP frame leaves the signer usable for the following error response.
 #[test]
 fn oversized_frame_does_not_advance_the_signer() {
-    use domain::tsig::ClientTransaction;
-
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
     let query = axfr_query();
-    let (_, mut additional) = crate::dns::query::build_question(
-        Opcode::QUERY,
-        false,
-        false,
-        &query.qname,
-        Rtype::AXFR,
-        None,
-    );
+    let (_, mut additional) =
+        query::build_question(Opcode::QUERY, false, false, &query.qname, Rtype::AXFR, None);
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-    let wire = additional.finish();
-    let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
-    let signer = tsig::verify_tsig(&wire, Some(key)).unwrap();
+    let query_data = additional.finish();
+    let query = ParsedQuery::parse(&query_data, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
     let mut builder = DnsMessageBuilder::new(&query, Rtype::AXFR).sign_with(signer.into());
 
     // Bypass the chunking helper to exercise the final frame guard itself.

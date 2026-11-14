@@ -2,17 +2,18 @@
 
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
-use bindizr_core::model::dnssec_key::{DnssecAlgorithm, DnssecKeyId};
+use bindizr_core::model::dnssec_key::{
+    DnssecAlgorithm, DnssecKeyId, DnssecKeyRole, DnssecKeyState,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::DnssecPolicyResponse;
-use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
+use crate::types::dnssec_policy::DnssecPolicyResponse;
 
 /// Whether a step that depends on the parent's DS asks the parent
 /// nameservers, or takes the DS on the operator's word.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DsCheck {
     Probe,
@@ -20,19 +21,27 @@ pub enum DsCheck {
 }
 
 impl DsCheck {
-    /// The check a `skip_ds_check` flag asks for.
+    /// Return the check a `skip_ds_check` flag asks for.
     pub fn from_skip_ds_check(skip_ds_check: bool) -> Self {
         if skip_ds_check {
-            DsCheck::Skip
+            Self::Skip
         } else {
-            DsCheck::Probe
+            Self::Probe
+        }
+    }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Probe => "probe",
+            Self::Skip => "skip",
         }
     }
 }
 
 /// Whether a key promotion waits out the hold-down resolvers need to learn
 /// the new key, or goes ahead at once.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Holddown {
     Wait,
@@ -40,18 +49,26 @@ pub enum Holddown {
 }
 
 impl Holddown {
-    /// The wait a `skip_holddown` flag asks for.
+    /// Return the wait a `skip_holddown` flag asks for.
     pub fn from_skip_holddown(skip_holddown: bool) -> Self {
         if skip_holddown {
-            Holddown::Skip
+            Self::Skip
         } else {
-            Holddown::Wait
+            Self::Wait
+        }
+    }
+
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wait => "wait",
+            Self::Skip => "skip",
         }
     }
 }
 
 /// Request body for enabling DNSSEC on a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EnableDnssecRequest {
     /// Name of the DNSSEC policy to sign under; defaults to `default`.
@@ -66,7 +83,7 @@ pub struct EnableDnssecRequest {
 
 /// Request body for changing a zone's signing settings; an omitted field
 /// keeps its value.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecSettingsRequest {
     /// Policy to move the signed zone to; it must share the zone's key
@@ -83,7 +100,7 @@ pub struct UpdateDnssecSettingsRequest {
 }
 
 /// One of the zone's SEP keys against the parent's DS records.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecDelegationKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
@@ -105,15 +122,25 @@ pub struct DnssecDelegationKeyResponse {
 }
 
 /// Whether the parent serves a DS for the zone.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DsState {
     Published,
     Hidden,
 }
 
+impl DsState {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Published => "published",
+            Self::Hidden => "hidden",
+        }
+    }
+}
+
 /// What the parent zone's servers answered when asked for the zone's DS.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecDelegationResponse {
     /// The nameservers asked, from the zone's setting.
     pub parent_ns_addrs: Vec<String>,
@@ -131,7 +158,7 @@ pub struct DnssecDelegationResponse {
 }
 
 /// Request body for starting a key rollover.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StartDnssecRolloverRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
@@ -141,7 +168,7 @@ pub struct StartDnssecRolloverRequest {
 }
 
 /// Public signing-key metadata; private material is excluded from HTTP responses.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
@@ -166,7 +193,7 @@ pub struct DnssecKeyResponse {
 }
 
 /// A key's DS form for parent-zone registration.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecDsResponse {
     #[schema(example = 34217, value_type = u16)]
     pub key_tag: KeyTag,
@@ -185,7 +212,7 @@ pub struct DnssecDsResponse {
 }
 
 /// DNSSEC signing state of a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -224,7 +251,7 @@ pub struct DnssecStatusResponse {
 
 /// One key's BIND file contents. Served only over the daemon socket:
 /// private keys never transit the HTTP API.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnssecKeyMaterialResponse {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
@@ -237,7 +264,7 @@ pub struct DnssecKeyMaterialResponse {
 }
 
 /// Response body listing a zone's keys in BIND file form.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportDnssecKeysResponse {
     pub zone_name: String,
     pub keys: Vec<DnssecKeyMaterialResponse>,
@@ -245,7 +272,7 @@ pub struct ExportDnssecKeysResponse {
 
 /// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
 /// matching `K*.private` contents.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyPair {
     pub dnskey: String,
@@ -253,7 +280,7 @@ pub struct ImportDnssecKeyPair {
 }
 
 /// Request body importing a zone's complete key set; daemon-socket only.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeysRequest {
     /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.
@@ -264,107 +291,43 @@ pub struct ImportDnssecKeysRequest {
     pub policy_name: Option<String>,
 }
 
-impl DsCheck {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Probe => "probe",
-            Self::Skip => "skip",
-        }
-    }
-}
-
-impl serde::Serialize for DsCheck {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl Holddown {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Wait => "wait",
-            Self::Skip => "skip",
-        }
-    }
-}
-
-impl serde::Serialize for Holddown {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl DsState {
-    /// Return the canonical wire spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Published => "published",
-            Self::Hidden => "hidden",
-        }
-    }
-}
-
-impl serde::Serialize for DsState {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every DsCheck variant.
+    /// Verify that `DsCheck` has one spelling across `as_str` and serde.
     #[test]
     fn ds_check_spells_itself_once() {
-        for (value, expected) in [(DsCheck::Probe, "probe"), (DsCheck::Skip, "skip")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [DsCheck::Probe, DsCheck::Skip] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<DsCheck>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<DsCheck>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every Holddown variant.
+    /// Verify that `Holddown` has one spelling across `as_str` and serde.
     #[test]
     fn holddown_spells_itself_once() {
-        for (value, expected) in [(Holddown::Wait, "wait"), (Holddown::Skip, "skip")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [Holddown::Wait, Holddown::Skip] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<Holddown>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<Holddown>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every DsState variant.
+    /// Verify that `DsState` has one spelling across `as_str` and serde.
     #[test]
     fn ds_state_spells_itself_once() {
-        for (value, expected) in [
-            (DsState::Published, "published"),
-            (DsState::Hidden, "hidden"),
-        ] {
-            assert_eq!(value.as_str(), expected);
+        for value in [DsState::Published, DsState::Hidden] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<DsState>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<DsState>(json!(value.as_str())).unwrap(),
                 value
             );
         }

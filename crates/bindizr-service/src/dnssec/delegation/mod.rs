@@ -3,23 +3,22 @@
 use bindizr_core::dns::dnssec::{DS_DIGEST_TYPES, KeyTag};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecordSet;
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyState};
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 use thiserror::Error;
 
-use super::status;
 use crate::authorization::Caller;
 use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
-use crate::dnssec::SignedZone;
+use crate::dnssec::{SignedZone, status};
 use crate::error::ServiceError;
-use crate::model::dnssec_key::{DnssecKey, DnssecKeyState};
-use crate::model::zone::Zone;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
 };
-use crate::{Context, transaction};
+use crate::{Context, dnssec, transaction};
 
 /// Why the zone's configuration prevents a delegation check.
 #[derive(Debug, Error)]
@@ -36,8 +35,9 @@ pub async fn check_ds(
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
+
     let result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(
+        let signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecRead,
@@ -45,7 +45,7 @@ pub async fn check_ds(
             LockLevel::Shared,
         )
         .await?;
-        let status = status::load_status_tx(
+        let status = status::lookup_status_tx(
             &mut tx,
             &signed.zone,
             Some(&signed.policy),
@@ -57,6 +57,7 @@ pub async fn check_ds(
         Ok((signed, status))
     }
     .await;
+
     let (signed, mut status) =
         transaction::finish_tx(tx, result, "failed to check the parent DS").await?;
 
@@ -67,15 +68,15 @@ pub async fn check_ds(
     Ok(status)
 }
 
-/// The parent's answer about the zone's DS, matched against the zone's
-/// SEP keys, or the unverified error a refusal reports.
+/// Probe the parent for the zone's DS, matched against the zone's SEP keys,
+/// or return the unverified error a refusal reports.
 pub(crate) async fn probe_delegation(
     cx: &Context,
     signed: &SignedZone,
 ) -> Result<DnssecDelegationResponse, ServiceError> {
     let parent_ns_addrs = signed.zone.parent_ns_addrs.as_deref().ok_or_else(|| {
         ServiceError::dnssec_ds_unverified(
-            signed.zone.name.as_str(),
+            &signed.zone.name,
             ProbeDelegationError::NoParentNameservers,
         )
     })?;
@@ -83,7 +84,7 @@ pub(crate) async fn probe_delegation(
 
     let parent = ds::probe_parent_ds(&signed.zone.name, parent_ns_addrs, timeout)
         .await
-        .map_err(|error| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), error))?;
+        .map_err(|error| ServiceError::dnssec_ds_unverified(&signed.zone.name, error))?;
 
     build_delegation_response(&signed.zone, &signed.keys, parent)
 }
@@ -104,7 +105,7 @@ fn build_delegation_response(
     ds_key_tags.dedup();
 
     let apex = zone.name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone apex: {}", error), error)
+        ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
     })?;
 
     let mut delegation_keys = Vec::new();

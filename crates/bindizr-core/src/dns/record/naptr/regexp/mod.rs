@@ -3,6 +3,22 @@
 
 use thiserror::Error;
 
+/// The character classes of the C locale.
+const CHARACTER_CLASSES: [&[u8]; 12] = [
+    b":alnum:",
+    b":digit:",
+    b":punct:",
+    b":alpha:",
+    b":graph:",
+    b":space:",
+    b":blank:",
+    b":lower:",
+    b":upper:",
+    b":cntrl:",
+    b":print:",
+    b":xdigit:",
+];
+
 /// Why BIND would refuse a NAPTR regexp, with the expression it refuses.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ValidateNaptrRegexpError {
@@ -186,24 +202,8 @@ pub(crate) fn validate_naptr_regexp(regexp: &str) -> Result<(), ValidateNaptrReg
     Ok(())
 }
 
-/// The character classes of the C locale.
-const CHARACTER_CLASSES: [&[u8]; 12] = [
-    b":alnum:",
-    b":digit:",
-    b":punct:",
-    b":alpha:",
-    b":graph:",
-    b":space:",
-    b":blank:",
-    b":lower:",
-    b":upper:",
-    b":cntrl:",
-    b":print:",
-    b":xdigit:",
-];
-
 /// Where the validator stands inside the expression.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     Outside,
     Bracket,

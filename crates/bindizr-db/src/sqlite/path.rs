@@ -1,8 +1,9 @@
 //! SQLite file paths, parent directories, and connection URLs.
 
-use std::fs;
+use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::{fs, io};
 
 use crate::error::DatabaseError;
 
@@ -26,13 +27,13 @@ pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), DatabaseError> {
         return Ok(());
     }
 
-    let failed = |source: std::io::Error| DatabaseError::CreateSqliteDir {
+    let failed = |source: io::Error| DatabaseError::CreateSqliteDir {
         path: parent.to_path_buf(),
         source,
     };
     fs::create_dir_all(parent).map_err(failed)?;
 
-    fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(failed)
+    fs::set_permissions(parent, Permissions::from_mode(0o700)).map_err(failed)
 }
 
 /// Convert a configured SQLite path into a SQLx connection URL.
@@ -47,7 +48,7 @@ pub(crate) fn to_url(file_path: &str) -> Result<String, DatabaseError> {
         return Ok(file_path.to_string());
     }
 
-    Ok(format!("sqlite:{}", file_path))
+    Ok(format!("sqlite:{file_path}"))
 }
 
 #[cfg(test)]
@@ -66,12 +67,12 @@ mod tests {
         assert!(nested.is_dir());
 
         // The database holds TSIG secrets, so the directory gates access.
-        let mode = std::fs::metadata(&nested)
+        let mode = fs::metadata(&nested)
             .expect("metadata")
             .permissions()
             .mode();
 
-        assert_eq!(mode & 0o777, 0o700, "mode was {:o}", mode);
+        assert_eq!(mode & 0o777, 0o700, "mode was {mode:o}");
 
         // Already there on the next start, which must not be an error.
         create_parent_dir(file.to_str().expect("utf-8")).expect("accepts an existing directory");
@@ -82,29 +83,31 @@ mod tests {
         create_parent_dir("sqlite:my_database.db").expect("sqlite URI");
     }
 
-    /// Verify that plain paths become SQLite connection URLs.
+    /// Verify that a path without the `sqlite:` scheme gains it, and one with
+    /// it passes through.
     #[test]
-    fn to_url_formats_plain_paths() {
-        let result = to_url("/absolute/path/to/database.db");
+    fn to_url_prefixes_paths_without_the_sqlite_scheme() {
+        assert_eq!(
+            to_url("/absolute/path/to/database.db").unwrap(),
+            "sqlite:/absolute/path/to/database.db"
+        );
+        assert_eq!(
+            to_url("relative/path/to/database.db").unwrap(),
+            "sqlite:relative/path/to/database.db"
+        );
+        assert_eq!(
+            to_url("file::memory:?cache=shared").unwrap(),
+            "sqlite:file::memory:?cache=shared"
+        );
+        assert_eq!(
+            to_url("sqlite:my_database.db").unwrap(),
+            "sqlite:my_database.db"
+        );
+    }
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:/absolute/path/to/database.db");
-
-        let result = to_url("relative/path/to/database.db");
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:relative/path/to/database.db");
-
+    /// Verify that an empty path is rejected rather than turned into a URL.
+    #[test]
+    fn to_url_rejects_an_empty_path() {
         assert!(matches!(to_url(""), Err(DatabaseError::EmptySqlitePath)));
-
-        let result = to_url("file::memory:?cache=shared");
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:file::memory:?cache=shared");
-
-        let result = to_url("sqlite:my_database.db");
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:my_database.db");
     }
 }

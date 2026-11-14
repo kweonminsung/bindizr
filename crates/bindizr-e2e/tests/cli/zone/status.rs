@@ -1,9 +1,9 @@
 use crate::common::TestApp;
 
-/// Verify zone status reporting through the CLI.
+/// Verify that the CLI reports zone status.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_status_returns_current_serial_via_cli() {
+async fn zone_status_returns_current_serial() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("status.example");
 
@@ -14,7 +14,7 @@ async fn zone_status_returns_current_serial_via_cli() {
         .await;
 
     // Serial 1: the zone and its apex NS arrive in one version.
-    assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
+    assert!(status.contains(&format!("Zone {zone_name} (serial 1)")));
 
     if !app.has_dns_secondaries() {
         assert!(status.contains("No enabled secondaries."));

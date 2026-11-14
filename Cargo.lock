@@ -316,6 +316,7 @@ dependencies = [
  "bindizr",
  "bindizr-external-dns",
  "domain",
+ "hex",
  "rcgen",
  "reqwest",
  "ring",

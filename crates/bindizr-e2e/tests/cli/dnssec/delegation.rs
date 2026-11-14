@@ -2,12 +2,13 @@
 //! `check-ds`, and the DS gate on `disable`.
 
 use crate::cli::common;
-use crate::common::{DsRecord, FakeParent, TestApp};
+use crate::common::TestApp;
+use crate::common::dns::{DsRecord, FakeParent};
 
-/// Verify parent DS checks through the CLI.
+/// Verify that the CLI checks the parent DS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_checks_parent_ds_via_cli() {
+async fn zone_dnssec_checks_parent_ds() {
     let app = TestApp::start_local().await;
 
     let parent = FakeParent::start();
@@ -36,14 +37,14 @@ async fn zone_dnssec_checks_parent_ds_via_cli() {
     );
 
     let status = common::read_dnssec_status(&app, &zone_name).await;
-    let key_tag = status["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    let key_tag = u16::try_from(status["keys"][0]["key_tag"].as_u64().unwrap()).unwrap();
     parent.set_ds(vec![DsRecord::from_status(&status, key_tag, 3600)]);
 
     // A served DS keeps disable blocked and must appear in the CLI's parent check.
-    let disable_args = ["dnssec", "disable", &zone_name];
+    let args = ["dnssec", "disable", &zone_name];
 
-    let refused = app.run_cli(&disable_args, None).await;
-    crate::common::assert_cli_failure_contains(&disable_args, &refused, "still serves DS records");
+    let refused = app.run_cli(&args, None).await;
+    crate::common::assert_cli_failure_contains(&args, &refused, "still serves DS records");
 
     let checked = app
         .run_cli_success(&["dnssec", "check-ds", &zone_name], None)
@@ -91,12 +92,12 @@ async fn zone_dnssec_checks_parent_ds_via_cli() {
         "{checked}"
     );
 
-    let disabled = app.run_cli_success(&disable_args, None).await;
+    let disabled = app.run_cli_success(&args, None).await;
 
     assert!(disabled.contains("DNSSEC disabled successfully"));
 }
 
-/// Verify the CLI option to disable DNSSEC without a parent DS check.
+/// Verify that the CLI option disables DNSSEC without a parent DS check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_disable_skips_parent_ds_check_when_requested() {
@@ -118,10 +119,10 @@ async fn zone_dnssec_disable_skips_parent_ds_check_when_requested() {
     )
     .await;
 
-    let disable_args = ["dnssec", "disable", &zone_name];
+    let args = ["dnssec", "disable", &zone_name];
 
-    let refused = app.run_cli(&disable_args, None).await;
-    crate::common::assert_cli_failure_contains(&disable_args, &refused, "could not verify");
+    let refused = app.run_cli(&args, None).await;
+    crate::common::assert_cli_failure_contains(&args, &refused, "could not verify");
 
     let disabled = app
         .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)

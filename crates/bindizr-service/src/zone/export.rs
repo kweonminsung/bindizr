@@ -6,11 +6,8 @@ use bindizr_db::LockLevel;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::dnssec_record::DnssecRecord;
-use crate::model::record::Record;
-use crate::model::zone::Zone;
 use crate::types::ZoneView;
-use crate::{Context, transaction};
+use crate::{Context, transaction, zone};
 
 /// Render a BIND master file (RFC 1035); unsigned output round-trips through `zone import`.
 /// Import manages SOA separately. Signed output adds derived DNSSEC records for inspection only.
@@ -25,8 +22,9 @@ pub async fn export(
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
-    let load_result = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+
+    let result: Result<_, ServiceError> = async {
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -38,11 +36,12 @@ pub async fn export(
             Vec::new()
         };
 
-        Ok::<(Zone, Vec<Record>, Vec<DnssecRecord>), ServiceError>((zone, records, derived))
+        Ok((zone, records, derived))
     }
     .await;
+
     let (zone, mut records, mut derived) =
-        transaction::finish_tx(tx, load_result, "failed to export zone").await?;
+        transaction::finish_tx(tx, result, "failed to export zone").await?;
 
     let origin = zone.name.to_fqdn();
     let mut out = String::new();
@@ -63,7 +62,7 @@ pub async fn export(
         zone.refresh,
         zone.retry,
         zone.expire,
-        zone.minimum_ttl,
+        zone.minimum_ttl
     ));
 
     // Deterministic order: owner name, then type, then rdata. Keyed up front
@@ -90,7 +89,7 @@ pub async fn export(
             record.record_type,
             record
                 .record_type
-                .presentation_rdata(&record.value, record.priority),
+                .presentation_rdata(&record.value, record.priority)
         );
     }
 
@@ -109,7 +108,7 @@ pub async fn export(
             record.name,
             record.ttl,
             record.record_type,
-            record.rdata.to_presentation(record.record_type),
+            record.rdata.to_presentation(record.record_type)
         );
     }
 

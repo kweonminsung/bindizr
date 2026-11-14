@@ -3,22 +3,25 @@
 use std::collections::HashMap;
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use bindizr_core::dns::name;
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role::RoleId;
 use bindizr_core::model::role_grant::Action;
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKey, TsigKeyId};
 use chrono::Utc;
 use rand::RngExt;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 use crate::text::MAX_COLUMN_TEXT_LEN;
-use crate::types::{
-    CreateTsigKeyRequest, PaginatedResponse, SingleTsigKeyResponse, TsigKeyFilter, TsigKeyResponse,
-};
+use crate::types::{CreateTsigKeyRequest, PaginatedResponse, TsigKeyFilter, TsigKeyResponse};
 use crate::{Context, audit, pagination, role, transaction};
+
+/// Imported secrets must contain at least 128 bits. RFC 8945, Section 8
+/// recommends output-sized keys; shorter imports preserve secrets already
+/// shared with other servers.
+const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 
 /// Create a TSIG key in the request's role. An omitted `secret` is generated;
 /// a given one must be valid, non-empty base64 (an imported key).
@@ -26,23 +29,22 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateTsigKeyRequest,
-) -> Result<SingleTsigKeyResponse, ServiceError> {
+) -> Result<(TsigKeyResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let name = normalize_key_name(&request.name)?;
+    let name = normalize_name(&request.name)?;
 
     let role = role::lookup_by_name(cx, &request.role_name).await?;
 
-    let algorithm = request
-        .algorithm
-        .as_deref()
-        .map(str::parse::<TsigAlgorithm>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?
-        .unwrap_or_default();
+    let algorithm = match request.algorithm.as_deref() {
+        Some(algorithm) => algorithm
+            .parse::<TsigAlgorithm>()
+            .map_err(ServiceError::invalid_input)?,
+        None => TsigAlgorithm::default(),
+    };
     let secret = match request.secret.as_deref() {
         Some(secret) => normalize_secret(secret)?,
-        None => generate_secret(&algorithm),
+        None => generate_secret(algorithm),
     };
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
@@ -54,7 +56,8 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create TSIG key").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -98,9 +101,13 @@ pub async fn create(
         Ok(tsig_key)
     }
     .await;
-    let tsig_key = transaction::finish_tx(tx, result, "failed to create TSIG key").await?;
 
-    Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
+    let tsig_key = transaction::finish_tx(tx, apply_result, "failed to create TSIG key").await?;
+
+    Ok((
+        TsigKeyResponse::from_tsig_key(&tsig_key, &role.name),
+        tsig_key.secret,
+    ))
 }
 
 /// List the TSIG keys, every one or one role's.
@@ -112,7 +119,7 @@ pub async fn list(
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(filter.limit)?;
 
-    let keys = match &filter.role_name {
+    let tsig_keys = match &filter.role_name {
         Some(role_name) => {
             let role = role::lookup_by_name(cx, role_name).await?;
             bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?
@@ -126,7 +133,8 @@ pub async fn list(
         .collect();
 
     Ok(pagination::build_page(
-        keys.iter()
+        tsig_keys
+            .iter()
             .map(|tsig_key| {
                 let role_name = role_names.get(&tsig_key.role_id).map_or("", String::as_str);
                 TsigKeyResponse::from_tsig_key(tsig_key, role_name)
@@ -137,12 +145,12 @@ pub async fn list(
     ))
 }
 
-/// Fetch one TSIG key by name, including its secret.
+/// Get one TSIG key by name, including its secret.
 pub async fn get(
     cx: &Context,
     caller: &Caller,
     name: &str,
-) -> Result<SingleTsigKeyResponse, ServiceError> {
+) -> Result<(TsigKeyResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
     let tsig_key = lookup_by_name(cx, name).await?;
@@ -150,23 +158,26 @@ pub async fn get(
         .await?
         .ok_or_else(|| ServiceError::role_not_found(tsig_key.role_id))?;
 
-    Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
+    Ok((
+        TsigKeyResponse::from_tsig_key(&tsig_key, &role.name),
+        tsig_key.secret,
+    ))
 }
 
-/// Fetch one TSIG key by name. This is the unchecked lookup for
+/// Look up one TSIG key by name. This is the unchecked lookup for
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, ServiceError> {
-    let name = normalize_key_name(name)?;
+    let name = normalize_name(name)?;
     bindizr_db::tsig_key::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
 }
 
-/// Look up the key an incoming TSIG record names. Authentication precedes
+/// Find the key an incoming TSIG record names. Authentication precedes
 /// any zone transaction, so this is a plain read.
 pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKey>, ServiceError> {
     // Canonicalize like storage does; an unparseable name matches no key.
-    let Ok(name) = normalize_key_name(name) else {
+    let Ok(name) = normalize_name(name) else {
         return Ok(None);
     };
     Ok(bindizr_db::tsig_key::get_by_name(cx.db(), &name).await?)
@@ -183,9 +194,8 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     if secondary_count > 0 {
         return Err(ServiceError::TsigKeyInUse(format!(
-            "TSIG key '{}' still signs NOTIFY for {} secondar{}",
+            "TSIG key '{}' still signs NOTIFY for {secondary_count} secondar{}",
             tsig_key.name,
-            secondary_count,
             if secondary_count == 1 {
                 "y"
             } else {
@@ -195,7 +205,8 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
-    let result: Result<_, ServiceError> = async {
+
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -231,29 +242,23 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to delete TSIG key").await
+    transaction::finish_tx(tx, apply_result, "failed to delete TSIG key").await
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
-pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     let name = name::parse_lookup_name(value)
-        .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {}", error)))?;
+        .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {error}")))?;
 
     if name.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
-            "TSIG key name must be {} characters or fewer in its canonical spelling",
-            MAX_COLUMN_TEXT_LEN
+            "TSIG key name must be {MAX_COLUMN_TEXT_LEN} characters or fewer in its canonical spelling"
         )));
     }
 
     Ok(name)
 }
-
-/// Imported secrets must contain at least 128 bits.
-// RFC 8945, Section 8 recommends output-sized keys; shorter imports preserve
-// secrets already shared with other servers.
-const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 
 /// Validate and normalize a base64-encoded TSIG secret.
 fn normalize_secret(value: &str) -> Result<String, ServiceError> {
@@ -261,21 +266,17 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 
     if trimmed.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
-            "TSIG key secret must be at most {} base64 characters",
-            MAX_COLUMN_TEXT_LEN
+            "TSIG key secret must be at most {MAX_COLUMN_TEXT_LEN} base64 characters"
         )));
     }
 
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(trimmed)
-        .map_err(|error| {
-            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", error))
-        })?;
+    let decoded = general_purpose::STANDARD.decode(trimmed).map_err(|error| {
+        ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {error}"))
+    })?;
 
     if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
         return Err(ServiceError::invalid_input(format!(
-            "TSIG key secret must decode to at least {} bytes ({} bits)",
-            MIN_IMPORTED_SECRET_BYTES,
+            "TSIG key secret must decode to at least {MIN_IMPORTED_SECRET_BYTES} bytes ({} bits)",
             MIN_IMPORTED_SECRET_BYTES * 8
         )));
     }
@@ -284,54 +285,47 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 }
 
 /// Generate a base64 secret as long as the HMAC output (RFC 8945, Section 8).
-fn generate_secret(algorithm: &TsigAlgorithm) -> String {
+fn generate_secret(algorithm: TsigAlgorithm) -> String {
     let bytes: [u8; 64] = rand::rng().random();
-    base64::engine::general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
+    general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
 }
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine;
-
     use super::*;
     use crate::error::ErrorCode;
 
-    /// Verify that `normalize_key_name` lowercases and strips trailing dot.
+    /// Verify that `normalize_name` lowercases and strips trailing dot.
     #[test]
-    fn normalize_key_name_lowercases_and_strips_trailing_dot() {
+    fn normalize_name_lowercases_and_strips_trailing_dot() {
         assert_eq!(
-            normalize_key_name("Nsupdate-Key.Example.COM.").unwrap(),
+            normalize_name("Nsupdate-Key.Example.COM.").unwrap(),
             "nsupdate-key.example.com"
         );
-        assert_eq!(normalize_key_name(" update-key ").unwrap(), "update-key");
+        assert_eq!(normalize_name(" update-key ").unwrap(), "update-key");
     }
 
-    /// Verify that `normalize_key_name` rejects invalid names.
+    /// Verify that `normalize_name` rejects invalid names.
     #[test]
-    fn normalize_key_name_rejects_invalid_names() {
+    fn normalize_name_rejects_invalid_names() {
         for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
-            let error = normalize_key_name(invalid).unwrap_err();
+            let error = normalize_name(invalid).unwrap_err();
 
-            assert_eq!(
-                error.code(),
-                ErrorCode::InvalidInput,
-                "input: {:?}",
-                invalid
-            );
+            assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
         }
     }
 
-    /// Verify that `normalize_key_name` holds the rendered name to the column.
+    /// Verify that `normalize_name` holds the rendered name to the column.
     #[test]
-    fn normalize_key_name_holds_the_rendered_name_to_the_column() {
+    fn normalize_name_holds_the_rendered_name_to_the_column() {
         // A label of escaped dots renders four characters per byte, so a name
         // the wire admits can still outgrow `tsig_keys.name`.
         let fits = format!("{}.key", r"\.".repeat(62));
         let too_long = format!("{}.{}", r"\.".repeat(40), r"\.".repeat(40));
 
-        assert_eq!(normalize_key_name(&fits).unwrap().len(), 252);
+        assert_eq!(normalize_name(&fits).unwrap().len(), 252);
         assert_eq!(
-            normalize_key_name(&too_long).unwrap_err().code(),
+            normalize_name(&too_long).unwrap_err().code(),
             ErrorCode::InvalidInput
         );
     }
@@ -342,7 +336,7 @@ mod tests {
         // 32-byte imported secret, whitespace trimmed.
         assert_eq!(
             normalize_secret(" bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU= ").unwrap(),
-            "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=".to_string()
+            "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
         );
 
         let invalid = normalize_secret("not base64!!").unwrap_err();
@@ -364,11 +358,11 @@ mod tests {
         assert!(short.to_string().contains("at least 16 bytes"));
 
         // Exactly 16 decoded bytes passes.
-        let sixteen = base64::engine::general_purpose::STANDARD.encode([0x42u8; 16]);
+        let sixteen = general_purpose::STANDARD.encode([0x42u8; 16]);
         normalize_secret(&sixteen).unwrap();
 
         // The base64 form must fit the VARCHAR(255) column.
-        let oversized = base64::engine::general_purpose::STANDARD.encode([0x42u8; 200]);
+        let oversized = general_purpose::STANDARD.encode([0x42u8; 200]);
 
         assert!(oversized.len() > 255);
         let too_long = normalize_secret(&oversized).unwrap_err();

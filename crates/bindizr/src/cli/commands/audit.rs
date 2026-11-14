@@ -9,7 +9,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for reading the audit log.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum AuditCommand {
     /// List the management changes, newest first: who changed what, and when
     #[command(
@@ -90,8 +90,8 @@ pub(crate) async fn handle_command(subcommand: AuditCommand) -> Result<(), CliEr
                 }),
             )
             .await?;
-            log::debug!("Audit list result: {:?}", response);
-            output::print_page(&response.data, output, |item| AuditLogRow::from(item))?;
+            log::debug!("Audit list result: {response:?}");
+            output::print_page(&response.data, output, |log| AuditLogRow::from(log))?;
         }
     }
 

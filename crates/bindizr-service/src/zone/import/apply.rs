@@ -7,23 +7,21 @@ use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::SoaMailbox;
 use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue};
-use bindizr_core::model::record::RecordId;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::record::{Record, RecordData, RecordId, RecordKey, RecordType};
+use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::plan::{DesiredRecord, ImportPlan};
-use super::{ImportOptions, ImportSource, MissingZoneAction};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData, RecordKey, RecordType};
-use crate::model::zone::Zone;
 use crate::record::validation;
 use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
-use crate::zone::diff;
-use crate::{Context, dnssec, record, serial, time, transaction, ttl, zone};
+use crate::zone::import::plan::{DesiredRecord, ImportPlan};
+use crate::zone::import::{ImportOptions, ImportSource, MissingZoneAction};
+use crate::zone::{diff, import};
+use crate::{Context, dnssec, notify, record, serial, time, transaction, ttl, zone};
 
 /// Resolve a new zone from the imported SOA and configured creation defaults.
 fn prepare_zone(
@@ -36,7 +34,7 @@ fn prepare_zone(
     let rname = SoaMailbox::from_encoded(&soa.rname)
         .to_email()
         .map_err(|error| {
-            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", error))
+            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {error}"))
         })?;
     let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
 
@@ -71,7 +69,7 @@ struct ApplyImportResult {
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
 /// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct ImportTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -102,18 +100,18 @@ pub(crate) async fn apply_import(
 
     let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
-    let apply_result: Result<ApplyImportResult, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let started = Instant::now();
 
-        let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let existing_zone = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
-        let zone_missing = existing.is_none();
-        let default_ttl = if let Some(zone) = &existing {
-            super::authorize_import(caller, mode, zone)?;
+        let zone_missing = existing_zone.is_none();
+        let default_ttl = if let Some(zone) = &existing_zone {
+            import::authorize_import(caller, mode, zone)?;
             zone.default_ttl
         } else if missing_zone_action == MissingZoneAction::Create {
-            super::authorize_new_zone_import(caller, mode)?;
+            import::authorize_new_zone_import(caller, mode)?;
             cx.config().dns.zone_defaults.ttl
         } else {
             return Err(ServiceError::zone_not_found(zone_name));
@@ -125,12 +123,15 @@ pub(crate) async fn apply_import(
             ImportSource::Text(content) => ParsedZoneFile::parse(content, zone_name, default_ttl),
             ImportSource::Transfer(parsed) => parsed,
         };
-        let mut zone = match existing {
+        let mut zone = match existing_zone {
             Some(zone) => zone,
             None => {
-                let soa = parsed.soa.as_ref().ok_or_else(|| ServiceError::invalid_input(
-                    "the zone file carries no SOA to create the zone from; create it with `zone create` first",
-                ))?;
+                let soa = parsed.soa.as_ref().ok_or_else(|| {
+                    ServiceError::invalid_input(
+                        "the zone file carries no SOA to create the zone from; \
+                         create it with `zone create` first",
+                    )
+                })?;
                 prepare_zone(cx, zone_name, soa, default_ttl)?
             }
         };
@@ -147,28 +148,31 @@ pub(crate) async fn apply_import(
         for record in parsed.records {
             let requested = match record.value {
                 ZoneFileValue::Rdata(rdata) if record.record_type == RecordType::Txt => {
-                    RecordValue::Presentation { presentation: rdata }
+                    RecordValue::Presentation {
+                        presentation: rdata,
+                    }
                 }
                 ZoneFileValue::Rdata(rdata) => RecordValue::Text(rdata),
                 ZoneFileValue::Segments(segments) => RecordValue::Segments(segments),
             };
-            let value = match requested.to_encoded_value(&record.record_type, record.priority) {
+            let value = match requested.to_encoded_value(record.record_type, record.priority) {
                 Ok(value) => value,
                 Err(error) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, error));
+                    errors.push(format!("{}: {error}", record.owner_fqdn));
                     continue;
                 }
             };
-            let stored_name = match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
-                Ok(stored_name) => stored_name,
-                Err(error) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, error));
-                    continue;
-                }
-            };
+            let owner =
+                match validation::normalize_record_owner_name(&record.owner_fqdn, &zone.name) {
+                    Ok(owner) => owner,
+                    Err(error) => {
+                        errors.push(format!("{}: {error}", record.owner_fqdn));
+                        continue;
+                    }
+                };
 
             let data = RecordData {
-                name: stored_name,
+                name: owner,
                 priority: record.record_type.stored_priority(record.priority),
                 record_type: record.record_type,
                 value,
@@ -182,13 +186,14 @@ pub(crate) async fn apply_import(
 
                 // The same record at two TTLs is a mixed-TTL record set (RFC 2181,
                 // Section 5.2); deduplication must not swallow the conflict.
-                if kept_ttl != this_ttl {
-                    errors.push(format!(
-                        "{}: {} records with conflicting TTLs {} and {}; records sharing a name and type share one TTL",
-                        record.owner_fqdn, record.record_type, kept_ttl, this_ttl
-                    ));
-                } else {
+                if kept_ttl == this_ttl {
                     skipped += 1;
+                } else {
+                    errors.push(format!(
+                        "{}: {} records with conflicting TTLs {kept_ttl} and {this_ttl}; \
+                         records sharing a name and type share one TTL",
+                        record.owner_fqdn, record.record_type
+                    ));
                 }
 
                 continue;
@@ -212,15 +217,17 @@ pub(crate) async fn apply_import(
         } else {
             match mode {
                 ImportMode::Append => {
-                    let mut names: Vec<OwnerName> =
-                        desired.iter().map(|desired_record| desired_record.data.name.clone()).collect();
-                    names.sort();
-                    names.dedup();
+                    let mut owners: Vec<OwnerName> = desired
+                        .iter()
+                        .map(|desired_record| desired_record.data.name.clone())
+                        .collect();
+                    owners.sort();
+                    owners.dedup();
 
                     bindizr_db::record::list_by_names_tx(
                         &mut tx,
                         zone.id,
-                        &names,
+                        &owners,
                         LockLevel::Exclusive,
                     )
                     .await
@@ -231,7 +238,7 @@ pub(crate) async fn apply_import(
             }
         }
         .map_err(|error| {
-            log::error!("Failed to load zone records: {}", error);
+            log::error!("Failed to load zone records: {error}");
             ServiceError::internal_with_source("failed to import zone file", error)
         })?;
 
@@ -281,14 +288,14 @@ pub(crate) async fn apply_import(
             match validation::validate_record_constraints(
                 records_at_name,
                 &desired_record.data.name,
-                &desired_record.data.record_type,
+                desired_record.data.record_type,
                 &desired_record.data.value,
                 desired_record.data.ttl,
                 desired_record.data.priority,
                 None,
             ) {
                 Ok(()) => records_at_name.push(candidate.clone()),
-                Err(error) => errors.push(format!("{}: {}", desired_record.source_name, error)),
+                Err(error) => errors.push(format!("{}: {error}", desired_record.source_name)),
             }
         }
 
@@ -348,7 +355,8 @@ pub(crate) async fn apply_import(
         };
 
         let will_apply = errors.is_empty() && !run.is_dry_run();
-        let has_changes = !plan.deletes.is_empty() || !plan.adds.is_empty() || !plan.ttl_deletes.is_empty();
+        let has_changes =
+            !plan.deletes.is_empty() || !plan.adds.is_empty() || !plan.ttl_deletes.is_empty();
 
         let new_serial = if has_changes && errors.is_empty() {
             serial::generate_serial(Some(zone.serial))
@@ -405,16 +413,14 @@ pub(crate) async fn apply_import(
     } = transaction::finish_tx(tx, apply_result, "failed to import zone file").await?;
 
     log::info!(
-        "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
-        zone_name,
-        mode,
+        "event=zone_import zone={zone_name} mode={mode:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
         response.applied,
         response.summary.added,
         response.summary.deleted,
         response.summary.updated,
         response.summary.unchanged,
         response.summary.skipped,
-        response.errors.len(),
+        response.errors.len()
     );
 
     let started = Instant::now();
@@ -426,12 +432,12 @@ pub(crate) async fn apply_import(
     let config = cx.config();
 
     if created {
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     // Notify after commit only when the import changed the served zone.
     if changed {
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     let notify_ms = time::elapsed_ms(started);
@@ -439,12 +445,10 @@ pub(crate) async fn apply_import(
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
     log::debug!(
-        "event=zone_import_timing zone={} mode={:?} parsed={} applied={} parse_ms={:.1} \
+        "event=zone_import_timing zone={zone_name} mode={mode:?} parsed={} applied={} parse_ms={:.1} \
          load_zone_ms={:.1} load_existing_ms={:.1} normalize_ms={:.1} \
-         reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} \
+         reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={notify_ms:.1} \
          total_ms={:.1}",
-        zone_name,
-        mode,
         response.summary.parsed,
         response.applied,
         timings.parse_ms,
@@ -455,8 +459,7 @@ pub(crate) async fn apply_import(
         timings.validate_ms,
         timings.db_write_ms,
         timings.serial_ms,
-        notify_ms,
-        time::elapsed_ms(total_started),
+        time::elapsed_ms(total_started)
     );
 
     Ok(response)

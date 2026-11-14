@@ -7,7 +7,7 @@ use crate::error::{ErrorCode, ServiceError};
 
 /// Whether a previewable write goes through, or only reports what it
 /// would do.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Run {
     Apply,
@@ -15,62 +15,20 @@ pub enum Run {
 }
 
 impl Run {
-    /// The run a `dry_run` flag asks for.
+    /// Return the run a `dry_run` flag asks for.
     pub fn from_dry_run(dry_run: bool) -> Self {
         if dry_run {
-            Run::DryRun
+            Self::DryRun
         } else {
-            Run::Apply
+            Self::Apply
         }
     }
 
-    /// Whether the run writes nothing.
+    /// Return whether the run writes nothing.
     pub fn is_dry_run(self) -> bool {
-        self == Run::DryRun
+        self == Self::DryRun
     }
-}
 
-/// Generic success message response.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct MessageResponse {
-    #[schema(example = "Deleted successfully")]
-    pub message: String,
-}
-
-/// Whether the API can serve requests: its database answered a probe.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum HealthStatus {
-    Healthy,
-    Unhealthy,
-}
-
-/// Health probe response.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
-pub struct HealthResponse {
-    pub status: HealthStatus,
-}
-
-/// Generic error response: a plain description plus a machine-readable code.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct ErrorResponse {
-    #[schema(example = "zone with name 'example.com' not found")]
-    pub error: String,
-    /// Machine-readable failure classification.
-    pub code: ErrorCode,
-}
-
-impl From<&ServiceError> for ErrorResponse {
-    /// Build an error response from a service error's code and message.
-    fn from(error: &ServiceError) -> Self {
-        ErrorResponse {
-            error: error.to_string(),
-            code: error.code(),
-        }
-    }
-}
-
-impl Run {
     /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -80,11 +38,19 @@ impl Run {
     }
 }
 
-impl serde::Serialize for Run {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
+/// Generic success message response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MessageResponse {
+    #[schema(example = "Deleted successfully")]
+    pub message: String,
+}
+
+/// Whether the API can serve requests: its database answered a probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum HealthStatus {
+    Healthy,
+    Unhealthy,
 }
 
 impl HealthStatus {
@@ -97,47 +63,56 @@ impl HealthStatus {
     }
 }
 
-impl serde::Serialize for HealthStatus {
-    /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
+/// Health probe response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HealthResponse {
+    pub status: HealthStatus,
+}
+
+/// Generic error response: a plain description plus a machine-readable code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ErrorResponse {
+    #[schema(example = "zone with name 'example.com' not found")]
+    pub error: String,
+    /// Machine-readable failure classification.
+    pub code: ErrorCode,
+}
+
+impl From<&ServiceError> for ErrorResponse {
+    /// Build an error response from a service error's code and message.
+    fn from(error: &ServiceError) -> Self {
+        Self {
+            error: error.to_string(),
+            code: error.code(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Verify the canonical spelling and round-trip of every Run variant.
+    /// Verify that `Run` has one spelling across `as_str` and serde.
     #[test]
     fn run_spells_itself_once() {
-        for (value, expected) in [(Run::Apply, "apply"), (Run::DryRun, "dry_run")] {
-            assert_eq!(value.as_str(), expected);
+        for value in [Run::Apply, Run::DryRun] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<Run>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<Run>(json!(value.as_str())).unwrap(),
                 value
             );
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every HealthStatus variant.
+    /// Verify that `HealthStatus` has one spelling across `as_str` and serde.
     #[test]
     fn health_status_spells_itself_once() {
-        for (value, expected) in [
-            (HealthStatus::Healthy, "healthy"),
-            (HealthStatus::Unhealthy, "unhealthy"),
-        ] {
-            assert_eq!(value.as_str(), expected);
+        for value in [HealthStatus::Healthy, HealthStatus::Unhealthy] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<HealthStatus>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<HealthStatus>(json!(value.as_str())).unwrap(),
                 value
             );
         }

@@ -6,16 +6,24 @@ mod canonical;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use base64::Engine;
+use base64::engine::general_purpose;
 pub use canonical::ParseRdataError;
+use domain::base::iana::Rtype;
+use domain::base::name::ParsedName;
+use domain::base::rdata::ParseRecordData;
+use domain::dep::octseq::parse::Parser;
+use domain::rdata::AllRecordData;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 
-use super::{
+use crate::dns::name;
+use crate::dns::name::EncodeNameError;
+use crate::dns::record::{
     CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, ParseMailboxError,
     ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
     WksRecordValue,
 };
-use crate::dns::name;
-use crate::dns::name::EncodeNameError;
 use crate::model::dnssec_record::DnssecRecordType;
 use crate::model::record::RecordType;
 
@@ -45,15 +53,9 @@ pub enum EncodeRdataError {
 pub struct Rdata(Vec<u8>);
 
 impl Rdata {
-    /// The presentation form of a derived row's RDATA of `record_type`, as
-    /// `dig` prints it; the base64 row form when it does not parse.
+    /// Render the presentation form of a derived row's RDATA of `record_type`,
+    /// as `dig` prints it; the base64 row form when it does not parse.
     pub fn to_presentation(&self, record_type: DnssecRecordType) -> String {
-        use domain::base::iana::Rtype;
-        use domain::base::name::ParsedName;
-        use domain::base::rdata::ParseRecordData;
-        use domain::dep::octseq::parse::Parser;
-        use domain::rdata::AllRecordData;
-
         let mut parser = Parser::from_ref(self.as_bytes());
 
         AllRecordData::<_, ParsedName<_>>::parse_rdata(
@@ -63,8 +65,7 @@ impl Rdata {
         .ok()
         .flatten()
         .filter(|_| parser.remaining() == 0)
-        .map(|data| data.to_string())
-        .unwrap_or_else(|| self.to_base64())
+        .map_or_else(|| self.to_base64(), |data| data.to_string())
     }
 
     /// Wrap wire-format record data after checking its length limit.
@@ -72,10 +73,11 @@ impl Rdata {
         if bytes.len() > usize::from(u16::MAX) {
             return Err(EncodeRdataError::TooLong { len: bytes.len() });
         }
+
         Ok(Self(bytes))
     }
 
-    /// Borrow the wire-format record data bytes.
+    /// Return the wire-format record data bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -85,9 +87,9 @@ impl Rdata {
         self.0
     }
 
-    /// Base64 presentation fallback for rows whose RDATA does not parse.
+    /// Render the base64 presentation fallback for rows whose RDATA does not parse.
     pub fn to_base64(&self) -> String {
-        base64::engine::general_purpose::STANDARD.encode(&self.0)
+        general_purpose::STANDARD.encode(&self.0)
     }
 }
 
@@ -102,7 +104,7 @@ where
         <Vec<u8> as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <Vec<u8> as sqlx::Type<DB>>::compatible(ty)
     }
@@ -116,7 +118,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.0.encode_by_ref(buffer)
     }
 }
@@ -125,12 +127,10 @@ impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for Rdata
 where
     Vec<u8>: sqlx::Decode<'r, DB>,
 {
-    /// Decode the stored bytes into record data.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    /// Read the row form; bytes over the 16-bit RDATA limit fail the row.
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<'r, DB>>::decode(value)?;
-        Self::new(bytes).map_err(Into::into)
+        Ok(Self::new(bytes)?)
     }
 }
 
@@ -145,23 +145,23 @@ impl EncodedRdata {
     /// Encode record or journal columns as wire RDATA.
     /// TXT remains opaque bytes for canonical record-set ordering.
     pub(crate) fn from_columns(
-        record_type: &RecordType,
+        record_type: RecordType,
         value: &str,
         priority: Option<i32>,
-    ) -> Result<EncodedRdata, EncodeRdataError> {
+    ) -> Result<Self, EncodeRdataError> {
         let stored_address = || EncodeRdataError::StoredAddress {
-            record_type: *record_type,
+            record_type,
             value: value.to_string(),
         };
         let rdata = match record_type {
             RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
-                let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
-                Rdata::new(addr.octets().to_vec())?
+                let ip = value.parse::<Ipv4Addr>().map_err(|_| stored_address())?;
+                Rdata::new(ip.octets().to_vec())?
             }
             RecordType::Aaaa => {
-                let addr: Ipv6Addr = value.parse().map_err(|_| stored_address())?;
-                Rdata::new(addr.octets().to_vec())?
+                let ip = value.parse::<Ipv6Addr>().map_err(|_| stored_address())?;
+                Rdata::new(ip.octets().to_vec())?
             }
             RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
             RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {

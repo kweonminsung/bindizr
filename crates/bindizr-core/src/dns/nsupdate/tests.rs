@@ -1,15 +1,18 @@
-use domain::base::Message;
-use domain::base::iana::{Class, Opcode, OptRcode, Rcode, TsigRcode};
+use std::str::FromStr;
+
+use domain::base::Name;
+use domain::base::iana::{Class, Rcode, Rtype, TsigRcode};
 use domain::rdata::tsig::Tsig;
+use domain::tsig::ClientTransaction;
 
 use super::*;
-use crate::dns::tsig;
-use crate::model::tsig_key::TsigAlgorithm;
+use crate::dns::{message, tsig};
+use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
-/// A truncated zone or later section receives only a header, without an invented OPT.
+/// Verify that a truncated zone or later section receives only a header, without an invented OPT.
 #[test]
 fn unreadable_update_bodies_receive_header_only_formerr() {
-    let valid = super::parser::tests::build_minimal_update_with_ztype(6);
+    let valid = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     let mut unreadable_zone = valid[..12].to_vec();
     unreadable_zone.extend_from_slice(&[5, b'x']);
     let mut unreadable_update = valid.clone();
@@ -37,7 +40,7 @@ fn unreadable_update_bodies_receive_header_only_formerr() {
 /// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
-    let query = super::parser::tests::build_minimal_update_with_ztype(6);
+    let query = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
 
     let response = build_response(
         &query,
@@ -45,11 +48,11 @@ fn build_response_echoes_request_header_and_question() {
         None,
         None,
         300,
-        crate::dns::message::ResponseLimit::udp(512),
+        ResponseLimit::udp(512),
     )
     .unwrap();
 
-    let message = Message::from_octets(&response[..]).unwrap();
+    let message = Message::from_octets(response.as_slice()).unwrap();
     let header = message.header();
 
     assert_eq!(header.id(), 0x1234);
@@ -64,7 +67,7 @@ fn build_response_echoes_request_header_and_question() {
 /// carrying the extended rcode (RFC 6891, Section 6.1.1).
 #[test]
 fn build_response_echoes_an_opt_with_the_extended_rcode() {
-    let mut query = super::parser::tests::build_minimal_update_with_ztype(6);
+    let mut query = parser::tests::build_minimal_update_with_ztype(Rtype::SOA.to_int());
     query[10..12].copy_from_slice(&1u16.to_be_bytes());
     query.extend_from_slice(&[
         0x00, 0x00, 0x29, 0x04, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -76,12 +79,12 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
         None,
         None,
         300,
-        crate::dns::message::ResponseLimit::udp(1232),
+        ResponseLimit::udp(1232),
     )
     .unwrap();
 
-    let message = Message::from_octets(&response[..]).unwrap();
-    let opt = message.opt().expect("the OPT is echoed");
+    let message = Message::from_octets(response.as_slice()).unwrap();
+    let opt = message.opt().unwrap();
 
     assert_eq!(opt.rcode(message.header()), OptRcode::BADVERS);
     assert_eq!(opt.udp_payload_size(), 1232);
@@ -90,26 +93,24 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
 /// Verify that `build_response` signs with request mac chain.
 #[test]
 fn build_response_signs_with_request_mac_chain() {
-    let query = crate::dns::tsig::tests::build_signed_update(
-        TsigAlgorithm::HmacSha256,
-        crate::dns::tsig::tests::now_secs(),
-    );
-    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+    let query_data =
+        tsig::tests::build_signed_update(TsigAlgorithm::HmacSha256, tsig::tests::now_secs());
+    let key = tsig::tests::test_key(TsigAlgorithm::HmacSha256)
         .to_signing_key()
         .unwrap();
-    let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
+    let signer = tsig::verify_tsig(&query_data, Some(key)).unwrap();
 
     let response = build_response(
-        &query,
+        &query_data,
         OptRcode::NOERROR,
         None,
         Some(signer),
         300,
-        crate::dns::message::ResponseLimit::udp(512),
+        ResponseLimit::udp(512),
     )
     .unwrap();
 
-    let message = Message::from_octets(&response[..]).unwrap();
+    let message = Message::from_octets(response.as_slice()).unwrap();
 
     assert_eq!(message.header().rcode(), Rcode::NOERROR);
     let tsig_record = message
@@ -126,16 +127,16 @@ fn build_response_signs_with_request_mac_chain() {
 
     // The request's MAC is the last rdata field before the trailing original
     // ID, error, and other-len (2 bytes each).
-    let request_mac = query[query.len() - 6 - 32..query.len() - 6].to_vec();
+    let request_mac = query_data[query_data.len() - 6 - 32..query_data.len() - 6].to_vec();
 
     // The unsigned build supplies the response before TSIG, including ARCOUNT.
     let unsigned = build_response(
-        &query,
+        &query_data,
         OptRcode::NOERROR,
         None,
         None,
         300,
-        crate::dns::message::ResponseLimit::udp(512),
+        ResponseLimit::udp(512),
     )
     .unwrap();
 
@@ -144,31 +145,23 @@ fn build_response_signs_with_request_mac_chain() {
     digest.extend_from_slice(&(request_mac.len() as u16).to_be_bytes());
     digest.extend_from_slice(&request_mac);
     digest.extend_from_slice(&unsigned);
-    digest.extend_from_slice(&crate::dns::tsig::tests::encode_name("update-key"));
+    digest.extend_from_slice(&tsig::tests::encode_name("update-key"));
     digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
     digest.extend_from_slice(&0u32.to_be_bytes());
-    digest.extend_from_slice(&crate::dns::tsig::tests::encode_name("hmac-sha256"));
-    digest.extend_from_slice(&crate::dns::tsig::tests::encode_u48(u64::from(
-        data.time_signed(),
-    )));
+    digest.extend_from_slice(&tsig::tests::encode_name("hmac-sha256"));
+    digest.extend_from_slice(&tsig::tests::encode_u48(u64::from(data.time_signed())));
     digest.extend_from_slice(&data.fudge().to_be_bytes());
     digest.extend_from_slice(&0u16.to_be_bytes()); // error
     digest.extend_from_slice(&0u16.to_be_bytes()); // other len
 
-    let expected = crate::dns::tsig::tests::hmac_sign(TsigAlgorithm::HmacSha256, &digest);
+    let expected = tsig::tests::hmac_sign(TsigAlgorithm::HmacSha256, &digest);
 
     assert_eq!(*data.mac(), &expected[..]);
 }
-/// UPDATE replies preserve MACs within the UDP limit.
+
+/// Verify that UPDATE replies preserve MACs within the UDP limit.
 #[test]
 fn update_responses_fit_udp_with_long_compressed_key_names() {
-    use std::str::FromStr;
-
-    use domain::base::{Name, Rtype};
-    use domain::tsig::ClientTransaction;
-
-    use crate::dns::message;
-    use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
     let name = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -178,7 +171,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
     );
     let key = TsigKey {
         name: name.clone(),
-        ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
+        ..tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
@@ -203,8 +196,8 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
 
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
-        let request = additional.finish().into_target();
-        let signer = crate::dns::tsig::verify_tsig(&request, Some(key.clone())).unwrap();
+        let query_data = additional.finish().into_target();
+        let signer = tsig::verify_tsig(&query_data, Some(key.clone())).unwrap();
 
         for rcode in [
             OptRcode::NOERROR,
@@ -213,27 +206,23 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
             OptRcode::SERVFAIL,
         ] {
             let response = build_response(
-                &request,
+                &query_data,
                 rcode,
                 None,
                 Some(signer.clone()),
                 300,
-                crate::dns::message::ResponseLimit::udp(size.unwrap_or(512)),
+                ResponseLimit::udp(size.unwrap_or(512)),
             )
             .unwrap();
 
-            assert!(response.len() <= size.unwrap_or(512) as usize);
+            assert!(response.len() <= usize::from(size.unwrap_or(512)));
             client
                 .answer(
                     &mut Message::from_octets(response.clone()).unwrap(),
                     Time48::now(),
                 )
                 .unwrap();
-            crate::dns::tsig::tests::assert_response_mac(
-                &request,
-                &response,
-                TsigAlgorithm::HmacSha512,
-            );
+            tsig::tests::assert_response_mac(&query_data, &response, TsigAlgorithm::HmacSha512);
         }
     }
 }

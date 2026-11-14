@@ -1,14 +1,14 @@
-use bindizr_core::model::dnssec_record::DnssecRecordId;
+use bindizr_core::model::dnssec_record::{DnssecRecord, DnssecRecordId, DnssecRecordWithZone};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
 use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
-use crate::model::dnssec_record::{DnssecRecord, DnssecRecordWithZone};
 use crate::{LockLevel, sql};
 
-/// Insert a batch of derived DNSSEC records in the current transaction.
+/// Insert many derived records in one statement (chunked). Ids are not
+/// returned.
 pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, MySql>,
     records: &[DnssecRecord],
@@ -37,9 +37,9 @@ pub(crate) async fn create_many_tx(
                 .bind(record.record_type)
                 .bind(record.covered_record_type)
                 .bind(record.ttl)
-                .bind(record.rdata.clone())
+                .bind(&record.rdata)
                 .bind(record.expires_at)
-                .bind(record.record_set_digest.clone());
+                .bind(&record.record_set_digest);
         }
 
         query.execute(&mut **tx).await?;
@@ -48,18 +48,20 @@ pub(crate) async fn create_many_tx(
     Ok(())
 }
 
-/// Read apex SOA signatures under the caller's zone lock.
+/// List apex SOA signatures in the same snapshot as the locked zone row.
 pub(crate) async fn list_signatures_covering_apex_soa_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
-    Ok(sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
+    let signatures = sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
         "SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest FROM dnssec_records WHERE zone_id = ? AND name = {} AND record_type = 46 AND covered_record_type = 6 ORDER BY id",
-        sql::apex_owner_sql()
+        sql::apex_owner_sql(),
     )))
     .bind(zone_id)
     .fetch_all(&mut **tx)
-    .await?)
+    .await?;
+
+    Ok(signatures)
 }
 
 /// List derived DNSSEC records for a zone in the current transaction.
@@ -69,14 +71,13 @@ pub(crate) async fn list_tx(
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
     let records = sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
-        "{}{}",
         r#"
         SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest
         FROM dnssec_records
         WHERE zone_id = ?
-        ORDER BY id
+        ORDER BY id{}
         "#,
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(zone_id)
     .fetch_all(&mut **tx)
@@ -85,26 +86,22 @@ pub(crate) async fn list_tx(
     Ok(records)
 }
 
-/// Delete the derived DNSSEC records with the supplied IDs in the current transaction.
+/// Delete many derived records in as few statements as the backend's bind limit
+/// allows.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
     ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-
     const CHUNK: usize = 2000;
 
     for chunk in ids.chunks(CHUNK) {
-        let mut sql = String::from("DELETE FROM dnssec_records WHERE id IN (");
+        let mut sql = "DELETE FROM dnssec_records WHERE id IN (".to_string();
 
         for i in 0..chunk.len() {
-            sql.push_str(if i == 0 {
-                "?"
-            } else {
-                ",?"
-            });
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push('?');
         }
 
         sql.push(')');
@@ -134,7 +131,8 @@ pub(crate) async fn delete_by_zone_id_tx(
     Ok(())
 }
 
-/// Count zones with stored derived DNSSEC records.
+/// Count the zones holding a signed view (any derived row): the signed-zone
+/// count.
 pub(crate) async fn count_zone_ids(pool: &Pool<MySql>) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -145,7 +143,8 @@ pub(crate) async fn count_zone_ids(pool: &Pool<MySql>) -> Result<u64, DatabaseEr
     Ok(count as u64)
 }
 
-/// List zones with signatures due for renewal.
+/// List the zones holding an RRSIG that expires within their policy's re-sign
+/// window after `cutoff`: the re-sign work list.
 pub(crate) async fn list_zone_ids_expiring_within_refresh(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
@@ -185,7 +184,8 @@ pub(crate) async fn list_zone_ids_expiring_within_refresh(
     Ok(zone_ids)
 }
 
-/// Count signatures due for renewal.
+/// Count the rows expiring within their zone's policy's re-sign window after
+/// `cutoff`; only RRSIG rows carry `expires_at`.
 pub(crate) async fn count_expiring_within_refresh(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
@@ -225,7 +225,8 @@ pub(crate) async fn count_expiring_within_refresh(
     Ok(count as u64)
 }
 
-/// Count signatures that have already expired.
+/// Count the rows whose expiration has already passed `cutoff`: signatures no
+/// resolver will accept any more.
 pub(crate) async fn count_expired_before(
     pool: &Pool<MySql>,
     cutoff: DateTime<Utc>,
@@ -250,7 +251,7 @@ pub(crate) async fn count_expired_before(
 /// List matching derived DNSSEC records with their zone metadata.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<MySql>,
-    filter: DnssecRecordFilter,
+    filter: &DnssecRecordFilter,
 ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -310,12 +311,11 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(filter.scope_role_id)
     .bind(filter.scope_role_id)
-    .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
     .bind(
         filter
             .offset
-            .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-            .unwrap_or(0),
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
     )
     .fetch_all(&mut *connection)
     .await?;
@@ -323,7 +323,7 @@ pub(crate) async fn list_by_filter_with_zone(
     Ok(records)
 }
 
-/// Count a zone's derived DNSSEC records in the current transaction.
+/// Count the derived DNSSEC records a zone holds, in the current transaction.
 pub(crate) async fn count_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
@@ -340,7 +340,7 @@ pub(crate) async fn count_tx(
 /// Count derived DNSSEC records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,
-    filter: DnssecRecordFilter,
+    filter: &DnssecRecordFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 

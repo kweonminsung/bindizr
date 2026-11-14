@@ -5,7 +5,8 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::opt::keepalive::TcpKeepalive;
 use domain::base::{MessageBuilder, Name};
 
-use super::EDNS_UDP_PAYLOAD_SIZE;
+use crate::dns::message;
+use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TsigSigningKey;
 
 /// Build a random-ID question with optional EDNS; leave additional open for signing.
@@ -14,7 +15,7 @@ pub fn build_question(
     aa: bool,
     rd: bool,
     qname: &Name<Vec<u8>>,
-    rtype: Rtype,
+    qtype: Rtype,
     edns_udp_payload_size: Option<u16>,
 ) -> (u16, AdditionalBuilder<Vec<u8>>) {
     let query_id = rand::random::<u16>();
@@ -28,7 +29,7 @@ pub fn build_question(
 
     let mut question = builder.question();
     question
-        .push((qname, rtype))
+        .push((qname, qtype))
         .expect("one question fits an unlimited message");
 
     let mut additional = question.additional();
@@ -48,16 +49,16 @@ pub fn build_question(
 /// Build an AXFR query whose OPT asks the primary to keep the connection for
 /// the transfers that follow (RFC 7828, Section 3.2.1; RFC 9103, Section 6).
 pub fn build_axfr_query(qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
-    let (query_id, mut builder) =
+    let (query_id, mut additional) =
         build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR, None);
-    builder
+    additional
         .opt(|opt| {
             opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
             opt.push(&TcpKeepalive::new(None))
         })
         .expect("one OPT record fits an unlimited message");
 
-    (query_id, builder.finish())
+    (query_id, additional.finish())
 }
 
 /// Add EDNS when the final signed NOTIFY would exceed 512 octets (RFC 1035, Section 4.2.1).
@@ -65,13 +66,14 @@ pub fn build_notify_query(
     qname: &Name<Vec<u8>>,
     key: Option<&TsigSigningKey>,
 ) -> (u16, AdditionalBuilder<Vec<u8>>) {
-    let (id, mut builder) = build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
+    let (query_id, mut additional) =
+        build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA, None);
 
     if key.is_some_and(|key| {
-        builder.as_slice().len() + usize::from(key.as_ref().compose_len())
-            > usize::from(crate::dns::message::UDP_PAYLOAD_SIZE_WITHOUT_EDNS)
+        additional.as_slice().len() + usize::from(key.as_ref().compose_len())
+            > usize::from(message::UDP_PAYLOAD_SIZE_WITHOUT_EDNS)
     }) {
-        builder
+        additional
             .opt(|opt| {
                 opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
                 Ok(())
@@ -79,5 +81,5 @@ pub fn build_notify_query(
             .expect("one OPT record fits an unlimited message");
     }
 
-    (id, builder)
+    (query_id, additional)
 }

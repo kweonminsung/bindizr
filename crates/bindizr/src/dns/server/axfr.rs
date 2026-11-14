@@ -1,15 +1,13 @@
 use std::net::IpAddr;
 
-use bindizr_core::dns::message;
-use bindizr_core::dns::message::Rtype;
+use bindizr_core::dns::message::{DnsMessageBuilder, ParsedQuery, Rtype};
 use bindizr_core::model::transfer::TransferKind;
-use bindizr_service::transfer;
-use bindizr_service::zone::{self, TransferAccess};
+use bindizr_service::zone::TransferAccess;
+use bindizr_service::{transfer, zone};
 
-use super::auth::TransferIdentity;
-use super::{catalog, transfer_cache};
 use crate::dns::error::DnsError;
-use crate::dns::server::DnsContext;
+use crate::dns::server::auth::TransferIdentity;
+use crate::dns::server::{DnsContext, catalog, transfer_cache};
 use crate::dns::stream::ResponseWriter;
 
 /// Send AXFR content with the original QTYPE, including IXFR fallback.
@@ -17,19 +15,15 @@ use crate::dns::stream::ResponseWriter;
 pub(crate) async fn handle_axfr(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
-    query: &message::ParsedQuery,
     client_ip: IpAddr,
+    query: &ParsedQuery,
     response_qtype: Rtype,
     identity: &mut TransferIdentity,
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
-    log::info!(
-        "AXFR request for zone {:?} from {}",
-        zone_name_str,
-        client_ip
-    );
+    log::info!("AXFR request for zone {zone_name_str:?} from {client_ip}");
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
         let access = tokio::select! {
@@ -41,9 +35,11 @@ pub(crate) async fn handle_axfr(
         let content = match access {
             TransferAccess::Granted(content) => content,
             TransferAccess::NotAuth => {
-                return Err(DnsError::NotAuth(zone_name_str.to_string()));
+                return Err(DnsError::NotAuth {
+                    zone_name: zone_name_str.to_string(),
+                });
             }
-            TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
+            TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
         };
 
         return catalog::send_catalog_response(
@@ -69,22 +65,23 @@ pub(crate) async fn handle_axfr(
         Err(_) => TransferAccess::NotAuth,
     };
     let (zone, content) = match access {
-        TransferAccess::Granted(found) => found,
+        TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => {
-            return Err(DnsError::NotAuth(zone_name_str.to_string()));
+            return Err(DnsError::NotAuth {
+                zone_name: zone_name_str.to_string(),
+            });
         }
-        TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
+        TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
     };
 
     log::info!(
-        "AXFR: zone {} has {} records + {} DNSSEC records, serial={}",
-        zone_name_str,
+        "AXFR: zone {zone_name_str} has {} records + {} DNSSEC records, serial={}",
         content.records.len(),
         content.dnssec_records.len(),
         zone.serial
     );
 
-    let mut builder = message::DnsMessageBuilder::new(query, response_qtype);
+    let mut builder = DnsMessageBuilder::new(query, response_qtype);
 
     if let Some(signer) = identity.signer.take() {
         builder = builder.sign_with(signer);
@@ -136,10 +133,8 @@ pub(crate) async fn handle_axfr(
     let messages_sent = streamed?;
 
     log::info!(
-        "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",
-        zone_name_str,
-        content.records.len() + content.dnssec_records.len(),
-        messages_sent
+        "AXFR completed for zone {zone_name_str}: sent {} records + 2 SOA records in {messages_sent} DNS message(s)",
+        content.records.len() + content.dnssec_records.len()
     );
 
     transfer::save_ok(

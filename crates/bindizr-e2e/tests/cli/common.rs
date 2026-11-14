@@ -1,9 +1,11 @@
 //! Readers for what a CLI command printed: the import summary table and the
 //! DNSSEC status a later assertion compares against.
 
+use serde_json::Value;
+
 use crate::common::TestApp;
 
-/// The `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
+/// Return the `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
 pub(crate) fn summary_cells(stdout: &str) -> Vec<&str> {
     stdout
         .lines()
@@ -14,14 +16,14 @@ pub(crate) fn summary_cells(stdout: &str) -> Vec<&str> {
         .collect()
 }
 
-/// The count cells of an import summary table, after its APPLIED and DRY-RUN
-/// flags.
+/// Return the count cells of an import summary table, after its APPLIED and
+/// DRY-RUN flags.
 pub(crate) fn summary_row(stdout: &str) -> Vec<&str> {
     summary_cells(stdout)[2..].to_vec()
 }
 
 /// Read a test zone's DNSSEC status through the CLI.
-pub(crate) async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
+pub(crate) async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> Value {
     let status = app
         .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"], None)
         .await;

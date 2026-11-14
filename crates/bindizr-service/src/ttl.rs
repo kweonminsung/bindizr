@@ -17,18 +17,16 @@ pub(crate) fn validate_record_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     Ttl::try_from(ttl).map_err(ServiceError::invalid_input)
 }
 
-/// A zone's default TTL as requested, validated against the supported range.
+/// Validate a zone's default TTL as requested against the supported range.
 pub(crate) fn validate_default_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     if ttl < MIN_DEFAULT_TTL {
         return Err(ServiceError::invalid_zone_field(format!(
-            "ttl must be at least {} seconds",
-            MIN_DEFAULT_TTL
+            "ttl must be at least {MIN_DEFAULT_TTL} seconds"
         )));
     }
     if ttl > MAX_DEFAULT_TTL {
         return Err(ServiceError::invalid_zone_field(format!(
-            "ttl must be at most {} seconds",
-            MAX_DEFAULT_TTL
+            "ttl must be at most {MAX_DEFAULT_TTL} seconds"
         )));
     }
 
@@ -54,8 +52,7 @@ pub(crate) fn validate_soa_interval<T: TryFrom<i32>>(
 ) -> Result<T, ServiceError> {
     let non_negative = || {
         ServiceError::invalid_zone_field(format!(
-            "{} must be a non-negative number of seconds",
-            field
+            "{field} must be a non-negative number of seconds"
         ))
     };
 
@@ -71,19 +68,19 @@ pub(crate) fn normalize_minimum_ttl(
     value: Option<i64>,
     fallback: Ttl,
 ) -> Result<Ttl, ServiceError> {
-    value
-        .map(validate_minimum_ttl)
-        .transpose()
-        .map(|ttl| ttl.unwrap_or(fallback))
+    let Some(ttl) = value else {
+        return Ok(fallback);
+    };
+    validate_minimum_ttl(ttl)
 }
 
 /// Require a SOA negative-cache TTL within the unsigned wire range; zero
 /// turns negative caching off (RFC 2308, Section 5).
-pub(crate) fn validate_minimum_ttl(value: i64) -> Result<Ttl, ServiceError> {
-    if value < 0 {
+pub(crate) fn validate_minimum_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
+    if ttl < 0 {
         return Err(ServiceError::invalid_zone_field(
             "minimum_ttl must be a non-negative number of seconds",
         ));
     }
-    Ttl::try_from(value).map_err(ServiceError::invalid_zone_field)
+    Ttl::try_from(ttl).map_err(ServiceError::invalid_zone_field)
 }

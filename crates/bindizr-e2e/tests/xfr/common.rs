@@ -2,45 +2,45 @@
 
 use domain::base::iana::{Class, Rtype};
 use domain::base::message_builder::AdditionalBuilder;
-use domain::base::{MessageBuilder, Ttl};
+use domain::base::{MessageBuilder, Serial, Ttl};
 use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 
 use crate::common::{TestApp, dns};
 
 /// Read one series of a counter from `/metrics`, picked by its labels.
-pub(crate) async fn counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
+pub(crate) async fn read_counter(app: &TestApp, name: &str, labels: &[&str]) -> f64 {
     let (status, body) = app.send_request(Method::GET, "/metrics", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     let text = body.as_str().expect("metrics body is prometheus text");
 
     text.lines()
         .filter(|line| line.starts_with(&format!("{name}{{")))
         .find(|line| labels.iter().all(|label| line.contains(label)))
-        .and_then(|line| line.rsplit(' ').next()?.parse().ok())
+        .and_then(|line| line.rsplit(' ').next()?.parse::<f64>().ok())
         .unwrap_or_else(|| panic!("{name} {labels:?} missing from the scrape"))
 }
 
 /// Build an IXFR query carrying the client's SOA serial.
-pub(crate) fn build_ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
-    let name = dns::parse_name(zone).unwrap();
+pub(crate) fn build_ixfr_query(zone_name: &str, serial: u32) -> AdditionalBuilder<Vec<u8>> {
+    let qname = dns::parse_name(zone_name).unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1995);
     let mut question = builder.question();
-    question.push((&name, Rtype::IXFR, Class::IN)).unwrap();
+    question.push((&qname, Rtype::IXFR, Class::IN)).unwrap();
     let mut authority = question.authority();
 
     // RFC 1995, Section 3: the client's SOA belongs in the authority section.
     authority
         .push((
-            &name,
+            &qname,
             Class::IN,
             Ttl::ZERO,
             Soa::new(
-                name.clone(),
-                name.clone(),
-                serial.into(),
+                qname.clone(),
+                qname.clone(),
+                Serial::from(serial),
                 Ttl::ZERO,
                 Ttl::ZERO,
                 Ttl::ZERO,
@@ -54,7 +54,7 @@ pub(crate) fn build_ixfr_query(zone: &str, serial: u32) -> AdditionalBuilder<Vec
 
 /// Build a two-question QUERY with optional EDNS.
 pub(crate) fn build_multi_question_query(
-    zone: &str,
+    zone_name: &str,
     qtype: Rtype,
     qclass: Class,
     opt_version: Option<u8>,
@@ -64,7 +64,7 @@ pub(crate) fn build_multi_question_query(
     builder.header_mut().set_rd(true);
     let mut question = builder.question();
     question
-        .push((&dns::parse_name(zone).unwrap(), qtype, qclass))
+        .push((&dns::parse_name(zone_name).unwrap(), qtype, qclass))
         .unwrap();
     question
         .push((
@@ -91,7 +91,7 @@ pub(crate) fn build_multi_question_query(
 
 /// Build a query with the specified OPT versions and DO bits.
 pub(crate) fn build_edns_query(
-    zone: &str,
+    zone_name: &str,
     qtype: Rtype,
     opts: &[(u8, bool)],
 ) -> AdditionalBuilder<Vec<u8>> {
@@ -99,7 +99,7 @@ pub(crate) fn build_edns_query(
     builder.header_mut().set_id(3225);
     let mut question = builder.question();
     question
-        .push((&dns::parse_name(zone).unwrap(), qtype))
+        .push((&dns::parse_name(zone_name).unwrap(), qtype))
         .unwrap();
     let mut additional = question.additional();
 

@@ -5,14 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use bindizr_core::dns::message::Rtype;
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::dns::record::Rdata;
+use bindizr_core::model::dnssec_record::DnssecRecord;
+use bindizr_core::model::record::Record;
+use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
-use super::NsupdateError;
 use crate::Transaction;
 use crate::error::ServiceError;
-use crate::model::dnssec_record::DnssecRecord;
-use crate::model::record::Record;
-use crate::model::zone::Zone;
+use crate::nsupdate::NsupdateError;
 
 /// An UPDATE prerequisite with a checked owner and wire type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +34,7 @@ pub(crate) enum Prerequisite {
 }
 
 impl Prerequisite {
-    /// The checked owner.
+    /// Return the checked owner.
     pub(crate) fn name(&self) -> &OwnerName {
         match self {
             Self::NameExists { name }
@@ -45,7 +45,7 @@ impl Prerequisite {
         }
     }
 
-    /// The wire type; `None` denotes a name-only prerequisite.
+    /// Return the wire type; `None` denotes a name-only prerequisite.
     pub(crate) fn record_type(&self) -> Option<Rtype> {
         match self {
             Self::NameExists { .. } | Self::NameAbsent { .. } => None,
@@ -59,7 +59,7 @@ impl Prerequisite {
 /// Canonical RDATA sets, excluding TTL (RFC 2136, Sections 1.1 and 3.2.3).
 pub(crate) type RecordSets = BTreeMap<(OwnerName, Rtype), BTreeSet<Rdata>>;
 
-/// The complete served zone at this transaction's serial, under the caller's
+/// List the complete served zone at this transaction's serial, under the caller's
 /// zone lock: the SOA, ordinary and signer-generated records.
 pub(crate) async fn list_served_record_sets_tx(
     tx: &mut Transaction<'_>,
@@ -77,40 +77,46 @@ pub(crate) fn evaluate_prerequisite(
     prerequisite: &Prerequisite,
     wanted: &mut RecordSets,
 ) -> Result<(), NsupdateError> {
-    let name = prerequisite.name();
+    let owner = prerequisite.name();
 
     match prerequisite {
         Prerequisite::NameExists { .. } => {
-            if !served.keys().any(|(owner, _)| owner == name) {
+            if !served.keys().any(|(served_owner, _)| served_owner == owner) {
                 return Err(NsupdateError::NxDomain(format!(
-                    "owner '{name}' does not exist"
+                    "owner '{owner}' does not exist"
                 )));
             }
         }
         Prerequisite::NameAbsent { .. } => {
-            if served.keys().any(|(owner, _)| owner == name) {
-                return Err(NsupdateError::YxDomain(format!("owner '{name}' exists")));
+            if served.keys().any(|(served_owner, _)| served_owner == owner) {
+                return Err(NsupdateError::YxDomain(format!("owner '{owner}' exists")));
             }
         }
-        Prerequisite::RecordSetExists { record_type, .. } => {
-            if !served.contains_key(&(name.clone(), *record_type)) {
+        Prerequisite::RecordSetExists {
+            record_type: rtype, ..
+        } => {
+            if !served.contains_key(&(owner.clone(), *rtype)) {
                 return Err(NsupdateError::NxRrset(format!(
-                    "no {record_type} records at {name}"
+                    "no {rtype} records at {owner}"
                 )));
             }
         }
-        Prerequisite::RecordSetAbsent { record_type, .. } => {
-            if served.contains_key(&(name.clone(), *record_type)) {
+        Prerequisite::RecordSetAbsent {
+            record_type: rtype, ..
+        } => {
+            if served.contains_key(&(owner.clone(), *rtype)) {
                 return Err(NsupdateError::YxRrset(format!(
-                    "{record_type} records at {name} exist"
+                    "{rtype} records at {owner} exist"
                 )));
             }
         }
         Prerequisite::RecordValueMatches {
-            record_type, rdata, ..
+            record_type: rtype,
+            rdata,
+            ..
         } => {
             wanted
-                .entry((name.clone(), *record_type))
+                .entry((owner.clone(), *rtype))
                 .or_default()
                 .insert(rdata.clone());
         }
@@ -129,7 +135,7 @@ pub(crate) fn evaluate_record_set_prerequisites(
         if served.get(key) != Some(values) {
             return Err(NsupdateError::NxRrset(format!(
                 "{} records at {} are not the ones the prerequisite names",
-                key.1, key.0,
+                key.1, key.0
             )));
         }
     }
@@ -145,14 +151,14 @@ fn zone_record_sets(
     derived: &[DnssecRecord],
 ) -> Result<RecordSets, ServiceError> {
     let mut sets = RecordSets::new();
-    let mut insert = |name: OwnerName, record_type: Rtype, rdata: Rdata| {
-        let rdata = rdata.to_canonical(record_type).map_err(|error| {
+    let mut insert = |owner: OwnerName, rtype: Rtype, rdata: Rdata| {
+        let rdata = rdata.to_canonical(rtype).map_err(|error| {
             ServiceError::internal_with_source(
                 "failed to decode stored prerequisite content",
                 error,
             )
         })?;
-        sets.entry((name, record_type)).or_default().insert(rdata);
+        sets.entry((owner, rtype)).or_default().insert(rdata);
 
         Ok::<(), ServiceError>(())
     };

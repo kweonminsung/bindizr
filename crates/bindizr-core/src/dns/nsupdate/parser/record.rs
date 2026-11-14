@@ -4,10 +4,11 @@
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
 use domain::dep::octseq::parse::Parser;
-use domain::rdata::{A, Aaaa, Mx, Soa, Srv};
+use domain::rdata::{A, Aaaa, Caa, Ds, Mx, Naptr, Soa, Srv, Sshfp, Tlsa};
 use thiserror::Error;
 
-use super::ParseUpdateError;
+use crate::dns::nsupdate::parser;
+use crate::dns::nsupdate::parser::ParseUpdateError;
 use crate::dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue};
 use crate::model::record::RecordType;
 
@@ -24,7 +25,7 @@ pub struct UpdateRecord {
 }
 
 /// A wire shape the IN-zone update section cannot carry (RFC 2136,
-/// Section 3.4.1). This is independent of whether the RR can change stored data.
+/// Section 3.4.1). This is independent of whether the record can change stored data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ValidateUpdateShapeError {
     #[error("unsupported update class: {class}")]
@@ -59,10 +60,11 @@ impl UpdateRecord {
             return Err(ValidateUpdateShapeError::NonzeroTtl);
         }
 
-        match self.class {
-            Class::ANY if !self.rdata.is_empty() => Err(ValidateUpdateShapeError::AnyClassRdata),
-            _ => Ok(()),
+        if self.class == Class::ANY && !self.rdata.is_empty() {
+            return Err(ValidateUpdateShapeError::AnyClassRdata);
         }
+
+        Ok(())
     }
 
     /// Decode prerequisite RDATA for comparison, resolving names in `message`.
@@ -83,8 +85,8 @@ impl UpdateRecord {
     pub fn to_soa_value(&self, message: &[u8]) -> Result<SoaRecordValue<String>, ParseUpdateError> {
         let data = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
         Ok(SoaRecordValue {
-            mname: super::to_presentation_name(data.mname())?,
-            rname: super::to_presentation_name(data.rname())?,
+            mname: parser::to_presentation_name(data.mname())?,
+            rname: parser::to_presentation_name(data.rname())?,
             serial: data.serial().into_int(),
             refresh: data.refresh().as_secs(),
             retry: data.retry().as_secs(),
@@ -97,12 +99,10 @@ impl UpdateRecord {
     fn parse_rdata<'a, T>(
         &self,
         message: &'a [u8],
-        what: &str,
+        record_type: &'static str,
         parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
     ) -> Result<T, ParseUpdateError> {
-        let refused = || ParseUpdateError::Rdata {
-            record_type: what.to_string(),
-        };
+        let refused = || ParseUpdateError::Rdata { record_type };
 
         // RDLENGTH bounds the value while compression retains message offsets
         // (RFC 1035, Sections 4.1.3–4.1.4).
@@ -147,9 +147,9 @@ impl UpdateRecord {
                 let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
-                let value = super::to_presentation_name(&name).map_err(|error| {
+                let value = parser::to_presentation_name(&name).map_err(|error| {
                     ParseUpdateError::RdataName {
-                        record_type: record_type.as_str().to_owned(),
+                        record_type: record_type.as_str(),
                         source: Box::new(error),
                     }
                 })?;
@@ -163,25 +163,20 @@ impl UpdateRecord {
                 Ok((RecordType::Txt, value, None))
             }
             RecordType::Caa => {
-                let data = self.parse_rdata(message, "CAA", |parser| {
-                    domain::rdata::Caa::parse(parser).ok()
-                })?;
+                let data = self.parse_rdata(message, "CAA", |parser| Caa::parse(parser).ok())?;
                 Ok((RecordType::Caa, data.to_string(), None))
             }
             RecordType::Ds => {
-                let data = self.parse_rdata(message, "DS", |parser| {
-                    domain::rdata::Ds::parse(parser).ok()
-                })?;
+                let data = self.parse_rdata(message, "DS", |parser| Ds::parse(parser).ok())?;
                 Ok((RecordType::Ds, data.to_string(), None))
             }
             RecordType::Naptr => {
-                let data = self.parse_rdata(message, "NAPTR", |parser| {
-                    domain::rdata::Naptr::parse(parser).ok()
-                })?;
+                let data =
+                    self.parse_rdata(message, "NAPTR", |parser| Naptr::parse(parser).ok())?;
                 let replacement =
-                    super::to_presentation_name(data.replacement()).map_err(|error| {
+                    parser::to_presentation_name(data.replacement()).map_err(|error| {
                         ParseUpdateError::RdataName {
-                            record_type: "NAPTR".to_string(),
+                            record_type: "NAPTR",
                             source: Box::new(error),
                         }
                     })?;
@@ -198,22 +193,19 @@ impl UpdateRecord {
                 Ok((RecordType::Naptr, value, None))
             }
             RecordType::Sshfp => {
-                let data = self.parse_rdata(message, "SSHFP", |parser| {
-                    domain::rdata::Sshfp::parse(parser).ok()
-                })?;
+                let data =
+                    self.parse_rdata(message, "SSHFP", |parser| Sshfp::parse(parser).ok())?;
                 Ok((RecordType::Sshfp, data.to_string(), None))
             }
             RecordType::Tlsa => {
-                let data = self.parse_rdata(message, "TLSA", |parser| {
-                    domain::rdata::Tlsa::parse(parser).ok()
-                })?;
+                let data = self.parse_rdata(message, "TLSA", |parser| Tlsa::parse(parser).ok())?;
                 Ok((RecordType::Tlsa, data.to_string(), None))
             }
             RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = super::to_presentation_name(data.exchange()).map_err(|error| {
+                let host = parser::to_presentation_name(data.exchange()).map_err(|error| {
                     ParseUpdateError::RdataName {
-                        record_type: "MX".to_string(),
+                        record_type: "MX",
                         source: Box::new(error),
                     }
                 })?;
@@ -222,9 +214,9 @@ impl UpdateRecord {
             }
             RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = super::to_presentation_name(data.target()).map_err(|error| {
+                let target = parser::to_presentation_name(data.target()).map_err(|error| {
                     ParseUpdateError::RdataName {
-                        record_type: "SRV".to_string(),
+                        record_type: "SRV",
                         source: Box::new(error),
                     }
                 })?;
@@ -232,7 +224,7 @@ impl UpdateRecord {
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((
                     RecordType::Srv,
-                    format!("{} {} {}", data.weight(), data.port(), target),
+                    format!("{} {} {target}", data.weight(), data.port()),
                     Some(i32::from(data.priority())),
                 ))
             }

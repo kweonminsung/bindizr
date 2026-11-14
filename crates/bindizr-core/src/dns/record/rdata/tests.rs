@@ -1,14 +1,11 @@
 use super::*;
-use crate::dns::message::Rtype;
-use crate::dns::name;
 use crate::dns::record::TxtRecordValue;
-use crate::model::record::RecordType;
 
 /// Verify that encode a RDATA is the address octets.
 #[test]
 fn encode_a_rdata_returns_address_octets() {
     // RFC 1035, Section 3.4.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::A, "192.0.2.1", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::A, "192.0.2.1", None).unwrap();
     assert_eq!(encoded.record_type, 1);
     assert_eq!(encoded.rdata.as_bytes(), [192, 0, 2, 1]);
 }
@@ -17,7 +14,7 @@ fn encode_a_rdata_returns_address_octets() {
 #[test]
 fn encode_aaaa_rdata_returns_address_octets() {
     // RFC 3596, Section 2.2.
-    let encoded = EncodedRdata::from_columns(&RecordType::Aaaa, "2001:db8::1", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Aaaa, "2001:db8::1", None).unwrap();
 
     assert_eq!(encoded.record_type, 28);
     assert_eq!(
@@ -29,8 +26,7 @@ fn encode_aaaa_rdata_returns_address_octets() {
 /// Verify that encode CNAME RDATA is the target name.
 #[test]
 fn encode_cname_rdata_returns_target_name() {
-    let encoded =
-        EncodedRdata::from_columns(&RecordType::Cname, "mail.example.com.", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Cname, "mail.example.com.", None).unwrap();
 
     assert_eq!(encoded.record_type, 5);
     assert_eq!(
@@ -44,10 +40,10 @@ fn encode_cname_rdata_returns_target_name() {
 fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
     // RFC 8659, Section 4.1.
     let encoded =
-        EncodedRdata::from_columns(&RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
+        EncodedRdata::from_columns(RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
 
     assert_eq!(encoded.record_type, 257);
-    let mut expected = vec![0u8, 5];
+    let mut expected = vec![0, 5];
     expected.extend_from_slice(b"issue");
     expected.extend_from_slice(b"letsencrypt.org");
 
@@ -58,30 +54,30 @@ fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
 #[test]
 fn encode_sshfp_rdata_returns_algorithm_type_and_fingerprint() {
     // RFC 4255, Section 3.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::Sshfp, "4 1 4B9B6B07", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Sshfp, "4 1 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 44);
-    assert_eq!(encoded.rdata.as_bytes(), [4, 1, 0x4B, 0x9B, 0x6B, 0x07]);
+    assert_eq!(encoded.rdata.as_bytes(), [4, 1, 0x4b, 0x9b, 0x6b, 0x07]);
 }
 
 /// Verify that encode TLSA RDATA is usage selector matching then data.
 #[test]
 fn encode_tlsa_rdata_returns_usage_selector_matching_and_data() {
     // RFC 6698, Section 2.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::Tlsa, "3 1 0 4B9B6B07", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Tlsa, "3 1 0 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 52);
-    assert_eq!(encoded.rdata.as_bytes(), [3, 1, 0, 0x4B, 0x9B, 0x6B, 0x07]);
+    assert_eq!(encoded.rdata.as_bytes(), [3, 1, 0, 0x4b, 0x9b, 0x6b, 0x07]);
 }
 
 /// Verify that encode DS RDATA is tag algorithm digest type then digest.
 #[test]
 fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
     // RFC 4034, Section 5.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::Ds, "34217 13 2 4B9B6B07", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Ds, "34217 13 2 4B9B6B07", None).unwrap();
 
     assert_eq!(encoded.record_type, 43);
     assert_eq!(
         encoded.rdata.as_bytes(),
-        [0x85, 0xA9, 13, 2, 0x4B, 0x9B, 0x6B, 0x07]
+        [0x85, 0xa9, 13, 2, 0x4b, 0x9b, 0x6b, 0x07]
     );
 }
 
@@ -89,8 +85,7 @@ fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
 #[test]
 fn encode_mx_rdata_returns_preference_and_exchange() {
     // RFC 1035, Section 3.3.9; the preference lives in the priority column.
-    let encoded =
-        EncodedRdata::from_columns(&RecordType::Mx, "mail.example.com", Some(10)).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Mx, "mail.example.com", Some(10)).unwrap();
 
     assert_eq!(encoded.record_type, 15);
     let mut expected = vec![0, 10];
@@ -104,7 +99,7 @@ fn encode_mx_rdata_returns_preference_and_exchange() {
 fn encode_srv_rdata_returns_priority_weight_port_and_target() {
     // RFC 2782; the value stores `weight port target`, priority its column.
     let encoded =
-        EncodedRdata::from_columns(&RecordType::Srv, "5 5060 sip.example.com", Some(1)).unwrap();
+        EncodedRdata::from_columns(RecordType::Srv, "5 5060 sip.example.com", Some(1)).unwrap();
 
     assert_eq!(encoded.record_type, 33);
     let mut expected = vec![0, 1, 0, 5, 0x13, 0xc4];
@@ -116,7 +111,7 @@ fn encode_srv_rdata_returns_priority_weight_port_and_target() {
 /// Verify that encode TXT RDATA rejects a plain unquoted value.
 #[test]
 fn encode_txt_rdata_rejects_a_plain_unquoted_value() {
-    assert!(EncodedRdata::from_columns(&RecordType::Txt, "hello", None).is_err());
+    assert!(EncodedRdata::from_columns(RecordType::Txt, "hello", None).is_err());
 }
 
 /// Verify that encode TXT RDATA decodes the stored presentation form.
@@ -125,7 +120,7 @@ fn encode_txt_rdata_decodes_the_stored_presentation_form() {
     let stored = TxtRecordValue::from_segments(["a", "b"])
         .unwrap()
         .to_presentation();
-    let encoded = EncodedRdata::from_columns(&RecordType::Txt, &stored, None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Txt, &stored, None).unwrap();
     assert_eq!(encoded.rdata.as_bytes(), [1, b'a', 1, b'b']);
 }
 
@@ -142,7 +137,7 @@ fn encode_cname_rdata_reads_an_escaped_dot_as_label_data() {
     // RFC 1035, Section 5.1: `a\.b` decodes to three octets in one label;
     // the escape is presentation syntax and the dot remains label data.
     let encoded =
-        EncodedRdata::from_columns(&RecordType::Cname, r"a\.b.example.com.", None).unwrap();
+        EncodedRdata::from_columns(RecordType::Cname, r"a\.b.example.com.", None).unwrap();
 
     assert_eq!(
         encoded.rdata.as_bytes(),
@@ -153,7 +148,7 @@ fn encode_cname_rdata_reads_an_escaped_dot_as_label_data() {
     );
 }
 
-/// Resolve compressed names within RDLENGTH (RFC 1035, Section 4.1.4).
+/// Verify that compressed names resolve within RDLENGTH (RFC 1035, Section 4.1.4).
 #[test]
 fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
     let mut message = b"\x02NS\x07EXAMPLE\x03COM\0".to_vec();
@@ -163,15 +158,15 @@ fn canonical_rdata_resolves_compression_without_consuming_the_next_record() {
 
     assert_eq!(rdata.as_bytes(), b"\0\x0a\x02ns\x07example\x03com\0");
     assert!(Rdata::parse_canonical(Rtype::MX, &message, start, 3).is_err());
-    assert!(matches!(
+    assert_eq!(
         Rdata::parse_canonical(Rtype::MX, &message, start, 5),
         Err(ParseRdataError::TrailingBytes)
-    ));
+    );
     assert!(Rdata::parse_canonical(Rtype::MX, &message, usize::MAX, 4).is_err());
     assert!(Rdata::parse_canonical(Rtype::MX, &message, start, usize::MAX).is_err());
 }
 
-/// Preserve opaque RDATA, including empty data (RFC 3597, Section 6).
+/// Verify that opaque RDATA is preserved, including empty data (RFC 3597, Section 6).
 #[test]
 fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
     let message = [0xc0, 0, 0xff, 0xee];
@@ -190,7 +185,8 @@ fn canonical_rdata_preserves_opaque_bytes_and_character_strings() {
     assert_eq!(txt.to_canonical(Rtype::TXT).unwrap(), txt);
 }
 
-/// Preserve NSEC name case but fold RRSIG signer names (RFC 6840, Section 5.1).
+/// Verify that NSEC name case is preserved but RRSIG signer names are folded (RFC 6840, Section
+/// 5.1).
 #[test]
 fn canonical_rdata_observes_dnssec_name_case_rules() {
     let name = b"\x02NS\x07EXAMPLE\x03COM\0";
@@ -211,15 +207,15 @@ fn canonical_rdata_observes_dnssec_name_case_rules() {
     assert_eq!(rdata.to_canonical(Rtype::NSEC).unwrap(), rdata);
 }
 
-/// Reject known RDATA that does not fill its declared length.
+/// Verify that known RDATA that does not fill its declared length is rejected.
 #[test]
 fn canonical_rdata_rejects_malformed_known_types() {
     let bytes = [192, 0, 2, 1, 0];
 
     assert!(Rdata::parse_canonical(Rtype::A, &bytes, 0, 3).is_err());
-    assert!(matches!(
+    assert_eq!(
         Rdata::parse_canonical(Rtype::A, &bytes, 0, 5),
         Err(ParseRdataError::TrailingBytes)
-    ));
+    );
     assert!(Rdata::parse_canonical(Rtype::DNSKEY, &bytes, 0, 3).is_err());
 }

@@ -1,10 +1,8 @@
 //! The transaction plumbing every mutation flow shares: open one on the
 //! context's database, then commit on success or roll back on failure.
 
-use bindizr_db::Transaction;
-
-use crate::Context;
 use crate::error::ServiceError;
+use crate::{Context, Transaction};
 
 /// Begin a database transaction and translate any startup error.
 pub(crate) async fn begin_tx(
@@ -12,7 +10,7 @@ pub(crate) async fn begin_tx(
     message: &'static str,
 ) -> Result<Transaction<'static>, ServiceError> {
     cx.db().begin().await.map_err(|error| {
-        log::error!("Failed to begin transaction: {}", error);
+        log::error!("Failed to begin transaction: {error}");
         ServiceError::internal_with_source(message, error)
     })
 }
@@ -23,7 +21,7 @@ pub(crate) async fn begin_read_tx(
     message: &'static str,
 ) -> Result<Transaction<'static>, ServiceError> {
     cx.db().begin_read().await.map_err(|error| {
-        log::error!("Failed to begin transaction: {}", error);
+        log::error!("Failed to begin transaction: {error}");
         ServiceError::internal_with_source(message, error)
     })
 }
@@ -37,15 +35,15 @@ pub(crate) async fn finish_tx<T, E: From<ServiceError>>(
     match apply_result {
         Ok(value) => {
             tx.commit().await.map_err(|error| {
-                log::error!("Failed to commit transaction: {}", error);
+                log::error!("Failed to commit transaction: {error}");
                 E::from(ServiceError::internal_with_source(message, error))
             })?;
             Ok(value)
         }
         Err(error) => {
             // A rollback failure must not replace the original operation error.
-            if let Err(error) = tx.rollback().await {
-                log::error!("Failed to rollback transaction: {}", error);
+            if let Err(rollback_error) = tx.rollback().await {
+                log::error!("Failed to rollback transaction: {rollback_error}");
             }
             Err(error)
         }

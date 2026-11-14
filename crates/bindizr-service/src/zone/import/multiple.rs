@@ -3,7 +3,6 @@
 use bindizr_core::dns;
 use bindizr_core::dns::address;
 
-use super::{ImportOptions, MissingZoneAction};
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
@@ -11,6 +10,8 @@ use crate::types::{
     ErrorResponse, ImportMode, ImportResult, ImportZonesItemResponse, ImportZonesRequest,
     ImportZonesResponse, ImportZonesSummaryResponse, Run,
 };
+use crate::zone::import;
+use crate::zone::import::{ImportOptions, MissingZoneAction};
 use crate::{Context, zone};
 
 /// Import named zones or catalog members from one server over one connection
@@ -33,9 +34,9 @@ pub async fn import_many(
             MissingZoneAction::Reject
         },
     };
-    let server = request.from_server.trim();
+    let address = request.from_server.trim();
 
-    if !address::is_address_target(server) {
+    if !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(
             "from_server must name one server as host[:port]",
         ));
@@ -43,44 +44,43 @@ pub async fn import_many(
 
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
-        super::authorize_new_zone_import(caller, mode)?;
+        import::authorize_new_zone_import(caller, mode)?;
     }
 
     let config = cx.config();
-    let mut client = AxfrClient::new(server);
+    let mut client = AxfrClient::new(address);
 
     let zone_names = match (&request.zone_names, &request.from_catalog) {
-        (Some(names), None) => super::normalize_zone_names(names)?,
+        (Some(names), None) => import::normalize_zone_names(names)?,
         (None, Some(catalog)) => {
             // A catalog names every zone its server provisions, so reading it
             // through Bindizr is an all-zones act.
-            for action in super::import_actions(mode) {
+            for action in import::import_actions(mode) {
                 caller.authorize_all_whole_zones(*action)?;
             }
 
-            let catalog = zone::normalize_name(catalog)?;
+            let catalog_zone_name = zone::normalize_name(catalog)?;
 
             let records = client
-                .fetch_zone(&catalog, &config.dns.import)
+                .fetch_zone(&catalog_zone_name, &config.dns.import)
                 .await
                 .map_err(|error| {
                     ServiceError::invalid_input_with_source(
                         format!(
-                            "AXFR of catalog {} from {} failed: {}",
-                            catalog, server, error
+                            "AXFR of catalog {catalog_zone_name} from {address} failed: {error}"
                         ),
                         error,
                     )
                 })?;
-            let members = dns::extract_member_zones(&records, &catalog).map_err(|error| {
-                ServiceError::invalid_input_with_source(
-                    format!(
-                        "catalog {} from {} cannot be read: {}",
-                        catalog, server, error
-                    ),
-                    error,
-                )
-            })?;
+            let members =
+                dns::extract_member_zones(&records, &catalog_zone_name).map_err(|error| {
+                    ServiceError::invalid_input_with_source(
+                        format!(
+                            "catalog {catalog_zone_name} from {address} cannot be read: {error}"
+                        ),
+                        error,
+                    )
+                })?;
 
             for member in &members {
                 zone::validate_name(member)?;
@@ -111,7 +111,8 @@ pub async fn import_many(
     // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
         let (result, import, error) =
-            match super::import_transfer(cx, caller, zone_name, &mut client, server, options).await
+            match import::import_transfer(cx, caller, zone_name, &mut client, address, options)
+                .await
             {
                 Ok(import) if import.was_rejected() => (ImportResult::Rejected, Some(import), None),
                 Ok(import) => (ImportResult::Ok, Some(import), None),
@@ -137,14 +138,12 @@ pub async fn import_many(
     }
 
     log::info!(
-        "event=zones_import server={} mode={:?} dry_run={} zones={} ok={} rejected={} failed={}",
-        server,
-        mode,
+        "event=zones_import server={address} mode={mode:?} dry_run={} zones={} ok={} rejected={} failed={}",
         request.dry_run,
         summary.zones,
         summary.ok,
         summary.rejected,
-        summary.failed,
+        summary.failed
     );
 
     Ok(ImportZonesResponse {

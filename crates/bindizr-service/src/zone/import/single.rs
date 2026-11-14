@@ -3,12 +3,12 @@
 use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 
-use super::{ImportOptions, ImportSource, MissingZoneAction, apply};
-use crate::Context;
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
 use crate::types::{ImportMode, ImportZoneRequest, ImportZoneResponse, Run};
+use crate::zone::import::{ImportOptions, ImportSource, MissingZoneAction, apply};
+use crate::{Context, zone};
 
 /// Import zone-file or AXFR records by mode; any validation failure rejects the whole import.
 /// Applying advances the serial once and sends one NOTIFY.
@@ -35,33 +35,38 @@ pub async fn import(
     // Checked before any fetch or parse: with `create` there is no zone yet,
     // and only an all-zones grant will reach the one made.
     if request.create {
-        super::authorize_new_zone_import(caller, mode)?;
+        zone::import::authorize_new_zone_import(caller, mode)?;
     }
 
     let source = match (&request.content, &request.from_server) {
         (Some(content), None) => ImportSource::Text(content),
-        (None, Some(server)) => {
-            let server = server.trim();
+        (None, Some(address)) => {
+            let address = address.trim();
 
-            if !address::is_address_target(server) {
+            if !address::is_address_target(address) {
                 return Err(ServiceError::invalid_input(
                     "from_server must name one server as host[:port]",
                 ));
             }
 
-            let mut client = AxfrClient::new(server);
+            let mut client = AxfrClient::new(address);
 
-            return super::import_transfer(cx, caller, zone_name, &mut client, server, options)
-                .await;
+            return zone::import::import_transfer(
+                cx,
+                caller,
+                zone_name,
+                &mut client,
+                address,
+                options,
+            )
+            .await;
         }
         (Some(_), Some(_)) => {
             return Err(ServiceError::invalid_input(
                 "give either content or from_server, not both",
             ));
         }
-        (None, None) => {
-            return Err(ServiceError::invalid_input("give content or from_server"));
-        }
+        (None, None) => return Err(ServiceError::invalid_input("give content or from_server")),
     };
 
     apply::apply_import(cx, caller, zone_name, source, options).await

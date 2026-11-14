@@ -1,12 +1,11 @@
 use bindizr_core::dns::Ttl;
-use bindizr_core::model::dnssec_key::DnssecKeyId;
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
+use crate::{LockLevel, sqlite};
 
 /// Insert a DNSSEC key in the current transaction.
 pub(crate) async fn create_tx(
@@ -35,7 +34,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    key.id = DnssecKeyId::from(super::last_insert_id(&result)?);
+    key.id = DnssecKeyId::from(sqlite::last_insert_id(&result)?);
     key.created_at = now;
 
     Ok(key)
@@ -62,7 +61,8 @@ pub(crate) async fn list_tx(
     Ok(keys)
 }
 
-/// List keys in the requested state whose transition deadline has passed.
+/// List the keys in `state` whose stamped `eligible_at` deadline has passed
+/// `cutoff`: the rollover work list.
 pub(crate) async fn list_by_state_eligible_before(
     pool: &Pool<Sqlite>,
     state: DnssecKeyState,
@@ -87,7 +87,8 @@ pub(crate) async fn list_by_state_eligible_before(
     Ok(keys)
 }
 
-/// List zones whose keys have exceeded the policy's ZSK lifetime.
+/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and
+/// `role`. A zero lifetime disables scheduled rollover.
 pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     pool: &Pool<Sqlite>,
     role: DnssecKeyRole,

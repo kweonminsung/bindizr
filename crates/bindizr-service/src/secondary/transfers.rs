@@ -4,24 +4,24 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::model::role_grant::Action;
+use bindizr_core::model::secondary::Secondary;
 use bindizr_core::model::transfer::{TransferKind, TransferLogWithZone, TransferResult};
 use bindizr_db::transfer_log::TransferLogFilter;
 
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::secondary::Secondary;
 use crate::types::{
     SecondaryTransferFilter, SecondaryTransfersResponse, TransferResponse, TransferSummaryResponse,
 };
-use crate::{Context, dns_client, pagination, transfer, zone};
+use crate::{Context, dns_client, pagination, secondary, transfer, zone};
 
-/// The transfers Bindizr answered `name`, newest first, with how each zone
+/// List the transfers Bindizr answered `name`, newest first, with how each zone
 /// was last served.
 pub async fn list_transfers(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    filter: SecondaryTransferFilter,
+    filter: &SecondaryTransferFilter,
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let limit = filter.limit.unwrap_or(1000);
@@ -33,7 +33,7 @@ pub async fn list_transfers(
         return Err(ServiceError::invalid_input("since must be before until"));
     }
 
-    let secondary = super::lookup_by_name(cx, name).await?;
+    let secondary = secondary::lookup_by_name(cx, name).await?;
 
     let zone_name = filter
         .zone_name
@@ -42,11 +42,11 @@ pub async fn list_transfers(
         .transpose()?;
 
     // The summary counts every zone's last transfer, whatever the filter selects.
-    let clients = resolve_ips(cx, &secondary).await;
-    let latest = transfer::list_latest_by_clients(cx, &clients).await?;
+    let client_ips = resolve_ips(cx, &secondary).await;
+    let latest = transfer::list_latest_by_clients(cx, &client_ips).await?;
     let logs = transfer::list_by_clients(
         cx,
-        &clients,
+        &client_ips,
         &TransferLogFilter {
             zone_name,
             since: filter.since,
@@ -64,7 +64,7 @@ pub async fn list_transfers(
     })
 }
 
-/// How Bindizr last served `secondary` each zone, for the check and doctor.
+/// Summarize how Bindizr last served `secondary` each zone, for the check and doctor.
 pub(crate) async fn summarize_transfers(
     cx: &Context,
     secondary: &Secondary,
@@ -73,16 +73,14 @@ pub(crate) async fn summarize_transfers(
     Ok(build_transfer_summary(&latest))
 }
 
-/// Count each zone by its latest transfer among `transfers`.
-fn build_transfer_summary(transfers: &[TransferLogWithZone]) -> TransferSummaryResponse {
+/// Count each zone by its latest transfer among `logs`.
+fn build_transfer_summary(logs: &[TransferLogWithZone]) -> TransferSummaryResponse {
     let mut latest: HashMap<&str, &TransferLogWithZone> = HashMap::new();
 
-    for transfer in transfers {
-        let entry = latest
-            .entry(transfer.zone_name.as_str())
-            .or_insert(transfer);
-        if transfer.served_at > entry.served_at {
-            *entry = transfer;
+    for log in logs {
+        let entry = latest.entry(log.zone_name.as_str()).or_insert(log);
+        if log.served_at > entry.served_at {
+            *entry = log;
         }
     }
 
@@ -95,8 +93,8 @@ fn build_transfer_summary(transfers: &[TransferLogWithZone]) -> TransferSummaryR
         failed: 0,
     };
 
-    for transfer in latest.values() {
-        match (transfer.result, transfer.kind, transfer.incremental) {
+    for log in latest.values() {
+        match (log.result, log.kind, log.incremental) {
             (TransferResult::Refused, _, _) => summary.refused += 1,
             (TransferResult::Failed, _, _) => summary.failed += 1,
             (TransferResult::Ok, TransferKind::Axfr, _) => summary.axfr += 1,
@@ -108,7 +106,7 @@ fn build_transfer_summary(transfers: &[TransferLogWithZone]) -> TransferSummaryR
     summary
 }
 
-/// The addresses the secondary resolves to now, which key the transfer log
+/// Resolve the addresses the secondary resolves to now, which key the transfer log
 /// rows; none when it does not resolve.
 async fn resolve_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
     let timeout = cx.config().dns.notify.timeout();

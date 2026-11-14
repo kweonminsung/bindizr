@@ -2,26 +2,30 @@
 
 use std::collections::BTreeMap;
 
+use domain::base::UnknownRecordData;
+use domain::base::cmp::CanonicalOrd;
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::FlattenInto;
-use domain::base::{Ttl, UnknownRecordData};
 use domain::dep::octseq::Parser;
 use domain::dnssec::sign::denial::nsec::GenerateNsecConfig;
 use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3Records};
 use domain::dnssec::sign::denial::{nsec, nsec3};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter};
-use domain::rdata::ZoneRecordData;
+use domain::rdata::{Soa, ZoneRecordData};
 
-use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord};
+use crate::dns::dnssec::signed_view;
+use crate::dns::dnssec::signed_view::{
+    SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord,
+};
 use crate::dns::record::EncodedRdata;
 use crate::model::dnssec_key::DS_DIGEST_TYPE;
 use crate::model::dnssec_policy::DnssecDenial;
 
 impl SignedViewParams<'_> {
-    /// User records, the synthesized SOA, and the apex key record sets in canonical
-    /// order — the exact content the chain and the signatures must cover.
+    /// Collect user records, the synthesized SOA, and the apex key record sets in
+    /// canonical order — the exact content the chain and the signatures must cover.
     pub(crate) fn signing_input(
-        &self,
+        self,
         apex: &WireName,
         signers: &[Signer<'_>],
     ) -> Result<Vec<SignRecord>, SignZoneError> {
@@ -33,7 +37,7 @@ impl SignedViewParams<'_> {
         input.push(WireRecord::new(
             apex.clone(),
             Class::IN,
-            Ttl::from_secs(zone.default_ttl.as_secs()),
+            domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
             ZoneRecordData::Soa(parse_soa(soa_bytes.as_bytes())?),
         ));
 
@@ -41,7 +45,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl.as_secs()),
+                domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Dnskey(signer.dnskey.clone()),
             ));
 
@@ -57,12 +61,12 @@ impl SignedViewParams<'_> {
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
-                    Ttl::from_secs(zone.default_ttl.as_secs()),
+                    domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                     ZoneRecordData::Unknown(cds),
                 ));
                 let cdnskey = UnknownRecordData::from_octets(
                     Rtype::CDNSKEY,
-                    super::to_rdata(&signer.dnskey)?.into_bytes(),
+                    signed_view::to_rdata(&signer.dnskey)?.into_bytes(),
                 )
                 .map_err(|error| SignZoneError::Rdata {
                     rtype: "CDNSKEY",
@@ -71,7 +75,7 @@ impl SignedViewParams<'_> {
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
-                    Ttl::from_secs(zone.default_ttl.as_secs()),
+                    domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                     ZoneRecordData::Unknown(cdnskey),
                 ));
             }
@@ -89,7 +93,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl.as_secs()),
+                domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Unknown(cds),
             ));
             let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
@@ -100,42 +104,45 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl.as_secs()),
+                domain::base::Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Unknown(cdnskey),
             ));
         }
 
         // Add user records to the same input used for denial proofs and signatures.
         for record in self.records {
-            let EncodedRdata { record_type, rdata } =
-                EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
-            let record_type = Rtype::from_int(record_type);
+            let EncodedRdata {
+                record_type: rtype,
+                rdata,
+            } = EncodedRdata::from_columns(record.record_type, &record.value, record.priority)?;
+            let rtype = Rtype::from_int(rtype);
 
             // UnknownRecordData cannot canonicalize embedded names for signing.
             let rdata = rdata
-                .to_canonical(record_type)
+                .to_canonical(rtype)
                 .map_err(|error| SignZoneError::Rdata {
                     rtype: "record",
                     source: Box::new(error),
                 })?;
-            let data = UnknownRecordData::from_octets(record_type, rdata.into_bytes()).map_err(
-                |error| SignZoneError::Rdata {
-                    rtype: "record",
-                    source: Box::new(error),
-                },
-            )?;
+            let data =
+                UnknownRecordData::from_octets(rtype, rdata.into_bytes()).map_err(|error| {
+                    SignZoneError::Rdata {
+                        rtype: "record",
+                        source: Box::new(error),
+                    }
+                })?;
             let owner = record.name.to_wire_name(&zone.name)?;
             input.push(WireRecord::new(
                 owner,
                 Class::IN,
-                Ttl::from_secs(record.ttl.as_secs()),
+                domain::base::Ttl::from_secs(record.ttl.as_secs()),
                 ZoneRecordData::Unknown(data),
             ));
         }
 
         // A record set shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
         // the set's minimum so record set construction and Original TTL are well-defined.
-        let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
+        let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), domain::base::Ttl> = BTreeMap::new();
 
         for record in &input {
             let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
@@ -149,20 +156,17 @@ impl SignedViewParams<'_> {
         }
 
         // Canonical order keeps each record set contiguous for the signing pass.
-        input.sort_by(|left, right| {
-            use domain::base::cmp::CanonicalOrd;
-            left.canonical_cmp(right)
-        });
+        input.sort_by(CanonicalOrd::canonical_cmp);
 
         Ok(input)
     }
 }
 
-/// The typed SOA the denial generators require (they read MINIMUM per
-/// RFC 9077), parsed back from the one byte encoding the transfer serves.
-fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, SignZoneError> {
+/// Parse the typed SOA the denial generators require (they read MINIMUM per
+/// RFC 9077) back from the one byte encoding the transfer serves.
+fn parse_soa(rdata: &[u8]) -> Result<Soa<WireName>, SignZoneError> {
     let mut parser = Parser::from_ref(rdata);
-    domain::rdata::Soa::parse(&mut parser)
+    Soa::parse(&mut parser)
         .map_err(|error| SignZoneError::Soa(Box::new(error)))?
         .try_flatten_into()
         .map_err(|error| SignZoneError::Soa(Box::new(error)))

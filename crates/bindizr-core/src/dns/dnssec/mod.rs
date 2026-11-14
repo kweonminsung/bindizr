@@ -6,8 +6,8 @@ mod key_tag;
 mod rdata;
 mod signed_view;
 
-use domain::base::Name;
 use domain::base::iana::Rtype;
+use domain::base::{Name, Record};
 pub use key::GenerateKeyError;
 pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
@@ -32,23 +32,23 @@ pub enum EncodeWireNameError {
 pub type WireName = Name<Vec<u8>>;
 
 /// A record in the `domain` crate's form, owned by a [`WireName`].
-pub(crate) type WireRecord<D> = domain::base::Record<WireName, D>;
+pub(crate) type WireRecord<D> = Record<WireName, D>;
 
-/// A typed name's wire bytes into the domain form.
+/// Convert a typed name's wire bytes into the domain form.
 fn to_wire_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {
     Name::from_octets(wire).map_err(|error| EncodeWireNameError::Octets(Box::new(error)))
 }
 
 impl ZoneName {
-    /// The zone apex in the domain form the DNSSEC machinery takes.
+    /// Convert the zone apex into the domain form the DNSSEC machinery takes.
     pub fn to_wire_name(&self) -> Result<WireName, EncodeWireNameError> {
         to_wire_name(self.to_wire()?)
     }
 }
 
 impl OwnerName {
-    /// The owner, absolute within `zone_name`, in the domain form the DNSSEC
-    /// machinery takes.
+    /// Convert the owner, absolute within `zone_name`, into the domain form the
+    /// DNSSEC machinery takes.
     pub fn to_wire_name(&self, zone_name: &ZoneName) -> Result<WireName, EncodeWireNameError> {
         to_wire_name(self.to_wire(zone_name)?)
     }
@@ -57,8 +57,8 @@ impl OwnerName {
 impl TryFrom<Rtype> for DnssecRecordType {
     type Error = ParseDnssecRecordTypeError;
 
-    /// The stored DNSSEC record type a wire record type maps to.
+    /// Convert a wire record type to the stored DNSSEC record type it maps to.
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        DnssecRecordType::try_from(i32::from(rtype.to_int()))
+        Self::try_from(i32::from(rtype.to_int()))
     }
 }

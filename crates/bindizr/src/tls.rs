@@ -5,8 +5,8 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use bindizr_core::config::{Config, TlsFiles};
 use rustls::crypto::ring;
-use rustls::pki_types::pem::{self, PemObject};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use thiserror::Error;
@@ -79,8 +79,8 @@ impl ResolvesServerCert for TlsCertificate {
 /// Read the PEM pair into the key a handshake signs with, checked against
 /// its certificate.
 fn load_certified_key(files: TlsFiles<'_>) -> Result<CertifiedKey, LoadCertificateError> {
-    let certs = CertificateDer::pem_file_iter(files.cert_file)
-        .and_then(std::iter::Iterator::collect::<Result<Vec<_>, _>>)
+    let certificates = CertificateDer::pem_file_iter(files.cert_file)
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|source| LoadCertificateError::Certificate {
             path: files.cert_file.to_string(),
             source,
@@ -92,7 +92,7 @@ fn load_certified_key(files: TlsFiles<'_>) -> Result<CertifiedKey, LoadCertifica
         }
     })?;
 
-    CertifiedKey::from_der(certs, key, &ring::default_provider()).map_err(|source| {
+    CertifiedKey::from_der(certificates, key, &ring::default_provider()).map_err(|source| {
         LoadCertificateError::Pair {
             cert_file: files.cert_file.to_string(),
             key_file: files.key_file.to_string(),

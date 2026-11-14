@@ -1,16 +1,18 @@
 //! Applying an ExternalDNS change set atomically and idempotently; the change
 //! set itself is computed in `change_set`.
 
+use std::time::Instant;
+
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::change_set;
-use super::change_set::ZoneChangeSet;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
+use crate::external_dns::change_set;
+use crate::external_dns::change_set::ZoneChangeSet;
 use crate::types::{ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse};
-use crate::{Context, dnssec, record, serial, time, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, time, transaction, zone};
 
 /// Apply all zones' ExternalDNS changes atomically, advancing serial/history
 /// once per changed zone.
@@ -19,7 +21,7 @@ pub async fn apply_changes(
     caller: &Caller,
     request: &ApplyExternalDnsChangesRequest,
 ) -> Result<ApplyExternalDnsChangesResponse, ServiceError> {
-    let started = std::time::Instant::now();
+    let started = Instant::now();
 
     let operations = change_set::parse_changes_request(request)?;
     let requested_operations = operations.len();
@@ -35,7 +37,7 @@ pub async fn apply_changes(
 
     let mut tx = transaction::begin_tx(cx, "failed to apply ExternalDNS changes").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
         let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
@@ -48,9 +50,7 @@ pub async fn apply_changes(
         // BTreeMap iteration locks zones in name order, so concurrent
         // multi-zone requests cannot deadlock on row locks.
         for (zone_name, operations) in &zone_operations {
-            let zone = bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
-                .await?
-                .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+            let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
             if !caller.sees_zone(zone.id) {
@@ -70,12 +70,12 @@ pub async fn apply_changes(
                 .deletes
                 .iter()
                 .map(|operation| (Action::RecordDelete, operation));
-            let writes: Vec<RecordAccess<'_>> = adds
+            let writes: Vec<RecordAccess> = adds
                 .chain(deletes)
                 .map(|(action, operation)| RecordAccess {
                     action,
                     relative_name: operation.name.clone(),
-                    record_type: Some(&operation.record_type),
+                    record_type: Some(operation.record_type),
                 })
                 .collect();
 
@@ -83,24 +83,24 @@ pub async fn apply_changes(
 
             // Only records sharing an owner name with the request can be
             // touched or conflict, so load just those.
-            let mut names: Vec<OwnerName> = operations
+            let mut owners: Vec<OwnerName> = operations
                 .adds
                 .iter()
                 .chain(operations.deletes.iter())
                 .map(|operation| operation.name.clone())
                 .collect();
-            names.sort();
-            names.dedup();
+            owners.sort();
+            owners.dedup();
 
-            let records_at_names = bindizr_db::record::list_by_names_tx(
+            let records_at_owners = bindizr_db::record::list_by_names_tx(
                 &mut tx,
                 zone.id,
-                &names,
+                &owners,
                 LockLevel::Exclusive,
             )
             .await?;
 
-            let change_set = ZoneChangeSet::compute(operations, &zone, &records_at_names)?;
+            let change_set = ZoneChangeSet::compute(&zone, operations, &records_at_owners)?;
 
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                 continue;
@@ -131,7 +131,7 @@ pub async fn apply_changes(
             changed_zones.push(zone.name.clone());
         }
 
-        Ok::<_, ServiceError>((changed_zones, added, deleted))
+        Ok((changed_zones, added, deleted))
     }
     .await;
 
@@ -142,18 +142,15 @@ pub async fn apply_changes(
     cx.metrics().track_serial_bumps(changed_zones.len() as u64);
 
     for zone_name in &changed_zones {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     let changed_zones: Vec<String> = changed_zones.iter().map(ToString::to_string).collect();
     log::info!(
-        "event=external_dns_apply zones={} ops={} added={} deleted={} noop={} ms={:.1}",
+        "event=external_dns_apply zones={} ops={requested_operations} added={added} deleted={deleted} noop={} ms={:.1}",
         changed_zones.join(","),
-        requested_operations,
-        added,
-        deleted,
         changed_zones.is_empty(),
-        time::elapsed_ms(started),
+        time::elapsed_ms(started)
     );
 
     Ok(ApplyExternalDnsChangesResponse {

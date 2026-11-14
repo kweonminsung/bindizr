@@ -1,10 +1,15 @@
-use super::*;
+use std::error::Error as _;
+use std::io;
 
-/// Input policy errors have no underlying operation failure to retain.
+use serde_json::json;
+
+use super::*;
+use crate::dns_client::ResolveAddressError;
+use crate::dns_client::ds::ProbeParentDsError;
+
+/// Verify that input policy errors have no underlying operation failure to retain.
 #[test]
 fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
-    use std::error::Error;
-
     for error in [
         ServiceError::invalid_input("invalid input"),
         ServiceError::record_name_ambiguous("example.com", "www", 2),
@@ -19,24 +24,19 @@ fn invalid_input_keeps_its_code_and_message_without_an_artificial_source() {
     );
     assert_eq!(
         ServiceError::record_name_ambiguous("example.com", "www", 2).to_string(),
-        "2 records are named 'www' in zone 'example.com'; address one by its id",
+        "2 records are named 'www' in zone 'example.com'; address one by its id"
     );
 }
 
-/// Keep the cause available after assigning the public DS-check classification.
+/// Verify that the cause stays available after assigning the public DS-check classification.
 #[test]
 fn ds_check_failure_preserves_source_and_wire_message() {
-    use std::error::Error;
-
-    use crate::dns_client::ResolveAddressError;
-    use crate::dns_client::ds::ProbeParentDsError;
-
     let error = ServiceError::dnssec_ds_unverified(
         "example.com",
         ProbeParentDsError::Unresolved {
             entry: "ns.parent.example".to_string(),
-            source: ResolveAddressError::Lookup(std::io::Error::new(
-                std::io::ErrorKind::ConnectionReset,
+            source: ResolveAddressError::Lookup(io::Error::new(
+                io::ErrorKind::ConnectionReset,
                 "resolver disconnected",
             )),
         },
@@ -47,25 +47,24 @@ fn ds_check_failure_preserves_source_and_wire_message() {
         error.to_string(),
         "could not verify that the parent zone serves no DS for zone 'example.com': \
          parent server 'ns.parent.example' did not resolve: resolver disconnected; set the \
-         zone's parent nameserver addresses, or skip the DS check",
+         zone's parent nameserver addresses, or skip the DS check"
     );
     let source = error.source().unwrap();
 
     assert!(matches!(
         source.downcast_ref::<ProbeParentDsError>(),
-        Some(ProbeParentDsError::Unresolved { entry, .. }) if entry == "ns.parent.example",
+        Some(ProbeParentDsError::Unresolved { entry, .. }) if entry == "ns.parent.example"
     ));
     assert!(matches!(
         source.source().unwrap().downcast_ref::<ResolveAddressError>(),
         Some(ResolveAddressError::Lookup(error))
-            if error.kind() == std::io::ErrorKind::ConnectionReset,
+            if error.kind() == io::ErrorKind::ConnectionReset
     ));
 }
 
-/// An unsupported digest is the observed policy outcome, without an underlying failure.
+/// Verify that an unsupported digest is the observed policy outcome, without an underlying failure.
 #[test]
 fn unsupported_ds_digest_preserves_policy_message_without_source() {
-    use std::error::Error;
     let error = ServiceError::dnssec_ds_digest_unsupported("example.com", &[KeyTag::from(7)]);
 
     assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
@@ -73,7 +72,7 @@ fn unsupported_ds_digest_preserves_policy_message_without_source() {
         error.to_string(),
         "the parent zone serves a DS for key tag 7 of zone 'example.com', but only in digest \
          types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
-         to publish SHA-256, or skip the DS check",
+         to publish SHA-256, or skip the DS check"
     );
     assert!(error.source().is_none());
 }
@@ -81,32 +80,27 @@ fn unsupported_ds_digest_preserves_policy_message_without_source() {
 /// Verify that a signing failure is not an internal error.
 #[test]
 fn signing_failure_preserves_dnssec_error_class() {
-    let error = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
+    let error = ServiceError::dnssec_signing_failed(io::Error::other("boom"));
     assert_eq!(error.code(), ErrorCode::DnssecSigningFailed);
     assert!(error.code().is_internal());
 }
 
-/// Preserve the concrete source when an internal failure gains context.
+/// Verify that the concrete source is preserved when an internal failure gains context.
 #[test]
 fn internal_context_preserves_the_source() {
-    use std::error::Error;
     let error = ServiceError::internal_with_source(
         "failed to load records",
-        std::io::Error::new(std::io::ErrorKind::ConnectionReset, "database disconnected"),
+        io::Error::new(io::ErrorKind::ConnectionReset, "database disconnected"),
     );
 
     assert_eq!(error.code(), ErrorCode::Internal);
     assert_eq!(error.to_string(), "failed to load records");
-    let source = error
-        .source()
-        .unwrap()
-        .downcast_ref::<std::io::Error>()
-        .unwrap();
+    let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
 
-    assert_eq!(source.kind(), std::io::ErrorKind::ConnectionReset);
+    assert_eq!(source.kind(), io::ErrorKind::ConnectionReset);
 }
 
-/// Verify every serialized error code against its established wire spelling.
+/// Verify that `ErrorCode` has one spelling across `as_str` and serde.
 #[test]
 fn error_code_spells_itself_once() {
     for (value, expected) in [
@@ -158,12 +152,9 @@ fn error_code_spells_itself_once() {
         (ErrorCode::Internal, "INTERNAL"),
     ] {
         assert_eq!(value.as_str(), expected);
+        assert_eq!(serde_json::to_value(value).unwrap(), json!(expected));
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
-            serde_json::json!(expected)
-        );
-        assert_eq!(
-            serde_json::from_value::<ErrorCode>(serde_json::json!(expected)).unwrap(),
+            serde_json::from_value::<ErrorCode>(json!(expected)).unwrap(),
             value
         );
     }

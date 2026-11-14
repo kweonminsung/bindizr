@@ -20,6 +20,7 @@ mod token;
 mod tsig_key;
 mod zone;
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,14 +33,18 @@ use bindizr_core::model::api_token::ApiToken;
 use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
-use error::ApiError;
 use rustls::ServerConfig;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
+use crate::api::error::ApiError;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
+
+/// How long a TLS shutdown waits for in-flight requests before dropping the
+/// connections; the plain-HTTP path waits without a deadline, as axum does.
+const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::unauthenticated_api()` layer when authentication is disabled. A request without
@@ -77,21 +82,13 @@ where
 
     /// Extract the authenticated API token from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
-        parts
-            .extensions
-            .get::<AuthenticatedToken>()
-            .cloned()
-            .ok_or_else(|| {
-                ApiError(ServiceError::TokenNotFound(
-                    "the request presents no API token: authentication is disabled".to_string(),
-                ))
-            })
+        parts.extensions.get::<Self>().cloned().ok_or_else(|| {
+            ApiError(ServiceError::TokenNotFound(
+                "the request presents no API token: authentication is disabled".to_string(),
+            ))
+        })
     }
 }
-
-/// How long a TLS shutdown waits for in-flight requests before dropping the
-/// connections; the plain-HTTP path waits without a deadline, as axum does.
-const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
 /// Why the HTTP API could not come up.
 #[derive(Debug, Error)]
@@ -100,15 +97,15 @@ pub(crate) enum StartApiError {
     Bind {
         addr: SocketAddr,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("failed to hand the HTTP API listener to the TLS server: {0}")]
-    IntoStd(#[source] std::io::Error),
+    IntoStd(#[source] io::Error),
     #[error("failed to start the HTTPS API server on {addr}: {source}")]
     Serve {
         addr: SocketAddr,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 
@@ -120,11 +117,8 @@ pub(crate) async fn start(
     shutdown: &Shutdown,
     certificate: Option<Arc<TlsCertificate>>,
 ) -> Result<JoinHandle<()>, StartApiError> {
-    let bindizr_config = cx.config();
-    let addr = SocketAddr::from((
-        bindizr_config.api.listen_addr,
-        bindizr_config.api.listen_port,
-    ));
+    let config = cx.config();
+    let addr = SocketAddr::from((config.api.listen_addr, config.api.listen_port));
 
     // Bound here rather than inside the server so a taken port fails startup
     // instead of surfacing in a background task.
@@ -133,7 +127,7 @@ pub(crate) async fn start(
         .map_err(|source| StartApiError::Bind { addr, source })?;
 
     let Some(certificate) = certificate else {
-        log::info!("HTTP API server listening on http://{}", addr);
+        log::info!("HTTP API server listening on http://{addr}");
         let stop = shutdown.waiter();
 
         return Ok(tokio::spawn(async move {
@@ -141,7 +135,7 @@ pub(crate) async fn start(
                 .with_graceful_shutdown(stop)
                 .await
             {
-                log::error!("API server error: {:?}", error);
+                log::error!("API server error: {error:?}");
             }
         }));
     };
@@ -156,7 +150,7 @@ pub(crate) async fn start(
     let server = axum_server::from_tcp_rustls(listener, tls)
         .map_err(|source| StartApiError::Serve { addr, source })?;
 
-    log::info!("HTTP API server listening on https://{}", addr);
+    log::info!("HTTP API server listening on https://{addr}");
 
     let handle = Handle::new();
     let stop = shutdown.waiter();
@@ -173,7 +167,7 @@ pub(crate) async fn start(
             .serve(router::routes(cx).into_make_service())
             .await
         {
-            log::error!("API server error: {:?}", error);
+            log::error!("API server error: {error:?}");
         }
     }))
 }

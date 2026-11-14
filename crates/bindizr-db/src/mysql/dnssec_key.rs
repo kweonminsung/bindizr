@@ -1,12 +1,11 @@
 use bindizr_core::dns::Ttl;
-use bindizr_core::model::dnssec_key::DnssecKeyId;
+use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
 
 /// Insert a DNSSEC key in the current transaction.
 pub(crate) async fn create_tx(
@@ -48,14 +47,13 @@ pub(crate) async fn list_tx(
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
     let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
-        "{}{}",
         r#"
         SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
         FROM dnssec_keys
         WHERE zone_id = ?
-        ORDER BY id
+        ORDER BY id{}
         "#,
-        lock_level.clause()
+        lock_level.clause(),
     )))
     .bind(zone_id)
     .fetch_all(&mut **tx)
@@ -64,7 +62,8 @@ pub(crate) async fn list_tx(
     Ok(keys)
 }
 
-/// List keys in the requested state whose transition deadline has passed.
+/// List the keys in `state` whose stamped `eligible_at` deadline has passed
+/// `cutoff`: the rollover work list.
 pub(crate) async fn list_by_state_eligible_before(
     pool: &Pool<MySql>,
     state: DnssecKeyState,
@@ -88,7 +87,8 @@ pub(crate) async fn list_by_state_eligible_before(
     Ok(keys)
 }
 
-/// List zones whose keys have exceeded the policy's ZSK lifetime.
+/// List zones whose keys exceeded their policy's ZSK lifetime in `state` and
+/// `role`. A zero lifetime disables scheduled rollover.
 pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     pool: &Pool<MySql>,
     role: DnssecKeyRole,

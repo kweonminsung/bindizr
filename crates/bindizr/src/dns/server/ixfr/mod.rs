@@ -5,48 +5,45 @@ mod send;
 use std::collections::HashMap;
 use std::net::IpAddr;
 
-use bindizr_core::dns::message::Rtype;
-use bindizr_core::dns::{Serial, message};
+use bindizr_core::dns::Serial;
+use bindizr_core::dns::message::{ParsedQuery, Rtype};
 use bindizr_core::model::transfer::TransferKind;
 use bindizr_core::model::zone_version::ZoneVersion;
-use bindizr_service::transfer;
-use bindizr_service::zone::{self, IxfrPlan, TransferAccess};
+use bindizr_service::zone::{IxfrPlan, TransferAccess};
+use bindizr_service::{transfer, zone};
 
-use self::send::SendIxfrError;
-use super::auth::TransferIdentity;
-use super::axfr;
 use crate::dns::error::DnsError;
-use crate::dns::server::DnsContext;
+use crate::dns::server::auth::TransferIdentity;
+use crate::dns::server::ixfr::send::SendIxfrError;
+use crate::dns::server::{DnsContext, axfr};
 use crate::dns::stream::ResponseWriter;
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.
 pub(crate) async fn handle_ixfr(
     dns_cx: &DnsContext,
     writer: &ResponseWriter,
-    query: &message::ParsedQuery,
     client_ip: IpAddr,
+    query: &ParsedQuery,
     identity: &mut TransferIdentity,
 ) -> Result<(), DnsError> {
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
     log::info!(
-        "IXFR request for zone {:?} from {}, client_serial={:?}",
-        zone_name_str,
-        client_ip,
+        "IXFR request for zone {zone_name_str:?} from {client_ip}, client_serial={:?}",
         query.client_serial
     );
 
     // Catalogs select their response from the generated snapshot.
     if cx.config().dns.is_catalog_zone(zone_name_str) {
-        return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity).await;
     }
 
     let client_serial = match query.client_serial {
         Some(serial) => Serial::from(serial),
         None => {
             log::warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity)
                 .await;
         }
     };
@@ -64,30 +61,26 @@ pub(crate) async fn handle_ixfr(
         Err(_) => TransferAccess::NotAuth,
     };
     let (zone, plan) = match access {
-        TransferAccess::Granted(found) => found,
+        TransferAccess::Granted(content) => content,
         TransferAccess::NotAuth => {
-            return Err(DnsError::NotAuth(zone_name_str.to_string()));
+            return Err(DnsError::NotAuth {
+                zone_name: zone_name_str.to_string(),
+            });
         }
-        TransferAccess::Refused(reason) => return Err(DnsError::Refused(reason)),
+        TransferAccess::Refused(reason) => return Err(DnsError::Refused { reason }),
     };
     let current_serial = zone.serial;
 
     let (changes, versions) = match plan {
         IxfrPlan::SoaOnly => {
-            log::info!(
-                "IXFR: Answering with current SOA (serial={})",
-                current_serial
-            );
-            return self::send::send_soa_response(writer, query, &zone, identity.signer.take())
-                .await;
+            log::info!("IXFR: Answering with current SOA (serial={current_serial})");
+            return send::send_soa_response(writer, query, &zone, identity.signer.take()).await;
         }
         IxfrPlan::Full => {
             log::info!(
-                "IXFR: No incremental answer from serial {} to {}, falling back to AXFR",
-                client_serial,
-                current_serial
+                "IXFR: No incremental answer from serial {client_serial} to {current_serial}, falling back to AXFR"
             );
-            return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity)
                 .await;
         }
         IxfrPlan::Changes { changes, versions } => (changes, versions),
@@ -99,17 +92,15 @@ pub(crate) async fn handle_ixfr(
         .collect();
 
     log::info!(
-        "IXFR: Sending {} changes across {} serial steps from {} to {}",
+        "IXFR: Sending {} changes across {} serial steps from {client_serial} to {current_serial}",
         changes.len(),
         // The versions span the client's serial and every step after it.
-        versions_by_serial.len().saturating_sub(1),
-        client_serial,
-        current_serial
+        versions_by_serial.len().saturating_sub(1)
     );
 
     // The service checked the delta has no gap; a failure still falls back
     // to AXFR only while no bytes have reached the client.
-    match self::send::send_ixfr_response(
+    match send::send_ixfr_response(
         writer,
         query,
         &zone,
@@ -123,30 +114,30 @@ pub(crate) async fn handle_ixfr(
         Ok(()) => {}
         // Nothing was written yet, so a full AXFR is still a valid response.
         Err(SendIxfrError::NotStarted {
-            error,
-            signer: signer_back,
+            source: error,
+            signer,
         }) => {
             log::warn!(
-                "IXFR: Failed to build incremental response ({}), falling back to AXFR",
-                error
+                "IXFR: Failed to build incremental response ({error}), falling back to AXFR"
             );
-            identity.signer = signer_back.map(|signer| *signer);
+            identity.signer = signer.map(|signer| *signer);
 
-            return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
+            return axfr::handle_axfr(dns_cx, writer, client_ip, query, Rtype::IXFR, identity)
                 .await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
-        Err(SendIxfrError::Partial { error, signer }) => {
-            log::warn!(
-                "IXFR: aborting after partial send, not falling back: {}",
-                error
-            );
+        Err(SendIxfrError::Partial {
+            source: error,
+            signer,
+        }) => {
+            log::warn!("IXFR: aborting after partial send, not falling back: {error}");
             identity.signer = signer.map(|signer| *signer);
+
             return Err(error);
         }
     }
 
-    log::info!("IXFR completed for zone {}", zone_name_str);
+    log::info!("IXFR completed for zone {zone_name_str}");
 
     transfer::save_ok(
         cx,

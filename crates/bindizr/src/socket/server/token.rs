@@ -8,7 +8,7 @@ use bindizr_service::{Context, token};
 
 use crate::socket::types::DaemonResponse;
 
-/// Create token from the control request.
+/// Create a token from the control request.
 pub(crate) async fn create_token(
     cx: &Context,
     request: &CreateTokenRequest,
@@ -38,7 +38,7 @@ pub(crate) async fn delete_token(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     token::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Token '{}' deleted successfully", name);
+    let message = format!("Token '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

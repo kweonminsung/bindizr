@@ -1,18 +1,21 @@
 //! The `dnssec keys` subcommands: BIND key-file export and import.
 
+use std::fs;
+
 use bindizr_core::outln;
 use bindizr_service::types::{
     DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeysRequest,
 };
 use clap::Subcommand;
 
+use crate::cli::commands::dnssec;
 use crate::cli::error::CliError;
 use crate::cli::output::OutputFormat;
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for moving raw key material in and out of bindizr.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum DnssecKeysCommand {
     /// Print the zone's keys in BIND key-file form, private halves
     /// included — redirect somewhere with tight permissions
@@ -61,7 +64,7 @@ is matched with the Nth --key.")]
     },
 }
 
-/// Run the requested DNSSEC key import or export command.
+/// Handle the `dnssec keys` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), CliError> {
     match subcommand {
         DnssecKeysCommand::Export { name } => {
@@ -90,15 +93,12 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             let mut keys = Vec::with_capacity(key.len());
 
             for (key, private) in key.iter().zip(&private) {
-                let dnskey = std::fs::read_to_string(key).map_err(|error| {
-                    CliError::request_with_source(
-                        format!("failed to read '{}': {}", key, error),
-                        error,
-                    )
+                let dnskey = fs::read_to_string(key).map_err(|error| {
+                    CliError::request_with_source(format!("failed to read '{key}': {error}"), error)
                 })?;
-                let private_key = std::fs::read_to_string(private).map_err(|error| {
+                let private_key = fs::read_to_string(private).map_err(|error| {
                     CliError::request_with_source(
-                        format!("failed to read '{}': {}", private, error),
+                        format!("failed to read '{private}': {error}"),
                         error,
                     )
                 })?;
@@ -117,7 +117,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                     },
                 })
                 .await?;
-            super::print_status(&response.data, output)?;
+            dnssec::print_status(&response.data, output)?;
         }
     }
 
@@ -127,14 +127,14 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
 /// Print each key as its BIND file pair, headed by the file name BIND
 /// tooling expects, so the stream splits cleanly into `K*.key`/`K*.private`.
 fn print_key_material(exported: &ExportDnssecKeysResponse) {
-    for (i, key) in exported.keys.iter().enumerate() {
+    for (index, key) in exported.keys.iter().enumerate() {
         let mut base = format!(
             "K{}.+{:03}+{:05}",
             exported.zone_name, key.algorithm, key.key_tag
         );
 
         // Distinct keys may share (algorithm, tag); the suffix keeps names unique.
-        let duplicate_count = exported.keys[..i]
+        let duplicate_count = exported.keys[..index]
             .iter()
             .filter(|candidate_key| {
                 candidate_key.algorithm == key.algorithm && candidate_key.key_tag == key.key_tag
@@ -145,9 +145,9 @@ fn print_key_material(exported: &ExportDnssecKeysResponse) {
             base.push_str(&format!(".{}", duplicate_count + 1));
         }
 
-        outln!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
+        outln!("; {base}.key ({}, tag {})", key.role, key.key_tag);
         outln!("{}", key.dnskey_record);
-        outln!("; {}.private", base);
+        outln!("; {base}.private");
         outln!("{}", key.private_key.trim_end());
     }
 }

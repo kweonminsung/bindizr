@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 /// Query parameters of the audit log listing: which changes, and the page.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct AuditLogFilter {
@@ -39,7 +39,7 @@ pub struct AuditLogFilter {
 }
 
 /// One row of the audit log: what was changed, how, by whom, and when.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AuditLogResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: AuditLogId,
@@ -62,9 +62,9 @@ pub struct AuditLogResponse {
 }
 
 impl From<&AuditLog> for AuditLogResponse {
-    /// Render a stored row.
+    /// Build an audit log response from a stored row.
     fn from(log: &AuditLog) -> Self {
-        AuditLogResponse {
+        Self {
             id: log.id,
             entity: log.entity,
             entity_name: log.entity_name.clone(),

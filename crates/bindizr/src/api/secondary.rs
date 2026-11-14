@@ -37,8 +37,8 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/secondaries",
         tag = "Secondary",
         summary = "List all secondaries",
-        params(PageRequest),
         description = "Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for all zones, may pull zones unsigned from its address, and is probed for the serial it serves.",
+        params(PageRequest),
         responses(
             (status = 200, description = "All secondaries", body = PaginatedResponse<SecondaryResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -139,7 +139,7 @@ pub(crate) async fn update_secondary(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
-    let secondary = secondary::update(&cx, &caller, &params.name, body).await?;
+    let secondary = secondary::update(&cx, &caller, &params.name, &body).await?;
     let response = SingleSecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -197,28 +197,28 @@ pub(crate) async fn check_secondary(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let check = secondary::check(&cx, &caller, &params.name).await?;
-    Ok((StatusCode::OK, Json(check)).into_response())
+    let response = secondary::check(&cx, &caller, &params.name).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// The transfers Bindizr served a secondary.
+/// List the transfers Bindizr served a secondary.
 #[utoipa::path(
-    get,
-    path = "/secondaries/{name}/transfers",
-    tag = "Secondary",
-    summary = "List a secondary's transfers",
-    description = "The transfers Bindizr answered the secondary's addresses, newest first, and a summary of how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Every transfer is kept for `history.transfer.max_days`, and each zone's last one beyond that; `history.transfer.save = \"unserved\"` keeps refusals and failures alone. The summary counts every zone, whatever the query selects.",
-    params(
-        ("name" = String, Path, description = "The name of the secondary."),
-        SecondaryTransferFilter
-    ),
-    responses(
-        (status = 200, description = "The transfers served", body = SecondaryTransfersResponse),
-        (status = 400, description = "Invalid query parameters", body = ErrorResponse),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
-        (status = 404, description = "Secondary not found", body = ErrorResponse)
-    )
+        get,
+        path = "/secondaries/{name}/transfers",
+        tag = "Secondary",
+        summary = "List a secondary's transfers",
+        description = "The transfers Bindizr answered the secondary's addresses, newest first, and a summary of how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Every transfer is kept for `history.transfer.max_days`, and each zone's last one beyond that; `history.transfer.save = \"unserved\"` keeps refusals and failures alone. The summary counts every zone, whatever the query selects.",
+        params(
+            ("name" = String, Path, description = "The name of the secondary."),
+            SecondaryTransferFilter
+        ),
+        responses(
+            (status = 200, description = "The transfers served", body = SecondaryTransfersResponse),
+            (status = 400, description = "Invalid query parameters", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
+            (status = 404, description = "Secondary not found", body = ErrorResponse)
+        )
 )]
 pub(crate) async fn list_secondary_transfers(
     State(cx): State<Arc<Context>>,
@@ -226,6 +226,6 @@ pub(crate) async fn list_secondary_transfers(
     Path(params): Path<NameParams>,
     Query(filter): Query<SecondaryTransferFilter>,
 ) -> Result<Response, ApiError> {
-    let transfers = secondary::list_transfers(&cx, &caller, &params.name, filter).await?;
-    Ok((StatusCode::OK, Json(transfers)).into_response())
+    let response = secondary::list_transfers(&cx, &caller, &params.name, &filter).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

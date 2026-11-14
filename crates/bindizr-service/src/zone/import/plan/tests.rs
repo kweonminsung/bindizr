@@ -5,7 +5,6 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::Utc;
 
 use super::*;
-use crate::model::record::RecordType;
 
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
@@ -18,7 +17,7 @@ fn zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -72,10 +71,10 @@ fn added<'a>(plan: &ImportPlan<'a>) -> Vec<&'a str> {
 /// Verify that append never deletes what it did not ask about.
 #[test]
 fn append_preserves_records_absent_from_file() {
-    let rows = [existing(1, "old", RecordType::A, "192.0.2.9", 300)];
+    let records = [existing(1, "old", RecordType::A, "192.0.2.9", 300)];
     let want = [desired("new", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Append, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &records, &want);
 
     assert!(plan.deletes.is_empty());
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -84,14 +83,14 @@ fn append_preserves_records_absent_from_file() {
 /// Verify that replace deletes every row the file does not name.
 #[test]
 fn replace_deletes_records_absent_from_file() {
-    let rows = [
+    let records = [
         existing(1, "keep", RecordType::A, "192.0.2.1", 300),
         existing(2, "drop", RecordType::A, "192.0.2.9", 300),
         existing(3, "drop", RecordType::Txt, "\"x\"", 300),
     ];
     let want = [desired("keep", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &records, &want);
 
     assert_eq!(ids(&plan.deletes), [RecordId::from(2), RecordId::from(3)]);
     assert_eq!(plan.unchanged, 1);
@@ -103,14 +102,14 @@ fn replace_deletes_records_absent_from_file() {
 fn upsert_preserves_name_and_type_pairs_absent_from_file() {
     // The file speaks about www/A only, so the other rows are none of its
     // business.
-    let rows = [
+    let records = [
         existing(1, "www", RecordType::A, "192.0.2.9", 300),
         existing(2, "www", RecordType::Txt, "\"x\"", 300),
         existing(3, "other", RecordType::A, "192.0.2.8", 300),
     ];
     let want = [desired("www", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Upsert, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &records, &want);
 
     assert_eq!(ids(&plan.deletes), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -120,10 +119,10 @@ fn upsert_preserves_name_and_type_pairs_absent_from_file() {
 #[test]
 fn import_plan_replaces_row_when_ttl_changes() {
     // RFC 2181, Section 5.2: the records of one name and type share a TTL.
-    let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
+    let records = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", 600)];
 
-    let plan = ImportPlan::compute(ImportMode::Upsert, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &records, &want);
 
     assert_eq!(ids(&plan.ttl_deletes), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -134,10 +133,10 @@ fn import_plan_replaces_row_when_ttl_changes() {
 /// Verify that append keeps a TTL it disagrees with.
 #[test]
 fn append_keeps_a_ttl_it_disagrees_with() {
-    let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
+    let records = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", 600)];
 
-    let plan = ImportPlan::compute(ImportMode::Append, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &records, &want);
 
     assert!(plan.ttl_deletes.is_empty());
     assert_eq!(plan.unchanged, 1);
@@ -148,10 +147,10 @@ fn append_keeps_a_ttl_it_disagrees_with() {
 fn import_plan_defaults_omitted_ttl_to_zone_default() {
     // A file that leaves the TTL out still reconciles against the default,
     // so a row at another TTL is stale rather than unchanged.
-    let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 900)];
+    let records = [existing(1, "www", RecordType::A, "192.0.2.1", 900)];
     let want = [desired("www", RecordType::A, "192.0.2.1", 300)];
 
-    let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &records, &want);
 
     assert_eq!(ids(&plan.ttl_deletes), [RecordId::from(1)]);
     assert_eq!(plan.updated, 1);
@@ -160,7 +159,7 @@ fn import_plan_defaults_omitted_ttl_to_zone_default() {
 /// Verify that a value the file spells differently is the same record.
 #[test]
 fn import_plan_matches_canonically_equivalent_values() {
-    let rows = [existing(
+    let records = [existing(
         1,
         "alias",
         RecordType::Cname,
@@ -174,7 +173,7 @@ fn import_plan_matches_canonically_equivalent_values() {
         300,
     )];
 
-    let plan = ImportPlan::compute(ImportMode::Replace, &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &records, &want);
 
     assert!(plan.deletes.is_empty());
     assert_eq!(plan.unchanged, 1);

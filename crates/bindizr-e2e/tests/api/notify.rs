@@ -1,19 +1,21 @@
-use reqwest::{Method, StatusCode};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
 
+use domain::base::iana::Rcode;
+use domain::base::{Message, MessageBuilder};
+use reqwest::{Method, StatusCode};
+use serde_json::json;
+use tokio::net::UdpSocket;
+use tokio::time;
+
+use crate::common::dns::notify::FakeSecondary;
 use crate::common::{TestApp, TestAppOptions};
 
-/// Committed changes and an all-zones round send promptly while other ACKs are silent.
+/// Verify that committed changes and an all-zones round send promptly while other ACKs are silent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use domain::base::iana::Rcode;
-    use domain::base::{Message, MessageBuilder};
-    use serde_json::json;
-
     let app = Arc::new(
         TestApp::start_with_options(TestAppOptions {
             notify_batch_ms: 10,
@@ -23,43 +25,57 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
         .await,
     );
 
-    let mut names = Vec::new();
+    let mut zone_names = Vec::new();
 
     for index in 0..33 {
-        let name = app.zone_name(&format!("zone-{index:02}.example"));
-        let (status, body) = app.send_request(Method::POST, "/zones", Some(json!({"name": name, "mname": "ns.example", "rname": "admin@example.com", "refresh": 1}))).await;
+        let zone_name = app.zone_name(&format!("zone-{index:02}.example"));
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/zones",
+                Some(json!({
+                    "name": zone_name,
+                    "mname": "ns.example",
+                    "rname": "admin@example.com",
+                    "refresh": 1
+                })),
+            )
+            .await;
+
         assert_eq!(status, StatusCode::CREATED, "{body}");
-        names.push(name);
+        zone_names.push(zone_name);
     }
 
     // Let catalog jobs from fixture creation finish before adding the silent peer.
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    time::sleep(Duration::from_millis(50)).await;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("silent", &socket.local_addr().unwrap().to_string())
         .await;
 
     let mut buffer = [0; 4096];
     let mut queued = Vec::new();
 
-    for name in names.iter().take(2) {
+    for zone_name in zone_names.iter().take(2) {
         let (status, body) = app
             .send_request(
                 Method::POST,
                 "/records",
-                Some(json!({"zone_name": name, "name": "www", "type": "A", "value": "192.0.2.50"})),
+                Some(json!({ "zone_name": zone_name, "name": "www", "type": "A", "value": "192.0.2.50" })),
             )
             .await;
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
 
-        let (len, peer) =
-            tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-                .await
-                .expect("an earlier ACK must not delay the next committed zone")
-                .unwrap();
+        let (len, peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+            .await
+            .expect("an earlier ACK must not delay the next committed zone")
+            .unwrap();
         let query = Message::from_octets(buffer[..len].to_vec()).unwrap();
 
-        assert_eq!(&query.sole_question().unwrap().qname().to_string(), name);
+        assert_eq!(
+            &query.sole_question().unwrap().qname().to_string(),
+            zone_name
+        );
         queued.push((query, peer));
     }
 
@@ -76,20 +92,17 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
             .unwrap();
     }
 
-    let request_app = app.clone();
+    let task_app = app.clone();
 
-    let request = tokio::spawn(async move {
-        request_app
-            .send_request(Method::POST, "/notify", None)
-            .await
-    });
+    let task =
+        tokio::spawn(async move { task_app.send_request(Method::POST, "/notify", None).await });
 
     let mut seen = HashSet::new();
     let mut peers = HashSet::new();
     let mut replies = Vec::new();
 
-    tokio::time::timeout(Duration::from_secs(1), async {
-        while seen.len() < names.len() {
+    time::timeout(Duration::from_secs(1), async {
+        while seen.len() < zone_names.len() {
             let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
             let query = Message::from_octets(buffer[..len].to_vec()).unwrap();
             seen.insert(query.sole_question().unwrap().qname().to_string());
@@ -100,7 +113,7 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
     .await
     .expect("all zones must start before the three-second ACK timeout");
 
-    assert_eq!(seen, names.into_iter().collect());
+    assert_eq!(seen, zone_names.into_iter().collect());
     assert_eq!(
         peers.len(),
         1,
@@ -120,12 +133,12 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
             .unwrap();
     }
 
-    let (status, body) = request.await.unwrap();
+    let (status, body) = task.await.unwrap();
 
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// Verify NOTIFY for one or all zones with optional serial advancement.
+/// Verify that NOTIFY reaches one or all zones, with optional serial advancement.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
@@ -140,7 +153,7 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
         .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["message"],
         format!("NOTIFY sent successfully for zone: {zone_name}")
@@ -148,15 +161,10 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
 
     let (status, body) = app.send_request(Method::POST, "/notify", None).await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["message"], "NOTIFY sent successfully for all zones");
 
-    let (status, before) = app
-        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
-        .await;
-
-    assert_eq!(status, StatusCode::OK);
-    let before_serial = before["zone"]["serial"].as_i64().unwrap();
+    let before_serial = app.read_zone_serial(zone_name).await;
 
     // bump_serial makes secondaries transfer even when nothing changed.
     let (status, body) = app
@@ -167,18 +175,13 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["message"],
         format!("NOTIFY sent successfully for zone: {zone_name} (serial bumped)")
     );
 
-    let (status, after) = app
-        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
-        .await;
-
-    assert_eq!(status, StatusCode::OK);
-    let after_serial = after["zone"]["serial"].as_i64().unwrap();
+    let after_serial = app.read_zone_serial(zone_name).await;
 
     assert!(after_serial > before_serial);
 
@@ -192,7 +195,7 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert!(
         body["error"]
             .as_str()
@@ -208,7 +211,7 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
 async fn scoped_token_rejects_catalog_zone_notify() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
-        ..TestAppOptions::default()
+        ..Default::default()
     })
     .await;
     let (_, admin_token) = app.create_api_token().await;
@@ -233,68 +236,70 @@ async fn scoped_token_rejects_catalog_zone_notify() {
         )
         .await;
 
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body["message"],
         "NOTIFY sent successfully for zone: catalog.bindizr"
     );
 }
 
-/// A one-second REFRESH bounds a ten-second batch; shutdown flushes the next batch.
+/// Verify that a one-second REFRESH bounds a ten-second batch and shutdown flushes the next batch.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
-    use std::time::Duration;
-
-    use serde_json::json;
-
-    use crate::common::dns::notify::FakeSecondary;
-
     let app = TestApp::start_with_options(TestAppOptions {
-        notify_batch_ms: 10_000,
+        notify_batch_ms: 10000,
         ..Default::default()
     })
     .await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
         .send_request(
             Method::PUT,
-            &format!("/zones/{name}"),
-            Some(json!({"refresh": 1})),
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "refresh": 1 })),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    let secondary = FakeSecondary::start(None);
 
-    app.create_secondary("receiver", &secondary.addr()).await;
+    let receiver = FakeSecondary::start(None);
+
+    app.create_secondary("receiver", &receiver.addr()).await;
 
     for index in 0..3 {
-        let (status, body) = app.send_request(Method::POST, "/records", Some(json!({
-            "zone_name": name, "name": format!("www{index}"), "type": "A", "value": "192.0.2.50"
-        }))).await;
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": zone_name, "name": format!("www{index}"), "type": "A", "value": "192.0.2.50"
+                })),
+            )
+            .await;
+
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
 
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while !secondary
+    time::timeout(Duration::from_secs(3), async {
+        while !receiver
             .received()
             .iter()
-            .any(|notify| notify.zone == name)
+            .any(|notify| notify.zone_name == zone_name)
         {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("REFRESH must cap the ten-second batching delay");
 
     assert_eq!(
-        secondary
+        receiver
             .received()
             .iter()
-            .filter(|notify| notify.zone == name)
+            .filter(|notify| notify.zone_name == zone_name)
             .count(),
         1
     );
@@ -302,57 +307,54 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
     let (status, body) = app
         .send_request(
             Method::PUT,
-            &format!("/zones/{name}"),
-            Some(json!({"refresh": 7200})),
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "refresh": 7200 })),
         )
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
     app.run_cli_success(&["stop"], None).await;
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while secondary
+    time::timeout(Duration::from_secs(3), async {
+        while receiver
             .received()
             .iter()
-            .filter(|notify| notify.zone == name)
+            .filter(|notify| notify.zone_name == zone_name)
             .count()
             < 2
         {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("shutdown must flush without the ten-second batching delay");
 }
 
-/// A matching NOTIMP completes the manual NOTIFY API call successfully.
+/// Verify that a matching NOTIMP completes the manual NOTIFY API call successfully.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_reports_completion_when_secondary_does_not_implement_notify() {
-    use domain::base::iana::Rcode;
-    use domain::base::{Message, MessageBuilder};
-
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
-    let name = zone["name"].as_str().unwrap();
+    let zone_name = zone["name"].as_str().unwrap();
 
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("notimp", &socket.local_addr().unwrap().to_string())
         .await;
     let server = tokio::spawn(async move {
         let mut buffer = [0; 4096];
 
         let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
-        let request = Message::from_octets(&buffer[..len]).unwrap();
+        let query = Message::from_octets(&buffer[..len]).unwrap();
         let response = MessageBuilder::new_vec()
-            .start_answer(&request, Rcode::NOTIMP)
+            .start_answer(&query, Rcode::NOTIMP)
             .unwrap()
             .finish();
 
         socket.send_to(&response, peer).await.unwrap();
     });
     let (status, body) = app
-        .send_request(Method::POST, &format!("/zones/{name}/notify"), None)
+        .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
         .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");

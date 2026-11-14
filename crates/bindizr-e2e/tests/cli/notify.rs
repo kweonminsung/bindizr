@@ -1,9 +1,11 @@
+use serde_json::Value;
+
 use crate::common::TestApp;
 
-/// Verify CLI notification of all zones or one named zone.
+/// Verify that the CLI notifies all zones or one named zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn notify_supports_all_zones_and_one_zone_via_cli() {
+async fn notify_supports_all_zones_and_one_zone() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-notify.example");
 
@@ -31,22 +33,23 @@ async fn notify_supports_all_zones_and_one_zone_via_cli() {
         "{one}"
     );
 
-    let catalog = app
+    let notified = app
         .run_cli_success(
             &[
                 "zone",
                 "notify",
                 "catalog.bindizr",
                 "--bump-serial",
-                "-o",
+                "--output",
                 "json",
             ],
             None,
         )
         .await;
-    let response: serde_json::Value = serde_json::from_str(&catalog).unwrap();
+    let notified: Value = serde_json::from_str(&notified).expect("CLI did not return valid JSON");
+
     assert_eq!(
-        response["message"],
+        notified["message"],
         "NOTIFY sent successfully for zone: catalog.bindizr"
     );
 }

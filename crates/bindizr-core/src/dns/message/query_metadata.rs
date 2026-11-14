@@ -5,7 +5,8 @@ use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
 use domain::base::{Message, Name, Question};
 use domain::rdata::tsig::Time48;
 
-use super::{
+use crate::dns::message;
+use crate::dns::message::{
     Edns, EncodeMessageError, ExtendedErrorCode, Keepalive, ParseQueryError, ParsedQuery,
     ResponseLimit,
 };
@@ -24,8 +25,8 @@ pub struct QueryMetadata {
 
 impl QueryMetadata {
     /// Retain optional sections only when the message uses readable DNS framing.
-    pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
-        let message = Message::from_octets(data)
+    pub fn parse(query_data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
+        let message = Message::from_octets(query_data)
             .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
         Ok(Self::from_message(&message, keepalive))
     }
@@ -59,12 +60,13 @@ impl QueryMetadata {
         }
     }
 
-    /// An EDNS error takes precedence over the default questionless refusal.
+    /// Return the response code; an EDNS error takes precedence over the default
+    /// questionless refusal.
     pub fn format_error(&self) -> Option<OptRcode> {
         self.edns.format_error()
     }
 
-    /// Carry the negotiated transport budget into the final send.
+    /// Return the negotiated transport budget for the final send.
     pub fn response_limit(&self) -> ResponseLimit {
         self.keepalive.response_limit(self.edns)
     }
@@ -145,7 +147,7 @@ impl QueryMetadata {
         truncated: bool,
         ede: Option<ExtendedErrorCode>,
     ) -> AdditionalBuilder<TreeCompressor<Vec<u8>>> {
-        let mut builder = super::build_response();
+        let mut builder = message::build_response();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
@@ -197,9 +199,9 @@ impl From<&ParsedQuery> for QueryMetadata {
     }
 }
 
-/// Whether generic DNS section boundaries are usable for EDNS and TSIG parsing.
-pub fn has_readable_sections(data: &[u8]) -> bool {
-    let Ok(message) = Message::from_octets(data) else {
+/// Return whether generic DNS section boundaries are usable for EDNS and TSIG parsing.
+pub fn has_readable_sections(query_data: &[u8]) -> bool {
+    let Ok(message) = Message::from_octets(query_data) else {
         return false;
     };
     let Ok(mut additional) = message.additional() else {
@@ -212,5 +214,5 @@ pub fn has_readable_sections(data: &[u8]) -> bool {
         }
     }
 
-    additional.pos() == data.len()
+    additional.pos() == query_data.len()
 }

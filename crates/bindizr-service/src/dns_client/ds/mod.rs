@@ -8,11 +8,12 @@ use bindizr_core::dns::dnssec::EncodeWireNameError;
 use bindizr_core::dns::message::{Name, Opcode, Rtype};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query;
-use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE};
+use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, ParseResponseError};
 use thiserror::Error;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 
-use super::{ExchangeMessageError, ResolveAddressError};
+use crate::dns_client;
+use crate::dns_client::{ExchangeMessageError, ResolveAddressError};
 
 /// Why the parent could not be asked, or what it failed to answer.
 #[derive(Debug, Error)]
@@ -40,11 +41,11 @@ pub(crate) enum QueryDsError {
     #[error(transparent)]
     Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    Response(#[from] ParseResponseError),
     #[error("no address")]
     NoAddress,
     #[error("probe task failed: {0}")]
-    TaskFailed(#[source] tokio::task::JoinError),
+    TaskFailed(#[source] JoinError),
 }
 
 /// What the parent zone's servers said about the zone's DS.
@@ -74,7 +75,7 @@ pub(crate) async fn probe_parent_ds(
     })
 }
 
-/// The zone's configured parent servers with their addresses; one that
+/// Resolve the zone's configured parent servers to their addresses; one that
 /// does not resolve cannot be asked, so it fails the probe.
 async fn resolve_parent_ns_addrs(
     raw: &str,
@@ -82,7 +83,7 @@ async fn resolve_parent_ns_addrs(
 ) -> Result<Vec<(String, Vec<SocketAddr>)>, ProbeParentDsError> {
     let mut servers = Vec::new();
 
-    for (entry, result) in super::resolve_address_entries(raw, timeout).await {
+    for (entry, result) in dns_client::resolve_address_entries(raw, timeout).await {
         match result {
             Ok(addrs) => servers.push((entry, addrs)),
             Err(source) => return Err(ProbeParentDsError::Unresolved { entry, source }),
@@ -164,13 +165,16 @@ async fn query_ds_at(
         );
         let query = builder.finish();
 
-        let result =
-            match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query").await {
-                Ok(response) => {
-                    query::extract_ds_record_set(query_id, qname, &response).map_err(Into::into)
-                }
-                Err(error) => Err(error.into()),
-            };
+        let result = match dns_client::exchange_with_tcp_fallback(
+            *addr, timeout, &query, "DS query",
+        )
+        .await
+        {
+            Ok(response) => {
+                query::extract_ds_record_set(query_id, qname, &response).map_err(Into::into)
+            }
+            Err(error) => Err(error.into()),
+        };
 
         match result {
             Ok(record_set) => return Ok(record_set),

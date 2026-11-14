@@ -1,4 +1,9 @@
+use std::fmt;
+use std::str::FromStr;
+
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 
 use crate::dns::name::OwnerName;
@@ -46,23 +51,23 @@ pub enum ChangeOperation {
 }
 
 impl ChangeOperation {
-    /// Return the text representation of this change operation.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            ChangeOperation::Add => "ADD",
-            ChangeOperation::Delete => "DEL",
+            Self::Add => "ADD",
+            Self::Delete => "DEL",
         }
     }
 }
 
-impl std::str::FromStr for ChangeOperation {
+impl FromStr for ChangeOperation {
     type Err = ParseChangeOperationError;
 
     /// Parse the stored text of a change operation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "ADD" => Ok(ChangeOperation::Add),
-            "DEL" => Ok(ChangeOperation::Delete),
+            "ADD" => Ok(Self::Add),
+            "DEL" => Ok(Self::Delete),
             other => Err(ParseChangeOperationError {
                 value: other.to_string(),
             }),
@@ -75,7 +80,35 @@ impl TryFrom<String> for ChangeOperation {
 
     /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
+        value.parse::<Self>()
+    }
+}
+
+impl<DB: sqlx::Database> sqlx::Type<DB> for ChangeOperation
+where
+    String: sqlx::Type<DB>,
+{
+    /// Return the SQL type used to store this value.
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Return whether the SQL type can store this value.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for ChangeOperation
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    /// Encode this value using its database representation.
+    fn encode_by_ref(
+        &self,
+        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
+        self.as_str().to_string().encode_by_ref(buffer)
     }
 }
 
@@ -94,16 +127,16 @@ impl JournalRecordType {
     /// Render the stored record mnemonic.
     pub fn to_text(&self) -> String {
         match self {
-            JournalRecordType::User(record_type) => record_type.as_str().to_owned(),
-            JournalRecordType::Derived(record_type) => record_type.as_str().to_owned(),
-            JournalRecordType::Soa => "SOA".to_owned(),
+            Self::User(record_type) => record_type.as_str().to_string(),
+            Self::Derived(record_type) => record_type.as_str().to_string(),
+            Self::Soa => "SOA".to_string(),
         }
     }
 }
 
-impl std::fmt::Display for JournalRecordType {
+impl fmt::Display for JournalRecordType {
     /// Write the journal record type in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.to_text())
     }
 }
@@ -114,43 +147,13 @@ impl TryFrom<String> for JournalRecordType {
     /// Validate and convert the stored value into a journal record type.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         if value.eq_ignore_ascii_case("SOA") {
-            return Ok(JournalRecordType::Soa);
+            return Ok(Self::Soa);
         }
         if let Ok(record_type) = value.parse::<RecordType>() {
-            return Ok(JournalRecordType::User(record_type));
+            return Ok(Self::User(record_type));
         }
 
-        value
-            .parse::<DnssecRecordType>()
-            .map(JournalRecordType::Derived)
-    }
-}
-
-impl<DB: sqlx::Database> sqlx::Type<DB> for ChangeOperation
-where
-    String: sqlx::Type<DB>,
-{
-    /// Return the SQL type used to store this value.
-    fn type_info() -> DB::TypeInfo {
-        <String as sqlx::Type<DB>>::type_info()
-    }
-
-    /// Check whether the SQL type can store this value.
-    fn compatible(ty: &DB::TypeInfo) -> bool {
-        <String as sqlx::Type<DB>>::compatible(ty)
-    }
-}
-
-impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for ChangeOperation
-where
-    String: sqlx::Encode<'q, DB>,
-{
-    /// Encode this value using its database representation.
-    fn encode_by_ref(
-        &self,
-        buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.as_str().to_string().encode_by_ref(buffer)
+        value.parse::<DnssecRecordType>().map(Self::Derived)
     }
 }
 
@@ -163,7 +166,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -177,7 +180,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_text().encode_by_ref(buffer)
     }
 }

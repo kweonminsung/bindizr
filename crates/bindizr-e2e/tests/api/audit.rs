@@ -6,14 +6,15 @@ use serde_json::{Value, json};
 
 use crate::common::{TestApp, TestAppOptions};
 
-/// The rows `query` selects, newest first, with the total the page reports.
+/// List the rows `query` selects, newest first, with the total the page reports.
 async fn list_audit_log(app: &TestApp, query: &str) -> (Vec<Value>, u64) {
     let (status, body) = app
         .send_request(Method::GET, &format!("/audit?{query}"), None)
         .await;
+
     assert_eq!(status, StatusCode::OK, "{body}");
-    let items = body["items"].as_array().expect("items").clone();
-    (items, body["pagination"]["total"].as_u64().expect("total"))
+    let items = body["items"].as_array().unwrap().clone();
+    (items, body["pagination"]["total"].as_u64().unwrap())
 }
 
 /// Verify that every management change leaves one row naming the object,
@@ -32,7 +33,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
 
     let role_name = format!("{}-audited", app.namespace());
     let token_name = format!("{role_name}-token");
-    let key_name = format!("{role_name}-key");
+    let tsig_key_name = format!("{role_name}-key");
     let secondary_name = format!("{role_name}-ns2");
     let policy_name = format!("{role_name}-policy");
     let zone_name = app.zone_name("audited.example");
@@ -67,7 +68,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": key_name, "role_name": role_name })),
+            Some(json!({ "name": tsig_key_name, "role_name": role_name })),
         )
         .await;
 
@@ -134,6 +135,7 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     app.create_named_zone(&zone_name).await;
+
     let (status, deleted_zone) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}"), None)
         .await;
@@ -148,29 +150,29 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(status, StatusCode::CONFLICT);
 
     // The role and its grant share the role's name; newest first.
-    let (rows, total) = list_audit_log(&app, &format!("entity_name={role_name}")).await;
+    let (logs, total) = list_audit_log(&app, &format!("entity_name={role_name}")).await;
 
-    assert_eq!(total, 2, "{rows:?}");
-    assert_eq!(rows[0]["entity"], "role_grant");
-    assert_eq!(rows[0]["operation"], "create");
+    assert_eq!(total, 2, "{logs:?}");
+    assert_eq!(logs[0]["entity"], "role_grant");
+    assert_eq!(logs[0]["operation"], "create");
     assert_eq!(
-        rows[0]["detail"],
+        logs[0]["detail"],
         "zone_name all zones, actions zone:read, record_name_pattern *, record_types *"
     );
-    assert_eq!(rows[1]["entity"], "role");
-    assert_eq!(rows[1]["operation"], "create");
-    assert!(rows[1]["detail"].is_null(), "{rows:?}");
+    assert_eq!(logs[1]["entity"], "role");
+    assert_eq!(logs[1]["operation"], "create");
+    assert!(logs[1]["detail"].is_null(), "{logs:?}");
 
-    for row in &rows {
-        assert_eq!(row["entity_name"], role_name);
-        assert_eq!(row["change_source"], "api");
-        assert_eq!(row["changed_by"], actor, "{row}");
-        assert!(row["created_at"].is_string(), "{row}");
+    for log in &logs {
+        assert_eq!(log["entity_name"], role_name);
+        assert_eq!(log["change_source"], "api");
+        assert_eq!(log["changed_by"], actor, "{log}");
+        assert!(log["created_at"].is_string(), "{log}");
     }
 
     let expected_operations = [
         ("token", token_name.as_str(), vec!["create"]),
-        ("tsig_key", key_name.as_str(), vec!["create"]),
+        ("tsig_key", tsig_key_name.as_str(), vec!["create"]),
         (
             "secondary",
             secondary_name.as_str(),
@@ -186,52 +188,52 @@ async fn audit_log_records_management_changes_with_their_actor() {
     ];
 
     for (entity, name, operations) in expected_operations {
-        let (rows, total) =
+        let (logs, total) =
             list_audit_log(&app, &format!("entity={entity}&entity_name={name}")).await;
 
-        assert_eq!(total, operations.len() as u64, "{entity} {name}: {rows:?}");
-        let listed: Vec<&str> = rows
+        assert_eq!(total, operations.len() as u64, "{entity} {name}: {logs:?}");
+        let listed: Vec<&str> = logs
             .iter()
-            .map(|row| row["operation"].as_str().unwrap())
+            .map(|log| log["operation"].as_str().unwrap())
             .collect();
 
         assert_eq!(listed, operations, "{entity} {name}");
-        assert!(rows.iter().all(|row| row["changed_by"] == actor));
+        assert!(logs.iter().all(|log| log["changed_by"] == actor));
     }
 
     // The detail: what a change set, or what an update moved.
-    let (rows, _) = list_audit_log(&app, &format!("entity=token&entity_name={token_name}")).await;
+    let (logs, _) = list_audit_log(&app, &format!("entity=token&entity_name={token_name}")).await;
 
     assert_eq!(
-        rows[0]["detail"],
+        logs[0]["detail"],
         format!("role_name {role_name}, expires_at never")
     );
 
-    let (rows, _) = list_audit_log(
+    let (logs, _) = list_audit_log(
         &app,
         &format!("entity=secondary&entity_name={secondary_name}"),
     )
     .await;
 
-    assert!(rows[0]["detail"].is_null(), "{rows:?}");
-    assert_eq!(rows[1]["detail"], "enabled true -> false");
+    assert!(logs[0]["detail"].is_null(), "{logs:?}");
+    assert_eq!(logs[1]["detail"], "enabled true -> false");
     assert_eq!(
-        rows[2]["detail"],
+        logs[2]["detail"],
         "address 192.0.2.77:53, notify_key_name none"
     );
 
-    let (rows, _) = list_audit_log(
+    let (logs, _) = list_audit_log(
         &app,
         &format!("entity=dnssec_policy&entity_name={policy_name}"),
     )
     .await;
 
-    assert_eq!(rows[1]["detail"], "signature_validity_days 14 -> 21");
+    assert_eq!(logs[1]["detail"], "signature_validity_days 14 -> 21");
 
-    let (rows, _) = list_audit_log(&app, &format!("entity=zone&entity_name={zone_name}")).await;
+    let (logs, _) = list_audit_log(&app, &format!("entity=zone&entity_name={zone_name}")).await;
 
     assert_eq!(
-        rows[0]["detail"],
+        logs[0]["detail"],
         format!(
             "records_deleted {}, versions_deleted {}",
             deleted_zone["records_deleted"], deleted_zone["versions_deleted"]
@@ -239,22 +241,22 @@ async fn audit_log_records_management_changes_with_their_actor() {
     );
 
     // Any column, either direction; newest first by default.
-    let (rows, _) = list_audit_log(
+    let (logs, _) = list_audit_log(
         &app,
         &format!("entity=secondary&entity_name={secondary_name}&sort=operation&order=asc"),
     )
     .await;
-    let listed: Vec<&str> = rows
+    let listed: Vec<&str> = logs
         .iter()
-        .map(|row| row["operation"].as_str().unwrap())
+        .map(|log| log["operation"].as_str().unwrap())
         .collect();
 
     assert_eq!(listed, ["create", "delete", "update"]);
 
-    let (rows, _) = list_audit_log(&app, &format!("entity_name={role_name}&order=asc")).await;
+    let (logs, _) = list_audit_log(&app, &format!("entity_name={role_name}&order=asc")).await;
 
-    assert_eq!(rows[0]["entity"], "role");
-    assert_eq!(rows[1]["entity"], "role_grant");
+    assert_eq!(logs[0]["entity"], "role");
+    assert_eq!(logs[1]["entity"], "role_grant");
 
     let (status, body) = app
         .send_request(Method::GET, "/audit?sort=detail", None)
@@ -286,15 +288,15 @@ async fn audit_log_records_management_changes_with_their_actor() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["code"], "INVALID_INPUT");
 
-    let (rows, _) = list_audit_log(&app, &format!("entity_name={role_name}&limit=1")).await;
+    let (logs, _) = list_audit_log(&app, &format!("entity_name={role_name}&limit=1")).await;
 
-    assert_eq!(rows.len(), 1);
+    assert_eq!(logs.len(), 1);
 }
 
 /// Verify that reading the log needs `audit:read`, which only an all-zones grant carries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn audit_log_needs_audit_read_in_all_zones() {
+async fn audit_log_requires_audit_read_in_all_zones() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()
@@ -341,16 +343,16 @@ async fn audit_log_needs_audit_read_in_all_zones() {
     // The reader sees the grant that admitted it, made by the admin token.
     app.set_auth_token(scoped_token);
 
-    let (rows, total) = list_audit_log(
+    let (logs, total) = list_audit_log(
         &app,
         &format!("entity=role_grant&entity_name={scoped_name}"),
     )
     .await;
 
-    assert_eq!(total, 1, "{rows:?}");
-    assert_eq!(rows[0]["operation"], "create");
+    assert_eq!(total, 1, "{logs:?}");
+    assert_eq!(logs[0]["operation"], "create");
     assert_eq!(
-        rows[0]["changed_by"],
+        logs[0]["changed_by"],
         json!({ "kind": "token", "name": admin_name })
     );
 }

@@ -1,35 +1,34 @@
 //! Read adapter flags/environment; the adapter runs beside external-dns and does not read bindizr's config.
 
 use std::net::SocketAddr;
+use std::{fs, io};
 
+use bindizr_core::config::{ConfigError, LogLevel};
 use clap::Parser;
+use reqwest::Url;
 use thiserror::Error;
 
 /// ExternalDNS webhook provider adapter for bindizr.
 ///
 /// Serves the ExternalDNS webhook protocol on a localhost listener and
 /// forwards every operation to the bindizr HTTP API with a Bearer token.
-#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Parser)]
 #[command(name = "bindizr-external-dns", version, about)]
 pub(crate) struct Cli {
     /// Base URL of the bindizr HTTP API, e.g. http://bindizr:8000
     #[arg(long, env = "BINDIZR_URL", value_name = "URL")]
     bindizr_url: String,
-
     /// Bindizr API token; prefer --token-file so the token stays out of the
     /// process list
     #[arg(long, env = "BINDIZR_API_TOKEN", hide_env_values = true)]
     token: Option<String>,
-
     /// File containing the bindizr API token (takes precedence over --token)
     #[arg(long, env = "BINDIZR_API_TOKEN_FILE", value_name = "FILE")]
     token_file: Option<String>,
-
     /// PEM CA certificate to trust on top of the system roots, for a bindizr
     /// serving a private or self-signed certificate
     #[arg(long, env = "BINDIZR_CA_FILE", value_name = "FILE")]
     ca_file: Option<String>,
-
     /// Webhook listener address; keep it on localhost so only the
     /// external-dns container in the same pod can reach it
     #[arg(
@@ -38,7 +37,6 @@ pub(crate) struct Cli {
         default_value = "127.0.0.1:8888"
     )]
     listen_addr: SocketAddr,
-
     /// Health and metrics listener address, exposed for Kubernetes probes
     #[arg(
         long,
@@ -46,29 +44,14 @@ pub(crate) struct Cli {
         default_value = "0.0.0.0:8080"
     )]
     health_listen_addr: SocketAddr,
-
     /// Timeout in seconds for each bindizr API request; keep it under the
     /// external-dns webhook write timeout (10s by default) so the mapped
     /// 502 still reaches the caller when bindizr stalls
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS", default_value_t = 8)]
     timeout_secs: u64,
-
     /// Log level (error, warn, info, debug, trace)
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_LOG_LEVEL", default_value = "info")]
     log_level: String,
-}
-
-/// The validated adapter settings the listeners and the upstream client start from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AdapterConfig {
-    /// Normalized base URL without a trailing slash.
-    pub(crate) bindizr_url: String,
-    pub(crate) token: Option<String>,
-    pub(crate) ca_file: Option<String>,
-    pub(crate) listen_addr: SocketAddr,
-    pub(crate) health_listen_addr: SocketAddr,
-    pub(crate) timeout_secs: u64,
-    pub(crate) log_level: bindizr_core::config::LogLevel,
 }
 
 /// Why the command line does not describe a runnable adapter.
@@ -88,14 +71,27 @@ pub(crate) enum LoadAdapterConfigError {
     ReadTokenFile {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("invalid --log-level '{value}': {source}")]
     InvalidLogLevel {
         value: String,
         #[source]
-        source: bindizr_core::config::ConfigError,
+        source: ConfigError,
     },
+}
+
+/// The validated adapter settings the listeners and the upstream client start from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AdapterConfig {
+    /// Normalized base URL without a trailing slash.
+    pub(crate) bindizr_url: String,
+    pub(crate) token: Option<String>,
+    pub(crate) ca_file: Option<String>,
+    pub(crate) listen_addr: SocketAddr,
+    pub(crate) health_listen_addr: SocketAddr,
+    pub(crate) timeout_secs: u64,
+    pub(crate) log_level: LogLevel,
 }
 
 impl AdapterConfig {
@@ -109,12 +105,11 @@ impl AdapterConfig {
 
         // Endpoint paths are appended to this string, so it must parse as a
         // URL and carry no query/fragment for the joined URLs to stay valid.
-        let parsed = reqwest::Url::parse(&bindizr_url).map_err(|source| {
-            LoadAdapterConfigError::InvalidUrl {
+        let parsed =
+            Url::parse(&bindizr_url).map_err(|source| LoadAdapterConfigError::InvalidUrl {
                 url: bindizr_url.clone(),
                 source: Box::new(source),
-            }
-        })?;
+            })?;
 
         if parsed.query().is_some() || parsed.fragment().is_some() {
             return Err(LoadAdapterConfigError::UrlQueryOrFragment { url: bindizr_url });
@@ -122,7 +117,7 @@ impl AdapterConfig {
 
         let token = match &cli.token_file {
             Some(path) => Some(
-                std::fs::read_to_string(path)
+                fs::read_to_string(path)
                     .map_err(|source| LoadAdapterConfigError::ReadTokenFile {
                         path: path.clone(),
                         source,
@@ -134,15 +129,14 @@ impl AdapterConfig {
         };
         let token = token.filter(|token| !token.is_empty());
 
-        let log_level = cli
-            .log_level
-            .parse::<bindizr_core::config::LogLevel>()
-            .map_err(|source| LoadAdapterConfigError::InvalidLogLevel {
+        let log_level = cli.log_level.parse::<LogLevel>().map_err(|source| {
+            LoadAdapterConfigError::InvalidLogLevel {
                 value: cli.log_level.clone(),
                 source,
-            })?;
+            }
+        })?;
 
-        Ok(AdapterConfig {
+        Ok(Self {
             bindizr_url,
             token,
             ca_file: cli.ca_file,
@@ -156,14 +150,13 @@ impl AdapterConfig {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
+    use std::iter;
 
-    use super::{AdapterConfig, Cli};
+    use super::*;
 
     /// Build the `Cli` a configuration test starts from, panicking on a parse failure.
     fn to_cli(args: &[&str]) -> Cli {
-        Cli::try_parse_from(std::iter::once("bindizr-external-dns").chain(args.iter().copied()))
-            .unwrap()
+        Cli::try_parse_from(iter::once("bindizr-external-dns").chain(args.iter().copied())).unwrap()
     }
 
     /// Verify that listener defaults to localhost only.
@@ -199,8 +192,7 @@ mod tests {
         ] {
             assert!(
                 AdapterConfig::load(to_cli(&["--bindizr-url", url])).is_err(),
-                "accepted '{}'",
-                url
+                "accepted '{url}'"
             );
         }
 
@@ -213,9 +205,9 @@ mod tests {
     /// Verify that token file takes precedence and is trimmed.
     #[test]
     fn config_prefers_trimmed_token_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("token");
-        std::fs::write(&path, "secret-token\n").unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("token");
+        fs::write(&path, "secret-token\n").unwrap();
 
         let config = AdapterConfig::load(to_cli(&[
             "--bindizr-url",

@@ -14,7 +14,7 @@ fn test_zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -26,13 +26,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -63,7 +63,7 @@ fn expirations_spread_across_the_jitter_window() {
             )
         })
         .collect();
-    let window = 21_600;
+    let window = 21600;
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -87,11 +87,8 @@ fn expirations_spread_across_the_jitter_window() {
         expirations.len() > 1,
         "one pass would come due for every signature at once: {expirations:?}"
     );
-    let earliest = *expirations.iter().next().expect("signatures were emitted");
-    let latest = *expirations
-        .iter()
-        .next_back()
-        .expect("signatures were emitted");
+    let earliest = *expirations.iter().next().unwrap();
+    let latest = *expirations.iter().next_back().unwrap();
 
     assert!(latest <= default_expiration());
     assert!(earliest > default_expiration() - Duration::seconds(window));
@@ -207,21 +204,24 @@ fn record_change_reuses_unaffected_signatures() {
         )
         .is_empty()
     );
-    assert!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).is_empty());
-    assert!(rrsigs_covering(&diff.removed, &www, RECORD_TYPE_A).is_empty());
+    assert!(rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).is_empty());
+    assert!(rrsigs_covering(&diff.removed, &www, i32::from(Rtype::A.to_int())).is_empty());
 
     // The SOA rdata carries the new serial, so its signature is replaced.
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.removed, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.removed, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
 
     // The new name gets its records; the chain splices it in after www.
-    assert_eq!(rrsigs_covering(&diff.added, &zzz, RECORD_TYPE_A).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &zzz, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
     assert!(
         diff.added
             .iter()
@@ -286,7 +286,7 @@ fn signing_refreshes_signatures_inside_refresh_window() {
     assert!(records_of_type(&diff.removed, DnssecRecordType::Dnskey).is_empty());
 }
 
-/// Verify that force resigns every RRSET.
+/// Verify that force resigns every record set.
 #[test]
 fn force_resigns_every_record_set() {
     let zone = test_zone();

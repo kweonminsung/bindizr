@@ -1,4 +1,3 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::grant_pattern;
 
 use super::*;
@@ -23,12 +22,7 @@ fn normalize_pattern_rejects_invalid_patterns() {
     for invalid in ["*.", "a*b", "*.a*", "bad name", "a..b", "*.**", &long_label] {
         let error = normalize_pattern(Some(invalid)).unwrap_err();
 
-        assert_eq!(
-            error.code(),
-            ErrorCode::InvalidInput,
-            "input: {:?}",
-            invalid
-        );
+        assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
     }
 }
 
@@ -37,10 +31,7 @@ fn normalize_pattern_rejects_invalid_patterns() {
 fn normalize_types_parses_and_dedupes() {
     assert_eq!(normalize_types(None).unwrap(), "*");
     assert_eq!(normalize_types(Some("*")).unwrap(), "*");
-    assert_eq!(
-        normalize_types(Some(" a , txt ,A ")).unwrap(),
-        "A,TXT".to_string()
-    );
+    assert_eq!(normalize_types(Some(" a , txt ,A ")).unwrap(), "A,TXT");
 
     let error = normalize_types(Some("A,BOGUS")).unwrap_err();
 
@@ -58,12 +49,7 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
     for invalid in [r"a\", "www.", "*.sub."] {
         let error = normalize_pattern(Some(invalid)).unwrap_err();
 
-        assert_eq!(
-            error.code(),
-            ErrorCode::InvalidInput,
-            "input: {:?}",
-            invalid
-        );
+        assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
     }
 }
 
@@ -110,14 +96,14 @@ fn normalize_pattern_preserves_escaped_dot_as_label_data() {
 /// Verify that a pattern becomes the name a domain filter can spell.
 #[test]
 fn domain_filter_renders_normalized_grant_pattern() {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
 
-    assert_eq!(pattern_domain("*", &zone), "example.com.");
-    assert_eq!(pattern_domain("*.k8s", &zone), "k8s.example.com.");
-    assert_eq!(pattern_domain("a.b", &zone), "a.b.example.com.");
+    assert_eq!(pattern_domain("*", &zone_name), "example.com.");
+    assert_eq!(pattern_domain("*.k8s", &zone_name), "k8s.example.com.");
+    assert_eq!(pattern_domain("a.b", &zone_name), "a.b.example.com.");
 
     // Both widen: a filter entry always carries everything under it, so the
     // apex reads as the zone and an exact name as its subtree.
-    assert_eq!(pattern_domain("@", &zone), "example.com.");
-    assert_eq!(pattern_domain("www", &zone), "www.example.com.");
+    assert_eq!(pattern_domain("@", &zone_name), "example.com.");
+    assert_eq!(pattern_domain("www", &zone_name), "www.example.com.");
 }

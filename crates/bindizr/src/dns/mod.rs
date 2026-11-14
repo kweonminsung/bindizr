@@ -10,16 +10,17 @@ mod tls;
 mod udp;
 pub(crate) mod wire;
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bindizr_service::Context;
+use bindizr_service::{Context, zone};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
-use self::server::DnsContext;
-use self::udp::UdpSocket;
+use crate::dns::server::DnsContext;
+use crate::dns::udp::UdpSocket;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
 
@@ -27,10 +28,9 @@ use crate::tls::TlsCertificate;
 #[derive(Debug, Error)]
 pub(crate) enum StartDnsError {
     #[error("failed to enable DNS UDP packet information: {0}")]
-    UdpPacketInfo(#[source] std::io::Error),
-
+    UdpPacketInfo(#[source] io::Error),
     /// Names the usual cause when the port is already taken.
-    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse {
+    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == io::ErrorKind::AddrInUse {
         format!(" (another DNS server on this host? change {setting})")
     } else {
         String::new()
@@ -41,7 +41,7 @@ pub(crate) enum StartDnsError {
         /// The configuration key that moves this listener.
         setting: &'static str,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 
@@ -64,17 +64,15 @@ pub(crate) async fn start(
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
 
     // The catalog zone must exist before a secondary asks for it.
-    match bindizr_service::zone::refresh_catalog(&cx).await {
-        Ok((catalog, _)) => {
+    match zone::refresh_catalog(&cx).await {
+        Ok((catalog_zone, _)) => {
             log::info!(
                 "Catalog zone '{}' is ready (serial: {})",
                 cx.config().dns.catalog_zone_name,
-                catalog.serial
+                catalog_zone.serial
             );
         }
-        Err(error) => {
-            log::warn!("Failed to generate catalog zone: {}", error);
-        }
+        Err(error) => log::warn!("Failed to generate catalog zone: {error}"),
     }
 
     let config = cx.config();
@@ -120,34 +118,35 @@ pub(crate) async fn start(
         None => None,
     };
 
-    log::info!("DNS TCP server listening on {}", listen_addr);
-    log::info!("DNS UDP server listening on {}", listen_addr);
+    log::info!("DNS TCP server listening on {listen_addr}");
+    log::info!("DNS UDP server listening on {listen_addr}");
 
     let tcp_stop = shutdown.waiter();
-    let tcp_cx = dns_cx.clone();
-
-    let tcp_task = tokio::spawn(async move {
-        if let Err(error) = tcp::run_tcp_server(tcp_cx, tcp_listener, tcp_stop).await {
-            log::error!("DNS TCP server error: {}", error);
-        }
-    });
-
-    let tls_task = tls_listener.map(|(tls_addr, listener, server_config)| {
-        log::info!("DNS TLS server listening on {} (XoT)", tls_addr);
-        let tls_stop = shutdown.waiter();
-        let tls_cx = dns_cx.clone();
+    let tcp_task = {
+        let dns_cx = dns_cx.clone();
 
         tokio::spawn(async move {
-            if let Err(error) = tls::run_tls_server(tls_cx, listener, server_config, tls_stop).await
+            if let Err(error) = tcp::run_tcp_server(dns_cx, tcp_listener, tcp_stop).await {
+                log::error!("DNS TCP server error: {error}");
+            }
+        })
+    };
+
+    let tls_task = tls_listener.map(|(tls_addr, listener, server_config)| {
+        log::info!("DNS TLS server listening on {tls_addr} (XoT)");
+        let tls_stop = shutdown.waiter();
+        let dns_cx = dns_cx.clone();
+
+        tokio::spawn(async move {
+            if let Err(error) = tls::run_tls_server(dns_cx, listener, server_config, tls_stop).await
             {
-                log::error!("DNS TLS server error: {}", error);
+                log::error!("DNS TLS server error: {error}");
             }
         })
     });
 
     let udp_stop = shutdown.waiter();
-    let udp_cx = dns_cx;
-    let udp_task = tokio::spawn(udp::run_udp_server(udp_cx, udp_socket, udp_stop));
+    let udp_task = tokio::spawn(udp::run_udp_server(dns_cx, udp_socket, udp_stop));
 
     Ok(DnsServers {
         tcp: tcp_task,

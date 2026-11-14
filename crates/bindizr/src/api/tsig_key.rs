@@ -30,8 +30,8 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "List TSIG keys",
-        params(TsigKeyFilter),
         description = "Lists TSIG keys without their secrets, every one or only those authenticating into `role_name`. Fetch a single key to read the secret.",
+        params(TsigKeyFilter),
         responses(
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<TsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -72,7 +72,8 @@ pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    let response = tsig_key::create(&cx, &caller, &body).await?;
+    let (tsig_key, secret) = tsig_key::create(&cx, &caller, &body).await?;
+    let response = SingleTsigKeyResponse { tsig_key, secret };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -99,7 +100,8 @@ pub(crate) async fn get_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let response = tsig_key::get(&cx, &caller, &params.name).await?;
+    let (tsig_key, secret) = tsig_key::get(&cx, &caller, &params.name).await?;
+    let response = SingleTsigKeyResponse { tsig_key, secret };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

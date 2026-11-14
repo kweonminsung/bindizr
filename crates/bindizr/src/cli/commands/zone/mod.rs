@@ -5,25 +5,27 @@ mod version;
 
 use bindizr_core::dns::Serial;
 use bindizr_core::{errln, out, outln};
+use bindizr_service::types;
 use bindizr_service::types::{
-    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
+    CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, ImportZoneRequest,
     ImportZoneResponse, ImportZonesRequest, ImportZonesResponse, MessageResponse, NotifySerial,
     PaginatedResponse, Run, SingleZoneResponse, UpdateZoneRequest, WriteZoneResponse, ZoneFilter,
     ZoneResponse, ZoneStatusResponse, ZoneView,
 };
+use chrono::{DateTime, Utc};
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
 
 use crate::cli::error::CliError;
-use crate::cli::output;
 use crate::cli::output::{
     ImportSummaryRow, ImportZonesRow, OutputFormat, SecondaryStatusRow, ZoneRow,
 };
+use crate::cli::{commands, output};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing zones.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum ZoneCommand {
     /// Create a zone
     #[command(after_help = "\
@@ -74,7 +76,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// List zones
     #[command(alias = "ls")]
     List {
@@ -107,10 +108,10 @@ and the contact is the address a resolver operator writes to.")]
         max_serial: Option<u32>,
         /// Keep zones created at or after this RFC 3339 timestamp
         #[arg(long, value_name = "TIMESTAMP")]
-        created_after: Option<chrono::DateTime<chrono::Utc>>,
+        created_after: Option<DateTime<Utc>>,
         /// Keep zones created at or before this RFC 3339 timestamp
         #[arg(long, value_name = "TIMESTAMP")]
-        created_before: Option<chrono::DateTime<chrono::Utc>>,
+        created_before: Option<DateTime<Utc>>,
         /// Keep only zones signing under a DNSSEC policy
         #[arg(long)]
         signed: bool,
@@ -136,7 +137,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Get a zone by name
     Get {
         /// The name of the zone
@@ -146,7 +146,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Update a zone, changing only the fields you pass
     Update {
         /// The name of the zone to update
@@ -189,7 +188,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Delete a zone
     #[command(alias = "rm")]
     Delete {
@@ -203,7 +201,6 @@ and the contact is the address a resolver operator writes to.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Import a BIND zone file into a zone, or pull zones from another server
     #[command(after_help = "\
 The file is standard BIND zone file text, for example:
@@ -277,7 +274,6 @@ skipped); a catalog zone (RFC 9432) names every zone the server provisions.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Export a zone as BIND master-file text
     #[command(after_help = "\
 Examples:
@@ -294,7 +290,6 @@ bindizr generates rather than stores as editable records.")]
         #[arg(long)]
         signed: bool,
     },
-
     /// Show how far each secondary has caught up with a zone
     Status {
         /// The name of the zone
@@ -304,7 +299,6 @@ bindizr generates rather than stores as editable records.")]
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-
     /// Send NOTIFY messages to secondary servers for a zone, or for all zones
     #[command(after_help = "\
 Examples:
@@ -312,7 +306,6 @@ Examples:
   bindizr zone notify                 # all zones
   bindizr zone notify --bump-serial   # all zones, transferring even where nothing changed")]
     Notify(NotifyArgs),
-
     /// Inspect or roll back a zone's versions (serial history)
     Version {
         #[command(subcommand)]
@@ -321,7 +314,7 @@ Examples:
 }
 
 /// CLI import mode, matching the service's `ImportMode` and lowercase wire names.
-#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
     Append,
@@ -335,31 +328,29 @@ impl From<ImportMode> for types::ImportMode {
     /// Convert the CLI import mode into the service import mode.
     fn from(mode: ImportMode) -> Self {
         match mode {
-            ImportMode::Append => types::ImportMode::Append,
-            ImportMode::Upsert => types::ImportMode::Upsert,
-            ImportMode::Replace => types::ImportMode::Replace,
+            ImportMode::Append => Self::Append,
+            ImportMode::Upsert => Self::Upsert,
+            ImportMode::Replace => Self::Replace,
         }
     }
 }
 
 /// Arguments for the `zone notify` subcommand.
-#[derive(Args, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub(crate) struct NotifyArgs {
     /// The name of the zone; omit it to notify all zones
     #[arg(value_name = "ZONE_NAME")]
     name: Option<String>,
-
     /// Bump the serial first, so secondaries transfer even when nothing
     /// changed
     #[arg(long)]
     bump_serial: bool,
-
     /// Output format
     #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
-/// Handle the `zone` subcommand by forwarding it to the daemon over the socket.
+/// Handle the `zone` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliError> {
     match subcommand {
         ZoneCommand::Create {
@@ -379,18 +370,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         } => {
             let response = client::send_command::<WriteZoneResponse>(DaemonCommand::CreateZone(
                 CreateZoneRequest {
-                    dry_run,
-                    apex_ns: !no_apex_ns,
                     name,
                     mname,
                     rname,
                     default_ttl,
                     serial: serial.map(Serial::from),
-                    description,
                     refresh,
                     retry,
                     expire,
                     minimum_ttl,
+                    description,
+                    apex_ns: !no_apex_ns,
+                    dry_run,
                 },
             ))
             .await?;
@@ -445,7 +436,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 }),
             )
             .await?;
-            output::print_page(&response.data, output, |item| ZoneRow::from(item))?;
+            output::print_page(&response.data, output, |zone| ZoneRow::from(zone))?;
         }
         ZoneCommand::Get { name, output } => {
             let response =
@@ -473,7 +464,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<WriteZoneResponse>(DaemonCommand::UpdateZone {
                 zone_name: name,
                 request: UpdateZoneRequest {
-                    dry_run,
                     name: new_name,
                     mname,
                     rname,
@@ -484,6 +474,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     minimum_ttl,
                     enabled,
                     description,
+                    dry_run,
                 },
             })
             .await?;
@@ -503,19 +494,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             .await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
-        }
-        ZoneCommand::Export { name, signed } => {
-            let response =
-                client::send_command::<ExportZoneFileResponse>(DaemonCommand::ExportZone {
-                    name,
-                    view: ZoneView::from_signed(signed),
-                })
-                .await?;
-            out!("{}", response.data.zone_file);
         }
         ZoneCommand::Import {
             name: None,
@@ -531,7 +513,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             // Clap requires --from-server with either selector.
             let from_server = from_server.unwrap_or_default();
             let zone_names = zones
-                .map(|zones| super::read_input(&zones))
+                .map(|zones| commands::read_input(&zones))
                 .transpose()?
                 .map(|text| {
                     text.lines()
@@ -546,7 +528,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     from_server,
                     zone_names,
                     from_catalog,
-                    mode: types::ImportMode::from(mode).as_str().to_owned(),
+                    mode: types::ImportMode::from(mode).as_str().to_string(),
                     dry_run,
                     create,
                 },
@@ -563,13 +545,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         continue;
                     };
                     for error in &zone_import.errors {
-                        errln!("  {} - {}", item.zone_name, error);
+                        errln!("  {} - {error}", item.zone_name);
                     }
                 }
 
                 output::print_table(import.zones.iter().map(ImportZonesRow::from).collect());
             } else {
-                output::print_payload(import, output)?
+                output::print_payload(import, output)?;
             }
 
             // A zone left behind must not exit as a success.
@@ -591,14 +573,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             output,
             ..
         } => {
-            let content = file.map(|file| super::read_input(&file)).transpose()?;
+            let content = file.map(|file| commands::read_input(&file)).transpose()?;
 
             let response = client::send_command::<ImportZoneResponse>(DaemonCommand::ImportZone {
                 zone_name: name,
                 request: ImportZoneRequest {
                     content,
                     from_server,
-                    mode: types::ImportMode::from(mode).as_str().to_owned(),
+                    mode: types::ImportMode::from(mode).as_str().to_string(),
                     dry_run,
                     create,
                 },
@@ -611,7 +593,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
                 // Diagnostics go to stderr, so a pipeline keeps the summary clean.
                 for error in &import.errors {
-                    errln!("  - {}", error);
+                    errln!("  - {error}");
                 }
 
                 output::print_table(vec![ImportSummaryRow::from(import)]);
@@ -620,7 +602,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     out!("{}", output::render_change_preview(&import.diff));
                 }
             } else {
-                output::print_payload(import, output)?
+                output::print_payload(import, output)?;
             }
 
             // A rejected import applied nothing, so it must not exit as a success.
@@ -631,7 +613,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 )));
             }
         }
-        ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
+        ZoneCommand::Export { name, signed } => {
+            let response =
+                client::send_command::<ExportZoneFileResponse>(DaemonCommand::ExportZone {
+                    name,
+                    view: ZoneView::from_signed(signed),
+                })
+                .await?;
+            out!("{}", response.data.zone_file);
+        }
         ZoneCommand::Status { name, output } => {
             let response =
                 client::send_command::<ZoneStatusResponse>(DaemonCommand::GetZoneStatus { name })
@@ -662,11 +652,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<MessageResponse>(command).await?;
 
             if args.output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, args.output)?
+                output::print_payload(&response.data, args.output)?;
             }
         }
+        ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
     }
 
     Ok(())

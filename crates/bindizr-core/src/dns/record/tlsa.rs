@@ -1,8 +1,8 @@
 //! TLSA record values (RFC 6698): DANE certificate associations, verifiable
 //! only from a signed zone.
 
-use super::value::MAX_RECORD_RDATA;
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use crate::dns::record::value::MAX_RECORD_RDATA;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsaRecordValue {
@@ -13,7 +13,7 @@ pub struct TlsaRecordValue {
 }
 
 impl TlsaRecordValue {
-    /// The value is `<usage> <selector> <matching type> <certificate data>`;
+    /// Parse `<usage> <selector> <matching type> <certificate data>`;
     /// the hex data may be split into whitespace-separated groups.
     pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
@@ -35,6 +35,10 @@ impl TlsaRecordValue {
 
     /// Validate the fields of this TLSA value.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+        // Bounded so the record fits one transfer message beside its 3 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_CERT_DATA: usize = MAX_RECORD_RDATA - 3;
+
         // Digest lengths are fixed per matching type; type 0 is a full
         // certificate or SPKI and takes any length.
         let expected = match self.matching_type {
@@ -53,10 +57,6 @@ impl TlsaRecordValue {
             });
         }
 
-        // Bounded so the record fits one transfer message beside its 3 fixed
-        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
-        const MAX_CERT_DATA: usize = MAX_RECORD_RDATA - 3;
-
         if self.cert_data.len() > MAX_CERT_DATA {
             return Err(ParseRecordValueError::TlsaDataTooLong {
                 max: MAX_CERT_DATA,
@@ -74,24 +74,25 @@ impl TlsaRecordValue {
             self.cert_usage,
             self.selector,
             self.matching_type,
-            value::hex_upper(&self.cert_data)
+            hex::encode_upper(&self.cert_data)
         )
     }
 
-    /// The wire-format RDATA of a stored value (RFC 6698, Section 2.1).
+    /// Encode the stored value as wire RDATA (RFC 6698, Section 2.1).
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(3 + self.cert_data.len());
         rdata.push(self.cert_usage);
         rdata.push(self.selector);
         rdata.push(self.matching_type);
         rdata.extend_from_slice(&self.cert_data);
+
         Rdata::new(rdata)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_RECORD_RDATA, TlsaRecordValue};
+    use super::*;
 
     /// Verify that `parse` joins spaced hex and canonicalizes.
     #[test]
@@ -112,12 +113,13 @@ mod tests {
     fn validate_pins_digest_lengths_but_not_full_certificates() {
         let short = TlsaRecordValue::parse("3 1 1 4B9B").unwrap();
 
-        assert!(
-            short
-                .validate()
-                .unwrap_err()
-                .to_string()
-                .contains("32-byte")
+        assert_eq!(
+            short.validate(),
+            Err(ParseRecordValueError::TlsaDataLength {
+                matching_type: 1,
+                expected: 32,
+                len: 2,
+            })
         );
 
         // Matching type 0 carries the full certificate at any length.
@@ -144,8 +146,12 @@ mod tests {
                 .is_ok()
         );
         let oversized = format!("3 0 0 {}", "AB".repeat(cap + 1));
-        let error = TlsaRecordValue::parse(&oversized).unwrap().validate();
-
-        assert!(error.unwrap_err().to_string().contains(&cap.to_string()));
+        assert_eq!(
+            TlsaRecordValue::parse(&oversized).unwrap().validate(),
+            Err(ParseRecordValueError::TlsaDataTooLong {
+                max: cap,
+                len: cap + 1,
+            })
+        );
     }
 }

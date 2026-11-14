@@ -8,8 +8,11 @@ use bindizr_core::dns::nsupdate::parser::UpdateRecord;
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::RecordType;
 
-use super::operation::RecordOperation;
-use super::{NsupdateError, Prerequisite, UpdateOperation};
+use crate::nsupdate;
+use crate::nsupdate::NsupdateError;
+use crate::nsupdate::operation::RecordOperation;
+use crate::nsupdate::plan::UpdateOperation;
+use crate::nsupdate::prerequisite::Prerequisite;
 
 /// Prescan the entire update section before selecting any operations
 /// (RFC 2136, Section 3.4.1), retaining checked owners through execution.
@@ -21,7 +24,7 @@ pub(crate) fn decode_updates(
     let checked = records
         .iter()
         .map(|record| {
-            let owner = super::parse_update_owner(&record.name, zone_name)?;
+            let owner = nsupdate::parse_update_owner(&record.name, zone_name)?;
             record.validate_update_shape()?;
             validate_supported_type(record.record_type)?;
             Ok((record, owner))
@@ -34,15 +37,15 @@ pub(crate) fn decode_updates(
         .collect()
 }
 
-/// The prescan's type check: unrecognized types are FORMERR (RFC 2136, Section 3.4.1.2).
-fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
-    if matches!(record_type, Rtype::SOA | Rtype::ANY)
-        || RecordType::try_from(record_type).is_ok()
-        || DnssecRecordType::try_from(i32::from(record_type.to_int())).is_ok()
+/// Check a type in the prescan: unrecognized types are FORMERR (RFC 2136, Section 3.4.1.2).
+fn validate_supported_type(rtype: Rtype) -> Result<(), NsupdateError> {
+    if matches!(rtype, Rtype::SOA | Rtype::ANY)
+        || RecordType::try_from(rtype).is_ok()
+        || DnssecRecordType::try_from(i32::from(rtype.to_int())).is_ok()
     {
         Ok(())
     } else {
-        Err(NsupdateError::UnsupportedType(record_type))
+        Err(NsupdateError::UnsupportedType(rtype))
     }
 }
 
@@ -50,7 +53,7 @@ fn validate_supported_type(record_type: Rtype) -> Result<(), NsupdateError> {
 pub(crate) fn decode_prerequisite(
     record: &UpdateRecord,
     zone_name: &ZoneName,
-    query_data: &[u8],
+    message: &[u8],
 ) -> Result<Prerequisite, NsupdateError> {
     if record.ttl != 0 {
         return Err(NsupdateError::FormErr(
@@ -59,7 +62,7 @@ pub(crate) fn decode_prerequisite(
     }
 
     // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
-    let name = super::parse_update_owner(&record.name, zone_name)?;
+    let owner = nsupdate::parse_update_owner(&record.name, zone_name)?;
 
     match record.class {
         Class::ANY | Class::NONE => {
@@ -77,10 +80,16 @@ pub(crate) fn decode_prerequisite(
             }
 
             Ok(match (is_any_class, record.record_type) {
-                (true, Rtype::ANY) => Prerequisite::NameExists { name },
-                (false, Rtype::ANY) => Prerequisite::NameAbsent { name },
-                (true, record_type) => Prerequisite::RecordSetExists { name, record_type },
-                (false, record_type) => Prerequisite::RecordSetAbsent { name, record_type },
+                (true, Rtype::ANY) => Prerequisite::NameExists { name: owner },
+                (false, Rtype::ANY) => Prerequisite::NameAbsent { name: owner },
+                (true, rtype) => Prerequisite::RecordSetExists {
+                    name: owner,
+                    record_type: rtype,
+                },
+                (false, rtype) => Prerequisite::RecordSetAbsent {
+                    name: owner,
+                    record_type: rtype,
+                },
             })
         }
         Class::IN => {
@@ -91,14 +100,13 @@ pub(crate) fn decode_prerequisite(
             }
 
             Ok(Prerequisite::RecordValueMatches {
-                name,
+                name: owner,
                 record_type: record.record_type,
-                rdata: record.to_rdata(query_data)?,
+                rdata: record.to_rdata(message)?,
             })
         }
         other => Err(NsupdateError::FormErr(format!(
-            "unsupported prerequisite class: {}",
-            other
+            "unsupported prerequisite class: {other}"
         ))),
     }
 }
@@ -107,13 +115,13 @@ pub(crate) fn decode_prerequisite(
 /// SOA deletes are ignored per RFC 2136, Sections 3.4.2.3 and 3.4.2.4.
 fn decode_update(
     record: &UpdateRecord,
-    name: OwnerName,
-    query_data: &[u8],
+    owner: OwnerName,
+    message: &[u8],
 ) -> Result<Option<UpdateOperation>, NsupdateError> {
     if DnssecRecordType::try_from(i32::from(record.record_type.to_int())).is_ok() {
         // Malformed RDATA must remain FORMERR, ahead of policy refusal.
         if record.class != Class::ANY {
-            record.to_rdata(query_data)?;
+            record.to_rdata(message)?;
         }
         return Err(NsupdateError::ManagedType(record.record_type));
     }
@@ -125,16 +133,16 @@ fn decode_update(
 
             if record.record_type == Rtype::SOA {
                 return Ok(Some(UpdateOperation::ReplaceSoa {
-                    name,
+                    name: owner,
                     ttl,
-                    value: record.to_soa_value(query_data)?,
+                    value: record.to_soa_value(message)?,
                 }));
             }
 
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
+            let (record_type, value, priority) = record.to_record_value(message)?;
 
             Ok(Some(UpdateOperation::Record(RecordOperation::AddRecord {
-                name,
+                name: owner,
                 record_type,
                 value,
                 ttl,
@@ -151,7 +159,10 @@ fn decode_update(
                 },
             };
             Ok(Some(UpdateOperation::Record(
-                RecordOperation::DeleteRecordSet { name, record_type },
+                RecordOperation::DeleteRecordSet {
+                    name: owner,
+                    record_type,
+                },
             )))
         }
         Class::NONE => {
@@ -160,20 +171,19 @@ fn decode_update(
                 return Ok(None);
             }
 
-            let (record_type, value, priority) = record.to_record_value(query_data)?;
+            let (record_type, value, priority) = record.to_record_value(message)?;
 
             Ok(Some(UpdateOperation::Record(
                 RecordOperation::DeleteRecord {
-                    name,
+                    name: owner,
                     record_type,
                     value,
                     priority,
                 },
             )))
         }
-        class => Err(NsupdateError::FormErr(format!(
-            "unsupported update class: {}",
-            class
+        other => Err(NsupdateError::FormErr(format!(
+            "unsupported update class: {other}"
         ))),
     }
 }

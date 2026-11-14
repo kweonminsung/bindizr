@@ -11,9 +11,8 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::tsig_key;
 use thiserror::Error;
 
-use super::acl;
 use crate::dns::error::DnsError;
-use crate::dns::server::DnsContext;
+use crate::dns::server::{DnsContext, acl};
 
 /// A rejected transfer's cause; encoding and response limits belong to the handler.
 #[derive(Debug, Error)]
@@ -52,7 +51,8 @@ impl TransferRefusal {
         }
     }
 
-    /// Identify authentication or backend processing failures for transfer metrics.
+    /// Return whether this is an authentication or backend processing failure for
+    /// transfer metrics.
     pub(crate) fn is_failure(&self) -> bool {
         match self {
             Self::Dns { rcode, .. } => *rcode == OptRcode::SERVFAIL,
@@ -62,7 +62,7 @@ impl TransferRefusal {
         }
     }
 
-    /// A refusal by policy: REFUSED, prohibited.
+    /// Refuse by policy: REFUSED, prohibited.
     pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         Self::Dns {
             reason,
@@ -82,7 +82,8 @@ impl TransferRefusal {
         }
     }
 
-    /// A request whose TSIG breaks RFC 8945, Section 5.2: FORMERR, unsigned.
+    /// Refuse a request whose TSIG breaks RFC 8945, Section 5.2: FORMERR,
+    /// unsigned.
     fn malformed(reason: String) -> Self {
         Self::Dns {
             reason,
@@ -95,8 +96,8 @@ impl TransferRefusal {
     /// Encode a refusal under the request's response budget, after authentication.
     pub(crate) fn into_response(
         self,
-        query_data: &[u8],
         metadata: &QueryMetadata,
+        query_data: &[u8],
     ) -> Result<Vec<u8>, DnsError> {
         match self {
             Self::Dns {
@@ -110,15 +111,13 @@ impl TransferRefusal {
                 None,
                 signer.as_deref_mut(),
             )?),
-            Self::Tsig(TsigError::Rejected { rcode, key, time }) => {
-                Ok(bindizr_core::dns::tsig::build_error_response(
-                    query_data,
-                    key.as_deref(),
-                    rcode,
-                    time,
-                    metadata.response_limit(),
-                )?)
-            }
+            Self::Tsig(TsigError::Rejected { rcode, key, time }) => Ok(tsig::build_error_response(
+                query_data,
+                key.as_deref(),
+                rcode,
+                time,
+                metadata.response_limit(),
+            )?),
             Self::Tsig(TsigError::Malformed(_)) => {
                 Ok(metadata.build_signed_error_response(OptRcode::FORMERR, None, None)?)
             }
@@ -172,7 +171,8 @@ pub(crate) async fn authenticate_tsig_key(
         }
     };
 
-    let tsig_key = tsig_key::find_by_wire_name(dns_cx.daemon(), &key_name)
+    let cx = dns_cx.daemon();
+    let tsig_key = tsig_key::find_by_wire_name(cx, &key_name)
         .await
         .map_err(|error| TransferRefusal::failed("failed to load TSIG key", error, None))?;
     let Some(tsig_key) = tsig_key else {
@@ -183,10 +183,10 @@ pub(crate) async fn authenticate_tsig_key(
             None,
         ));
     };
-    let signing_key = tsig_key.to_signing_key().map_err(TransferRefusal::from)?;
+    let signing_key = tsig_key.to_signing_key()?;
     let signer = tsig::verify_tsig(query_data, Some(signing_key))?;
 
-    let caller = match Caller::authenticate_tsig_key(dns_cx.daemon(), &tsig_key).await {
+    let caller = match Caller::authenticate_tsig_key(cx, &tsig_key).await {
         Ok(caller) => caller,
         Err(error) => {
             return Err(TransferRefusal::failed(
@@ -207,11 +207,11 @@ pub(crate) async fn authenticate_tsig_key(
 /// Content grants are checked when loading the zone or catalog.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
-    query_data: &[u8],
     client_ip: IpAddr,
+    query_data: &[u8],
     transport: TransferTransport,
 ) -> Result<TransferIdentity, TransferRefusal> {
-    let over_tls = matches!(transport, TransferTransport::Tls);
+    let over_tls = transport == TransferTransport::Tls;
 
     let Some(identity) = authenticate_tsig_key(dns_cx, query_data).await? else {
         if over_tls {
@@ -229,7 +229,7 @@ pub(crate) async fn authenticate_transfer(
                 signer: None,
             }),
             Ok(false) => Err(TransferRefusal::refused(
-                format!("IP {} is not an enabled secondary", client_ip),
+                format!("IP {client_ip} is not an enabled secondary"),
                 None,
             )),
             Err(error) => Err(TransferRefusal::failed(
@@ -247,8 +247,7 @@ pub(crate) async fn authenticate_transfer(
             Ok(false) => {
                 return Err(TransferRefusal::refused(
                     format!(
-                        "IP {} is not an enabled secondary; XoT needs the key and the address (RFC 9103, Section 7.5)",
-                        client_ip
+                        "IP {client_ip} is not an enabled secondary; XoT needs the key and the address (RFC 9103, Section 7.5)"
                     ),
                     identity.signer,
                 ));
@@ -287,9 +286,9 @@ pub(crate) async fn refuse_query(
             let mut signer = identity.and_then(|identity| identity.signer);
             Ok(metadata.build_signed_error_response(rcode, ede, signer.as_mut())?)
         }
-        Err(refusal) => match refusal.into_response(query_data, metadata) {
+        Err(refusal) => match refusal.into_response(metadata, query_data) {
             Err(DnsError::Tsig(error)) => {
-                log::warn!("Failed to encode TSIG refusal: {}", error);
+                log::warn!("Failed to encode TSIG refusal: {error}");
                 Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
             }
             response => response,

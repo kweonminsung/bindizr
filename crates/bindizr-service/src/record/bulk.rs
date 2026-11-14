@@ -1,24 +1,23 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::dns::name::OwnerName;
+use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
-use crate::model::record::{Record, RecordData};
+use crate::record::validation;
 use crate::types::{
-    CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse, Run,
+    CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse,
 };
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, time, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, time, transaction, zone};
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct BulkTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -35,13 +34,12 @@ pub async fn create_bulk(
     caller: &Caller,
     request: &CreateBulkRecordsRequest,
 ) -> Result<CreateBulkRecordsResponse, ServiceError> {
-    let zone_name = &zone::normalize_name(&request.zone_name)?;
+    let zone_name = zone::normalize_name(&request.zone_name)?;
     let records = &request.records;
-    let run = Run::from_dry_run(request.dry_run);
 
     if records.is_empty() {
         return Err(ServiceError::invalid_input(
-            "no records provided for bulk insert".to_string(),
+            "no records provided for bulk insert",
         ));
     }
 
@@ -62,7 +60,7 @@ pub async fn create_bulk(
         .collect::<Result<Vec<_>, _>>()?;
     let owners: Vec<_> = records
         .iter()
-        .map(|record| validation::normalize_record_owner_name(&record.name, zone_name))
+        .map(|record| validation::normalize_record_owner_name(&record.name, &zone_name))
         .collect();
     let prepare_ms = time::elapsed_ms(started);
 
@@ -70,10 +68,10 @@ pub async fn create_bulk(
 
     let mut tx = transaction::begin_tx(cx, "failed to create records").await?;
 
-    let apply_result = async {
+    let apply_result: Result<_, ServiceError> = async {
         let started = Instant::now();
 
-        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
         timings.load_zone_ms = time::elapsed_ms(started);
@@ -81,14 +79,14 @@ pub async fn create_bulk(
         // Authorize before loading existing record rows so an ungranted caller
         // gets 404 instead of constraint details; dry runs included.
         // A name that will not parse lists no write; validation reports it.
-        let writes: Vec<RecordAccess<'_>> = prepared
+        let writes: Vec<RecordAccess> = prepared
             .iter()
             .zip(&owners)
-            .filter_map(|(prepared, owner)| {
+            .filter_map(|(prepared_record, owner)| {
                 owner.as_ref().ok().map(|owner| RecordAccess {
                     action: Action::RecordCreate,
                     relative_name: owner.clone(),
-                    record_type: Some(&prepared.record_type),
+                    record_type: Some(prepared_record.record_type),
                 })
             })
             .collect();
@@ -97,30 +95,24 @@ pub async fn create_bulk(
         // Only records whose owner name appears in the batch can conflict, so
         // load just those instead of the whole zone.
         let started = Instant::now();
-        let mut batch_names: Vec<OwnerName> = writes
+        let mut batch_owners: Vec<OwnerName> = writes
             .iter()
             .map(|write| write.relative_name.clone())
             .collect();
-        batch_names.sort();
-        batch_names.dedup();
+        batch_owners.sort();
+        batch_owners.dedup();
 
-        let existing_records = match bindizr_db::record::list_by_names_tx(
+        let existing_records = bindizr_db::record::list_by_names_tx(
             &mut tx,
             zone.id,
-            &batch_names,
+            &batch_owners,
             LockLevel::Exclusive,
         )
         .await
-        {
-            Ok(records) => records,
-            Err(error) => {
-                log::error!("Failed to load zone records: {}", error);
-                return Err(ServiceError::internal_with_source(
-                    "failed to create records",
-                    error,
-                ));
-            }
-        };
+        .map_err(|error| {
+            log::error!("Failed to load zone records: {error}");
+            ServiceError::internal_with_source("failed to create records", error)
+        })?;
 
         timings.load_existing_ms = time::elapsed_ms(started);
 
@@ -128,7 +120,7 @@ pub async fn create_bulk(
 
         // The diff is only shown on a dry-run preview, so keep the `before`
         // copy (and pay for building the diff) off the apply hot path.
-        let before_records = if run.is_dry_run() {
+        let before_records = if request.dry_run {
             existing_records.clone()
         } else {
             Vec::new()
@@ -151,18 +143,18 @@ pub async fn create_bulk(
         let started = Instant::now();
         let mut to_insert = Vec::with_capacity(prepared.len());
 
-        for (prepared_record, owner_name) in prepared.iter().zip(owners) {
-            let owner_name = owner_name?;
+        for (prepared_record, owner) in prepared.iter().zip(owners) {
+            let owner = owner?;
 
-            let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
+            let records_at_name = records_by_name.entry(owner.clone()).or_default();
 
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
             validation::validate_record_constraints(
                 records_at_name,
-                &owner_name,
-                &prepared_record.record_type,
+                &owner,
+                prepared_record.record_type,
                 &prepared_record.value,
                 ttl,
                 prepared_record.priority,
@@ -171,7 +163,7 @@ pub async fn create_bulk(
 
             let record = Record {
                 id: RecordId::UNWRITTEN,
-                name: owner_name,
+                name: owner,
                 record_type: prepared_record.record_type,
                 value: prepared_record.value.clone(),
                 ttl,
@@ -187,7 +179,7 @@ pub async fn create_bulk(
 
         zone::validate_record_changes_tx(&mut tx, &zone, &[], &to_insert).await?;
 
-        let (created_records, diff) = if run.is_dry_run() {
+        let (created_records, diff) = if request.dry_run {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
             let before =
@@ -205,7 +197,7 @@ pub async fn create_bulk(
             let started = Instant::now();
 
             let created_records =
-                super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+                record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
             timings.db_write_ms = time::elapsed_ms(started);
 
@@ -222,18 +214,16 @@ pub async fn create_bulk(
         };
 
         // Carry grants out of the locked snapshot; render values after commit.
-        let records = created_records
+        let records: Vec<_> = created_records
             .into_iter()
             .map(|record| {
                 let actions =
-                    caller.record_actions(record.zone_id, &record.name, &record.record_type);
+                    caller.record_actions(record.zone_id, &record.name, record.record_type);
                 (record, actions)
             })
             .collect();
 
-        Ok::<(Vec<(Record, Vec<Action>)>, ZoneName, RecordDiffResponse), ServiceError>((
-            records, zone.name, diff,
-        ))
+        Ok((records, zone.name, diff))
     }
     .await;
 
@@ -241,17 +231,16 @@ pub async fn create_bulk(
         transaction::finish_tx(tx, apply_result, "failed to create records").await?;
 
     log::info!(
-        "event=record_bulk_create zone={} count={} dry_run={}",
-        zone_name,
+        "event=record_bulk_create zone={zone_name} count={} dry_run={}",
         created_records.len(),
-        run.is_dry_run()
+        request.dry_run
     );
 
     let started = Instant::now();
 
-    if !run.is_dry_run() {
+    if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     let notify_ms = time::elapsed_ms(started);
@@ -259,31 +248,28 @@ pub async fn create_bulk(
     // Per-stage breakdown for profiling; debug-gated so it stays out of
     // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
     log::debug!(
-        "event=record_bulk_create_timing zone={} count={} prepare_ms={:.1} load_zone_ms={:.1} \
+        "event=record_bulk_create_timing zone={zone_name} count={} prepare_ms={prepare_ms:.1} load_zone_ms={:.1} \
          load_existing_ms={:.1} build_index_ms={:.1} build_records_ms={:.1} \
-         db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",
-        zone_name,
+         db_write_ms={:.1} serial_ms={:.1} notify_ms={notify_ms:.1} total_ms={:.1}",
         created_records.len(),
-        prepare_ms,
         timings.load_zone_ms,
         timings.load_existing_ms,
         timings.build_index_ms,
         timings.build_records_ms,
         timings.db_write_ms,
         timings.serial_ms,
-        notify_ms,
-        time::elapsed_ms(total_started),
+        time::elapsed_ms(total_started)
     );
 
-    let records = created_records
+    let records: Vec<_> = created_records
         .into_iter()
         .map(|(record, actions)| RecordResponse::from_record(&record, &zone_name, actions))
-        .collect::<Vec<_>>();
+        .collect();
 
     Ok(CreateBulkRecordsResponse {
-        applied: !run.is_dry_run(),
-        dry_run: run.is_dry_run(),
-        added: if run.is_dry_run() {
+        applied: !request.dry_run,
+        dry_run: request.dry_run,
+        added: if request.dry_run {
             0
         } else {
             records.len() as u64

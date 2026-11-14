@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bindizr_core::dns::Serial;
 use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
@@ -12,11 +14,11 @@ use bindizr_service::types::{
     UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
     UpdateSecondaryRequest, UpdateZoneRequest, ZoneFilter, ZoneView,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 /// A daemon command and its payload, shared by CLI serialization
 /// and daemon deserialization.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub(crate) enum DaemonCommand {
     Status,
@@ -215,14 +217,14 @@ pub(crate) enum DaemonCommand {
 
 /// The daemon's answer: a message for a person, and the payload
 /// `--output json` prints.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonResponse<T> {
     pub(crate) message: String,
     pub(crate) data: T,
 }
 
 /// Daemon status details returned by the `Status` command.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonStatusResponse {
     pub(crate) pid: Option<u32>,
     pub(crate) version: String,
@@ -236,7 +238,7 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) dns_tls_addr: Option<String>,
     pub(crate) database_type: String,
     /// Enabled secondaries; `None` when the database did not answer.
-    pub(crate) secondaries: Option<usize>,
+    pub(crate) secondaries: Option<u64>,
     /// `None`, with `database_error` set, when the database did not answer;
     /// `status` prints the block and then exits non-zero.
     pub(crate) zones: Option<u64>,
@@ -245,7 +247,7 @@ pub(crate) struct DaemonStatusResponse {
 
 /// Daemon installation checks; secondaries are compared with the catalog serial
 /// as `zone status` compares them with a member zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheckResponse,
     pub(crate) dns_server: DoctorCheckResponse,
@@ -261,31 +263,13 @@ pub(crate) struct DaemonDoctorResponse {
 }
 
 /// One check's outcome.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum DoctorCheckStatus {
     Ok,
     Failed,
     #[serde(rename = "skip")]
     Skipped,
-}
-
-impl std::fmt::Display for DoctorCheckStatus {
-    /// Write the status as the doctor's report labels it.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            DoctorCheckStatus::Ok => "OK",
-            DoctorCheckStatus::Failed => "FAILED",
-            DoctorCheckStatus::Skipped => "SKIP",
-        })
-    }
-}
-
-/// One installation check, worded as `doctor` reports it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorCheckResponse {
-    pub(crate) status: DoctorCheckStatus,
-    pub(crate) message: String,
 }
 
 impl DoctorCheckStatus {
@@ -299,24 +283,44 @@ impl DoctorCheckStatus {
     }
 }
 
-impl serde::Serialize for DoctorCheckStatus {
+impl fmt::Display for DoctorCheckStatus {
+    /// Write the status as the doctor's report labels it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Ok => "OK",
+            Self::Failed => "FAILED",
+            Self::Skipped => "SKIP",
+        })
+    }
+}
+
+impl Serialize for DoctorCheckStatus {
     /// Serialize through the canonical spelling used by the wire contract.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
 }
 
+/// One installation check, worded as `doctor` reports it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DoctorCheckResponse {
+    pub(crate) status: DoctorCheckStatus,
+    pub(crate) message: String,
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
-    /// Keep socket command strings stable when Rust variants are renamed.
+    /// Verify that socket command strings stay stable when Rust variants are renamed.
     #[test]
     fn command_names_preserve_the_wire_contract() {
         for (command, expected) in [
             (
                 DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
-                    zone_name: "example.com".into(),
+                    zone_name: "example.com".to_string(),
                     records: Vec::new(),
                     dry_run: true,
                 }),
@@ -324,8 +328,8 @@ mod tests {
             ),
             (
                 DaemonCommand::DeleteMatchingRecords(DeleteRecordsRequest {
-                    zone_name: "example.com".into(),
-                    name: "www".into(),
+                    zone_name: "example.com".to_string(),
+                    name: "www".to_string(),
                     record_type: None,
                     value: None,
                     priority: None,
@@ -335,7 +339,7 @@ mod tests {
             ),
             (
                 DaemonCommand::AdvanceDnssecRollover {
-                    zone_name: "example.com".into(),
+                    zone_name: "example.com".to_string(),
                     ds_check: DsCheck::Probe,
                     holddown: Holddown::Wait,
                 },
@@ -351,21 +355,17 @@ mod tests {
         }
     }
 
-    /// Verify the canonical spelling and round-trip of every DoctorCheckStatus variant.
+    /// Verify that `DoctorCheckStatus` has one spelling across `as_str` and serde.
     #[test]
     fn doctor_check_status_spells_itself_once() {
-        for (value, expected) in [
-            (DoctorCheckStatus::Ok, "ok"),
-            (DoctorCheckStatus::Failed, "failed"),
-            (DoctorCheckStatus::Skipped, "skip"),
+        for value in [
+            DoctorCheckStatus::Ok,
+            DoctorCheckStatus::Failed,
+            DoctorCheckStatus::Skipped,
         ] {
-            assert_eq!(value.as_str(), expected);
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
-                serde_json::json!(expected)
-            );
-            assert_eq!(
-                serde_json::from_value::<DoctorCheckStatus>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<DoctorCheckStatus>(json!(value.as_str())).unwrap(),
                 value
             );
         }

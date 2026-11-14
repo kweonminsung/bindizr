@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 
 use bindizr_core::dns::Ttl;
+use bindizr_core::model::record::{RecordData, RecordSetKey};
+use bindizr_core::model::zone::Zone;
 
 use crate::authorization::ReadableRecords;
-use crate::model::record::{RecordData, RecordSetKey};
-use crate::model::zone::Zone;
 use crate::types;
 use crate::types::{
     RecordChange, RecordDiffEntryResponse, RecordDiffResponse, RecordDiffSummaryResponse,
@@ -15,7 +15,7 @@ use crate::types::{
 };
 
 /// What makes two records of one record set the same: canonical rdata and TTL.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberIdentity {
     rdata: String,
     ttl: Ttl,
@@ -23,7 +23,7 @@ struct MemberIdentity {
 
 /// One record within a record set: its identity (for change detection) and
 /// its display-form value (for the response).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RecordSetMember {
     identity: MemberIdentity,
     value: RecordDiffValueResponse,
@@ -51,7 +51,7 @@ fn group_record_sets(
                 ttl: record.ttl,
             },
             value: RecordDiffValueResponse {
-                value: types::build_display_value(&record.value, &record.record_type),
+                value: types::build_display_value(record.record_type, &record.value),
                 ttl: record.ttl,
                 priority: record.priority,
             },
@@ -63,9 +63,9 @@ fn group_record_sets(
 
 /// Collect sorted, borrowed record identities for comparison without copying their contents.
 fn record_set_identities(record_set: &[RecordSetMember]) -> Vec<&MemberIdentity> {
-    let mut ids: Vec<_> = record_set.iter().map(|record| &record.identity).collect();
-    ids.sort();
-    ids
+    let mut identities: Vec<_> = record_set.iter().map(|record| &record.identity).collect();
+    identities.sort();
+    identities
 }
 
 /// Collect the record values belonging to an owner and type.

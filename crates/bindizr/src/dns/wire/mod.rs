@@ -12,10 +12,10 @@ use crate::dns::error::DnsError;
 const TCP_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Write a length-prefixed DNS TCP frame.
-pub(crate) async fn write_frame<W>(writer: &mut W, frame: &[u8]) -> Result<(), DnsError>
-where
-    W: AsyncWrite + Unpin,
-{
+pub(crate) async fn write_frame<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    frame: &[u8],
+) -> Result<(), DnsError> {
     use tokio::io::AsyncWriteExt as _;
 
     let write = async {
@@ -39,7 +39,7 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
 ) -> Result<Vec<u8>, DnsError> {
     use tokio::io::AsyncReadExt as _;
 
-    let mut chunk = [0u8; 4096];
+    let mut buffer = [0; 4096];
 
     loop {
         // The two-octet prefix cannot name more than the limit RFC 1035,
@@ -56,17 +56,17 @@ pub(crate) async fn read_tcp_message<R: AsyncRead + Unpin>(
             return Ok(message);
         }
 
-        let read = reader.read(&mut chunk).await.map_err(DnsError::Io)?;
+        let read = reader.read(&mut buffer).await?;
 
         if read == 0 {
             return Err(match expected {
+                Some(expected) => DnsError::IncompleteMessage { expected },
                 None if pending.is_empty() => DnsError::PeerClosed,
                 None => DnsError::IncompletePrefix,
-                Some(expected) => DnsError::IncompleteMessage { expected },
             });
         }
 
-        pending.extend_from_slice(&chunk[..read]);
+        pending.extend_from_slice(&buffer[..read]);
     }
 }
 

@@ -4,13 +4,14 @@ use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use tokio::sync::mpsc;
+use tokio::task;
 
 use super::*;
 
 /// Build real service state and its reload channel over a disposable SQLite database.
 async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.scheduler_interval_secs = period;
 
     let db = Db::connect(&config.database).await.unwrap();
@@ -28,13 +29,13 @@ async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
     (cx, period_rx)
 }
 
-/// A disabled scheduler stops even while the context keeps its reload sender alive.
+/// Verify that a disabled scheduler stops even while the context keeps its reload sender alive.
 #[tokio::test]
 async fn stop_joins_disabled_worker_without_starting_a_pass() {
     let (cx, period_rx) = context(0).await;
     let worker = spawn(cx.clone(), period_rx);
 
-    tokio::time::timeout(Duration::from_secs(2), worker.stop())
+    time::timeout(Duration::from_secs(2), worker.stop())
         .await
         .unwrap()
         .unwrap();
@@ -46,7 +47,8 @@ async fn stop_joins_disabled_worker_without_starting_a_pass() {
     );
 }
 
-/// Shutdown waits for the current database pass and skips ticks accumulated during that pass.
+/// Verify that shutdown waits for the current database pass and skips ticks
+/// accumulated during that pass.
 #[tokio::test]
 async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
     let (cx, period_rx) = context(1).await;
@@ -60,10 +62,10 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
 
     let worker = spawn(cx.clone(), period_rx);
 
-    tokio::time::timeout(Duration::from_secs(2), async {
+    time::timeout(Duration::from_secs(2), async {
         // The scheduler's additional Arc belongs to the spawned in-flight pass.
         while Arc::strong_count(&cx) < 3 {
-            tokio::task::yield_now().await;
+            task::yield_now().await;
         }
     })
     .await
@@ -71,7 +73,7 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
 
     let task = worker.stop();
 
-    tokio::time::sleep(Duration::from_millis(1100)).await;
+    time::sleep(Duration::from_millis(1100)).await;
 
     assert!(!task.is_finished(), "shutdown must await the blocked pass");
     assert!(
@@ -84,7 +86,7 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
         tx.rollback().await.unwrap();
     }
 
-    tokio::time::timeout(Duration::from_secs(2), task)
+    time::timeout(Duration::from_secs(2), task)
         .await
         .unwrap()
         .unwrap();

@@ -11,7 +11,7 @@ use crate::error::ServiceError;
 use crate::types::{
     CheckSecondariesResponse, CheckSecondaryResponse, SecondaryTransferSummaryResponse,
 };
-use crate::{Context, dns_client, notify, probe};
+use crate::{Context, dns_client, notify, probe, secondary};
 
 /// Check one secondary, enabled or not: resolve it, compare its catalog serial
 /// with Bindizr's listener, and send catalog NOTIFY.
@@ -22,10 +22,10 @@ pub async fn check(
 ) -> Result<CheckSecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let secondary = super::lookup_by_name(cx, name).await?;
+    let secondary = secondary::lookup_by_name(cx, name).await?;
 
     let config = cx.config();
-    let catalog_zone = config.dns.catalog_zone_name.clone();
+    let catalog_zone_name = config.dns.catalog_zone_name.clone();
     let timeout = config.dns.notify.timeout();
 
     // The listener's serial is the reference: it reflects the catalog's
@@ -36,9 +36,9 @@ pub async fn check(
     );
 
     let (catalog_serial, listener_error) =
-        match dns_client::probe::probe_server(dns_addr, &catalog_zone, timeout).await {
+        match dns_client::probe::probe_server(&catalog_zone_name, dns_addr, timeout).await {
             Ok(serial) => (Some(serial), None),
-            Err(error) => (None, Some(format!("{}: {}", dns_addr, error))),
+            Err(error) => (None, Some(format!("{dns_addr}: {error}"))),
         };
 
     let (addresses, resolve_error) =
@@ -46,15 +46,16 @@ pub async fn check(
             Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
             Err(error) => (Vec::new(), Some(error.to_string())),
         };
-    let catalog = probe::probe_secondary(cx, &catalog_zone, &secondary, catalog_serial).await?;
-    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone, &secondary).await?;
-    let transfers = super::summarize_transfers(cx, &secondary).await?;
+    let catalog =
+        probe::probe_secondary(cx, &catalog_zone_name, &secondary, catalog_serial).await?;
+    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone_name, &secondary).await?;
+    let transfers = secondary::summarize_transfers(cx, &secondary).await?;
 
     Ok(CheckSecondaryResponse {
-        secondary: super::load_response(cx, secondary).await?,
+        secondary: secondary::lookup_response(cx, &secondary).await?,
         addresses,
         resolve_error,
-        catalog_zone_name: catalog_zone.to_string(),
+        catalog_zone_name: catalog_zone_name.to_string(),
         catalog_serial,
         listener_error,
         catalog,
@@ -68,18 +69,18 @@ pub async fn check(
 pub async fn check_enabled(
     cx: &Context,
     caller: &Caller,
-    catalog_zone: &ZoneName,
+    catalog_zone_name: &ZoneName,
     catalog_serial: Option<Serial>,
 ) -> Result<CheckSecondariesResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let secondaries = probe::probe_secondaries(cx, catalog_zone, catalog_serial).await?;
-    let notifies = notify::send_notify_to_secondaries(cx, catalog_zone).await?;
+    let secondaries = probe::probe_secondaries(cx, catalog_zone_name, catalog_serial).await?;
+    let notifies = notify::send_notify_to_secondaries(cx, catalog_zone_name).await?;
     let mut transfers = Vec::new();
 
-    for secondary in super::list_enabled(cx).await? {
+    for secondary in secondary::list_enabled(cx).await? {
         transfers.push(SecondaryTransferSummaryResponse {
-            summary: super::summarize_transfers(cx, &secondary).await?,
+            summary: secondary::summarize_transfers(cx, &secondary).await?,
             secondary_name: secondary.name,
             address: secondary.address.to_string(),
         });

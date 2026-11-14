@@ -1,12 +1,11 @@
 use bindizr_core::dns::Serial;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_policy::PolicyId;
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::zone::{Zone, ZoneId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::error::DatabaseError;
-use crate::model::zone::Zone;
 use crate::zone::ZoneFilter;
 use crate::{LockLevel, sql};
 
@@ -17,7 +16,7 @@ pub(crate) async fn create_tx(
 ) -> Result<Zone, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -40,52 +39,57 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    zone.id = ZoneId::from(result.get::<i32, _>(0));
+    zone.id = ZoneId::from(row.get::<i32, _>(0));
     zone.created_at = now;
 
     Ok(zone)
 }
 
-/// Find a zone by ID in the current transaction.
+/// Get a zone by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
-    let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = $1{}",lock_level.clause())))
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = $1{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
 
     Ok(zone)
 }
 
-/// Find a zone by name.
+/// Get a zone by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
-    name: &ZoneName,
+    zone_name: &ZoneName,
 ) -> Result<Option<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1")
-        .bind(name)
-        .fetch_optional(&mut *connection)
-        .await?;
+    let zone = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1",
+    )
+    .bind(zone_name)
+    .fetch_optional(&mut *connection)
+    .await?;
 
     Ok(zone)
 }
 
-/// Find a zone by name in the current transaction.
+/// Get a zone by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Postgres>,
-    name: &ZoneName,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
-    let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
-        format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1{}",
+    let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1{}",
         lock_level.clause(),
     )))
-    .bind(name)
+    .bind(zone_name)
     .fetch_optional(&mut **tx)
     .await?;
 
@@ -96,9 +100,11 @@ pub(crate) async fn get_by_name_tx(
 pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
-        .fetch_all(&mut *connection)
-        .await?;
+    let zones = sqlx::query_as::<_, Zone>(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
 
     Ok(zones)
 }
@@ -108,9 +114,12 @@ pub(crate) async fn list_all_tx(
     tx: &mut Transaction<'_, Postgres>,
     lock_level: LockLevel,
 ) -> Result<Vec<Zone>, DatabaseError> {
-    let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name{}",lock_level.clause())))
-        .fetch_all(&mut **tx)
-        .await?;
+    let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
+        "SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name{}",
+        lock_level.clause(),
+    )))
+    .fetch_all(&mut **tx)
+    .await?;
 
     Ok(zones)
 }
@@ -118,12 +127,11 @@ pub(crate) async fn list_all_tx(
 /// List zones matching the filter.
 pub(crate) async fn list_by_filter(
     pool: &Pool<Postgres>,
-    filter: ZoneFilter,
+    filter: &ZoneFilter,
 ) -> Result<Vec<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
     let search = sql::like_pattern(filter.search.as_deref());
-
     let order_by = filter.sort.order_by_sql(filter.order);
 
     let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
@@ -191,12 +199,11 @@ pub(crate) async fn list_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
     .bind(
         filter
             .offset
-            .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-            .unwrap_or(0),
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
     )
     .bind(filter.scope_role_id)
     .fetch_all(&mut *connection)
@@ -205,19 +212,22 @@ pub(crate) async fn list_by_filter(
     Ok(zones)
 }
 
-/// Probe the zones table to check database connectivity.
-pub(crate) async fn ping(pool: &Pool<Postgres>) -> Result<(), DatabaseError> {
+/// Probe the zones table with a limit-1 query; health checks must stay cheap on
+/// large tables.
+pub(crate) async fn probe_table(pool: &Pool<Postgres>) -> Result<(), DatabaseError> {
     let mut connection = pool.acquire().await?;
+
     sqlx::query("SELECT 1 FROM zones LIMIT 1")
         .fetch_optional(&mut *connection)
         .await?;
+
     Ok(())
 }
 
 /// Count zones matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
-    filter: ZoneFilter,
+    filter: &ZoneFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -293,7 +303,8 @@ pub(crate) async fn count_by_filter(
     Ok(count as u64)
 }
 
-/// Update a zone in the current transaction.
+/// Update a zone's full row, except the DNSSEC-owned `dnssec_policy_id` and
+/// `parent_ns_addrs`: ordinary zone updates cannot clobber them.
 pub(crate) async fn update_tx(
     tx: &mut Transaction<'_, Postgres>,
     zone: Zone,
@@ -325,37 +336,39 @@ pub(crate) async fn update_tx(
     Ok(zone)
 }
 
-/// Set or clear a zone's DNSSEC policy assignment in the current transaction.
+/// Set only `dnssec_policy_id`, leaving the zone's other columns untouched;
+/// `None` marks the zone unsigned.
 pub(crate) async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: ZoneId,
+    id: ZoneId,
     dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET dnssec_policy_id = $1 WHERE id = $2")
         .bind(dnssec_policy_id)
-        .bind(zone_id)
+        .bind(id)
         .execute(&mut **tx)
         .await?;
 
     Ok(())
 }
 
-/// Set or clear a zone's configured parent name servers in the current transaction.
+/// Set only `parent_ns_addrs`, leaving the zone's other columns untouched;
+/// `None` clears the configured parent servers.
 pub(crate) async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: ZoneId,
+    id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET parent_ns_addrs = $1 WHERE id = $2")
         .bind(parent_ns_addrs)
-        .bind(zone_id)
+        .bind(id)
         .execute(&mut **tx)
         .await?;
 
     Ok(())
 }
 
-/// Count zones using a DNSSEC policy.
+/// Count the zones signed under the policy: the in-use check before a delete.
 pub(crate) async fn count_by_dnssec_policy_id(
     pool: &Pool<Postgres>,
     dnssec_policy_id: PolicyId,
@@ -371,17 +384,18 @@ pub(crate) async fn count_by_dnssec_policy_id(
     Ok(count as u64)
 }
 
-/// Update only a zone's serial in the current transaction.
+/// Bump only the serial, leaving the zone's other columns untouched.
 pub(crate) async fn update_serial_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: ZoneId,
+    id: ZoneId,
     serial: Serial,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET serial = $1 WHERE id = $2")
         .bind(serial)
-        .bind(zone_id)
+        .bind(id)
         .execute(&mut **tx)
         .await?;
+
     Ok(())
 }
 
@@ -394,5 +408,6 @@ pub(crate) async fn delete_tx(
         .bind(id)
         .execute(&mut **tx)
         .await?;
+
     Ok(())
 }

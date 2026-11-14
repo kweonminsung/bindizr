@@ -7,16 +7,18 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use reqwest::{Client, StatusCode};
+use reqwest::{Certificate, Client, StatusCode};
 use rustls::pki_types::CertificateDer;
+use tokio::time;
 
-use super::{TestApp, TestAppOptions, TestRuntime};
+use crate::common;
+use crate::common::{TestApp, TestAppOptions, TestRuntime};
 
 impl TestApp {
     /// Start with non-default config; always the local runtime, because the
     /// compose stack's config is fixed.
     pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
-        super::install_crypto_provider();
+        common::install_crypto_provider();
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         let config_path = temp_dir.path().join("bindizr.conf.toml");
@@ -34,9 +36,9 @@ impl TestApp {
         let mut failures = Vec::new();
 
         for _ in 0..3 {
-            let api_port = super::reserve_tcp_port();
+            let api_port = common::reserve_tcp_port();
             let dns_port = reserve_dns_port();
-            let dns_tls_port = options.dns_tls.then(super::reserve_tcp_port);
+            let dns_tls_port = options.dns_tls.then(common::reserve_tcp_port);
             write_config(
                 &config_path,
                 api_port,
@@ -68,7 +70,7 @@ impl TestApp {
                         dns_tls_port,
                         tls_cert: tls_cert.clone(),
                         dns_secondary_ports: Vec::new(),
-                        namespace: super::test_namespace(),
+                        namespace: common::test_namespace(),
                         auth_token: None,
                     };
                 }
@@ -76,24 +78,16 @@ impl TestApp {
             }
         }
 
-        panic!(
-            "bindizr did not start:
-{}",
-            failures.join(
-                "
----
-"
-            )
-        );
+        panic!("bindizr did not start:\n{}", failures.join("\n---\n"));
     }
 }
 
 /// Find a local port available for both TCP and UDP DNS.
 fn reserve_dns_port() -> u16 {
     for _ in 0..10 {
-        let tcp =
+        let listener =
             TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind ephemeral DNS TCP port");
-        let port = tcp
+        let port = listener
             .local_addr()
             .expect("failed to read ephemeral DNS TCP port")
             .port();
@@ -106,23 +100,20 @@ fn reserve_dns_port() -> u16 {
     panic!("failed to reserve a DNS port available for both TCP and UDP");
 }
 
-/// A self-signed certificate for `127.0.0.1`, written beside the config as
-/// `tls.crt`/`tls.key`; returns the certificate a client must trust to reach it.
+/// Write a self-signed certificate for `127.0.0.1` beside the config as
+/// `tls.crt`/`tls.key` and return the certificate a client must trust to reach it.
 fn write_test_certificate(dir: &Path) -> CertificateDer<'static> {
     let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
         .expect("generate a test certificate");
-    std::fs::write(dir.join("tls.crt"), certified.cert.pem()).expect("write tls.crt");
-    std::fs::write(dir.join("tls.key"), certified.signing_key.serialize_pem())
-        .expect("write tls.key");
+    fs::write(dir.join("tls.crt"), certified.cert.pem()).expect("write tls.crt");
+    fs::write(dir.join("tls.key"), certified.signing_key.serialize_pem()).expect("write tls.key");
     certified.cert.der().clone()
 }
 
 /// Build an HTTP client that trusts the test TLS certificate.
 fn tls_client(cert: &CertificateDer<'static>) -> Client {
     Client::builder()
-        .add_root_certificate(
-            reqwest::Certificate::from_der(cert).expect("parse the test certificate"),
-        )
+        .add_root_certificate(Certificate::from_der(cert).expect("parse the test certificate"))
         .build()
         .expect("build the TLS client")
 }
@@ -188,14 +179,12 @@ level = "error"
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,
-        catalog_zone_name = serde_json::to_string(&options.catalog_zone_name).unwrap(),
-        tls = match options.tls {
-            true => {
-                format!(
-                    "\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n"
-                )
-            }
-            false => String::new(),
+        catalog_zone_name = serde_json::to_string(&options.catalog_zone_name)
+            .expect("catalog zone name serializes as a quoted string"),
+        tls = if options.tls {
+            format!("\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n")
+        } else {
+            String::new()
         },
         dns_tls = match dns_tls_port {
             Some(port) => format!(
@@ -203,10 +192,11 @@ level = "error"
             ),
             None => String::new(),
         },
-        dns_transfer = match options.dns_transfer_require_tls {
-            true => "\n[dns.transfer]\nrequire_tls = true\n",
-            false => "",
-        },
+        dns_transfer = if options.dns_transfer_require_tls {
+            "\n[dns.transfer]\nrequire_tls = true\n"
+        } else {
+            ""
+        }
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");
@@ -241,7 +231,7 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
             break "bindizr API did not become ready".to_string();
         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        time::sleep(Duration::from_millis(100)).await;
     };
 
     let mut stderr = String::new();
@@ -271,6 +261,6 @@ impl TestApp {
         let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
             panic!("the compose stack's certificate is fixed");
         };
-        std::fs::write(temp_dir.path().join("tls.key"), "not a key").expect("write tls.key");
+        fs::write(temp_dir.path().join("tls.key"), "not a key").expect("write tls.key");
     }
 }

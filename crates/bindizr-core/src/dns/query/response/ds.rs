@@ -4,8 +4,9 @@ use domain::base::iana::{Class, OptRcode, Rtype};
 use domain::base::{Message, Name, ToName};
 use domain::rdata::{Ds, Soa};
 
-use super::ParseResponseError;
 use crate::dns::dnssec::KeyTag;
+use crate::dns::query::response;
+use crate::dns::query::response::ParseResponseError;
 
 /// The DS record set a parent-zone server holds for a child.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,7 +18,7 @@ pub struct DsRecordSet {
 }
 
 impl DsRecordSet {
-    /// Key tags of the keys the records name, ascending and deduplicated.
+    /// List the key tags of the keys the records name, ascending and deduplicated.
     pub fn key_tags(&self) -> Vec<KeyTag> {
         let mut key_tags: Vec<KeyTag> = self.records.iter().map(|record| record.key_tag).collect();
         key_tags.dedup();
@@ -43,12 +44,12 @@ pub fn extract_ds_record_set(
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
     use domain::base::rdata::ComposeRecordData;
 
-    let message = super::parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
+    let message = response::parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
 
-    match super::response_rcode(&message)? {
+    match response::response_rcode(&message)? {
         OptRcode::NOERROR => {}
-        OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
-        rcode => return Err(ParseResponseError::Rcode(rcode)),
+        OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|()| None),
+        rcode => return Err(ParseResponseError::Rcode { rcode }),
     }
 
     let answer = message
@@ -87,7 +88,7 @@ pub fn extract_ds_record_set(
     }
 
     let Some(ttl) = ttl else {
-        return validate_parent_soa(&message, qname).map(|_| None);
+        return validate_parent_soa(&message, qname).map(|()| None);
     };
     records.sort();
     records.dedup();

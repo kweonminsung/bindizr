@@ -113,8 +113,8 @@ and `docker`), not `utils` or `helpers`.
 Use modules as namespaces, not unit structs with associated functions
 (`zone::create`, not `ZoneService::create`; `api::zone::routes`, not `ZoneApi`).
 A struct represents a value or invariant (`C-METHOD`). Entity modules split by
-verb re-export functions flat from `mod.rs`, so both callers and siblings use
-`zone::create` / `super::lookup_by_name`, never `Self::` for module operations.
+verb re-export functions flat from `mod.rs`, so callers and siblings alike call
+`zone::create` / `zone::lookup_by_name`, never `Self::` for module operations.
 Service/db functions omit the entity their module names; front-end handlers keep
 the full operation (`get_zone`, `list_records`). HTTP names are API-wide unique
 OpenAPI operation IDs, and socket handlers use the same names.
@@ -981,6 +981,13 @@ Derive traits according to the value's contract (`C-COMMON-TRAITS`, `C-DEBUG`):
 | `Default` | An empty/default value is meaningful, including filters and infallible no-argument constructors. |
 | `Serialize`, `Deserialize` | Every process-boundary payload, including adapter-local HTTP shapes and responses read by the CLI. Query extractors and final CLI presentation structs need only their transport's direction. DB rows carry neither. |
 
+A derive list names std traits first, in the order `Debug`, `Clone`, `Copy`,
+`PartialEq`, `Eq`, `Hash`, `PartialOrd`, `Ord`, `Default`; then `Serialize`,
+`Deserialize`; then the rest (`ToSchema`, `IntoParams`, `FromRow`, `Error`,
+`Tabled`, clap's). A derive macro is imported like any other name (`Serialize`,
+not `serde::Serialize`); a `macro_rules!` body spells the path out, since it
+expands where nothing is imported.
+
 Enums with stored, wire, or textual forms follow [Presentation](#presentation).
 Control enums without those forms need neither text conversion nor `Display`.
 
@@ -1365,6 +1372,28 @@ value that waits for the result and keeps the target socket alive, and `task` or
 `worker` for spawned work. Carry concept renames through error variants, tests,
 comments, and documentation.
 
+A value's type decides its name wherever it is bound:
+
+| Value | Name |
+| --- | --- |
+| `ZoneName` or a zone-name string | `zone_name` (`other_zone_name`, `catalog_zone_name`); `zone` is a `Zone` row, or the zone JSON in e2e tests |
+| `ZoneId`, `RecordId`, … | `zone_id`, `record_id` |
+| `RecordType` | `record_type`; a wire `Rtype` is `rtype`, a question's `qtype` |
+| `TsigKey` | `tsig_key` / `tsig_keys` / `tsig_key_id`; `key` is a DNSSEC key or a signing key |
+| `SocketAddr` | `addr` / `addrs` (`server_addr` as a client parameter); `address` is an `AddressTarget` or `host[:port]` text; a datagram's sender is `peer` |
+| Request bytes / parsed request / reply bytes on the DNS plane | `query_data` / `query` / `response`; a receive buffer is `buffer` |
+| A service answer in a front-end handler | `response`; `status` is the HTTP `StatusCode` |
+| A fetched db value | its entity (`token`, `logs`), not `row` / `rows` |
+| A conversion's input | `value` from a primitive or text, the domain name otherwise (`fn from(zone: &Zone)`) |
+| A `#[source]` field | `source` |
+| `OwnerName` | `owner` / `owners` (bindizr-db keeps `name`, as its grammar spells) |
+| `IpAddr` | `ip` |
+| A `CatalogZone` | `catalog_zone`; its name `catalog_zone_name` |
+
+DNS handlers order their parameters state, transport handle, peer, parsed
+`query`, raw `query_data`, then the rest; `query` and `query_data` stay
+adjacent.
+
 ### Control flow and calls
 
 Within functions, separate changes of responsibility with one blank line:
@@ -1554,8 +1583,21 @@ same module, without mixing paths inside its braces. Prefer importing types and
 traits directly, subject to the collision rules below.
 
 Call a function from another module through that module (`history::prune_by_zone_id`),
-importing the module rather than its individual functions. Use `super::lookup_by_name`
-for a parent's facade, and retain a longer path when short module names collide.
+importing the module rather than its individual functions, and retain a longer
+path when short module names collide.
+
+Every path starts at the crate (`crate::…`) or at a dependency; `super::` is not
+used, not even for a parent's facade or its items. A module inside `zone` imports
+`use crate::zone;` and calls `zone::lookup_by_name`, exactly as a caller outside
+does, so one function has one spelling wherever it is called. A local of the
+module's name (`let zone = …`) does not change that: a value and a module live
+in different namespaces, so `zone::create_tx(&mut tx, &zone)` stays short. A
+longer path is kept only where two modules share the short name in one file
+(`bindizr_db::zone` beside the service's `zone`). The one exception
+is a test module's `use super::*;`, which imports the module under test.
+A `bindizr_db` entity function is always spelled in full
+(`bindizr_db::zone::get_tx`), since its modules share the service's names, and
+so is a helper another module's `tests` exports.
 Functions defined or re-exported by the current module are its local API.
 
 Use explicit imports and re-exports in production; do not introduce project
@@ -1563,6 +1605,13 @@ preludes. Tests may use `super::*` for the module under test, including its
 fixtures. A trait needed only for method resolution inside one function is
 imported inside that function. Keep it at module scope when several functions
 need it, or when an impl, bound, derive, or signature refers to it there.
+
+A type or trait is named through its import wherever it is used, not by a path
+spelled in place (`Duration`, `FromStr`, `UdpSocket`, never
+`std::time::Duration` in a signature). `std::fmt` and `std::io` are imported as
+modules, since their `Result` and `Error` collide with ours: `fmt::Display`,
+`fmt::Formatter`, `fmt::Result`, `io::Error`. `std::error::Error` stays spelled
+out beside the `Error` derive.
 
 A `use` never renames: `use domain::base::Record as WireRecord` hides which
 name a body reads. A foreign name that collides with one of ours is reached
@@ -1572,6 +1621,75 @@ beside its kin (`WireName`, `WireRecord` in `dns::dnssec`); a module is
 imported as itself (`use bindizr_service::{token, zone}`), never `self as
 service`. The one rename is `as _`, for a trait imported only for its
 methods (`use std::fmt::Write as _`).
+
+### Expression style
+
+Where two spellings mean the same thing, the workspace writes one:
+
+- A format string captures a bare identifier inline (`"{error}"`,
+  `"{zone_name:?}"`); a positional `{}` takes an expression (`"{}", zone.name`).
+- Inside an `impl`, the type is `Self`: its variants, constructors, and
+  associated items (`Self::Axfr`, `Self { .. }`), not its own name.
+- A method of a `Copy` type takes `self` by value (`fn as_str(self)`).
+- A string literal becomes a `String` through `.to_string()`. `.into()` is for
+  another target type; `String::from` and `.to_owned()` are not used for it.
+- An empty collection is `Vec::new()` (`HashMap::new()`, `String::new()`), not
+  `vec![]`.
+- Struct update is `..Default::default()`; a default on its own names its type
+  (`ZoneFilter::default()`).
+- A mapped `Option` or `Result` with a fallback is `map_or` / `map_or_else`, not
+  `map(..).unwrap_or(..)`.
+- A statement that ends a block returning `()` ends with a semicolon.
+- A number of six or more digits groups them by thousands (`500_000`); a
+  shorter one does not (`86400`), and a date-form serial stays whole
+  (`2026072501`).
+- `const` and `use` items inside a function open its body.
+- A `collect()` that ends a `let` takes its type from the binding
+  (`let names: Vec<_> = …collect();`); `parse` and sqlx `query_as` /
+  `query_scalar` take the turbofish.
+- A `Display` value is passed as itself (`&zone.name`, `{zone_name}`), not
+  through `.as_str()`.
+- A `PartialEq` value is compared with `==` and asserted with `assert_eq!`;
+  `matches!` is for types without `PartialEq` and patterns with bindings.
+- An `Option` match lists `Some` first; a single-expression or single-`return`
+  arm is unbraced.
+- A lossless conversion uses `From` (`char::from(byte)`); a checked narrowing
+  uses `try_from`, not a bound check followed by `as`.
+- A zeroed buffer is `[0; N]`; a suffixed literal is `0u64`.
+- `#[cfg(test)] mod tests;` is the last item of its file, and a test module
+  imports the module under test with `use super::*;`.
+- A test's purpose sentence starts "Verify that …". Within one test file a
+  call fails one way: the file's `unwrap()` or its `expect("…")`.
+- Every e2e test carries `#[serial_test::serial(bindizr_e2e)]`.
+- A function's first doc line starts with an imperative verb ("List …",
+  "Return …"); a predicate's with "Return whether …", an `as_str` with
+  "Return the canonical wire spelling.", a `track_*` with "Count …", an
+  unchecked `lookup_*` with "Look up …". Payload and route docs are OpenAPI
+  text and keep their own wording.
+- A format string captures every bare identifier inline, also beside
+  positional expressions.
+- A transaction's `async` block types its error on the binding
+  (`let apply_result: Result<_, ServiceError> = async {`), with one blank line
+  after `begin_tx` and one before `finish_tx`.
+- A typed value implementing `sqlx::Encode` is bound as itself, not through
+  `.as_str()` or `.clone()`.
+- Error enums keep their variants packed; a payload other than a cause is a
+  named field.
+- A multi-line macro call (`format!`, log macros, `writeln!`, `assert!`,
+  `assert_eq!`, `matches!`) ends without a trailing comma; bindizr-db's SQL
+  `format!` builders keep theirs.
+- An `enumerate()` index is `index`.
+- A hand-written impl of a `sqlx`, `serde` or `utoipa` trait names the trait
+  by its crate path (`impl sqlx::Type<Sqlite> for`), since `Type` would collide
+  with `utoipa::openapi::schema::Type`.
+- Channel halves are named for their role or qualified (`jobs`, `stop_tx`),
+  never a bare `tx` / `rx`: `tx` is a `Transaction`.
+- A function-local `use` imports a trait that one function needs only for
+  method calls, and it opens the function's body; a type, module, or a trait
+  named as a path (`CanonicalOrd::canonical_cmp`) is imported at module scope.
+
+The `uninlined_format_args`, `use_self`, `map_unwrap_or`, and
+`semicolon_if_nothing_returned` Clippy lints hold the mechanical part.
 
 ### Comments
 

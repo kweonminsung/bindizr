@@ -38,8 +38,8 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/dnssec-policies",
         tag = "DNSSEC",
         summary = "List all DNSSEC policies",
-        params(PageRequest),
         description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC3, 14-day signatures re-signed with 5 days left) is seeded at startup.",
+        params(PageRequest),
         responses(
             (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<DnssecPolicyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -80,9 +80,9 @@ pub(crate) async fn create_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    let policy = dnssec_policy::create(&cx, &caller, body).await?;
+    let policy = dnssec_policy::create(&cx, &caller, &body).await?;
     let response = SingleDnssecPolicyResponse {
-        dnssec_policy: DnssecPolicyResponse::from(&policy),
+        dnssec_policy: policy,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -111,7 +111,7 @@ pub(crate) async fn get_dnssec_policy(
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::get(&cx, &caller, &params.name).await?;
     let response = SingleDnssecPolicyResponse {
-        dnssec_policy: DnssecPolicyResponse::from(&policy),
+        dnssec_policy: policy,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -143,9 +143,9 @@ pub(crate) async fn update_dnssec_policy(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    let policy = dnssec_policy::update(&cx, &caller, &params.name, body).await?;
+    let policy = dnssec_policy::update(&cx, &caller, &params.name, &body).await?;
     let response = SingleDnssecPolicyResponse {
-        dnssec_policy: DnssecPolicyResponse::from(&policy),
+        dnssec_policy: policy,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

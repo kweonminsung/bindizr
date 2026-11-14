@@ -4,8 +4,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::dns::name::OwnerName;
 use crate::model::grant_pattern;
@@ -51,17 +55,7 @@ pub struct ParseActionError {
 ///   and equivalent to admin since its holder can grant itself anything
 /// - `audit:read` — read the audit log of management changes; all zones only
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    utoipa::ToSchema,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
 )]
 pub enum Action {
     #[serde(rename = "zone:read")]
@@ -98,68 +92,69 @@ pub enum Action {
 
 impl Action {
     /// Every action, in storage order.
-    pub const ALL: [Action; 15] = [
-        Action::ZoneRead,
-        Action::ZoneCreate,
-        Action::ZoneUpdate,
-        Action::ZoneDelete,
-        Action::ZoneTransfer,
-        Action::RecordRead,
-        Action::RecordCreate,
-        Action::RecordUpdate,
-        Action::RecordDelete,
-        Action::DnssecRead,
-        Action::DnssecManage,
-        Action::SecondaryRead,
-        Action::SecondaryManage,
-        Action::AccessManage,
-        Action::AuditRead,
+    pub const ALL: [Self; 15] = [
+        Self::ZoneRead,
+        Self::ZoneCreate,
+        Self::ZoneUpdate,
+        Self::ZoneDelete,
+        Self::ZoneTransfer,
+        Self::RecordRead,
+        Self::RecordCreate,
+        Self::RecordUpdate,
+        Self::RecordDelete,
+        Self::DnssecRead,
+        Self::DnssecManage,
+        Self::SecondaryRead,
+        Self::SecondaryManage,
+        Self::AccessManage,
+        Self::AuditRead,
     ];
 
-    /// Storage and API form.
+    /// Return the canonical wire spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            Action::ZoneRead => "zone:read",
-            Action::ZoneCreate => "zone:create",
-            Action::ZoneUpdate => "zone:update",
-            Action::ZoneDelete => "zone:delete",
-            Action::ZoneTransfer => "zone:transfer",
-            Action::RecordRead => "record:read",
-            Action::RecordCreate => "record:create",
-            Action::RecordUpdate => "record:update",
-            Action::RecordDelete => "record:delete",
-            Action::DnssecRead => "dnssec:read",
-            Action::DnssecManage => "dnssec:manage",
-            Action::SecondaryRead => "secondary:read",
-            Action::SecondaryManage => "secondary:manage",
-            Action::AccessManage => "access:manage",
-            Action::AuditRead => "audit:read",
+            Self::ZoneRead => "zone:read",
+            Self::ZoneCreate => "zone:create",
+            Self::ZoneUpdate => "zone:update",
+            Self::ZoneDelete => "zone:delete",
+            Self::ZoneTransfer => "zone:transfer",
+            Self::RecordRead => "record:read",
+            Self::RecordCreate => "record:create",
+            Self::RecordUpdate => "record:update",
+            Self::RecordDelete => "record:delete",
+            Self::DnssecRead => "dnssec:read",
+            Self::DnssecManage => "dnssec:manage",
+            Self::SecondaryRead => "secondary:read",
+            Self::SecondaryManage => "secondary:manage",
+            Self::AccessManage => "access:manage",
+            Self::AuditRead => "audit:read",
         }
     }
 
-    /// Whether the action targets nothing a zone owns, so only an all-zones grant carries it.
+    /// Return whether the action targets nothing a zone owns, so only an all-zones
+    /// grant carries it.
     pub fn needs_all_zones(self) -> bool {
         matches!(
             self,
-            Action::ZoneCreate
-                | Action::SecondaryRead
-                | Action::SecondaryManage
-                | Action::AccessManage
-                | Action::AuditRead
+            Self::ZoneCreate
+                | Self::SecondaryRead
+                | Self::SecondaryManage
+                | Self::AccessManage
+                | Self::AuditRead
         )
     }
 
-    /// Whether a grant's name and type constraints narrow this action.
+    /// Return whether a grant's name and type constraints narrow this action.
     pub fn is_record_action(self) -> bool {
         matches!(
             self,
-            Action::RecordRead | Action::RecordCreate | Action::RecordUpdate | Action::RecordDelete
+            Self::RecordRead | Self::RecordCreate | Self::RecordUpdate | Self::RecordDelete
         )
     }
 
-    /// The names an action parses from, for messages that list them.
+    /// List the names an action parses from, for messages that list them.
     pub fn supported_names() -> Vec<&'static str> {
-        Self::ALL.iter().map(|action| action.as_str()).collect()
+        Self::ALL.into_iter().map(Self::as_str).collect()
     }
 }
 
@@ -186,22 +181,22 @@ impl FromStr for Action {
 
 /// The actions one grant permits, stored as a comma-separated list in
 /// [`Action::ALL`] order so one set has one spelling.
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ActionSet(BTreeSet<Action>);
 
 impl ActionSet {
-    /// Whether the set permits `action`.
+    /// Return whether the set permits `action`.
     pub fn contains(&self, action: Action) -> bool {
         self.0.contains(&action)
     }
 
-    /// Whether the set permits nothing.
+    /// Return whether the set permits nothing.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// The actions in storage order.
+    /// Iterate the actions in storage order.
     pub fn iter(&self) -> impl Iterator<Item = Action> + '_ {
         self.0.iter().copied()
     }
@@ -250,7 +245,7 @@ where
         <String as sqlx::Type<DB>>::type_info()
     }
 
-    /// Check whether the SQL type can store this value.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -264,7 +259,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_string().encode_by_ref(buffer)
     }
 }
@@ -278,19 +273,19 @@ pub enum RoleZoneScope {
 }
 
 impl RoleZoneScope {
-    /// The row form: `None` for all zones.
+    /// Return the row form: `None` for all zones.
     pub fn zone_id(self) -> Option<ZoneId> {
         match self {
-            RoleZoneScope::All => None,
-            RoleZoneScope::Zone(zone_id) => Some(zone_id),
+            Self::All => None,
+            Self::Zone(zone_id) => Some(zone_id),
         }
     }
 
-    /// Whether the scope reaches `zone_id`.
+    /// Return whether the scope reaches `zone_id`.
     pub fn covers(self, zone_id: ZoneId) -> bool {
         match self {
-            RoleZoneScope::All => true,
-            RoleZoneScope::Zone(scoped) => scoped == zone_id,
+            Self::All => true,
+            Self::Zone(scoped) => scoped == zone_id,
         }
     }
 }
@@ -298,13 +293,13 @@ impl RoleZoneScope {
 impl From<Option<ZoneId>> for RoleZoneScope {
     /// Read the row form, where NULL means all zones.
     fn from(zone_id: Option<ZoneId>) -> Self {
-        zone_id.map_or(RoleZoneScope::All, RoleZoneScope::Zone)
+        zone_id.map_or(Self::All, Self::Zone)
     }
 }
 
 /// A role's actions and zone scope; name/type patterns narrow only `record:*`.
-/// Pattern syntax is defined by [`super::grant_pattern`].
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+/// Pattern syntax is defined by [`crate::model::grant_pattern`].
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct RoleGrant {
     pub id: RoleGrantId,
     pub role_id: RoleId,
@@ -319,25 +314,25 @@ pub struct RoleGrant {
 
 // Private: `RoleGrants` answers every question over the union of grants.
 impl RoleGrant {
-    /// Whether this grant reaches `zone_id` with `action`.
+    /// Return whether this grant reaches `zone_id` with `action`.
     fn permits(&self, action: Action, zone_id: ZoneId) -> bool {
         self.actions.contains(action) && self.zone_scope.covers(zone_id)
     }
 
-    /// Whether this grant's record constraints cover `record_type` at the
+    /// Return whether this grant's record constraints cover `record_type` at the
     /// relative owner name.
-    fn matches(&self, name: &OwnerName, record_type: Option<&RecordType>) -> bool {
-        grant_pattern::matches_name(&self.record_name_pattern, name)
+    fn matches(&self, owner: &OwnerName, record_type: Option<RecordType>) -> bool {
+        grant_pattern::matches_name(&self.record_name_pattern, owner)
             && grant_pattern::matches_types(&self.record_types, record_type)
     }
 
-    /// Whether this grant covers every name `pattern` matches, for `record_type`.
-    fn covers_pattern(&self, pattern: &str, record_type: &RecordType) -> bool {
+    /// Return whether this grant covers every name `pattern` matches, for `record_type`.
+    fn covers_pattern(&self, pattern: &str, record_type: RecordType) -> bool {
         grant_pattern::has_pattern_coverage(&self.record_name_pattern, pattern)
             && grant_pattern::matches_types(&self.record_types, Some(record_type))
     }
 
-    /// Whether this grant constrains no name or type.
+    /// Return whether this grant constrains no name or type.
     fn is_unrestricted(&self) -> bool {
         self.record_name_pattern == MATCH_ANY && self.record_types == MATCH_ANY
     }
@@ -347,32 +342,25 @@ impl RoleGrant {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RoleGrants(Arc<[RoleGrant]>);
 
-impl From<Vec<RoleGrant>> for RoleGrants {
-    /// Wrap a role's loaded grants.
-    fn from(grants: Vec<RoleGrant>) -> Self {
-        RoleGrants(grants.into())
-    }
-}
-
 impl RoleGrants {
-    /// Whether the role holds no grant.
+    /// Return whether the role holds no grant.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// The grants themselves.
+    /// Iterate the grants themselves.
     pub fn iter(&self) -> impl Iterator<Item = &RoleGrant> {
         self.0.iter()
     }
 
-    /// Whether an all-zones grant carries `action`, as what no zone owns needs.
+    /// Return whether an all-zones grant carries `action`, as what no zone owns needs.
     pub fn permits_all_zones(&self, action: Action) -> bool {
         self.0
             .iter()
             .any(|grant| grant.zone_scope == RoleZoneScope::All && grant.actions.contains(action))
     }
 
-    /// Whether an all-zones grant carries `action` with no name or type limit.
+    /// Return whether an all-zones grant carries `action` with no name or type limit.
     pub fn covers_all_whole_zones(&self, action: Action) -> bool {
         self.0.iter().any(|grant| {
             grant.zone_scope == RoleZoneScope::All
@@ -381,50 +369,50 @@ impl RoleGrants {
         })
     }
 
-    /// Whether some grant reaches `zone_id` with `action`.
+    /// Return whether some grant reaches `zone_id` with `action`.
     pub fn permits(&self, action: Action, zone_id: ZoneId) -> bool {
         self.0.iter().any(|grant| grant.permits(action, zone_id))
     }
 
-    /// Whether some grant reaches `zone_id`, whatever its actions.
+    /// Return whether some grant reaches `zone_id`, whatever its actions.
     pub fn reaches_zone(&self, zone_id: ZoneId) -> bool {
         self.0.iter().any(|grant| grant.zone_scope.covers(zone_id))
     }
 
-    /// Whether some grant permits `action` on a record of this name and type.
+    /// Return whether some grant permits `action` on a record of this name and type.
     pub fn covers_record(
         &self,
         action: Action,
         zone_id: ZoneId,
-        name: &OwnerName,
-        record_type: Option<&RecordType>,
+        owner: &OwnerName,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.0
             .iter()
-            .any(|grant| grant.permits(action, zone_id) && grant.matches(name, record_type))
+            .any(|grant| grant.permits(action, zone_id) && grant.matches(owner, record_type))
     }
 
-    /// Whether `record:read` or the write `action` covers a record of this
+    /// Return whether `record:read` or the write `action` covers a record of this
     /// name and type, so a write-only grant finds what it may change.
     pub fn reaches_record(
         &self,
         action: Action,
         zone_id: ZoneId,
-        name: &OwnerName,
-        record_type: Option<&RecordType>,
+        owner: &OwnerName,
+        record_type: Option<RecordType>,
     ) -> bool {
-        self.covers_record(Action::RecordRead, zone_id, name, record_type)
-            || self.covers_record(action, zone_id, name, record_type)
+        self.covers_record(Action::RecordRead, zone_id, owner, record_type)
+            || self.covers_record(action, zone_id, owner, record_type)
     }
 
-    /// Whether some grant permits `action` in `zone_id` with no name or type limit.
+    /// Return whether some grant permits `action` in `zone_id` with no name or type limit.
     pub fn covers_whole_zone(&self, action: Action, zone_id: ZoneId) -> bool {
         self.0
             .iter()
             .any(|grant| grant.permits(action, zone_id) && grant.is_unrestricted())
     }
 
-    /// The grant patterns in `zone_id` where the role's grants together hold
+    /// List the grant patterns in `zone_id` where the role's grants together hold
     /// every one of `actions` for one of `record_types`.
     pub fn patterns_holding(
         &self,
@@ -442,12 +430,19 @@ impl RoleGrants {
                     actions.iter().all(|&action| {
                         self.0.iter().any(|grant| {
                             grant.permits(action, zone_id)
-                                && grant.covers_pattern(pattern, record_type)
+                                && grant.covers_pattern(pattern, *record_type)
                         })
                     })
                 })
             })
             .collect()
+    }
+}
+
+impl From<Vec<RoleGrant>> for RoleGrants {
+    /// Wrap a role's loaded grants.
+    fn from(grants: Vec<RoleGrant>) -> Self {
+        Self(grants.into())
     }
 }
 

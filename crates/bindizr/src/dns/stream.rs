@@ -1,13 +1,13 @@
 //! Plain/TLS DNS streams and the write half shared by concurrent queries.
 
-use std::io;
 use std::pin::Pin;
-use std::task::{self, Poll};
+use std::task::Poll;
+use std::{io, task};
 
 use bindizr_core::dns::message;
 use bindizr_core::dns::message::{DnsMessageBuilder, EncodeMessageError};
 use bindizr_core::model::transfer::TransferTransport;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf, ReadHalf, WriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, watch};
 use tokio_rustls::server::TlsStream;
@@ -25,18 +25,18 @@ pub(crate) enum DnsStream {
 }
 
 impl DnsStream {
-    /// The transport the connection arrived over, as the transfer log and
-    /// the metrics record it.
+    /// Return the transport the connection arrived over, as the transfer log
+    /// and the metrics record it.
     pub(crate) fn transport(&self) -> TransferTransport {
         match self {
-            DnsStream::Tcp(_) => TransferTransport::Tcp,
-            DnsStream::Tls(_) => TransferTransport::Tls,
+            Self::Tcp(_) => TransferTransport::Tcp,
+            Self::Tls(_) => TransferTransport::Tls,
         }
     }
 
     /// Split the connection into the half the listener reads queries from and
     /// the writer the queries in flight answer through.
-    pub(crate) fn into_split(self) -> (ReadHalf<DnsStream>, ResponseWriter) {
+    pub(crate) fn into_split(self) -> (ReadHalf<Self>, ResponseWriter) {
         let transport = self.transport();
         let (reader, writer) = tokio::io::split(self);
 
@@ -59,8 +59,8 @@ impl AsyncRead for DnsStream {
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_read(task_cx, buffer),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_read(task_cx, buffer),
+            Self::Tcp(stream) => Pin::new(stream).poll_read(task_cx, buffer),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_read(task_cx, buffer),
         }
     }
 }
@@ -73,16 +73,16 @@ impl AsyncWrite for DnsStream {
         buffer: &[u8],
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_write(task_cx, buffer),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_write(task_cx, buffer),
+            Self::Tcp(stream) => Pin::new(stream).poll_write(task_cx, buffer),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_write(task_cx, buffer),
         }
     }
 
     /// Flush whichever stream the connection arrived on.
     fn poll_flush(self: Pin<&mut Self>, task_cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_flush(task_cx),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_flush(task_cx),
+            Self::Tcp(stream) => Pin::new(stream).poll_flush(task_cx),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_flush(task_cx),
         }
     }
 
@@ -92,8 +92,8 @@ impl AsyncWrite for DnsStream {
         task_cx: &mut task::Context<'_>,
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_shutdown(task_cx),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_shutdown(task_cx),
+            Self::Tcp(stream) => Pin::new(stream).poll_shutdown(task_cx),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_shutdown(task_cx),
         }
     }
 }
@@ -108,7 +108,7 @@ pub(crate) struct ResponseWriter {
 }
 
 impl ResponseWriter {
-    /// The transport the connection arrived over.
+    /// Return the transport the connection arrived over.
     pub(crate) fn transport(&self) -> TransferTransport {
         self.transport
     }
@@ -147,8 +147,8 @@ impl ResponseWriter {
     }
 
     /// Write one DNS message as a TCP frame.
-    pub(crate) async fn write_message(&self, message: &[u8]) -> Result<(), DnsError> {
-        let frame = message::encode_tcp_message(message)?;
+    pub(crate) async fn write_message(&self, response: &[u8]) -> Result<(), DnsError> {
+        let frame = message::encode_tcp_message(response)?;
         self.write_frame(&frame).await
     }
 
@@ -199,10 +199,14 @@ impl ResponseWriter {
 
     /// Close healthy transports; suppress TLS close_notify after failure.
     pub(crate) async fn shutdown(&self) -> io::Result<()> {
+        use tokio::io::AsyncWriteExt as _;
+
         let mut writer = self.writer.lock().await;
+
         if *self.failure.borrow() {
             return Ok(());
         }
+
         writer.shutdown().await
     }
 }
@@ -217,7 +221,7 @@ mod tests {
 
     use super::*;
 
-    /// A known failure suppresses queued frames and wakes connection waiters.
+    /// Verify that a known failure suppresses queued frames and wakes connection waiters.
     #[tokio::test]
     async fn failed_connection_suppresses_queued_responses() {
         use tokio::io::AsyncReadExt as _;

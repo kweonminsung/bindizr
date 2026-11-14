@@ -1,15 +1,15 @@
-use crate::cli::common;
-use crate::common::TestApp;
-
 mod delegation;
 mod keys;
 mod policy;
 mod rollover;
 
-/// Verify the DNSSEC lifecycle through the CLI.
+use crate::cli::common;
+use crate::common::TestApp;
+
+/// Verify that the CLI drives the DNSSEC lifecycle.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_supports_enable_sign_and_disable_via_cli() {
+async fn zone_dnssec_supports_enable_sign_and_disable() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("dnssec-cli.example");
 

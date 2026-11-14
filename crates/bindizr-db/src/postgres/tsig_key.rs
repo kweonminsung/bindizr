@@ -1,64 +1,63 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::tsig_key::TsigKey;
 
 /// Insert a TSIG key.
 pub(crate) async fn create_tx(
     tx: &mut Transaction<'_, Postgres>,
-    mut key: TsigKey,
+    mut tsig_key: TsigKey,
 ) -> Result<TsigKey, DatabaseError> {
     let now = Utc::now();
 
-    let result = sqlx::query(
+    let row = sqlx::query(
         r#"
         INSERT INTO tsig_keys (name, algorithm, secret, role_id, created_at)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id
         "#,
     )
-    .bind(&key.name)
-    .bind(key.algorithm.as_str())
-    .bind(&key.secret)
-    .bind(key.role_id)
+    .bind(&tsig_key.name)
+    .bind(tsig_key.algorithm.as_str())
+    .bind(&tsig_key.secret)
+    .bind(tsig_key.role_id)
     .bind(now)
     .fetch_one(&mut **tx)
     .await?;
 
-    key.id = TsigKeyId::from(result.get::<i32, _>(0));
-    key.created_at = now;
+    tsig_key.id = TsigKeyId::from(row.get::<i32, _>(0));
+    tsig_key.created_at = now;
 
-    Ok(key)
+    Ok(tsig_key)
 }
 
-/// Find a TSIG key by ID.
+/// Get a TSIG key by ID.
 pub(crate) async fn get(
     pool: &Pool<Postgres>,
     id: TsigKeyId,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let key = sqlx::query_as::<_, TsigKey>(
+    let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&mut *connection)
     .await?;
 
-    Ok(key)
+    Ok(tsig_key)
 }
 
-/// A TSIG key by id in the current transaction.
+/// Get a TSIG key by ID in the current transaction, locked at `lock_level`.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
     id: TsigKeyId,
     lock_level: LockLevel,
 ) -> Result<Option<TsigKey>, DatabaseError> {
-    let row = sqlx::query_as::<_, TsigKey>(AssertSqlSafe(format!(
+    let tsig_key = sqlx::query_as::<_, TsigKey>(AssertSqlSafe(format!(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = $1{}",
         lock_level.clause(),
     )))
@@ -66,37 +65,37 @@ pub(crate) async fn get_tx(
     .fetch_optional(&mut **tx)
     .await?;
 
-    Ok(row)
+    Ok(tsig_key)
 }
 
-/// Find a TSIG key by name.
+/// Get a TSIG key by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Postgres>,
     name: &str,
 ) -> Result<Option<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let key = sqlx::query_as::<_, TsigKey>(
+    let tsig_key = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE name = $1",
     )
     .bind(name)
     .fetch_optional(&mut *connection)
     .await?;
 
-    Ok(key)
+    Ok(tsig_key)
 }
 
 /// List all TSIG keys.
 pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let keys = sqlx::query_as::<_, TsigKey>(
+    let tsig_keys = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys ORDER BY name",
     )
     .fetch_all(&mut *connection)
     .await?;
 
-    Ok(keys)
+    Ok(tsig_keys)
 }
 
 /// Delete a TSIG key by ID.
@@ -120,12 +119,12 @@ pub(crate) async fn list_by_role_id(
 ) -> Result<Vec<TsigKey>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
-    let rows = sqlx::query_as::<_, TsigKey>(
+    let tsig_keys = sqlx::query_as::<_, TsigKey>(
         "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE role_id = $1 ORDER BY name",
     )
     .bind(role_id)
     .fetch_all(&mut *connection)
     .await?;
 
-    Ok(rows)
+    Ok(tsig_keys)
 }

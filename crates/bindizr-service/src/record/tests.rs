@@ -1,32 +1,31 @@
 use bindizr_core::config::Config;
+use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::Metrics;
 use bindizr_core::model::role_grant::Action;
-use serde_json::json;
+use bindizr_db::Db;
 use tokio::sync::{mpsc, watch};
 
 use super::*;
 use crate::error::ErrorCode;
 use crate::types::{
-    CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest, RoleGrantResponse,
+    BulkRecordItem, CreateBulkRecordsRequest, CreateRecordRequest, CreateRoleGrantRequest,
+    CreateRoleRequest, CreateTokenRequest, CreateZoneRequest, RoleGrantResponse,
+    UpdateRecordRequest,
 };
 use crate::{Context, role, token, zone};
 
 /// Build isolated service state over SQLite without background workers.
 async fn context() -> Context {
-    let config: Config = serde_json::from_value(json!({
-        "database": {"sqlite": {"file_path": "sqlite::memory:"}},
-    }))
-    .unwrap();
-    let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-    let (jobs, _rx) = mpsc::unbounded_channel();
-    let (period, _rx) = watch::channel(0);
+    let mut config: Config = serde_json::from_str("{}").unwrap();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
+    let db = Db::connect(&config.database).await.unwrap();
     Context::new(
         config,
         String::new(),
         db,
         Metrics::new().unwrap(),
-        jobs,
-        period,
+        mpsc::unbounded_channel().0,
+        watch::channel(0).0,
     )
 }
 
@@ -37,7 +36,7 @@ async fn grant(cx: &Context, actions: &[&str]) -> RoleGrantResponse {
         &Caller::socket(),
         "writer",
         &CreateRoleGrantRequest {
-            zone_name: Some("example.test".into()),
+            zone_name: Some("example.test".to_string()),
             actions: actions.iter().map(ToString::to_string).collect(),
             record_name_pattern: None,
             record_types: None,
@@ -50,14 +49,31 @@ async fn grant(cx: &Context, actions: &[&str]) -> RoleGrantResponse {
 /// Create a managed zone and a credential with read, create and update access.
 async fn credential(cx: &Context) -> String {
     let admin = Caller::socket();
-    zone::create(cx, &admin, &serde_json::from_value(json!({
-        "name":"example.test", "mname":"ns.example.test", "rname":"hostmaster@example.test", "apex_ns":false,
-    })).unwrap()).await.unwrap();
+    zone::create(
+        cx,
+        &admin,
+        &CreateZoneRequest {
+            name: "example.test".to_string(),
+            mname: "ns.example.test".to_string(),
+            rname: "hostmaster@example.test".to_string(),
+            default_ttl: None,
+            serial: None,
+            refresh: None,
+            retry: None,
+            expire: None,
+            minimum_ttl: None,
+            description: None,
+            apex_ns: false,
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
     role::create(
         cx,
         &admin,
         &CreateRoleRequest {
-            name: "writer".into(),
+            name: "writer".to_string(),
             description: None,
         },
     )
@@ -68,10 +84,10 @@ async fn credential(cx: &Context) -> String {
         cx,
         &admin,
         &CreateTokenRequest {
-            name: "writer-token".into(),
+            name: "writer-token".to_string(),
             description: None,
             expires_in_days: None,
-            role_name: "writer".into(),
+            role_name: "writer".to_string(),
         },
     )
     .await
@@ -79,7 +95,7 @@ async fn credential(cx: &Context) -> String {
     .1
 }
 
-/// Every mutation and preview reports the grants reloaded under its zone lock.
+/// Verify that every mutation and preview reports the grants reloaded under its zone lock.
 #[tokio::test]
 async fn record_write_actions_follow_transactional_grants() {
     for dry_run in [true, false] {
@@ -90,10 +106,15 @@ async fn record_write_actions_follow_transactional_grants() {
             let existing = create(
                 &cx,
                 &admin,
-                &serde_json::from_value(json!({
-                    "name":"existing", "type":"A", "value":"192.0.2.1", "zone_name":"example.test",
-                }))
-                .unwrap(),
+                &CreateRecordRequest {
+                    name: "existing".to_string(),
+                    record_type: "A".to_string(),
+                    value: RecordValue::Text("192.0.2.1".to_string()),
+                    ttl: None,
+                    priority: None,
+                    zone_name: "example.test".to_string(),
+                    dry_run: false,
+                },
             )
             .await
             .unwrap();
@@ -112,35 +133,63 @@ async fn record_write_actions_follow_transactional_grants() {
                 grant(&cx, &["record:delete"]).await;
             }
 
-            let name = zone::normalize_name("example.test").unwrap();
-            let before = zone::get_by_name(&cx, &admin, &name).await.unwrap();
+            let zone_name = ZoneName::parse("example.test").unwrap();
+            let before = zone::get_by_name(&cx, &admin, &zone_name).await.unwrap();
             let count = count_all(&cx).await.unwrap();
-            let created = create(&cx, &caller, &serde_json::from_value(json!({
-                "name":"one", "type":"A", "value":"192.0.2.2", "zone_name":"example.test", "dry_run":dry_run,
-            })).unwrap()).await.unwrap();
-            let bulk = create_bulk(&cx, &caller, &serde_json::from_value(json!({
-                "zone_name":"example.test", "records":[{"name":"two", "type":"A", "value":"192.0.2.3"}], "dry_run":dry_run,
-            })).unwrap()).await.unwrap();
+            let created = create(
+                &cx,
+                &caller,
+                &CreateRecordRequest {
+                    name: "one".to_string(),
+                    record_type: "A".to_string(),
+                    value: RecordValue::Text("192.0.2.2".to_string()),
+                    ttl: None,
+                    priority: None,
+                    zone_name: "example.test".to_string(),
+                    dry_run,
+                },
+            )
+            .await
+            .unwrap();
+            let bulk = create_bulk(
+                &cx,
+                &caller,
+                &CreateBulkRecordsRequest {
+                    zone_name: "example.test".to_string(),
+                    records: vec![BulkRecordItem {
+                        name: "two".to_string(),
+                        record_type: "A".to_string(),
+                        value: RecordValue::Text("192.0.2.3".to_string()),
+                        ttl: None,
+                        priority: None,
+                    }],
+                    dry_run,
+                },
+            )
+            .await
+            .unwrap();
             let updated = update(
                 &cx,
                 &caller,
                 existing.record.id.unwrap(),
-                &serde_json::from_value(json!({
-                    "value":"192.0.2.4", "dry_run":dry_run,
-                }))
-                .unwrap(),
+                &UpdateRecordRequest {
+                    value: Some(RecordValue::Text("192.0.2.4".to_string())),
+                    dry_run,
+                    ..Default::default()
+                },
             )
             .await
             .unwrap();
             let updated_by_name = update_by_name(
                 &cx,
                 &caller,
-                &name,
+                &zone_name,
                 "existing",
-                &serde_json::from_value(json!({
-                    "value":"192.0.2.5", "dry_run":dry_run,
-                }))
-                .unwrap(),
+                &UpdateRecordRequest {
+                    value: Some(RecordValue::Text("192.0.2.5".to_string())),
+                    dry_run,
+                    ..Default::default()
+                },
             )
             .await
             .unwrap();
@@ -160,7 +209,10 @@ async fn record_write_actions_follow_transactional_grants() {
             if dry_run {
                 assert_eq!(count_all(&cx).await.unwrap(), count);
                 assert_eq!(
-                    zone::get_by_name(&cx, &admin, &name).await.unwrap().serial,
+                    zone::get_by_name(&cx, &admin, &zone_name)
+                        .await
+                        .unwrap()
+                        .serial,
                     before.serial
                 );
             } else {
@@ -170,7 +222,7 @@ async fn record_write_actions_follow_transactional_grants() {
     }
 }
 
-/// A credential revoked before the transaction cannot mutate or preview records.
+/// Verify that a credential revoked before the transaction cannot mutate or preview records.
 #[tokio::test]
 async fn record_writes_reject_revoked_credentials() {
     for dry_run in [true, false] {
@@ -180,37 +232,72 @@ async fn record_writes_reject_revoked_credentials() {
         let existing = create(
             &cx,
             &admin,
-            &serde_json::from_value(json!({
-                "name":"existing", "type":"A", "value":"192.0.2.1", "zone_name":"example.test",
-            }))
-            .unwrap(),
+            &CreateRecordRequest {
+                name: "existing".to_string(),
+                record_type: "A".to_string(),
+                value: RecordValue::Text("192.0.2.1".to_string()),
+                ttl: None,
+                priority: None,
+                zone_name: "example.test".to_string(),
+                dry_run: false,
+            },
         )
         .await
         .unwrap();
         let caller = Caller::authenticate_token(&cx, &secret).await.unwrap().0;
         token::delete(&cx, &admin, "writer-token").await.unwrap();
-        let name = zone::normalize_name("example.test").unwrap();
-        let serial = zone::get_by_name(&cx, &admin, &name).await.unwrap().serial;
+        let zone_name = ZoneName::parse("example.test").unwrap();
+        let serial = zone::get_by_name(&cx, &admin, &zone_name)
+            .await
+            .unwrap()
+            .serial;
         let count = count_all(&cx).await.unwrap();
 
-        let error = create(&cx, &caller, &serde_json::from_value(json!({
-                "name":"one", "type":"A", "value":"192.0.2.2", "zone_name":"example.test", "dry_run":dry_run,
-            })).unwrap()).await.unwrap_err();
+        let error = create(
+            &cx,
+            &caller,
+            &CreateRecordRequest {
+                name: "one".to_string(),
+                record_type: "A".to_string(),
+                value: RecordValue::Text("192.0.2.2".to_string()),
+                ttl: None,
+                priority: None,
+                zone_name: "example.test".to_string(),
+                dry_run,
+            },
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidToken);
 
-        let error = create_bulk(&cx, &caller, &serde_json::from_value(json!({
-                "zone_name":"example.test", "records":[{"name":"two", "type":"A", "value":"192.0.2.3"}], "dry_run":dry_run,
-            })).unwrap()).await.unwrap_err();
+        let error = create_bulk(
+            &cx,
+            &caller,
+            &CreateBulkRecordsRequest {
+                zone_name: "example.test".to_string(),
+                records: vec![BulkRecordItem {
+                    name: "two".to_string(),
+                    record_type: "A".to_string(),
+                    value: RecordValue::Text("192.0.2.3".to_string()),
+                    ttl: None,
+                    priority: None,
+                }],
+                dry_run,
+            },
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidToken);
 
         let error = update(
             &cx,
             &caller,
             existing.record.id.unwrap(),
-            &serde_json::from_value(json!({
-                "value":"192.0.2.4", "dry_run":dry_run,
-            }))
-            .unwrap(),
+            &UpdateRecordRequest {
+                value: Some(RecordValue::Text("192.0.2.4".to_string())),
+                dry_run,
+                ..Default::default()
+            },
         )
         .await
         .unwrap_err();
@@ -219,19 +306,23 @@ async fn record_writes_reject_revoked_credentials() {
         let error = update_by_name(
             &cx,
             &caller,
-            &name,
+            &zone_name,
             "existing",
-            &serde_json::from_value(json!({
-                "value":"192.0.2.5", "dry_run":dry_run,
-            }))
-            .unwrap(),
+            &UpdateRecordRequest {
+                value: Some(RecordValue::Text("192.0.2.5".to_string())),
+                dry_run,
+                ..Default::default()
+            },
         )
         .await
         .unwrap_err();
         assert_eq!(error.code(), ErrorCode::InvalidToken);
         assert_eq!(count_all(&cx).await.unwrap(), count);
         assert_eq!(
-            zone::get_by_name(&cx, &admin, &name).await.unwrap().serial,
+            zone::get_by_name(&cx, &admin, &zone_name)
+                .await
+                .unwrap()
+                .serial,
             serial
         );
     }

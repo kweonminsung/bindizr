@@ -1,7 +1,10 @@
+use std::fs;
+use std::path::Path;
+
 use crate::cli::common;
 use crate::common::TestApp;
 
-/// Each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
+/// Read each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
 async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
     let mut states: Vec<(u64, String)> = common::read_dnssec_status(app, zone_name).await["keys"]
         .as_array()
@@ -21,11 +24,7 @@ async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
 
 /// Split `dnssec keys export` into the `K*.key`/`K*.private` file pairs on
 /// disk that the import takes.
-async fn write_exported_pairs(
-    app: &TestApp,
-    zone_name: &str,
-    dir: &std::path::Path,
-) -> Vec<(String, String)> {
+async fn write_exported_pairs(app: &TestApp, zone_name: &str, dir: &Path) -> Vec<(String, String)> {
     let exported = app
         .run_cli_success(&["dnssec", "keys", "export", zone_name], None)
         .await;
@@ -46,8 +45,8 @@ async fn write_exported_pairs(
     for (index, chunk) in blocks.chunks(2).enumerate() {
         let key_file = dir.join(format!("{index}.key"));
         let private_file = dir.join(format!("{index}.private"));
-        std::fs::write(&key_file, &chunk[0]).expect("write .key");
-        std::fs::write(&private_file, &chunk[1]).expect("write .private");
+        fs::write(&key_file, &chunk[0]).expect("write .key");
+        fs::write(&private_file, &chunk[1]).expect("write .private");
         pairs.push((
             key_file.to_str().expect("utf-8 temp dir").to_string(),
             private_file.to_str().expect("utf-8 temp dir").to_string(),
@@ -57,10 +56,10 @@ async fn write_exported_pairs(
     pairs
 }
 
-/// Verify DNSSEC key export and import through the CLI.
+/// Verify that the CLI exports and imports DNSSEC keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
+async fn zone_dnssec_keys_round_trip_export_and_import() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-keys.example");
 
@@ -109,8 +108,8 @@ async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
     let dir = tempfile::tempdir().expect("create key dir");
     let key_file = dir.path().join(format!("{base}.key"));
     let private_file = dir.path().join(format!("{base}.private"));
-    std::fs::write(&key_file, format!("{dnskey_line}\n")).expect("write .key");
-    std::fs::write(&private_file, private_block).expect("write .private");
+    fs::write(&key_file, format!("{dnskey_line}\n")).expect("write .key");
+    fs::write(&private_file, private_block).expect("write .private");
     let key_file = key_file.to_str().expect("utf-8 temp dir").to_string();
     let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
@@ -120,10 +119,16 @@ async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
 
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
     // import is refused before anything is stored.
-    let split_policy = format!("{}-split", app.namespace());
+    let split_policy_name = format!("{}-split", app.namespace());
 
     app.run_cli_success(
-        &["dnssec", "policy", "create", &split_policy, "--split-keys"],
+        &[
+            "dnssec",
+            "policy",
+            "create",
+            &split_policy_name,
+            "--split-keys",
+        ],
         None,
     )
     .await;
@@ -139,7 +144,7 @@ async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
                 "--private",
                 &private_file,
                 "--policy",
-                &split_policy,
+                &split_policy_name,
             ],
             None,
         )
@@ -231,8 +236,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         };
         let key_file = dir.path().join(format!("{role}.key"));
         let private_file = dir.path().join(format!("{role}.private"));
-        std::fs::write(&key_file, key_body).expect("write .key");
-        std::fs::write(&private_file, private_body).expect("write .private");
+        fs::write(&key_file, key_body).expect("write .key");
+        fs::write(&private_file, private_body).expect("write .private");
         pairs.push((
             role.to_string(),
             key_file.to_str().expect("utf-8 temp dir").to_string(),
@@ -240,7 +245,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         ));
     }
 
-    pairs.sort(); // ksk before zsk
+    // ksk before zsk
+    pairs.sort();
 
     app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"], None)
         .await;

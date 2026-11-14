@@ -1,6 +1,5 @@
-use super::value::DEFAULT_PRIORITY;
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 use crate::dns::name;
+use crate::dns::record::{DEFAULT_PRIORITY, EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MxRecordValue<'a> {
@@ -9,8 +8,8 @@ pub struct MxRecordValue<'a> {
 }
 
 impl<'a> MxRecordValue<'a> {
-    /// The value is the target host only; the priority comes from the priority
-    /// field (default 10), never inline.
+    /// Parse the target host; the priority comes from the priority field
+    /// (default 10), never inline.
     pub fn parse(
         value: &'a str,
         fallback_priority: Option<i32>,
@@ -33,15 +32,8 @@ impl<'a> MxRecordValue<'a> {
         }
     }
 
-    /// The wire-format RDATA of a stored value (RFC 1035, Section 3.3.9).
-    pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
-        let mut rdata = self.priority.to_be_bytes().to_vec();
-        rdata.extend_from_slice(&name::encode_name(self.target)?);
-        Rdata::new(rdata)
-    }
-
     /// Validate the fields of this MX value.
-    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+    pub fn validate(self) -> Result<(), ParseRecordValueError> {
         if self.target.trim() == "." {
             if self.priority != 0 {
                 return Err(ParseRecordValueError::NullMxPriority);
@@ -52,18 +44,26 @@ impl<'a> MxRecordValue<'a> {
         value::validate_domain_record_value("MX record target", self.target)
     }
 
-    /// Null MX (RFC 7505): priority 0 with target `.`.
-    pub fn is_null(&self) -> bool {
+    /// Return whether this is a null MX (RFC 7505): priority 0 with target `.`.
+    pub fn is_null(self) -> bool {
         self.priority == 0 && self.target.trim() == "."
     }
 
     /// Render the MX value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         format!("{} {}", self.priority, name::to_fqdn_lowercase(self.target))
     }
 
-    /// The value column's form: the target host as a lowercase FQDN.
-    pub fn to_stored(&self) -> String {
+    /// Encode the stored value as wire RDATA (RFC 1035, Section 3.3.9).
+    pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
+        let mut rdata = self.priority.to_be_bytes().to_vec();
+        rdata.extend_from_slice(&name::encode_name(self.target)?);
+
+        Rdata::new(rdata)
+    }
+
+    /// Return the value column's form: the target host as a lowercase FQDN.
+    pub fn to_stored(self) -> String {
         name::to_fqdn_lowercase(self.target)
     }
 }

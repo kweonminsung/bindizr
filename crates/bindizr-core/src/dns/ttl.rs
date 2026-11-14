@@ -3,12 +3,12 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
-
-/// A TTL in seconds, 0 through 2^32 - 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(from = "u32", into = "u32")]
-pub struct Ttl(u32);
+use utoipa::openapi::RefOr;
+use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, Schema, SchemaFormat, Type};
 
 /// A stored or requested TTL outside the wire range.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -21,16 +21,21 @@ pub enum ConvertTtlError {
     TooLarge { ttl: i64 },
 }
 
+/// A TTL in seconds, 0 through 2^32 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Ttl(u32);
+
 impl Ttl {
     /// The largest TTL (RFC 8767, Section 4).
-    pub const MAX: Ttl = Ttl(u32::MAX);
+    pub const MAX: Self = Self(u32::MAX);
 
     /// Construct a TTL from its unsigned wire value.
     pub const fn from_secs(secs: u32) -> Self {
-        Ttl(secs)
+        Self(secs)
     }
 
-    /// The TTL in seconds, as the wire carries it.
+    /// Return the TTL in seconds, as the wire carries it.
     pub const fn as_secs(self) -> u32 {
         self.0
     }
@@ -38,8 +43,8 @@ impl Ttl {
 
 impl From<u32> for Ttl {
     /// Take a wire TTL without narrowing its range.
-    fn from(ttl: u32) -> Self {
-        Self::from_secs(ttl)
+    fn from(value: u32) -> Self {
+        Self::from_secs(value)
     }
 }
 
@@ -47,8 +52,8 @@ impl TryFrom<i32> for Ttl {
     type Error = ConvertTtlError;
 
     /// Accept a nonnegative signed 32-bit value.
-    fn try_from(ttl: i32) -> Result<Self, Self::Error> {
-        Self::try_from(i64::from(ttl))
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::try_from(i64::from(value))
     }
 }
 
@@ -56,27 +61,27 @@ impl TryFrom<i64> for Ttl {
     type Error = ConvertTtlError;
 
     /// Validate a request or stored value against the unsigned wire range.
-    fn try_from(ttl: i64) -> Result<Self, Self::Error> {
-        if ttl < 0 {
-            return Err(ConvertTtlError::Negative { ttl });
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value < 0 {
+            return Err(ConvertTtlError::Negative { ttl: value });
         }
-        u32::try_from(ttl)
-            .map(Ttl)
-            .map_err(|_| ConvertTtlError::TooLarge { ttl })
+        u32::try_from(value)
+            .map(Self)
+            .map_err(|_| ConvertTtlError::TooLarge { ttl: value })
     }
 }
 
 impl From<Ttl> for u32 {
-    /// The wire form.
+    /// Convert to the wire form.
     fn from(ttl: Ttl) -> Self {
         ttl.0
     }
 }
 
 impl From<Ttl> for i64 {
-    /// The row form; the range invariant makes it exact.
+    /// Convert to the row form; the range invariant makes it exact.
     fn from(ttl: Ttl) -> Self {
-        i64::from(ttl.0)
+        Self::from(ttl.0)
     }
 }
 
@@ -89,15 +94,13 @@ impl fmt::Display for Ttl {
 
 impl utoipa::PartialSchema for Ttl {
     /// Describe the wire range using the domain value's maximum.
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, Type};
-
+    fn schema() -> RefOr<Schema> {
         ObjectBuilder::new()
             .schema_type(Type::Integer)
             .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
-            .minimum(Some(0_u64))
+            .minimum(Some(0u64))
             .maximum(Some(u64::from(Self::MAX.as_secs())))
-            .examples([serde_json::json!(3600)])
+            .examples([json!(3600)])
             .into()
     }
 }
@@ -108,12 +111,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for Ttl
 where
     i64: sqlx::Type<DB>,
 {
-    /// The row form's column type.
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i64 as sqlx::Type<DB>>::type_info()
     }
 
-    /// Whether the column can hold the row form.
+    /// Return whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i64 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -123,11 +126,11 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Ttl
 where
     i64: sqlx::Encode<'q, DB>,
 {
-    /// Bind the row form.
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i64::from(*self).encode_by_ref(buffer)
     }
 }
@@ -137,10 +140,8 @@ where
     i64: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a negative column fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(Ttl::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        Ok(Self::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }
@@ -148,9 +149,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::Ttl;
+    use super::*;
 
-    /// TTL conversion preserves every boundary of the unsigned wire range.
+    /// Verify that TTL conversion preserves every boundary of the unsigned wire range.
     #[test]
     fn ttl_preserves_unsigned_boundaries() {
         for value in [0, 2_147_483_647, 2_147_483_648, u32::MAX] {

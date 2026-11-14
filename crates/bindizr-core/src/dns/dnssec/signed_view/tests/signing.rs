@@ -19,7 +19,7 @@ fn test_zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -31,13 +31,13 @@ fn test_zone() -> Zone {
 
 /// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i64) -> Record {
-    let zone = ZoneName::parse("example.com").unwrap();
+    let zone_name = ZoneName::parse("example.com").unwrap();
     Record {
         id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
-            OwnerName::parse_in_zone(name, &zone).unwrap()
+            OwnerName::parse_in_zone(name, &zone_name).unwrap()
         },
         record_type,
         value: value.to_string(),
@@ -119,7 +119,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
 
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RECORD_TYPE_SOA).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::SOA.to_int())).len(),
         1
     );
     assert_eq!(
@@ -140,8 +140,14 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         .len(),
         1
     );
-    assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
-    assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, i32::from(Rtype::NS.to_int())).len(),
+        1
+    );
+    assert_eq!(
+        rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int())).len(),
+        1
+    );
     assert!(rrsigs.iter().all(|record| record.expires_at.is_some()));
     assert!(
         rrsigs
@@ -150,7 +156,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     );
 }
 
-/// Verify signatures while serving the original case of name-bearing RDATA.
+/// Verify that signatures validate while name-bearing RDATA is served in its original case.
 #[test]
 fn signatures_validate_case_preserving_rdata() {
     let zone = test_zone();
@@ -216,11 +222,11 @@ fn signatures_validate_case_preserving_rdata() {
 
         assert_eq!(signature.original_ttl().as_secs(), u32::MAX);
         assert_eq!(rows[0].ttl.as_secs(), u32::MAX);
-        let rdata = EncodedRdata::from_columns(&record_type, canonical_value, priority)
+        let rdata = EncodedRdata::from_columns(record_type, canonical_value, priority)
             .unwrap()
             .rdata;
 
-        // RFC 4034: RRSIG fields without the signature, then the canonical RR.
+        // RFC 4034: RRSIG fields without the signature, then the canonical record.
         let mut signed_data = wire[..wire.len() - signature.signature().len()].to_vec();
         signed_data.extend_from_slice(records[0].name.to_wire_name(&zone.name).unwrap().as_slice());
         signed_data.extend_from_slice(&record_type.wire_type().to_be_bytes());
@@ -346,13 +352,16 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
 
     // RFC 4035, Section 2.2: delegation NS and glue, including A at the cut,
     // are unsigned. NSEC covers the delegation point, not glue.
-    assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
-    assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_A).is_empty());
-    assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());
+    assert!(rrsigs_covering(&diff.added, &sub, i32::from(Rtype::NS.to_int())).is_empty());
+    assert!(rrsigs_covering(&diff.added, &sub, i32::from(Rtype::A.to_int())).is_empty());
+    assert!(rrsigs_covering(&diff.added, &glue, i32::from(Rtype::A.to_int())).is_empty());
 
     // The DS record set at the cut is the parent's authoritative data (RFC 4035,
     // Section 2.4), unlike the NS beside it.
-    assert_eq!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_DS).len(), 1);
+    assert_eq!(
+        rrsigs_covering(&diff.added, &sub, i32::from(Rtype::DS.to_int())).len(),
+        1
+    );
     assert!(
         !diff
             .added
@@ -366,8 +375,8 @@ fn signing_leaves_delegation_ns_and_glue_unsigned() {
     );
 }
 
-/// A stored NS/DS pair below a zone cut belongs to the delegated child,
-/// so it must not acquire signatures from this zone (RFC 4035, Section 2.2).
+/// Verify that a stored NS/DS pair below a zone cut, which belongs to the delegated child,
+/// acquires no signatures from this zone (RFC 4035, Section 2.2).
 #[test]
 fn signing_excludes_ds_below_an_existing_delegation() {
     let zone = test_zone();
@@ -402,18 +411,18 @@ fn signing_excludes_ds_below_an_existing_delegation() {
         });
 
         assert_eq!(
-            rrsigs_covering(&diff.added, &delegation, RECORD_TYPE_DS).len(),
+            rrsigs_covering(&diff.added, &delegation, i32::from(Rtype::DS.to_int())).len(),
             1
         );
         assert!(
-            rrsigs_covering(&diff.added, &below_cut, RECORD_TYPE_DS).is_empty(),
+            rrsigs_covering(&diff.added, &below_cut, i32::from(Rtype::DS.to_int())).is_empty(),
             "{denial:?}"
         );
         assert!(!diff.added.iter().any(|record| record.name == below_cut));
     }
 }
 
-/// Verify that mixed TTL RRSET signs at the minimum.
+/// Verify that a mixed-TTL record set signs at the minimum.
 #[test]
 fn mixed_ttl_record_set_signs_at_the_minimum() {
     let zone = test_zone();
@@ -442,7 +451,7 @@ fn mixed_ttl_record_set_signs_at_the_minimum() {
     });
 
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
-    let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
+    let rrsig = rrsigs_covering(&diff.added, &www, i32::from(Rtype::A.to_int()));
 
     assert_eq!(rrsig.len(), 1);
     assert_eq!(rrsig[0].ttl, Ttl::from_secs(300));
@@ -472,7 +481,7 @@ fn withdrawal_publishes_the_delete_cds_pair() {
         inception: now - Duration::hours(1),
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        refresh_secs: 5 * 86_400,
+        refresh_secs: 5 * 86400,
         pass: SigningPass::Refresh,
         withdraw_parent_ds: true,
     }

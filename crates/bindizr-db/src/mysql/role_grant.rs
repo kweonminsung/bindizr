@@ -1,11 +1,10 @@
 use bindizr_core::model::role::RoleId;
-use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
 use crate::LockLevel;
 use crate::error::DatabaseError;
-use crate::model::role_grant::RoleGrant;
 
 /// Insert a role grant.
 pub(crate) async fn create_tx(
@@ -35,7 +34,7 @@ pub(crate) async fn create_tx(
     Ok(grant)
 }
 
-/// Find a role grant by ID.
+/// Get a role grant by ID.
 pub(crate) async fn get(
     pool: &Pool<MySql>,
     id: RoleGrantId,
@@ -65,7 +64,7 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<RoleGrant>, Datab
     Ok(grants)
 }
 
-/// List every grant of a role.
+/// List every grant of a role, which bounds what a credential of it may see.
 pub(crate) async fn list_by_role_id(
     pool: &Pool<MySql>,
     role_id: RoleId,
@@ -82,7 +81,8 @@ pub(crate) async fn list_by_role_id(
     Ok(grants)
 }
 
-/// List every grant of a role in the current transaction.
+/// List every grant of a role in the current transaction, locked at
+/// `lock_level`, for a mutation to authorize against.
 pub(crate) async fn list_by_role_id_tx(
     tx: &mut Transaction<'_, MySql>,
     role_id: RoleId,

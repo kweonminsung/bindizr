@@ -1,20 +1,18 @@
 use bindizr_core::dns::name;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_core::model::record::RecordId;
+use bindizr_core::model::dnssec_record::DnssecRecordType;
+use bindizr_core::model::record::{RecordId, RecordType};
 use bindizr_db::dnssec_record::DnssecRecordFilter;
 
-use super::ServedRecord;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
-use crate::model::dnssec_record::DnssecRecordType;
-use crate::model::record::RecordType;
+use crate::record::ServedRecord;
 use crate::types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView};
-use crate::zone::validation;
-use crate::{Context, pagination, zone};
+use crate::{Context, pagination, record, ttl, zone};
 
 /// Which plane a `type` filter names: a user record type, or a derived
 /// DNSSEC type when the signed view is requested.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TypeFilter {
     Any,
     User(RecordType),
@@ -40,34 +38,35 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
     }
 }
 
-/// Every record, for the unauthenticated metrics endpoint.
+/// Count every record, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(
-        bindizr_db::record::count_by_filter(cx.db(), bindizr_db::record::RecordFilter::default())
+        bindizr_db::record::count_by_filter(cx.db(), &bindizr_db::record::RecordFilter::default())
             .await?,
     )
 }
 
 /// List records with zone names, applying caller grants and pagination in SQL.
 /// Signed records follow user records, support name search, and reject value filters.
-/// Priority filters omit signed records; unknown or invisible zones yield empty pages for scoped callers.
+/// Priority filters omit signed records; unknown or invisible zones yield empty pages for
+/// scoped callers.
 pub async fn list_by_filter_with_zone(
     cx: &Context,
     caller: &Caller,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<PaginatedResponse<RecordResponse>, ServiceError> {
     for ttl in [filter.ttl, filter.min_ttl, filter.max_ttl]
         .into_iter()
         .flatten()
     {
-        crate::ttl::validate_record_ttl(ttl)?;
+        ttl::validate_record_ttl(ttl)?;
     }
 
     let scope_role_id = caller.scope_role_id();
     let zone_name = filter
         .zone_name
         .as_deref()
-        .map(validation::normalize_name)
+        .map(zone::normalize_name)
         .transpose()?;
     pagination::validate_page_limit(filter.limit)?;
     let limit = filter.limit;
@@ -76,13 +75,13 @@ pub async fn list_by_filter_with_zone(
 
     // Scoped callers read unknown and invisible zones alike as empty
     // pages, so skip the 404 probe.
-    if let Some(name) = zone_name.as_ref()
+    if let Some(zone_name) = zone_name.as_ref()
         && scope_role_id.is_none()
     {
-        zone::lookup_by_name(cx, name).await?;
+        zone::lookup_by_name(cx, zone_name).await?;
     }
 
-    let name = build_record_name_filter(filter.name, zone_name.as_ref());
+    let name = build_record_name_filter(filter.name.clone(), zone_name.as_ref());
     let type_filter = parse_type_filter(filter.record_type.as_deref(), view)?;
 
     // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
@@ -110,7 +109,7 @@ pub async fn list_by_filter_with_zone(
             TypeFilter::User(record_type) => Some(*record_type),
             _ => None,
         },
-        value: filter.value,
+        value: filter.value.clone(),
         ttl: filter.ttl,
         min_ttl: filter.min_ttl,
         max_ttl: filter.max_ttl,
@@ -141,12 +140,12 @@ pub async fn list_by_filter_with_zone(
     };
 
     let user_total = if user_plane {
-        bindizr_db::record::count_by_filter(cx.db(), record_filter.clone()).await?
+        bindizr_db::record::count_by_filter(cx.db(), &record_filter).await?
     } else {
         0
     };
     let derived_total = if derived_plane {
-        bindizr_db::dnssec_record::count_by_filter(cx.db(), derived_filter.clone()).await?
+        bindizr_db::dnssec_record::count_by_filter(cx.db(), &derived_filter).await?
     } else {
         0
     };
@@ -156,7 +155,7 @@ pub async fn list_by_filter_with_zone(
 
     if user_plane && start < user_total {
         records.extend(
-            bindizr_db::record::list_by_filter_with_zone(cx.db(), record_filter)
+            bindizr_db::record::list_by_filter_with_zone(cx.db(), &record_filter)
                 .await?
                 .into_iter()
                 .map(ServedRecord::User),
@@ -171,7 +170,7 @@ pub async fn list_by_filter_with_zone(
         records.extend(
             bindizr_db::dnssec_record::list_by_filter_with_zone(
                 cx.db(),
-                DnssecRecordFilter {
+                &DnssecRecordFilter {
                     limit: remaining,
                     offset: Some(start.saturating_sub(user_total)),
                     ..derived_filter
@@ -185,7 +184,7 @@ pub async fn list_by_filter_with_zone(
 
     let records = records
         .iter()
-        .map(|record| super::build_record_response(caller, record))
+        .map(|record| record::build_record_response(caller, record))
         .collect();
 
     Ok(pagination::build_paginated_response(
@@ -196,7 +195,7 @@ pub async fn list_by_filter_with_zone(
     ))
 }
 
-/// Fetch a record by id with the caller's actions on it. A record the
+/// Get a record by id with the caller's actions on it. A record the
 /// caller cannot read reads as `NotFound`, so ids cannot be probed.
 pub async fn get(
     cx: &Context,
@@ -207,7 +206,7 @@ pub async fn get(
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {}", error);
+            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,
@@ -215,11 +214,11 @@ pub async fn get(
         }
     };
 
-    if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
+    if !caller.sees_record(record.zone_id, &record.name, Some(record.record_type)) {
         return Err(ServiceError::record_not_found(record_id));
     }
 
-    Ok(super::build_record_response(
+    Ok(record::build_record_response(
         caller,
         &ServedRecord::User(record),
     ))
@@ -236,7 +235,7 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             return None;
         }
 
-        let Some(zone) = zone_name else {
+        let Some(zone_name) = zone_name else {
             // No zone to build an FQDN against, so the apex can only be matched
             // by the sentinel rows hold it as.
             if trimmed == OwnerName::APEX {
@@ -259,11 +258,11 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
         };
 
         // Use stored owner spelling for SQL owner/FQDN matching; pass non-names through literally.
-        if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone) {
-            return Some(owner.to_fqdn(zone));
+        if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone_name) {
+            return Some(owner.to_fqdn(zone_name));
         }
 
-        Some(match OwnerName::parse_in_zone(trimmed, zone) {
+        Some(match OwnerName::parse_in_zone(trimmed, zone_name) {
             Ok(owner) => owner.to_stored(),
             Err(_) => trimmed.to_string(),
         })

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Actions held, and those held with no record name or type limit.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 pub struct PermittedActionsResponse {
     /// The actions permitted.
     pub actions: Vec<Action>,
@@ -15,7 +15,7 @@ pub struct PermittedActionsResponse {
 }
 
 /// The caller's actions in one zone that differ from its all-zones actions.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ZonePermissionsResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -24,7 +24,7 @@ pub struct ZonePermissionsResponse {
 }
 
 /// What the caller may do across all zones, and where zone grants add to it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PermissionsResponse {
     /// Applies to any zone not listed in `zones`, and to what no zone owns.
     pub all_zones: PermittedActionsResponse,

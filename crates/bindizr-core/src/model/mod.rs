@@ -28,7 +28,7 @@ macro_rules! id_newtype {
             /// the id on insert.
             pub const UNWRITTEN: Self = Self(0);
 
-            /// The id the database gave the row, or `None` for the placeholder.
+            /// Return the id the database gave the row, or `None` for the placeholder.
             pub fn written(self) -> Option<Self> {
                 (self != Self::UNWRITTEN).then_some(self)
             }
@@ -36,13 +36,13 @@ macro_rules! id_newtype {
 
         impl From<i32> for $name {
             /// Wrap a row id as the database numbered it.
-            fn from(id: i32) -> Self {
-                Self(id)
+            fn from(value: i32) -> Self {
+                Self(value)
             }
         }
 
         impl From<$name> for i32 {
-            /// The row form.
+            /// Convert to the row form.
             fn from(id: $name) -> Self {
                 id.0
             }
@@ -51,7 +51,7 @@ macro_rules! id_newtype {
         impl std::fmt::Display for $name {
             /// Write the id in decimal.
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0)
+                std::fmt::Display::fmt(&self.0, f)
             }
         }
     };

@@ -16,29 +16,32 @@ mod zone;
 
 use std::future::Future;
 use std::io;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::Arc;
 
 use bindizr_service::Context;
 use bindizr_service::error::ServiceError;
 use bindizr_service::types::ErrorResponse;
-use control::DaemonControl;
+use serde::Serialize;
 use thiserror::Error;
 use tokio::fs;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio::task::{JoinHandle, JoinSet};
 
 use crate::shutdown::Shutdown;
 use crate::socket;
+use crate::socket::server::control::DaemonControl;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
 use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 use crate::tls::TlsCertificates;
 
 /// Bound command allocation above the 32 MB HTTP cap to accommodate JSON-escaped zone files.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Socket paths tried in order when the daemon starts.
+const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
 /// Why the control socket could not be bound.
 #[derive(Debug, Error)]
@@ -92,30 +95,30 @@ pub(crate) struct SocketContext {
 }
 
 impl SocketContext {
-    /// The front end's context over the daemon's.
+    /// Build the front end's context over the daemon's.
     pub(crate) fn new(
         daemon: Arc<Context>,
         control: mpsc::Sender<DaemonControl>,
         tls: TlsCertificates,
     ) -> Self {
-        SocketContext {
+        Self {
             daemon,
             control,
             tls,
         }
     }
 
-    /// The daemon's context.
+    /// Return the daemon's context.
     pub(crate) fn daemon(&self) -> &Arc<Context> {
         &self.daemon
     }
 
-    /// The certificates the TLS listeners present.
+    /// Return the certificates the TLS listeners present.
     pub(crate) fn tls(&self) -> &TlsCertificates {
         &self.tls
     }
 
-    /// The sender a shutdown or restart request goes down.
+    /// Return the sender a shutdown or restart request goes down.
     pub(crate) fn control(&self) -> &mpsc::Sender<DaemonControl> {
         &self.control
     }
@@ -127,7 +130,7 @@ async fn handle_client(
     stream: UnixStream,
     stop: impl Future<Output = ()>,
 ) {
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
@@ -150,10 +153,9 @@ async fn handle_client(
         let response = match serde_json::from_str::<DaemonCommand>(&line) {
             Ok(command) => handle_command(socket_cx, command).await,
             Err(error) => {
-                log::error!("Failed to parse command: {}", error);
+                log::error!("Failed to parse command: {error}");
                 encode_error(&ServiceError::invalid_input(format!(
-                    "failed to parse command: {}",
-                    error
+                    "failed to parse command: {error}"
                 )))
             }
         };
@@ -187,7 +189,7 @@ pub(crate) fn serve(
 
                 Some(result) = clients.join_next(), if !clients.is_empty() => {
                     if let Err(error) = result {
-                        log::warn!("Daemon socket client task failed: {}", error);
+                        log::warn!("Daemon socket client task failed: {error}");
                     }
                     continue;
                 }
@@ -213,13 +215,12 @@ pub(crate) fn serve(
                     Err(error) if error.kind() == io::ErrorKind::NotConnected => {}
                     Err(error) => {
                         log::warn!(
-                            "Refused a daemon socket connection with no peer credentials: {}",
-                            error
+                            "Refused a daemon socket connection with no peer credentials: {error}"
                         );
                     }
                 },
                 Err(error) => {
-                    log::error!("Error accepting connection: {}", error);
+                    log::error!("Error accepting connection: {error}");
                 }
             }
         }
@@ -228,7 +229,7 @@ pub(crate) fn serve(
 
         while let Some(result) = clients.join_next().await {
             if let Err(error) = result {
-                log::warn!("Daemon socket client task failed: {}", error);
+                log::warn!("Daemon socket client task failed: {error}");
             }
         }
 
@@ -239,23 +240,16 @@ pub(crate) fn serve(
 /// Remove the daemon's socket file, once nothing is serving on it.
 pub(crate) async fn remove_socket_file(socket_path: &str) {
     if let Err(error) = fs::remove_file(socket_path).await {
-        log::warn!(
-            "Failed to remove the daemon socket {}: {}",
-            socket_path,
-            error
-        );
+        log::warn!("Failed to remove the daemon socket {socket_path}: {error}");
     }
 }
-
-/// Socket paths tried in order when the daemon starts.
-const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
 /// Bind the daemon's configured control socket. Owning it is what refuses a
 /// second daemon, so the daemon binds before anything else it would share.
 pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
     let mut failures = Vec::new();
 
-    for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
+    for (index, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
         let error = match bind_socket(path).await {
             Ok(listener) => return Ok(((*path).to_string(), listener)),
             // Another daemon already owns this socket. Trying the next candidate
@@ -264,13 +258,8 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
             Err(error) => error,
         };
 
-        if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
-            log::warn!(
-                "Cannot use Unix socket path '{}': {}. Falling back to '{}'.",
-                path,
-                error,
-                next
-            );
+        if let Some(next) = SOCKET_PATH_CANDIDATES.get(index + 1) {
+            log::warn!("Cannot use Unix socket path '{path}': {error}. Falling back to '{next}'.");
         }
 
         failures.push((path.to_string(), error));
@@ -293,7 +282,7 @@ async fn bind_socket(socket_path: &str) -> Result<UnixListener, BindSocketPathEr
 
 /// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> Result<(), BindSocketPathError> {
-    use std::os::unix::fs::FileTypeExt;
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
 
     if let Some(parent) = Path::new(socket_path).parent() {
         // No chmod of the socket by path, which a writable directory would let
@@ -363,6 +352,21 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteToken { name } => {
             encode_response(token::delete_token(cx, &name).await)
         }
+        DaemonCommand::CreateTsigKey(request) => {
+            encode_response(tsig_key::create_tsig_key(cx, &request).await)
+        }
+        DaemonCommand::ListTsigKeys(filter) => {
+            encode_response(tsig_key::list_tsig_keys(cx, &filter).await)
+        }
+        DaemonCommand::GetTsigKey { name } => {
+            encode_response(tsig_key::get_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::DeleteTsigKey { name } => {
+            encode_response(tsig_key::delete_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::ListAuditLogs(filter) => {
+            encode_response(audit::list_audit_logs(cx, &filter).await)
+        }
         DaemonCommand::CreateRole(request) => {
             encode_response(role::create_role(cx, &request).await)
         }
@@ -378,21 +382,6 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteRoleGrant { role_name, id } => {
             encode_response(role::delete_role_grant(cx, &role_name, id).await)
         }
-        DaemonCommand::CreateTsigKey(request) => {
-            encode_response(tsig_key::create_tsig_key(cx, &request).await)
-        }
-        DaemonCommand::ListTsigKeys(filter) => {
-            encode_response(tsig_key::list_tsig_keys(cx, &filter).await)
-        }
-        DaemonCommand::GetTsigKey { name } => {
-            encode_response(tsig_key::get_tsig_key(cx, &name).await)
-        }
-        DaemonCommand::DeleteTsigKey { name } => {
-            encode_response(tsig_key::delete_tsig_key(cx, &name).await)
-        }
-        DaemonCommand::ListAuditLogs(filter) => {
-            encode_response(audit::list_audit_logs(cx, filter).await)
-        }
         DaemonCommand::CreateSecondary(request) => {
             encode_response(secondary::create_secondary(cx, &request).await)
         }
@@ -403,7 +392,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(secondary::get_secondary(cx, &name).await)
         }
         DaemonCommand::UpdateSecondary { name, request } => {
-            encode_response(secondary::update_secondary(cx, &name, request).await)
+            encode_response(secondary::update_secondary(cx, &name, &request).await)
         }
         DaemonCommand::DeleteSecondary { name } => {
             encode_response(secondary::delete_secondary(cx, &name).await)
@@ -412,10 +401,10 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(secondary::check_secondary(cx, &name).await)
         }
         DaemonCommand::ListSecondaryTransfers { name, filter } => {
-            encode_response(secondary::list_secondary_transfers(cx, &name, filter).await)
+            encode_response(secondary::list_secondary_transfers(cx, &name, &filter).await)
         }
         DaemonCommand::CreateDnssecPolicy(request) => {
-            encode_response(dnssec_policy::create_dnssec_policy(cx, request).await)
+            encode_response(dnssec_policy::create_dnssec_policy(cx, &request).await)
         }
         DaemonCommand::ListDnssecPolicies(page) => {
             encode_response(dnssec_policy::list_dnssec_policies(cx, page).await)
@@ -424,7 +413,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(dnssec_policy::get_dnssec_policy(cx, &name).await)
         }
         DaemonCommand::UpdateDnssecPolicy { name, request } => {
-            encode_response(dnssec_policy::update_dnssec_policy(cx, &name, request).await)
+            encode_response(dnssec_policy::update_dnssec_policy(cx, &name, &request).await)
         }
         DaemonCommand::DeleteDnssecPolicy { name } => {
             encode_response(dnssec_policy::delete_dnssec_policy(cx, &name).await)
@@ -432,7 +421,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::CreateZone(request) => {
             encode_response(zone::create_zone(cx, &request).await)
         }
-        DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, filter).await),
+        DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, &filter).await),
         DaemonCommand::GetZone { name } => encode_response(zone::get_zone(cx, &name).await),
         DaemonCommand::UpdateZone { zone_name, request } => {
             encode_response(zone::update_zone(cx, &zone_name, &request).await)
@@ -482,7 +471,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(record::create_bulk_records(cx, &request).await)
         }
         DaemonCommand::ListRecords(filter) => {
-            encode_response(record::list_records(cx, filter).await)
+            encode_response(record::list_records(cx, &filter).await)
         }
         DaemonCommand::GetRecord { id } => encode_response(record::get_record(cx, id).await),
         DaemonCommand::UpdateRecord { id, request } => {
@@ -538,13 +527,13 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(dnssec::export_dnssec_keys(cx, &name).await)
         }
         DaemonCommand::ImportDnssecKeys { zone_name, request } => {
-            encode_response(dnssec::import_dnssec_keys(cx, &zone_name, request).await)
+            encode_response(dnssec::import_dnssec_keys(cx, &zone_name, &request).await)
         }
     }
 }
 
 /// Encode a handler's response, or the error it failed with, as one JSON line.
-fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
+fn encode_response<T: Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
     match result {
         Ok(response) => serde_json::to_string(&response).unwrap_or_else(|error| {
             encode_error(&ServiceError::internal_with_source(

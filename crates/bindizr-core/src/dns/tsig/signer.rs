@@ -8,7 +8,8 @@ use domain::tsig::Key;
 use ring::hmac;
 use thiserror::Error;
 
-use super::TsigSigningKey;
+use crate::dns::nsupdate::DEFAULT_FUDGE;
+use crate::dns::tsig::TsigSigningKey;
 
 /// The response signature could not be appended to the DNS message.
 #[derive(Debug, Error)]
@@ -16,7 +17,7 @@ use super::TsigSigningKey;
 pub struct SignResponseError(#[from] PushError);
 
 /// The key and original request MAC needed to sign its response.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct ResponseSigner {
     pub(crate) key: TsigSigningKey,
     pub(crate) request_mac: Vec<u8>,
@@ -26,61 +27,50 @@ impl ResponseSigner {
     /// Sign one response with the suggested TSIG fudge (RFC 8945, Section 10).
     pub fn sign_response<T: Composer>(
         self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
     ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(message, now, 300)
+        self.sign_response_with_fudge(additional, now, DEFAULT_FUDGE)
     }
 
     /// Sign one response with the caller's accepted clock tolerance.
     pub fn sign_response_with_fudge<T: Composer>(
         self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
         fudge: u16,
     ) -> Result<(), SignResponseError> {
-        TransferSigner::from(self).sign_response_with_fudge(message, now, fudge)
+        TransferSigner::from(self).sign_response_with_fudge(additional, now, fudge)
     }
 
-    /// The key whose name and algorithm the response carries.
+    /// Return the key whose name and algorithm the response carries.
     pub fn key(&self) -> &Key {
         self.key.as_ref()
     }
 }
 
 /// One transfer's key and previous MAC (RFC 8945, Section 5.3.1).
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct TransferSigner {
     key: TsigSigningKey,
     previous_mac: Vec<u8>,
     first: bool,
 }
 
-impl From<ResponseSigner> for TransferSigner {
-    /// Begin the response chain with the original request's MAC.
-    fn from(signer: ResponseSigner) -> Self {
-        Self {
-            key: signer.key,
-            previous_mac: signer.request_mac,
-            first: true,
-        }
-    }
-}
-
 impl TransferSigner {
-    /// Sign the next transfer message with the suggested TSIG fudge.
+    /// Sign the next transfer additional with the suggested TSIG fudge.
     pub fn sign_response<T: Composer>(
         &mut self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
     ) -> Result<(), SignResponseError> {
-        self.sign_response_with_fudge(message, now, 300)
+        self.sign_response_with_fudge(additional, now, DEFAULT_FUDGE)
     }
 
     /// Advance the chain only after the signed record fits the builder.
     pub fn sign_response_with_fudge<T: Composer>(
         &mut self,
-        message: &mut AdditionalBuilder<T>,
+        additional: &mut AdditionalBuilder<T>,
         now: Time48,
         fudge: u16,
     ) -> Result<(), SignResponseError> {
@@ -91,7 +81,7 @@ impl TransferSigner {
         let mut digest = hmac::Context::with_key(&self.key.hmac);
         digest.update(&(self.previous_mac.len() as u16).to_be_bytes());
         digest.update(&self.previous_mac);
-        digest.update(message.as_slice());
+        digest.update(additional.as_slice());
 
         if self.first {
             digest.update(name.as_slice());
@@ -108,7 +98,7 @@ impl TransferSigner {
         }
 
         let mac = digest.sign();
-        message.push((
+        additional.push((
             &name,
             Class::ANY,
             0,
@@ -117,7 +107,7 @@ impl TransferSigner {
                 now,
                 fudge,
                 mac.as_ref(),
-                message.header().id(),
+                additional.header().id(),
                 TsigRcode::NOERROR,
                 b"",
             )
@@ -129,8 +119,19 @@ impl TransferSigner {
         Ok(())
     }
 
-    /// The key used to size and identify the next signature.
+    /// Return the key used to size and identify the next signature.
     pub fn key(&self) -> &Key {
         self.key.as_ref()
+    }
+}
+
+impl From<ResponseSigner> for TransferSigner {
+    /// Begin the response chain with the original request's MAC.
+    fn from(signer: ResponseSigner) -> Self {
+        Self {
+            key: signer.key,
+            previous_mac: signer.request_mac,
+            first: true,
+        }
     }
 }
