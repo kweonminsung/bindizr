@@ -350,7 +350,7 @@ async fn dnssec_enable_supports_nsec3_with_split_keys() {
 async fn dnssec_enable_requires_dnssec_manage() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
-        ..TestAppOptions::default()
+        ..Default::default()
     })
     .await;
     let (_, admin_token) = app.create_api_token().await;

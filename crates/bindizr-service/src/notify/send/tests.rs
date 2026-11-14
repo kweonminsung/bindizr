@@ -17,7 +17,7 @@ use crate::types::CreateSecondaryRequest;
 #[tokio::test]
 async fn zone_notify_preserves_failure_causes_and_completes_other_requests() {
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.notify.timeout_secs = 1;
     config.dns.notify.retries = 0;
 

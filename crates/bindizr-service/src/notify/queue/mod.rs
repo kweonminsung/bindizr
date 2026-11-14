@@ -32,7 +32,7 @@ enum NotifyJobTarget {
 impl NotifyJob {
     /// A job for the zones `target` names.
     pub(crate) fn new(target: NotifyTarget<'_>) -> Self {
-        NotifyJob {
+        Self {
             target: match target {
                 NotifyTarget::Zone(zone_name) => NotifyJobTarget::Zone(zone_name.clone()),
                 NotifyTarget::All => NotifyJobTarget::All,
@@ -86,7 +86,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
 
                     result = tasks.join_next(), if !tasks.is_empty() => {
                         if let Some(Err(error)) = result {
-                            log::warn!("queued notify: task failed: {}", error);
+                            log::warn!("queued notify: task failed: {error}");
                         }
                     }
                 }
@@ -112,7 +112,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
 
         while let Some(result) = tasks.join_next().await {
             if let Err(error) = result {
-                log::warn!("queued notify: task failed: {}", error);
+                log::warn!("queued notify: task failed: {error}");
             }
         }
     });
@@ -124,7 +124,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
 }
 
 /// Pending zones; an all-zones job expands into the same deduplicated set.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct NotifyBatch {
     all_zones: bool,
     zones: HashSet<ZoneName>,
@@ -170,10 +170,7 @@ async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
     let delay = match refresh {
         Ok(refresh) => window.min(Duration::from_secs(u64::from(refresh.as_secs()))),
         Err(error) => {
-            log::warn!(
-                "queued notify: failed to read SOA REFRESH; sending immediately: {}",
-                error
-            );
+            log::warn!("queued notify: failed to read SOA REFRESH; sending immediately: {error}");
             Duration::ZERO
         }
     };
@@ -231,7 +228,7 @@ async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut Join
     if batch.all_zones {
         match crate::zone::list(cx).await {
             Ok(zones) => batch.zones.extend(zones.into_iter().map(|zone| zone.name)),
-            Err(error) => log::warn!("queued notify: failed to list zones: {}", error),
+            Err(error) => log::warn!("queued notify: failed to list zones: {error}"),
         }
     }
 
@@ -239,7 +236,7 @@ async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut Join
         let cx = cx.clone();
         tasks.spawn(async move {
             if let Err(error) = super::send_notify(&cx, NotifyTarget::Zone(&zone)).await {
-                log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, error);
+                log::warn!("queued notify: NOTIFY failed for zone {zone}: {error}");
             }
         });
     }

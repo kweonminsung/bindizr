@@ -9,7 +9,7 @@ use crate::model::transfer::{TransferLog, TransferLogWithZone};
 use crate::{Backend, Db, mysql, postgres, sqlite};
 
 /// Which of one client address's transfer log rows a listing selects.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TransferLogFilter {
     pub zone_name: Option<ZoneName>,
     /// Transfers answered at or after this time.

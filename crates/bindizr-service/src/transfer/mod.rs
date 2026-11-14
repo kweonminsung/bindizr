@@ -50,7 +50,7 @@ pub async fn save_ok(
     .await;
 
     if let Err(error) = saved {
-        log::warn!("Failed to save a transfer: {}", error);
+        log::warn!("Failed to save a transfer: {error}");
     }
 }
 
@@ -116,7 +116,7 @@ async fn save_unserved(
         Ok(Some(zone)) => zone,
         Ok(None) => return,
         Err(error) => {
-            log::warn!("Failed to save a transfer of {}: {}", zone_name, error);
+            log::warn!("Failed to save a transfer of {zone_name}: {error}");
             return;
         }
     };
@@ -137,7 +137,7 @@ async fn save_unserved(
     .await;
 
     if let Err(error) = saved {
-        log::warn!("Failed to save a transfer of {}: {}", zone_name, error);
+        log::warn!("Failed to save a transfer of {zone_name}: {error}");
     }
 }
 
@@ -200,7 +200,7 @@ pub(crate) async fn find_by_clients_and_zone_name(
     let filter = TransferLogFilter {
         zone_name: Some(zone_name.clone()),
         limit: Some(1),
-        ..TransferLogFilter::default()
+        ..Default::default()
     };
 
     Ok(list_by_clients(cx, clients, &filter)

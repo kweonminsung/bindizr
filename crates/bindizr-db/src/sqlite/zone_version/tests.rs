@@ -30,12 +30,12 @@ async fn fixture() -> (Pool<Sqlite>, ZoneVersion) {
         id: ZoneVersionId::UNWRITTEN,
         zone_id: ZoneId::from(1),
         serial: Serial::from(1),
-        mname: "ns1.example.com".into(),
-        rname: "admin.example.com".into(),
+        mname: "ns1.example.com".to_string(),
+        rname: "admin.example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(86400),
         change_source: ChangeSource::Socket,
         changed_by: None,
@@ -54,7 +54,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         (
             ChangeSource::Api,
             Some(ChangeActor::Token {
-                name: "admin".into(),
+                name: "admin".to_string(),
             }),
             Some("token"),
             Some("admin"),
@@ -62,7 +62,7 @@ async fn actor_columns_round_trip_through_upsert_and_reads() {
         (
             ChangeSource::Nsupdate,
             Some(ChangeActor::TsigKey {
-                name: "updater".into(),
+                name: "updater".to_string(),
             }),
             Some("tsig_key"),
             Some("updater"),

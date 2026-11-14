@@ -31,7 +31,7 @@ pub enum ConfigError {
     InFile {
         path: String,
         #[source]
-        source: Box<ConfigError>,
+        source: Box<Self>,
     },
     #[error("invalid Bindizr configuration: {0}")]
     Parse(#[source] toml::de::Error),
@@ -99,7 +99,7 @@ pub enum ConfigError {
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 /// Top-level bindizr configuration.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
@@ -115,7 +115,7 @@ pub struct Config {
 }
 
 /// HTTP API server settings.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApiConfig {
     #[serde(default = "default_listen_addr")]
@@ -167,7 +167,7 @@ fn default_api_listen_port() -> u16 {
 
 /// HTTPS for the API, served while both PEM files are set; without them the
 /// bearer tokens travel in the clear.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApiTlsConfig {
     #[serde(default)]
@@ -194,7 +194,7 @@ fn default_metrics_enabled() -> bool {
 }
 
 /// Database backend selection and per-backend connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     #[serde(default, rename = "type")]
@@ -210,7 +210,7 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database backends.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     MySql,
@@ -233,9 +233,9 @@ impl std::str::FromStr for DatabaseType {
     /// Parse a database type from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "mysql" => Ok(DatabaseType::MySql),
-            "sqlite" => Ok(DatabaseType::Sqlite),
-            "postgresql" => Ok(DatabaseType::Postgres),
+            "mysql" => Ok(Self::MySql),
+            "sqlite" => Ok(Self::Sqlite),
+            "postgresql" => Ok(Self::Postgres),
             _ => Err(ConfigError::UnknownValue {
                 expected: "mysql, postgresql, or sqlite",
             }),
@@ -244,21 +244,21 @@ impl std::str::FromStr for DatabaseType {
 }
 
 /// MySQL connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MySqlConfig {
     pub url: String,
 }
 
 /// SQLite connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
 /// PostgreSQL connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PostgresConfig {
     pub url: String,
@@ -266,7 +266,7 @@ pub struct PostgresConfig {
 
 /// TLS to the MySQL or PostgreSQL server. A set key overrides the URL's own
 /// parameter; unset leaves the URL and sqlx's default (TLS if offered, unverified).
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseTlsConfig {
     #[serde(default)]
@@ -296,7 +296,7 @@ impl DatabaseTlsConfig {
 
 /// How far the database connection insists on TLS, in PostgreSQL's words;
 /// MySQL's modes map one to one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DatabaseTlsMode {
     Disable,
@@ -353,7 +353,7 @@ impl serde::Serialize for DatabaseTlsMode {
 
 /// DNS server settings; the sub-tables hold the import client, NOTIFY,
 /// nsupdate, the TLS listener, transfers, and zone defaults.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DnsConfig {
     #[serde(default = "default_listen_addr")]
@@ -415,7 +415,7 @@ fn default_dns_listen_port() -> u16 {
 }
 
 /// When NOTIFY reaches the secondaries.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
     /// NOTIFY coalescing window in milliseconds; queued sends follow the write response.
@@ -448,7 +448,7 @@ impl Default for NotifyConfig {
 }
 
 /// Zone transfers as bindizr serves them.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransferConfig {
     /// Record budget for serial-keyed transfer caches, evicting least-recently-used zones.
@@ -472,7 +472,7 @@ impl Default for TransferConfig {
 }
 
 /// nsupdate (RFC 2136).
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NsupdateConfig {
     /// Require a TSIG signature on every update; `false` admits anyone.
@@ -508,7 +508,7 @@ fn default_tcp_max_connections() -> usize {
 }
 
 /// `zone import --from-server`: the AXFR bindizr pulls.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportConfig {
     /// Seconds the whole transfer may take, resolution included.
@@ -564,7 +564,7 @@ fn default_import_max_records() -> usize {
 
 /// Zone transfers over TLS (XoT, RFC 9103): a second TCP listener on
 /// `dns.listen_addr`, served while both PEM files are set.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DnsTlsConfig {
     /// 853 is the port DNS over TLS registers (RFC 7858, Section 3.1).
@@ -595,7 +595,7 @@ fn default_dns_tls_listen_port() -> u16 {
 
 /// What a zone takes when its creation request leaves a field out. Only the
 /// creation reads these: afterwards the values are the zone's own columns.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
@@ -626,7 +626,7 @@ impl Default for ZoneDefaultsConfig {
 
 /// Return the default zone TTL setting.
 fn default_zone_ttl() -> Ttl {
-    Ttl::from_secs(3_600)
+    Ttl::from_secs(3600)
 }
 
 /// Return the default zone refresh setting.
@@ -646,13 +646,13 @@ fn default_zone_expire() -> SoaInterval {
 
 /// Return the default zone minimum TTL setting.
 fn default_zone_minimum_ttl() -> Ttl {
-    Ttl::from_secs(86_400)
+    Ttl::from_secs(86400)
 }
 
 /// Return the default scheduler interval setting: plenty next to the
 /// day-scale windows a pass enforces.
 fn default_scheduler_interval_secs() -> u64 {
-    3_600
+    3600
 }
 
 /// Return the default transfer cache max records setting.
@@ -672,7 +672,7 @@ fn default_notify_timeout_secs() -> u64 {
 
 /// What Bindizr keeps of the past and for how long: zone versions and the
 /// audit and transfer logs. The scheduler pass prunes what is older.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HistoryConfig {
     /// Zone versions, for diff and rollback, and the IXFR journal behind
@@ -688,7 +688,7 @@ pub struct HistoryConfig {
 }
 
 /// How long one kind of history is kept.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetentionConfig {
     /// Days kept before the scheduler pass prunes older entries; `0` keeps
@@ -712,7 +712,7 @@ fn default_history_days() -> u32 {
 }
 
 /// The transfer log: which transfers are saved, and for how long.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransferHistoryConfig {
     #[serde(default)]
@@ -739,7 +739,7 @@ fn default_transfer_history_days() -> u32 {
 }
 
 /// Which transfers the transfer log saves.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SavedTransfers {
     /// Every transfer answered, refused, or failed.
@@ -762,8 +762,8 @@ impl std::str::FromStr for SavedTransfers {
     /// Parse the setting from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "all" => Ok(SavedTransfers::All),
-            "unserved" => Ok(SavedTransfers::Unserved),
+            "all" => Ok(Self::All),
+            "unserved" => Ok(Self::Unserved),
             _ => Err(ConfigError::UnknownValue {
                 expected: "all or unserved",
             }),
@@ -772,7 +772,7 @@ impl std::str::FromStr for SavedTransfers {
 }
 
 /// Logging settings.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
     #[serde(default)]
@@ -783,7 +783,7 @@ pub struct LoggingConfig {
 }
 
 /// The shape of each log line.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
     #[default]
@@ -804,8 +804,8 @@ impl std::str::FromStr for LogFormat {
     /// Parse a log format from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "text" => Ok(LogFormat::Text),
-            "json" => Ok(LogFormat::Json),
+            "text" => Ok(Self::Text),
+            "json" => Ok(Self::Json),
             _ => Err(ConfigError::UnknownValue {
                 expected: "text or json",
             }),
@@ -814,7 +814,7 @@ impl std::str::FromStr for LogFormat {
 }
 
 /// Console log verbosity levels.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -838,11 +838,11 @@ impl std::str::FromStr for LogLevel {
     /// Parse a log level from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "trace" => Ok(LogLevel::Trace),
-            "debug" => Ok(LogLevel::Debug),
-            "info" => Ok(LogLevel::Info),
-            "warn" => Ok(LogLevel::Warn),
-            "error" => Ok(LogLevel::Error),
+            "trace" => Ok(Self::Trace),
+            "debug" => Ok(Self::Debug),
+            "info" => Ok(Self::Info),
+            "warn" => Ok(Self::Warn),
+            "error" => Ok(Self::Error),
             _ => Err(ConfigError::UnknownValue {
                 expected: "trace, debug, info, warn, or error",
             }),
@@ -870,7 +870,7 @@ fn resolve_config_path_with_env(
 impl Config {
     /// Load and validate the file at `conf_file_path`, applying environment
     /// overrides. The value is the caller's to hold; nothing is stored.
-    pub fn load(conf_file_path: &str) -> Result<Config, ConfigError> {
+    pub fn load(conf_file_path: &str) -> Result<Self, ConfigError> {
         if !PathBuf::from(conf_file_path).exists() {
             return Err(ConfigError::NotFound {
                 path: conf_file_path.to_string(),
@@ -884,14 +884,14 @@ impl Config {
 
         // A parse or validation failure names no file, and the path may be a
         // default the caller never spelled.
-        Config::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
+        Self::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
             path: conf_file_path.to_string(),
             source: Box::new(source),
         })
     }
 
     /// The settings a reload actually changed, for the line that reports it.
-    pub fn changed_settings(&self, next: &Config) -> Vec<String> {
+    pub fn changed_settings(&self, next: &Self) -> Vec<String> {
         let mut changed = Vec::new();
 
         if self.dns != next.dns {
@@ -909,7 +909,7 @@ impl Config {
 
     /// Settings bound to something built at startup — a listening socket, the
     /// HTTP router, the database pool — which a reload cannot rebuild.
-    pub fn fixed_settings_changed(&self, next: &Config) -> Vec<String> {
+    pub fn fixed_settings_changed(&self, next: &Self) -> Vec<String> {
         let mut fixed = Vec::new();
 
         if self.api != next.api {

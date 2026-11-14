@@ -59,6 +59,6 @@ impl TryFrom<Rtype> for DnssecRecordType {
 
     /// The stored DNSSEC record type a wire record type maps to.
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        DnssecRecordType::try_from(i32::from(rtype.to_int()))
+        Self::try_from(i32::from(rtype.to_int()))
     }
 }

@@ -773,7 +773,7 @@ async fn external_dns_record_listing_spans_read_pages() {
     app.create_named_zone(&zone_name).await;
 
     // Past the read page, so the listing has to tile without dropping a row.
-    const RECORDS: usize = 5_100;
+    const RECORDS: usize = 5100;
     let zone_file: String = (0..RECORDS)
         .map(|i| {
             format!(

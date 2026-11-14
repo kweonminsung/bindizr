@@ -23,7 +23,7 @@ use crate::cli::output::OutputFormat;
 use crate::daemon;
 
 /// Top-level CLI argument parser.
-#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Parser)]
 #[command(name = "bindizr", version, about)]
 pub(crate) struct Args {
     #[command(subcommand)]
@@ -31,7 +31,7 @@ pub(crate) struct Args {
 }
 
 /// Top-level CLI subcommands. Declaration order is `--help` order.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
     Start {
@@ -160,7 +160,7 @@ pub async fn execute() {
     // not lost output.
     let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
         Some(failure) => Err(error::CliError::request_with_source(
-            format!("output was lost: {}", failure),
+            format!("output was lost: {failure}"),
             failure,
         )),
         None => Ok(()),

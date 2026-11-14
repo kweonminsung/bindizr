@@ -2,6 +2,7 @@
 //! by the adapter's state.
 
 use prometheus::{HistogramVec, IntCounterVec, Registry, TextEncoder};
+use thiserror::Error;
 
 /// The adapter's Prometheus registry and the request metrics registered in it.
 #[derive(Debug)]
@@ -51,7 +52,7 @@ impl AdapterMetrics {
             request_duration_seconds.with_label_values(&[endpoint]);
         }
 
-        Ok(AdapterMetrics {
+        Ok(Self {
             registry,
             requests_total,
             request_duration_seconds,
@@ -67,6 +68,6 @@ impl AdapterMetrics {
 }
 
 /// Failure to register an adapter metric collector.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 #[error(transparent)]
 pub(crate) struct RegisterMetricsError(#[from] prometheus::Error);

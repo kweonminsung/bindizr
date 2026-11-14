@@ -9,7 +9,7 @@ use crate::sql::{RecordSortField, SortOrder};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RecordFilter {
     /// Resolve `zones.name` in the query while filtering `records.zone_id`
     /// through `idx_records_zone_name`.

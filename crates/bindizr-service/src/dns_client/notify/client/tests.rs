@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode};
 use bindizr_core::dns::query;
+use thiserror::Error;
 
 use super::*;
 
@@ -11,7 +12,7 @@ use super::*;
 async fn shared_socket_failure_preserves_original_io_error() {
     use std::error::Error;
 
-    #[derive(Debug, thiserror::Error)]
+    #[derive(Debug, Error)]
     #[error("socket operation failed")]
     struct SocketCause;
 

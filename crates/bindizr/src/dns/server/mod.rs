@@ -37,7 +37,7 @@ pub(crate) struct DnsContext {
 impl DnsContext {
     /// The front end's context over the daemon's, with empty caches.
     pub(crate) fn new(daemon: Arc<Context>) -> Self {
-        DnsContext {
+        Self {
             daemon,
             transfer_cache: transfer_cache::TransferCache::new(),
             address_cache: acl::AddressCache::new(),
@@ -93,12 +93,7 @@ pub(crate) fn query_refusal(
     client_addr: SocketAddr,
 ) -> Option<(OptRcode, Option<ExtendedErrorCode>)> {
     if let Some(rcode) = query.format_error() {
-        log::info!(
-            "Refusing DNS {} query format from {}: {}",
-            transport,
-            client_addr,
-            rcode
-        );
+        log::info!("Refusing DNS {transport} query format from {client_addr}: {rcode}");
         return Some((rcode, None));
     }
 
@@ -254,11 +249,7 @@ pub(crate) async fn handle_tcp_xfr(
             .await;
 
             if let Err(error) = ended {
-                log::debug!(
-                    "Failed to end the XFR session from {}: {}",
-                    client_ip,
-                    error
-                );
+                log::debug!("Failed to end the XFR session from {client_ip}: {error}");
             }
 
             Err(error)
@@ -306,12 +297,7 @@ async fn refuse_tcp_xfr(
     }
 
     cx.metrics().track_xfr(query.qtype, transport, outcome);
-    log::warn!(
-        "Refused XFR {} query from {}: {}",
-        transport,
-        client_ip,
-        reason
-    );
+    log::warn!("Refused XFR {transport} query from {client_ip}: {reason}");
 
     if outcome == XfrResult::Failed {
         transfer::save_failed(
@@ -374,7 +360,7 @@ pub(crate) async fn handle_udp_xfr(
                 match refusal.into_response(query_data, &message::QueryMetadata::from(query)) {
                     Err(DnsError::Tsig(error)) => {
                         failed = true;
-                        log::warn!("Failed to encode XFR UDP TSIG refusal: {}", error);
+                        log::warn!("Failed to encode XFR UDP TSIG refusal: {error}");
                         query
                             .build_signed_error_response(OptRcode::SERVFAIL, None, None)
                             .map_err(DnsError::from)

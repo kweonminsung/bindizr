@@ -34,7 +34,7 @@ pub(crate) enum FetchZoneError {
     Server {
         addr: SocketAddr,
         #[source]
-        source: Box<FetchZoneError>,
+        source: Box<Self>,
     },
     #[error("{addr}: transfer timed out")]
     TimedOut { addr: SocketAddr },
@@ -130,8 +130,8 @@ impl Connection {
 
 impl AxfrClient {
     /// Name the primary; nothing is resolved or connected until a transfer asks.
-    pub(crate) fn new(server: &str) -> AxfrClient {
-        AxfrClient {
+    pub(crate) fn new(server: &str) -> Self {
+        Self {
             server: server.to_string(),
             addr: None,
             connection: None,
@@ -229,7 +229,7 @@ async fn connect_to_server(
                     last = Some(FetchZoneError::Server {
                         addr,
                         source: Box::new(FetchZoneError::Connect(error)),
-                    })
+                    });
                 }
             }
         }

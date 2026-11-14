@@ -229,7 +229,7 @@ pub(crate) async fn authenticate_transfer(
                 signer: None,
             }),
             Ok(false) => Err(TransferRefusal::refused(
-                format!("IP {} is not an enabled secondary", client_ip),
+                format!("IP {client_ip} is not an enabled secondary"),
                 None,
             )),
             Err(error) => Err(TransferRefusal::failed(
@@ -247,8 +247,7 @@ pub(crate) async fn authenticate_transfer(
             Ok(false) => {
                 return Err(TransferRefusal::refused(
                     format!(
-                        "IP {} is not an enabled secondary; XoT needs the key and the address (RFC 9103, Section 7.5)",
-                        client_ip
+                        "IP {client_ip} is not an enabled secondary; XoT needs the key and the address (RFC 9103, Section 7.5)"
                     ),
                     identity.signer,
                 ));
@@ -289,7 +288,7 @@ pub(crate) async fn refuse_query(
         }
         Err(refusal) => match refusal.into_response(query_data, metadata) {
             Err(DnsError::Tsig(error)) => {
-                log::warn!("Failed to encode TSIG refusal: {}", error);
+                log::warn!("Failed to encode TSIG refusal: {error}");
                 Ok(metadata.build_signed_error_response(OptRcode::SERVFAIL, None, None)?)
             }
             response => response,

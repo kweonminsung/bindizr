@@ -54,7 +54,7 @@ pub(crate) async fn delete_role(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     role::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Role '{}' deleted successfully", name);
+    let message = format!("Role '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

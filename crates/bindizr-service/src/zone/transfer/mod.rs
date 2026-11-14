@@ -33,9 +33,9 @@ impl<T> TransferAccess<T> {
     /// Carry a granted value into another shape, leaving a denial as it is.
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TransferAccess<U> {
         match self {
-            TransferAccess::Granted(value) => TransferAccess::Granted(f(value)),
-            TransferAccess::NotAuth => TransferAccess::NotAuth,
-            TransferAccess::Refused(reason) => TransferAccess::Refused(reason),
+            Self::Granted(value) => TransferAccess::Granted(f(value)),
+            Self::NotAuth => TransferAccess::NotAuth,
+            Self::Refused(reason) => TransferAccess::Refused(reason),
         }
     }
 }

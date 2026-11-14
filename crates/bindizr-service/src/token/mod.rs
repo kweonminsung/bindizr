@@ -19,7 +19,7 @@ use crate::types::{CreateTokenRequest, PaginatedResponse, TokenFilter, TokenResp
 use crate::{Context, audit, pagination, role, text, transaction};
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
-const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
+const MAX_EXPIRES_IN_DAYS: i64 = 36500;
 
 /// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {

@@ -65,7 +65,7 @@ async fn import_transfer(
         .await
         .map_err(|error| {
             ServiceError::invalid_input_with_source(
-                format!("AXFR from {} failed: {}", server, error),
+                format!("AXFR from {server} failed: {error}"),
                 error,
             )
         })?;

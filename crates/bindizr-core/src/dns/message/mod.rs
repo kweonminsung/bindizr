@@ -77,7 +77,7 @@ pub struct AddAnswerError {
 impl AddAnswerError {
     /// Build an answer error without a pending TCP frame.
     fn without_frame(source: EncodeMessageError) -> Self {
-        AddAnswerError {
+        Self {
             frame: None,
             source,
         }
@@ -86,7 +86,7 @@ impl AddAnswerError {
 
 /// A record already composed into wire bytes, pushed back through `domain`'s
 /// builder so a message can carry a section it did not compose.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComposedRecord<'a>(&'a [u8]);
 
 impl ComposeRecord for ComposedRecord<'_> {
@@ -223,7 +223,7 @@ impl DnsMessageBuilder {
         add_answer: F,
     ) -> Result<Option<Vec<u8>>, AddAnswerError>
     where
-        F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,
+        F: FnOnce(&mut Self) -> Result<(), EncodeMessageError>,
     {
         add_answer(self).map_err(AddAnswerError::without_frame)?;
 

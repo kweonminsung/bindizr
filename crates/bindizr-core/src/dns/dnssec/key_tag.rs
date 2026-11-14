@@ -27,7 +27,7 @@ impl KeyTag {
 impl From<u16> for KeyTag {
     /// Take a wire key tag.
     fn from(key_tag: u16) -> Self {
-        KeyTag(key_tag)
+        Self(key_tag)
     }
 }
 
@@ -52,7 +52,7 @@ impl From<KeyTag> for u16 {
 impl From<KeyTag> for i32 {
     /// The row form.
     fn from(key_tag: KeyTag) -> Self {
-        i32::from(key_tag.0)
+        Self::from(key_tag.0)
     }
 }
 
@@ -99,7 +99,7 @@ where
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(KeyTag::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+        Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

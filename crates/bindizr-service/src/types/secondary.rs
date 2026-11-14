@@ -13,7 +13,7 @@ use crate::model::secondary::Secondary;
 use crate::types::SecondaryStatusResponse;
 
 /// Request body for registering a secondary.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateSecondaryRequest {
     /// A plain identifier, since it travels in URL paths.
@@ -29,7 +29,7 @@ pub struct CreateSecondaryRequest {
 }
 
 /// Request body for changing a secondary; an omitted field keeps its value.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateSecondaryRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,7 +47,7 @@ pub struct UpdateSecondaryRequest {
 }
 
 /// API representation of a secondary.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SecondaryResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: SecondaryId,
@@ -67,7 +67,7 @@ impl SecondaryResponse {
     /// Build the API representation from a stored secondary and its NOTIFY
     /// key's name.
     pub fn from_secondary(secondary: &Secondary, notify_key_name: Option<&str>) -> Self {
-        SecondaryResponse {
+        Self {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.to_string(),
@@ -79,14 +79,14 @@ impl SecondaryResponse {
 }
 
 /// A secondary wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleSecondaryResponse {
     pub secondary: SecondaryResponse,
 }
 
 /// One NOTIFY sent to a resolved address during a check; `error` is null
 /// when the server accepted it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CheckNotifyResponse {
     #[schema(example = "10.0.0.14:53")]
     pub address: String,
@@ -94,7 +94,7 @@ pub struct CheckNotifyResponse {
 }
 
 /// Secondary check results: resolved addresses, catalog serial comparison, and NOTIFY outcome.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CheckSecondaryResponse {
     pub secondary: SecondaryResponse,
     /// Socket addresses the registered `host[:port]` resolves to now.
@@ -118,7 +118,7 @@ pub struct CheckSecondaryResponse {
 }
 
 /// One transfer Bindizr answered, refused, or failed for a secondary's address.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TransferResponse {
     /// The client address the transfer was served to.
     #[schema(example = "10.0.0.14")]
@@ -146,7 +146,7 @@ pub struct TransferResponse {
 impl From<&TransferLogWithZone> for TransferResponse {
     /// Build the payload of one saved transfer.
     fn from(transfer: &TransferLogWithZone) -> Self {
-        TransferResponse {
+        Self {
             address: transfer.client_addr.clone(),
             zone_name: transfer.zone_name.to_string(),
             kind: transfer.kind,
@@ -161,7 +161,7 @@ impl From<&TransferLogWithZone> for TransferResponse {
 }
 
 /// How the zones a secondary asked for were last served, counted by zone.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TransferSummaryResponse {
     #[schema(example = 12)]
     pub zones: u64,
@@ -180,7 +180,7 @@ pub struct TransferSummaryResponse {
 }
 
 /// The transfers Bindizr served one secondary.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SecondaryTransfersResponse {
     #[schema(example = "ns2")]
     pub secondary_name: String,
@@ -192,7 +192,7 @@ pub struct SecondaryTransfersResponse {
 }
 
 /// One secondary's transfer summary, as `doctor` reports it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SecondaryTransferSummaryResponse {
     #[schema(example = "ns2")]
     pub secondary_name: String,
@@ -202,7 +202,7 @@ pub struct SecondaryTransferSummaryResponse {
 }
 
 /// Catalog diagnostics for the enabled secondaries, before and after NOTIFY.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 pub struct CheckSecondariesResponse {
     pub secondaries: Vec<SecondaryStatusResponse>,
     pub notifies: Vec<CheckNotifyResponse>,
@@ -210,7 +210,7 @@ pub struct CheckSecondariesResponse {
 }
 
 /// Query parameters of a secondary's transfer listing.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct SecondaryTransferFilter {

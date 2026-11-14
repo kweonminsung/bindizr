@@ -1,5 +1,6 @@
 use bindizr_service::types::ErrorResponse;
 use serde::de::DeserializeOwned;
+use thiserror::Error;
 use tokio::io::BufReader;
 use tokio::net::UnixStream;
 
@@ -70,24 +71,21 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
     let mut stream = connect_to_daemon_socket().await?;
 
     let json = serde_json::to_string(&command).map_err(|error| {
-        CliError::request_with_source(format!("failed to serialize command: {}", error), error)
+        CliError::request_with_source(format!("failed to serialize command: {error}"), error)
     })?;
 
     stream.write_all(json.as_bytes()).await.map_err(|error| {
-        CliError::request_with_source(format!("failed to write to socket: {}", error), error)
+        CliError::request_with_source(format!("failed to write to socket: {error}"), error)
     })?;
     stream.write_all(b"\n").await.map_err(|error| {
-        CliError::request_with_source(
-            format!("failed to write newline to socket: {}", error),
-            error,
-        )
+        CliError::request_with_source(format!("failed to write newline to socket: {error}"), error)
     })?;
 
     let mut reader = BufReader::new(stream);
     let mut response = String::new();
 
     reader.read_line(&mut response).await.map_err(|error| {
-        CliError::request_with_source(format!("failed to read from socket: {}", error), error)
+        CliError::request_with_source(format!("failed to read from socket: {error}"), error)
     })?;
 
     // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
@@ -97,7 +95,7 @@ pub(crate) async fn send_command<T: DeserializeOwned>(
     }
 
     serde_json::from_str(&response).map_err(|error| {
-        CliError::request_with_source(format!("failed to parse response: {}", error), error)
+        CliError::request_with_source(format!("failed to parse response: {error}"), error)
     })
 }
 /// Open a connection to the daemon's control socket, refusing a daemon this
@@ -116,7 +114,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
 
             match denied_path {
                 Some(path) => CliError::request_with_source(format!(
-                    "permission denied on the daemon socket at '{}'. Run the CLI as the daemon's user (for a package install, `sudo bindizr ...`).", path
+                    "permission denied on the daemon socket at '{path}'. Run the CLI as the daemon's user (for a package install, `sudo bindizr ...`)."
                 ), error),
                 None => CliError::daemon_unreachable(error),
             }
@@ -126,16 +124,13 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
         .peer_cred()
         .map_err(|error| {
             CliError::request_with_source(
-                format!("could not identify the daemon behind its socket: {}", error),
+                format!("could not identify the daemon behind its socket: {error}"),
                 error,
             )
         })?
         .uid();
     let own_uid = socket::read_own_uid().map_err(|error| {
-        CliError::request_with_source(
-            format!("could not read this process's uid: {}", error),
-            error,
-        )
+        CliError::request_with_source(format!("could not read this process's uid: {error}"), error)
     })?;
 
     // Root drives another user's daemon on the primary socket only, as `sudo bindizr` does.
@@ -188,7 +183,7 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
 }
 
 /// Failed connection attempts to the primary and optional fallback socket.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 #[error(
     "could not connect to the daemon socket at '{SOCKET_FILE_PATH}': {primary}{}; is the bindizr daemon running?",
     fallback.as_ref().map(|error| format!("; fallback '{FALLBACK_SOCKET_FILE_PATH}': {error}")).unwrap_or_default()

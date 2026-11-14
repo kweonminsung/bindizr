@@ -41,7 +41,7 @@ pub(crate) async fn check_database(config: &Config, report: &mut Report) {
 
     match tokio::time::timeout(DB_CHECK_TIMEOUT, bindizr_db::probe_connection(database)).await {
         Ok(Ok(())) => report.ok(format!("Database reachable: {}", database.database_type)),
-        Ok(Err(error)) => report.fail(format!("Database not reachable: {}", error)),
+        Ok(Err(error)) => report.fail(format!("Database not reachable: {error}")),
         Err(_) => report.fail(format!(
             "Database not reachable: timed out after {} seconds",
             DB_CHECK_TIMEOUT.as_secs()
@@ -94,14 +94,13 @@ fn check_port(
     in_use_hint: &str,
 ) {
     match bound {
-        Ok(()) => report.ok(format!("{} port free: {}", label, addr)),
+        Ok(()) => report.ok(format!("{label} port free: {addr}")),
         Err(error) if error.kind() == ErrorKind::AddrInUse => {
-            report.fail(format!("{} port in use: {} ({})", label, addr, in_use_hint))
+            report.fail(format!("{label} port in use: {addr} ({in_use_hint})"));
         }
         Err(error) if error.kind() == ErrorKind::PermissionDenied => report.skip(format!(
-            "{} port check skipped: binding {} needs root",
-            label, addr
+            "{label} port check skipped: binding {addr} needs root"
         )),
-        Err(error) => report.fail(format!("{} port not bindable: {} ({})", label, addr, error)),
+        Err(error) => report.fail(format!("{label} port not bindable: {addr} ({error})")),
     }
 }

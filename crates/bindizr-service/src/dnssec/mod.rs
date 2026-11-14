@@ -319,7 +319,7 @@ mod tests {
         // The built-in default: 14 days of validity re-signed with 5 left.
         assert_eq!(
             policy(14, 5).expiration_jitter_secs(),
-            (9 * 86_400) / 2,
+            (9 * 86400) / 2,
             "a fixed window would come due for the whole zone at once"
         );
     }
@@ -329,10 +329,10 @@ mod tests {
     fn jitter_keeps_signatures_outside_refresh_window() {
         for (validity, refresh) in [(14, 5), (30, 7), (7, 6), (2, 1)] {
             let policy = policy(validity, refresh);
-            let earliest = i64::from(validity) * 86_400 - policy.expiration_jitter_secs();
+            let earliest = i64::from(validity) * 86400 - policy.expiration_jitter_secs();
 
             assert!(
-                earliest > i64::from(refresh) * 86_400,
+                earliest > i64::from(refresh) * 86400,
                 "validity {validity}, refresh {refresh}: signing would land inside the window"
             );
         }

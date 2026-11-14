@@ -15,7 +15,7 @@ use crate::dns::message::DNS_HEADER_LEN;
 type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [u8]>>>;
 
 /// The final Additional record and where the signed DNS message ends.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParsedTsig<'a> {
     pub(crate) record: WireTsig<'a>,
     start: usize,

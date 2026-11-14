@@ -67,7 +67,7 @@ pub(crate) struct ApiError(pub(crate) ServiceError);
 impl From<ServiceError> for ApiError {
     /// Wrap a service error for HTTP response conversion.
     fn from(value: ServiceError) -> Self {
-        ApiError(value)
+        Self(value)
     }
 }
 
@@ -98,7 +98,7 @@ impl IntoResponse for ApiError {
 impl From<JsonRejection> for ApiError {
     /// Translate a JSON extraction failure into an API error.
     fn from(rejection: JsonRejection) -> Self {
-        log::error!("JSON Rejection: {:?}", rejection);
+        log::error!("JSON Rejection: {rejection:?}");
 
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
@@ -125,7 +125,7 @@ impl From<JsonRejection> for ApiError {
             _ => ServiceError::internal_with_source("failed to read request body", rejection),
         };
 
-        ApiError(error)
+        Self(error)
     }
 }
 
@@ -144,7 +144,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         axum::extract::Query::from_request_parts(parts, state)
             .await
-            .map(|axum::extract::Query(value)| Query(value))
+            .map(|axum::extract::Query(value)| Self(value))
             .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
     }
 }
@@ -164,7 +164,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         axum::extract::Path::from_request_parts(parts, state)
             .await
-            .map(|axum::extract::Path(value)| Path(value))
+            .map(|axum::extract::Path(value)| Self(value))
             .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
     }
 }

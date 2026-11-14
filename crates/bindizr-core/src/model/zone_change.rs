@@ -49,8 +49,8 @@ impl ChangeOperation {
     /// Return the text representation of this change operation.
     pub fn as_str(self) -> &'static str {
         match self {
-            ChangeOperation::Add => "ADD",
-            ChangeOperation::Delete => "DEL",
+            Self::Add => "ADD",
+            Self::Delete => "DEL",
         }
     }
 }
@@ -61,8 +61,8 @@ impl std::str::FromStr for ChangeOperation {
     /// Parse the stored text of a change operation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "ADD" => Ok(ChangeOperation::Add),
-            "DEL" => Ok(ChangeOperation::Delete),
+            "ADD" => Ok(Self::Add),
+            "DEL" => Ok(Self::Delete),
             other => Err(ParseChangeOperationError {
                 value: other.to_string(),
             }),
@@ -94,9 +94,9 @@ impl JournalRecordType {
     /// Render the stored record mnemonic.
     pub fn to_text(&self) -> String {
         match self {
-            JournalRecordType::User(record_type) => record_type.as_str().to_owned(),
-            JournalRecordType::Derived(record_type) => record_type.as_str().to_owned(),
-            JournalRecordType::Soa => "SOA".to_owned(),
+            Self::User(record_type) => record_type.as_str().to_owned(),
+            Self::Derived(record_type) => record_type.as_str().to_owned(),
+            Self::Soa => "SOA".to_string(),
         }
     }
 }
@@ -114,10 +114,10 @@ impl TryFrom<String> for JournalRecordType {
     /// Validate and convert the stored value into a journal record type.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         if value.eq_ignore_ascii_case("SOA") {
-            return Ok(JournalRecordType::Soa);
+            return Ok(Self::Soa);
         }
         if let Ok(record_type) = value.parse::<RecordType>() {
-            return Ok(JournalRecordType::User(record_type));
+            return Ok(Self::User(record_type));
         }
 
         value

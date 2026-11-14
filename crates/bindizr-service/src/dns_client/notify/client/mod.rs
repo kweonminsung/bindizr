@@ -343,9 +343,7 @@ async fn serve(
                     && !error.is_authenticated()
                 {
                     log::warn!(
-                        "Ignoring an unauthenticated NOTIFY response from {}: {}",
-                        address,
-                        error
+                        "Ignoring an unauthenticated NOTIFY response from {address}: {error}"
                     );
                     continue;
                 }
@@ -359,8 +357,7 @@ async fn serve(
                         // RFC 1996, Section 3.12: a validated NOTIMP completes the transaction.
                         Err(ParseResponseError::NotifyRcode(OptRcode::NOTIMP)) => {
                             log::warn!(
-                                "Server {} does not support NOTIFY; transaction complete",
-                                address
+                                "Server {address} does not support NOTIFY; transaction complete"
                             );
                             Ok(())
                         }

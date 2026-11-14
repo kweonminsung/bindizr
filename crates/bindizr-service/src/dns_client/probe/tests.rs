@@ -91,7 +91,7 @@ fn build_soa_response(
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&7200u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
-        rdata.extend_from_slice(&604800u32.to_be_bytes());
+        rdata.extend_from_slice(&604_800_u32.to_be_bytes());
         rdata.extend_from_slice(&3600u32.to_be_bytes());
 
         buffer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());

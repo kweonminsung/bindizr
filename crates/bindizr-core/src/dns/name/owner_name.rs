@@ -85,11 +85,7 @@ impl OwnerName {
             // An externally corrupted row becomes one literal label; splitting it
             // would invent a different name.
             Err(error) => {
-                log::error!(
-                    "undecodable owner name in a record row: {} ({})",
-                    value,
-                    error
-                );
+                log::error!("undecodable owner name in a record row: {value} ({error})");
                 Self(vec![value.as_bytes().to_ascii_lowercase()])
             }
         }

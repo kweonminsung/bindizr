@@ -42,7 +42,7 @@ pub(crate) enum ConvertChangesError {
 }
 
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Endpoint {
     #[serde(default)]
@@ -68,7 +68,7 @@ fn is_ttl_unset(ttl: &i64) -> bool {
 }
 
 /// JSON shape of external-dns `endpoint.ProviderSpecificProperty`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ProviderSpecificProperty {
     #[serde(default)]
     name: String,
@@ -77,7 +77,7 @@ pub(crate) struct ProviderSpecificProperty {
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
-#[derive(serde::Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Changes {
     #[serde(default)]
@@ -91,7 +91,7 @@ pub(crate) struct Changes {
 }
 
 /// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
-#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub(crate) struct DomainFilter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) include: Vec<String>,
@@ -99,7 +99,7 @@ pub(crate) struct DomainFilter {
 
 /// One record of the bindizr `/external-dns` API: every value of one name and
 /// type (snake_case, internal shape).
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct BindizrRecord {
     name: String,
     #[serde(rename = "type")]
@@ -110,7 +110,7 @@ pub(crate) struct BindizrRecord {
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
-#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ApplyExternalDnsChangesRequest {
     creates: Vec<BindizrRecord>,
     updates: Vec<BindizrRecordUpdate>,
@@ -119,7 +119,7 @@ pub(crate) struct ApplyExternalDnsChangesRequest {
 
 /// One update of the bindizr change set: the record as stored and its
 /// replacement, paired positionally from `updateOld` and `updateNew`.
-#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct BindizrRecordUpdate {
     old: BindizrRecord,
     new: BindizrRecord,
@@ -128,12 +128,12 @@ pub(crate) struct BindizrRecordUpdate {
 impl From<BindizrRecord> for Endpoint {
     /// An endpoint for one bindizr record; the server already sorts values.
     fn from(record: BindizrRecord) -> Self {
-        Endpoint {
+        Self {
             dns_name: record.name,
             targets: record.values,
             record_type: record.record_type,
             record_ttl: record.ttl.unwrap_or(0),
-            ..Endpoint::default()
+            ..Default::default()
         }
     }
 }

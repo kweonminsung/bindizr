@@ -36,7 +36,7 @@ fn prepare_zone(
     let rname = SoaMailbox::from_encoded(&soa.rname)
         .to_email()
         .map_err(|error| {
-            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", error))
+            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {error}"))
         })?;
     let normalized = zone::validation::normalize_soa(&soa.mname, &rname, i64::from(default_ttl))?;
 
@@ -71,7 +71,7 @@ struct ApplyImportResult {
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
 /// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct ImportTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -231,7 +231,7 @@ pub(crate) async fn apply_import(
             }
         }
         .map_err(|error| {
-            log::error!("Failed to load zone records: {}", error);
+            log::error!("Failed to load zone records: {error}");
             ServiceError::internal_with_source("failed to import zone file", error)
         })?;
 

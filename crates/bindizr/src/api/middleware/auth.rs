@@ -45,7 +45,7 @@ pub(crate) async fn auth_middleware(
             Ok(next.run(request).await)
         }
         Err(error) => {
-            log::debug!("Token validation error: {}", error);
+            log::debug!("Token validation error: {error}");
             Ok(ApiError::from(error).into_response())
         }
     }

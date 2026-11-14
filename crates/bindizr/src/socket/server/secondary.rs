@@ -64,7 +64,7 @@ pub(crate) async fn delete_secondary(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     secondary::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Secondary '{}' deleted successfully", name);
+    let message = format!("Secondary '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },
@@ -78,9 +78,9 @@ pub(crate) async fn check_secondary(
 ) -> Result<DaemonResponse<CheckSecondaryResponse>, ServiceError> {
     let check = secondary::check(cx, &Caller::socket(), name).await?;
     let message = if check.is_healthy() {
-        format!("Secondary '{}' passed the check", name)
+        format!("Secondary '{name}' passed the check")
     } else {
-        format!("Secondary '{}' failed the check", name)
+        format!("Secondary '{name}' failed the check")
     };
 
     Ok(DaemonResponse {

@@ -32,9 +32,9 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
     match stopped {
         Some(()) => {
             if output == OutputFormat::Table {
-                outln!("Bindizr stopped.")
+                outln!("Bindizr stopped.");
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
             Ok(())
         }

@@ -62,28 +62,28 @@ impl IntoResponse for UpstreamError {
     /// Map 401 to 503 so external-dns retries after token replacement; 403 stays permanent.
     fn into_response(self) -> Response {
         match self {
-            UpstreamError::Rejected {
+            Self::Rejected {
                 status: 401,
                 message,
             } => (
                 StatusCode::SERVICE_UNAVAILABLE,
-                format!("bindizr rejected the adapter's token: {}", message),
+                format!("bindizr rejected the adapter's token: {message}"),
             )
                 .into_response(),
-            UpstreamError::Rejected { status, message } if status < 500 => (
+            Self::Rejected { status, message } if status < 500 => (
                 StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
                 message,
             )
                 .into_response(),
-            UpstreamError::Rejected { status, .. } => (
+            Self::Rejected { status, .. } => (
                 StatusCode::BAD_GATEWAY,
-                format!("bindizr responded with status {}", status),
+                format!("bindizr responded with status {status}"),
             )
                 .into_response(),
-            error @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_)) => {
+            error @ (Self::Unreachable(_) | Self::InvalidResponse(_)) => {
                 (StatusCode::BAD_GATEWAY, error.to_string()).into_response()
             }
-            UpstreamError::NoManageableNames => {
+            Self::NoManageableNames => {
                 (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
             }
         }
@@ -98,7 +98,7 @@ fn build_json_response<T: serde::Serialize>(value: &T) -> Response {
         Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, MEDIA_TYPE)], body).into_response(),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to encode response: {}", error),
+            format!("failed to encode response: {error}"),
         )
             .into_response(),
     }
@@ -163,7 +163,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
-            format!("supported media type: {}", MEDIA_TYPE),
+            format!("supported media type: {MEDIA_TYPE}"),
         )
             .into_response();
     }
@@ -185,7 +185,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
     if !media_type::is_acceptable(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
-            format!("supported media type: {}", MEDIA_TYPE),
+            format!("supported media type: {MEDIA_TYPE}"),
         )
             .into_response();
     }
@@ -209,7 +209,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         Err(error) => {
             return (
                 StatusCode::BAD_REQUEST,
-                format!("invalid changes body: {}", error),
+                format!("invalid changes body: {error}"),
             )
                 .into_response();
         }
@@ -218,7 +218,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
     let bindizr_changes = match changes.to_apply_changes_request() {
         Ok(converted) => converted,
         Err(message) => {
-            log::warn!("event=records_apply rejected={}", message);
+            log::warn!("event=records_apply rejected={message}");
             return (StatusCode::BAD_REQUEST, message.to_string()).into_response();
         }
     };
@@ -247,7 +247,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
         Err(error) => {
             return (
                 StatusCode::BAD_REQUEST,
-                format!("invalid endpoints body: {}", error),
+                format!("invalid endpoints body: {error}"),
             )
                 .into_response();
         }
@@ -256,7 +256,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
     let records = match wire::to_bindizr_records(&endpoints) {
         Ok(records) => records,
         Err(message) => {
-            log::warn!("event=adjust_endpoints rejected={}", message);
+            log::warn!("event=adjust_endpoints rejected={message}");
             return (StatusCode::BAD_REQUEST, message.to_string()).into_response();
         }
     };
@@ -287,7 +287,7 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
         Err(UpstreamError::Rejected { status, message }) => (
             StatusCode::SERVICE_UNAVAILABLE,
-            format!("bindizr answered {}: {}", status, message),
+            format!("bindizr answered {status}: {message}"),
         )
             .into_response(),
         Err(error @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_))) => {

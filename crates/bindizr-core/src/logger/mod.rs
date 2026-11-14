@@ -58,7 +58,7 @@ impl log::Log for Logger {
 
             // Stderr keeps logs out of the CLI's stdout; a reader that stops
             // early must not panic the daemon.
-            crate::stream::write_stderr(&format!("{}\n", line));
+            crate::stream::write_stderr(&format!("{line}\n"));
         }
     }
 
@@ -72,11 +72,11 @@ impl From<config::LogLevel> for Level {
     /// Convert a configured logging level into the logging facade's level.
     fn from(level: config::LogLevel) -> Self {
         match level {
-            config::LogLevel::Error => Level::Error,
-            config::LogLevel::Warn => Level::Warn,
-            config::LogLevel::Debug => Level::Debug,
-            config::LogLevel::Trace => Level::Trace,
-            config::LogLevel::Info => Level::Info,
+            config::LogLevel::Error => Self::Error,
+            config::LogLevel::Warn => Self::Warn,
+            config::LogLevel::Debug => Self::Debug,
+            config::LogLevel::Trace => Self::Trace,
+            config::LogLevel::Info => Self::Info,
         }
     }
 }
@@ -89,14 +89,14 @@ impl Logger {
 
         set_format(logging.format);
 
-        if let Err(error) = log::set_boxed_logger(Box::new(Logger)) {
+        if let Err(error) = log::set_boxed_logger(Box::new(Self)) {
             crate::errln!("Failed to set logger: {}", error);
             return;
         }
 
         set_level(logging.level);
 
-        log::info!("Console logging level: {}", log_level);
+        log::info!("Console logging level: {log_level}");
     }
 }
 

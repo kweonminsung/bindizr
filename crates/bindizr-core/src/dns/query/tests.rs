@@ -26,7 +26,7 @@ fn extract_tcp_keepalive_checks_timeout_units_and_option_shape() {
             vec![0, 11, 0, 2, 255, 255],
             Some(Duration::from_millis(6_553_500)),
         ),
-        (vec![], None),
+        (Vec::new(), None),
     ] {
         let mut response = build_soa_response(1, &name("example.com"), Class::IN);
 

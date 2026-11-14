@@ -12,7 +12,7 @@ id_newtype!(
 );
 
 /// Zone metadata used to generate the SOA and NS records.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Zone {
     pub id: ZoneId,
     pub name: ZoneName,
@@ -48,7 +48,7 @@ impl Zone {
     }
 
     /// Whether the SOA metadata differs from `other`, excluding the serial.
-    pub fn soa_metadata_differs(&self, other: &Zone) -> bool {
+    pub fn soa_metadata_differs(&self, other: &Self) -> bool {
         self.mname != other.mname
             || self.rname != other.rname
             || self.default_ttl != other.default_ttl

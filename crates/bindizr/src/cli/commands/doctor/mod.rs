@@ -16,7 +16,7 @@ use crate::socket::client;
 use crate::socket::types::{DaemonCommand, DoctorCheckResponse, DoctorCheckStatus};
 
 /// The whole run, as `--output json` reports it.
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct DoctorResponse {
     healthy: bool,
     failures: usize,
@@ -96,11 +96,11 @@ pub(crate) async fn handle_command(
     let path = config::resolve_config_path(config_file.as_deref());
     let file_config = match Config::load(&path) {
         Ok(config) => {
-            report.ok(format!("Config valid: {}", path));
+            report.ok(format!("Config valid: {path}"));
             Some(config)
         }
         Err(error) => {
-            report.fail(format!("Config invalid: {}", error));
+            report.fail(format!("Config invalid: {error}"));
             None
         }
     };

@@ -38,8 +38,7 @@ pub(crate) fn normalize_soa(
 pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<(), ServiceError> {
     if name == &cx.config().dns.catalog_zone_name {
         return Err(ServiceError::invalid_zone_field(format!(
-            "'{}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it",
-            name
+            "'{name}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it"
         )));
     }
 
@@ -76,7 +75,7 @@ pub(crate) fn validate_name(name: &ZoneName) -> Result<(), ServiceError> {
 /// live on [`ZoneName`]; this only maps the failure to a zone error.
 fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceError> {
     ZoneName::parse(value)
-        .map_err(|error| ServiceError::invalid_zone_field(format!("{} {}", field, error)))
+        .map_err(|error| ServiceError::invalid_zone_field(format!("{field} {error}")))
 }
 
 /// Normalize the SOA primary server name.
@@ -118,7 +117,7 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
     validate_email_local_part(local)?;
     let domain = normalize_domain_name(domain, "rname domain")?;
 
-    let normalized = format!("{}@{}", local, domain);
+    let normalized = format!("{local}@{domain}");
 
     if normalized.len() > MAX_EMAIL_LEN {
         return Err(ServiceError::invalid_zone_field(
@@ -127,7 +126,7 @@ pub(crate) fn normalize_rname(value: &str) -> Result<String, ServiceError> {
     }
 
     SoaMailbox::from_email(&normalized)
-        .map_err(|error| ServiceError::invalid_zone_field(format!("rname {}", error)))?;
+        .map_err(|error| ServiceError::invalid_zone_field(format!("rname {error}")))?;
 
     Ok(normalized)
 }

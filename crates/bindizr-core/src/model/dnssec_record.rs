@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::dns::Ttl;
 use crate::dns::name::{OwnerName, ZoneName};
@@ -80,17 +82,7 @@ pub enum ParseDnssecRecordTypeError {
 /// The record types the signer derives; rows store the wire record type number
 /// (RFC 4034).
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    serde::Serialize,
-    serde::Deserialize,
-    utoipa::ToSchema,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
 )]
 #[serde(rename_all = "UPPERCASE")]
 pub enum DnssecRecordType {
@@ -107,26 +99,26 @@ impl DnssecRecordType {
     /// Return the DNS wire type number for this derived record type.
     pub fn wire_type(self) -> u16 {
         match self {
-            DnssecRecordType::Rrsig => 46,
-            DnssecRecordType::Nsec => 47,
-            DnssecRecordType::Dnskey => 48,
-            DnssecRecordType::Nsec3 => 50,
-            DnssecRecordType::Nsec3param => 51,
-            DnssecRecordType::Cds => 59,
-            DnssecRecordType::Cdnskey => 60,
+            Self::Rrsig => 46,
+            Self::Nsec => 47,
+            Self::Dnskey => 48,
+            Self::Nsec3 => 50,
+            Self::Nsec3param => 51,
+            Self::Cds => 59,
+            Self::Cdnskey => 60,
         }
     }
 
     /// Return the text representation of this DNSSEC record type.
     pub fn as_str(self) -> &'static str {
         match self {
-            DnssecRecordType::Rrsig => "RRSIG",
-            DnssecRecordType::Nsec => "NSEC",
-            DnssecRecordType::Dnskey => "DNSKEY",
-            DnssecRecordType::Nsec3 => "NSEC3",
-            DnssecRecordType::Nsec3param => "NSEC3PARAM",
-            DnssecRecordType::Cds => "CDS",
-            DnssecRecordType::Cdnskey => "CDNSKEY",
+            Self::Rrsig => "RRSIG",
+            Self::Nsec => "NSEC",
+            Self::Dnskey => "DNSKEY",
+            Self::Nsec3 => "NSEC3",
+            Self::Nsec3param => "NSEC3PARAM",
+            Self::Cds => "CDS",
+            Self::Cdnskey => "CDNSKEY",
         }
     }
 }
@@ -144,13 +136,13 @@ impl TryFrom<i32> for DnssecRecordType {
     /// Validate and convert the stored value into a DNSSEC record type.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            46 => Ok(DnssecRecordType::Rrsig),
-            47 => Ok(DnssecRecordType::Nsec),
-            48 => Ok(DnssecRecordType::Dnskey),
-            50 => Ok(DnssecRecordType::Nsec3),
-            51 => Ok(DnssecRecordType::Nsec3param),
-            59 => Ok(DnssecRecordType::Cds),
-            60 => Ok(DnssecRecordType::Cdnskey),
+            46 => Ok(Self::Rrsig),
+            47 => Ok(Self::Nsec),
+            48 => Ok(Self::Dnskey),
+            50 => Ok(Self::Nsec3),
+            51 => Ok(Self::Nsec3param),
+            59 => Ok(Self::Cds),
+            60 => Ok(Self::Cdnskey),
             other => Err(ParseDnssecRecordTypeError::Number(other)),
         }
     }
@@ -162,13 +154,13 @@ impl std::str::FromStr for DnssecRecordType {
     /// Parse a DNSSEC record type from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "RRSIG" => Ok(DnssecRecordType::Rrsig),
-            "NSEC" => Ok(DnssecRecordType::Nsec),
-            "DNSKEY" => Ok(DnssecRecordType::Dnskey),
-            "NSEC3" => Ok(DnssecRecordType::Nsec3),
-            "NSEC3PARAM" => Ok(DnssecRecordType::Nsec3param),
-            "CDS" => Ok(DnssecRecordType::Cds),
-            "CDNSKEY" => Ok(DnssecRecordType::Cdnskey),
+            "RRSIG" => Ok(Self::Rrsig),
+            "NSEC" => Ok(Self::Nsec),
+            "DNSKEY" => Ok(Self::Dnskey),
+            "NSEC3" => Ok(Self::Nsec3),
+            "NSEC3PARAM" => Ok(Self::Nsec3param),
+            "CDS" => Ok(Self::Cds),
+            "CDNSKEY" => Ok(Self::Cdnskey),
             other => Err(ParseDnssecRecordTypeError::Name(other.to_string())),
         }
     }

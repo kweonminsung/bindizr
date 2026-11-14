@@ -4,7 +4,7 @@
 use thiserror::Error;
 
 /// A sort parameter a listing did not recognise.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseSortError {
     #[error("unknown sort field '{value}': expected {expected}")]
     UnknownField {
@@ -17,7 +17,7 @@ pub enum ParseSortError {
 }
 
 /// The column a zone listing sorts by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ZoneSortField {
     #[default]
     Name,
@@ -27,7 +27,7 @@ pub enum ZoneSortField {
 }
 
 /// The column a record listing sorts by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RecordSortField {
     #[default]
     Name,
@@ -38,7 +38,7 @@ pub enum RecordSortField {
 }
 
 /// The column an audit log listing sorts by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AuditLogSortField {
     #[default]
     CreatedAt,
@@ -47,7 +47,7 @@ pub enum AuditLogSortField {
     Operation,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortOrder {
     #[default]
     Asc,
@@ -58,8 +58,8 @@ impl SortOrder {
     /// Return the text representation of this sort order.
     fn as_str(self) -> &'static str {
         match self {
-            SortOrder::Asc => "ASC",
-            SortOrder::Desc => "DESC",
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
         }
     }
 }
@@ -68,10 +68,10 @@ impl ZoneSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            ZoneSortField::Name => "name",
-            ZoneSortField::Serial => "serial",
-            ZoneSortField::DefaultTtl => "default_ttl",
-            ZoneSortField::CreatedAt => "created_at",
+            Self::Name => "name",
+            Self::Serial => "serial",
+            Self::DefaultTtl => "default_ttl",
+            Self::CreatedAt => "created_at",
         }
     }
 
@@ -86,11 +86,11 @@ impl RecordSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            RecordSortField::Name => "r.name",
-            RecordSortField::RecordType => "r.record_type",
-            RecordSortField::Ttl => "r.ttl",
-            RecordSortField::Priority => "r.priority",
-            RecordSortField::CreatedAt => "r.created_at",
+            Self::Name => "r.name",
+            Self::RecordType => "r.record_type",
+            Self::Ttl => "r.ttl",
+            Self::Priority => "r.priority",
+            Self::CreatedAt => "r.created_at",
         }
     }
 
@@ -105,10 +105,10 @@ impl AuditLogSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            AuditLogSortField::CreatedAt => "created_at",
-            AuditLogSortField::Entity => "entity",
-            AuditLogSortField::EntityName => "entity_name",
-            AuditLogSortField::Operation => "operation",
+            Self::CreatedAt => "created_at",
+            Self::Entity => "entity",
+            Self::EntityName => "entity_name",
+            Self::Operation => "operation",
         }
     }
 
@@ -130,10 +130,10 @@ impl std::str::FromStr for AuditLogSortField {
     /// Parse an audit sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "created_at" => Ok(AuditLogSortField::CreatedAt),
-            "entity" => Ok(AuditLogSortField::Entity),
-            "entity_name" => Ok(AuditLogSortField::EntityName),
-            "operation" => Ok(AuditLogSortField::Operation),
+            "created_at" => Ok(Self::CreatedAt),
+            "entity" => Ok(Self::Entity),
+            "entity_name" => Ok(Self::EntityName),
+            "operation" => Ok(Self::Operation),
             other => Err(ParseSortError::UnknownField {
                 value: other.to_string(),
                 expected: "created_at, entity, entity_name, or operation",
@@ -148,10 +148,10 @@ impl std::str::FromStr for ZoneSortField {
     /// Parse a zone sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "name" => Ok(ZoneSortField::Name),
-            "serial" => Ok(ZoneSortField::Serial),
-            "default_ttl" => Ok(ZoneSortField::DefaultTtl),
-            "created_at" => Ok(ZoneSortField::CreatedAt),
+            "name" => Ok(Self::Name),
+            "serial" => Ok(Self::Serial),
+            "default_ttl" => Ok(Self::DefaultTtl),
+            "created_at" => Ok(Self::CreatedAt),
             other => Err(ParseSortError::UnknownField {
                 value: other.to_string(),
                 expected: "name, serial, default_ttl, or created_at",
@@ -166,11 +166,11 @@ impl std::str::FromStr for RecordSortField {
     /// Parse a record sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "name" => Ok(RecordSortField::Name),
-            "type" => Ok(RecordSortField::RecordType),
-            "ttl" => Ok(RecordSortField::Ttl),
-            "priority" => Ok(RecordSortField::Priority),
-            "created_at" => Ok(RecordSortField::CreatedAt),
+            "name" => Ok(Self::Name),
+            "type" => Ok(Self::RecordType),
+            "ttl" => Ok(Self::Ttl),
+            "priority" => Ok(Self::Priority),
+            "created_at" => Ok(Self::CreatedAt),
             other => Err(ParseSortError::UnknownField {
                 value: other.to_string(),
                 expected: "name, type, ttl, priority, or created_at",
@@ -185,8 +185,8 @@ impl std::str::FromStr for SortOrder {
     /// Parse a sort order from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "asc" => Ok(SortOrder::Asc),
-            "desc" => Ok(SortOrder::Desc),
+            "asc" => Ok(Self::Asc),
+            "desc" => Ok(Self::Desc),
             other => Err(ParseSortError::UnknownOrder {
                 value: other.to_string(),
             }),

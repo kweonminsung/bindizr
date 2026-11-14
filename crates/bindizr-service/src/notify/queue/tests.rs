@@ -39,7 +39,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
         &cx,
         &Caller::socket(),
         &CreateSecondaryRequest {
-            name: "silent".into(),
+            name: "silent".to_string(),
             address: socket.local_addr().unwrap().to_string(),
             notify_key_name: None,
         },
@@ -162,7 +162,7 @@ async fn batching_bounds_catalog_delay_and_does_not_restart_expired_windows() {
 /// A shorter delay advances a pending deadline; shutdown flushes without waiting.
 #[tokio::test]
 async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
-    let cx = context(10_000).await;
+    let cx = context(10000).await;
 
     time::pause();
     let name = cx.config().dns.catalog_zone_name.clone();

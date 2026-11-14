@@ -61,7 +61,7 @@ pub(crate) async fn run_tls_server(
 
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
-                    log::warn!("DNS TLS connection task failed: {}", error);
+                    log::warn!("DNS TLS connection task failed: {error}");
                 }
                 continue;
             }
@@ -77,7 +77,7 @@ pub(crate) async fn run_tls_server(
 
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
-                    log::warn!("DNS TLS connection task failed: {}", error);
+                    log::warn!("DNS TLS connection task failed: {error}");
                 }
                 continue;
             }
@@ -103,14 +103,12 @@ pub(crate) async fn run_tls_server(
                     let mut session = match handshake {
                         Ok(Ok(session)) => session,
                         Ok(Err(error)) => {
-                            log::warn!("TLS handshake with {} failed: {}", client_addr, error);
+                            log::warn!("TLS handshake with {client_addr} failed: {error}");
                             return;
                         }
                         Err(_) => {
                             log::warn!(
-                                "TLS handshake with {} timed out after {:?}",
-                                client_addr,
-                                TLS_HANDSHAKE_TIMEOUT
+                                "TLS handshake with {client_addr} timed out after {TLS_HANDSHAKE_TIMEOUT:?}"
                             );
                             return;
                         }
@@ -119,12 +117,11 @@ pub(crate) async fn run_tls_server(
                     // RFC 9103, Section 7.1: rustls may accept a client without ALPN.
                     if session.get_ref().1.alpn_protocol() != Some(b"dot") {
                         log::warn!(
-                            "Closing TLS session with {}: no \"dot\" ALPN was selected",
-                            client_addr
+                            "Closing TLS session with {client_addr}: no \"dot\" ALPN was selected"
                         );
 
                         if let Err(error) = session.shutdown().await {
-                            log::debug!("Closing TLS session with {}: {}", client_addr, error);
+                            log::debug!("Closing TLS session with {client_addr}: {error}");
                         }
 
                         return;
@@ -139,14 +136,12 @@ pub(crate) async fn run_tls_server(
                     .await
                     {
                         log::error!(
-                            "Failed to read DNS TLS message from {}: {}",
-                            client_addr,
-                            error
+                            "Failed to read DNS TLS message from {client_addr}: {error}"
                         );
                     }
                 });
             }
-            Err(error) => log::error!("Failed to accept DNS TLS connection: {}", error),
+            Err(error) => log::error!("Failed to accept DNS TLS connection: {error}"),
         }
     };
 
@@ -156,7 +151,7 @@ pub(crate) async fn run_tls_server(
 
     while let Some(result) = connections.join_next().await {
         if let Err(error) = result {
-            log::warn!("DNS TLS connection task failed: {}", error);
+            log::warn!("DNS TLS connection task failed: {error}");
         }
     }
 

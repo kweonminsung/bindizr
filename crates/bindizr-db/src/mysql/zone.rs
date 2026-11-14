@@ -193,12 +193,11 @@ pub(crate) async fn list_by_filter(
     .bind(&search)
     .bind(filter.scope_role_id)
     .bind(filter.scope_role_id)
-    .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
     .bind(
         filter
             .offset
-            .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-            .unwrap_or(0),
+            .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
     )
     .fetch_all(&mut *connection)
     .await?;

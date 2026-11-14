@@ -4,8 +4,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::dns::name::OwnerName;
 use crate::model::grant_pattern;
@@ -51,17 +53,7 @@ pub struct ParseActionError {
 ///   and equivalent to admin since its holder can grant itself anything
 /// - `audit:read` — read the audit log of management changes; all zones only
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    utoipa::ToSchema,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
 )]
 pub enum Action {
     #[serde(rename = "zone:read")]
@@ -98,42 +90,42 @@ pub enum Action {
 
 impl Action {
     /// Every action, in storage order.
-    pub const ALL: [Action; 15] = [
-        Action::ZoneRead,
-        Action::ZoneCreate,
-        Action::ZoneUpdate,
-        Action::ZoneDelete,
-        Action::ZoneTransfer,
-        Action::RecordRead,
-        Action::RecordCreate,
-        Action::RecordUpdate,
-        Action::RecordDelete,
-        Action::DnssecRead,
-        Action::DnssecManage,
-        Action::SecondaryRead,
-        Action::SecondaryManage,
-        Action::AccessManage,
-        Action::AuditRead,
+    pub const ALL: [Self; 15] = [
+        Self::ZoneRead,
+        Self::ZoneCreate,
+        Self::ZoneUpdate,
+        Self::ZoneDelete,
+        Self::ZoneTransfer,
+        Self::RecordRead,
+        Self::RecordCreate,
+        Self::RecordUpdate,
+        Self::RecordDelete,
+        Self::DnssecRead,
+        Self::DnssecManage,
+        Self::SecondaryRead,
+        Self::SecondaryManage,
+        Self::AccessManage,
+        Self::AuditRead,
     ];
 
     /// Storage and API form.
     pub fn as_str(self) -> &'static str {
         match self {
-            Action::ZoneRead => "zone:read",
-            Action::ZoneCreate => "zone:create",
-            Action::ZoneUpdate => "zone:update",
-            Action::ZoneDelete => "zone:delete",
-            Action::ZoneTransfer => "zone:transfer",
-            Action::RecordRead => "record:read",
-            Action::RecordCreate => "record:create",
-            Action::RecordUpdate => "record:update",
-            Action::RecordDelete => "record:delete",
-            Action::DnssecRead => "dnssec:read",
-            Action::DnssecManage => "dnssec:manage",
-            Action::SecondaryRead => "secondary:read",
-            Action::SecondaryManage => "secondary:manage",
-            Action::AccessManage => "access:manage",
-            Action::AuditRead => "audit:read",
+            Self::ZoneRead => "zone:read",
+            Self::ZoneCreate => "zone:create",
+            Self::ZoneUpdate => "zone:update",
+            Self::ZoneDelete => "zone:delete",
+            Self::ZoneTransfer => "zone:transfer",
+            Self::RecordRead => "record:read",
+            Self::RecordCreate => "record:create",
+            Self::RecordUpdate => "record:update",
+            Self::RecordDelete => "record:delete",
+            Self::DnssecRead => "dnssec:read",
+            Self::DnssecManage => "dnssec:manage",
+            Self::SecondaryRead => "secondary:read",
+            Self::SecondaryManage => "secondary:manage",
+            Self::AccessManage => "access:manage",
+            Self::AuditRead => "audit:read",
         }
     }
 
@@ -141,11 +133,11 @@ impl Action {
     pub fn needs_all_zones(self) -> bool {
         matches!(
             self,
-            Action::ZoneCreate
-                | Action::SecondaryRead
-                | Action::SecondaryManage
-                | Action::AccessManage
-                | Action::AuditRead
+            Self::ZoneCreate
+                | Self::SecondaryRead
+                | Self::SecondaryManage
+                | Self::AccessManage
+                | Self::AuditRead
         )
     }
 
@@ -153,7 +145,7 @@ impl Action {
     pub fn is_record_action(self) -> bool {
         matches!(
             self,
-            Action::RecordRead | Action::RecordCreate | Action::RecordUpdate | Action::RecordDelete
+            Self::RecordRead | Self::RecordCreate | Self::RecordUpdate | Self::RecordDelete
         )
     }
 
@@ -186,7 +178,7 @@ impl FromStr for Action {
 
 /// The actions one grant permits, stored as a comma-separated list in
 /// [`Action::ALL`] order so one set has one spelling.
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ActionSet(BTreeSet<Action>);
 
@@ -281,16 +273,16 @@ impl RoleZoneScope {
     /// The row form: `None` for all zones.
     pub fn zone_id(self) -> Option<ZoneId> {
         match self {
-            RoleZoneScope::All => None,
-            RoleZoneScope::Zone(zone_id) => Some(zone_id),
+            Self::All => None,
+            Self::Zone(zone_id) => Some(zone_id),
         }
     }
 
     /// Whether the scope reaches `zone_id`.
     pub fn covers(self, zone_id: ZoneId) -> bool {
         match self {
-            RoleZoneScope::All => true,
-            RoleZoneScope::Zone(scoped) => scoped == zone_id,
+            Self::All => true,
+            Self::Zone(scoped) => scoped == zone_id,
         }
     }
 }
@@ -298,13 +290,13 @@ impl RoleZoneScope {
 impl From<Option<ZoneId>> for RoleZoneScope {
     /// Read the row form, where NULL means all zones.
     fn from(zone_id: Option<ZoneId>) -> Self {
-        zone_id.map_or(RoleZoneScope::All, RoleZoneScope::Zone)
+        zone_id.map_or(Self::All, RoleZoneScope::Zone)
     }
 }
 
 /// A role's actions and zone scope; name/type patterns narrow only `record:*`.
 /// Pattern syntax is defined by [`super::grant_pattern`].
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct RoleGrant {
     pub id: RoleGrantId,
     pub role_id: RoleId,
@@ -350,7 +342,7 @@ pub struct RoleGrants(Arc<[RoleGrant]>);
 impl From<Vec<RoleGrant>> for RoleGrants {
     /// Wrap a role's loaded grants.
     fn from(grants: Vec<RoleGrant>) -> Self {
-        RoleGrants(grants.into())
+        Self(grants.into())
     }
 }
 

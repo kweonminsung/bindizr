@@ -9,7 +9,7 @@ fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> En
         record_type: record_type.to_string(),
         record_ttl: ttl,
         targets: targets.iter().map(ToString::to_string).collect(),
-        ..Endpoint::default()
+        ..Default::default()
     }
 }
 

@@ -33,7 +33,7 @@ pub(crate) async fn find_notify_tsig_key(
         Some(id) => Ok(Some(
             bindizr_db::tsig_key::get(cx.db(), id)
                 .await?
-                .ok_or_else(|| ServiceError::internal(format!("TSIG key {} is missing", id)))?,
+                .ok_or_else(|| ServiceError::internal(format!("TSIG key {id} is missing")))?,
         )),
         None => Ok(None),
     }

@@ -23,7 +23,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing zones.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum ZoneCommand {
     /// Create a zone
     #[command(after_help = "\
@@ -321,7 +321,7 @@ Examples:
 }
 
 /// CLI import mode, matching the service's `ImportMode` and lowercase wire names.
-#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
     Append,
@@ -335,15 +335,15 @@ impl From<ImportMode> for types::ImportMode {
     /// Convert the CLI import mode into the service import mode.
     fn from(mode: ImportMode) -> Self {
         match mode {
-            ImportMode::Append => types::ImportMode::Append,
-            ImportMode::Upsert => types::ImportMode::Upsert,
-            ImportMode::Replace => types::ImportMode::Replace,
+            ImportMode::Append => Self::Append,
+            ImportMode::Upsert => Self::Upsert,
+            ImportMode::Replace => Self::Replace,
         }
     }
 }
 
 /// Arguments for the `zone notify` subcommand.
-#[derive(Args, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub(crate) struct NotifyArgs {
     /// The name of the zone; omit it to notify all zones
     #[arg(value_name = "ZONE_NAME")]
@@ -503,9 +503,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             .await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
         ZoneCommand::Export { name, signed } => {
@@ -569,7 +569,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
                 output::print_table(import.zones.iter().map(ImportZonesRow::from).collect());
             } else {
-                output::print_payload(import, output)?
+                output::print_payload(import, output)?;
             }
 
             // A zone left behind must not exit as a success.
@@ -620,7 +620,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     out!("{}", output::render_change_preview(&import.diff));
                 }
             } else {
-                output::print_payload(import, output)?
+                output::print_payload(import, output)?;
             }
 
             // A rejected import applied nothing, so it must not exit as a success.
@@ -662,9 +662,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<MessageResponse>(command).await?;
 
             if args.output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, args.output)?
+                output::print_payload(&response.data, args.output)?;
             }
         }
     }

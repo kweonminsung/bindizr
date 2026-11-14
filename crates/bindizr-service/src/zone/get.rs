@@ -38,7 +38,7 @@ pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
 /// fan-out read it.
 pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|error| {
-        log::error!("Failed to fetch zones: {}", error);
+        log::error!("Failed to fetch zones: {error}");
         ServiceError::internal_with_source("failed to fetch zones", error)
     })?;
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
@@ -55,7 +55,7 @@ pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
         cx.db(),
         bindizr_db::zone::ZoneFilter {
             scope_role_id: caller.scope_role_id(),
-            ..bindizr_db::zone::ZoneFilter::default()
+            ..Default::default()
         },
     )
     .await?)

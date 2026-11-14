@@ -105,7 +105,7 @@ fn parse_bind_key_time(
 
 /// Where an imported key stands in its rollover: the state it is in, when it
 /// entered it, and when it may move on.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DnssecKeyPhase {
     state: DnssecKeyState,
     state_changed_at: DateTime<Utc>,
@@ -251,7 +251,7 @@ impl DnssecKey {
             eligible_at,
         } = bind_key_phase(private_key, zone.default_ttl, now)?;
 
-        Ok(DnssecKey {
+        Ok(Self {
             id: DnssecKeyId::UNWRITTEN,
             zone_id: zone.id,
             role,

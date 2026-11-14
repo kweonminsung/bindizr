@@ -44,7 +44,7 @@ impl From<NotifyError> for ServiceError {
     fn from(error: NotifyError) -> Self {
         match error {
             NotifyError::Service(error) => error,
-            other => ServiceError::Internal {
+            other => Self::Internal {
                 message: other.to_string(),
                 source: Some(Box::new(other)),
             },
@@ -75,7 +75,7 @@ pub(crate) async fn send_notify(
             let (zone_name, result) = result
                 .map_err(|error| ServiceError::internal_with_source("NOTIFY task failed", error))?;
             if let Err(error) = result {
-                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, error);
+                log::warn!("Failed to send NOTIFY for zone {zone_name}: {error}");
                 failures.push((zone_name, error));
             }
         }
@@ -97,6 +97,6 @@ pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
     }
 
     if let Err(error) = send::send_zone_notify(cx, zone_name).await {
-        log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, error);
+        log::warn!("Failed to send NOTIFY for zone {zone_name}: {error}");
     }
 }

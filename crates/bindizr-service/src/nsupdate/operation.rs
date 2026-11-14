@@ -46,28 +46,27 @@ impl RecordOperation {
     /// The grant action this operation needs: an add creates, both deletes delete.
     pub(crate) fn action(&self) -> Action {
         match self {
-            RecordOperation::AddRecord { .. } => Action::RecordCreate,
-            RecordOperation::DeleteRecordSet { .. } | RecordOperation::DeleteRecord { .. } => {
-                Action::RecordDelete
-            }
+            Self::AddRecord { .. } => Action::RecordCreate,
+            Self::DeleteRecordSet { .. } | Self::DeleteRecord { .. } => Action::RecordDelete,
         }
     }
 
     /// Return the owner name targeted by this update operation.
     pub(crate) fn name(&self) -> &OwnerName {
         match self {
-            RecordOperation::AddRecord { name, .. }
-            | RecordOperation::DeleteRecordSet { name, .. }
-            | RecordOperation::DeleteRecord { name, .. } => name,
+            Self::AddRecord { name, .. }
+            | Self::DeleteRecordSet { name, .. }
+            | Self::DeleteRecord { name, .. } => name,
         }
     }
 
     /// The type this update touches; `None` for a whole-name delete.
     pub(crate) fn record_type(&self) -> Option<&RecordType> {
         match self {
-            RecordOperation::AddRecord { record_type, .. }
-            | RecordOperation::DeleteRecord { record_type, .. } => Some(record_type),
-            RecordOperation::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
+            Self::AddRecord { record_type, .. } | Self::DeleteRecord { record_type, .. } => {
+                Some(record_type)
+            }
+            Self::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
         }
     }
 }
@@ -270,7 +269,7 @@ async fn delete_matching_tx(
         match value {
             None => matched.retain(|record| record.record_type != RecordType::Ns),
             Some(_) if ns_total <= 1 => {
-                matched.retain(|record| record.record_type != RecordType::Ns)
+                matched.retain(|record| record.record_type != RecordType::Ns);
             }
             Some(_) => {}
         }

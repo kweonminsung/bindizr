@@ -7,7 +7,7 @@ use crate::error::DatabaseError;
 
 /// Row locks requested on MySQL/PostgreSQL. SQLite relies on its transaction
 /// mode: a database write lock for mutations, a snapshot for read-only work.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockLevel {
     /// The caller mutates these rows in this transaction.
     Exclusive,
@@ -25,9 +25,9 @@ impl LockLevel {
     /// this.
     pub(crate) fn clause(self) -> &'static str {
         match self {
-            LockLevel::Exclusive => " FOR UPDATE",
-            LockLevel::Shared => " FOR SHARE",
-            LockLevel::Unlocked => "",
+            Self::Exclusive => " FOR UPDATE",
+            Self::Shared => " FOR SHARE",
+            Self::Unlocked => "",
         }
     }
 }

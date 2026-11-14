@@ -87,7 +87,7 @@ impl VerifyResponseError {
 }
 
 /// Validated key material for transactions and signed TSIG errors.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct TsigSigningKey {
     domain: Arc<Key>,
     hmac: hmac::Key,
@@ -101,7 +101,7 @@ impl AsRef<Key> for TsigSigningKey {
 }
 
 /// The outbound key and request MAC used to authenticate the response.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct ResponseVerifier {
     key: TsigSigningKey,
     request_mac: Vec<u8>,

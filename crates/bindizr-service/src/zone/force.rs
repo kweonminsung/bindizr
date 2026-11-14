@@ -33,7 +33,7 @@ pub(crate) async fn force_increment_serial(
         )
         .await
         .map_err(|error| {
-            log::error!("Failed to force increment zone serial: {}", error);
+            log::error!("Failed to force increment zone serial: {error}");
             ServiceError::internal_with_source("failed to force increment zone serial", error)
         })?;
 

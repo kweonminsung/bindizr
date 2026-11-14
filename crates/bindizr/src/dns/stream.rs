@@ -29,14 +29,14 @@ impl DnsStream {
     /// the metrics record it.
     pub(crate) fn transport(&self) -> TransferTransport {
         match self {
-            DnsStream::Tcp(_) => TransferTransport::Tcp,
-            DnsStream::Tls(_) => TransferTransport::Tls,
+            Self::Tcp(_) => TransferTransport::Tcp,
+            Self::Tls(_) => TransferTransport::Tls,
         }
     }
 
     /// Split the connection into the half the listener reads queries from and
     /// the writer the queries in flight answer through.
-    pub(crate) fn into_split(self) -> (ReadHalf<DnsStream>, ResponseWriter) {
+    pub(crate) fn into_split(self) -> (ReadHalf<Self>, ResponseWriter) {
         let transport = self.transport();
         let (reader, writer) = tokio::io::split(self);
 
@@ -59,8 +59,8 @@ impl AsyncRead for DnsStream {
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_read(task_cx, buffer),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_read(task_cx, buffer),
+            Self::Tcp(stream) => Pin::new(stream).poll_read(task_cx, buffer),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_read(task_cx, buffer),
         }
     }
 }
@@ -73,16 +73,16 @@ impl AsyncWrite for DnsStream {
         buffer: &[u8],
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_write(task_cx, buffer),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_write(task_cx, buffer),
+            Self::Tcp(stream) => Pin::new(stream).poll_write(task_cx, buffer),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_write(task_cx, buffer),
         }
     }
 
     /// Flush whichever stream the connection arrived on.
     fn poll_flush(self: Pin<&mut Self>, task_cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_flush(task_cx),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_flush(task_cx),
+            Self::Tcp(stream) => Pin::new(stream).poll_flush(task_cx),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_flush(task_cx),
         }
     }
 
@@ -92,8 +92,8 @@ impl AsyncWrite for DnsStream {
         task_cx: &mut task::Context<'_>,
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            DnsStream::Tcp(stream) => Pin::new(stream).poll_shutdown(task_cx),
-            DnsStream::Tls(stream) => Pin::new(stream.as_mut()).poll_shutdown(task_cx),
+            Self::Tcp(stream) => Pin::new(stream).poll_shutdown(task_cx),
+            Self::Tls(stream) => Pin::new(stream.as_mut()).poll_shutdown(task_cx),
         }
     }
 }

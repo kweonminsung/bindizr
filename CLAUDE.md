@@ -981,6 +981,13 @@ Derive traits according to the value's contract (`C-COMMON-TRAITS`, `C-DEBUG`):
 | `Default` | An empty/default value is meaningful, including filters and infallible no-argument constructors. |
 | `Serialize`, `Deserialize` | Every process-boundary payload, including adapter-local HTTP shapes and responses read by the CLI. Query extractors and final CLI presentation structs need only their transport's direction. DB rows carry neither. |
 
+A derive list names std traits first, in the order `Debug`, `Clone`, `Copy`,
+`PartialEq`, `Eq`, `Hash`, `PartialOrd`, `Ord`, `Default`; then `Serialize`,
+`Deserialize`; then the rest (`ToSchema`, `IntoParams`, `FromRow`, `Error`,
+`Tabled`, clap's). A derive macro is imported like any other name (`Serialize`,
+not `serde::Serialize`); a `macro_rules!` body spells the path out, since it
+expands where nothing is imported.
+
 Enums with stored, wire, or textual forms follow [Presentation](#presentation).
 Control enums without those forms need neither text conversion nor `Display`.
 
@@ -1564,6 +1571,13 @@ fixtures. A trait needed only for method resolution inside one function is
 imported inside that function. Keep it at module scope when several functions
 need it, or when an impl, bound, derive, or signature refers to it there.
 
+A type or trait is named through its import wherever it is used, not by a path
+spelled in place (`Duration`, `FromStr`, `UdpSocket`, never
+`std::time::Duration` in a signature). `std::fmt` and `std::io` are imported as
+modules, since their `Result` and `Error` collide with ours: `fmt::Display`,
+`fmt::Formatter`, `fmt::Result`, `io::Error`. `std::error::Error` stays spelled
+out beside the `Error` derive.
+
 A `use` never renames: `use domain::base::Record as WireRecord` hides which
 name a body reads. A foreign name that collides with one of ours is reached
 through its parent module (`inplace::Error`, `domain::base::Ttl`) or, when
@@ -1572,6 +1586,32 @@ beside its kin (`WireName`, `WireRecord` in `dns::dnssec`); a module is
 imported as itself (`use bindizr_service::{token, zone}`), never `self as
 service`. The one rename is `as _`, for a trait imported only for its
 methods (`use std::fmt::Write as _`).
+
+### Expression style
+
+Where two spellings mean the same thing, the workspace writes one:
+
+- A format string captures a bare identifier inline (`"{error}"`,
+  `"{zone_name:?}"`); a positional `{}` takes an expression (`"{}", zone.name`).
+- Inside an `impl`, the type is `Self`: its variants, constructors, and
+  associated items (`Self::Axfr`, `Self { .. }`), not its own name.
+- A method of a `Copy` type takes `self` by value (`fn as_str(self)`).
+- A string literal becomes a `String` through `.to_string()`. `.into()` is for
+  another target type; `String::from` and `.to_owned()` are not used for it.
+- An empty collection is `Vec::new()` (`HashMap::new()`, `String::new()`), not
+  `vec![]`.
+- Struct update is `..Default::default()`; a default on its own names its type
+  (`ZoneFilter::default()`).
+- A mapped `Option` or `Result` with a fallback is `map_or` / `map_or_else`, not
+  `map(..).unwrap_or(..)`.
+- A statement that ends a block returning `()` ends with a semicolon.
+- A number of six or more digits groups them by thousands (`500_000`); a
+  shorter one does not (`86400`), and a date-form serial stays whole
+  (`2026072501`).
+- `const` and `use` items inside a function open its body.
+
+The `uninlined_format_args`, `use_self`, `map_unwrap_or`, and
+`semicolon_if_nothing_returned` Clippy lints hold the mechanical part.
 
 ### Comments
 

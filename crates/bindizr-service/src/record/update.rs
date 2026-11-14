@@ -15,7 +15,7 @@ use crate::{Context, dnssec, serial, transaction, ttl, zone};
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LockTarget<'a> {
     Id {
         record_id: RecordId,
@@ -92,8 +92,7 @@ fn resolve_update(
         record_type.stored_priority(request.priority.or(existing.priority))
     } else if request.priority.is_some() {
         return Err(ServiceError::invalid_record_value(format!(
-            "{} records do not take a priority",
-            record_type
+            "{record_type} records do not take a priority"
         )));
     } else {
         None
@@ -145,7 +144,7 @@ pub async fn update(
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {}", error);
+            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,
@@ -186,12 +185,11 @@ async fn update_locked(
                         Ok(Some(zone)) => zone,
                         Ok(None) => {
                             return Err(ServiceError::ZoneNotFound(format!(
-                                "zone with id '{}' not found",
-                                zone_id
+                                "zone with id '{zone_id}' not found"
                             )));
                         }
                         Err(error) => {
-                            log::error!("Failed to fetch zone: {}", error);
+                            log::error!("Failed to fetch zone: {error}");
                             return Err(ServiceError::internal_with_source(
                                 "failed to fetch zone",
                                 error,
@@ -212,7 +210,7 @@ async fn update_locked(
                         return Err(ServiceError::record_not_found(record_id));
                     }
                     Err(error) => {
-                        log::error!("Failed to fetch record: {}", error);
+                        log::error!("Failed to fetch record: {error}");
                         return Err(ServiceError::internal_with_source(
                             "failed to fetch record",
                             error,
@@ -313,7 +311,7 @@ async fn update_locked(
         {
             Ok(records) => records,
             Err(error) => {
-                log::error!("Failed to load records: {}", error);
+                log::error!("Failed to load records: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to update record",
                     error,

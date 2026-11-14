@@ -42,7 +42,7 @@ fn command_round_trips_between_client_and_server() {
         request: UpdateZoneRequest {
             name: Some("new.example.com".to_string()),
             default_ttl: Some(300),
-            ..UpdateZoneRequest::default()
+            ..Default::default()
         },
     };
     let line = serde_json::to_string(&sent).unwrap();
@@ -177,7 +177,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     use tokio::time;
 
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.notify.batch_ms = 0;
     config.dns.notify.timeout_secs = 3;
     config.dns.notify.retries = 0;

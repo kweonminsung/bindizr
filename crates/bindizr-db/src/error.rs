@@ -55,12 +55,12 @@ pub enum DatabaseError {
 impl DatabaseError {
     /// Check whether the database error reports a duplicate unique value.
     pub fn is_unique_violation(&self) -> bool {
-        matches!(self, DatabaseError::UniqueViolation(_))
+        matches!(self, Self::UniqueViolation(_))
     }
 
     /// Check whether the database error reports a foreign-key violation.
     pub fn is_foreign_key_violation(&self) -> bool {
-        matches!(self, DatabaseError::ForeignKeyViolation(_))
+        matches!(self, Self::ForeignKeyViolation(_))
     }
 }
 
@@ -69,15 +69,13 @@ impl From<sqlx::Error> for DatabaseError {
     /// source.
     fn from(error: sqlx::Error) -> Self {
         match &error {
-            sqlx::Error::PoolTimedOut => DatabaseError::PoolTimedOut,
+            sqlx::Error::PoolTimedOut => Self::PoolTimedOut,
             sqlx::Error::Database(database_error) => match database_error.kind() {
-                sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(error),
-                sqlx::error::ErrorKind::ForeignKeyViolation => {
-                    DatabaseError::ForeignKeyViolation(error)
-                }
-                _ => DatabaseError::QueryFailed(error),
+                sqlx::error::ErrorKind::UniqueViolation => Self::UniqueViolation(error),
+                sqlx::error::ErrorKind::ForeignKeyViolation => Self::ForeignKeyViolation(error),
+                _ => Self::QueryFailed(error),
             },
-            _ => DatabaseError::QueryFailed(error),
+            _ => Self::QueryFailed(error),
         }
     }
 }

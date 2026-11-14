@@ -251,14 +251,14 @@ fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
 /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
 /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
 pub fn to_quoted_charstr(bytes: &[u8]) -> String {
-    let mut text = String::from("\"");
+    let mut text = "\"".to_string();
 
     for &byte in bytes {
         match byte {
             b'"' => text.push_str("\\\""),
             b'\\' => text.push_str("\\\\"),
             0x20..=0x7e => text.push(byte as char),
-            _ => text.push_str(&format!("\\{:03}", byte)),
+            _ => text.push_str(&format!("\\{byte:03}")),
         }
     }
 

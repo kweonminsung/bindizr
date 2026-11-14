@@ -149,7 +149,7 @@ pub(crate) async fn load_status_tx(
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
 fn build_ds_response(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsResponse, ServiceError> {
     let apex = zone.name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone apex: {}", error), error)
+        ServiceError::internal_with_source(format!("invalid zone apex: {error}"), error)
     })?;
     let rdata = key
         .ds_rdata(&apex, DS_DIGEST_TYPE)

@@ -70,21 +70,20 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
     if config.api.tls.tls_files().is_some() {
         match tokio::time::timeout(API_CHECK_TIMEOUT, TcpStream::connect(addr)).await {
             Ok(Ok(_)) => report.ok(format!(
-                "API listening: https://{} (TLS handshake not attempted)",
-                addr
+                "API listening: https://{addr} (TLS handshake not attempted)"
             )),
             Ok(Err(error)) => {
-                report.fail(format!("API not reachable: https://{} ({})", addr, error))
+                report.fail(format!("API not reachable: https://{addr} ({error})"));
             }
-            Err(_) => report.fail(format!("API not reachable: https://{} (timed out)", addr)),
+            Err(_) => report.fail(format!("API not reachable: https://{addr} (timed out)")),
         }
 
         return;
     }
 
     match probe_http_status_line(addr).await {
-        Ok(status_line) => report.ok(format!("API reachable: http://{} ({})", addr, status_line)),
-        Err(error) => report.fail(format!("API not reachable: http://{} ({})", addr, error)),
+        Ok(status_line) => report.ok(format!("API reachable: http://{addr} ({status_line})")),
+        Err(error) => report.fail(format!("API not reachable: http://{addr} ({error})")),
     }
 }
 
@@ -96,10 +95,7 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await?;
 
-        let request = format!(
-            "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-            addr
-        );
+        let request = format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
 
         stream.write_all(request.as_bytes()).await?;
 

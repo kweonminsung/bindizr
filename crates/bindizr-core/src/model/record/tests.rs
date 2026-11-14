@@ -322,7 +322,7 @@ fn validate_mx_value_rejects_invalid_forms() {
         ("bad target.example.com", None),
         ("bad..example.com", None),
         ("mail.example.com", Some(-1)),
-        ("mail.example.com", Some(65_536)),
+        ("mail.example.com", Some(65536)),
     ] {
         assert!(
             RecordType::Mx.validate_value(value, priority).is_err(),
@@ -366,7 +366,7 @@ fn validate_srv_value_rejects_invalid_forms() {
         ("5 5060 bad target.example.com", None),
         ("5 5060 bad..example.com", None),
         ("5 5060 sip.example.com", Some(-1)),
-        ("5 5060 sip.example.com", Some(65_536)),
+        ("5 5060 sip.example.com", Some(65536)),
     ] {
         assert!(
             RecordType::Srv.validate_value(value, priority).is_err(),

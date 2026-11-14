@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 /// A daemon command and its payload, shared by CLI serialization
 /// and daemon deserialization.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub(crate) enum DaemonCommand {
     Status,
@@ -215,14 +215,14 @@ pub(crate) enum DaemonCommand {
 
 /// The daemon's answer: a message for a person, and the payload
 /// `--output json` prints.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonResponse<T> {
     pub(crate) message: String,
     pub(crate) data: T,
 }
 
 /// Daemon status details returned by the `Status` command.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonStatusResponse {
     pub(crate) pid: Option<u32>,
     pub(crate) version: String,
@@ -245,7 +245,7 @@ pub(crate) struct DaemonStatusResponse {
 
 /// Daemon installation checks; secondaries are compared with the catalog serial
 /// as `zone status` compares them with a member zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheckResponse,
     pub(crate) dns_server: DoctorCheckResponse,
@@ -261,7 +261,7 @@ pub(crate) struct DaemonDoctorResponse {
 }
 
 /// One check's outcome.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum DoctorCheckStatus {
     Ok,
@@ -274,15 +274,15 @@ impl std::fmt::Display for DoctorCheckStatus {
     /// Write the status as the doctor's report labels it.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            DoctorCheckStatus::Ok => "OK",
-            DoctorCheckStatus::Failed => "FAILED",
-            DoctorCheckStatus::Skipped => "SKIP",
+            Self::Ok => "OK",
+            Self::Failed => "FAILED",
+            Self::Skipped => "SKIP",
         })
     }
 }
 
 /// One installation check, worded as `doctor` reports it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DoctorCheckResponse {
     pub(crate) status: DoctorCheckStatus,
     pub(crate) message: String,
@@ -316,7 +316,7 @@ mod tests {
         for (command, expected) in [
             (
                 DaemonCommand::CreateBulkRecords(CreateBulkRecordsRequest {
-                    zone_name: "example.com".into(),
+                    zone_name: "example.com".to_string(),
                     records: Vec::new(),
                     dry_run: true,
                 }),
@@ -324,8 +324,8 @@ mod tests {
             ),
             (
                 DaemonCommand::DeleteMatchingRecords(DeleteRecordsRequest {
-                    zone_name: "example.com".into(),
-                    name: "www".into(),
+                    zone_name: "example.com".to_string(),
+                    name: "www".to_string(),
                     record_type: None,
                     value: None,
                     priority: None,
@@ -335,7 +335,7 @@ mod tests {
             ),
             (
                 DaemonCommand::AdvanceDnssecRollover {
-                    zone_name: "example.com".into(),
+                    zone_name: "example.com".to_string(),
                     ds_check: DsCheck::Probe,
                     holddown: Holddown::Wait,
                 },

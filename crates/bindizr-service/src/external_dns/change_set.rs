@@ -62,8 +62,7 @@ pub(crate) struct ZoneChangeSet {
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
     RecordType::parse_external_dns_supported(record_type).ok_or_else(|| {
         ServiceError::invalid_input(format!(
-            "record type '{}' is not supported by the ExternalDNS API",
-            record_type
+            "record type '{record_type}' is not supported by the ExternalDNS API"
         ))
     })
 }
@@ -330,6 +329,6 @@ impl ZoneChangeSet {
             records_at_name.push(record.clone());
         }
 
-        Ok(ZoneChangeSet { deletes, creates })
+        Ok(Self { deletes, creates })
     }
 }

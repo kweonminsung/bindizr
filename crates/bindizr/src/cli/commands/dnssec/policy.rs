@@ -13,7 +13,7 @@ use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing DNSSEC policies, the named signing-parameter
 /// bundles zones sign under.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum DnssecPolicyCommand {
     /// Create a DNSSEC policy (omitted options take the built-in defaults)
     #[command(after_help = "\
@@ -133,7 +133,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 }),
             )
             .await?;
-            log::debug!("DNSSEC policy creation result: {:?}", response);
+            log::debug!("DNSSEC policy creation result: {response:?}");
             print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::List {
@@ -145,7 +145,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 DaemonCommand::ListDnssecPolicies(PageRequest { limit, offset }),
             )
             .await?;
-            log::debug!("DNSSEC policy list result: {:?}", response);
+            log::debug!("DNSSEC policy list result: {response:?}");
             output::print_page(&response.data, output, |item| DnssecPolicyRow::from(item))?;
         }
         DnssecPolicyCommand::Get { name, output } => {
@@ -153,7 +153,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 DaemonCommand::GetDnssecPolicy { name },
             )
             .await?;
-            log::debug!("DNSSEC policy get result: {:?}", response);
+            log::debug!("DNSSEC policy get result: {response:?}");
             print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::Update {
@@ -174,19 +174,19 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                 },
             )
             .await?;
-            log::debug!("DNSSEC policy update result: {:?}", response);
+            log::debug!("DNSSEC policy update result: {response:?}");
             print_policy(&response.data, output)?;
         }
         DnssecPolicyCommand::Delete { name, output } => {
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteDnssecPolicy { name })
                     .await?;
-            log::debug!("DNSSEC policy deletion result: {:?}", response);
+            log::debug!("DNSSEC policy deletion result: {response:?}");
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }

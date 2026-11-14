@@ -29,15 +29,14 @@ pub async fn create(
 
     match bindizr_db::zone::get_by_name(cx.db(), name).await {
         Ok(Some(_)) => {
-            log::error!("Zone with name {} already exists", name);
+            log::error!("Zone with name {name} already exists");
             return Err(ServiceError::zone_conflict(format!(
-                "zone with name '{}' already exists",
-                name
+                "zone with name '{name}' already exists"
             )));
         }
         Ok(None) => {}
         Err(error) => {
-            log::error!("Failed to check existing zone: {}", error);
+            log::error!("Failed to check existing zone: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to create zone",
                 error,
@@ -156,7 +155,7 @@ pub(crate) async fn create_tx(
         .await
         .map_err(|error| {
             if error.is_unique_violation() {
-                ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+                ServiceError::zone_conflict(format!("zone with name '{name}' already exists"))
             } else {
                 ServiceError::internal_with_source("failed to create zone", error)
             }

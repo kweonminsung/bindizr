@@ -50,10 +50,7 @@ pub(crate) async fn serve_connection(
                     Ok(result) => result,
                     Err(_) => {
                         log::info!(
-                            "Closing idle DNS {} connection from {} after {:?}",
-                            transport,
-                            client_addr,
-                            idle_timeout
+                            "Closing idle DNS {transport} connection from {client_addr} after {idle_timeout:?}"
                         );
                         Err(DnsError::PeerClosed)
                     }
@@ -137,12 +134,7 @@ pub(crate) async fn serve_connection(
     if outcome.is_ok()
         && let Err(error) = writer.shutdown().await
     {
-        log::debug!(
-            "Closing DNS {} connection from {}: {}",
-            transport,
-            client_addr,
-            error
-        );
+        log::debug!("Closing DNS {transport} connection from {client_addr}: {error}");
     }
 
     outcome
@@ -159,7 +151,7 @@ async fn dispatch_query(
     let transport = writer.transport();
 
     if message::is_response(query_data) {
-        log::warn!("Ignoring a DNS {} response from {}", transport, client_addr);
+        log::warn!("Ignoring a DNS {transport} response from {client_addr}");
         return;
     }
 
@@ -168,12 +160,7 @@ async fn dispatch_query(
         if let Err(error) =
             server::nsupdate::handle_tcp_nsupdate(dns_cx, writer, query_data, client_addr).await
         {
-            log::error!(
-                "NSUPDATE {} handler failed for {}: {}",
-                transport,
-                client_addr,
-                error
-            );
+            log::error!("NSUPDATE {transport} handler failed for {client_addr}: {error}");
         }
 
         return;
@@ -184,24 +171,14 @@ async fn dispatch_query(
     match server::refuse_unsupported_opcode(dns_cx, query_data, keepalive, transport).await {
         Ok(Some((response, _))) => {
             if let Err(error) = writer.write_message(&response).await {
-                log::error!(
-                    "Failed to refuse DNS {} opcode from {}: {}",
-                    transport,
-                    client_addr,
-                    error
-                );
+                log::error!("Failed to refuse DNS {transport} opcode from {client_addr}: {error}");
             }
 
             return;
         }
         Ok(None) => {}
         Err(error) => {
-            log::error!(
-                "Failed to refuse DNS {} opcode from {}: {}",
-                transport,
-                client_addr,
-                error
-            );
+            log::error!("Failed to refuse DNS {transport} opcode from {client_addr}: {error}");
             return;
         }
     }
@@ -209,12 +186,7 @@ async fn dispatch_query(
     let query = match message::ParsedQuery::parse(query_data, keepalive) {
         Ok(query) => query,
         Err(error) => {
-            log::warn!(
-                "Failed to parse DNS {} query from {}: {}",
-                transport,
-                client_addr,
-                error
-            );
+            log::warn!("Failed to parse DNS {transport} query from {client_addr}: {error}");
 
             if let Some(metadata) = error.query_metadata() {
                 let result = async {
@@ -229,10 +201,7 @@ async fn dispatch_query(
 
                 if let Err(error) = result {
                     log::error!(
-                        "Failed to answer malformed DNS {} query from {}: {}",
-                        transport,
-                        client_addr,
-                        error
+                        "Failed to answer malformed DNS {transport} query from {client_addr}: {error}"
                     );
                 }
             }

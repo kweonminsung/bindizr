@@ -15,7 +15,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing records.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum RecordCommand {
     /// Create a record
     #[command(after_help = "\
@@ -376,7 +376,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             // YAML is a superset of JSON, so one parse accepts both formats.
             let parsed: serde_json::Value = serde_norway::from_str(&content).map_err(|error| {
                 CliError::request_with_source(
-                    format!("invalid JSON/YAML in '{}': {}", file, error),
+                    format!("invalid JSON/YAML in '{file}': {error}"),
                     error,
                 )
             })?;
@@ -394,7 +394,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let records: Vec<BulkRecordItem> =
                 serde_json::from_value(records).map_err(|error| {
                     CliError::request_with_source(
-                        format!("invalid record in '{}': {}", file, error),
+                        format!("invalid record in '{file}': {error}"),
                         error,
                     )
                 })?;
@@ -417,7 +417,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     output::print_table(bulk.records.iter().map(RecordRow::from).collect());
                 }
             } else {
-                output::print_payload(bulk, output)?
+                output::print_payload(bulk, output)?;
             }
         }
         // clap holds the two selectors apart.
@@ -450,7 +450,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                         zone_name: zone.clone(),
                         name: Some(name.clone()),
                         offset: Some(offset),
-                        ..RecordFilter::default()
+                        ..Default::default()
                     }),
                 )
                 .await?
@@ -555,9 +555,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
         RecordCommand::Delete {
@@ -583,9 +583,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             .await?;
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
         RecordCommand::Delete { .. } => {

@@ -25,8 +25,7 @@ pub(crate) fn normalize_parent_ns_addrs(entries: &[String]) -> Result<String, Se
     for entry in &entries {
         if name::has_whitespace_or_control(entry) || !address::is_address_target(entry) {
             return Err(ServiceError::invalid_input(format!(
-                "parent address '{}' must be host[:port] with a numeric port",
-                entry
+                "parent address '{entry}' must be host[:port] with a numeric port"
             )));
         }
     }

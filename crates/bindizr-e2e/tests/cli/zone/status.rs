@@ -14,7 +14,7 @@ async fn zone_status_returns_current_serial_via_cli() {
         .await;
 
     // Serial 1: the zone and its apex NS arrive in one version.
-    assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
+    assert!(status.contains(&format!("Zone {zone_name} (serial 1)")));
 
     if !app.has_dns_secondaries() {
         assert!(status.contains("No enabled secondaries."));

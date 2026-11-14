@@ -165,7 +165,7 @@ async fn wait_for_signal() {
     let mut terminate = match unix::signal(SignalKind::terminate()) {
         Ok(terminate) => terminate,
         Err(error) => {
-            log::error!("Failed to listen for SIGTERM: {}", error);
+            log::error!("Failed to listen for SIGTERM: {error}");
             return;
         }
     };
@@ -179,8 +179,8 @@ async fn wait_for_signal() {
 /// Log the server that stopped on its own, which stops the adapter with it.
 fn log_server_stopped(name: &str, result: Result<std::io::Result<()>, tokio::task::JoinError>) {
     match result {
-        Ok(Ok(())) => log::error!("{} server stopped", name),
-        Ok(Err(error)) => log::error!("{} server error: {:?}", name, error),
-        Err(error) => log::error!("{} server task failed: {}", name, error),
+        Ok(Ok(())) => log::error!("{name} server stopped"),
+        Ok(Err(error)) => log::error!("{name} server error: {error:?}"),
+        Err(error) => log::error!("{name} server task failed: {error}"),
     }
 }

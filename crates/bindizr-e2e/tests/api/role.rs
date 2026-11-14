@@ -1621,7 +1621,7 @@ async fn responses_hide_records_outside_read_grants() {
         .map(|label| label.len() + 1)
         .sum::<usize>()
         + 1;
-    let mut long_name = String::from("leak-marker-long");
+    let mut long_name = "leak-marker-long".to_string();
     let mut room = 250 - zone_wire - (long_name.len() + 1);
 
     while room >= 2 {
@@ -1754,7 +1754,7 @@ async fn responses_hide_records_outside_read_grants() {
     let rename = json!({ "name": format!("renamed.{zone}"), "dry_run": true });
     let rollback = format!("/zones/{zone}/versions/{first_serial}/rollback?dry_run=true");
     let mut requests: Vec<(Method, String, Option<serde_json::Value>)> = vec![
-        (Method::GET, "/zones".into(), None),
+        (Method::GET, "/zones".to_string(), None),
         (Method::GET, format!("/zones/{zone}"), None),
         (Method::GET, format!("/zones/{zone}/export"), None),
         (Method::GET, format!("/zones/{zone}/versions"), None),
@@ -1769,21 +1769,21 @@ async fn responses_hide_records_outside_read_grants() {
             None,
         ),
         (Method::GET, format!("/zones/{zone}/dnssec"), None),
-        (Method::GET, "/records".into(), None),
+        (Method::GET, "/records".to_string(), None),
         (Method::GET, format!("/records?zone_name={zone}"), None),
-        (Method::GET, "/records?search=leak".into(), None),
+        (Method::GET, "/records?search=leak".to_string(), None),
         (
             Method::GET,
             format!("/records?zone_name={zone}&name=_acme-challenge"),
             None,
         ),
-        (Method::GET, "/permissions".into(), None),
-        (Method::GET, "/tokens/self/grants".into(), None),
-        (Method::GET, "/external-dns/domains".into(), None),
-        (Method::GET, "/external-dns/records".into(), None),
+        (Method::GET, "/permissions".to_string(), None),
+        (Method::GET, "/tokens/self/grants".to_string(), None),
+        (Method::GET, "/external-dns/domains".to_string(), None),
+        (Method::GET, "/external-dns/records".to_string(), None),
         (
             Method::POST,
-            "/records".into(),
+            "/records".to_string(),
             Some(json!({
                 "zone_name": zone, "name": "_acme-challenge", "type": "TXT",
                 "value": "probe", "dry_run": true,
@@ -1791,12 +1791,12 @@ async fn responses_hide_records_outside_read_grants() {
         ),
         (
             Method::POST,
-            "/records".into(),
+            "/records".to_string(),
             Some(record_body(zone, "_acme-challenge", "TXT", "token-1")),
         ),
         (
             Method::POST,
-            "/records/bulk".into(),
+            "/records/bulk".to_string(),
             Some(json!({
                 "zone_name": zone,
                 "records": [{ "name": "_acme-challenge", "type": "TXT", "value": "token-2" }],
@@ -1822,7 +1822,7 @@ async fn responses_hide_records_outside_read_grants() {
         ),
         (
             Method::POST,
-            "/external-dns/changes".into(),
+            "/external-dns/changes".to_string(),
             Some(json!({
                 "creates": [{
                     "name": format!("_acme-challenge.{zone}"), "type": "TXT",

@@ -47,7 +47,7 @@ impl DnssecKey {
         let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
             .map_err(|error| GenerateKeyError(Box::new(error)))?;
 
-        Ok(DnssecKey {
+        Ok(Self {
             id: DnssecKeyId::UNWRITTEN,
             zone_id: zone.id,
             role,

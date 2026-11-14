@@ -632,7 +632,7 @@ fn build_failed_response(
         TsigError::Rejected { rcode, key, time } => {
             build_error_response(query_data, key.as_deref(), rcode, time, limit).unwrap()
         }
-        other => panic!("expected TSIG rejection, got {:?}", other),
+        other => panic!("expected TSIG rejection, got {other:?}"),
     }
 }
 

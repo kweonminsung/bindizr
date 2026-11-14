@@ -16,7 +16,7 @@ use crate::{Context, secondary, transfer};
 impl From<ProbeSoaError> for ServiceError {
     /// Preserve probe setup failures as internal error sources.
     fn from(error: ProbeSoaError) -> Self {
-        ServiceError::Internal {
+        Self::Internal {
             message: error.to_string(),
             source: Some(Box::new(error)),
         }
@@ -143,7 +143,7 @@ async fn attach_last_transfer(
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
             Ok(transfer) => transfer.as_ref().map(TransferResponse::from),
             Err(error) => {
-                log::warn!("Failed to read the transfers of {}: {}", zone_name, error);
+                log::warn!("Failed to read the transfers of {zone_name}: {error}");
                 None
             }
         };

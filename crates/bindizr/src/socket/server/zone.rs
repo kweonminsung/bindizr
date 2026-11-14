@@ -183,7 +183,7 @@ pub(crate) async fn get_zone_version(
     let response =
         zone::get_version(cx, &Caller::socket(), &zone::normalize_name(name)?, serial).await?;
     Ok(DaemonResponse {
-        message: format!("Version '{}' retrieved successfully", serial),
+        message: format!("Version '{serial}' retrieved successfully"),
         data: response,
     })
 }
@@ -293,7 +293,7 @@ pub(crate) async fn delete_zone(
                 name, response.records_deleted, response.versions_deleted
             )
         } else {
-            format!("Zone '{}' deleted successfully", name)
+            format!("Zone '{name}' deleted successfully")
         },
         data: response,
     })

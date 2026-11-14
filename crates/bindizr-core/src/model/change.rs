@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 /// A change-source column holding none of the known sources.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -12,9 +13,7 @@ pub struct ParseChangeSourceError {
 }
 
 /// The request path or background process that produced a managed change.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ChangeSource {
     /// An HTTP API request, including requests made with authentication disabled.
@@ -31,10 +30,10 @@ impl ChangeSource {
     /// Return the text representation of this change source.
     pub fn as_str(self) -> &'static str {
         match self {
-            ChangeSource::Api => "api",
-            ChangeSource::Socket => "socket",
-            ChangeSource::Nsupdate => "nsupdate",
-            ChangeSource::System => "system",
+            Self::Api => "api",
+            Self::Socket => "socket",
+            Self::Nsupdate => "nsupdate",
+            Self::System => "system",
         }
     }
 }
@@ -52,10 +51,10 @@ impl std::str::FromStr for ChangeSource {
     /// Parse the stored text of a change source.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "api" => Ok(ChangeSource::Api),
-            "socket" => Ok(ChangeSource::Socket),
-            "nsupdate" => Ok(ChangeSource::Nsupdate),
-            "system" => Ok(ChangeSource::System),
+            "api" => Ok(Self::Api),
+            "socket" => Ok(Self::Socket),
+            "nsupdate" => Ok(Self::Nsupdate),
+            "system" => Ok(Self::System),
             other => Err(ParseChangeSourceError {
                 value: other.to_string(),
             }),
@@ -73,7 +72,7 @@ impl TryFrom<String> for ChangeSource {
 }
 
 /// The named credential behind a change, copied so deleting it preserves the history.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChangeActor {
     Token { name: String },
@@ -84,8 +83,8 @@ impl ChangeActor {
     /// Borrow the kind and name stored in the two actor columns.
     pub fn as_columns(&self) -> (&'static str, &str) {
         match self {
-            ChangeActor::Token { name } => ("token", name),
-            ChangeActor::TsigKey { name } => ("tsig_key", name),
+            Self::Token { name } => ("token", name),
+            Self::TsigKey { name } => ("tsig_key", name),
         }
     }
 }
@@ -143,10 +142,10 @@ mod tests {
     fn actor_columns_match_the_api_identity() {
         for actor in [
             ChangeActor::Token {
-                name: "admin".into(),
+                name: "admin".to_string(),
             },
             ChangeActor::TsigKey {
-                name: "admin".into(),
+                name: "admin".to_string(),
             },
         ] {
             let (kind, name) = actor.as_columns();
@@ -184,7 +183,7 @@ mod tests {
                 Some("unknown"),
                 Some("admin"),
                 DecodeChangeActorError::UnknownKind {
-                    value: "unknown".into(),
+                    value: "unknown".to_string(),
                 },
             ),
         ] {

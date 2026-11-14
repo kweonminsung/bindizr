@@ -54,7 +54,7 @@ async fn credential(cx: &Context) -> String {
         cx,
         &caller,
         &CreateRoleRequest {
-            name: "external-dns".into(),
+            name: "external-dns".to_string(),
             description: None,
         },
     )
@@ -64,10 +64,10 @@ async fn credential(cx: &Context) -> String {
         cx,
         &caller,
         &CreateTokenRequest {
-            name: "external-dns".into(),
+            name: "external-dns".to_string(),
             description: None,
             expires_in_days: None,
-            role_name: "external-dns".into(),
+            role_name: "external-dns".to_string(),
         },
     )
     .await
@@ -188,13 +188,13 @@ fn test_zone(id: i32, name: &str) -> Zone {
     Zone {
         id: ZoneId::from(id),
         name: ZoneName::from_row(name),
-        mname: format!("ns1.{}", name),
-        rname: format!("hostmaster@{}", name),
+        mname: format!("ns1.{name}"),
+        rname: format!("hostmaster@{name}"),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(1),
         refresh: SoaInterval::from_secs(7200),
         retry: SoaInterval::from_secs(3600),
-        expire: SoaInterval::from_secs(604800),
+        expire: SoaInterval::from_secs(604_800),
         minimum_ttl: Ttl::from_secs(86400),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -478,8 +478,8 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
             None,
             &["192.0.2.1"],
         )],
-        updates: vec![],
-        deletes: vec![],
+        updates: Vec::new(),
+        deletes: Vec::new(),
     };
     let operations = change_set::parse_changes_request(&request).unwrap();
 
@@ -503,8 +503,8 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     let zones = vec![test_zone(1, "example.com")];
     let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.other.org", "A", None, &["192.0.2.1"])],
-        updates: vec![],
-        deletes: vec![],
+        updates: Vec::new(),
+        deletes: Vec::new(),
     };
     let operations = change_set::parse_changes_request(&request).unwrap();
 
@@ -528,8 +528,8 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
     let zone = test_zone(1, "example.com");
     let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
-        updates: vec![],
-        deletes: vec![],
+        updates: Vec::new(),
+        deletes: Vec::new(),
     };
 
     let change_set = ZoneChangeSet::compute(&zone_operations(&request, &zone), &zone, &[]).unwrap();
@@ -546,8 +546,8 @@ fn change_set_skips_existing_values_regardless_of_ttl() {
     let zone = test_zone(1, "example.com");
     let request = ApplyExternalDnsChangesRequest {
         creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
-        updates: vec![],
-        deletes: vec![],
+        updates: Vec::new(),
+        deletes: Vec::new(),
     };
 
     // An omitted TTL resolves to 3600; retrying must also preserve a row with TTL 300.
@@ -567,12 +567,12 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
     let request = ApplyExternalDnsChangesRequest {
-        creates: vec![],
+        creates: Vec::new(),
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set("app.example.com", "A", Some(300), &["192.0.2.1"]),
             new: record_set("app.example.com", "A", Some(900), &["192.0.2.1"]),
         }],
-        deletes: vec![],
+        deletes: Vec::new(),
     };
 
     let change_set =
@@ -589,8 +589,8 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
 fn change_set_skips_deletes_of_absent_records() {
     let zone = test_zone(1, "example.com");
     let request = ApplyExternalDnsChangesRequest {
-        creates: vec![],
-        updates: vec![],
+        creates: Vec::new(),
+        updates: Vec::new(),
         deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
     };
 
@@ -609,12 +609,12 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
         test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
     ];
     let request = ApplyExternalDnsChangesRequest {
-        creates: vec![],
+        creates: Vec::new(),
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
             new: record_set("app.example.com", "A", None, &["192.0.2.2", "192.0.2.1"]),
         }],
-        deletes: vec![],
+        deletes: Vec::new(),
     };
 
     let change_set =
@@ -633,12 +633,12 @@ fn change_set_replaces_rows_when_update_changes_targets() {
         test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
     ];
     let request = ApplyExternalDnsChangesRequest {
-        creates: vec![],
+        creates: Vec::new(),
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
             new: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.3"]),
         }],
-        deletes: vec![],
+        deletes: Vec::new(),
     };
 
     let change_set =
@@ -665,7 +665,7 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
         test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
     ];
     let request = ApplyExternalDnsChangesRequest {
-        creates: vec![],
+        creates: Vec::new(),
         updates: vec![ExternalDnsRecordUpdate {
             old: record_set(
                 "app.example.com",
@@ -680,7 +680,7 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
                 &["192.0.2.1", "192.0.2.2"],
             ),
         }],
-        deletes: vec![],
+        deletes: Vec::new(),
     };
 
     let change_set =
@@ -708,8 +708,8 @@ fn change_set_enforces_cname_exclusivity() {
             None,
             &["cdn.example.net"],
         )],
-        updates: vec![],
-        deletes: vec![],
+        updates: Vec::new(),
+        deletes: Vec::new(),
     };
 
     let error =
@@ -730,7 +730,7 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
             None,
             &["cdn.example.net"],
         )],
-        updates: vec![],
+        updates: Vec::new(),
         deletes: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
     };
 

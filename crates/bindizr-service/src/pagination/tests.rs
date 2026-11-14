@@ -90,13 +90,13 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             Zone {
                 id: crate::model::zone::ZoneId::UNWRITTEN,
                 name: ZoneName::parse(&format!("page{index:04}.example")).unwrap(),
-                mname: "ns1.example".into(),
-                rname: "admin@example".into(),
+                mname: "ns1.example".to_string(),
+                rname: "admin@example".to_string(),
                 default_ttl: Ttl::from_secs(300),
                 serial: Serial::from(1001),
                 refresh: SoaInterval::from_secs(300),
                 retry: SoaInterval::from_secs(60),
-                expire: SoaInterval::from_secs(3600000),
+                expire: SoaInterval::from_secs(3_600_000),
                 minimum_ttl: Ttl::from_secs(300),
                 dnssec_policy_id: None,
                 parent_ns_addrs: None,
@@ -146,7 +146,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             id: RecordId::UNWRITTEN,
             name: OwnerName::from_row(&format!("host{index:04}")),
             record_type: RecordType::A,
-            value: "192.0.2.1".into(),
+            value: "192.0.2.1".to_string(),
             ttl: Ttl::from_secs(300),
             priority: None,
             created_at: Utc::now(),
@@ -184,7 +184,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
                 zone_id: zone.id,
                 serial: Serial::from(serial),
                 mname: zone.mname.clone(),
-                rname: "admin.example".into(),
+                rname: "admin.example".to_string(),
                 default_ttl: zone.default_ttl,
                 refresh: zone.refresh,
                 retry: zone.retry,
@@ -215,7 +215,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             ZoneFilter {
                 limit,
                 offset,
-                ..ZoneFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -226,7 +226,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             RecordFilter {
                 limit,
                 offset,
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -237,7 +237,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
             AuditLogFilter {
                 limit,
                 offset,
-                ..AuditLogFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -306,7 +306,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
                 signed: Some(true),
                 limit,
                 offset,
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -356,9 +356,9 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
             &cx,
             &caller,
             &TokenFilter {
-                role_name: Some("missing".into()),
+                role_name: Some("missing".to_string()),
                 limit: Some(limit),
-                ..TokenFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -367,9 +367,9 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
             &cx,
             &caller,
             &TsigKeyFilter {
-                role_name: Some("missing".into()),
+                role_name: Some("missing".to_string()),
                 limit: Some(limit),
-                ..TsigKeyFilter::default()
+                ..Default::default()
             },
         )
         .await

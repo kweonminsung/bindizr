@@ -32,6 +32,10 @@ redundant_clone = "warn"
 inefficient_to_string = "warn"
 manual_let_else = "warn"
 redundant_closure_for_method_calls = "warn"
+uninlined_format_args = "warn"
+use_self = "warn"
+map_unwrap_or = "warn"
+semicolon_if_nothing_returned = "warn"
 
 [workspace.dependencies]
 axum = "0.8.9"

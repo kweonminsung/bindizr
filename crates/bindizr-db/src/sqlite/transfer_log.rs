@@ -58,7 +58,7 @@ pub(crate) async fn list_by_client_addr_and_filter_with_zone(
     .bind(filter.since)
     .bind(filter.until)
     .bind(filter.until)
-    .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(filter.limit.map_or(i64::MAX, i64::from))
     .fetch_all(&mut *connection)
     .await?;
 

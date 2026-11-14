@@ -44,7 +44,7 @@ fn zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: Some("192.0.2.1,192.0.2.2".to_string()),
@@ -109,7 +109,7 @@ fn promotion_waits_until_every_server_serves_the_ds() {
     let key = csk();
     let served = delegation_response(
         &key,
-        vec![record_set(vec![ds_of(&key, 2)]), record_set(vec![])],
+        vec![record_set(vec![ds_of(&key, 2)]), record_set(Vec::new())],
     );
 
     assert!(!served.keys[0].ds_published);

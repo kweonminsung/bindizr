@@ -12,7 +12,7 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
         11, b'h', b'o', b's', b't', b'.', b'm', b'a', b's', b't', b'e', b'r', 0xc0, 12,
     ]);
 
-    for field in [u32::MAX, 7200, 3600, 604800, 86400] {
+    for field in [u32::MAX, 7200, 3600, 604_800, 86400] {
         message.extend_from_slice(&field.to_be_bytes());
     }
 
@@ -31,7 +31,7 @@ fn soa_update_decodes_compression_and_checks_rdata_length() {
     assert_eq!(soa.serial, u32::MAX);
     assert_eq!(
         [soa.refresh, soa.retry, soa.expire, soa.minimum],
-        [7200, 3600, 604800, 86400]
+        [7200, 3600, 604_800, 86400]
     );
     let length = record.rdata.len();
 
@@ -481,7 +481,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
             Rtype::from_int(65535),
         ] {
             let data = if class == Class::ANY {
-                vec![]
+                Vec::new()
             } else {
                 vec![1]
             };
@@ -502,7 +502,7 @@ fn update_shapes_distinguish_data_from_query_and_meta_types() {
         // deletion still has a well-formed wire shape (RFC 3597, Section 2).
         for rtype in [Rtype::A, Rtype::SOA, Rtype::HINFO, Rtype::from_int(65280)] {
             let data = if class == Class::ANY {
-                vec![]
+                Vec::new()
             } else {
                 vec![1]
             };

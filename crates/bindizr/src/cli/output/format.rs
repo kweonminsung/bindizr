@@ -36,9 +36,9 @@ where
     U: Tabled,
 {
     if format == OutputFormat::Table {
-        print_table(to_table_rows(data))
+        print_table(to_table_rows(data));
     } else {
-        print_payload(data, format)?
+        print_payload(data, format)?;
     }
     Ok(())
 }

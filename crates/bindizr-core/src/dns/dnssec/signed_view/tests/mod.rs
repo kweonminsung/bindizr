@@ -35,7 +35,7 @@ fn fixed_now() -> DateTime<Utc> {
         .to_utc()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComputeArgs<'a> {
     zone: &'a Zone,
     records: &'a [Record],
@@ -63,7 +63,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         inception: now - Duration::hours(1),
         expiration: args.expiration,
         expiration_jitter_secs: args.expiration_jitter_secs,
-        refresh_secs: 5 * 86_400,
+        refresh_secs: 5 * 86400,
         pass: args.pass,
         withdraw_parent_ds: false,
     }

@@ -40,11 +40,11 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
 
         match (&status.database_error, status.zones) {
             (Some(error), _) => {
-                outln!("Database: {} ({})", status.database_type, color::red(error))
+                outln!("Database: {} ({})", status.database_type, color::red(error));
             }
             (None, Some(1)) => outln!("Database: {} (1 zone)", status.database_type),
             (None, Some(zones)) => {
-                outln!("Database: {} ({} zones)", status.database_type, zones)
+                outln!("Database: {} ({} zones)", status.database_type, zones);
             }
             (None, None) => outln!("Database: {}", status.database_type),
         }
@@ -55,16 +55,13 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
             None => {}
         }
     } else {
-        output::print_payload(&status, output)?
+        output::print_payload(&status, output)?;
     }
 
     // A daemon whose database does not answer is not healthy, so the exit code
     // says so for a health wrapper and the container health check.
     match status.database_error {
-        Some(error) => Err(CliError::request(format!(
-            "database unavailable: {}",
-            error
-        ))),
+        Some(error) => Err(CliError::request(format!("database unavailable: {error}"))),
         None => Ok(()),
     }
 }

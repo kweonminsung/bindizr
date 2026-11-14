@@ -153,7 +153,7 @@ pub enum Keepalive {
 impl Keepalive {
     /// Advertise the TCP idle timeout (RFC 7828, Section 3.3.2); none over UDP.
     pub(crate) fn tcp_keepalive(self) -> Option<TcpKeepalive> {
-        let Keepalive::IdleTimeout(idle_timeout) = self else {
+        let Self::IdleTimeout(idle_timeout) = self else {
             return None;
         };
         let Ok(timeout) = IdleTimeout::try_from(idle_timeout) else {
@@ -166,8 +166,8 @@ impl Keepalive {
     /// Use the request's transport and EDNS advertisement for every response encoder.
     pub(crate) fn response_limit(self, edns: Edns) -> ResponseLimit {
         match self {
-            Keepalive::IdleTimeout(_) => ResponseLimit::STREAM,
-            Keepalive::None => match edns {
+            Self::IdleTimeout(_) => ResponseLimit::STREAM,
+            Self::None => match edns {
                 Edns::Present {
                     udp_payload_size, ..
                 } => ResponseLimit::udp(udp_payload_size),
@@ -244,7 +244,7 @@ pub struct ParsedQuery {
 
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
-    pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<ParsedQuery, ParseQueryError> {
+    pub fn parse(data: &[u8], keepalive: Keepalive) -> Result<Self, ParseQueryError> {
         use domain::base::ToName;
 
         let message = Message::from_octets(data)
@@ -298,7 +298,7 @@ impl ParsedQuery {
             None
         };
 
-        Ok(ParsedQuery {
+        Ok(Self {
             qname,
             zone_name,
             qtype,

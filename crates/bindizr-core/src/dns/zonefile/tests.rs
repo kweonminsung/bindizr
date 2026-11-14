@@ -37,13 +37,13 @@ fn parse_reads_generic_rdata_of_known_types() {
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
-        ZoneFileValue::Rdata("192.0.2.1".into())
+        ZoneFileValue::Rdata("192.0.2.1".to_string())
     );
     assert_eq!(parsed.records[0].record_type, RecordType::A);
     assert_eq!(parsed.records[1].record_type, RecordType::Mx);
     assert_eq!(
         parsed.records[1].value,
-        ZoneFileValue::Rdata("mail.example.com.".into())
+        ZoneFileValue::Rdata("mail.example.com.".to_string())
     );
     assert_eq!(parsed.records[1].priority, Some(10));
 
@@ -363,24 +363,31 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(
         parsed.records[0].value,
-        ZoneFileValue::Segments(vec!["Mixed CASE".into(), "a\"b\\c".into(), "".into()])
+        ZoneFileValue::Segments(vec![
+            "Mixed CASE".to_string(),
+            "a\"b\\c".to_string(),
+            "".to_string()
+        ])
     );
     assert_eq!(
         parsed.records[1].value,
-        ZoneFileValue::Rdata("5 5060 .".into())
+        ZoneFileValue::Rdata("5 5060 .".to_string())
     );
     assert_eq!(parsed.records[1].priority, Some(10));
     assert!(
         matches!(&parsed.records[2].value, ZoneFileValue::Rdata(value) if value.ends_with(" ."))
     );
-    assert_eq!(parsed.records[3].value, ZoneFileValue::Rdata(".".into()));
+    assert_eq!(
+        parsed.records[3].value,
+        ZoneFileValue::Rdata(".".to_string())
+    );
     assert_eq!(parsed.records[3].priority, Some(0));
     let text = ParsedZoneFile::parse("@ 300 IN MX 0 .\n", &zone, Ttl::try_from(300).unwrap());
 
     assert_eq!(text.records, parsed.records[3..]);
 
     let invalid = TransferRecord {
-        name: "txt.example.com.".into(),
+        name: "txt.example.com.".to_string(),
         rtype: Rtype::TXT,
         ttl: 300,
         rdata: Rdata::new(vec![1, 255]).unwrap(),

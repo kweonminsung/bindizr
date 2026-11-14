@@ -9,7 +9,7 @@ id_newtype!(
 );
 
 /// An API authentication token and its metadata.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ApiToken {
     pub id: TokenId,
     /// Unique human-facing identifier; CLI and API reference tokens by name.

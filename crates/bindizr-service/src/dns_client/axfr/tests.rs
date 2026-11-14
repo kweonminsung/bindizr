@@ -226,7 +226,7 @@ async fn fetch_zone_accepts_case_varied_closing_soa_and_preserves_rdata() {
         serial: 42,
         refresh: 7200,
         retry: 3600,
-        expire: 604800,
+        expire: 604_800,
         minimum: 300,
     };
 
@@ -263,7 +263,7 @@ async fn fetch_zone_rejects_changed_closing_soa() {
         serial: 42,
         refresh: 7200,
         retry: 3600,
-        expire: 604800,
+        expire: 604_800,
         minimum: 300,
     };
 
@@ -289,7 +289,7 @@ async fn fetch_zone_rejects_changed_closing_soa() {
             ..opening
         },
         SoaRecordValue {
-            expire: 604801,
+            expire: 604_801,
             ..opening
         },
         SoaRecordValue {

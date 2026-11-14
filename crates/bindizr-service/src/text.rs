@@ -16,14 +16,12 @@ pub(crate) fn normalize_identifier(
 
     if name.is_empty() {
         return Err(ServiceError::invalid_input(format!(
-            "{} must not be empty",
-            what
+            "{what} must not be empty"
         )));
     }
     if name.len() > max_len {
         return Err(ServiceError::invalid_input(format!(
-            "{} must be {} characters or fewer",
-            what, max_len
+            "{what} must be {max_len} characters or fewer"
         )));
     }
     if !name
@@ -31,8 +29,7 @@ pub(crate) fn normalize_identifier(
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
     {
         return Err(ServiceError::invalid_input(format!(
-            "{} may contain only letters, digits, '.', '_', and '-'",
-            what
+            "{what} may contain only letters, digits, '.', '_', and '-'"
         )));
     }
 
@@ -51,8 +48,7 @@ pub(crate) fn normalize_description(
 
     if description.chars().count() > MAX_COLUMN_TEXT_LEN {
         return Err(error(format!(
-            "description must be {} characters or fewer",
-            MAX_COLUMN_TEXT_LEN
+            "description must be {MAX_COLUMN_TEXT_LEN} characters or fewer"
         )));
     }
     if description.contains('\0') {

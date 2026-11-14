@@ -41,8 +41,8 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
         &cx,
         &Caller::socket(),
         &CreateTsigKeyRequest {
-            name: "fault-key".into(),
-            role_name: "admin".into(),
+            name: "fault-key".to_string(),
+            role_name: "admin".to_string(),
             algorithm: None,
             secret: None,
         },

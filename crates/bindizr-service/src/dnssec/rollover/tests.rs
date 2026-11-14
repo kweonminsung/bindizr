@@ -19,7 +19,7 @@ fn zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
@@ -163,10 +163,10 @@ fn retiring_key_waits_for_signature_expiration() {
     zsk.max_signed_ttl = Ttl::try_from(900).unwrap();
 
     // A ZSK has no DS at the parent, so only its signatures hold it back.
-    assert_eq!(zsk.retirement_interval_secs(Some(86_400), 0), 900);
+    assert_eq!(zsk.retirement_interval_secs(Some(86400), 0), 900);
 
     // Propagation is added whole: a secondary may need the SOA refresh to catch up.
-    assert_eq!(zsk.retirement_interval_secs(Some(86_400), 300), 1_200);
+    assert_eq!(zsk.retirement_interval_secs(Some(86400), 300), 1200);
 }
 
 /// Verify that a retiring sep key also waits out the parents DS.
@@ -177,12 +177,12 @@ fn retiring_sep_key_waits_for_parent_ds_expiration() {
     let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);
     csk.max_signed_ttl = Ttl::try_from(900).unwrap();
 
-    assert_eq!(csk.retirement_interval_secs(Some(86_400), 0), 86_400);
+    assert_eq!(csk.retirement_interval_secs(Some(86400), 0), 86400);
 
     // A zone signed with a longer TTL than the parent's outlasts it.
     csk.max_signed_ttl = Ttl::try_from(604_800).unwrap();
 
-    assert_eq!(csk.retirement_interval_secs(Some(86_400), 0), 604_800);
+    assert_eq!(csk.retirement_interval_secs(Some(86400), 0), 604_800);
 
     // Nothing observed the parent, so only the signatures are known.
     csk.max_signed_ttl = Ttl::try_from(900).unwrap();

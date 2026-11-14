@@ -6,21 +6,21 @@ use bindizr_core::model::role_grant::RoleGrantId;
 use serde::{Deserialize, Serialize};
 
 /// The name of the zone, secondary, token, key, or policy addressed.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NameParams {
     pub(crate) name: String,
 }
 
 /// The id of the record addressed.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct IdParams {
     pub(crate) id: RecordId,
 }
 
 /// A grant, by the name of its role and its own id.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NameIdParams {
     pub(crate) name: String,

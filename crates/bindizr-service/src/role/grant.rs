@@ -59,8 +59,7 @@ pub async fn create(
         Some(zone_name) => {
             if let Some(action) = actions.iter().find(|action| action.needs_all_zones()) {
                 return Err(ServiceError::invalid_input(format!(
-                    "'{}' acts on no zone, so its grant must cover all zones: omit zone_name",
-                    action
+                    "'{action}' acts on no zone, so its grant must cover all zones: omit zone_name"
                 )));
             }
 

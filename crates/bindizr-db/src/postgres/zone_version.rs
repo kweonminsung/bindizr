@@ -118,7 +118,7 @@ pub(crate) async fn list_by_filter(
         "#
     )))
     .bind(zone_id)
-    .bind(limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(limit.map_or(i64::MAX, i64::from))
     .bind(i64::try_from(offset).unwrap_or(i64::MAX))
     .fetch_all(pool)
     .await

@@ -336,12 +336,11 @@ pub(crate) async fn list_by_filter_with_zone(
     let records = query
         .bind(filter.scope_role_id)
         .bind(filter.scope_role_id)
-        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+        .bind(filter.limit.map_or(i64::MAX, i64::from))
         .bind(
             filter
                 .offset
-                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-                .unwrap_or(0),
+                .map_or(0, |offset| i64::try_from(offset).unwrap_or(i64::MAX)),
         )
         .fetch_all(&mut *connection)
         .await?;
@@ -488,7 +487,7 @@ pub(crate) async fn delete_many_tx(
     const CHUNK: usize = 900;
 
     for chunk in ids.chunks(CHUNK) {
-        let mut sql = String::from("DELETE FROM records WHERE id IN (");
+        let mut sql = "DELETE FROM records WHERE id IN (".to_string();
 
         for i in 0..chunk.len() {
             sql.push_str(if i == 0 {

@@ -19,7 +19,7 @@ pub enum ConvertSerialError {
 
 impl Serial {
     /// The largest wire serial (RFC 1982, Section 2).
-    pub const MAX: Serial = Serial(u32::MAX);
+    pub const MAX: Self = Self(u32::MAX);
 
     /// The serial as the wire carries it.
     pub const fn as_u32(self) -> u32 {
@@ -28,16 +28,16 @@ impl Serial {
 
     /// Whether this serial advances `other` under RFC 1982, Section 3.2.
     /// The undefined half-range distance does not establish an advance.
-    pub fn is_newer_than(self, other: Serial) -> bool {
+    pub fn is_newer_than(self, other: Self) -> bool {
         matches!(self.0.wrapping_sub(other.0), 1..=0x7fff_ffff)
     }
 
     /// Advance modulo 2^32 (RFC 1982, Section 3.1), passing over zero (RFC 2136,
     /// Section 7.11: older secondaries read it as a zone to fetch afresh).
-    pub fn next(self) -> Serial {
+    pub fn next(self) -> Self {
         match self.0.wrapping_add(1) {
-            0 => Serial(1),
-            next => Serial(next),
+            0 => Self(1),
+            next => Self(next),
         }
     }
 }
@@ -45,7 +45,7 @@ impl Serial {
 impl From<u32> for Serial {
     /// Take a wire serial as it is.
     fn from(serial: u32) -> Self {
-        Serial(serial)
+        Self(serial)
     }
 }
 
@@ -79,7 +79,7 @@ impl TryFrom<i32> for Serial {
 impl From<Serial> for i64 {
     /// Widen the wire serial into its lossless database representation.
     fn from(serial: Serial) -> Self {
-        i64::from(serial.0)
+        Self::from(serial.0)
     }
 }
 
@@ -143,7 +143,7 @@ where
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(Serial::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
+        Ok(Self::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

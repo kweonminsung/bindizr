@@ -74,18 +74,13 @@ pub(crate) async fn handle_ixfr(
 
     let (changes, versions) = match plan {
         IxfrPlan::SoaOnly => {
-            log::info!(
-                "IXFR: Answering with current SOA (serial={})",
-                current_serial
-            );
+            log::info!("IXFR: Answering with current SOA (serial={current_serial})");
             return self::send::send_soa_response(writer, query, &zone, identity.signer.take())
                 .await;
         }
         IxfrPlan::Full => {
             log::info!(
-                "IXFR: No incremental answer from serial {} to {}, falling back to AXFR",
-                client_serial,
-                current_serial
+                "IXFR: No incremental answer from serial {client_serial} to {current_serial}, falling back to AXFR"
             );
             return axfr::handle_axfr(dns_cx, writer, query, client_ip, Rtype::IXFR, identity)
                 .await;
@@ -127,8 +122,7 @@ pub(crate) async fn handle_ixfr(
             signer: signer_back,
         }) => {
             log::warn!(
-                "IXFR: Failed to build incremental response ({}), falling back to AXFR",
-                error
+                "IXFR: Failed to build incremental response ({error}), falling back to AXFR"
             );
             identity.signer = signer_back.map(|signer| *signer);
 
@@ -137,16 +131,13 @@ pub(crate) async fn handle_ixfr(
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(SendIxfrError::Partial { error, signer }) => {
-            log::warn!(
-                "IXFR: aborting after partial send, not falling back: {}",
-                error
-            );
+            log::warn!("IXFR: aborting after partial send, not falling back: {error}");
             identity.signer = signer.map(|signer| *signer);
             return Err(error);
         }
     }
 
-    log::info!("IXFR completed for zone {}", zone_name_str);
+    log::info!("IXFR completed for zone {zone_name_str}");
 
     transfer::save_ok(
         cx,

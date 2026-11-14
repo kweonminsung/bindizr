@@ -8,7 +8,7 @@ id_newtype!(
 
 /// A named set of rights that API tokens and TSIG keys authenticate into; the
 /// rights are its [`super::role_grant::RoleGrant`] rows.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Role {
     pub id: RoleId,
     /// Unique human-facing identifier; credentials and the CLI reference a role by name.

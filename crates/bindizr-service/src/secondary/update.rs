@@ -110,8 +110,7 @@ pub async fn update(
             // The UNIQUE(address) backstop for the pre-check above.
             if error.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
-                    "secondary with address '{}' already exists",
-                    address
+                    "secondary with address '{address}' already exists"
                 ))
             } else {
                 error.into()

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::wire::{ApplyExternalDnsChangesRequest, BindizrRecord};
@@ -44,7 +44,7 @@ pub(crate) enum BuildClientError {
 }
 
 /// The `error` message a bindizr API error response carries.
-#[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct UpstreamErrorResponse {
     error: String,
 }
@@ -91,7 +91,7 @@ impl UpstreamClient {
 
         let http = builder.build().map_err(BuildClientError::Build)?;
 
-        Ok(UpstreamClient {
+        Ok(Self {
             http,
             base_url,
             token,
@@ -100,7 +100,7 @@ impl UpstreamClient {
 
     /// Fetch domain names available to the adapter's token.
     pub(crate) async fn list_domains(&self) -> Result<Vec<String>, UpstreamError> {
-        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct ListExternalDnsDomainsResponse {
             domains: Vec<String>,
         }
@@ -110,7 +110,7 @@ impl UpstreamClient {
 
     /// Fetch the records visible through the bindizr external-dns API.
     pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
-        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct ListExternalDnsRecordsResponse {
             records: Vec<BindizrRecord>,
         }
@@ -136,11 +136,11 @@ impl UpstreamClient {
         &self,
         records: &[BindizrRecord],
     ) -> Result<Vec<BindizrRecord>, UpstreamError> {
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct AdjustExternalDnsRecordsRequest<'a> {
             records: std::borrow::Cow<'a, [BindizrRecord]>,
         }
-        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct AdjustExternalDnsRecordsResponse {
             records: Vec<BindizrRecord>,
         }
@@ -209,11 +209,10 @@ impl UpstreamClient {
         }
 
         // Surface the bindizr error body's message; never the token.
-        let message = response
-            .json::<UpstreamErrorResponse>()
-            .await
-            .map(|body| body.error)
-            .unwrap_or_else(|_| format!("bindizr responded with status {}", status.as_u16()));
+        let message = response.json::<UpstreamErrorResponse>().await.map_or_else(
+            |_| format!("bindizr responded with status {}", status.as_u16()),
+            |body| body.error,
+        );
 
         if status.as_u16() == 401 || status.as_u16() == 403 {
             log::error!(

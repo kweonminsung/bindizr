@@ -22,7 +22,7 @@ fn test_zone() -> Zone {
         serial: Serial::from(1),
         refresh: SoaInterval::from_secs(7200),
         retry: SoaInterval::from_secs(3600),
-        expire: SoaInterval::from_secs(604800),
+        expire: SoaInterval::from_secs(604_800),
         minimum_ttl: Ttl::from_secs(86400),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -129,7 +129,7 @@ fn authorize_zone_action_hides_unreached_zones() {
 
     assert_eq!(error.code(), ErrorCode::Forbidden);
 
-    let error = token(vec![])
+    let error = token(Vec::new())
         .authorize_zone_action(Action::ZoneUpdate, &zone)
         .unwrap_err();
 
@@ -270,7 +270,9 @@ fn authorize_whole_zone_rejects_a_constrained_grant() {
     assert_eq!(error.code(), ErrorCode::Forbidden);
 
     // A zone with no grant at all keeps reading as absent.
-    let error = token(vec![]).authorize_whole_zone(read, &zone).unwrap_err();
+    let error = token(Vec::new())
+        .authorize_whole_zone(read, &zone)
+        .unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::ZoneNotFound);
 }
@@ -294,7 +296,7 @@ fn change_origin_preserves_credential_across_access_scopes() {
     assert_eq!(api.change_origin().actor, None);
 
     let admin = token(vec![all_zones(&Action::ALL)]);
-    let scoped = token(vec![]);
+    let scoped = token(Vec::new());
 
     assert_eq!(admin.change_origin(), scoped.change_origin());
     assert_eq!(

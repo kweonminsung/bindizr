@@ -16,7 +16,7 @@ use super::TsigSigningKey;
 pub struct SignResponseError(#[from] PushError);
 
 /// The key and original request MAC needed to sign its response.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct ResponseSigner {
     pub(crate) key: TsigSigningKey,
     pub(crate) request_mac: Vec<u8>,
@@ -49,7 +49,7 @@ impl ResponseSigner {
 }
 
 /// One transfer's key and previous MAC (RFC 8945, Section 5.3.1).
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct TransferSigner {
     key: TsigSigningKey,
     previous_mac: Vec<u8>,

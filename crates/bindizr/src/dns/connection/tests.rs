@@ -18,7 +18,7 @@ use crate::shutdown::Shutdown;
 /// Build real service state with unsigned UPDATE and synchronous NOTIFY enabled.
 async fn context() -> Arc<Context> {
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.nsupdate.tsig_required = false;
     config.dns.notify.batch_ms = 0;
     config.dns.notify.timeout_secs = 3;
@@ -170,8 +170,8 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             &cx,
             &caller,
             bindizr_service::types::RecordFilter {
-                zone_name: Some("example.com".into()),
-                name: Some("www".into()),
+                zone_name: Some("example.com".to_string()),
+                name: Some("www".to_string()),
                 ..Default::default()
             },
         )

@@ -15,7 +15,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing the secondary servers.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum SecondaryCommand {
     /// Register a secondary: it receives NOTIFY and may pull zones unsigned
     /// from its address
@@ -135,7 +135,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 }),
             )
             .await?;
-            log::debug!("Secondary creation result: {:?}", response);
+            log::debug!("Secondary creation result: {response:?}");
             print_secondary(&response.data, output)?;
         }
         SecondaryCommand::List {
@@ -147,7 +147,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 DaemonCommand::ListSecondaries(PageRequest { limit, offset }),
             )
             .await?;
-            log::debug!("Secondary list result: {:?}", response);
+            log::debug!("Secondary list result: {response:?}");
             output::print_page(&response.data, output, |item| SecondaryRow::from(item))?;
         }
         SecondaryCommand::Get { name, output } => {
@@ -156,7 +156,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     name,
                 })
                 .await?;
-            log::debug!("Secondary get result: {:?}", response);
+            log::debug!("Secondary get result: {response:?}");
             print_secondary(&response.data, output)?;
         }
         SecondaryCommand::Update {
@@ -176,7 +176,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     },
                 })
                 .await?;
-            log::debug!("Secondary update result: {:?}", response);
+            log::debug!("Secondary update result: {response:?}");
             print_secondary(&response.data, output)?;
         }
         SecondaryCommand::Transfers {
@@ -199,14 +199,14 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 },
             )
             .await?;
-            log::debug!("Secondary transfers result: {:?}", response);
+            log::debug!("Secondary transfers result: {response:?}");
             let transfers = &response.data;
 
             if output == OutputFormat::Table {
                 output::print_table(transfers.transfers.iter().map(TransferRow::from).collect());
                 outln!("{}", output::display_transfer_summary(&transfers.summary));
             } else {
-                output::print_payload(transfers, output)?
+                output::print_payload(transfers, output)?;
             }
         }
         SecondaryCommand::Check { name, output } => {
@@ -215,20 +215,19 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     name: name.clone(),
                 })
                 .await?;
-            log::debug!("Secondary check result: {:?}", response);
+            log::debug!("Secondary check result: {response:?}");
             let check = &response.data;
 
             if output == OutputFormat::Table {
-                print_check(check)
+                print_check(check);
             } else {
-                output::print_payload(check, output)?
+                output::print_payload(check, output)?;
             }
 
             // A failed part exits non-zero, so a script can branch on it.
             if !check.is_healthy() {
                 return Err(CliError::request(format!(
-                    "secondary '{}' failed the check",
-                    name
+                    "secondary '{name}' failed the check"
                 )));
             }
         }
@@ -236,12 +235,12 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteSecondary { name })
                     .await?;
-            log::debug!("Secondary deletion result: {:?}", response);
+            log::debug!("Secondary deletion result: {response:?}");
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }
@@ -262,7 +261,7 @@ fn print_check(check: &CheckSecondaryResponse) {
             "disabled"
         },
         match &secondary.notify_key_name {
-            Some(key) => format!(", NOTIFY signed with {}", key),
+            Some(key) => format!(", NOTIFY signed with {key}"),
             None => String::new(),
         }
     );

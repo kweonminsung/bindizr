@@ -1603,7 +1603,7 @@ async fn udp_query_truncates_answers_above_limit() {
                 "serial": 10,
                 "refresh": 7200,
                 "retry": 3600,
-                "expire": 604800,
+                "expire": 604_800,
                 "minimum_ttl": 86400
             })),
         )

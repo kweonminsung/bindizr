@@ -97,14 +97,14 @@ pub(crate) async fn handle_udp_ixfr(
     .await
     .inspect_err(|_| {
         cx.metrics()
-            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+            .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed);
     })?;
     socket
         .send_to(&response, target, query.response_limit())
         .await
         .inspect_err(|_| {
             cx.metrics()
-                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed)
+                .track_xfr(Rtype::IXFR, TransferTransport::Udp, XfrResult::Failed);
         })?;
 
     let result = match outcome {

@@ -102,7 +102,7 @@ impl NsupdateError {
 impl From<bindizr_db::error::DatabaseError> for NsupdateError {
     /// Map a database failure to SERVFAIL.
     fn from(error: bindizr_db::error::DatabaseError) -> Self {
-        NsupdateError::from(ServiceError::from(error))
+        Self::from(ServiceError::from(error))
     }
 }
 

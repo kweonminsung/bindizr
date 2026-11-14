@@ -35,7 +35,7 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
     let canonical = name::labels_to_presentation(&parse_relative_name(name_part)?);
 
     Ok(match raw.strip_prefix("*.") {
-        Some(_) => format!("*.{}", canonical),
+        Some(_) => format!("*.{canonical}"),
         None => canonical,
     })
 }
@@ -44,14 +44,13 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
 /// rules themselves (empty, length, charset) come with decoding.
 fn parse_relative_name(name: &str) -> Result<Vec<Vec<u8>>, ServiceError> {
     let (labels, rooted) = name::decode_name_labels(name)
-        .map_err(|error| ServiceError::invalid_input(format!("record name pattern {}", error)))?;
+        .map_err(|error| ServiceError::invalid_input(format!("record name pattern {error}")))?;
 
     // A pattern is relative, and `*` is the language's metacharacter: it is
     // not escaped on render, so a label spelled `\042` would read as a grant.
     if rooted || labels.iter().any(|label| label.contains(&b'*')) {
         return Err(ServiceError::invalid_input(format!(
-            "invalid record name pattern '{}': use '*', '@', '*.<name>' or an exact relative name",
-            name
+            "invalid record name pattern '{name}': use '*', '@', '*.<name>' or an exact relative name"
         )));
     }
 

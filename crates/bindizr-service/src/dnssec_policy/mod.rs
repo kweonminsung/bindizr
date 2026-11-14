@@ -20,7 +20,7 @@ use crate::{Context, audit, pagination, text, transaction};
 
 /// RFC 1982 serial arithmetic is only unambiguous while expiration -
 /// inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
-const MAX_SIGNATURE_VALIDITY_DAYS: u32 = 24_855;
+const MAX_SIGNATURE_VALIDITY_DAYS: u32 = 24855;
 /// Cap on scheduled-roll lifetimes: a typo must not park a ZSK for decades.
 const MAX_ZSK_LIFETIME_DAYS: u32 = 3650;
 const MAX_POLICY_NAME_LEN: usize = 64;
@@ -247,8 +247,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     // `enable` and `keys import` fall back to it by name.
     if policy.is_builtin() {
         return Err(ServiceError::invalid_input(format!(
-            "the built-in '{}' policy cannot be deleted; edit it instead",
-            DEFAULT_DNSSEC_POLICY_NAME
+            "the built-in '{DEFAULT_DNSSEC_POLICY_NAME}' policy cannot be deleted; edit it instead"
         )));
     }
 
@@ -326,8 +325,7 @@ fn validate_timings(
     }
     if signature_validity_days > MAX_SIGNATURE_VALIDITY_DAYS {
         return Err(ServiceError::invalid_input(format!(
-            "signature_validity_days must be at most {} (2^31 seconds)",
-            MAX_SIGNATURE_VALIDITY_DAYS
+            "signature_validity_days must be at most {MAX_SIGNATURE_VALIDITY_DAYS} (2^31 seconds)"
         )));
     }
     if signature_refresh_days == 0 {
@@ -337,14 +335,12 @@ fn validate_timings(
     }
     if signature_refresh_days >= signature_validity_days {
         return Err(ServiceError::invalid_input(format!(
-            "signature_refresh_days ({}) must be less than signature_validity_days ({})",
-            signature_refresh_days, signature_validity_days
+            "signature_refresh_days ({signature_refresh_days}) must be less than signature_validity_days ({signature_validity_days})"
         )));
     }
     if zsk_lifetime_days > MAX_ZSK_LIFETIME_DAYS {
         return Err(ServiceError::invalid_input(format!(
-            "zsk_lifetime_days must be at most {}",
-            MAX_ZSK_LIFETIME_DAYS
+            "zsk_lifetime_days must be at most {MAX_ZSK_LIFETIME_DAYS}"
         )));
     }
 
@@ -387,8 +383,8 @@ mod tests {
         assert!(super::validate_timings(14, 0, 0).is_err());
 
         // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
-        assert!(super::validate_timings(24_856, 5, 0).is_err());
-        assert!(super::validate_timings(24_855, 5, 0).is_ok());
+        assert!(super::validate_timings(24856, 5, 0).is_err());
+        assert!(super::validate_timings(24855, 5, 0).is_ok());
         assert!(super::validate_timings(14, 5, 3651).is_err());
     }
 }

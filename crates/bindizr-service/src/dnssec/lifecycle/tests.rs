@@ -17,7 +17,7 @@ fn zone() -> Zone {
         serial: Serial::from(5),
         refresh: SoaInterval::from_secs(300),
         retry: SoaInterval::from_secs(60),
-        expire: SoaInterval::from_secs(3600000),
+        expire: SoaInterval::from_secs(3_600_000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,

@@ -127,9 +127,9 @@ pub(crate) async fn delete_record(
 
     Ok(DaemonResponse {
         message: if response.dry_run {
-            format!("Record {} would be deleted", id)
+            format!("Record {id} would be deleted")
         } else {
-            format!("Record {} deleted successfully", id)
+            format!("Record {id} deleted successfully")
         },
         data: response,
     })

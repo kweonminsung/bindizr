@@ -33,7 +33,7 @@ pub(crate) async fn check_installation(
         },
         Ok(Err(error)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
-            message: format!("Database not reachable: {}", error),
+            message: format!("Database not reachable: {error}"),
         },
         Err(_) => DoctorCheckResponse {
             status: DoctorCheckStatus::Failed,
@@ -68,7 +68,7 @@ pub(crate) async fn check_installation(
             Err(error) => (
                 DoctorCheckResponse {
                     status: DoctorCheckStatus::Failed,
-                    message: format!("DNS server not reachable: {}: {}", dns_addr, error),
+                    message: format!("DNS server not reachable: {dns_addr}: {error}"),
                 },
                 None,
             ),
@@ -87,23 +87,16 @@ pub(crate) async fn check_installation(
                     Ok(Ok(_)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Ok,
                         message: format!(
-                            "DNS TLS server listening: {} (TLS handshake not attempted)",
-                            dns_tls_addr
+                            "DNS TLS server listening: {dns_tls_addr} (TLS handshake not attempted)"
                         ),
                     },
                     Ok(Err(error)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
-                        message: format!(
-                            "DNS TLS server not reachable: {}: {}",
-                            dns_tls_addr, error
-                        ),
+                        message: format!("DNS TLS server not reachable: {dns_tls_addr}: {error}"),
                     },
                     Err(_) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Failed,
-                        message: format!(
-                            "DNS TLS server not reachable: {}: timed out",
-                            dns_tls_addr
-                        ),
+                        message: format!("DNS TLS server not reachable: {dns_tls_addr}: timed out"),
                     },
                 },
             )

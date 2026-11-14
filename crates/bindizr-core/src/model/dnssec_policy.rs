@@ -4,6 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use super::dnssec_key::DnssecAlgorithm;
 
@@ -18,9 +19,7 @@ pub struct ParseDenialError {
 }
 
 /// How a signed zone proves nonexistence (denial of existence).
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DnssecDenial {
     /// Plain NSEC chain over the zone's names.
@@ -33,8 +32,8 @@ impl DnssecDenial {
     /// Storage name, as the columns and the API spell it.
     pub fn as_str(&self) -> &'static str {
         match self {
-            DnssecDenial::Nsec => "nsec",
-            DnssecDenial::Nsec3 => "nsec3",
+            Self::Nsec => "nsec",
+            Self::Nsec3 => "nsec3",
         }
     }
 }
@@ -43,8 +42,8 @@ impl std::fmt::Display for DnssecDenial {
     /// Write the denial mode in the upper case the DNSSEC documents use.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            DnssecDenial::Nsec => "NSEC",
-            DnssecDenial::Nsec3 => "NSEC3",
+            Self::Nsec => "NSEC",
+            Self::Nsec3 => "NSEC3",
         })
     }
 }
@@ -55,8 +54,8 @@ impl std::str::FromStr for DnssecDenial {
     /// Parse a DNSSEC denial from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "nsec" => Ok(DnssecDenial::Nsec),
-            "nsec3" => Ok(DnssecDenial::Nsec3),
+            "nsec" => Ok(Self::Nsec),
+            "nsec3" => Ok(Self::Nsec3),
             _ => Err(ParseDenialError {
                 value: value.to_string(),
             }),
@@ -80,7 +79,7 @@ id_newtype!(
 
 /// A named signing policy: key layout, algorithm, and denial mode are fixed
 /// at creation; timing changes take effect on the next signing pass.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecPolicy {
     pub id: PolicyId,
     pub name: String,
@@ -153,7 +152,7 @@ pub enum ConvertDaysError {
 
 impl Days {
     /// The largest count the row form holds.
-    pub const MAX: Days = Days(i32::MAX as u32);
+    pub const MAX: Self = Self(i32::MAX as u32);
 
     /// The count of days.
     pub const fn as_days(self) -> u32 {
@@ -174,7 +173,7 @@ impl TryFrom<u32> for Days {
         if days > Self::MAX.0 {
             return Err(ConvertDaysError::TooLarge { days });
         }
-        Ok(Days(days))
+        Ok(Self(days))
     }
 }
 
@@ -199,7 +198,7 @@ impl From<Days> for u32 {
 impl From<Days> for i32 {
     /// The row form; the range invariant makes it exact.
     fn from(days: Days) -> Self {
-        days.0 as i32
+        days.0 as Self
     }
 }
 
@@ -246,7 +245,7 @@ where
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(Days::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+        Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

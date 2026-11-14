@@ -12,7 +12,7 @@ use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 
 /// Whether a step that depends on the parent's DS asks the parent
 /// nameservers, or takes the DS on the operator's word.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DsCheck {
     Probe,
@@ -23,16 +23,16 @@ impl DsCheck {
     /// The check a `skip_ds_check` flag asks for.
     pub fn from_skip_ds_check(skip_ds_check: bool) -> Self {
         if skip_ds_check {
-            DsCheck::Skip
+            Self::Skip
         } else {
-            DsCheck::Probe
+            Self::Probe
         }
     }
 }
 
 /// Whether a key promotion waits out the hold-down resolvers need to learn
 /// the new key, or goes ahead at once.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Holddown {
     Wait,
@@ -43,15 +43,15 @@ impl Holddown {
     /// The wait a `skip_holddown` flag asks for.
     pub fn from_skip_holddown(skip_holddown: bool) -> Self {
         if skip_holddown {
-            Holddown::Skip
+            Self::Skip
         } else {
-            Holddown::Wait
+            Self::Wait
         }
     }
 }
 
 /// Request body for enabling DNSSEC on a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EnableDnssecRequest {
     /// Name of the DNSSEC policy to sign under; defaults to `default`.
@@ -66,7 +66,7 @@ pub struct EnableDnssecRequest {
 
 /// Request body for changing a zone's signing settings; an omitted field
 /// keeps its value.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecSettingsRequest {
     /// Policy to move the signed zone to; it must share the zone's key
@@ -83,7 +83,7 @@ pub struct UpdateDnssecSettingsRequest {
 }
 
 /// One of the zone's SEP keys against the parent's DS records.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecDelegationKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
@@ -105,7 +105,7 @@ pub struct DnssecDelegationKeyResponse {
 }
 
 /// Whether the parent serves a DS for the zone.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DsState {
     Published,
@@ -113,7 +113,7 @@ pub enum DsState {
 }
 
 /// What the parent zone's servers answered when asked for the zone's DS.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecDelegationResponse {
     /// The nameservers asked, from the zone's setting.
     pub parent_ns_addrs: Vec<String>,
@@ -131,7 +131,7 @@ pub struct DnssecDelegationResponse {
 }
 
 /// Request body for starting a key rollover.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StartDnssecRolloverRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
@@ -141,7 +141,7 @@ pub struct StartDnssecRolloverRequest {
 }
 
 /// Public signing-key metadata; private material is excluded from HTTP responses.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
@@ -166,7 +166,7 @@ pub struct DnssecKeyResponse {
 }
 
 /// A key's DS form for parent-zone registration.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecDsResponse {
     #[schema(example = 34217, value_type = u16)]
     pub key_tag: KeyTag,
@@ -185,7 +185,7 @@ pub struct DnssecDsResponse {
 }
 
 /// DNSSEC signing state of a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DnssecStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -224,7 +224,7 @@ pub struct DnssecStatusResponse {
 
 /// One key's BIND file contents. Served only over the daemon socket:
 /// private keys never transit the HTTP API.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnssecKeyMaterialResponse {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
@@ -237,7 +237,7 @@ pub struct DnssecKeyMaterialResponse {
 }
 
 /// Response body listing a zone's keys in BIND file form.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportDnssecKeysResponse {
     pub zone_name: String,
     pub keys: Vec<DnssecKeyMaterialResponse>,
@@ -245,7 +245,7 @@ pub struct ExportDnssecKeysResponse {
 
 /// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
 /// matching `K*.private` contents.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyPair {
     pub dnskey: String,
@@ -253,7 +253,7 @@ pub struct ImportDnssecKeyPair {
 }
 
 /// Request body importing a zone's complete key set; daemon-socket only.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeysRequest {
     /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.

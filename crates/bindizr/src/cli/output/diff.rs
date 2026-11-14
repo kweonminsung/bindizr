@@ -72,10 +72,7 @@ fn render_diff_lines(entries: &[RecordDiffEntryResponse]) -> String {
             } else {
                 ""
             };
-            let line = format!(
-                "{} {:<24} {:>5} IN {:<6} {}",
-                head, name_col, ttl, rtype, data
-            );
+            let line = format!("{head} {name_col:<24} {ttl:>5} IN {rtype:<6} {data}");
             let line = if index < removed {
                 color::red(&line)
             } else {

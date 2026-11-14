@@ -61,7 +61,7 @@ pub(crate) enum Backend {
 impl Db {
     /// Connect to the configured backend and set up the schema; the daemon
     /// calls this once and holds the value.
-    pub async fn connect(database: &config::DatabaseConfig) -> Result<Db, DatabaseError> {
+    pub async fn connect(database: &config::DatabaseConfig) -> Result<Self, DatabaseError> {
         let backend = match database.database_type {
             config::DatabaseType::MySql => {
                 Backend::connect_mysql(&database.mysql.url, &database.tls).await?
@@ -77,7 +77,7 @@ impl Db {
             }
         };
 
-        let db = Db(backend);
+        let db = Self(backend);
 
         db.create_tables().await?;
 
@@ -242,9 +242,7 @@ pub struct PoolStats {
 /// Max pooled connections, scaled to the host instead of sqlx's flat 10.
 /// SQLite shares it: under WAL the pool bounds readers, not the one writer.
 fn pool_max_connections() -> u32 {
-    let cores = std::thread::available_parallelism()
-        .map(std::num::NonZero::get)
-        .unwrap_or(4);
+    let cores = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
     ((cores * 4) as u32).clamp(8, 64)
 }
 
@@ -270,7 +268,7 @@ impl Backend {
             .await
             .map_err(DatabaseError::MySqlConnect)?;
 
-        Ok(Backend::MySql(pool))
+        Ok(Self::MySql(pool))
     }
 
     /// Connect to PostgreSQL and return the pool.
@@ -295,7 +293,7 @@ impl Backend {
             .await
             .map_err(DatabaseError::PostgresConnect)?;
 
-        Ok(Backend::Postgres(pool))
+        Ok(Self::Postgres(pool))
     }
 
     /// Connect to SQLite and return the pool.
@@ -326,8 +324,7 @@ impl Backend {
 
                     if !mode.eq_ignore_ascii_case("wal") {
                         log::warn!(
-                            "SQLite journal_mode is '{}', not WAL: readers will queue behind writes",
-                            mode
+                            "SQLite journal_mode is '{mode}', not WAL: readers will queue behind writes"
                         );
                     }
 
@@ -338,7 +335,7 @@ impl Backend {
             .await
             .map_err(DatabaseError::SqliteOpen)?;
 
-        Ok(Backend::Sqlite(pool))
+        Ok(Self::Sqlite(pool))
     }
 }
 
@@ -354,7 +351,7 @@ impl Db {
                         .execute(&mut *connection)
                         .await
                         .map_err(|error| {
-                            log::error!("Failed to execute query '{}': {}", query, error);
+                            log::error!("Failed to execute query '{query}': {error}");
                             DatabaseError::from(error)
                         })?;
                 }
@@ -366,7 +363,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
 
@@ -380,7 +377,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
 
@@ -393,7 +390,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
             }
@@ -405,7 +402,7 @@ impl Db {
                         .execute(&mut *connection)
                         .await
                         .map_err(|error| {
-                            log::error!("Failed to execute query '{}': {}", query, error);
+                            log::error!("Failed to execute query '{query}': {error}");
                             DatabaseError::from(error)
                         })?;
                 }
@@ -417,7 +414,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
 
@@ -431,7 +428,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
 
@@ -444,7 +441,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
             }
@@ -456,7 +453,7 @@ impl Db {
                         .execute(&mut *connection)
                         .await
                         .map_err(|error| {
-                            log::error!("Failed to execute query '{}': {}", query, error);
+                            log::error!("Failed to execute query '{query}': {error}");
                             DatabaseError::from(error)
                         })?;
                 }
@@ -468,7 +465,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
 
@@ -482,7 +479,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
 
@@ -495,7 +492,7 @@ impl Db {
                     .execute(&mut *connection)
                     .await
                     .map_err(|error| {
-                        log::error!("Failed to execute query '{}': {}", seed, error);
+                        log::error!("Failed to execute query '{seed}': {error}");
                         DatabaseError::from(error)
                     })?;
             }

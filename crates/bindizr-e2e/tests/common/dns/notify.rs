@@ -17,7 +17,7 @@ use crate::common::dns::tsig::SigningKey;
 pub(crate) const SERVED_SERIAL: u32 = 1;
 
 /// One NOTIFY as the fake secondary saw it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReceivedNotify {
     pub(crate) zone: String,
     /// The request carried a TSIG record.
@@ -96,14 +96,11 @@ impl FakeSecondary {
                     continue;
                 }
 
-                let signed = request
-                    .additional()
-                    .map(|section| {
-                        section
-                            .flatten()
-                            .any(|record| record.rtype() == Rtype::TSIG)
-                    })
-                    .unwrap_or(false);
+                let signed = request.additional().is_ok_and(|section| {
+                    section
+                        .flatten()
+                        .any(|record| record.rtype() == Rtype::TSIG)
+                });
 
                 // With a key, the signature decides the answer.
                 let mut signer = None;

@@ -174,7 +174,7 @@ pub async fn update(
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    log::error!("Failed to check existing zone: {}", error);
+                    log::error!("Failed to check existing zone: {error}");
                     return Err(ServiceError::internal_with_source(
                         "failed to update zone",
                         error,
@@ -203,9 +203,9 @@ pub async fn update(
                 // A rename that raced past the pre-check above trips
                 // UNIQUE(name); the backstop reads as the same conflict.
                 if error.is_unique_violation() {
-                    ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+                    ServiceError::zone_conflict(format!("zone with name '{name}' already exists"))
                 } else {
-                    log::error!("Failed to update zone: {}", error);
+                    log::error!("Failed to update zone: {error}");
                     ServiceError::internal_with_source("failed to update zone", error)
                 }
             })?;
@@ -217,7 +217,7 @@ pub async fn update(
         bindizr_db::zone_change::create_many_tx(&mut tx, &changes)
             .await
             .map_err(|error| {
-                log::error!("Failed to create zone changes: {}", error);
+                log::error!("Failed to create zone changes: {error}");
                 ServiceError::internal_with_source("failed to create zone change", error)
             })?;
 

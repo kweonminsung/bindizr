@@ -37,7 +37,7 @@ async fn grant(cx: &Context, actions: &[&str]) -> RoleGrantResponse {
         &Caller::socket(),
         "writer",
         &CreateRoleGrantRequest {
-            zone_name: Some("example.test".into()),
+            zone_name: Some("example.test".to_string()),
             actions: actions.iter().map(ToString::to_string).collect(),
             record_name_pattern: None,
             record_types: None,
@@ -57,7 +57,7 @@ async fn credential(cx: &Context) -> String {
         cx,
         &admin,
         &CreateRoleRequest {
-            name: "writer".into(),
+            name: "writer".to_string(),
             description: None,
         },
     )
@@ -68,10 +68,10 @@ async fn credential(cx: &Context) -> String {
         cx,
         &admin,
         &CreateTokenRequest {
-            name: "writer-token".into(),
+            name: "writer-token".to_string(),
             description: None,
             expires_in_days: None,
-            role_name: "writer".into(),
+            role_name: "writer".to_string(),
         },
     )
     .await

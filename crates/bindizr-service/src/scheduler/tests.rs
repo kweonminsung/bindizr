@@ -10,7 +10,7 @@ use super::*;
 /// Build real service state and its reload channel over a disposable SQLite database.
 async fn context(period: u64) -> (Arc<Context>, watch::Receiver<u64>) {
     let mut config: Config = serde_json::from_str("{}").unwrap();
-    config.database.sqlite.file_path = "sqlite::memory:".into();
+    config.database.sqlite.file_path = "sqlite::memory:".to_string();
     config.dns.scheduler_interval_secs = period;
 
     let db = Db::connect(&config.database).await.unwrap();

@@ -35,8 +35,7 @@ pub async fn create(
         .is_some()
     {
         return Err(ServiceError::secondary_conflict(format!(
-            "secondary with name '{}' already exists",
-            name
+            "secondary with name '{name}' already exists"
         )));
     }
     if let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), &address).await? {
@@ -68,8 +67,7 @@ pub async fn create(
             // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
             if error.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
-                    "secondary with name '{}' or address '{}' already exists",
-                    name, address
+                    "secondary with name '{name}' or address '{address}' already exists"
                 ))
             } else {
                 error.into()

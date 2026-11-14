@@ -179,7 +179,7 @@ async fn zone_supports_create_read_update_and_delete() {
         "default_ttl": 3600,
         "refresh": 7200,
         "retry": 3600,
-        "expire": 604800,
+        "expire": 604_800,
         "minimum_ttl": 86400
     });
 
@@ -208,8 +208,8 @@ async fn zone_supports_create_read_update_and_delete() {
         "default_ttl": 7200,
         "refresh": 14400,
         "retry": 7200,
-        "expire": 1209600,
-        "minimum_ttl": 172800
+        "expire": 1_209_600,
+        "minimum_ttl": 172_800
     });
 
     let (status, body) = app
@@ -472,7 +472,7 @@ async fn zone_listing_filters_and_paginates() {
         "default_ttl": 7200,
         "refresh": 7200,
         "retry": 3600,
-        "expire": 604800,
+        "expire": 604_800,
         "minimum_ttl": 86400
     });
 
@@ -901,7 +901,7 @@ async fn zone_rejects_invalid_name_and_ttl() {
             "name": "high-ttl.example.com",
             "mname": "ns.high-ttl.example.com",
             "rname": "hostmaster@example.com",
-            "default_ttl": 604801
+            "default_ttl": 604_801
         }),
     ] {
         let (status, _) = app

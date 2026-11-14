@@ -15,7 +15,7 @@ use crate::types::{
 };
 
 /// What makes two records of one record set the same: canonical rdata and TTL.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberIdentity {
     rdata: String,
     ttl: Ttl,
@@ -23,7 +23,7 @@ struct MemberIdentity {
 
 /// One record within a record set: its identity (for change detection) and
 /// its display-form value (for the response).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RecordSetMember {
     identity: MemberIdentity,
     value: RecordDiffValueResponse,

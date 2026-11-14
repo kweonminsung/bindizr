@@ -1,13 +1,14 @@
 //! Zone import payloads, for one zone and for several from one server.
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use utoipa::ToSchema;
 
 use super::common::ErrorResponse;
 use super::version::RecordDiffResponse;
 
 /// How parsed records are reconciled with the records already in the zone.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Add parsed records; records already present are left untouched.
@@ -22,7 +23,7 @@ pub enum ImportMode {
 
 /// Request body for importing records into a zone: BIND zone file text in
 /// `content`, or a transfer from `from_server`; exactly one of the two.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportZoneRequest {
     /// Raw BIND zone file text.
@@ -51,7 +52,7 @@ pub struct ImportZoneRequest {
 }
 
 /// Result of a zone import, including a summary and any validation errors.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ImportZoneResponse {
     #[schema(example = true)]
     pub applied: bool,
@@ -73,7 +74,7 @@ impl ImportZoneResponse {
 }
 
 /// Import record counts; `updated` counts TTL-only changes and excludes `unchanged`.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ImportZoneSummaryResponse {
     #[schema(example = 12)]
     pub parsed: u64,
@@ -128,7 +129,7 @@ impl Default for ImportZoneRequest {
 /// Request body for importing several zones from one server over AXFR:
 /// those in `zone_names`, or the members of its catalog zone `from_catalog`
 /// (RFC 9432); exactly one of the two.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportZonesRequest {
     /// Transfer source (`host[:port]`, port 53 default); it must allow the transfers.
@@ -156,7 +157,7 @@ pub struct ImportZonesRequest {
 }
 
 /// How one zone of a bulk import came out.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportResult {
     /// The import ran: applied, or previewed on a dry run.
@@ -187,7 +188,7 @@ impl std::fmt::Display for ImportResult {
 }
 
 /// One zone of a bulk import: its result with the import answer or the error.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ImportZonesItemResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -199,7 +200,7 @@ pub struct ImportZonesItemResponse {
 }
 
 /// How many zones of a bulk import came out each way.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ImportZonesSummaryResponse {
     #[schema(example = 12)]
     pub zones: u64,
@@ -212,7 +213,7 @@ pub struct ImportZonesSummaryResponse {
 }
 
 /// Result of a bulk import: one entry per zone, in the order imported.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ImportZonesResponse {
     #[schema(example = false)]
     pub dry_run: bool,
@@ -228,7 +229,7 @@ impl ImportZonesResponse {
 }
 
 /// An import mode outside the supported reconciliation strategies.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid import mode '{0}': expected append, upsert, or replace")]
 pub struct ParseImportModeError(String);
 

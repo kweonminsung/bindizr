@@ -14,7 +14,7 @@ use crate::{Context, pagination, zone};
 
 /// Which plane a `type` filter names: a user record type, or a derived
 /// DNSSEC type when the signed view is requested.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TypeFilter {
     Any,
     User(RecordType),
@@ -207,7 +207,7 @@ pub async fn get(
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(error) => {
-            log::error!("Failed to fetch record: {}", error);
+            log::error!("Failed to fetch record: {error}");
             return Err(ServiceError::internal_with_source(
                 "failed to fetch record",
                 error,

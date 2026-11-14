@@ -101,7 +101,7 @@ impl<'de> serde::Deserialize<'de> for ZoneName {
     /// Deserialize a zone name from its text, rejecting one that does not parse.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        ZoneName::parse(&value).map_err(serde::de::Error::custom)
+        Self::parse(&value).map_err(serde::de::Error::custom)
     }
 }
 

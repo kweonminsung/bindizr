@@ -50,7 +50,7 @@ pub(crate) async fn delete_tsig_key(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     tsig_key::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("TSIG key '{}' deleted successfully", name);
+    let message = format!("TSIG key '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

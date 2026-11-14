@@ -201,7 +201,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
                         &[UpdateRecord::AddA {
                             name: format!("host.{zone_name}."),
                             ttl: 300,
-                            addr: "192.0.2.1".into(),
+                            addr: "192.0.2.1".to_string(),
                         }],
                     )
                     .unwrap()
@@ -353,7 +353,7 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
                 UpdateRecord::AddA {
                     name: format!("rollback.{name}"),
                     ttl: 3600,
-                    addr: "192.0.2.1".into(),
+                    addr: "192.0.2.1".to_string(),
                 },
                 operation,
             ];
@@ -565,8 +565,8 @@ async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
         addr: "192.0.2.170".to_string(),
     };
     let cases = [
-        (vec![], vec![]),
-        (vec![], vec![add.clone()]),
+        (Vec::new(), Vec::new()),
+        (Vec::new(), vec![add.clone()]),
         (
             vec![PrerequisiteRecord::NameInUse {
                 name: format!("absent.{zone_name}."),
@@ -574,7 +574,7 @@ async fn nsupdate_returns_notauth_for_unserved_zone_classes_over_udp() {
             vec![add.clone()],
         ),
         (
-            vec![],
+            Vec::new(),
             vec![
                 add.clone(),
                 UpdateRecord::DeleteRecordSet {
@@ -1010,7 +1010,7 @@ async fn nsupdate_prerequisite_accepts_zone_soa() {
             Serial::from(serial),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
-            Ttl::from_secs(604800),
+            Ttl::from_secs(604_800),
             Ttl::from_secs(86400),
         )
     };
@@ -2606,7 +2606,7 @@ async fn dnssec_prerequisites_require_read_grants_and_sign_errors() {
     for (rtype, rdata, expected) in [
         (Rtype::DNSKEY, vec![1, 1, 3], Rcode::FORMERR),
         // RFC 2136, Section 3.2 restricts no type; an unstored one is absent.
-        (Rtype::from_int(65280), vec![], Rcode::NXRRSET),
+        (Rtype::from_int(65280), Vec::new(), Rcode::NXRRSET),
     ] {
         let prerequisite = PrerequisiteRecord::RecordEquals {
             name: apex.clone(),
@@ -3315,7 +3315,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
             updates.push(UpdateRecord::AddA {
                 name: format!("new.{zone_name}."),
                 ttl: 300,
-                addr: "192.0.2.99".into(),
+                addr: "192.0.2.99".to_string(),
             });
         }
 
@@ -3369,7 +3369,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
 async fn unsigned_nsupdate_app() -> TestApp {
     TestApp::start_with_options(TestAppOptions {
         nsupdate_tsig_required: false,
-        ..TestAppOptions::default()
+        ..Default::default()
     })
     .await
 }
@@ -3394,7 +3394,7 @@ async fn nsupdate_rejects_unsupported_types_and_invalid_wks_atomically() {
             UpdateRecord::AddA {
                 name: format!("before.{zone_name}."),
                 ttl: 300,
-                addr: "192.0.2.1".into(),
+                addr: "192.0.2.1".to_string(),
             },
             UpdateRecord::AddRecord {
                 name: format!("unsupported.{zone_name}."),

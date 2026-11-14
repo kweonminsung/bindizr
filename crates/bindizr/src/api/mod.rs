@@ -77,15 +77,11 @@ where
 
     /// Extract the authenticated API token from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
-        parts
-            .extensions
-            .get::<AuthenticatedToken>()
-            .cloned()
-            .ok_or_else(|| {
-                ApiError(ServiceError::TokenNotFound(
-                    "the request presents no API token: authentication is disabled".to_string(),
-                ))
-            })
+        parts.extensions.get::<Self>().cloned().ok_or_else(|| {
+            ApiError(ServiceError::TokenNotFound(
+                "the request presents no API token: authentication is disabled".to_string(),
+            ))
+        })
     }
 }
 
@@ -133,7 +129,7 @@ pub(crate) async fn start(
         .map_err(|source| StartApiError::Bind { addr, source })?;
 
     let Some(certificate) = certificate else {
-        log::info!("HTTP API server listening on http://{}", addr);
+        log::info!("HTTP API server listening on http://{addr}");
         let stop = shutdown.waiter();
 
         return Ok(tokio::spawn(async move {
@@ -141,7 +137,7 @@ pub(crate) async fn start(
                 .with_graceful_shutdown(stop)
                 .await
             {
-                log::error!("API server error: {:?}", error);
+                log::error!("API server error: {error:?}");
             }
         }));
     };
@@ -156,7 +152,7 @@ pub(crate) async fn start(
     let server = axum_server::from_tcp_rustls(listener, tls)
         .map_err(|source| StartApiError::Serve { addr, source })?;
 
-    log::info!("HTTP API server listening on https://{}", addr);
+    log::info!("HTTP API server listening on https://{addr}");
 
     let handle = Handle::new();
     let stop = shutdown.waiter();
@@ -173,7 +169,7 @@ pub(crate) async fn start(
             .serve(router::routes(cx).into_make_service())
             .await
         {
-            log::error!("API server error: {:?}", error);
+            log::error!("API server error: {error:?}");
         }
     }))
 }

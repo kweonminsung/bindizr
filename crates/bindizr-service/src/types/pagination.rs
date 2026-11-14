@@ -9,7 +9,7 @@ pub const DEFAULT_PAGE_LIMIT: u32 = 50;
 
 /// Requested pagination window for a listing with no row predicates.
 #[derive(
-    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema, IntoParams,
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams,
 )]
 #[serde(deny_unknown_fields)]
 pub struct PageRequest {
@@ -22,14 +22,14 @@ pub struct PageRequest {
 }
 
 /// A page of items together with its pagination metadata.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub pagination: PaginationResponse,
 }
 
 /// Pagination window and total count for a list response.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PaginationResponse {
     #[schema(example = 50)]
     pub limit: u32,

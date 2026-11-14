@@ -1,8 +1,10 @@
 //! Management-change history: who changed what and when, beyond zone-version history.
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::model::change::{ChangeActor, ChangeActorColumns, ChangeSource};
 
@@ -21,9 +23,7 @@ pub enum ParseAuditLogError {
 }
 
 /// What a management change was made to.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditEntity {
     Token,
@@ -53,13 +53,13 @@ impl AuditEntity {
     /// Storage and API form.
     pub fn as_str(self) -> &'static str {
         match self {
-            AuditEntity::Token => "token",
-            AuditEntity::Role => "role",
-            AuditEntity::RoleGrant => "role_grant",
-            AuditEntity::TsigKey => "tsig_key",
-            AuditEntity::Secondary => "secondary",
-            AuditEntity::DnssecPolicy => "dnssec_policy",
-            AuditEntity::Zone => "zone",
+            Self::Token => "token",
+            Self::Role => "role",
+            Self::RoleGrant => "role_grant",
+            Self::TsigKey => "tsig_key",
+            Self::Secondary => "secondary",
+            Self::DnssecPolicy => "dnssec_policy",
+            Self::Zone => "zone",
         }
     }
 
@@ -100,9 +100,7 @@ impl TryFrom<String> for AuditEntity {
 }
 
 /// What was done to the entity.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AuditOperation {
     Create,
@@ -114,9 +112,9 @@ impl AuditOperation {
     /// Storage and API form.
     pub fn as_str(self) -> &'static str {
         match self {
-            AuditOperation::Create => "create",
-            AuditOperation::Update => "update",
-            AuditOperation::Delete => "delete",
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Delete => "delete",
         }
     }
 }
@@ -134,9 +132,9 @@ impl std::str::FromStr for AuditOperation {
     /// Parse an operation from its storage form, ignoring case.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "create" => Ok(AuditOperation::Create),
-            "update" => Ok(AuditOperation::Update),
-            "delete" => Ok(AuditOperation::Delete),
+            "create" => Ok(Self::Create),
+            "update" => Ok(Self::Update),
+            "delete" => Ok(Self::Delete),
             _ => Err(ParseAuditLogError::Operation {
                 value: value.to_string(),
             }),

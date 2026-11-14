@@ -63,8 +63,7 @@ impl Rdata {
         .ok()
         .flatten()
         .filter(|_| parser.remaining() == 0)
-        .map(|data| data.to_string())
-        .unwrap_or_else(|| self.to_base64())
+        .map_or_else(|| self.to_base64(), |data| data.to_string())
     }
 
     /// Wrap wire-format record data after checking its length limit.
@@ -148,7 +147,7 @@ impl EncodedRdata {
         record_type: &RecordType,
         value: &str,
         priority: Option<i32>,
-    ) -> Result<EncodedRdata, EncodeRdataError> {
+    ) -> Result<Self, EncodeRdataError> {
         let stored_address = || EncodeRdataError::StoredAddress {
             record_type: *record_type,
             value: value.to_string(),

@@ -53,7 +53,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
             let qname = Name::<Vec<u8>>::from_str(&if long {
                 long_name("z")
             } else {
-                "example.com".into()
+                "example.com".to_string()
             })
             .unwrap();
             let key = TsigKey {
@@ -61,7 +61,7 @@ async fn signed_notify_advertises_edns_for_long_names() {
                 name: if long {
                     long_name("k")
                 } else {
-                    "notify-key".into()
+                    "notify-key".to_string()
                 },
                 algorithm,
                 secret: base64::engine::general_purpose::STANDARD.encode([1u8; 64]),
@@ -359,7 +359,7 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
     use tokio::net::UdpSocket;
     let key = TsigKey {
         id: TsigKeyId::from(1),
-        name: "notify-key".into(),
+        name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
         secret: base64::engine::general_purpose::STANDARD
             .encode(b"notify-test-secret-at-least-32-bytes"),
@@ -506,7 +506,7 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
 
     let key = TsigKey {
         id: TsigKeyId::from(1),
-        name: "notify-key".into(),
+        name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
         secret: base64::engine::general_purpose::STANDARD
             .encode(b"notify-test-secret-at-least-32-bytes"),
@@ -572,7 +572,7 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
     use tokio::net::UdpSocket;
     let key = TsigKey {
         id: TsigKeyId::from(1),
-        name: "notify-key".into(),
+        name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
         secret: base64::engine::general_purpose::STANDARD
             .encode(b"notify-test-secret-at-least-32-bytes"),

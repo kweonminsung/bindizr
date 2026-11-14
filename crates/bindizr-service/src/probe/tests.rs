@@ -41,7 +41,7 @@ fn secondary_status_uses_rfc1982_order() {
     ] {
         assert_eq!(
             build_secondary_status(
-                "server".into(),
+                "server".to_string(),
                 Some(Serial::from(expected)),
                 Ok(Serial::from(visible))
             )

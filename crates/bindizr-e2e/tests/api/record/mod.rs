@@ -2619,7 +2619,7 @@ async fn record_writes_reject_unsupported_types_without_changes() {
 
     for record_type in ["HINFO", "TYPE13", "HTTPS", "TYPE65280"] {
         for (method, path) in [
-            (Method::POST, "/records".into()),
+            (Method::POST, "/records".to_string()),
             (Method::PUT, format!("/records/{record_id}")),
         ] {
             let payload = json!({"zone_name": zone_name, "name": "unsupported", "type": record_type, "value": r"\# 2 0000"});

@@ -8,7 +8,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::model::tsig_key::TsigKey;
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateTsigKeyRequest {
     #[schema(example = "update-key")]
@@ -26,7 +26,7 @@ pub struct CreateTsigKeyRequest {
 }
 
 /// Query parameters of the TSIG keys listing: one role's, or every one.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct TsigKeyFilter {
@@ -42,7 +42,7 @@ pub struct TsigKeyFilter {
 }
 
 /// API representation of a TSIG key; never carries the secret.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TsigKeyResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: TsigKeyId,
@@ -59,7 +59,7 @@ pub struct TsigKeyResponse {
 impl TsigKeyResponse {
     /// Build TSIG key information with its role name, without the secret.
     pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
-        TsigKeyResponse {
+        Self {
             id: tsig_key.id,
             name: tsig_key.name.clone(),
             algorithm: tsig_key.algorithm,
@@ -70,7 +70,7 @@ impl TsigKeyResponse {
 }
 
 /// A key with its secret: the create and get responses.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleTsigKeyResponse {
     pub tsig_key: TsigKeyResponse,
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
@@ -80,7 +80,7 @@ pub struct SingleTsigKeyResponse {
 impl SingleTsigKeyResponse {
     /// Build a TSIG key response, with its secret and its role's name.
     pub(crate) fn from_tsig_key(tsig_key: &TsigKey, role_name: &str) -> Self {
-        SingleTsigKeyResponse {
+        Self {
             tsig_key: TsigKeyResponse::from_tsig_key(tsig_key, role_name),
             secret: tsig_key.secret.clone(),
         }

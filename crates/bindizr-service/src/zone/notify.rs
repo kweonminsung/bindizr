@@ -49,7 +49,7 @@ pub async fn notify(
     crate::notify::send_notify(cx, target).await?;
 
     let scope = match target {
-        NotifyTarget::Zone(zone_name) => format!("zone: {}", zone_name),
+        NotifyTarget::Zone(zone_name) => format!("zone: {zone_name}"),
         NotifyTarget::All => "all zones".to_string(),
     };
     let suffix = if serial_bumped {
@@ -59,7 +59,7 @@ pub async fn notify(
     };
 
     Ok(MessageResponse {
-        message: format!("NOTIFY sent successfully for {}{}", scope, suffix),
+        message: format!("NOTIFY sent successfully for {scope}{suffix}"),
     })
 }
 

@@ -25,8 +25,7 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<AddressTarget, 
     }
     if name::has_whitespace_or_control(address) || !address::is_address_target(address) {
         return Err(ServiceError::invalid_input(format!(
-            "secondary address '{}' must be host[:port] with a numeric port",
-            address
+            "secondary address '{address}' must be host[:port] with a numeric port"
         )));
     }
 
@@ -34,8 +33,7 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<AddressTarget, 
 
     if address.to_string().len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
-            "secondary address must be {} characters or fewer",
-            MAX_COLUMN_TEXT_LEN
+            "secondary address must be {MAX_COLUMN_TEXT_LEN} characters or fewer"
         )));
     }
 

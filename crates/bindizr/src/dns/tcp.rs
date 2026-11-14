@@ -35,7 +35,7 @@ pub(crate) async fn run_tcp_server(
 
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
-                    log::warn!("DNS TCP connection task failed: {}", error);
+                    log::warn!("DNS TCP connection task failed: {error}");
                 }
                 continue;
             }
@@ -52,7 +52,7 @@ pub(crate) async fn run_tcp_server(
 
             Some(result) = connections.join_next(), if !connections.is_empty() => {
                 if let Err(error) = result {
-                    log::warn!("DNS TCP connection task failed: {}", error);
+                    log::warn!("DNS TCP connection task failed: {error}");
                 }
                 continue;
             }
@@ -76,16 +76,12 @@ pub(crate) async fn run_tcp_server(
                     )
                     .await
                     {
-                        log::error!(
-                            "Failed to read DNS TCP message from {}: {}",
-                            client_addr,
-                            error
-                        );
+                        log::error!("Failed to read DNS TCP message from {client_addr}: {error}");
                     }
                 });
             }
             Err(error) => {
-                log::error!("Failed to accept DNS TCP connection: {}", error);
+                log::error!("Failed to accept DNS TCP connection: {error}");
             }
         }
     };
@@ -96,7 +92,7 @@ pub(crate) async fn run_tcp_server(
 
     while let Some(result) = connections.join_next().await {
         if let Err(error) = result {
-            log::warn!("DNS TCP connection task failed: {}", error);
+            log::warn!("DNS TCP connection task failed: {error}");
         }
     }
 

@@ -24,7 +24,7 @@ use crate::types::{
 use crate::{Context, grant_pattern};
 
 /// DB read page size; the protocol still returns all endpoints in one response.
-const RECORD_READ_PAGE: u32 = 5_000;
+const RECORD_READ_PAGE: u32 = 5000;
 
 /// Normalize desired records with the apply flow's rules for AdjustEndpoints.
 /// No caller is needed: only the request's own payload is read.
@@ -56,7 +56,7 @@ pub async fn list_managed_domains(
         cx.db(),
         ZoneFilter {
             scope_role_id: caller.scope_role_id(),
-            ..ZoneFilter::default()
+            ..Default::default()
         },
     )
     .await?;
@@ -102,7 +102,7 @@ pub async fn list_records(
                 scope_role_id: caller.scope_role_id(),
                 limit: Some(RECORD_READ_PAGE),
                 offset: Some(offset),
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await?;

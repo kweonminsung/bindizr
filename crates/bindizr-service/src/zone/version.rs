@@ -19,7 +19,7 @@ pub(crate) async fn advance_serial_tx(
     bindizr_db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
         .map_err(|error| {
-            log::error!("Failed to update zone serial: {}", error);
+            log::error!("Failed to update zone serial: {error}");
             ServiceError::internal_with_source("failed to update zone serial", error)
         })?;
 
@@ -59,7 +59,7 @@ pub(crate) async fn save_version_tx(
     )
     .await
     .map_err(|error| {
-        log::error!("Failed to save SOA version: {}", error);
+        log::error!("Failed to save SOA version: {error}");
         ServiceError::internal_with_source("failed to save SOA version", error)
     })?;
 

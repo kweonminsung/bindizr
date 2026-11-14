@@ -98,7 +98,7 @@ impl SocketContext {
         control: mpsc::Sender<DaemonControl>,
         tls: TlsCertificates,
     ) -> Self {
-        SocketContext {
+        Self {
             daemon,
             control,
             tls,
@@ -150,10 +150,9 @@ async fn handle_client(
         let response = match serde_json::from_str::<DaemonCommand>(&line) {
             Ok(command) => handle_command(socket_cx, command).await,
             Err(error) => {
-                log::error!("Failed to parse command: {}", error);
+                log::error!("Failed to parse command: {error}");
                 encode_error(&ServiceError::invalid_input(format!(
-                    "failed to parse command: {}",
-                    error
+                    "failed to parse command: {error}"
                 )))
             }
         };
@@ -187,7 +186,7 @@ pub(crate) fn serve(
 
                 Some(result) = clients.join_next(), if !clients.is_empty() => {
                     if let Err(error) = result {
-                        log::warn!("Daemon socket client task failed: {}", error);
+                        log::warn!("Daemon socket client task failed: {error}");
                     }
                     continue;
                 }
@@ -213,13 +212,12 @@ pub(crate) fn serve(
                     Err(error) if error.kind() == io::ErrorKind::NotConnected => {}
                     Err(error) => {
                         log::warn!(
-                            "Refused a daemon socket connection with no peer credentials: {}",
-                            error
+                            "Refused a daemon socket connection with no peer credentials: {error}"
                         );
                     }
                 },
                 Err(error) => {
-                    log::error!("Error accepting connection: {}", error);
+                    log::error!("Error accepting connection: {error}");
                 }
             }
         }
@@ -228,7 +226,7 @@ pub(crate) fn serve(
 
         while let Some(result) = clients.join_next().await {
             if let Err(error) = result {
-                log::warn!("Daemon socket client task failed: {}", error);
+                log::warn!("Daemon socket client task failed: {error}");
             }
         }
 
@@ -239,11 +237,7 @@ pub(crate) fn serve(
 /// Remove the daemon's socket file, once nothing is serving on it.
 pub(crate) async fn remove_socket_file(socket_path: &str) {
     if let Err(error) = fs::remove_file(socket_path).await {
-        log::warn!(
-            "Failed to remove the daemon socket {}: {}",
-            socket_path,
-            error
-        );
+        log::warn!("Failed to remove the daemon socket {socket_path}: {error}");
     }
 }
 
@@ -265,12 +259,7 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
         };
 
         if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
-            log::warn!(
-                "Cannot use Unix socket path '{}': {}. Falling back to '{}'.",
-                path,
-                error,
-                next
-            );
+            log::warn!("Cannot use Unix socket path '{path}': {error}. Falling back to '{next}'.");
         }
 
         failures.push((path.to_string(), error));

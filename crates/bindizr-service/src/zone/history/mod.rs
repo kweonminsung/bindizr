@@ -215,7 +215,7 @@ pub async fn rollback(
             .to_email()
             .map_err(|error| {
                 ServiceError::internal_with_source(
-                    format!("failed to decode version rname: {}", error),
+                    format!("failed to decode version rname: {error}"),
                     error,
                 )
             })?;

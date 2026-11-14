@@ -208,7 +208,7 @@ async fn notify_supports_one_or_all_zones_with_optional_serial_bump() {
 async fn scoped_token_rejects_catalog_zone_notify() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
-        ..TestAppOptions::default()
+        ..Default::default()
     })
     .await;
     let (_, admin_token) = app.create_api_token().await;
@@ -251,7 +251,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
     use crate::common::dns::notify::FakeSecondary;
 
     let app = TestApp::start_with_options(TestAppOptions {
-        notify_batch_ms: 10_000,
+        notify_batch_ms: 10000,
         ..Default::default()
     })
     .await;

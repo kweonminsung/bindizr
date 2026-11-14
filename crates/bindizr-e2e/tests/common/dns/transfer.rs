@@ -12,7 +12,7 @@ use super::tsig::SigningKey;
 use super::{transport, tsig};
 
 /// Transferred record count or refusal details.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransferResult {
     Records(usize),
     Refused { rcode: Rcode, signed: bool },
@@ -22,24 +22,24 @@ impl TransferResult {
     /// The record count of a transfer that ran, panicking on a refusal.
     pub(crate) fn records(self) -> usize {
         match self {
-            TransferResult::Records(count) => count,
-            TransferResult::Refused { rcode, .. } => panic!("transfer refused with {rcode}"),
+            Self::Records(count) => count,
+            Self::Refused { rcode, .. } => panic!("transfer refused with {rcode}"),
         }
     }
 
     /// The RCODE of a refused transfer, panicking if it ran.
     pub(crate) fn refusal(self) -> Rcode {
         match self {
-            TransferResult::Refused { rcode, .. } => rcode,
-            TransferResult::Records(count) => panic!("transfer returned {count} record(s)"),
+            Self::Refused { rcode, .. } => rcode,
+            Self::Records(count) => panic!("transfer returned {count} record(s)"),
         }
     }
 
     /// Whether a refusal carried TSIG, panicking if the transfer ran.
     pub(crate) fn refusal_signed(self) -> bool {
         match self {
-            TransferResult::Refused { signed, .. } => signed,
-            TransferResult::Records(count) => panic!("transfer returned {count} record(s)"),
+            Self::Refused { signed, .. } => signed,
+            Self::Records(count) => panic!("transfer returned {count} record(s)"),
         }
     }
 }

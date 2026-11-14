@@ -22,11 +22,11 @@ impl AddressTarget {
     /// Parse an address target and supply the default port when needed.
     pub fn parse(value: &str, default_port: u16) -> Self {
         if let Ok(addr) = value.parse::<SocketAddr>() {
-            return AddressTarget::Socket(addr);
+            return Self::Socket(addr);
         }
 
         if let Ok(ip) = value.parse::<IpAddr>() {
-            return AddressTarget::Socket(SocketAddr::new(ip, default_port));
+            return Self::Socket(SocketAddr::new(ip, default_port));
         }
 
         if let Some(bracketed) = value
@@ -34,13 +34,13 @@ impl AddressTarget {
             .and_then(|value| value.strip_suffix(']'))
             && let Ok(ip) = bracketed.parse::<IpAddr>()
         {
-            return AddressTarget::Socket(SocketAddr::new(ip, default_port));
+            return Self::Socket(SocketAddr::new(ip, default_port));
         }
 
         let host_port = if has_explicit_port(value) || value.contains(':') {
             value.to_string()
         } else {
-            format!("{}:{}", value, default_port)
+            format!("{value}:{default_port}")
         };
 
         // A trailing root dot names the same host, so one server has one spelling.
@@ -49,7 +49,7 @@ impl AddressTarget {
             None => host_port,
         };
 
-        AddressTarget::HostPort(host_port.to_ascii_lowercase())
+        Self::HostPort(host_port.to_ascii_lowercase())
     }
 }
 
@@ -58,8 +58,8 @@ impl fmt::Display for AddressTarget {
     /// Write the address target in its canonical form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AddressTarget::Socket(addr) => fmt::Display::fmt(addr, f),
-            AddressTarget::HostPort(host_port) => f.pad(host_port),
+            Self::Socket(addr) => fmt::Display::fmt(addr, f),
+            Self::HostPort(host_port) => f.pad(host_port),
         }
     }
 }

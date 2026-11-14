@@ -52,7 +52,7 @@ pub enum ParseResponseError {
     Rdata(#[from] EncodeRdataError),
     /// The NOTIFY acknowledgement did not read as one; the source says why.
     #[error("NOTIFY {0}")]
-    Notify(#[source] Box<ParseResponseError>),
+    Notify(#[source] Box<Self>),
     #[error("NOTIFY response returned RCODE {}", .0.to_int())]
     NotifyRcode(OptRcode),
     #[error("no SOA record in answer")]

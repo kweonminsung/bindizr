@@ -2,8 +2,10 @@
 //! client address and a zone, which is what a secondary pulled.
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::dns::Serial;
 use crate::dns::message::Rtype;
@@ -22,9 +24,7 @@ pub enum ParseTransferError {
 }
 
 /// Which transfer a client asked for.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TransferKind {
     Axfr,
@@ -35,17 +35,17 @@ impl TransferKind {
     /// The transfer a query type asks for; the caller checked it is one.
     pub fn from_qtype(qtype: Rtype) -> Self {
         if qtype == Rtype::IXFR {
-            TransferKind::Ixfr
+            Self::Ixfr
         } else {
-            TransferKind::Axfr
+            Self::Axfr
         }
     }
 
     /// Storage name, as the column and the API spell it.
     pub fn as_str(&self) -> &'static str {
         match self {
-            TransferKind::Axfr => "axfr",
-            TransferKind::Ixfr => "ixfr",
+            Self::Axfr => "axfr",
+            Self::Ixfr => "ixfr",
         }
     }
 }
@@ -54,8 +54,8 @@ impl std::fmt::Display for TransferKind {
     /// Write the transfer kind as the query type name.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            TransferKind::Axfr => "AXFR",
-            TransferKind::Ixfr => "IXFR",
+            Self::Axfr => "AXFR",
+            Self::Ixfr => "IXFR",
         })
     }
 }
@@ -66,8 +66,8 @@ impl std::str::FromStr for TransferKind {
     /// Parse a transfer kind from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "axfr" => Ok(TransferKind::Axfr),
-            "ixfr" => Ok(TransferKind::Ixfr),
+            "axfr" => Ok(Self::Axfr),
+            "ixfr" => Ok(Self::Ixfr),
             _ => Err(ParseTransferError::Kind(value.to_string())),
         }
     }
@@ -84,9 +84,7 @@ impl TryFrom<String> for TransferKind {
 
 /// How a transfer request turned out: answered, refused by the ACL or the
 /// key's grant, or allowed and then broken off by a failure.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TransferResult {
     Ok,
@@ -98,9 +96,9 @@ impl TransferResult {
     /// Storage name, as the column and the API spell it.
     pub fn as_str(&self) -> &'static str {
         match self {
-            TransferResult::Ok => "ok",
-            TransferResult::Refused => "refused",
-            TransferResult::Failed => "failed",
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::Failed => "failed",
         }
     }
 }
@@ -118,9 +116,9 @@ impl std::str::FromStr for TransferResult {
     /// Parse a transfer result from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "ok" => Ok(TransferResult::Ok),
-            "refused" => Ok(TransferResult::Refused),
-            "failed" => Ok(TransferResult::Failed),
+            "ok" => Ok(Self::Ok),
+            "refused" => Ok(Self::Refused),
+            "failed" => Ok(Self::Failed),
             _ => Err(ParseTransferError::Result(value.to_string())),
         }
     }
@@ -137,9 +135,7 @@ impl TryFrom<String> for TransferResult {
 
 /// What a request arrived over, in DNS's own transport words. `Udp` reaches
 /// the metrics alone: a UDP question is answered with TC or the SOA, never saved.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TransferTransport {
     Udp,
@@ -154,9 +150,9 @@ impl TransferTransport {
     /// Storage name, as the column, the API, and the metric label spell it.
     pub fn as_str(&self) -> &'static str {
         match self {
-            TransferTransport::Udp => "udp",
-            TransferTransport::Tcp => "tcp",
-            TransferTransport::Tls => "tls",
+            Self::Udp => "udp",
+            Self::Tcp => "tcp",
+            Self::Tls => "tls",
         }
     }
 }
@@ -165,9 +161,9 @@ impl std::fmt::Display for TransferTransport {
     /// Write the transport as its DNS mnemonic.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            TransferTransport::Udp => "UDP",
-            TransferTransport::Tcp => "TCP",
-            TransferTransport::Tls => "TLS",
+            Self::Udp => "UDP",
+            Self::Tcp => "TCP",
+            Self::Tls => "TLS",
         })
     }
 }
@@ -178,9 +174,9 @@ impl std::str::FromStr for TransferTransport {
     /// Parse a transport from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "udp" => Ok(TransferTransport::Udp),
-            "tcp" => Ok(TransferTransport::Tcp),
-            "tls" => Ok(TransferTransport::Tls),
+            "udp" => Ok(Self::Udp),
+            "tcp" => Ok(Self::Tcp),
+            "tls" => Ok(Self::Tls),
             _ => Err(ParseTransferError::Transport(value.to_string())),
         }
     }

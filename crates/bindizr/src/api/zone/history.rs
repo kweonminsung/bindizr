@@ -133,7 +133,7 @@ pub(crate) async fn rollback_zone(
 }
 
 /// The page and content filter of a version listing.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ListZoneVersionsQuery {
@@ -148,14 +148,14 @@ pub(crate) struct ListZoneVersionsQuery {
 }
 
 /// One of a zone's versions, by name and serial.
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct ZoneVersionParams {
     name: String,
     serial: Serial,
 }
 
 /// The two serials of a version diff.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DiffZoneVersionsQuery {

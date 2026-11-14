@@ -182,7 +182,7 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
         (
             TransferLogFilter {
                 zone_name: Some(ZoneName::parse("a.test").unwrap()),
-                ..TransferLogFilter::default()
+                ..Default::default()
             },
             vec![("a.test", 1), ("a.test", 3)],
         ),
@@ -190,14 +190,14 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
             TransferLogFilter {
                 since: Some(now - Duration::days(2) - half_day),
                 until: Some(now - Duration::days(1) - half_day),
-                ..TransferLogFilter::default()
+                ..Default::default()
             },
             vec![("b.test", 2)],
         ),
         (
             TransferLogFilter {
                 limit: Some(2),
-                ..TransferLogFilter::default()
+                ..Default::default()
             },
             vec![("a.test", 1), ("b.test", 2)],
         ),

@@ -203,7 +203,7 @@ const CHARACTER_CLASSES: [&[u8]; 12] = [
 ];
 
 /// Where the validator stands inside the expression.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     Outside,
     Bracket,

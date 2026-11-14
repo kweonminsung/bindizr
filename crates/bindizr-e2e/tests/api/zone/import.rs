@@ -508,7 +508,7 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
     assert_eq!(zone["rname"], format!("hostmaster@{zone_name}"));
     assert_eq!(zone["refresh"], 7200);
     assert_eq!(zone["retry"], 1800);
-    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["expire"], 1_209_600);
     assert_eq!(zone["minimum_ttl"], 300);
 
     // The import advanced it once for the records it added.
@@ -533,7 +533,7 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
 async fn zone_import_preserves_supported_initial_serials() {
     let app = TestApp::start().await;
 
-    for serial in [0u32, 1, 2137483647, 2147483648, u32::MAX] {
+    for serial in [0u32, 1, 2_137_483_647, 2_147_483_648, u32::MAX] {
         let zone_name = app.zone_name(&format!("import-serial-{serial}.example"));
 
         // The increment passes over zero (RFC 2136, Section 7.11).
@@ -1421,7 +1421,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
             Serial::from(42),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
-            Ttl::from_secs(604800),
+            Ttl::from_secs(604_800),
             Ttl::from_secs(300),
         );
         let closing = Soa::new(
@@ -1430,7 +1430,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
             Serial::from(42),
             Ttl::from_secs(7200),
             Ttl::from_secs(3600),
-            Ttl::from_secs(604800),
+            Ttl::from_secs(604_800),
             Ttl::from_secs(300),
         );
         let mut builder = MessageBuilder::new_vec();
@@ -1536,7 +1536,7 @@ fn serve_catalog(
                 Serial::from(42),
                 Ttl::from_secs(7200),
                 Ttl::from_secs(3600),
-                Ttl::from_secs(604800),
+                Ttl::from_secs(604_800),
                 Ttl::from_secs(300),
             );
             let mut builder = MessageBuilder::new_vec();
@@ -1641,7 +1641,7 @@ fn serve_catalog(
                         break;
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(std::time::Duration::from_millis(5))
+                        std::thread::sleep(std::time::Duration::from_millis(5));
                     }
                     Err(error) => panic!("{error}"),
                 }

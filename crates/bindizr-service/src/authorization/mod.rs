@@ -204,7 +204,7 @@ impl Caller {
     pub async fn authenticate_token(
         cx: &Context,
         bearer_token: &str,
-    ) -> Result<(Caller, ApiToken), ServiceError> {
+    ) -> Result<(Self, ApiToken), ServiceError> {
         let token_hash = token::hash_token(bearer_token);
 
         let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
@@ -215,7 +215,7 @@ impl Caller {
                 ));
             }
             Err(error) => {
-                log::error!("Failed to validate token: {}", error);
+                log::error!("Failed to validate token: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to validate token",
                     error,
@@ -241,7 +241,7 @@ impl Caller {
             bindizr_db::api_token::update_last_used_at(cx.db(), stored_token.id, last_used_at)
                 .await
                 .map_err(|error| {
-                    log::error!("Failed to update last_used_at: {}", error);
+                    log::error!("Failed to update last_used_at: {error}");
                     ServiceError::internal_with_source("failed to update last_used_at", error)
                 })?;
 
@@ -253,7 +253,7 @@ impl Caller {
 
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), token.role_id).await?;
 
-        Ok((Caller::from_token(&token, grants), token))
+        Ok((Self::from_token(&token, grants), token))
     }
 
     /// Preload the grants of a key whose signature verified, as
@@ -261,9 +261,9 @@ impl Caller {
     pub async fn authenticate_tsig_key(
         cx: &Context,
         tsig_key: &TsigKey,
-    ) -> Result<Caller, ServiceError> {
+    ) -> Result<Self, ServiceError> {
         let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), tsig_key.role_id).await?;
-        Ok(Caller::from_tsig_key(tsig_key, grants))
+        Ok(Self::from_tsig_key(tsig_key, grants))
     }
 
     /// Authorize an action on something no zone owns, which only an all-zones grant carries.
@@ -276,8 +276,7 @@ impl Caller {
         }
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' in all zones",
-            action
+            "role does not permit '{action}' in all zones"
         )))
     }
 
@@ -340,7 +339,7 @@ impl Caller {
     pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
-    ) -> Result<Caller, ServiceError> {
+    ) -> Result<Self, ServiceError> {
         let (role_id, credential) = match &self.scope {
             CallerScope::Global => return Ok(self.clone()),
             CallerScope::Role {
@@ -372,7 +371,7 @@ impl Caller {
         let grants =
             bindizr_db::role_grant::list_by_role_id_tx(tx, role_id, LockLevel::Shared).await?;
 
-        Ok(Caller {
+        Ok(Self {
             scope: CallerScope::Role {
                 id: role_id,
                 credential,
@@ -486,8 +485,7 @@ impl Caller {
         }
 
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' over all zones whole",
-            action
+            "role does not permit '{action}' over all zones whole"
         )))
     }
 
@@ -533,8 +531,9 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map(|record_type| record_type.as_str().to_owned())
-                    .unwrap_or("records".into()),
+                    .map_or("records".to_string(), |record_type| record_type
+                        .as_str()
+                        .to_owned()),
                 zone.name
             )));
         }

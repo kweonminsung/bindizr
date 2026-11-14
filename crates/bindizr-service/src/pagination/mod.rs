@@ -14,8 +14,7 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
         && (limit == 0 || limit > MAX_PAGE_LIMIT)
     {
         return Err(ServiceError::invalid_input(format!(
-            "limit must be between 1 and {}",
-            MAX_PAGE_LIMIT
+            "limit must be between 1 and {MAX_PAGE_LIMIT}"
         )));
     }
 

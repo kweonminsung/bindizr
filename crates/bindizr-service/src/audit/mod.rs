@@ -131,7 +131,7 @@ mod tests {
             entity_name: Some(" Update-Key ".to_string()),
             limit: Some(10),
             offset: Some(5),
-            ..AuditLogFilter::default()
+            ..Default::default()
         })
         .unwrap();
 
@@ -149,7 +149,7 @@ mod tests {
         let filter = normalize_filter(AuditLogFilter {
             sort: Some("entity_name".to_string()),
             order: Some("asc".to_string()),
-            ..AuditLogFilter::default()
+            ..Default::default()
         })
         .unwrap();
 
@@ -160,7 +160,7 @@ mod tests {
             let error = normalize_filter(AuditLogFilter {
                 sort: sort.map(str::to_string),
                 order: order.map(str::to_string),
-                ..AuditLogFilter::default()
+                ..Default::default()
             })
             .unwrap_err();
 
@@ -174,7 +174,7 @@ mod tests {
         let filter = normalize_filter(AuditLogFilter {
             entity: Some("".to_string()),
             entity_name: Some("   ".to_string()),
-            ..AuditLogFilter::default()
+            ..Default::default()
         })
         .unwrap();
 
@@ -188,7 +188,7 @@ mod tests {
     fn normalize_filter_rejects_unknown_entity_and_inverted_window() {
         let unknown = normalize_filter(AuditLogFilter {
             entity: Some("record".to_string()),
-            ..AuditLogFilter::default()
+            ..Default::default()
         })
         .unwrap_err();
 
@@ -199,7 +199,7 @@ mod tests {
         let inverted = normalize_filter(AuditLogFilter {
             since: Some(later),
             until: Some(later),
-            ..AuditLogFilter::default()
+            ..Default::default()
         })
         .unwrap_err();
 

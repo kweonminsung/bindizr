@@ -47,7 +47,7 @@ pub(crate) fn to_url(file_path: &str) -> Result<String, DatabaseError> {
         return Ok(file_path.to_string());
     }
 
-    Ok(format!("sqlite:{}", file_path))
+    Ok(format!("sqlite:{file_path}"))
 }
 
 #[cfg(test)]
@@ -71,7 +71,7 @@ mod tests {
             .permissions()
             .mode();
 
-        assert_eq!(mode & 0o777, 0o700, "mode was {:o}", mode);
+        assert_eq!(mode & 0o777, 0o700, "mode was {mode:o}");
 
         // Already there on the next start, which must not be an error.
         create_parent_dir(file.to_str().expect("utf-8")).expect("accepts an existing directory");

@@ -187,7 +187,7 @@ async fn listings_match_role_grants_visibility() {
             &pool,
             RecordFilter {
                 scope_role_id: Some(role_id),
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -223,7 +223,7 @@ async fn listings_match_role_grants_visibility() {
             &pool,
             DnssecRecordFilter {
                 scope_role_id: Some(role_id),
-                ..DnssecRecordFilter::default()
+                ..Default::default()
             },
         )
         .await
@@ -246,7 +246,7 @@ async fn listings_match_role_grants_visibility() {
             &pool,
             ZoneFilter {
                 scope_role_id: Some(role_id),
-                ..ZoneFilter::default()
+                ..Default::default()
             },
         )
         .await

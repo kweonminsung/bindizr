@@ -18,7 +18,7 @@ fn is_enabled() -> bool {
 /// disabled.
 fn colored(code: &str, text: &str) -> String {
     if is_enabled() {
-        format!("\x1b[{}m{}\x1b[0m", code, text)
+        format!("\x1b[{code}m{text}\x1b[0m")
     } else {
         text.to_string()
     }

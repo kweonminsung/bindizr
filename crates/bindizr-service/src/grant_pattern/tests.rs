@@ -23,12 +23,7 @@ fn normalize_pattern_rejects_invalid_patterns() {
     for invalid in ["*.", "a*b", "*.a*", "bad name", "a..b", "*.**", &long_label] {
         let error = normalize_pattern(Some(invalid)).unwrap_err();
 
-        assert_eq!(
-            error.code(),
-            ErrorCode::InvalidInput,
-            "input: {:?}",
-            invalid
-        );
+        assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
     }
 }
 
@@ -58,12 +53,7 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
     for invalid in [r"a\", "www.", "*.sub."] {
         let error = normalize_pattern(Some(invalid)).unwrap_err();
 
-        assert_eq!(
-            error.code(),
-            ErrorCode::InvalidInput,
-            "input: {:?}",
-            invalid
-        );
+        assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
     }
 }
 

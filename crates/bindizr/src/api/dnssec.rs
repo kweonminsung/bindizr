@@ -103,7 +103,7 @@ pub(crate) async fn enable_dnssec(
 }
 
 /// The check switch of a DNSSEC disable request.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DisableDnssecQuery {
@@ -217,7 +217,7 @@ pub(crate) async fn start_dnssec_rollover(
 }
 
 /// The check switches of a ds-seen request.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AdvanceDnssecRolloverQuery {

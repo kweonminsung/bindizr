@@ -10,7 +10,7 @@ use crate::{AuditLogSortField, Backend, Db, SortOrder, Transaction, mysql, postg
 
 /// Which audit log rows a listing selects and how they are ordered; paging
 /// rides along.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AuditLogFilter {
     pub entity: Option<AuditEntity>,
     pub entity_name: Option<String>,

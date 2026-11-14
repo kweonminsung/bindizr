@@ -23,10 +23,7 @@ pub(crate) fn handle_man_command() -> Result<(), CliError> {
     clap_mangen::Man::new(Args::command())
         .render(&mut page)
         .map_err(|error| {
-            CliError::request_with_source(
-                format!("failed to render the man page: {}", error),
-                error,
-            )
+            CliError::request_with_source(format!("failed to render the man page: {error}"), error)
         })?;
 
     write_generated(&page)
@@ -36,7 +33,7 @@ pub(crate) fn handle_man_command() -> Result<(), CliError> {
 /// shell script.
 fn write_generated(bytes: &[u8]) -> Result<(), CliError> {
     let text = std::str::from_utf8(bytes).map_err(|error| {
-        CliError::request_with_source(format!("generated output was not UTF-8: {}", error), error)
+        CliError::request_with_source(format!("generated output was not UTF-8: {error}"), error)
     })?;
     stream::write_stdout(text);
     Ok(())

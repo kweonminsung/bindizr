@@ -10,7 +10,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for inspecting and validating configuration.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum ConfigCommand {
     /// Validate a configuration file without starting bindizr
     Check {
@@ -64,9 +64,9 @@ async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_command::<MessageResponse>(DaemonCommand::ReloadConfig).await?;
 
     if output == OutputFormat::Table {
-        outln!("{}", response.message)
+        outln!("{}", response.message);
     } else {
-        output::print_payload(&response.data, output)?
+        output::print_payload(&response.data, output)?;
     }
 
     Ok(())
@@ -82,7 +82,7 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
 
     Config::load(&path).map_err(CliError::configuration)?;
 
-    let message = format!("Configuration file '{}' is valid", path);
+    let message = format!("Configuration file '{path}' is valid");
 
     if output == OutputFormat::Table {
         outln!("Configuration is {}.", color::green("valid"));
@@ -99,9 +99,9 @@ async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_control_command::<Config>(DaemonCommand::Config).await?;
 
     if output == OutputFormat::Table {
-        print_config(&response.data)
+        print_config(&response.data);
     } else {
-        output::print_payload(&response.data, output)?
+        output::print_payload(&response.data, output)?;
     }
 
     Ok(())
@@ -116,7 +116,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
     let found = key
         .split('.')
         .try_fold(&config, |value, part| value.get(part))
-        .ok_or_else(|| CliError::request(format!("unknown configuration key: {}", key)))?;
+        .ok_or_else(|| CliError::request(format!("unknown configuration key: {key}")))?;
 
     if output == OutputFormat::Table {
         match found {
@@ -125,7 +125,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
                 "{}",
                 serde_json::to_string_pretty(found).map_err(|error| {
                     CliError::request_with_source(
-                        format!("failed to render configuration value: {}", error),
+                        format!("failed to render configuration value: {error}"),
                         error,
                     )
                 })?
@@ -133,7 +133,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
             value => outln!("{}", value),
         }
     } else {
-        output::print_payload(found, output)?
+        output::print_payload(found, output)?;
     }
 
     Ok(())
@@ -250,7 +250,7 @@ fn print_config(config: &Config) {
 
 /// Print a configuration section heading.
 fn print_section(name: &str) {
-    outln!("{}", color::cyan(&format!("[{}]", name)));
+    outln!("{}", color::cyan(&format!("[{name}]")));
 }
 
 /// A value the configuration may leave out, shown as unset rather than absent
@@ -261,5 +261,5 @@ fn print_optional(key: &str, value: Option<&str>) {
 
 /// Print one configuration key and its value.
 fn print_value(key: &str, value: impl std::fmt::Display) {
-    outln!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
+    outln!("  {} = {}", color::yellow(&format!("{key:<24}")), value);
 }

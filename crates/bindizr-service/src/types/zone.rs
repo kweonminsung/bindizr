@@ -11,7 +11,7 @@ use crate::model::zone::Zone;
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneView {
     Plain,
@@ -22,16 +22,16 @@ impl ZoneView {
     /// The view a `signed` flag asks for.
     pub fn from_signed(signed: bool) -> Self {
         if signed {
-            ZoneView::Signed
+            Self::Signed
         } else {
-            ZoneView::Plain
+            Self::Plain
         }
     }
 }
 
 /// Whether a manual NOTIFY bumps the zone serial first, so secondaries
 /// transfer even when nothing changed.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotifySerial {
     Keep,
@@ -42,15 +42,15 @@ impl NotifySerial {
     /// The bump a `bump_serial` flag asks for.
     pub fn from_bump_serial(bump_serial: bool) -> Self {
         if bump_serial {
-            NotifySerial::Bump
+            Self::Bump
         } else {
-            NotifySerial::Keep
+            Self::Keep
         }
     }
 }
 
 /// API representation of a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ZoneResponse {
     /// Absent on a dry run, where nothing was written to carry one.
     #[schema(example = 1, value_type = Option<i32>)]
@@ -69,7 +69,7 @@ pub struct ZoneResponse {
     pub refresh: SoaInterval,
     #[schema(example = 3600, value_type = i32)]
     pub retry: SoaInterval,
-    #[schema(example = 604800, value_type = i32)]
+    #[schema(example = 604_800, value_type = i32)]
     pub expire: SoaInterval,
     #[schema(example = 3600, inline)]
     pub minimum_ttl: Ttl,
@@ -83,7 +83,7 @@ pub struct ZoneResponse {
 impl From<&Zone> for ZoneResponse {
     /// Build zone information from its stored settings.
     fn from(zone: &Zone) -> Self {
-        ZoneResponse {
+        Self {
             id: zone.id.written(),
             name: zone.name.to_string(),
             mname: zone.mname.clone(),
@@ -101,7 +101,7 @@ impl From<&Zone> for ZoneResponse {
 }
 
 /// Request body for creating a zone.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
@@ -112,7 +112,7 @@ pub struct CreateZoneRequest {
     pub rname: String,
     /// Record TTL the zone hands out when a record names none; defaults to
     /// `dns.zone_defaults.ttl`.
-    #[schema(example = 3600, minimum = 60, maximum = 604800)]
+    #[schema(example = 3600, minimum = 60, maximum = 604_800)]
     pub default_ttl: Option<i64>,
     /// Starting serial, auto-generated if not provided. Accepts 0-4294967295, advances modulo 2^32, and can only be set at creation.
     #[schema(inline)]
@@ -121,7 +121,7 @@ pub struct CreateZoneRequest {
     pub refresh: Option<i32>,
     #[schema(example = 3600)]
     pub retry: Option<i32>,
-    #[schema(example = 604800)]
+    #[schema(example = 604_800)]
     pub expire: Option<i32>,
     #[schema(schema_with = build_minimum_ttl_schema)]
     pub minimum_ttl: Option<i64>,
@@ -158,7 +158,7 @@ fn default_apex_ns() -> bool {
 }
 
 /// Query filters and pagination for listing zones.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneFilter {
@@ -230,7 +230,7 @@ pub struct ZoneFilter {
 
 /// Update a zone, resolving omitted fields from the locked row.
 /// `serial` is accepted only at creation and is not an update field.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateZoneRequest {
     /// A different name renames the zone.
@@ -244,7 +244,7 @@ pub struct UpdateZoneRequest {
     #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 3600, minimum = 60, maximum = 604800)]
+    #[schema(example = 3600, minimum = 60, maximum = 604_800)]
     pub default_ttl: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 7200)]
@@ -253,7 +253,7 @@ pub struct UpdateZoneRequest {
     #[schema(example = 3600)]
     pub retry: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = 604800)]
+    #[schema(example = 604_800)]
     pub expire: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(schema_with = build_minimum_ttl_schema)]
@@ -274,7 +274,7 @@ pub struct UpdateZoneRequest {
 
 /// What deleting a zone takes with it. A dry run reports the counts and
 /// removes nothing; deleting a zone cannot be undone from the tool.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DeleteZoneResponse {
     /// Whether this call removed the zone; a dry run answers `false`.
     #[schema(example = true)]
@@ -291,14 +291,14 @@ pub struct DeleteZoneResponse {
 }
 
 /// A single zone wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleZoneResponse {
     pub zone: ZoneResponse,
 }
 
 /// What a zone write left behind. The zone's own fields are the change, so
 /// unlike a record write this carries no diff.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WriteZoneResponse {
     /// Whether this call wrote; a dry run answers `false`.
     #[schema(example = true)]
@@ -310,13 +310,13 @@ pub struct WriteZoneResponse {
 
 /// A zone rendered as BIND master-file text. Only the daemon socket wraps the
 /// export this way; the HTTP endpoint serves the text as its body.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportZoneFileResponse {
     pub zone_file: String,
 }
 
 /// How the serial a secondary serves compares with the one Bindizr serves.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SecondaryStatus {
     InSync,
@@ -331,18 +331,18 @@ impl std::fmt::Display for SecondaryStatus {
     /// Write the status as a person reads it; serde spells the API form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            SecondaryStatus::InSync => "in sync",
-            SecondaryStatus::Lagging => "lagging",
-            SecondaryStatus::Ahead => "ahead",
-            SecondaryStatus::Reachable => "reachable",
-            SecondaryStatus::Unreachable => "unreachable",
+            Self::InSync => "in sync",
+            Self::Lagging => "lagging",
+            Self::Ahead => "ahead",
+            Self::Reachable => "reachable",
+            Self::Unreachable => "unreachable",
         })
     }
 }
 
 /// What one secondary answered when probed for a zone's SOA, classified
 /// against the serial Bindizr serves.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
@@ -368,7 +368,7 @@ impl SecondaryStatusResponse {
 
 /// A zone's serial and the sync state of every enabled secondary, probed
 /// live via SOA queries.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,

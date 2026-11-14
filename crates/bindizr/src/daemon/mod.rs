@@ -81,7 +81,7 @@ impl DaemonError {
     /// Whether running the same thing again would fail the same way: the
     /// exit class a supervisor stops retrying on.
     pub(crate) fn is_configuration(&self) -> bool {
-        matches!(self, DaemonError::Config(_) | DaemonError::Tls(_))
+        matches!(self, Self::Config(_) | Self::Tls(_))
     }
 }
 
@@ -109,8 +109,8 @@ impl From<ReloadError> for ServiceError {
     /// Classify the reload failure for the error payload.
     fn from(error: ReloadError) -> Self {
         match error {
-            ReloadError::Config(error) => ServiceError::from(error),
-            tls @ ReloadError::Tls(_) => ServiceError::invalid_input(tls),
+            ReloadError::Config(error) => Self::from(error),
+            tls @ ReloadError::Tls(_) => Self::invalid_input(tls),
         }
     }
 }
@@ -153,12 +153,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     Logger::init(&config.logging);
 
     // Reported after the logger exists, so it carries the configured format.
-    log::info!("Configuration loaded from {}", config_path);
+    log::info!("Configuration loaded from {config_path}");
 
     // Bind the control socket first so a second daemon fails before
     // opening the database or claiming DNS ports.
     let (socket_path, socket_listener) = socket::server::bind().await?;
-    log::info!("Daemon socket server listening on {}", socket_path);
+    log::info!("Daemon socket server listening on {socket_path}");
 
     // Read before the database opens: a pair that does not load is a
     // configuration failure.
@@ -191,7 +191,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --role admin`"
             ),
             Ok(_) => {}
-            Err(error) => log::warn!("Could not count API tokens: {}", error),
+            Err(error) => log::warn!("Could not count API tokens: {error}"),
         }
     }
 
@@ -258,12 +258,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
             _ = hangup.recv() => {
                 match reload_config(&cx, &tls) {
                     Ok(changed) if changed.is_empty() => {
-                        log::info!("SIGHUP received, nothing changed.")
+                        log::info!("SIGHUP received, nothing changed.");
                     }
                     Ok(changed) => {
-                        log::info!("SIGHUP received, reloaded: {}", changed.join(", "))
+                        log::info!("SIGHUP received, reloaded: {}", changed.join(", "));
                     }
-                    Err(error) => log::error!("SIGHUP received, nothing reloaded: {}", error),
+                    Err(error) => log::error!("SIGHUP received, nothing reloaded: {error}"),
                 }
 
                 continue;
@@ -312,7 +312,7 @@ impl RunResult {
     /// The result of a server that stopped on its own, so the exit says what
     /// failed.
     fn server_stopped(name: &'static str, result: Result<(), tokio::task::JoinError>) -> Self {
-        RunResult::Failed(match result {
+        Self::Failed(match result {
             Ok(()) => DaemonError::ServerStopped { name },
             Err(source) => DaemonError::ServerFailed { name, source },
         })
@@ -334,7 +334,7 @@ async fn drain(
 
         // The scheduler is a write producer too; its last pass may enqueue NOTIFY.
         if let Err(error) = scheduler_worker.stop().await {
-            log::warn!("DNSSEC scheduler did not stop cleanly: {}", error);
+            log::warn!("DNSSEC scheduler did not stop cleanly: {error}");
         }
 
         // Flush only after every NOTIFY producer has stopped.
@@ -343,10 +343,7 @@ async fn drain(
     .await;
 
     if drained.is_err() {
-        log::error!(
-            "Servers did not finish within {:?}, exiting anyway.",
-            DRAIN_TIMEOUT
-        );
+        log::error!("Servers did not finish within {DRAIN_TIMEOUT:?}, exiting anyway.");
     }
 }
 

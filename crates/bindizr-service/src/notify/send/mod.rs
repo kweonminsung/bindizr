@@ -39,7 +39,7 @@ pub(crate) async fn send_zone_notify(
     cx: &Context,
     zone_name: &ZoneName,
 ) -> Result<(), NotifyZoneError> {
-    log::info!("Sending NOTIFY for zone: {}", zone_name);
+    log::info!("Sending NOTIFY for zone: {zone_name}");
 
     let secondaries = secondary::list_enabled(cx).await?;
     let results = send_notify(cx, zone_name, secondaries).await?;
@@ -107,7 +107,7 @@ async fn send_notify(
 ) -> Result<Vec<(String, Result<(), SendNotifyError>)>, ServiceError> {
     // An invalid stored zone name is a server fault.
     let qname = zone_name.to_wire_name().map_err(|error| {
-        ServiceError::internal_with_source(format!("invalid zone name: {}", error), error)
+        ServiceError::internal_with_source(format!("invalid zone name: {error}"), error)
     })?;
     let timeout = cx.config().dns.notify.timeout();
     let retries = cx.config().dns.notify.retries;
@@ -174,12 +174,12 @@ async fn send_notify(
     for (address, handle) in handles {
         let result = match handle.wait().await {
             Ok(()) => {
-                log::info!("NOTIFY sent successfully to {}", address);
+                log::info!("NOTIFY sent successfully to {address}");
                 cx.metrics().track_notify(NotifyResult::Ok);
                 Ok(())
             }
             Err(error) => {
-                log::error!("Failed to send NOTIFY to {}: {}", address, error);
+                log::error!("Failed to send NOTIFY to {address}: {error}");
                 cx.metrics().track_notify(NotifyResult::Failed);
                 Err(SendNotifyError::Send(error))
             }

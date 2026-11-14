@@ -6,7 +6,7 @@ use crate::dns::name::ZoneName;
 
 /// Deviations from the base config TOML; the default renders a minimal valid
 /// sqlite config.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TestConfigToml {
     api_listen_addr: &'static str,
     dns_listen_addr: &'static str,

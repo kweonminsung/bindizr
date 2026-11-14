@@ -22,7 +22,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 }
 
 /// The serial switch of a NOTIFY request.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotifyQuery {

@@ -28,7 +28,7 @@ pub enum ReloadConfigError {
 impl From<ReloadConfigError> for ServiceError {
     /// Classify the reload failure for the error payload.
     fn from(error: ReloadConfigError) -> Self {
-        ServiceError::invalid_input(error)
+        Self::invalid_input(error)
     }
 }
 
@@ -64,7 +64,7 @@ impl Context {
         notify_jobs: UnboundedSender<NotifyJob>,
         scheduler_period: watch::Sender<u64>,
     ) -> Self {
-        Context {
+        Self {
             config: RwLock::new(Arc::new(config)),
             config_path,
             db,

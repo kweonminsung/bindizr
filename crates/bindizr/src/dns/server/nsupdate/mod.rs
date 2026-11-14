@@ -53,7 +53,7 @@ pub(crate) async fn handle_udp_nsupdate(
     target: ReplyTarget,
 ) -> Result<(), DnsError> {
     let client_addr = target.client_addr;
-    log::info!("NSUPDATE UDP request from {}", client_addr);
+    log::info!("NSUPDATE UDP request from {client_addr}");
 
     let limit = QueryMetadata::parse(query_data, Keepalive::None)
         .map_or(ResponseLimit::UDP, |metadata| metadata.response_limit());
@@ -85,7 +85,7 @@ async fn handle_nsupdate_request(
     let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
         Ok(request) => request,
         Err(error) => {
-            log::warn!("NSUPDATE parse error from {}: {}", client_addr, error);
+            log::warn!("NSUPDATE parse error from {client_addr}: {error}");
             let mut response_rcode = OptRcode::FORMERR;
 
             // RFC 8945, Section 5.2: a request whose key verifies is answered
@@ -108,9 +108,7 @@ async fn handle_nsupdate_request(
                             ) {
                                 Ok(response) => {
                                     log::warn!(
-                                        "NSUPDATE TSIG rejected from {}: {}",
-                                        client_addr,
-                                        rcode
+                                        "NSUPDATE TSIG rejected from {client_addr}: {rcode}"
                                     );
                                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
 
@@ -118,9 +116,7 @@ async fn handle_nsupdate_request(
                                 }
                                 Err(error) => {
                                     log::warn!(
-                                        "NSUPDATE TSIG error encoding failed from {}: {}",
-                                        client_addr,
-                                        error
+                                        "NSUPDATE TSIG error encoding failed from {client_addr}: {error}"
                                     );
                                     response_rcode = OptRcode::SERVFAIL;
 
@@ -129,7 +125,7 @@ async fn handle_nsupdate_request(
                             }
                         }
                         Err(error) => {
-                            log::warn!("NSUPDATE key check failed from {}: {}", client_addr, error);
+                            log::warn!("NSUPDATE key check failed from {client_addr}: {error}");
 
                             if matches!(&error, update::UpdateError::LoadTsigKey(_))
                                 || matches!(
@@ -172,11 +168,7 @@ async fn handle_nsupdate_request(
 
     let (rcode, ede) = match result {
         Ok(changed) => {
-            log::info!(
-                "NSUPDATE applied from {} (changed={})",
-                client_addr,
-                changed
-            );
+            log::info!("NSUPDATE applied from {client_addr} (changed={changed})");
             (OptRcode::NOERROR, None)
         }
         // The handler composes TSIG rejections against the request (RFC 8945, Sections 5.2–5.3).
@@ -189,34 +181,30 @@ async fn handle_nsupdate_request(
                 limit,
             ) {
                 Ok(response) => {
-                    log::warn!("NSUPDATE TSIG rejected from {}: {}", client_addr, rcode);
+                    log::warn!("NSUPDATE TSIG rejected from {client_addr}: {rcode}");
                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
                     return Ok(response);
                 }
                 Err(error) => {
-                    log::warn!(
-                        "NSUPDATE TSIG error encoding failed from {}: {}",
-                        client_addr,
-                        error
-                    );
+                    log::warn!("NSUPDATE TSIG error encoding failed from {client_addr}: {error}");
                     (OptRcode::SERVFAIL, None)
                 }
             }
         }
         Err(update::UpdateError::Edns(rcode)) => {
-            log::info!("Refusing the EDNS of an NSUPDATE from {}", client_addr);
+            log::info!("Refusing the EDNS of an NSUPDATE from {client_addr}");
             (rcode, None)
         }
         Err(update::UpdateError::NotSupported(message)) => {
-            log::info!("NSUPDATE refused from {}: {}", client_addr, message);
+            log::info!("NSUPDATE refused from {client_addr}: {message}");
             (OptRcode::REFUSED, Some(ExtendedErrorCode::NOT_SUPPORTED))
         }
         Err(error @ update::UpdateError::Tsig(TsigError::Malformed(_))) => {
-            log::warn!("NSUPDATE refused from {}: {}", client_addr, error);
+            log::warn!("NSUPDATE refused from {client_addr}: {error}");
             (OptRcode::REFUSED, Some(ExtendedErrorCode::PROHIBITED))
         }
         Err(error @ (update::UpdateError::NotAuth(_) | update::UpdateError::ZoneName { .. })) => {
-            log::warn!("NSUPDATE notauth from {}: {}", client_addr, error);
+            log::warn!("NSUPDATE notauth from {client_addr}: {error}");
             (
                 OptRcode::NOTAUTH,
                 Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
@@ -229,12 +217,12 @@ async fn handle_nsupdate_request(
                 Rcode::NOTAUTH => Some(ExtendedErrorCode::NOT_AUTHORITATIVE),
                 _ => None,
             };
-            log::warn!("NSUPDATE {} from {}: {}", rcode, client_addr, error);
+            log::warn!("NSUPDATE {rcode} from {client_addr}: {error}");
 
             (rcode.into(), ede)
         }
         Err(error @ (update::UpdateError::LoadTsigKey(_) | update::UpdateError::Tsig(_))) => {
-            log::warn!("NSUPDATE internal error from {}: {}", client_addr, error);
+            log::warn!("NSUPDATE internal error from {client_addr}: {error}");
             (OptRcode::SERVFAIL, None)
         }
     };

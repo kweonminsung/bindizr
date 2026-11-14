@@ -57,7 +57,7 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
 /// What a fake server answers to every question: DS records at the qname,
 /// the same but truncated over UDP so only TCP carries them, NXDOMAIN, or
 /// nothing at all.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ServerBehavior {
     Ds { aa: bool, records: Vec<(u16, u32)> },
     DsTruncatedOverUdp { records: Vec<(u16, u32)> },
@@ -370,7 +370,7 @@ async fn query_ds_retries_a_truncated_response_over_tcp() {
 async fn query_ds_reports_absence_per_server() {
     let absent = fake_server(ServerBehavior::Ds {
         aa: true,
-        records: vec![],
+        records: Vec::new(),
     })
     .await;
     let nxdomain = fake_server(ServerBehavior::Nxdomain).await;
@@ -413,7 +413,7 @@ async fn query_ds_reports_absence_per_server() {
 async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     let absent = fake_server(ServerBehavior::Ds {
         aa: true,
-        records: vec![],
+        records: Vec::new(),
     })
     .await;
     let silent = fake_server(ServerBehavior::Silence).await;
@@ -430,7 +430,7 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
 
     let cache = fake_server(ServerBehavior::Ds {
         aa: false,
-        records: vec![],
+        records: Vec::new(),
     })
     .await;
     let error = query_ds(&zone_name("example.com"), &servers(&[cache]), TIMEOUT)

@@ -65,19 +65,13 @@ pub async fn import_many(
                 .await
                 .map_err(|error| {
                     ServiceError::invalid_input_with_source(
-                        format!(
-                            "AXFR of catalog {} from {} failed: {}",
-                            catalog, server, error
-                        ),
+                        format!("AXFR of catalog {catalog} from {server} failed: {error}"),
                         error,
                     )
                 })?;
             let members = dns::extract_member_zones(&records, &catalog).map_err(|error| {
                 ServiceError::invalid_input_with_source(
-                    format!(
-                        "catalog {} from {} cannot be read: {}",
-                        catalog, server, error
-                    ),
+                    format!("catalog {catalog} from {server} cannot be read: {error}"),
                     error,
                 )
             })?;

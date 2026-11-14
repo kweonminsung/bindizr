@@ -36,7 +36,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
         cx.db(),
         ZoneFilter {
             scope_role_id: caller.scope_role_id(),
-            ..ZoneFilter::default()
+            ..Default::default()
         },
     )
     .await?;

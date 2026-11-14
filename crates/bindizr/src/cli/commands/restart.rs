@@ -48,9 +48,9 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                     "Bindizr restarted: pid {} (version {})",
                     pid,
                     status.version
-                )
+                );
             } else {
-                output::print_payload(&status, output)?
+                output::print_payload(&status, output)?;
             }
 
             Ok(())

@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 /// One record of the ExternalDNS API: every value of one name and type. Names
 /// are absolute; TXT values are quoted presentation strings.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExternalDnsRecord {
     #[schema(example = "app.example.com")]
@@ -22,7 +22,7 @@ pub struct ExternalDnsRecord {
 }
 
 /// A record replacement: `old` values are removed and `new` written in place.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExternalDnsRecordUpdate {
     pub old: ExternalDnsRecord,
@@ -30,20 +30,20 @@ pub struct ExternalDnsRecordUpdate {
 }
 
 /// Request body for canonicalizing desired records without applying them.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AdjustExternalDnsRecordsRequest {
     pub records: Vec<ExternalDnsRecord>,
 }
 
 /// The request's records in the canonical form applying them would store.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AdjustExternalDnsRecordsResponse {
     pub records: Vec<ExternalDnsRecord>,
 }
 
 /// Request body for applying an ExternalDNS change set atomically.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyExternalDnsChangesRequest {
     #[serde(default)]
@@ -55,7 +55,7 @@ pub struct ApplyExternalDnsChangesRequest {
 }
 
 /// Summary of an applied ExternalDNS change set.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ApplyExternalDnsChangesResponse {
     /// Zones whose serial advanced; empty when the request was a no-op.
     #[schema(example = json!(["example.com"]))]
@@ -70,7 +70,7 @@ pub struct ApplyExternalDnsChangesResponse {
 
 /// The names the ExternalDNS caller may manage under its grants, each
 /// covering itself and everything under it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ListExternalDnsDomainsResponse {
     #[schema(example = json!(["example.com"]))]
     pub domains: Vec<String>,
@@ -78,7 +78,7 @@ pub struct ListExternalDnsDomainsResponse {
 
 /// Records of every ExternalDNS-managed zone, one per name and type, in a
 /// deterministic order.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ListExternalDnsRecordsResponse {
     pub records: Vec<ExternalDnsRecord>,
 }

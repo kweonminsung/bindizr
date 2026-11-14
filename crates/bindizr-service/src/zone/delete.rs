@@ -31,7 +31,7 @@ pub async fn delete(
             cx.db(),
             RecordFilter {
                 zone_name: Some(zone.name.clone()),
-                ..RecordFilter::default()
+                ..Default::default()
             },
         )
         .await?;
@@ -53,7 +53,7 @@ pub async fn delete(
         bindizr_db::zone::delete_tx(&mut tx, zone.id)
             .await
             .map_err(|error| {
-                log::error!("Failed to delete zone: {}", error);
+                log::error!("Failed to delete zone: {error}");
                 ServiceError::internal_with_source("failed to delete zone", error)
             })?;
 

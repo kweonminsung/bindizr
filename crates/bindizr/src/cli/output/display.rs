@@ -72,7 +72,7 @@ pub(crate) fn display_record_value(value: &RecordValue) -> String {
     if chars.next().is_none() {
         head
     } else {
-        format!("{}…", head)
+        format!("{head}…")
     }
 }
 
@@ -86,17 +86,17 @@ pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     let now_ms = Utc::now().timestamp_millis().max(0) as u64;
     let secs = now_ms.saturating_sub(started_at_ms) / 1000;
     let (days, hours, minutes, seconds) = (
-        secs / 86_400,
-        secs % 86_400 / 3_600,
-        secs % 3_600 / 60,
+        secs / 86400,
+        secs % 86400 / 3600,
+        secs % 3600 / 60,
         secs % 60,
     );
 
     match (days, hours, minutes) {
-        (0, 0, 0) => format!("{}s", seconds),
-        (0, 0, _) => format!("{}m {}s", minutes, seconds),
-        (0, _, _) => format!("{}h {}m", hours, minutes),
-        _ => format!("{}d {}h", days, hours),
+        (0, 0, 0) => format!("{seconds}s"),
+        (0, 0, _) => format!("{minutes}m {seconds}s"),
+        (0, _, _) => format!("{hours}h {minutes}m"),
+        _ => format!("{days}d {hours}h"),
     }
 }
 

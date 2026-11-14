@@ -11,7 +11,7 @@ use crate::sql::{SortOrder, ZoneSortField};
 use crate::tx::TransactionKind;
 use crate::{Backend, Db, LockLevel, Transaction, mysql, postgres, sqlite};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ZoneFilter {
     pub name: Option<String>,
     pub id: Option<ZoneId>,

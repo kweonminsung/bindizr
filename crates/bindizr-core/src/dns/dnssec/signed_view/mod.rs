@@ -320,7 +320,7 @@ impl SignedViewDiff {
     }
 
     /// Compare derived record identities to find additions and removals.
-    fn compute(prev: &[DnssecRecord], new_records: Vec<DnssecRecord>) -> SignedViewDiff {
+    fn compute(prev: &[DnssecRecord], new_records: Vec<DnssecRecord>) -> Self {
         let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
 
         for record in prev {
@@ -343,7 +343,7 @@ impl SignedViewDiff {
 
         let removed = remaining.into_values().flatten().collect();
 
-        SignedViewDiff { added, removed }
+        Self { added, removed }
     }
 }
 

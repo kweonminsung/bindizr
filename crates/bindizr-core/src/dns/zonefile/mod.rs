@@ -213,11 +213,10 @@ impl ParsedZoneFile {
             let mut parser = Parser::from_ref(unknown.data().as_ref());
             return match ZoneRecordData::<_, ParsedName<_>>::parse_rdata(rtype, &mut parser) {
                 Ok(Some(typed)) if parser.remaining() == 0 => {
-                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed)
+                    self.push_record(origin_fqdn, owner, rtype, ttl_secs, &typed);
                 }
                 _ => self.errors.push(format!(
-                    "generic RDATA for '{}' does not encode a {} record",
-                    owner, rtype
+                    "generic RDATA for '{owner}' does not encode a {rtype} record"
                 )),
             };
         }
@@ -227,12 +226,11 @@ impl ParsedZoneFile {
             Rtype::SOA => {
                 if name::to_fqdn_lowercase(&owner) != origin_fqdn {
                     self.errors.push(format!(
-                        "SOA for '{}' does not belong to zone '{}'",
-                        owner, origin_fqdn
+                        "SOA for '{owner}' does not belong to zone '{origin_fqdn}'"
                     ));
                 } else if self.soa.is_some() {
                     self.errors
-                        .push(format!("zone '{}' carries more than one SOA", origin_fqdn));
+                        .push(format!("zone '{origin_fqdn}' carries more than one SOA"));
                 } else {
                     match to_zone_file_soa(data) {
                         Some(soa) => self.soa = Some(soa),
@@ -249,10 +247,8 @@ impl ParsedZoneFile {
             other => match RecordType::try_from(other) {
                 Ok(record_type) => record_type,
                 Err(_) => {
-                    self.errors.push(format!(
-                        "unsupported record type '{}' for '{}'",
-                        other, owner
-                    ));
+                    self.errors
+                        .push(format!("unsupported record type '{other}' for '{owner}'"));
                     return;
                 }
             },
@@ -268,7 +264,7 @@ impl ParsedZoneFile {
                 Ok(value) => (ZoneFileValue::Rdata(value.canonical()), None),
                 Err(error) => {
                     self.errors
-                        .push(format!("WKS value for '{}': {}", owner, error));
+                        .push(format!("WKS value for '{owner}': {error}"));
                     return;
                 }
             }
@@ -304,7 +300,7 @@ impl ParsedZoneFile {
                     Ok(text) => (ZoneFileValue::Rdata(text), None),
                     Err(error) => {
                         self.errors
-                            .push(format!("NAPTR value for '{}': {}", owner, error));
+                            .push(format!("NAPTR value for '{owner}': {error}"));
                         return;
                     }
                 },

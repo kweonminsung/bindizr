@@ -98,7 +98,7 @@ async fn zone_create_takes_soa_timers() {
 
     assert_eq!(zone["refresh"], 300);
     assert_eq!(zone["retry"], 60);
-    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["expire"], 1_209_600);
     assert_eq!(zone["minimum_ttl"], 120);
 }
 

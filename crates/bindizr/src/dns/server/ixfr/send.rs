@@ -171,7 +171,7 @@ pub(crate) async fn send_ixfr_response(
 
     match result {
         Ok(()) => {
-            log::info!("IXFR: sent response in {} DNS message(s)", messages_sent);
+            log::info!("IXFR: sent response in {messages_sent} DNS message(s)");
             Ok(())
         }
         // A failure after the first flush leaves the stream mid-transfer, and

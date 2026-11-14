@@ -238,12 +238,11 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     let name = name::parse_lookup_name(value)
-        .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {}", error)))?;
+        .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {error}")))?;
 
     if name.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
-            "TSIG key name must be {} characters or fewer in its canonical spelling",
-            MAX_COLUMN_TEXT_LEN
+            "TSIG key name must be {MAX_COLUMN_TEXT_LEN} characters or fewer in its canonical spelling"
         )));
     }
 
@@ -261,15 +260,14 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 
     if trimmed.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
-            "TSIG key secret must be at most {} base64 characters",
-            MAX_COLUMN_TEXT_LEN
+            "TSIG key secret must be at most {MAX_COLUMN_TEXT_LEN} base64 characters"
         )));
     }
 
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(trimmed)
         .map_err(|error| {
-            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", error))
+            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {error}"))
         })?;
 
     if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
@@ -312,12 +310,7 @@ mod tests {
         for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
             let error = normalize_key_name(invalid).unwrap_err();
 
-            assert_eq!(
-                error.code(),
-                ErrorCode::InvalidInput,
-                "input: {:?}",
-                invalid
-            );
+            assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
         }
     }
 

@@ -21,14 +21,12 @@ pub(crate) fn validate_record_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
 pub(crate) fn validate_default_ttl(ttl: i64) -> Result<Ttl, ServiceError> {
     if ttl < MIN_DEFAULT_TTL {
         return Err(ServiceError::invalid_zone_field(format!(
-            "ttl must be at least {} seconds",
-            MIN_DEFAULT_TTL
+            "ttl must be at least {MIN_DEFAULT_TTL} seconds"
         )));
     }
     if ttl > MAX_DEFAULT_TTL {
         return Err(ServiceError::invalid_zone_field(format!(
-            "ttl must be at most {} seconds",
-            MAX_DEFAULT_TTL
+            "ttl must be at most {MAX_DEFAULT_TTL} seconds"
         )));
     }
 
@@ -54,8 +52,7 @@ pub(crate) fn validate_soa_interval<T: TryFrom<i32>>(
 ) -> Result<T, ServiceError> {
     let non_negative = || {
         ServiceError::invalid_zone_field(format!(
-            "{} must be a non-negative number of seconds",
-            field
+            "{field} must be a non-negative number of seconds"
         ))
     };
 

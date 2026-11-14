@@ -264,7 +264,7 @@ fn encoding_splits_overflowing_answers_into_frames() {
         let frame = builder
             .add_answer_or_overflow(|builder| {
                 builder.add_text_rdata(
-                    &format!("host-{}.example.com.", index),
+                    &format!("host-{index}.example.com."),
                     3600,
                     &RecordType::A,
                     &format!("192.0.2.{}", index % 255),
@@ -483,7 +483,7 @@ fn signed_transfer_authenticates_every_envelope() {
         let frame = builder
             .add_answer_or_overflow(|builder| {
                 builder.add_text_rdata(
-                    &format!("host-{}.example.com.", index),
+                    &format!("host-{index}.example.com."),
                     3600,
                     &RecordType::A,
                     &format!("192.0.2.{}", index % 255),

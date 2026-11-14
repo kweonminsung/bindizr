@@ -62,7 +62,7 @@ pub async fn create(
         {
             Ok(records) => records,
             Err(error) => {
-                log::error!("Failed to check existing records: {}", error);
+                log::error!("Failed to check existing records: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to create record",
                     error,

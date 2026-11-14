@@ -24,7 +24,7 @@ pub enum ConvertSoaIntervalError {
 
 impl SoaInterval {
     /// The largest interval the row form holds.
-    pub const MAX: SoaInterval = SoaInterval(i32::MAX as u32);
+    pub const MAX: Self = Self(i32::MAX as u32);
 
     /// An interval known to be in range, such as a literal; wire input goes
     /// through `TryFrom` instead.
@@ -34,7 +34,7 @@ impl SoaInterval {
     /// Past [`SoaInterval::MAX`].
     pub const fn from_secs(secs: u32) -> Self {
         assert!(secs <= Self::MAX.0, "SOA interval exceeds 2^31 - 1");
-        SoaInterval(secs)
+        Self(secs)
     }
 
     /// The interval in seconds, as the wire carries it.
@@ -51,7 +51,7 @@ impl TryFrom<u32> for SoaInterval {
         if secs > Self::MAX.0 {
             return Err(ConvertSoaIntervalError::TooLarge { secs });
         }
-        Ok(SoaInterval(secs))
+        Ok(Self(secs))
     }
 }
 
@@ -76,7 +76,7 @@ impl From<SoaInterval> for u32 {
 impl From<SoaInterval> for i32 {
     /// The row form; the range invariant makes it exact.
     fn from(interval: SoaInterval) -> Self {
-        interval.0 as i32
+        interval.0 as Self
     }
 }
 
@@ -123,8 +123,8 @@ where
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(SoaInterval::try_from(
-            <i32 as sqlx::Decode<'r, DB>>::decode(value)?,
-        )?)
+        Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+            value,
+        )?)?)
     }
 }

@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::model::role::RoleId;
 
@@ -12,17 +14,7 @@ pub struct ParseTsigAlgorithmError {
 }
 
 /// TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Clone,
-    Copy,
-    Default,
-    serde::Serialize,
-    serde::Deserialize,
-    utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TsigAlgorithm {
     /// Required for interoperability by RFC 8945, Section 6; prefer SHA256.
@@ -39,20 +31,20 @@ impl TsigAlgorithm {
     /// the trailing root dot (e.g. `"hmac-sha256"`).
     pub fn as_str(&self) -> &'static str {
         match self {
-            TsigAlgorithm::HmacSha1 => "hmac-sha1",
-            TsigAlgorithm::HmacSha256 => "hmac-sha256",
-            TsigAlgorithm::HmacSha384 => "hmac-sha384",
-            TsigAlgorithm::HmacSha512 => "hmac-sha512",
+            Self::HmacSha1 => "hmac-sha1",
+            Self::HmacSha256 => "hmac-sha256",
+            Self::HmacSha384 => "hmac-sha384",
+            Self::HmacSha512 => "hmac-sha512",
         }
     }
 
     /// HMAC output length in bytes, the least a secret should hold (RFC 8945, Section 8).
     pub fn digest_len(&self) -> usize {
         match self {
-            TsigAlgorithm::HmacSha1 => 20,
-            TsigAlgorithm::HmacSha256 => 32,
-            TsigAlgorithm::HmacSha384 => 48,
-            TsigAlgorithm::HmacSha512 => 64,
+            Self::HmacSha1 => 20,
+            Self::HmacSha256 => 32,
+            Self::HmacSha384 => 48,
+            Self::HmacSha512 => 64,
         }
     }
 
@@ -76,10 +68,10 @@ impl std::str::FromStr for TsigAlgorithm {
     /// case-insensitively.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim_end_matches('.').to_ascii_lowercase().as_str() {
-            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
-            "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
-            "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
-            "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
+            "hmac-sha1" => Ok(Self::HmacSha1),
+            "hmac-sha256" => Ok(Self::HmacSha256),
+            "hmac-sha384" => Ok(Self::HmacSha384),
+            "hmac-sha512" => Ok(Self::HmacSha512),
             _ => Err(ParseTsigAlgorithmError {
                 value: value.to_string(),
             }),
@@ -104,7 +96,7 @@ id_newtype!(
 /// A TSIG credential whose wire `name` identifies it for updates and transfers.
 /// Rights come from its role's [`super::role_grant::RoleGrant`] rows; a key
 /// that only signs outbound NOTIFY names a role with none.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct TsigKey {
     pub id: TsigKeyId,
     pub name: String,

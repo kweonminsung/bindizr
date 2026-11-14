@@ -11,7 +11,7 @@ id_newtype!(
 
 /// A secondary server: it receives NOTIFY, may pull zones unsigned from its
 /// address, and is probed for the serial it serves.
-#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Secondary {
     pub id: SecondaryId,
     pub name: String,

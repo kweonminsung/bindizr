@@ -38,7 +38,7 @@ pub(crate) async fn delete_token(
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     token::delete(cx, &Caller::socket(), name).await?;
-    let message = format!("Token '{}' deleted successfully", name);
+    let message = format!("Token '{name}' deleted successfully");
     Ok(DaemonResponse {
         message: message.clone(),
         data: MessageResponse { message },

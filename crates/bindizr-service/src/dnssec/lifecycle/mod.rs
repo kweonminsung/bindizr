@@ -354,10 +354,10 @@ pub async fn disable(
     cx.metrics().track_serial_bumps(1);
 
     if ds_check == DsCheck::Skip {
-        log::warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
+        log::warn!("event=dnssec_disable_ds_check_skipped zone={zone_name}");
     }
 
-    log::info!("event=dnssec_disable zone={}", zone_name);
+    log::info!("event=dnssec_disable zone={zone_name}");
 
     crate::notify::notify_after_update(cx, &zone_name).await;
 
@@ -387,7 +387,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
     .await;
     let (zone_name, changed) = transaction::finish_tx(tx, result, "failed to sign zone").await?;
 
-    log::info!("event=dnssec_sign zone={}", zone_name);
+    log::info!("event=dnssec_sign zone={zone_name}");
 
     if changed {
         cx.metrics().track_serial_bumps(1);

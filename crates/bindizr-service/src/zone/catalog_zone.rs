@@ -18,8 +18,7 @@ pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError
         .is_some()
     {
         return Err(ServiceError::zone_conflict(format!(
-            "zone '{}' has the name dns.catalog_zone_name gives the catalog; rename either one",
-            name
+            "zone '{name}' has the name dns.catalog_zone_name gives the catalog; rename either one"
         )));
     }
 
@@ -44,13 +43,13 @@ async fn advance_catalog_serial(
 }
 
 /// TTL used by the generated catalog's records.
-const DEFAULT_TTL: Ttl = Ttl::from_secs(3_600);
+const DEFAULT_TTL: Ttl = Ttl::from_secs(3600);
 
 /// SOA retry interval of the generated catalog.
 const SOA_RETRY: SoaInterval = SoaInterval::from_secs(600);
 
 /// SOA expiry interval of the generated catalog.
-const SOA_EXPIRE: SoaInterval = SoaInterval::from_secs(86_400);
+const SOA_EXPIRE: SoaInterval = SoaInterval::from_secs(86400);
 
 /// Negative caching TTL of the generated catalog.
 const MINIMUM_TTL: Ttl = Ttl::from_secs(60);
@@ -67,7 +66,7 @@ pub(crate) async fn refresh_catalog_from_zones(
 ) -> Result<(CatalogZone, Vec<String>), ServiceError> {
     let config = cx.config();
     let catalog_zone_name = &config.dns.catalog_zone_name;
-    log::info!("Generating catalog zone: {}", catalog_zone_name);
+    log::info!("Generating catalog zone: {catalog_zone_name}");
 
     let all_zones = zones;
 

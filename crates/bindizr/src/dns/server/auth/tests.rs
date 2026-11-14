@@ -46,8 +46,8 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
         &cx,
         &Caller::socket(),
         &CreateTsigKeyRequest {
-            name: "fault-key".into(),
-            role_name: "admin".into(),
+            name: "fault-key".to_string(),
+            role_name: "admin".to_string(),
             algorithm: None,
             secret: None,
         },

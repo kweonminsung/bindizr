@@ -55,7 +55,7 @@ pub(crate) async fn export_zone(
 }
 
 /// The view switch of a zone export.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, IntoParams)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneQuery {

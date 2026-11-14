@@ -204,7 +204,7 @@ pub(crate) async fn run_udp_server(
 
             Some(result) = in_flight.join_next(), if !in_flight.is_empty() => {
                 if let Err(error) = result {
-                    log::warn!("DNS UDP query task failed: {}", error);
+                    log::warn!("DNS UDP query task failed: {error}");
                 }
                 continue;
             }
@@ -215,18 +215,18 @@ pub(crate) async fn run_udp_server(
         let (len, target) = match received {
             Ok(received) => received,
             Err(error) => {
-                log::error!("Failed to receive DNS UDP packet: {}", error);
+                log::error!("Failed to receive DNS UDP packet: {error}");
                 continue;
             }
         };
         let client_addr = target.client_addr;
 
         if len == buffer.len() {
-            log::warn!("Dropping oversized DNS UDP query from {}", client_addr);
+            log::warn!("Dropping oversized DNS UDP query from {client_addr}");
             continue;
         }
         if in_flight.len() >= MAX_UDP_IN_FLIGHT {
-            log::warn!("Dropping excess DNS UDP query from {}", client_addr);
+            log::warn!("Dropping excess DNS UDP query from {client_addr}");
             continue;
         }
 
@@ -241,7 +241,7 @@ pub(crate) async fn run_udp_server(
 
     while let Some(result) = in_flight.join_next().await {
         if let Err(error) = result {
-            log::warn!("DNS UDP query task failed: {}", error);
+            log::warn!("DNS UDP query task failed: {error}");
         }
     }
 }
@@ -256,7 +256,7 @@ async fn handle_udp_query(
     let client_addr = target.client_addr;
 
     if message::is_response(query_data) {
-        log::warn!("Ignoring a DNS UDP response from {}", client_addr);
+        log::warn!("Ignoring a DNS UDP response from {client_addr}");
         return;
     }
 
@@ -264,7 +264,7 @@ async fn handle_udp_query(
         if let Err(error) =
             server::nsupdate::handle_udp_nsupdate(dns_cx, socket, query_data, target).await
         {
-            log::error!("NSUPDATE UDP handler failed for {}: {}", client_addr, error);
+            log::error!("NSUPDATE UDP handler failed for {client_addr}: {error}");
         }
         return;
     }
@@ -283,11 +283,7 @@ async fn handle_udp_query(
         }
         Ok(None) => {}
         Err(error) => {
-            log::warn!(
-                "Failed to refuse DNS UDP opcode from {}: {}",
-                client_addr,
-                error
-            );
+            log::warn!("Failed to refuse DNS UDP opcode from {client_addr}: {error}");
             return;
         }
     }
@@ -303,12 +299,10 @@ async fn handle_udp_query(
                 match server::refuse_query(dns_cx, metadata, query_data, rcode, None).await {
                     Ok(response) => {
                         send_udp_response(socket, target, &response, metadata.response_limit())
-                            .await
+                            .await;
                     }
                     Err(error) => log::warn!(
-                        "Failed to answer malformed DNS UDP query from {}: {}",
-                        client_addr,
-                        error
+                        "Failed to answer malformed DNS UDP query from {client_addr}: {error}"
                     ),
                 }
             }
@@ -328,13 +322,9 @@ async fn handle_udp_query(
         .await
         {
             Ok(response) => {
-                send_udp_response(socket, target, &response, query.response_limit()).await
+                send_udp_response(socket, target, &response, query.response_limit()).await;
             }
-            Err(error) => log::warn!(
-                "Failed to refuse DNS UDP query from {}: {}",
-                client_addr,
-                error
-            ),
+            Err(error) => log::warn!("Failed to refuse DNS UDP query from {client_addr}: {error}"),
         }
 
         return;
@@ -344,11 +334,7 @@ async fn handle_udp_query(
         if let Err(error) =
             server::soa::handle_udp_soa(dns_cx, socket, target, &query, query_data).await
         {
-            log::warn!(
-                "Failed to handle SOA UDP query from {}: {}",
-                client_addr,
-                error
-            );
+            log::warn!("Failed to handle SOA UDP query from {client_addr}: {error}");
         }
 
         return;
@@ -359,22 +345,14 @@ async fn handle_udp_query(
         if let Err(error) =
             server::soa::handle_udp_ixfr(dns_cx, socket, target, &query, query_data).await
         {
-            log::warn!(
-                "Failed to handle IXFR UDP query from {}: {}",
-                client_addr,
-                error
-            );
+            log::warn!("Failed to handle IXFR UDP query from {client_addr}: {error}");
         }
 
         return;
     }
 
     if let Err(error) = server::handle_udp_xfr(dns_cx, socket, target, &query, query_data).await {
-        log::warn!(
-            "Failed to answer DNS UDP transfer from {}: {}",
-            client_addr,
-            error
-        );
+        log::warn!("Failed to answer DNS UDP transfer from {client_addr}: {error}");
     }
 }
 

@@ -14,7 +14,7 @@ use crate::wire::MEDIA_TYPE;
 type RecordedRequest = (String, Option<String>, String);
 
 /// The mock bindizr server's canned responses and the requests it recorded.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 struct MockState {
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
     domains: (u16, String),
@@ -130,7 +130,7 @@ fn ok_mock_bodies() -> ((u16, Value), (u16, Value), (u16, Value)) {
 /// Start a webhook adapter connected to the test upstream.
 async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>) -> String {
     let upstream = UpstreamClient::new(
-        format!("http://{}", upstream_addr),
+        format!("http://{upstream_addr}"),
         token.map(str::to_string),
         2,
         None,
@@ -149,7 +149,7 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
         axum::serve(listener, webhook).await.unwrap();
     });
 
-    format!("http://{}", addr)
+    format!("http://{addr}")
 }
 
 /// Send a webhook GET request with the requested Accept header.
@@ -290,7 +290,7 @@ async fn list_records_maps_records_to_endpoints() {
     .await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
-    let (status, content_type, body) = get(&format!("{}/records", base), Some(MEDIA_TYPE)).await;
+    let (status, content_type, body) = get(&format!("{base}/records"), Some(MEDIA_TYPE)).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(content_type.as_deref(), Some(MEDIA_TYPE));
@@ -315,7 +315,7 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, _) = post(
-        &format!("{}/records", base),
+        &format!("{base}/records"),
         json!({
             "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"],
                         "recordType": "A", "recordTTL": 300}],
@@ -361,7 +361,7 @@ async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, body) = post(
-        &format!("{}/records", base),
+        &format!("{base}/records"),
         json!({"create": [{"dnsName": "a.example.com", "targets": ["x"], "recordType": "SRV"}]}),
     )
     .await;
@@ -369,7 +369,7 @@ async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.contains("not supported"));
 
-    let (status, _) = post(&format!("{}/records", base), json!({"create": "nope"})).await;
+    let (status, _) = post(&format!("{base}/records"), json!({"create": "nope"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
@@ -391,7 +391,7 @@ async fn apply_changes_passes_bindizr_4xx_through_as_permanent_error() {
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, body) = post(
-        &format!("{}/records", base),
+        &format!("{base}/records"),
         json!({"create": [{"dnsName": "api.internal.example.com", "targets": ["192.0.2.1"], "recordType": "A"}]}),
     )
     .await;
@@ -415,7 +415,7 @@ async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, body) = post(
-        &format!("{}/records", base),
+        &format!("{base}/records"),
         json!({"create": [{"dnsName": "api.example.com", "targets": ["192.0.2.1"], "recordType": "A"}]}),
     )
     .await;
@@ -442,7 +442,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
 
     let changes = json!({"create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A"}]});
 
-    let (status, _) = post(&format!("{}/records", base), changes.clone()).await;
+    let (status, _) = post(&format!("{base}/records"), changes.clone()).await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
 
@@ -452,7 +452,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
     drop(closed);
 
     let base = spawn_adapter(closed_addr, Some("test-token")).await;
-    let (status, _) = post(&format!("{}/records", base), changes).await;
+    let (status, _) = post(&format!("{base}/records"), changes).await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
 }
@@ -478,7 +478,7 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, body) = post(
-        &format!("{}/adjustendpoints", base),
+        &format!("{base}/adjustendpoints"),
         json!([
             {"dnsName": "a.example.com", "targets": ["2001:0DB8::1"], "recordType": "aaaa", "recordTTL": 300, "labels": {"owner": "default"},
              "providerSpecific": [{"name": "webhook/flag", "value": "on"}]},
@@ -521,7 +521,7 @@ async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, body) = post(
-        &format!("{}/adjustendpoints", base),
+        &format!("{base}/adjustendpoints"),
         json!([{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "setIdentifier": "weighted"}]),
     )
     .await;
@@ -552,12 +552,12 @@ async fn healthz_reflects_bindizr_reachability() {
         axum::serve(listener, health).await.unwrap();
     });
 
-    let (status, _, body) = get(&format!("http://{}/healthz", addr), None).await;
+    let (status, _, body) = get(&format!("http://{addr}/healthz"), None).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, "ok");
 
-    let (status, _, body) = get(&format!("http://{}/metrics", addr), None).await;
+    let (status, _, body) = get(&format!("http://{addr}/metrics"), None).await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("bindizr_external_dns_requests_total"));
@@ -585,7 +585,7 @@ async fn healthz_reports_unready_without_manageable_names() {
         axum::serve(listener, health_router(state)).await.unwrap();
     });
 
-    let (status, _, body) = get(&format!("http://{}/healthz", addr), None).await;
+    let (status, _, body) = get(&format!("http://{addr}/healthz"), None).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body.contains("no manageable names"), "{body}");

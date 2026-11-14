@@ -5,6 +5,7 @@ pub mod parser;
 use domain::base::Message;
 use domain::base::iana::{Opcode, OptRcode};
 use domain::rdata::tsig::Time48;
+use thiserror::Error;
 
 use crate::dns::message;
 use crate::dns::message::{Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit};
@@ -19,7 +20,7 @@ pub fn is_nsupdate(message: &[u8]) -> bool {
 }
 
 /// Why an UPDATE response could not be encoded.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum BuildResponseError {
     #[error("invalid UPDATE message: {0}")]
     Malformed(#[source] crate::dns::LibraryError),

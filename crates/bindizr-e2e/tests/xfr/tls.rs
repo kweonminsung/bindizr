@@ -145,7 +145,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
     .unwrap();
 
     // 64,618 wire bytes leave room for maximal names, TSIG, OPT and keepalive.
-    let value = format!("3 0 0 {}", "AB".repeat(64_618 - 3));
+    let value = format!("3 0 0 {}", "AB".repeat(64618 - 3));
 
     let (status, body) = app
         .send_request(
@@ -197,7 +197,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
             for record in message.answer().unwrap().map(Result::unwrap) {
                 types.push(record.rtype());
                 if record.rtype() == Rtype::TLSA {
-                    assert_eq!(record.rdlen(), 64_618);
+                    assert_eq!(record.rdlen(), 64618);
                 }
             }
         }

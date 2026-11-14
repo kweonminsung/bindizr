@@ -18,7 +18,7 @@ use crate::zone::diff;
 use crate::{Context, dnssec, serial, time, transaction, zone};
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct BulkTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -114,7 +114,7 @@ pub async fn create_bulk(
         {
             Ok(records) => records,
             Err(error) => {
-                log::error!("Failed to load zone records: {}", error);
+                log::error!("Failed to load zone records: {error}");
                 return Err(ServiceError::internal_with_source(
                     "failed to create records",
                     error,

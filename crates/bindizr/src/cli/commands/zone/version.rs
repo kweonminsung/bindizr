@@ -16,7 +16,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for inspecting a zone's versions.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum ZoneVersionCommand {
     /// List a zone's versions (serial history)
     #[command(
@@ -143,7 +143,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 output::print_table(vec![VersionRow::from(&detail.version)]);
                 output::print_table(detail.records.iter().map(VersionRecordRow::from).collect());
             } else {
-                output::print_payload(detail, output)?
+                output::print_payload(detail, output)?;
             }
         }
         ZoneVersionCommand::Diff {
@@ -161,9 +161,9 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 .await?;
 
             if output == OutputFormat::Table {
-                out!("{}", output::render_version_diff(&response.data))
+                out!("{}", output::render_version_diff(&response.data));
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
         ZoneVersionCommand::Rollback {
@@ -184,7 +184,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                 outln!("{}", response.message);
                 output::print_table(vec![RollbackSummaryRow::from(&response.data)]);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }

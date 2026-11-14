@@ -12,7 +12,7 @@ use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
 
 /// A DS record for the fake parent to serve.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DsRecord {
     key_tag: u16,
     algorithm: u8,
@@ -177,8 +177,7 @@ impl FakeParent {
                     // A negative answer needs the parent's SOA (RFC 2308, Section 2).
                     let parent = qname
                         .parent()
-                        .map(|parent| parent.to_name::<Vec<u8>>())
-                        .unwrap_or_else(Name::root_vec);
+                        .map_or_else(Name::root_vec, |parent| parent.to_name::<Vec<u8>>());
                     authority
                         .push((
                             &parent,

@@ -9,7 +9,7 @@ use thiserror::Error;
 ///
 /// Serves the ExternalDNS webhook protocol on a localhost listener and
 /// forwards every operation to the bindizr HTTP API with a Bearer token.
-#[derive(Parser, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Parser)]
 #[command(name = "bindizr-external-dns", version, about)]
 pub(crate) struct Cli {
     /// Base URL of the bindizr HTTP API, e.g. http://bindizr:8000
@@ -142,7 +142,7 @@ impl AdapterConfig {
                 source,
             })?;
 
-        Ok(AdapterConfig {
+        Ok(Self {
             bindizr_url,
             token,
             ca_file: cli.ca_file,
@@ -199,8 +199,7 @@ mod tests {
         ] {
             assert!(
                 AdapterConfig::load(to_cli(&["--bindizr-url", url])).is_err(),
-                "accepted '{}'",
-                url
+                "accepted '{url}'"
             );
         }
 

@@ -233,7 +233,7 @@ use utoipa::{Modify, OpenApi};
 )]
 pub(crate) struct ApiDoc;
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {

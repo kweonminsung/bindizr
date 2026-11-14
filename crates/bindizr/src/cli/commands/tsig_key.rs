@@ -12,7 +12,7 @@ use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
 /// Subcommands for managing TSIG update and transfer credentials.
-#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key in a role (generates a secret unless one is provided)
     #[command(after_help = "\
@@ -99,7 +99,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key creation result: {:?}", response);
+            log::debug!("TSIG key creation result: {response:?}");
             output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::List {
@@ -116,14 +116,14 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 }),
             )
             .await?;
-            log::debug!("TSIG key list result: {:?}", response);
+            log::debug!("TSIG key list result: {response:?}");
             output::print_page(&response.data, output, |item| TsigKeyRow::from(item))?;
         }
         TsigKeyCommand::Get { name, output } => {
             let response =
                 client::send_command::<SingleTsigKeyResponse>(DaemonCommand::GetTsigKey { name })
                     .await?;
-            log::debug!("TSIG key get result: {:?}", response);
+            log::debug!("TSIG key get result: {response:?}");
             output::print_response(&response.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::Export { name } => {
@@ -136,12 +136,12 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let response =
                 client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigKey { name })
                     .await?;
-            log::debug!("TSIG key deletion result: {:?}", response);
+            log::debug!("TSIG key deletion result: {response:?}");
 
             if output == OutputFormat::Table {
-                outln!("{}", response.message)
+                outln!("{}", response.message);
             } else {
-                output::print_payload(&response.data, output)?
+                output::print_payload(&response.data, output)?;
             }
         }
     }

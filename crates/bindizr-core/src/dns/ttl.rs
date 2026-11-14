@@ -23,11 +23,11 @@ pub enum ConvertTtlError {
 
 impl Ttl {
     /// The largest TTL (RFC 8767, Section 4).
-    pub const MAX: Ttl = Ttl(u32::MAX);
+    pub const MAX: Self = Self(u32::MAX);
 
     /// Construct a TTL from its unsigned wire value.
     pub const fn from_secs(secs: u32) -> Self {
-        Ttl(secs)
+        Self(secs)
     }
 
     /// The TTL in seconds, as the wire carries it.
@@ -76,7 +76,7 @@ impl From<Ttl> for u32 {
 impl From<Ttl> for i64 {
     /// The row form; the range invariant makes it exact.
     fn from(ttl: Ttl) -> Self {
-        i64::from(ttl.0)
+        Self::from(ttl.0)
     }
 }
 
@@ -140,7 +140,7 @@ where
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
-        Ok(Ttl::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
+        Ok(Self::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
     }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Request body for creating a role.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRoleRequest {
     /// Letters, digits, `.`, `_`, and `-`: one URL path segment.
@@ -20,7 +20,7 @@ pub struct CreateRoleRequest {
 }
 
 /// API representation of a role.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RoleResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: RoleId,
@@ -43,13 +43,13 @@ pub struct RoleResponse {
 }
 
 /// A single role wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleRoleResponse {
     pub role: RoleResponse,
 }
 
 /// Request body for granting a role actions in one zone or all zones.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRoleGrantRequest {
     /// Name of an existing zone; omit to cover all zones, including later ones.
@@ -70,7 +70,7 @@ pub struct CreateRoleGrantRequest {
 }
 
 /// API representation of a role grant.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RoleGrantResponse {
     #[schema(example = 1, value_type = i32)]
     pub id: RoleGrantId,
@@ -94,7 +94,7 @@ impl RoleGrantResponse {
         role_name: &str,
         zone_name: Option<&ZoneName>,
     ) -> Self {
-        RoleGrantResponse {
+        Self {
             id: grant.id,
             role_name: role_name.to_string(),
             zone_name: zone_name.map(ToString::to_string),
@@ -107,7 +107,7 @@ impl RoleGrantResponse {
 }
 
 /// A single role grant wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SingleRoleGrantResponse {
     pub role_grant: RoleGrantResponse,
 }

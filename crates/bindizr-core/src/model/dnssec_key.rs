@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::dns::Ttl;
 use crate::dns::dnssec::KeyTag;
@@ -24,9 +26,7 @@ pub enum ParseDnssecKeyError {
 pub const DS_DIGEST_TYPE: u8 = 2;
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DnssecAlgorithm {
     /// RSA with SHA-256, algorithm 8 (RFC 5702).
@@ -48,24 +48,24 @@ impl DnssecAlgorithm {
     /// IANA algorithm number, the storage form.
     pub fn as_i32(self) -> i32 {
         match self {
-            DnssecAlgorithm::RsaSha256 => 8,
-            DnssecAlgorithm::RsaSha512 => 10,
-            DnssecAlgorithm::EcdsaP256Sha256 => 13,
-            DnssecAlgorithm::EcdsaP384Sha384 => 14,
-            DnssecAlgorithm::Ed25519 => 15,
-            DnssecAlgorithm::Ed448 => 16,
+            Self::RsaSha256 => 8,
+            Self::RsaSha512 => 10,
+            Self::EcdsaP256Sha256 => 13,
+            Self::EcdsaP384Sha384 => 14,
+            Self::Ed25519 => 15,
+            Self::Ed448 => 16,
         }
     }
 
     /// Parse a supported DNSSEC algorithm number.
     pub fn from_i32(value: i32) -> Option<Self> {
         match value {
-            8 => Some(DnssecAlgorithm::RsaSha256),
-            10 => Some(DnssecAlgorithm::RsaSha512),
-            13 => Some(DnssecAlgorithm::EcdsaP256Sha256),
-            14 => Some(DnssecAlgorithm::EcdsaP384Sha384),
-            15 => Some(DnssecAlgorithm::Ed25519),
-            16 => Some(DnssecAlgorithm::Ed448),
+            8 => Some(Self::RsaSha256),
+            10 => Some(Self::RsaSha512),
+            13 => Some(Self::EcdsaP256Sha256),
+            14 => Some(Self::EcdsaP384Sha384),
+            15 => Some(Self::Ed25519),
+            16 => Some(Self::Ed448),
             _ => None,
         }
     }
@@ -73,12 +73,12 @@ impl DnssecAlgorithm {
     /// IANA mnemonic in lowercase, the presentation/input form.
     pub fn as_str(&self) -> &'static str {
         match self {
-            DnssecAlgorithm::RsaSha256 => "rsasha256",
-            DnssecAlgorithm::RsaSha512 => "rsasha512",
-            DnssecAlgorithm::EcdsaP256Sha256 => "ecdsap256sha256",
-            DnssecAlgorithm::EcdsaP384Sha384 => "ecdsap384sha384",
-            DnssecAlgorithm::Ed25519 => "ed25519",
-            DnssecAlgorithm::Ed448 => "ed448",
+            Self::RsaSha256 => "rsasha256",
+            Self::RsaSha512 => "rsasha512",
+            Self::EcdsaP256Sha256 => "ecdsap256sha256",
+            Self::EcdsaP384Sha384 => "ecdsap384sha384",
+            Self::Ed25519 => "ed25519",
+            Self::Ed448 => "ed448",
         }
     }
 
@@ -108,12 +108,12 @@ impl std::str::FromStr for DnssecAlgorithm {
     /// Parse a DNSSEC algorithm from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "rsasha256" => Ok(DnssecAlgorithm::RsaSha256),
-            "rsasha512" => Ok(DnssecAlgorithm::RsaSha512),
-            "ecdsap256sha256" => Ok(DnssecAlgorithm::EcdsaP256Sha256),
-            "ecdsap384sha384" => Ok(DnssecAlgorithm::EcdsaP384Sha384),
-            "ed25519" => Ok(DnssecAlgorithm::Ed25519),
-            "ed448" => Ok(DnssecAlgorithm::Ed448),
+            "rsasha256" => Ok(Self::RsaSha256),
+            "rsasha512" => Ok(Self::RsaSha512),
+            "ecdsap256sha256" => Ok(Self::EcdsaP256Sha256),
+            "ecdsap384sha384" => Ok(Self::EcdsaP384Sha384),
+            "ed25519" => Ok(Self::Ed25519),
+            "ed448" => Ok(Self::Ed448),
             _ => Err(ParseDnssecKeyError::Algorithm {
                 value: value.to_string(),
             }),
@@ -126,16 +126,14 @@ impl TryFrom<i32> for DnssecAlgorithm {
 
     /// Validate and convert the stored value into a DNSSEC algorithm.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        DnssecAlgorithm::from_i32(value).ok_or(ParseDnssecKeyError::AlgorithmNumber { value })
+        Self::from_i32(value).ok_or(ParseDnssecKeyError::AlgorithmNumber { value })
     }
 }
 
 /// What a key signs: a CSK everything, a KSK/ZSK pair splits the apex DNSKEY
 /// records (whose signer the parent DS must name, RFC 7344, Section 4.1) from
 /// the zone data.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DnssecKeyRole {
     Csk,
@@ -147,15 +145,15 @@ impl DnssecKeyRole {
     /// Return the text representation of this DNSSEC key role.
     pub fn as_str(&self) -> &'static str {
         match self {
-            DnssecKeyRole::Csk => "csk",
-            DnssecKeyRole::Ksk => "ksk",
-            DnssecKeyRole::Zsk => "zsk",
+            Self::Csk => "csk",
+            Self::Ksk => "ksk",
+            Self::Zsk => "zsk",
         }
     }
 
     /// Whether the key is represented in the parent DS set (SEP keys).
     pub fn is_sep(&self) -> bool {
-        matches!(self, DnssecKeyRole::Csk | DnssecKeyRole::Ksk)
+        matches!(self, Self::Csk | Self::Ksk)
     }
 
     /// DNSKEY flags field: ZONE, plus SEP for keys the parent DS names
@@ -182,9 +180,9 @@ impl std::str::FromStr for DnssecKeyRole {
     /// Parse a DNSSEC key role from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "csk" => Ok(DnssecKeyRole::Csk),
-            "ksk" => Ok(DnssecKeyRole::Ksk),
-            "zsk" => Ok(DnssecKeyRole::Zsk),
+            "csk" => Ok(Self::Csk),
+            "ksk" => Ok(Self::Ksk),
+            "zsk" => Ok(Self::Zsk),
             _ => Err(ParseDnssecKeyError::Role {
                 value: value.to_string(),
             }),
@@ -203,9 +201,7 @@ impl TryFrom<String> for DnssecKeyRole {
 
 /// Rollover lifecycle position (RFC 7583); a settled zone holds only
 /// `Active` keys.
-#[derive(
-    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DnssecKeyState {
     /// Published ahead of promotion so caches learn it; an algorithm rollover
@@ -222,9 +218,9 @@ impl DnssecKeyState {
     /// Return the text representation of this DNSSEC key state.
     pub fn as_str(&self) -> &'static str {
         match self {
-            DnssecKeyState::Published => "published",
-            DnssecKeyState::Active => "active",
-            DnssecKeyState::Retired => "retired",
+            Self::Published => "published",
+            Self::Active => "active",
+            Self::Retired => "retired",
         }
     }
 }
@@ -242,9 +238,9 @@ impl std::str::FromStr for DnssecKeyState {
     /// Parse a DNSSEC key state from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_ascii_lowercase().as_str() {
-            "published" => Ok(DnssecKeyState::Published),
-            "active" => Ok(DnssecKeyState::Active),
-            "retired" => Ok(DnssecKeyState::Retired),
+            "published" => Ok(Self::Published),
+            "active" => Ok(Self::Active),
+            "retired" => Ok(Self::Retired),
             _ => Err(ParseDnssecKeyError::State {
                 value: value.to_string(),
             }),
@@ -299,7 +295,7 @@ pub struct DnssecKey {
 impl DnssecKey {
     /// CSK/ZSK keys sign when active, or when their algorithm has no active
     /// data signer in `keys` (RFC 6840, Section 5.11). KSKs never sign zone data.
-    pub fn signs_zone_data(&self, keys: &[DnssecKey]) -> bool {
+    pub fn signs_zone_data(&self, keys: &[Self]) -> bool {
         if !matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk) {
             return false;
         }

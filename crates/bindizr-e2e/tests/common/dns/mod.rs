@@ -479,7 +479,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
 /// Quote a value the way the record types render it: `"` and `\` escaped,
 /// control and non-ASCII bytes as `\DDD`, so it matches what the API reports.
 fn to_quoted_string(bytes: &[u8]) -> String {
-    let mut out = String::from("\"");
+    let mut out = "\"".to_string();
 
     for &byte in bytes {
         match byte {

@@ -97,8 +97,7 @@ pub(crate) fn decode_prerequisite(
             })
         }
         other => Err(NsupdateError::FormErr(format!(
-            "unsupported prerequisite class: {}",
-            other
+            "unsupported prerequisite class: {other}"
         ))),
     }
 }
@@ -172,8 +171,7 @@ fn decode_update(
             )))
         }
         class => Err(NsupdateError::FormErr(format!(
-            "unsupported update class: {}",
-            class
+            "unsupported update class: {class}"
         ))),
     }
 }

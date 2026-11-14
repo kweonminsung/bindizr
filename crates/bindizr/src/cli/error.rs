@@ -36,7 +36,7 @@ enum Failure {
 impl From<RenderOutputError> for CliError {
     /// Report the rendering failure as a failed request.
     fn from(error: RenderOutputError) -> Self {
-        CliError::request_with_source(error.to_string(), error)
+        Self::request_with_source(error.to_string(), error)
     }
 }
 
@@ -44,7 +44,7 @@ impl From<RenderOutputError> for CliError {
 impl From<ReadInputError> for CliError {
     /// Report the read failure as a failed request.
     fn from(error: ReadInputError) -> Self {
-        CliError::request_with_source(error.to_string(), error)
+        Self::request_with_source(error.to_string(), error)
     }
 }
 
@@ -52,7 +52,7 @@ impl From<ReadInputError> for CliError {
 impl From<ConfigError> for CliError {
     /// Report the configuration failure with its exit class.
     fn from(error: ConfigError) -> Self {
-        CliError::configuration(error)
+        Self::configuration(error)
     }
 }
 
@@ -61,9 +61,9 @@ impl From<DaemonError> for CliError {
     /// A configuration or TLS failure is permanent; anything else may pass.
     fn from(error: DaemonError) -> Self {
         if error.is_configuration() {
-            CliError::configuration(error)
+            Self::configuration(error)
         } else {
-            CliError::request_with_source(error.to_string(), error)
+            Self::request_with_source(error.to_string(), error)
         }
     }
 }
@@ -81,7 +81,7 @@ impl CliError {
     /// A request that failed before or after reaching the daemon, with no
     /// code to hint from.
     pub(crate) fn request(message: impl fmt::Display) -> Self {
-        CliError {
+        Self {
             code: None,
             failure: Failure::Request,
             message: message.to_string(),
@@ -104,7 +104,7 @@ impl CliError {
 
     /// An error reply from the daemon, carrying whatever code it sent.
     pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
-        CliError {
+        Self {
             code,
             failure: Failure::Request,
             message,
@@ -117,7 +117,7 @@ impl CliError {
     pub(crate) fn daemon_unreachable(
         source: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        CliError {
+        Self {
             code: None,
             failure: Failure::Unreachable,
             message: source.to_string(),
@@ -128,7 +128,7 @@ impl CliError {
     /// The configuration is unusable. Exits distinctly so a supervisor can
     /// stop retrying a start that will fail the same way every time.
     pub(crate) fn configuration(source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        CliError {
+        Self {
             code: None,
             failure: Failure::Configuration,
             message: source.to_string(),

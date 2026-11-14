@@ -7,7 +7,7 @@ use crate::error::{ErrorCode, ServiceError};
 
 /// Whether a previewable write goes through, or only reports what it
 /// would do.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Run {
     Apply,
@@ -18,27 +18,27 @@ impl Run {
     /// The run a `dry_run` flag asks for.
     pub fn from_dry_run(dry_run: bool) -> Self {
         if dry_run {
-            Run::DryRun
+            Self::DryRun
         } else {
-            Run::Apply
+            Self::Apply
         }
     }
 
     /// Whether the run writes nothing.
     pub fn is_dry_run(self) -> bool {
-        self == Run::DryRun
+        self == Self::DryRun
     }
 }
 
 /// Generic success message response.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct MessageResponse {
     #[schema(example = "Deleted successfully")]
     pub message: String,
 }
 
 /// Whether the API can serve requests: its database answered a probe.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
     Healthy,
@@ -46,13 +46,13 @@ pub enum HealthStatus {
 }
 
 /// Health probe response.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
     pub status: HealthStatus,
 }
 
 /// Generic error response: a plain description plus a machine-readable code.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ErrorResponse {
     #[schema(example = "zone with name 'example.com' not found")]
     pub error: String,
@@ -63,7 +63,7 @@ pub struct ErrorResponse {
 impl From<&ServiceError> for ErrorResponse {
     /// Build an error response from a service error's code and message.
     fn from(error: &ServiceError) -> Self {
-        ErrorResponse {
+        Self {
             error: error.to_string(),
             code: error.code(),
         }

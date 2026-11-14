@@ -207,7 +207,7 @@ pub async fn resolve_address_entry(
                     }
                 }
                 Ok(Err(error)) => {
-                    log::error!("Invalid server address '{}': {}", entry, error);
+                    log::error!("Invalid server address '{entry}': {error}");
                     Err(ResolveAddressError::Lookup(error))
                 }
                 Err(_) => {

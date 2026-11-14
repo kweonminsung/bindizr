@@ -58,7 +58,7 @@ pub enum ParseUpdateError {
     RdataName {
         record_type: String,
         #[source]
-        source: Box<ParseUpdateError>,
+        source: Box<Self>,
     },
     /// The `domain` TXT reader's error implements no `Error`, so its text
     /// is what is kept.
@@ -128,7 +128,7 @@ impl UpdateRequest {
             return Err(ParseUpdateError::InvalidHeader);
         }
 
-        Ok(UpdateRequest {
+        Ok(Self {
             zone_name,
             zone_class: Class::from_int(zclass),
             prerequisites,

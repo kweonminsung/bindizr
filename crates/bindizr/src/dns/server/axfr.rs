@@ -25,11 +25,7 @@ pub(crate) async fn handle_axfr(
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
-    log::info!(
-        "AXFR request for zone {:?} from {}",
-        zone_name_str,
-        client_ip
-    );
+    log::info!("AXFR request for zone {zone_name_str:?} from {client_ip}");
 
     if cx.config().dns.is_catalog_zone(zone_name_str) {
         let access = tokio::select! {
