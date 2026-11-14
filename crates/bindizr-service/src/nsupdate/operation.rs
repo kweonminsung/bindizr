@@ -90,7 +90,7 @@ pub(crate) async fn apply_record_operation_tx(
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
             let value = if *record_type == RecordType::Txt {
-                value.to_string()
+                value.clone()
             } else {
                 record_type
                     .encoded_value(value, *priority)

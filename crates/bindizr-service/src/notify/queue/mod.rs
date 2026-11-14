@@ -13,7 +13,7 @@ use tokio::time;
 use tokio::time::Instant;
 
 use super::NotifyTarget;
-use crate::Context;
+use crate::{Context, zone};
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,10 +156,10 @@ async fn read_batch_deadline(cx: &Context, job: &NotifyJob) -> Instant {
         NotifyJobTarget::Zone(zone_name) if zone_name == &config.dns.catalog_zone_name => {
             Ok(CATALOG_SOA_REFRESH)
         }
-        NotifyJobTarget::Zone(zone_name) => crate::zone::lookup_by_name(cx, zone_name)
+        NotifyJobTarget::Zone(zone_name) => zone::lookup_by_name(cx, zone_name)
             .await
             .map(|zone| zone.refresh),
-        NotifyJobTarget::All => crate::zone::list(cx).await.map(|zones| {
+        NotifyJobTarget::All => zone::list(cx).await.map(|zones| {
             zones
                 .into_iter()
                 .map(|zone| zone.refresh)
@@ -200,7 +200,7 @@ async fn collect_batch(
             biased;
             _ = stop.changed() => break,
 
-            _ = time::sleep_until(deadline) => break,
+            () = time::sleep_until(deadline) => break,
 
             job = rx.recv() => match job {
                 Some(job) => {
@@ -226,7 +226,7 @@ async fn collect_batch(
 /// Start a batch without holding collection behind an earlier ACK/retry wait.
 async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut JoinSet<()>) {
     if batch.all_zones {
-        match crate::zone::list(cx).await {
+        match zone::list(cx).await {
             Ok(zones) => batch.zones.extend(zones.into_iter().map(|zone| zone.name)),
             Err(error) => log::warn!("queued notify: failed to list zones: {error}"),
         }

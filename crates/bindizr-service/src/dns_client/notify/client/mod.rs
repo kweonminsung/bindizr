@@ -1,10 +1,10 @@
 //! Multiplex NOTIFY transactions on one connected socket per active target.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use std::future;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
+use std::{future, io};
 
 use bindizr_core::dns::message::{Keepalive, Name, OptRcode, QueryMetadata, ResponseLimit};
 use bindizr_core::dns::query::ParseResponseError;
@@ -276,7 +276,7 @@ async fn serve(
 
                 // Readiness can become stale before the actual send attempt.
                 match socket.try_send(&request.request) {
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {},
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {},
                     Err(error) => {
                         fail_requests(&mut requests, error);
                         break;
@@ -285,7 +285,12 @@ async fn serve(
                         ready.pop_front();
                         timers.remove(&(request.deadline, id));
 
-                        if sent != request.request.len() {
+                        if sent == request.request.len() {
+                            request.waiting = true;
+                            request.sent = true;
+                            request.deadline = Instant::now() + request.timeout;
+                            timers.insert((request.deadline, id));
+                        } else {
                             let request = requests.remove(&id).unwrap();
                             let _ = request
                                 .reply
@@ -296,11 +301,6 @@ async fn serve(
                                     len: request.request.len(),
                                 }
                                 .into()));
-                        } else {
-                            request.waiting = true;
-                            request.sent = true;
-                            request.deadline = Instant::now() + request.timeout;
-                            timers.insert((request.deadline, id));
                         }
                     }
                 }
@@ -372,7 +372,7 @@ async fn serve(
 }
 
 /// A connected-socket ICMP/I/O error ends every outstanding request to that peer.
-fn fail_requests(requests: &mut HashMap<u16, PendingNotify>, error: std::io::Error) {
+fn fail_requests(requests: &mut HashMap<u16, PendingNotify>, error: io::Error) {
     let error = Arc::new(error);
     for (_, request) in requests.drain() {
         let _ = request.reply.send(Err(SendNotifyError::Io(error.clone())));

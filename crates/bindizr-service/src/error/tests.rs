@@ -1,3 +1,5 @@
+use std::io;
+
 use super::*;
 
 /// Input policy errors have no underlying operation failure to retain.
@@ -35,8 +37,8 @@ fn ds_check_failure_preserves_source_and_wire_message() {
         "example.com",
         ProbeParentDsError::Unresolved {
             entry: "ns.parent.example".to_string(),
-            source: ResolveAddressError::Lookup(std::io::Error::new(
-                std::io::ErrorKind::ConnectionReset,
+            source: ResolveAddressError::Lookup(io::Error::new(
+                io::ErrorKind::ConnectionReset,
                 "resolver disconnected",
             )),
         },
@@ -58,7 +60,7 @@ fn ds_check_failure_preserves_source_and_wire_message() {
     assert!(matches!(
         source.source().unwrap().downcast_ref::<ResolveAddressError>(),
         Some(ResolveAddressError::Lookup(error))
-            if error.kind() == std::io::ErrorKind::ConnectionReset,
+            if error.kind() == io::ErrorKind::ConnectionReset,
     ));
 }
 
@@ -81,7 +83,7 @@ fn unsupported_ds_digest_preserves_policy_message_without_source() {
 /// Verify that a signing failure is not an internal error.
 #[test]
 fn signing_failure_preserves_dnssec_error_class() {
-    let error = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
+    let error = ServiceError::dnssec_signing_failed(io::Error::other("boom"));
     assert_eq!(error.code(), ErrorCode::DnssecSigningFailed);
     assert!(error.code().is_internal());
 }
@@ -92,18 +94,14 @@ fn internal_context_preserves_the_source() {
     use std::error::Error;
     let error = ServiceError::internal_with_source(
         "failed to load records",
-        std::io::Error::new(std::io::ErrorKind::ConnectionReset, "database disconnected"),
+        io::Error::new(io::ErrorKind::ConnectionReset, "database disconnected"),
     );
 
     assert_eq!(error.code(), ErrorCode::Internal);
     assert_eq!(error.to_string(), "failed to load records");
-    let source = error
-        .source()
-        .unwrap()
-        .downcast_ref::<std::io::Error>()
-        .unwrap();
+    let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
 
-    assert_eq!(source.kind(), std::io::ErrorKind::ConnectionReset);
+    assert_eq!(source.kind(), io::ErrorKind::ConnectionReset);
 }
 
 /// Verify every serialized error code against its established wire spelling.

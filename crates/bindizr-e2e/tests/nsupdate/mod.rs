@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode, TsigRcode};
-use domain::base::{Message, Name, Rtype, Serial, Ttl};
+use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, Ttl};
 use domain::rdata::Soa;
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::tsig::ClientTransaction;
@@ -247,7 +249,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
                             Rcode::FORMERR,
                             "tsig_required={tsig_required}, prerequisite={prerequisite}, owner={owner}"
                         );
-                        assert!(!crate::common::dns::tsig::parse_tsig_presence(&response).unwrap());
+                        assert!(!tsig::parse_tsig_presence(&response).unwrap());
                     }
                 }
             }
@@ -293,7 +295,7 @@ async fn nsupdate_refuses_managed_dnssec_changes_without_mutating_zone() {
         .await
         .1;
 
-    let request = domain::base::MessageBuilder::new_vec().question();
+    let request = MessageBuilder::new_vec().question();
     let mut request = request;
     request
         .push((&dns::parse_name(name).unwrap(), Rtype::AXFR))
@@ -444,7 +446,7 @@ async fn nsupdate_caa_values_keep_their_wire_bytes() {
     }
 
     let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
-    let mut exported = sets.get(&(owner.clone(), Rtype::CAA)).unwrap().clone();
+    let mut exported = sets[&(owner.clone(), Rtype::CAA)].clone();
     let mut expected = values.to_vec();
     exported.sort();
     expected.sort();
@@ -2633,7 +2635,7 @@ async fn update_preserves_binary_values_and_names() {
 
     let key = tsig::create_tsig_key(&app, "opaque-key", KeyRole::Admin).await;
 
-    let target = crate::common::dns::parse_name("Mixed.Example.")
+    let target = dns::parse_name("Mixed.Example.")
         .unwrap()
         .as_slice()
         .to_vec();
@@ -2650,7 +2652,7 @@ async fn update_preserves_binary_values_and_names() {
         ("dname", Rtype::DNAME, target),
     ] {
         let owner = format!("{label}.{zone}.");
-        let export_owner = format!("{}.", crate::common::dns::parse_name(&owner).unwrap());
+        let export_owner = format!("{}.", dns::parse_name(&owner).unwrap());
 
         assert_eq!(
             nsupdate::send_update_udp(
@@ -2672,7 +2674,7 @@ async fn update_preserves_binary_values_and_names() {
         let exported = dns::fetch_exported_record_sets(&app, zone).await;
 
         assert_eq!(
-            exported.get(&(export_owner.clone(), rtype)).unwrap(),
+            &exported[&(export_owner.clone(), rtype)],
             &vec![rdata.clone()]
         );
         assert_eq!(
@@ -3255,7 +3257,7 @@ async fn ixfr_replays_soa_replacement() {
             replacement(zone_name, old_serial),
         ))
         .unwrap();
-    let response = crate::common::exchange_tcp(app.dns_port(), &authority.finish()).unwrap();
+    let response = common::exchange_tcp(app.dns_port(), &authority.finish()).unwrap();
     let message = Message::from_octets(response).unwrap();
 
     assert_eq!(message.header().rcode(), Rcode::NOERROR);
@@ -3293,7 +3295,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
 
     let initial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
     let key = tsig::create_tsig_key(&app, "serial-reuse", KeyRole::Admin).await;
-    let before = crate::common::axfr(app.dns_port(), zone_name, Some(&key))
+    let before = common::axfr(app.dns_port(), zone_name, Some(&key))
         .unwrap()
         .records();
 
@@ -3328,7 +3330,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
 
     assert_eq!(app.read_zone_serial(zone_name).await, i64::from(initial));
     assert_eq!(
-        crate::common::axfr(app.dns_port(), zone_name, Some(&key))
+        common::axfr(app.dns_port(), zone_name, Some(&key))
             .unwrap()
             .records(),
         before + 1
@@ -3471,7 +3473,7 @@ async fn nsupdate_replaces_wks_by_address_and_protocol() {
     assert_eq!(app.read_zone_serial(zone_name).await, serial);
 
     let sets = dns::fetch_exported_record_sets(&app, zone_name).await;
-    let mut actual = sets.get(&(owner, rtype)).unwrap().clone();
+    let mut actual = sets[&(owner, rtype)].clone();
     actual.sort();
     let mut expected = vec![replacement, other_address, other_protocol];
     expected.sort();
@@ -3499,7 +3501,7 @@ async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
     let zone_name = zone["name"].as_str().unwrap();
     let mut stream = TcpStream::connect(("127.0.0.1", app.dns_port())).unwrap();
     stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
 
     for id in [81, 82] {
@@ -3529,7 +3531,7 @@ async fn nsupdate_answers_pipelined_requests_after_write_half_close() {
         ids.push(response.header().id());
     }
 
-    ids.sort();
+    ids.sort_unstable();
 
     assert_eq!(ids, [81, 82]);
 }

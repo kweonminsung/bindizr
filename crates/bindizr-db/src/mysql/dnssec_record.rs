@@ -90,11 +90,11 @@ pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
     ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
+    const CHUNK: usize = 2000;
+
     if ids.is_empty() {
         return Ok(());
     }
-
-    const CHUNK: usize = 2000;
 
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM dnssec_records WHERE id IN (".to_string();

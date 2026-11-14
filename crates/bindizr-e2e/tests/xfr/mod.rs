@@ -10,21 +10,24 @@ mod tls;
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose;
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
 use domain::base::{Message, MessageBuilder, Name, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
 use domain::rdata::{A, Soa};
-use domain::tsig::{ClientSequence, ClientTransaction};
+use domain::tsig::{Algorithm, ClientSequence, ClientTransaction};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use serial_test::serial;
+use tokio::time;
 
 use crate::common::dns::nsupdate::UpdateRecord;
 use crate::common::dns::tsig::{KeyRole, SigningKey};
 use crate::common::dns::{nsupdate, tsig};
-use crate::common::{TestApp, TransferResult, dns};
+use crate::common::{TestApp, TestAppOptions, TransferResult, dns};
 
 /// A bindizr whose transfer ACL admits the test's own loopback pull.
 async fn transfer_app() -> TestApp {
@@ -42,7 +45,7 @@ async fn oversized_tsig_errors_preserve_error_and_authentication_across_transpor
     use crate::common::dns;
     use crate::common::dns::tsig::SigningKey;
 
-    let app = TestApp::start_with_options(crate::common::TestAppOptions {
+    let app = TestApp::start_with_options(TestAppOptions {
         dns_tls: true,
         ..Default::default()
     })
@@ -275,10 +278,10 @@ async fn sha1_tsig_key_authenticates_queries_and_updates() {
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha1");
-    let secret = base64::engine::general_purpose::STANDARD
+    let secret = general_purpose::STANDARD
         .decode(body["secret"].as_str().unwrap())
         .unwrap();
-    let key = std::sync::Arc::new(
+    let key = Arc::new(
         Key::new(
             Algorithm::Sha1,
             &secret,
@@ -728,7 +731,7 @@ async fn signed_transfer_rejects_unknown_key_without_address_fallback() {
     // hold must not be a way around the check.
     let stranger = SigningKey {
         name: "stranger-key".to_string(),
-        algorithm: domain::tsig::Algorithm::Sha256,
+        algorithm: Algorithm::Sha256,
         secret: "c3RyYW5nZXItc2VjcmV0LW1hdGVyaWFsLWZvci10ZXN0cw==".to_string(),
     };
     let outcome = crate::common::axfr(app.dns_port(), zone_name, Some(&stranger));
@@ -833,7 +836,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
 
         assert!(attempts < 60, "secondaries never reached in_sync: {body}");
 
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        time::sleep(Duration::from_secs(1)).await;
     }
 }
 
@@ -912,7 +915,7 @@ async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) ->
             return body;
         }
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        time::sleep(Duration::from_millis(50)).await;
     }
 }
 

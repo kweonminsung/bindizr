@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use crate::cli::common;
 use crate::common::TestApp;
 
@@ -21,11 +24,7 @@ async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
 
 /// Split `dnssec keys export` into the `K*.key`/`K*.private` file pairs on
 /// disk that the import takes.
-async fn write_exported_pairs(
-    app: &TestApp,
-    zone_name: &str,
-    dir: &std::path::Path,
-) -> Vec<(String, String)> {
+async fn write_exported_pairs(app: &TestApp, zone_name: &str, dir: &Path) -> Vec<(String, String)> {
     let exported = app
         .run_cli_success(&["dnssec", "keys", "export", zone_name], None)
         .await;
@@ -46,8 +45,8 @@ async fn write_exported_pairs(
     for (index, chunk) in blocks.chunks(2).enumerate() {
         let key_file = dir.join(format!("{index}.key"));
         let private_file = dir.join(format!("{index}.private"));
-        std::fs::write(&key_file, &chunk[0]).expect("write .key");
-        std::fs::write(&private_file, &chunk[1]).expect("write .private");
+        fs::write(&key_file, &chunk[0]).expect("write .key");
+        fs::write(&private_file, &chunk[1]).expect("write .private");
         pairs.push((
             key_file.to_str().expect("utf-8 temp dir").to_string(),
             private_file.to_str().expect("utf-8 temp dir").to_string(),
@@ -109,8 +108,8 @@ async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
     let dir = tempfile::tempdir().expect("create key dir");
     let key_file = dir.path().join(format!("{base}.key"));
     let private_file = dir.path().join(format!("{base}.private"));
-    std::fs::write(&key_file, format!("{dnskey_line}\n")).expect("write .key");
-    std::fs::write(&private_file, private_block).expect("write .private");
+    fs::write(&key_file, format!("{dnskey_line}\n")).expect("write .key");
+    fs::write(&private_file, private_block).expect("write .private");
     let key_file = key_file.to_str().expect("utf-8 temp dir").to_string();
     let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
@@ -231,8 +230,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         };
         let key_file = dir.path().join(format!("{role}.key"));
         let private_file = dir.path().join(format!("{role}.private"));
-        std::fs::write(&key_file, key_body).expect("write .key");
-        std::fs::write(&private_file, private_body).expect("write .private");
+        fs::write(&key_file, key_body).expect("write .key");
+        fs::write(&private_file, private_body).expect("write .private");
         pairs.push((
             role.to_string(),
             key_file.to_str().expect("utf-8 temp dir").to_string(),

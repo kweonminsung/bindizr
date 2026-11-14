@@ -5,7 +5,7 @@ use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::model::zone::Zone;
 use crate::types::{PaginatedResponse, ZoneFilter, ZoneResponse};
-use crate::{Context, Transaction, pagination};
+use crate::{Context, Transaction, pagination, ttl};
 
 /// The DNS plane's view of a zone: a disabled one is absent rather than
 /// served. The nsupdate apply and the transfer authorization read it.
@@ -76,7 +76,7 @@ pub async fn list_by_filter(
     .into_iter()
     .flatten()
     {
-        crate::ttl::validate_record_ttl(ttl)?;
+        ttl::validate_record_ttl(ttl)?;
     }
 
     let scope_role_id = caller.scope_role_id();

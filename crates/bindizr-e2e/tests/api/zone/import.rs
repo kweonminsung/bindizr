@@ -1,6 +1,15 @@
+use std::net::TcpListener;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+use std::{io, iter, thread};
+
+use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
+use tokio::net::UdpSocket;
+use tokio::time;
 
+use crate::common;
 use crate::common::{TestApp, TestAppOptions};
 
 /// Populate a zone with records before testing an import.
@@ -1398,17 +1407,17 @@ async fn import_zones_authorizes_create_and_catalog_before_transferring() {
 }
 
 /// Serve a case-varied AXFR with TC set, AA clear, and optional trailing data.
-fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::JoinHandle<()>) {
+fn serve_import_transfer(zone: String, trailing: bool) -> (String, JoinHandle<()>) {
     use domain::base::{Message, MessageBuilder, Serial, Ttl};
     use domain::rdata::{A, Cname, Dname, Ns, Ptr, Soa};
 
     use crate::common::dns;
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
-    let server = std::thread::spawn(move || {
+    let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         let query = dns::read_frame(&mut stream).unwrap().unwrap();
         let message = Message::from_octets(query.as_slice()).unwrap();
@@ -1438,7 +1447,7 @@ fn serve_import_transfer(zone: String, trailing: bool) -> (String, std::thread::
         builder.header_mut().set_qr(true);
         builder.header_mut().set_tc(true);
         let mut question = builder.question();
-        question.push((&owner, domain::base::Rtype::AXFR)).unwrap();
+        question.push((&owner, Rtype::AXFR)).unwrap();
         let mut answer = question.answer();
         answer.push((&owner, Ttl::from_secs(300), soa)).unwrap();
         answer
@@ -1504,18 +1513,18 @@ fn serve_catalog(
     split: bool,
     apex_ns: bool,
     member_transfers: usize,
-) -> (String, std::thread::JoinHandle<Vec<String>>) {
+) -> (String, JoinHandle<Vec<String>>) {
     use domain::base::{Message, MessageBuilder, Serial, Ttl};
     use domain::rdata::{A, Ns, Ptr, Soa, Txt};
 
     use crate::common::dns;
 
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
-    let server = std::thread::spawn(move || {
+    let server = thread::spawn(move || {
         let mut queries = Vec::new();
 
-        for (index, zone) in std::iter::once("catalog.example".to_string())
+        for (index, zone) in iter::once("catalog.example".to_string())
             .chain(members.iter().cloned())
             .take(1 + member_transfers)
             .enumerate()
@@ -1523,7 +1532,7 @@ fn serve_catalog(
             let catalog = index == 0;
             let (mut stream, _) = listener.accept().unwrap();
             stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
             let query = dns::read_frame(&mut stream).unwrap().unwrap();
             let message = Message::from_octets(query.as_slice()).unwrap();
@@ -1543,7 +1552,7 @@ fn serve_catalog(
             builder.header_mut().set_id(message.header().id());
             builder.header_mut().set_qr(true);
             let mut question = builder.question();
-            question.push((&owner, domain::base::Rtype::AXFR)).unwrap();
+            question.push((&owner, Rtype::AXFR)).unwrap();
             let mut answer = question.answer();
             answer
                 .push((&owner, Ttl::from_secs(300), soa.clone()))
@@ -1618,13 +1627,13 @@ fn serve_catalog(
         if member_transfers == 0 {
             // Keep listening after a rejected catalog: no member AXFR may follow.
             listener.set_nonblocking(true).unwrap();
-            let until = std::time::Instant::now() + std::time::Duration::from_millis(150);
+            let until = Instant::now() + Duration::from_millis(150);
 
-            while std::time::Instant::now() < until {
+            while Instant::now() < until {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         stream
-                            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                            .set_read_timeout(Some(Duration::from_secs(1)))
                             .unwrap();
 
                         if let Some(query) = dns::read_frame(&mut stream).unwrap() {
@@ -1640,8 +1649,8 @@ fn serve_catalog(
 
                         break;
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
                     }
                     Err(error) => panic!("{error}"),
                 }
@@ -1848,7 +1857,7 @@ async fn catalog_import_requires_apex_ns_before_fetching_members() {
                     }
 
                     let output = app.run_cli(&args, None).await;
-                    crate::common::assert_cli_failure_contains(&args, &output, "no apex NS");
+                    common::assert_cli_failure_contains(&args, &output, "no apex NS");
                 } else {
                     let (status, body) = app.send_request(Method::POST, "/import", Some(json!({"from_server": address, "from_catalog": "catalog.example", "create": true, "dry_run": dry_run}))).await;
 
@@ -1916,7 +1925,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     };
     let serial = catalog_serial();
 
-    let notify = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let notify = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("notify", &notify.local_addr().unwrap().to_string())
         .await;
 
@@ -1948,7 +1957,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
                     let output = app.run_cli(&args, None).await;
 
                     assert_eq!(server.join().unwrap(), ["catalog.example"]);
-                    crate::common::assert_cli_failure_contains(&args, &output, "wildcard");
+                    common::assert_cli_failure_contains(&args, &output, "wildcard");
                 } else {
                     let (status, body) = app
                         .send_request(
@@ -1987,7 +1996,7 @@ async fn catalog_import_rejects_wildcard_members_before_fetching_or_writing() {
     }
 
     assert!(
-        tokio::time::timeout(Duration::from_millis(150), notify.recv_from(&mut [0; 4096]))
+        time::timeout(Duration::from_millis(150), notify.recv_from(&mut [0; 4096]))
             .await
             .is_err(),
         "rejected catalog imports must not send NOTIFY"

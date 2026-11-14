@@ -5,13 +5,15 @@ mod tests;
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
-use std::{env, fmt};
+use std::{env, fmt, fs, io};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::dns::name::ZoneName;
+use crate::dns;
+use crate::dns::name::{ParseNameError, ZoneName};
 use crate::dns::{SoaInterval, Ttl};
 
 /// Why the configuration could not be loaded or does not describe a runnable
@@ -24,7 +26,7 @@ pub enum ConfigError {
     Read {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     /// A parse or validation failure, named with the file it came from.
     #[error("{source} (in {path})")]
@@ -86,7 +88,7 @@ pub enum ConfigError {
     #[error("{key} must be at least 1")]
     Zero { key: &'static str },
     #[error("dns.catalog_zone_name is not a zone name: {0}")]
-    CatalogZoneName(#[source] crate::dns::name::ParseNameError),
+    CatalogZoneName(#[source] ParseNameError),
     #[error(
         "dns.catalog_zone_name must fit within {max_wire_len} wire octets, including the root, to leave room for generated catalog owners"
     )]
@@ -227,7 +229,7 @@ impl fmt::Display for DatabaseType {
     }
 }
 
-impl std::str::FromStr for DatabaseType {
+impl FromStr for DatabaseType {
     type Err = ConfigError;
 
     /// Parse a database type from its text representation.
@@ -326,7 +328,7 @@ impl fmt::Display for DatabaseTlsMode {
     }
 }
 
-impl std::str::FromStr for DatabaseTlsMode {
+impl FromStr for DatabaseTlsMode {
     type Err = ConfigError;
 
     /// Parse a TLS mode from its configuration spelling.
@@ -756,7 +758,7 @@ impl fmt::Display for SavedTransfers {
     }
 }
 
-impl std::str::FromStr for SavedTransfers {
+impl FromStr for SavedTransfers {
     type Err = ConfigError;
 
     /// Parse the setting from its text representation.
@@ -798,7 +800,7 @@ impl fmt::Display for LogFormat {
     }
 }
 
-impl std::str::FromStr for LogFormat {
+impl FromStr for LogFormat {
     type Err = ConfigError;
 
     /// Parse a log format from its text representation.
@@ -832,7 +834,7 @@ impl fmt::Display for LogLevel {
     }
 }
 
-impl std::str::FromStr for LogLevel {
+impl FromStr for LogLevel {
     type Err = ConfigError;
 
     /// Parse a log level from its text representation.
@@ -877,7 +879,7 @@ impl Config {
             });
         }
 
-        let text = std::fs::read_to_string(conf_file_path).map_err(|source| ConfigError::Read {
+        let text = fs::read_to_string(conf_file_path).map_err(|source| ConfigError::Read {
             path: conf_file_path.to_string(),
             source,
         })?;
@@ -1120,9 +1122,9 @@ impl DnsConfig {
             .to_wire()
             .map_err(ConfigError::CatalogZoneName)?;
 
-        if catalog_wire.len() > crate::dns::MAX_CATALOG_ZONE_WIRE_LEN {
+        if catalog_wire.len() > dns::MAX_CATALOG_ZONE_WIRE_LEN {
             return Err(ConfigError::CatalogZoneTooLong {
-                max_wire_len: crate::dns::MAX_CATALOG_ZONE_WIRE_LEN,
+                max_wire_len: dns::MAX_CATALOG_ZONE_WIRE_LEN,
             });
         }
         if self.listen_port == 0 {

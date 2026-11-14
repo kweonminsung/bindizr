@@ -25,7 +25,7 @@ use crate::types::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
     RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,
 };
-use crate::{Context, Transaction, dnssec, pagination, record, serial, transaction};
+use crate::{Context, Transaction, dnssec, notify, pagination, record, serial, transaction};
 
 /// A serial is diffable only if it is the current serial or has a version.
 async fn validate_serial_diffable_tx(
@@ -264,11 +264,11 @@ pub async fn rollback(
                 Some(target) => {
                     // A TTL change is a DEL + ADD pair, which RFC 2181,
                     // Section 5.2 requires: one name and type, one TTL.
-                    if record.ttl != target.ttl {
+                    if record.ttl == target.ttl {
+                        unchanged += 1;
+                    } else {
                         deletes.push(record.clone());
                         to_add.push(target);
-                    } else {
-                        unchanged += 1;
                     }
                 }
                 None => deletes.push(record.clone()),
@@ -393,7 +393,7 @@ pub async fn rollback(
             response.summary.deleted
         );
 
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)

@@ -9,7 +9,7 @@ use crate::model::zone::Zone;
 use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use crate::types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse};
 use crate::zone::validation;
-use crate::{Context, dnssec, record, serial, text, transaction, ttl};
+use crate::{Context, dnssec, notify, record, serial, text, transaction, ttl};
 
 /// Outcome of the transactional part of a zone update.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -249,14 +249,14 @@ pub async fn update(
     // Announce the zone's new serial after its data and version have committed.
     if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &updated_zone.name).await;
+        notify::notify_after_update(cx, &updated_zone.name).await;
     }
 
     // Renaming or toggling a zone also changes the catalog seen by secondaries.
     let config = cx.config();
 
     if !request.dry_run && catalog_changed {
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     Ok(WriteZoneResponse {

@@ -1,10 +1,13 @@
-use std::env;
 use std::net::TcpListener;
-use std::process::{Child, Command, Stdio};
+use std::path::PathBuf;
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::SystemTime;
+use std::{env, process, time};
 
 use reqwest::{Client, Method, StatusCode};
+use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -96,7 +99,7 @@ enum TestRuntime {
 
 /// Install ring as the process's TLS provider; Err means a test already did.
 fn install_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _ = ring::default_provider().install_default();
 }
 
 impl TestApp {
@@ -194,7 +197,7 @@ impl TestApp {
 
     /// The config file the local daemon was started from, for tests that
     /// rewrite it and reload.
-    pub(crate) fn config_path(&self) -> std::path::PathBuf {
+    pub(crate) fn config_path(&self) -> PathBuf {
         match &self.runtime {
             TestRuntime::Local { temp_dir, .. } => temp_dir.path().join("bindizr.conf.toml"),
             _ => panic!("only the local runtime owns its config file"),
@@ -393,7 +396,7 @@ impl TestApp {
 
     /// Run the CLI with optional stdin; after selected zone/record writes,
     /// wait for configured secondaries to match the API.
-    pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
+    pub(crate) async fn run_cli(&self, args: &[&str], input: Option<&str>) -> Output {
         use std::io::Write;
 
         // Remember deleted names before the API can no longer return their identity.
@@ -477,10 +480,10 @@ impl Drop for TestApp {
 /// Generate an isolated namespace for a test application.
 fn test_namespace() -> String {
     let run_id = RUN_ID.get_or_init(|| {
-        let elapsed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let elapsed = SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
             .expect("system clock is before the Unix epoch");
-        format!("e2e-{}-{}", elapsed.as_millis(), std::process::id())
+        format!("e2e-{}-{}", elapsed.as_millis(), process::id())
     });
     let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
 

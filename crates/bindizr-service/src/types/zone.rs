@@ -1,9 +1,13 @@
 //! Zone request, patch, filter, and response payloads.
 
+use std::fmt;
+
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
 use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::openapi::RefOr;
+use utoipa::openapi::schema::Schema;
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
@@ -140,7 +144,7 @@ pub struct CreateZoneRequest {
 }
 
 /// Describe the nullable nonnegative SOA minimum accepted by zone writes.
-fn build_minimum_ttl_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+fn build_minimum_ttl_schema() -> RefOr<Schema> {
     use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, SchemaType, Type};
 
     ObjectBuilder::new()
@@ -327,9 +331,9 @@ pub enum SecondaryStatus {
     Unreachable,
 }
 
-impl std::fmt::Display for SecondaryStatus {
+impl fmt::Display for SecondaryStatus {
     /// Write the status as a person reads it; serde spells the API form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::InSync => "in sync",
             Self::Lagging => "lagging",

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use chrono::Local;
 use log::{Level, Metadata, Record};
 
-use crate::config;
+use crate::{config, stream};
 
 /// The level in force, read per record so a config reload changes it without
 /// replacing the installed logger — `log` allows only one.
@@ -58,7 +58,7 @@ impl log::Log for Logger {
 
             // Stderr keeps logs out of the CLI's stdout; a reader that stops
             // early must not panic the daemon.
-            crate::stream::write_stderr(&format!("{line}\n"));
+            stream::write_stderr(&format!("{line}\n"));
         }
     }
 

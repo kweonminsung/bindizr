@@ -10,7 +10,7 @@ use domain::dnssec::sign::denial::nsec::GenerateNsecConfig;
 use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3Records};
 use domain::dnssec::sign::denial::{nsec, nsec3};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter};
-use domain::rdata::ZoneRecordData;
+use domain::rdata::{Soa, ZoneRecordData};
 
 use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord};
 use crate::dns::record::EncodedRdata;
@@ -160,9 +160,9 @@ impl SignedViewParams<'_> {
 
 /// The typed SOA the denial generators require (they read MINIMUM per
 /// RFC 9077), parsed back from the one byte encoding the transfer serves.
-fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, SignZoneError> {
+fn parse_soa(rdata: &[u8]) -> Result<Soa<WireName>, SignZoneError> {
     let mut parser = Parser::from_ref(rdata);
-    domain::rdata::Soa::parse(&mut parser)
+    Soa::parse(&mut parser)
         .map_err(|error| SignZoneError::Soa(Box::new(error)))?
         .try_flatten_into()
         .map_err(|error| SignZoneError::Soa(Box::new(error)))

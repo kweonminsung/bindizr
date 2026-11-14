@@ -1,5 +1,7 @@
 //! Listing policy: validate query windows, page collections, and assemble metadata.
 
+use std::str::FromStr;
+
 use bindizr_db::ParseSortError;
 
 use crate::error::ServiceError;
@@ -24,7 +26,7 @@ pub(crate) fn validate_page_limit(limit: Option<u32>) -> Result<(), ServiceError
 /// Parse a listing's sort or order using its query enum, or take the default.
 pub(crate) fn parse_setting<T>(value: Option<&str>) -> Result<T, ServiceError>
 where
-    T: Default + std::str::FromStr<Err = ParseSortError>,
+    T: Default + FromStr<Err = ParseSortError>,
 {
     match value {
         None => Ok(T::default()),

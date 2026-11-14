@@ -1,4 +1,9 @@
+use std::fs;
+use std::net::TcpListener;
 use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use tokio::time;
 
 use crate::common;
 use crate::common::TestApp;
@@ -31,7 +36,7 @@ async fn doctor_reports_healthy_installation() {
 
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
+    fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
     let path = config_path.to_str().expect("config path was not UTF-8");
 
     // Compose mode runs the CLI inside the container, where the default
@@ -50,7 +55,7 @@ async fn doctor_reports_healthy_installation() {
         if result.status.success() {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        time::sleep(Duration::from_secs(1)).await;
         result = app.run_cli(&args, None).await;
     }
 
@@ -78,7 +83,7 @@ async fn doctor_reports_healthy_installation() {
 fn doctor_without_a_daemon_runs_the_offline_checks() {
     // Ports nothing on this host holds, so the port checks have a pass to report.
     let free_port = || {
-        std::net::TcpListener::bind("127.0.0.1:0")
+        TcpListener::bind("127.0.0.1:0")
             .expect("bind an ephemeral port")
             .local_addr()
             .expect("local address")
@@ -96,7 +101,7 @@ fn doctor_without_a_daemon_runs_the_offline_checks() {
 
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, config).expect("failed to write config");
+    fs::write(&config_path, config).expect("failed to write config");
     let path = config_path.to_str().expect("config path was not UTF-8");
 
     // The host binary, like `config check`: no daemon answers its socket.

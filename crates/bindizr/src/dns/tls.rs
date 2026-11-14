@@ -4,7 +4,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rustls::ServerConfig;
+use rustls::{ServerConfig, version};
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -25,7 +25,7 @@ const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// with.
 pub(crate) fn build_server_config(certificate: Arc<TlsCertificate>) -> Arc<ServerConfig> {
     // RFC 9103, Section 7.2: XoT uses TLS 1.3 or later and nothing older.
-    let mut config = ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+    let mut config = ServerConfig::builder_with_protocol_versions(&[&version::TLS13])
         .with_no_client_auth()
         .with_cert_resolver(certificate);
 

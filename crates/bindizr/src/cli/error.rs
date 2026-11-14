@@ -280,6 +280,8 @@ impl CliError {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
 
     /// Verify that exit codes separate the classes a script branches on.
@@ -303,7 +305,7 @@ mod tests {
         // LSB reserves 7 for NOTRUNNING and 6 for NOTCONFIGURED;
         // the systemd unit also depends on RestartPreventExitStatus=6.
         assert_eq!(
-            CliError::daemon_unreachable(std::io::Error::other("connection refused")).exit_code(),
+            CliError::daemon_unreachable(io::Error::other("connection refused")).exit_code(),
             7
         );
         assert_eq!(
@@ -311,7 +313,7 @@ mod tests {
             EXIT_FAILURE
         );
         assert_eq!(
-            CliError::configuration(std::io::Error::other("missing field `mname`")).exit_code(),
+            CliError::configuration(io::Error::other("missing field `mname`")).exit_code(),
             6
         );
     }
@@ -322,16 +324,12 @@ mod tests {
         use std::error::Error;
         let error = CliError::request_with_source(
             "failed to read the response",
-            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "socket closed"),
+            io::Error::new(io::ErrorKind::UnexpectedEof, "socket closed"),
         );
 
         assert_eq!(error.exit_code(), EXIT_FAILURE);
-        let source = error
-            .source()
-            .unwrap()
-            .downcast_ref::<std::io::Error>()
-            .unwrap();
+        let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
 
-        assert_eq!(source.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert_eq!(source.kind(), io::ErrorKind::UnexpectedEof);
     }
 }

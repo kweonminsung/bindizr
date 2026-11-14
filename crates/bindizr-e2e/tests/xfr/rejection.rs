@@ -4,7 +4,7 @@ use domain::base::iana::{Class, ExtendedErrorCode, Opcode, OptRcode, Rcode, Rtyp
 use domain::base::opt::exterr::ExtendedError;
 use domain::base::{Message, MessageBuilder, Ttl};
 use domain::rdata::tsig::{Time48, Tsig};
-use domain::tsig::ClientTransaction;
+use domain::tsig::{Algorithm, ClientTransaction};
 use serial_test::serial;
 
 use super::{common, tls};
@@ -18,7 +18,7 @@ use crate::common::{TestApp, TestAppOptions, dns};
 async fn tsig_error_metrics_follow_the_encoded_response() {
     let app = TestApp::start_local().await;
 
-    let owner = crate::common::dns::parse_name(&format!(
+    let owner = dns::parse_name(&format!(
         "{}.{}.{}.{}",
         "k".repeat(63),
         "l".repeat(63),
@@ -26,7 +26,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
         "n".repeat(61),
     ))
     .unwrap();
-    let algorithm = crate::common::dns::parse_name(&format!(
+    let algorithm = dns::parse_name(&format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
         "b".repeat(63),
@@ -91,10 +91,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
             builder.header_mut().set_opcode(opcode);
             let mut question = builder.question();
             question
-                .push((
-                    crate::common::dns::parse_name("example.com").unwrap(),
-                    qtype,
-                ))
+                .push((dns::parse_name("example.com").unwrap(), qtype))
                 .unwrap();
             let mut request = question.additional();
             request
@@ -136,7 +133,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
 async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
     let app = TestApp::start_local().await;
 
-    let owner = crate::common::dns::parse_name(&format!(
+    let owner = dns::parse_name(&format!(
         "{}.{}.{}.{}",
         "k".repeat(63),
         "l".repeat(63),
@@ -144,7 +141,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
         "n".repeat(61),
     ))
     .unwrap();
-    let algorithm = crate::common::dns::parse_name(&format!(
+    let algorithm = dns::parse_name(&format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
         "b".repeat(63),
@@ -228,9 +225,9 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
     let key = SigningKey {
         name: key_name,
         secret: body["secret"].as_str().unwrap().to_string(),
-        algorithm: domain::tsig::Algorithm::Sha512,
+        algorithm: Algorithm::Sha512,
     };
-    let qname = crate::common::dns::parse_name(&format!(
+    let qname = dns::parse_name(&format!(
         "{}.{}.{}.q",
         "a".repeat(63),
         "b".repeat(63),
@@ -312,7 +309,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
     })
     .await;
 
-    let owner = crate::common::dns::parse_name(&format!(
+    let owner = dns::parse_name(&format!(
         "{}.{}.{}.{}",
         "k".repeat(63),
         "l".repeat(63),
@@ -320,7 +317,7 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
         "n".repeat(61),
     ))
     .unwrap();
-    let algorithm = crate::common::dns::parse_name(&format!(
+    let algorithm = dns::parse_name(&format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
         "b".repeat(63),
@@ -401,7 +398,7 @@ async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
         let mut question = builder.question();
         question
             .push((
-                crate::common::dns::parse_name("example.com").unwrap(),
+                dns::parse_name("example.com").unwrap(),
                 domain::base::Rtype::SOA,
             ))
             .unwrap();

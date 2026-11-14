@@ -1,18 +1,22 @@
 //! Client-side AXFR: pull a whole zone from another server, the fetch half
 //! of `zone import --from-server`.
 
+use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use bindizr_core::config::ImportConfig;
 use bindizr_core::dns::dnssec::EncodeWireNameError;
-use bindizr_core::dns::message::{Name, Rtype};
-use bindizr_core::dns::name::ZoneName;
-use bindizr_core::dns::query::{TransferMessagePosition, TransferRecord};
+use bindizr_core::dns::message::{EncodeMessageError, Name, Rtype};
+use bindizr_core::dns::name::{ParseNameError, ZoneName};
+use bindizr_core::dns::query::{ParseResponseError, TransferMessagePosition, TransferRecord};
+use bindizr_core::dns::record::ParseRdataError;
 use bindizr_core::dns::{message, name, query};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
+use tokio::time;
+use tokio::time::Instant;
 
 use super::{ReadTcpMessageError, ResolveAddressError};
 
@@ -41,17 +45,17 @@ pub(crate) enum FetchZoneError {
     #[error("no server address to transfer from")]
     NoAddress,
     #[error("connect failed: {0}")]
-    Connect(#[source] std::io::Error),
+    Connect(#[source] io::Error),
     #[error("send failed: {0}")]
-    Send(#[source] std::io::Error),
+    Send(#[source] io::Error),
     #[error(transparent)]
-    Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
+    Encode(#[from] EncodeMessageError),
     #[error("read failed before the closing SOA: {0}")]
     Read(#[source] ReadTcpMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    Response(#[from] ParseResponseError),
     #[error(transparent)]
-    Rdata(#[from] bindizr_core::dns::record::ParseRdataError),
+    Rdata(#[from] ParseRdataError),
     #[error("transfer does not start with the zone's SOA")]
     NoOpeningSoa,
     #[error("transfer opens with the SOA of {found}, not {expected}")]
@@ -66,7 +70,7 @@ pub(crate) enum FetchZoneError {
     OwnerName {
         name: String,
         #[source]
-        source: bindizr_core::dns::name::ParseNameError,
+        source: ParseNameError,
     },
 }
 
@@ -94,13 +98,13 @@ enum Connection {
 impl Connection {
     /// Close at the advertised deadline even while the importer is applying the previous zone.
     fn spawn(stream: TcpStream, timeout: Duration) -> Self {
-        let deadline = tokio::time::Instant::now() + timeout;
+        let deadline = Instant::now() + timeout;
         let (resume, requested) = oneshot::channel();
         let (returned, receive) = oneshot::channel();
         tokio::spawn(async move {
             tokio::select! {
                 biased;
-                () = tokio::time::sleep_until(deadline) => {},
+                () = time::sleep_until(deadline) => {},
 
                 result = requested => {
                     if result.is_ok() {
@@ -146,7 +150,7 @@ impl AxfrClient {
         import: &ImportConfig,
     ) -> Result<Vec<TransferRecord>, FetchZoneError> {
         let qname = zone_name.to_wire_name()?;
-        let deadline = tokio::time::Instant::now() + import.timeout();
+        let deadline = Instant::now() + import.timeout();
 
         let transfer = async {
             let previous = match self.connection.take() {
@@ -185,7 +189,7 @@ impl AxfrClient {
             result.map(|(records, timeout)| (records, timeout, stream))
         };
 
-        match tokio::time::timeout_at(deadline, transfer).await {
+        match time::timeout_at(deadline, transfer).await {
             Ok(Ok((records, idle_timeout, stream))) => {
                 // A zero timeout closes after the outstanding transfer completes (RFC 7828, Section 3.2.2).
                 self.connection = match idle_timeout {

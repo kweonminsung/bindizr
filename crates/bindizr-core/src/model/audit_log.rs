@@ -1,5 +1,8 @@
 //! Management-change history: who changed what and when, beyond zone-version history.
 
+use std::fmt;
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -69,14 +72,14 @@ impl AuditEntity {
     }
 }
 
-impl std::fmt::Display for AuditEntity {
+impl fmt::Display for AuditEntity {
     /// Write the entity in its storage form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for AuditEntity {
+impl FromStr for AuditEntity {
     type Err = ParseAuditLogError;
 
     /// Parse an entity from its storage form, ignoring case.
@@ -119,14 +122,14 @@ impl AuditOperation {
     }
 }
 
-impl std::fmt::Display for AuditOperation {
+impl fmt::Display for AuditOperation {
     /// Write the operation in its storage form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for AuditOperation {
+impl FromStr for AuditOperation {
     type Err = ParseAuditLogError;
 
     /// Parse an operation from its storage form, ignoring case.

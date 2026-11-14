@@ -1,6 +1,8 @@
 //! Applying an ExternalDNS change set atomically and idempotently; the change
 //! set itself is computed in `change_set`.
 
+use std::time::Instant;
+
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
@@ -10,7 +12,7 @@ use super::change_set::ZoneChangeSet;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
 use crate::types::{ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse};
-use crate::{Context, dnssec, record, serial, time, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, time, transaction, zone};
 
 /// Apply all zones' ExternalDNS changes atomically, advancing serial/history
 /// once per changed zone.
@@ -19,7 +21,7 @@ pub async fn apply_changes(
     caller: &Caller,
     request: &ApplyExternalDnsChangesRequest,
 ) -> Result<ApplyExternalDnsChangesResponse, ServiceError> {
-    let started = std::time::Instant::now();
+    let started = Instant::now();
 
     let operations = change_set::parse_changes_request(request)?;
     let requested_operations = operations.len();
@@ -142,7 +144,7 @@ pub async fn apply_changes(
     cx.metrics().track_serial_bumps(changed_zones.len() as u64);
 
     for zone_name in &changed_zones {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     let changed_zones: Vec<String> = changed_zones.iter().map(ToString::to_string).collect();

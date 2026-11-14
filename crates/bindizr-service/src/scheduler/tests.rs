@@ -4,6 +4,7 @@ use bindizr_core::config::Config;
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
 use tokio::sync::mpsc;
+use tokio::{task, time};
 
 use super::*;
 
@@ -34,7 +35,7 @@ async fn stop_joins_disabled_worker_without_starting_a_pass() {
     let (cx, period_rx) = context(0).await;
     let worker = spawn(cx.clone(), period_rx);
 
-    tokio::time::timeout(Duration::from_secs(2), worker.stop())
+    time::timeout(Duration::from_secs(2), worker.stop())
         .await
         .unwrap()
         .unwrap();
@@ -60,10 +61,10 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
 
     let worker = spawn(cx.clone(), period_rx);
 
-    tokio::time::timeout(Duration::from_secs(2), async {
+    time::timeout(Duration::from_secs(2), async {
         // The scheduler's additional Arc belongs to the spawned in-flight pass.
         while Arc::strong_count(&cx) < 3 {
-            tokio::task::yield_now().await;
+            task::yield_now().await;
         }
     })
     .await
@@ -71,7 +72,7 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
 
     let task = worker.stop();
 
-    tokio::time::sleep(Duration::from_millis(1100)).await;
+    time::sleep(Duration::from_millis(1100)).await;
 
     assert!(!task.is_finished(), "shutdown must await the blocked pass");
     assert!(
@@ -84,7 +85,7 @@ async fn stop_finishes_the_in_flight_pass_and_prevents_another() {
         tx.rollback().await.unwrap();
     }
 
-    tokio::time::timeout(Duration::from_secs(2), task)
+    time::timeout(Duration::from_secs(2), task)
         .await
         .unwrap()
         .unwrap();

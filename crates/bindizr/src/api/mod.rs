@@ -20,6 +20,7 @@ mod token;
 mod tsig_key;
 mod zone;
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -96,15 +97,15 @@ pub(crate) enum StartApiError {
     Bind {
         addr: SocketAddr,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("failed to hand the HTTP API listener to the TLS server: {0}")]
-    IntoStd(#[source] std::io::Error),
+    IntoStd(#[source] io::Error),
     #[error("failed to start the HTTPS API server on {addr}: {source}")]
     Serve {
         addr: SocketAddr,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 

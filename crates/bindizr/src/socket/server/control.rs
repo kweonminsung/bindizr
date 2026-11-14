@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
+use tokio::time;
 
 use crate::socket::server::SocketContext;
 use crate::socket::types::DaemonResponse;
@@ -45,7 +46,7 @@ fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
     let tx = socket_cx.control().clone();
 
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        time::sleep(Duration::from_millis(100)).await;
         let _ = tx.send(control).await;
     });
 }

@@ -17,10 +17,11 @@ use tokio::sync::{mpsc, watch};
 use super::*;
 use crate::authorization::Caller;
 use crate::error::ErrorCode;
+use crate::model::zone::ZoneId;
 use crate::types::{
     AuditLogFilter, PageRequest, RecordFilter, TokenFilter, TsigKeyFilter, ZoneFilter,
 };
-use crate::{Context, audit, record, role, zone};
+use crate::{Context, audit, record, role, token, tsig_key, zone};
 
 /// Build real service state over a disposable in-memory database.
 async fn context() -> Context {
@@ -88,7 +89,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let zone = bindizr_db::zone::create_tx(
             &mut tx,
             Zone {
-                id: crate::model::zone::ZoneId::UNWRITTEN,
+                id: ZoneId::UNWRITTEN,
                 name: ZoneName::parse(&format!("page{index:04}.example")).unwrap(),
                 mname: "ns1.example".to_string(),
                 rname: "admin@example".to_string(),
@@ -352,7 +353,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
     let caller = Caller::socket();
 
     for limit in [0, 1001] {
-        let token = crate::token::list(
+        let token = token::list(
             &cx,
             &caller,
             &TokenFilter {
@@ -363,7 +364,7 @@ async fn collection_listings_reject_invalid_limits_before_role_queries() {
         )
         .await
         .unwrap_err();
-        let tsig = crate::tsig_key::list(
+        let tsig = tsig_key::list(
             &cx,
             &caller,
             &TsigKeyFilter {

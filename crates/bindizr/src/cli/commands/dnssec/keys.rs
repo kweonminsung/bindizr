@@ -1,5 +1,7 @@
 //! The `dnssec keys` subcommands: BIND key-file export and import.
 
+use std::fs;
+
 use bindizr_core::outln;
 use bindizr_service::types::{
     DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeysRequest,
@@ -90,10 +92,10 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             let mut keys = Vec::with_capacity(key.len());
 
             for (key, private) in key.iter().zip(&private) {
-                let dnskey = std::fs::read_to_string(key).map_err(|error| {
+                let dnskey = fs::read_to_string(key).map_err(|error| {
                     CliError::request_with_source(format!("failed to read '{key}': {error}"), error)
                 })?;
-                let private_key = std::fs::read_to_string(private).map_err(|error| {
+                let private_key = fs::read_to_string(private).map_err(|error| {
                     CliError::request_with_source(
                         format!("failed to read '{private}': {error}"),
                         error,

@@ -23,7 +23,7 @@ use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
 use crate::zone::diff;
-use crate::{Context, dnssec, record, serial, time, transaction, ttl, zone};
+use crate::{Context, dnssec, notify, record, serial, time, transaction, ttl, zone};
 
 /// Resolve a new zone from the imported SOA and configured creation defaults.
 fn prepare_zone(
@@ -182,13 +182,13 @@ pub(crate) async fn apply_import(
 
                 // The same record at two TTLs is a mixed-TTL record set (RFC 2181,
                 // Section 5.2); deduplication must not swallow the conflict.
-                if kept_ttl != this_ttl {
+                if kept_ttl == this_ttl {
+                    skipped += 1;
+                } else {
                     errors.push(format!(
                         "{}: {} records with conflicting TTLs {} and {}; records sharing a name and type share one TTL",
                         record.owner_fqdn, record.record_type, kept_ttl, this_ttl
                     ));
-                } else {
-                    skipped += 1;
                 }
 
                 continue;
@@ -426,12 +426,12 @@ pub(crate) async fn apply_import(
     let config = cx.config();
 
     if created {
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     // Notify after commit only when the import changed the served zone.
     if changed {
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     let notify_ms = time::elapsed_ms(started);

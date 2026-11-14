@@ -12,6 +12,7 @@ use tokio::sync::{Semaphore, watch};
 
 use crate::dns_client::notify::NotifyClient;
 use crate::error::ServiceError;
+use crate::notify;
 use crate::notify::NotifyTarget;
 use crate::notify::queue::NotifyJob;
 
@@ -71,7 +72,7 @@ impl Context {
             metrics,
             notify_jobs,
             notify_client: NotifyClient::default(),
-            notify_preparations: Semaphore::new(crate::notify::CONCURRENT_PREPARATIONS),
+            notify_preparations: Semaphore::new(notify::CONCURRENT_PREPARATIONS),
             scheduler_period,
             started_at: OnceLock::new(),
         }

@@ -3,6 +3,7 @@
 use domain::zonefile::inplace::{Entry, Zonefile};
 
 use super::*;
+use crate::dns::name;
 use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;
 use crate::dns::record::Rdata;
@@ -221,7 +222,7 @@ fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     let Ok(()) = record.data().compose_rdata(&mut bytes);
 
     TransferRecord {
-        name: crate::dns::name::to_fqdn(&record.owner().to_string()),
+        name: name::to_fqdn(&record.owner().to_string()),
         rtype,
         ttl: 300,
         rdata: Rdata::new(bytes).unwrap(),
@@ -252,7 +253,7 @@ fn zonefile_and_transfer_preserve_root_and_literal_dot_targets() {
             assert_eq!(parsed.records, transferred.records, "{kind} {target}");
             assert_eq!(
                 parsed.records[0].value,
-                ZoneFileValue::Rdata(crate::dns::name::to_fqdn(target)),
+                ZoneFileValue::Rdata(name::to_fqdn(target)),
                 "{kind} {target}",
             );
         }
@@ -366,7 +367,7 @@ fn transfer_preserves_record_values_and_arbitrary_octets() {
         ZoneFileValue::Segments(vec![
             "Mixed CASE".to_string(),
             "a\"b\\c".to_string(),
-            "".to_string()
+            String::new()
         ])
     );
     assert_eq!(

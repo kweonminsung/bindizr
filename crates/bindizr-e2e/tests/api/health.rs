@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use reqwest::tls::Certificate;
 use reqwest::{Method, StatusCode};
 
 use crate::common::{TestApp, TestAppOptions};
@@ -45,7 +48,7 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
     // A bearer token must not have a plaintext path to the same port.
     let plain = reqwest::Client::new()
         .get(app.base_url().replace("https://", "http://") + "/health")
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(Duration::from_secs(5))
         .send()
         .await;
 
@@ -54,7 +57,7 @@ async fn api_tls_accepts_https_and_rejects_plain_http() {
     // An untrusted client is refused rather than downgraded.
     let untrusted = reqwest::Client::new()
         .get(format!("{}/health", app.base_url()))
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(Duration::from_secs(5))
         .send()
         .await;
 
@@ -75,10 +78,10 @@ async fn config_reload_replaces_api_certificate() {
     })
     .await;
 
-    let trusting = |cert: &reqwest::tls::Certificate| {
+    let trusting = |cert: &Certificate| {
         reqwest::Client::builder()
             .add_root_certificate(cert.clone())
-            .timeout(std::time::Duration::from_secs(5))
+            .timeout(Duration::from_secs(5))
             .build()
             .unwrap()
     };

@@ -1,5 +1,7 @@
 mod regexp;
 
+use std::str;
+
 pub use regexp::ValidateNaptrRegexpError;
 
 use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
@@ -112,7 +114,7 @@ impl<'a> NaptrRecordValue<'a> {
         replacement: &'a str,
     ) -> Result<Self, ParseRecordValueError> {
         let to_text = |field: &'static str, bytes: &[u8]| {
-            std::str::from_utf8(bytes)
+            str::from_utf8(bytes)
                 .map(str::to_string)
                 .map_err(|_| ParseRecordValueError::NotUtf8 { field })
         };

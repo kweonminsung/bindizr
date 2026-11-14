@@ -14,6 +14,8 @@ pub(crate) async fn create_many_tx(
     tx: &mut Transaction<'_, MySql>,
     records: &[Record],
 ) -> Result<Vec<Record>, DatabaseError> {
+    const CHUNK: usize = 500;
+
     // Ids in a multi-row insert step by @@auto_increment_increment,
     // which is >1 on multi-primary replication setups.
     let increment =
@@ -22,7 +24,6 @@ pub(crate) async fn create_many_tx(
             .await?
             .max(1) as i32;
 
-    const CHUNK: usize = 500;
     let mut created_records = Vec::with_capacity(records.len());
 
     for chunk in records.chunks(CHUNK) {
@@ -214,13 +215,14 @@ pub(crate) async fn list_by_names_tx(
     names: &[OwnerName],
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
+    // Lock only conflicting names; 5000-name chunks reduce round trips
+    // without reaching MySQL's 65535-placeholder limit.
+    const CHUNK: usize = 5000;
+
     if names.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Lock only conflicting names; 5000-name chunks reduce round trips
-    // without reaching MySQL's 65535-placeholder limit.
-    const CHUNK: usize = 5000;
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
@@ -484,11 +486,11 @@ pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, MySql>,
     ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
+    const CHUNK: usize = 2000;
+
     if ids.is_empty() {
         return Ok(());
     }
-
-    const CHUNK: usize = 2000;
 
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM records WHERE id IN (".to_string();

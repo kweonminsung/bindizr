@@ -303,7 +303,6 @@ impl Metrics {
 
         Ok(Self {
             registry,
-            started_at_seconds,
             database_up,
             db_connections,
             db_connections_max,
@@ -325,6 +324,7 @@ impl Metrics {
             zone_cache_lookups_total,
             zone_cache_evictions_total,
             zone_cache_records,
+            started_at_seconds,
         })
     }
 
@@ -357,7 +357,7 @@ impl XfrResult {
     ];
 
     /// The metric label value of this xfr result.
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -380,7 +380,7 @@ impl SoaResult {
     const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
 
     /// The metric label value of this SOA result.
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -417,10 +417,10 @@ impl NsupdateResult {
     ];
 
     /// The metric label value of this nsupdate result.
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         let rcode = match self {
             Self::TsigFailed => return "tsig_failed",
-            Self::Rcode(rcode) => *rcode,
+            Self::Rcode(rcode) => rcode,
         };
 
         match rcode {
@@ -452,7 +452,7 @@ impl NotifyResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::ResolveFailed];
 
     /// The metric label value of this notify result.
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Failed => "failed",
@@ -473,7 +473,7 @@ impl SchedulerResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panicked];
 
     /// The metric label value of this scheduler result.
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Failed => "failed",

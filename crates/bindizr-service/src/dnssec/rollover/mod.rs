@@ -19,7 +19,7 @@ use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
     StartDnssecRolloverRequest,
 };
-use crate::{Context, Transaction, transaction};
+use crate::{Context, Transaction, notify, transaction};
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
 /// the CSK, or for the `role` named in a split-key zone.
@@ -117,7 +117,7 @@ pub async fn start_rollover(
 
     // Announce the pre-published key after the signed view commits.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -255,7 +255,7 @@ pub async fn advance_rollover(
     log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
 
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)

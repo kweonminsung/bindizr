@@ -8,7 +8,7 @@ use crate::dns_client::{ResolveAddressError, notify};
 use crate::error::ServiceError;
 use crate::model::secondary::Secondary;
 use crate::types::CheckNotifyResponse;
-use crate::{Context, secondary};
+use crate::{Context, dns_client, secondary};
 
 /// Why a NOTIFY target could not be reached or acknowledged.
 #[derive(Debug, Error)]
@@ -132,8 +132,7 @@ async fn send_notify(
             }
         };
         preparations.spawn(async move {
-            let addresses =
-                crate::dns_client::resolve_address_entry(&secondary.address, timeout).await;
+            let addresses = dns_client::resolve_address_entry(&secondary.address, timeout).await;
             (secondary.address, key, addresses)
         });
     }

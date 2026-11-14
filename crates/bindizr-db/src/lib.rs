@@ -1,7 +1,9 @@
 //! Data access: the `Db` a daemon connects to, and one module per entity
 //! whose functions run its queries on whichever backend it holds.
 
+use std::num::NonZero;
 use std::str::FromStr;
+use std::thread;
 
 use chrono::Utc;
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
@@ -242,7 +244,7 @@ pub struct PoolStats {
 /// Max pooled connections, scaled to the host instead of sqlx's flat 10.
 /// SQLite shares it: under WAL the pool bounds readers, not the one writer.
 fn pool_max_connections() -> u32 {
-    let cores = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
+    let cores = thread::available_parallelism().map_or(4, NonZero::get);
     ((cores * 4) as u32).clamp(8, 64)
 }
 

@@ -11,7 +11,7 @@ use crate::model::record::{Record, RecordType};
 use crate::model::zone::Zone;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
 use crate::zone::validation;
-use crate::{Context, serial, text, transaction, ttl};
+use crate::{Context, notify, serial, text, transaction, ttl};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME
 /// unless opted out. Additional NS records are caller-managed.
@@ -42,7 +42,7 @@ pub async fn create(
                 error,
             ));
         }
-    };
+    }
 
     let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;
     let apply_result: Result<_, ServiceError> = async {
@@ -98,7 +98,7 @@ pub async fn create(
     if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
         if created_zone.enabled {
-            crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+            notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
         }
     }
 

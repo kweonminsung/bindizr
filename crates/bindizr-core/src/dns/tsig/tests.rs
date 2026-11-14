@@ -2,6 +2,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use chrono::Utc;
 use domain::base::iana::{Class, Opcode, Rtype};
 use domain::base::name::ParsedName;
@@ -11,6 +12,9 @@ use domain::tsig::ServerTransaction;
 use ring::hmac;
 
 use super::*;
+use crate::dns::message;
+use crate::dns::message::ResponseLimit;
+use crate::dns::nsupdate::parser::{ParseUpdateError, UpdateRequest};
 use crate::model::role::RoleId;
 use crate::model::tsig_key::TsigKeyId;
 
@@ -94,8 +98,8 @@ fn request_tsig_rejects_nonzero_error() {
 
             assert_eq!(request_signature(&message), RequestSignature::Malformed);
             assert!(matches!(
-                crate::dns::nsupdate::parser::UpdateRequest::parse(&message),
-                Err(crate::dns::nsupdate::parser::ParseUpdateError::InvalidTsig)
+                UpdateRequest::parse(&message),
+                Err(ParseUpdateError::InvalidTsig)
             ));
             assert!(matches!(
                 verify_tsig(&message, Some(key.clone())),
@@ -139,7 +143,7 @@ fn verify_tsig_authenticates_original_other_data() {
                 extract_response_tsig(&build_failed_response(
                     &tampered,
                     error,
-                    crate::dns::message::ResponseLimit::STREAM
+                    ResponseLimit::STREAM
                 ))
                 .1,
                 TsigRcode::BADSIG
@@ -163,7 +167,7 @@ fn verify_tsig_authenticates_original_other_data() {
             extract_response_tsig(&build_failed_response(
                 &appended,
                 error,
-                crate::dns::message::ResponseLimit::STREAM
+                ResponseLimit::STREAM
             ))
             .1,
             TsigRcode::BADSIG
@@ -197,7 +201,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
         )
         .unwrap(),
     );
-    let mut question = crate::dns::message::build_response().question();
+    let mut question = message::build_response().question();
     question
         .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
         .unwrap();
@@ -207,7 +211,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     let response = build_failed_response(
         &query,
         verify_tsig(&query, Some(key.clone())).unwrap_err(),
-        crate::dns::message::ResponseLimit::STREAM,
+        ResponseLimit::STREAM,
     );
 
     assert!(response.len() <= 512);
@@ -215,7 +219,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
     assert_response_mac(&query, &response, TsigAlgorithm::HmacSha512);
 
     for stale in [false, true] {
-        let mut question = crate::dns::message::build_response().question();
+        let mut question = message::build_response().question();
         question
             .push((Name::<Vec<u8>>::from_str(&name).unwrap(), Rtype::SOA))
             .unwrap();
@@ -246,7 +250,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
         let unknown = build_failed_response(
             &query,
             verify_tsig(&query, None).unwrap_err(),
-            crate::dns::message::ResponseLimit::STREAM,
+            ResponseLimit::STREAM,
         );
 
         assert!(unknown.len() <= 512);
@@ -260,7 +264,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             let response = build_failed_response(
                 &query,
                 verify_tsig(&query, Some(key.clone())).unwrap_err(),
-                crate::dns::message::ResponseLimit::STREAM,
+                ResponseLimit::STREAM,
             );
 
             assert!(response.len() <= 512);
@@ -285,7 +289,7 @@ fn tsig_errors_fit_long_compressed_queries_and_retain_authentication_status() {
             let response = build_failed_response(
                 &forged,
                 verify_tsig(&forged, Some(key.clone())).unwrap_err(),
-                crate::dns::message::ResponseLimit::STREAM,
+                ResponseLimit::STREAM,
             );
 
             assert!(response.len() <= 512);
@@ -408,7 +412,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             let full = build_failed_response(
                                 &query,
                                 verify_tsig(&query, Some(key.clone())).unwrap_err(),
-                                crate::dns::message::ResponseLimit::STREAM,
+                                ResponseLimit::STREAM,
                             );
 
                             assert_eq!(
@@ -422,7 +426,7 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                             let response = build_failed_response(
                                 &query,
                                 verify_tsig(&query, Some(key.clone())).unwrap_err(),
-                                crate::dns::message::ResponseLimit::udp(edns.unwrap_or(512)),
+                                ResponseLimit::udp(edns.unwrap_or(512)),
                             );
 
                             assert!(
@@ -513,7 +517,7 @@ pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
         id: TsigKeyId::from(1),
         name: "update-key".to_string(),
         algorithm,
-        secret: base64::engine::general_purpose::STANDARD.encode(SECRET),
+        secret: general_purpose::STANDARD.encode(SECRET),
         role_id: RoleId::from(1),
         created_at: Utc::now(),
     }
@@ -529,10 +533,7 @@ pub(crate) fn now_secs() -> u64 {
 
 /// Encode a DNS name for a test wire message.
 pub(crate) fn encode_name(name: &str) -> Vec<u8> {
-    domain::base::Name::<Vec<u8>>::from_str(name)
-        .unwrap()
-        .as_slice()
-        .to_vec()
+    Name::<Vec<u8>>::from_str(name).unwrap().as_slice().to_vec()
 }
 
 /// Encode a TSIG timestamp as six big-endian bytes.
@@ -623,11 +624,7 @@ fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Ve
 }
 
 /// Encode a failed authentication result under the test's transport budget.
-fn build_failed_response(
-    query_data: &[u8],
-    error: TsigError,
-    limit: crate::dns::message::ResponseLimit,
-) -> Vec<u8> {
+fn build_failed_response(query_data: &[u8], error: TsigError, limit: ResponseLimit) -> Vec<u8> {
     match error {
         TsigError::Rejected { rcode, key, time } => {
             build_error_response(query_data, key.as_deref(), rcode, time, limit).unwrap()
@@ -750,11 +747,8 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
         let error = verify_tsig(&query, Some(key.clone())).unwrap_err();
 
         // RFC 8945, Section 5.2: a failed MAC cannot produce signed BADTIME.
-        let (rcode, error, _, mac, other) = extract_response_tsig(&build_failed_response(
-            &query,
-            error,
-            crate::dns::message::ResponseLimit::STREAM,
-        ));
+        let (rcode, error, _, mac, other) =
+            extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
         assert_eq!(rcode, Rcode::NOTAUTH);
         assert_eq!(error, TsigRcode::BADSIG);
@@ -778,11 +772,8 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
         .unwrap();
     let error = verify_tsig(&query, Some(key)).unwrap_err();
 
-    let (rcode, error, _, _, _) = extract_response_tsig(&build_failed_response(
-        &query,
-        error,
-        crate::dns::message::ResponseLimit::STREAM,
-    ));
+    let (rcode, error, _, _, _) =
+        extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADSIG);
@@ -798,11 +789,8 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
         .unwrap();
     let error = verify_tsig(&query, Some(key)).unwrap_err();
 
-    let (rcode, error, _, mac, _) = extract_response_tsig(&build_failed_response(
-        &query,
-        error,
-        crate::dns::message::ResponseLimit::STREAM,
-    ));
+    let (rcode, error, _, mac, _) =
+        extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADKEY);
@@ -816,11 +804,8 @@ fn verify_tsig_rejects_unknown_key_with_badkey() {
 
     let error = verify_tsig(&query, None).unwrap_err();
 
-    let (rcode, error, _, mac, _) = extract_response_tsig(&build_failed_response(
-        &query,
-        error,
-        crate::dns::message::ResponseLimit::STREAM,
-    ));
+    let (rcode, error, _, mac, _) =
+        extract_response_tsig(&build_failed_response(&query, error, ResponseLimit::STREAM));
 
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADKEY);
@@ -840,7 +825,7 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
 
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
-    let response = build_failed_response(&query, error, crate::dns::message::ResponseLimit::STREAM);
+    let response = build_failed_response(&query, error, ResponseLimit::STREAM);
     let (rcode, error, time_signed, mac, other) = extract_response_tsig(&response);
 
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -905,11 +890,7 @@ fn badtime_response_preserves_edns() {
                     let query = additional.finish();
                     let before = Time48::now();
                     let error = verify_tsig(&query, Some(key.clone())).unwrap_err();
-                    let response = build_failed_response(
-                        &query,
-                        error,
-                        crate::dns::message::ResponseLimit::STREAM,
-                    );
+                    let response = build_failed_response(&query, error, ResponseLimit::STREAM);
                     let message = Message::from_octets(response.as_slice()).unwrap();
 
                     assert_eq!(message.header().id(), 8945);
@@ -1030,11 +1011,7 @@ fn truncated_requests_follow_validation_order() {
                         assert!(
                             matches!(&error, TsigError::Rejected { rcode, .. } if *rcode == expected)
                         );
-                        let response = build_failed_response(
-                            &query,
-                            error,
-                            crate::dns::message::ResponseLimit::STREAM,
-                        );
+                        let response = build_failed_response(&query, error, ResponseLimit::STREAM);
                         let (rcode, error, time_signed, mac, other) =
                             extract_response_tsig(&response);
 
@@ -1071,7 +1048,7 @@ fn truncated_requests_follow_validation_order() {
                     let unknown_key = build_failed_response(
                         &query,
                         verify_tsig(&query, None).unwrap_err(),
-                        crate::dns::message::ResponseLimit::STREAM,
+                        ResponseLimit::STREAM,
                     );
                     let (_, error, _, mac, _) = extract_response_tsig(&unknown_key);
 

@@ -6,7 +6,10 @@ mod canonical;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use base64::Engine;
+use base64::engine::general_purpose;
 pub use canonical::ParseRdataError;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 
 use super::{
@@ -86,7 +89,7 @@ impl Rdata {
 
     /// Base64 presentation fallback for rows whose RDATA does not parse.
     pub fn to_base64(&self) -> String {
-        base64::engine::general_purpose::STANDARD.encode(&self.0)
+        general_purpose::STANDARD.encode(&self.0)
     }
 }
 
@@ -115,7 +118,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.0.encode_by_ref(buffer)
     }
 }
@@ -125,9 +128,7 @@ where
     Vec<u8>: sqlx::Decode<'r, DB>,
 {
     /// Decode the stored bytes into record data.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<'r, DB>>::decode(value)?;
         Self::new(bytes).map_err(Into::into)
     }

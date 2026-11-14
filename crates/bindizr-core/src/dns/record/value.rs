@@ -1,5 +1,7 @@
 //! Shared field parsing/validation helpers for stored record values.
 
+use std::iter;
+
 use super::ParseRecordValueError;
 use crate::dns::message::query::{KEEPALIVE_OPTION_LEN, OPT_RECORD_LEN};
 use crate::dns::message::{DNS_HEADER_LEN, QUESTION_FIELDS_LEN, RECORD_FIELDS_LEN};
@@ -27,7 +29,7 @@ pub(crate) const MAX_RECORD_RDATA: usize = DNS_TCP_MAX_SIZE
 /// Split bare fields on unescaped whitespace, preserving DNS presentation escapes.
 pub(crate) fn split_record_fields(value: &str) -> impl Iterator<Item = &str> {
     let mut rest = value;
-    std::iter::from_fn(move || {
+    iter::from_fn(move || {
         rest = rest.trim_start();
 
         if rest.is_empty() {

@@ -8,7 +8,7 @@ use bindizr_db::record::RecordFilter;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{DeleteZoneResponse, Run, ZoneResponse};
-use crate::{Context, audit, transaction};
+use crate::{Context, audit, notify, transaction};
 
 /// Delete a zone, records, and rollback history; NOTIFY the catalog after commit.
 /// A dry run reports the contents without removing them.
@@ -86,7 +86,7 @@ pub async fn delete(
     let config = cx.config();
 
     if response.applied {
-        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
+        notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     Ok(response)

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use bindizr_core::dns::name;
 use bindizr_core::model::audit_log::{AuditEntity, AuditOperation};
 use bindizr_core::model::role::RoleId;
@@ -264,11 +265,9 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
         )));
     }
 
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(trimmed)
-        .map_err(|error| {
-            ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {error}"))
-        })?;
+    let decoded = general_purpose::STANDARD.decode(trimmed).map_err(|error| {
+        ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {error}"))
+    })?;
 
     if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
         return Err(ServiceError::invalid_input(format!(
@@ -284,7 +283,7 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 /// Generate a base64 secret as long as the HMAC output (RFC 8945, Section 8).
 fn generate_secret(algorithm: &TsigAlgorithm) -> String {
     let bytes: [u8; 64] = rand::rng().random();
-    base64::engine::general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
+    general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
 }
 
 #[cfg(test)]
@@ -357,11 +356,11 @@ mod tests {
         assert!(short.to_string().contains("at least 16 bytes"));
 
         // Exactly 16 decoded bytes passes.
-        let sixteen = base64::engine::general_purpose::STANDARD.encode([0x42u8; 16]);
+        let sixteen = general_purpose::STANDARD.encode([0x42u8; 16]);
         normalize_secret(&sixteen).unwrap();
 
         // The base64 form must fit the VARCHAR(255) column.
-        let oversized = base64::engine::general_purpose::STANDARD.encode([0x42u8; 200]);
+        let oversized = general_purpose::STANDARD.encode([0x42u8; 200]);
 
         assert!(oversized.len() > 255);
         let too_long = normalize_secret(&oversized).unwrap_err();

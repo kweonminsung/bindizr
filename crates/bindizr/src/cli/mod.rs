@@ -6,7 +6,9 @@ pub(crate) mod error;
 mod output;
 mod time;
 
-use bindizr_core::errln;
+use std::process;
+
+use bindizr_core::{errln, stream};
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -158,7 +160,7 @@ pub async fn execute() {
 
     // Lost output must not read as success; a reader that stopped early is
     // not lost output.
-    let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
+    let result = result.and_then(|()| match stream::write_failure() {
         Some(failure) => Err(error::CliError::request_with_source(
             format!("output was lost: {failure}"),
             failure,
@@ -171,6 +173,6 @@ pub async fn execute() {
         if let Some(hint) = error.hint() {
             errln!("Hint: {}", hint);
         }
-        std::process::exit(error.exit_code());
+        process::exit(error.exit_code());
     }
 }

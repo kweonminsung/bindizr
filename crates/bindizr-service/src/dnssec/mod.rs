@@ -40,7 +40,7 @@ use crate::model::dnssec_key::DnssecKey;
 use crate::model::dnssec_policy::DnssecPolicy;
 use crate::model::zone::Zone;
 use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
-use crate::{Transaction, zone};
+use crate::{Transaction, serial, zone};
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
 /// sane offset.
@@ -82,7 +82,7 @@ async fn resign_zone_tx(
     pass: SigningPass,
     origin: &ChangeOrigin,
 ) -> Result<Option<Serial>, ServiceError> {
-    let new_serial = crate::serial::generate_serial(Some(signed.zone.serial));
+    let new_serial = serial::generate_serial(Some(signed.zone.serial));
 
     if !apply_signed_view_tx(
         tx,

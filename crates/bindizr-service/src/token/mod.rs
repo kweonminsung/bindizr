@@ -9,6 +9,7 @@ use bindizr_core::model::role_grant::Action;
 use chrono::{DateTime, Duration, Utc};
 use rand::RngExt;
 use rand::distr::Alphanumeric;
+use ring::digest;
 use ring::digest::SHA256;
 
 use super::error::ServiceError;
@@ -23,7 +24,7 @@ const MAX_EXPIRES_IN_DAYS: i64 = 36500;
 
 /// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
-    hex::encode(ring::digest::digest(&SHA256, token.as_bytes()))
+    hex::encode(digest::digest(&SHA256, token.as_bytes()))
 }
 
 /// Create an API token in the request's role; the secret is shown this once.

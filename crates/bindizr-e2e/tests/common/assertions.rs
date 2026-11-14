@@ -1,5 +1,7 @@
+use std::process::Output;
+
 /// Assert that a CLI command completed successfully, showing output on failure.
-pub(crate) fn assert_cli_success(args: &[&str], output: &std::process::Output) {
+pub(crate) fn assert_cli_success(args: &[&str], output: &Output) {
     assert!(
         output.status.success(),
         "bindizr {} failed\nstdout:\n{}\nstderr:\n{}",
@@ -10,11 +12,7 @@ pub(crate) fn assert_cli_success(args: &[&str], output: &std::process::Output) {
 }
 
 /// Assert that a CLI command failed with the expected error text.
-pub(crate) fn assert_cli_failure_contains(
-    args: &[&str],
-    output: &std::process::Output,
-    expected_error: &str,
-) {
+pub(crate) fn assert_cli_failure_contains(args: &[&str], output: &Output, expected_error: &str) {
     assert!(
         !output.status.success(),
         "expected bindizr {} to fail, but it succeeded.\nstdout:\n{}\nstderr:\n{}",

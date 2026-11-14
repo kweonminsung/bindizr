@@ -1,9 +1,10 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
 use std::str::{FromStr, Utf8Error};
+use std::{fmt, str};
 
 use domain::base::Name;
-use domain::base::name::FromStrError;
+use domain::base::name::{FromStrError, Label};
 use thiserror::Error;
 
 use crate::dns::name;
@@ -92,7 +93,7 @@ impl SoaMailbox {
         let labels = name
             .iter()
             .filter(|label| !label.is_root())
-            .map(domain::base::name::Label::as_slice)
+            .map(Label::as_slice)
             .collect::<Vec<_>>();
 
         if labels.len() < 2 {
@@ -101,7 +102,7 @@ impl SoaMailbox {
 
         Ok(format!(
             "{}@{}",
-            std::str::from_utf8(labels[0])?,
+            str::from_utf8(labels[0])?,
             name::labels_to_presentation(&labels[1..])
         ))
     }
@@ -117,9 +118,9 @@ impl SoaMailbox {
     }
 }
 
-impl std::fmt::Display for SoaMailbox {
+impl fmt::Display for SoaMailbox {
     /// Write the SOA mailbox in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }

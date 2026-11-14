@@ -1,6 +1,8 @@
 //! Record payloads, in three groups: the string-or-segments value form, the
 //! request/filter/patch shapes, and the response shapes.
 
+use std::fmt;
+
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::{ParseRecordValueError, TxtContent, TxtRecordValue};
@@ -384,9 +386,9 @@ impl ServedRecordType {
     }
 }
 
-impl std::fmt::Display for ServedRecordType {
+impl fmt::Display for ServedRecordType {
     /// Display the canonical DNS mnemonic.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(&self.to_text())
     }
 }

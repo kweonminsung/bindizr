@@ -1,3 +1,6 @@
+use std::fmt;
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -71,7 +74,7 @@ impl DnssecAlgorithm {
     }
 
     /// IANA mnemonic in lowercase, the presentation/input form.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::RsaSha256 => "rsasha256",
             Self::RsaSha512 => "rsasha512",
@@ -95,14 +98,14 @@ impl DnssecAlgorithm {
     }
 }
 
-impl std::fmt::Display for DnssecAlgorithm {
+impl fmt::Display for DnssecAlgorithm {
     /// Write the DNSSEC algorithm in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for DnssecAlgorithm {
+impl FromStr for DnssecAlgorithm {
     type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC algorithm from its text representation.
@@ -143,7 +146,7 @@ pub enum DnssecKeyRole {
 
 impl DnssecKeyRole {
     /// Return the text representation of this DNSSEC key role.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Csk => "csk",
             Self::Ksk => "ksk",
@@ -152,13 +155,13 @@ impl DnssecKeyRole {
     }
 
     /// Whether the key is represented in the parent DS set (SEP keys).
-    pub fn is_sep(&self) -> bool {
+    pub fn is_sep(self) -> bool {
         matches!(self, Self::Csk | Self::Ksk)
     }
 
     /// DNSKEY flags field: ZONE, plus SEP for keys the parent DS names
     /// (RFC 4034, Section 2.1.1).
-    pub fn flags(&self) -> u16 {
+    pub fn flags(self) -> u16 {
         if self.is_sep() {
             257
         } else {
@@ -167,14 +170,14 @@ impl DnssecKeyRole {
     }
 }
 
-impl std::fmt::Display for DnssecKeyRole {
+impl fmt::Display for DnssecKeyRole {
     /// Write the DNSSEC key role in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for DnssecKeyRole {
+impl FromStr for DnssecKeyRole {
     type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC key role from its text representation.
@@ -216,7 +219,7 @@ pub enum DnssecKeyState {
 
 impl DnssecKeyState {
     /// Return the text representation of this DNSSEC key state.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Published => "published",
             Self::Active => "active",
@@ -225,14 +228,14 @@ impl DnssecKeyState {
     }
 }
 
-impl std::fmt::Display for DnssecKeyState {
+impl fmt::Display for DnssecKeyState {
     /// Write the DNSSEC key state in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for DnssecKeyState {
+impl FromStr for DnssecKeyState {
     type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC key state from its text representation.

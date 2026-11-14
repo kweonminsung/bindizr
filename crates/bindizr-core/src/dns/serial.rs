@@ -3,7 +3,11 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
+use utoipa::openapi::RefOr;
+use utoipa::openapi::schema::Schema;
 
 /// A zone's SOA serial, in its wire form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -92,7 +96,7 @@ impl fmt::Display for Serial {
 
 impl utoipa::PartialSchema for Serial {
     /// Describe the unsigned wire range with a format that holds every serial.
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    fn schema() -> RefOr<Schema> {
         use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, Type};
 
         ObjectBuilder::new()
@@ -130,7 +134,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i64::from(*self).encode_by_ref(buffer)
     }
 }
@@ -140,9 +144,7 @@ where
     i64: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a negative column fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::try_from(<i64 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)

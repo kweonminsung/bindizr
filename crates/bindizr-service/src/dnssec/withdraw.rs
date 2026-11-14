@@ -10,7 +10,7 @@ use super::status;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::DnssecStatusResponse;
-use crate::{Context, transaction};
+use crate::{Context, notify, transaction};
 
 /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
 /// parent to drop the zone's DS: the first step of going insecure.
@@ -72,7 +72,7 @@ pub async fn withdraw(
     log::info!("event=dnssec_withdraw zone={}", response.zone_name);
 
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -136,7 +136,7 @@ pub async fn cancel_withdrawal(
     log::info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
 
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)

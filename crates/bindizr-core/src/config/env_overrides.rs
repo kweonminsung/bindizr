@@ -1,6 +1,8 @@
 //! Apply `BINDIZR_<UPPERCASE_TOML_PATH>` overrides before validation, replacing dots with `_`.
 //! `BINDIZR_DATABASE_URL` is the one convenience outside that mapping.
 
+use std::str::FromStr;
+
 use super::{Config, ConfigError, DatabaseType};
 use crate::dns::name::ZoneName;
 
@@ -212,7 +214,7 @@ where
 /// Parse an environment override into the field's type, naming the variable on failure.
 fn parse_env_value<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
-    T: std::str::FromStr,
+    T: FromStr,
     T::Err: std::error::Error + Send + Sync + 'static,
 {
     value.parse::<T>().map_err(|error| ConfigError::Env {

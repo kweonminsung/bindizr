@@ -1,12 +1,16 @@
 //! Zone transfers over TLS require both TSIG and address authorization
 //! without mTLS (RFC 9103, Section 7.5).
 
+use std::io;
+
+use base64::engine::general_purpose;
 use domain::base::iana::{Class, ExtendedErrorCode, Opcode, OptRcode, Rcode, Rtype, TsigRcode};
+use domain::base::message_builder::AdditionalBuilder;
 use domain::base::opt::exterr::ExtendedError;
 use domain::base::{Message, MessageBuilder};
 use domain::rdata::Soa;
 use domain::rdata::tsig::{Time48, Tsig};
-use domain::tsig::ClientTransaction;
+use domain::tsig::{ClientSequence, ClientTransaction, Key};
 use reqwest::{Method, StatusCode};
 use rustls::pki_types::CertificateDer;
 use rustls::{ClientConfig, RootCertStore, SupportedProtocolVersion, version};
@@ -49,15 +53,14 @@ pub(crate) fn dot_client(app: &TestApp) -> ClientConfig {
 }
 
 /// Finish a signed transfer, verifying every frame and its closing signature.
-fn exchange_signed_boundary_transfer<S: std::io::Read + std::io::Write>(
+fn exchange_signed_boundary_transfer<S: io::Read + io::Write>(
     stream: &mut S,
-    mut request: domain::base::message_builder::AdditionalBuilder<Vec<u8>>,
-    key: domain::tsig::Key,
+    mut request: AdditionalBuilder<Vec<u8>>,
+    key: Key,
 ) -> Vec<Message<Vec<u8>>> {
     use crate::common::dns;
 
-    let mut client =
-        domain::tsig::ClientSequence::request(key, &mut request, Time48::now()).unwrap();
+    let mut client = ClientSequence::request(key, &mut request, Time48::now()).unwrap();
     dns::write_frame(stream, &request.finish()).unwrap();
     let mut messages = Vec::new();
     let mut soa_count = 0;
@@ -132,7 +135,7 @@ async fn maximum_record_value_transfers_with_signed_edns_and_long_names() {
         .await;
 
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let secret = base64::engine::general_purpose::STANDARD
+    let secret = general_purpose::STANDARD
         .decode(body["secret"].as_str().unwrap())
         .unwrap();
     let key = Key::new(

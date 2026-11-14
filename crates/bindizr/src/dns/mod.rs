@@ -10,10 +10,11 @@ mod tls;
 mod udp;
 pub(crate) mod wire;
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bindizr_service::Context;
+use bindizr_service::{Context, zone};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
@@ -27,10 +28,10 @@ use crate::tls::TlsCertificate;
 #[derive(Debug, Error)]
 pub(crate) enum StartDnsError {
     #[error("failed to enable DNS UDP packet information: {0}")]
-    UdpPacketInfo(#[source] std::io::Error),
+    UdpPacketInfo(#[source] io::Error),
 
     /// Names the usual cause when the port is already taken.
-    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse {
+    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == io::ErrorKind::AddrInUse {
         format!(" (another DNS server on this host? change {setting})")
     } else {
         String::new()
@@ -41,7 +42,7 @@ pub(crate) enum StartDnsError {
         /// The configuration key that moves this listener.
         setting: &'static str,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 
@@ -64,7 +65,7 @@ pub(crate) async fn start(
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
 
     // The catalog zone must exist before a secondary asks for it.
-    match bindizr_service::zone::refresh_catalog(&cx).await {
+    match zone::refresh_catalog(&cx).await {
         Ok((catalog, _)) => {
             log::info!(
                 "Catalog zone '{}' is ready (serial: {})",

@@ -1,3 +1,6 @@
+use std::fmt;
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -29,7 +32,7 @@ pub enum TsigAlgorithm {
 impl TsigAlgorithm {
     /// Presentation/storage name, identical to the wire algorithm name without
     /// the trailing root dot (e.g. `"hmac-sha256"`).
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::HmacSha1 => "hmac-sha1",
             Self::HmacSha256 => "hmac-sha256",
@@ -39,7 +42,7 @@ impl TsigAlgorithm {
     }
 
     /// HMAC output length in bytes, the least a secret should hold (RFC 8945, Section 8).
-    pub fn digest_len(&self) -> usize {
+    pub fn digest_len(self) -> usize {
         match self {
             Self::HmacSha1 => 20,
             Self::HmacSha256 => 32,
@@ -54,14 +57,14 @@ impl TsigAlgorithm {
     }
 }
 
-impl std::fmt::Display for TsigAlgorithm {
+impl fmt::Display for TsigAlgorithm {
     /// Write the TSIG algorithm in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for TsigAlgorithm {
+impl FromStr for TsigAlgorithm {
     type Err = ParseTsigAlgorithmError;
 
     /// Accepts the storage form or the wire form (trailing root dot tolerated),

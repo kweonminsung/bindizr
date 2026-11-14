@@ -4,7 +4,7 @@
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
 use domain::dep::octseq::parse::Parser;
-use domain::rdata::{A, Aaaa, Mx, Soa, Srv};
+use domain::rdata::{A, Aaaa, Caa, Ds, Mx, Naptr, Soa, Srv, Sshfp, Tlsa};
 use thiserror::Error;
 
 use super::ParseUpdateError;
@@ -163,21 +163,16 @@ impl UpdateRecord {
                 Ok((RecordType::Txt, value, None))
             }
             RecordType::Caa => {
-                let data = self.parse_rdata(message, "CAA", |parser| {
-                    domain::rdata::Caa::parse(parser).ok()
-                })?;
+                let data = self.parse_rdata(message, "CAA", |parser| Caa::parse(parser).ok())?;
                 Ok((RecordType::Caa, data.to_string(), None))
             }
             RecordType::Ds => {
-                let data = self.parse_rdata(message, "DS", |parser| {
-                    domain::rdata::Ds::parse(parser).ok()
-                })?;
+                let data = self.parse_rdata(message, "DS", |parser| Ds::parse(parser).ok())?;
                 Ok((RecordType::Ds, data.to_string(), None))
             }
             RecordType::Naptr => {
-                let data = self.parse_rdata(message, "NAPTR", |parser| {
-                    domain::rdata::Naptr::parse(parser).ok()
-                })?;
+                let data =
+                    self.parse_rdata(message, "NAPTR", |parser| Naptr::parse(parser).ok())?;
                 let replacement =
                     super::to_presentation_name(data.replacement()).map_err(|error| {
                         ParseUpdateError::RdataName {
@@ -198,15 +193,12 @@ impl UpdateRecord {
                 Ok((RecordType::Naptr, value, None))
             }
             RecordType::Sshfp => {
-                let data = self.parse_rdata(message, "SSHFP", |parser| {
-                    domain::rdata::Sshfp::parse(parser).ok()
-                })?;
+                let data =
+                    self.parse_rdata(message, "SSHFP", |parser| Sshfp::parse(parser).ok())?;
                 Ok((RecordType::Sshfp, data.to_string(), None))
             }
             RecordType::Tlsa => {
-                let data = self.parse_rdata(message, "TLSA", |parser| {
-                    domain::rdata::Tlsa::parse(parser).ok()
-                })?;
+                let data = self.parse_rdata(message, "TLSA", |parser| Tlsa::parse(parser).ok())?;
                 Ok((RecordType::Tlsa, data.to_string(), None))
             }
             RecordType::Mx => {

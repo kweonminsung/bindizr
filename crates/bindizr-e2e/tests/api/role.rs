@@ -1,5 +1,8 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
+use tokio::io;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
 
 use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 
@@ -2150,18 +2153,18 @@ async fn zone_import_rejects_credential_revoked_during_transfer() {
         };
 
         // A relay that holds the transfer until the credential is revoked.
-        let relay = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let relay_addr = relay.local_addr().unwrap();
         let upstream = format!("127.0.0.1:{}", app.dns_port());
-        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel::<()>();
 
         let relaying = tokio::spawn(async move {
             let (mut client, _) = relay.accept().await.unwrap();
             accepted_tx.send(()).unwrap();
             release_rx.await.unwrap();
-            let mut server = tokio::net::TcpStream::connect(upstream).await.unwrap();
-            let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+            let mut server = TcpStream::connect(upstream).await.unwrap();
+            let _ = io::copy_bidirectional(&mut client, &mut server).await;
         });
 
         app.set_auth_token(token);

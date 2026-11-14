@@ -139,7 +139,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.retries, 3);
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
     assert_eq!(parsed.dns.transfer.cache_max_records, 500_000);
-    assert_eq!(parsed.database.tls, Default::default());
+    assert_eq!(parsed.database.tls, DatabaseTlsConfig::default());
 
     // The registered DNS over TLS port, and no certificate: the listener is off.
     assert_eq!(parsed.dns.tls.listen_port, 853);
@@ -251,8 +251,8 @@ fn from_toml_defaults_fields_of_an_empty_sub_table() {
     })
     .unwrap();
 
-    assert_eq!(parsed.dns.notify, Default::default());
-    assert_eq!(parsed.dns.tls, Default::default());
+    assert_eq!(parsed.dns.notify, NotifyConfig::default());
+    assert_eq!(parsed.dns.tls, DnsTlsConfig::default());
     assert_eq!(parsed.dns.transfer.cache_max_records, 10);
 }
 

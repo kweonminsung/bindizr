@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
 use rustls::pki_types::CertificateDer;
+use tokio::time;
 
 use super::{TestApp, TestAppOptions, TestRuntime};
 
@@ -111,9 +112,8 @@ fn reserve_dns_port() -> u16 {
 fn write_test_certificate(dir: &Path) -> CertificateDer<'static> {
     let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
         .expect("generate a test certificate");
-    std::fs::write(dir.join("tls.crt"), certified.cert.pem()).expect("write tls.crt");
-    std::fs::write(dir.join("tls.key"), certified.signing_key.serialize_pem())
-        .expect("write tls.key");
+    fs::write(dir.join("tls.crt"), certified.cert.pem()).expect("write tls.crt");
+    fs::write(dir.join("tls.key"), certified.signing_key.serialize_pem()).expect("write tls.key");
     certified.cert.der().clone()
 }
 
@@ -189,13 +189,10 @@ level = "error"
         nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,
         catalog_zone_name = serde_json::to_string(&options.catalog_zone_name).unwrap(),
-        tls = match options.tls {
-            true => {
-                format!(
-                    "\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n"
-                )
-            }
-            false => String::new(),
+        tls = if options.tls {
+            format!("\n[api.tls]\ncert_file = \"{dir}/tls.crt\"\nkey_file = \"{dir}/tls.key\"\n")
+        } else {
+            String::new()
         },
         dns_tls = match dns_tls_port {
             Some(port) => format!(
@@ -203,9 +200,10 @@ level = "error"
             ),
             None => String::new(),
         },
-        dns_transfer = match options.dns_transfer_require_tls {
-            true => "\n[dns.transfer]\nrequire_tls = true\n",
-            false => "",
+        dns_transfer = if options.dns_transfer_require_tls {
+            "\n[dns.transfer]\nrequire_tls = true\n"
+        } else {
+            ""
         },
     );
 
@@ -241,7 +239,7 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Res
             break "bindizr API did not become ready".to_string();
         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        time::sleep(Duration::from_millis(100)).await;
     };
 
     let mut stderr = String::new();
@@ -271,6 +269,6 @@ impl TestApp {
         let TestRuntime::Local { temp_dir, .. } = &self.runtime else {
             panic!("the compose stack's certificate is fixed");
         };
-        std::fs::write(temp_dir.path().join("tls.key"), "not a key").expect("write tls.key");
+        fs::write(temp_dir.path().join("tls.key"), "not a key").expect("write tls.key");
     }
 }

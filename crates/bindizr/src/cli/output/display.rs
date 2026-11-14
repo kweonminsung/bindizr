@@ -1,6 +1,8 @@
 //! Shared CLI cells for absent values, flags, time, truncation, and combined fields.
 //! Use a type's `Display` where available.
 
+use std::fmt;
+
 use bindizr_core::dns::Serial;
 use bindizr_core::model::transfer::{TransferKind, TransferResult, TransferTransport};
 use bindizr_service::types::{
@@ -12,7 +14,7 @@ use chrono::Utc;
 pub(crate) const MISSING_CELL: &str = "-";
 
 /// An optional value as one cell, absent as `-`.
-pub(crate) fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {
+pub(crate) fn display_option<T: fmt::Display>(opt: &Option<T>) -> String {
     opt.as_ref()
         .map_or_else(|| MISSING_CELL.to_string(), ToString::to_string)
 }

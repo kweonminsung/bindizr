@@ -5,11 +5,14 @@ use bindizr_core::dns::message::{Name, Opcode, OptRcode};
 use bindizr_core::dns::{message, query};
 use bindizr_core::metrics::Metrics;
 use bindizr_service::authorization::Caller;
-use bindizr_service::{Context, secondary, zone};
+use bindizr_service::types::RecordFilter;
+use bindizr_service::{Context, record, secondary, zone};
+use rustls::server::ResolvesServerCertUsingSni;
+use rustls::version;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, watch};
-use tokio::time;
+use tokio::{task, time};
 
 use super::*;
 use crate::dns::{tcp, tls, udp};
@@ -166,10 +169,10 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
             .await
             .unwrap()
             .unwrap();
-        let records = bindizr_service::record::list_by_filter_with_zone(
+        let records = record::list_by_filter_with_zone(
             &cx,
             &caller,
-            bindizr_service::types::RecordFilter {
+            RecordFilter {
                 zone_name: Some("example.com".to_string()),
                 name: Some("www".to_string()),
                 ..Default::default()
@@ -200,11 +203,10 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
 
         let server = tokio::spawn(async move {
             if tls {
-                let config = rustls::ServerConfig::builder_with_protocol_versions(&[
-                    &rustls::version::TLS13,
-                ])
-                .with_no_client_auth()
-                .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
+                let config =
+                    rustls::ServerConfig::builder_with_protocol_versions(&[&version::TLS13])
+                        .with_no_client_auth()
+                        .with_cert_resolver(Arc::new(ResolvesServerCertUsingSni::new()));
 
                 tls::run_tls_server(server_cx, listener, Arc::new(config), stop)
                     .await
@@ -217,7 +219,7 @@ async fn listeners_stop_idle_connections_without_waiting_for_protocol_timeouts()
         });
         time::timeout(Duration::from_secs(2), async {
             while Arc::strong_count(&dns_cx) < 3 {
-                tokio::task::yield_now().await;
+                task::yield_now().await;
             }
         })
         .await

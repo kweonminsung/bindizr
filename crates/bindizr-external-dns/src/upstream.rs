@@ -1,7 +1,11 @@
 //! Authenticated HTTP client for the bindizr `/external-dns` API.
 
+use std::borrow::Cow;
 use std::time::Duration;
+use std::{fs, io};
 
+use rustls::crypto::ring;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -31,7 +35,7 @@ pub(crate) enum BuildClientError {
     ReadCa {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("invalid CA certificate '{path}': {source}")]
     InvalidCa {
@@ -68,13 +72,13 @@ impl UpstreamClient {
     ) -> Result<Self, BuildClientError> {
         // reqwest builds no rustls client without a process-level provider;
         // Err means one is installed already.
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = ring::default_provider().install_default();
         let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
 
         // Added to the system roots rather than replacing them, so one private
         // CA does not cut off a publicly issued certificate beside it.
         if let Some(path) = ca_file {
-            let pem = std::fs::read(path).map_err(|source| BuildClientError::ReadCa {
+            let pem = fs::read(path).map_err(|source| BuildClientError::ReadCa {
                 path: path.to_string(),
                 source,
             })?;
@@ -138,7 +142,7 @@ impl UpstreamClient {
     ) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct AdjustExternalDnsRecordsRequest<'a> {
-            records: std::borrow::Cow<'a, [BindizrRecord]>,
+            records: Cow<'a, [BindizrRecord]>,
         }
         #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct AdjustExternalDnsRecordsResponse {
@@ -161,17 +165,15 @@ impl UpstreamClient {
 
     /// Check token access to at least one manageable name; unauthenticated `/health` cannot prove it.
     pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
-        match self.list_domains().await?.is_empty() {
-            true => Err(UpstreamError::NoManageableNames),
-            false => Ok(()),
+        if self.list_domains().await?.is_empty() {
+            Err(UpstreamError::NoManageableNames)
+        } else {
+            Ok(())
         }
     }
 
     /// Fetch and deserialize a JSON response from a bindizr API path.
-    async fn fetch_json<T: serde::de::DeserializeOwned>(
-        &self,
-        path: &str,
-    ) -> Result<T, UpstreamError> {
+    async fn fetch_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, UpstreamError> {
         let response = self
             .send(self.build_request(reqwest::Method::GET, path))
             .await?;

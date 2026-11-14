@@ -1,3 +1,5 @@
+use tokio::sync::{mpsc, watch};
+
 use super::*;
 use crate::error::ErrorCode;
 use crate::types::{ImportZoneRequest, ImportZonesRequest};
@@ -21,8 +23,8 @@ async fn failed_zone_and_catalog_transfers_preserve_their_sources() {
 
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
 
-    let (notify_jobs, _jobs) = tokio::sync::mpsc::unbounded_channel();
-    let (scheduler, _period) = tokio::sync::watch::channel(0);
+    let (notify_jobs, _jobs) = mpsc::unbounded_channel();
+    let (scheduler, _period) = watch::channel(0);
     let cx = Context::new(
         config,
         String::new(),

@@ -2,9 +2,12 @@
 
 pub(crate) mod db_probe;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{env, io};
 
 use bindizr_core::config::{self, Config, ConfigError};
 use bindizr_core::logger::{self, Logger};
@@ -19,8 +22,8 @@ use chrono::Utc;
 use thiserror::Error;
 use tokio::signal::unix;
 use tokio::signal::unix::SignalKind;
-use tokio::sync;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
+use tokio::{signal, sync, time};
 
 use crate::api::StartApiError;
 use crate::dns::StartDnsError;
@@ -61,7 +64,7 @@ pub(crate) enum DaemonError {
     Signal {
         signal: &'static str,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("the {name} stopped")]
     ServerStopped { name: &'static str },
@@ -69,12 +72,12 @@ pub(crate) enum DaemonError {
     ServerFailed {
         name: &'static str,
         #[source]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
     #[error("failed to locate the bindizr executable")]
     ExecutableUnknown,
     #[error("failed to re-execute bindizr: {0}")]
-    Reexec(#[source] std::io::Error),
+    Reexec(#[source] io::Error),
 }
 
 impl DaemonError {
@@ -145,7 +148,7 @@ pub(crate) fn reload_config(
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonError> {
     // Captured at startup: after a package upgrade /proc/self/exe reads as a
     // "(deleted)" path, while this path points at the replacement.
-    let daemon_exe = std::env::current_exe().ok();
+    let daemon_exe = env::current_exe().ok();
 
     let config_path = config::resolve_config_path(config_file);
     let config = Config::load(&config_path)?;
@@ -241,7 +244,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // Handle process signals and socket control commands in one lifecycle loop.
     let outcome = loop {
         let control = tokio::select! {
-            result = tokio::signal::ctrl_c() => {
+            result = signal::ctrl_c() => {
                 result.map_err(|source| DaemonError::Signal {
                     signal: "shutdown signal",
                     source,
@@ -311,7 +314,7 @@ enum RunResult {
 impl RunResult {
     /// The result of a server that stopped on its own, so the exit says what
     /// failed.
-    fn server_stopped(name: &'static str, result: Result<(), tokio::task::JoinError>) -> Self {
+    fn server_stopped(name: &'static str, result: Result<(), JoinError>) -> Self {
         Self::Failed(match result {
             Ok(()) => DaemonError::ServerStopped { name },
             Err(source) => DaemonError::ServerFailed { name, source },
@@ -329,7 +332,7 @@ async fn drain(
 ) {
     shutdown.trigger();
 
-    let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
+    let drained = time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
 
         // The scheduler is a write producer too; its last pass may enqueue NOTIFY.
@@ -355,7 +358,7 @@ fn reexec(daemon_exe: Option<PathBuf>) -> DaemonError {
     let Some(exe) = daemon_exe else {
         return DaemonError::ExecutableUnknown;
     };
-    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
 
-    DaemonError::Reexec(std::process::Command::new(exe).args(args).exec())
+    DaemonError::Reexec(Command::new(exe).args(args).exec())
 }

@@ -6,6 +6,7 @@ use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use bindizr_core::metrics::TEXT_CONTENT_TYPE;
 use bindizr_service::{Context, metrics};
+use tokio::time;
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 
@@ -15,7 +16,7 @@ pub(crate) async fn handle_metrics(State(cx): State<Arc<Context>>) -> Response {
 
     // A failed probe still serves the instrumentation counters; only
     // database_up drops to 0.
-    match tokio::time::timeout(DB_PROBE_TIMEOUT, metrics::refresh_db_gauges(&cx)).await {
+    match time::timeout(DB_PROBE_TIMEOUT, metrics::refresh_db_gauges(&cx)).await {
         Ok(Ok(())) => metrics.database_up.set(1),
         _ => metrics.database_up.set(0),
     }

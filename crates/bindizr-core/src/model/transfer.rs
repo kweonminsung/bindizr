@@ -1,6 +1,9 @@
 //! The transfer log: every transfer Bindizr served, refused, or failed for a
 //! client address and a zone, which is what a secondary pulled.
 
+use std::fmt;
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -42,7 +45,7 @@ impl TransferKind {
     }
 
     /// Storage name, as the column and the API spell it.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Axfr => "axfr",
             Self::Ixfr => "ixfr",
@@ -50,9 +53,9 @@ impl TransferKind {
     }
 }
 
-impl std::fmt::Display for TransferKind {
+impl fmt::Display for TransferKind {
     /// Write the transfer kind as the query type name.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Axfr => "AXFR",
             Self::Ixfr => "IXFR",
@@ -60,7 +63,7 @@ impl std::fmt::Display for TransferKind {
     }
 }
 
-impl std::str::FromStr for TransferKind {
+impl FromStr for TransferKind {
     type Err = ParseTransferError;
 
     /// Parse a transfer kind from its text representation.
@@ -94,7 +97,7 @@ pub enum TransferResult {
 
 impl TransferResult {
     /// Storage name, as the column and the API spell it.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -103,14 +106,14 @@ impl TransferResult {
     }
 }
 
-impl std::fmt::Display for TransferResult {
+impl fmt::Display for TransferResult {
     /// Write the transfer result as the API spells it.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for TransferResult {
+impl FromStr for TransferResult {
     type Err = ParseTransferError;
 
     /// Parse a transfer result from its text representation.
@@ -148,7 +151,7 @@ impl TransferTransport {
     pub const ALL: [Self; 3] = [Self::Udp, Self::Tcp, Self::Tls];
 
     /// Storage name, as the column, the API, and the metric label spell it.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Udp => "udp",
             Self::Tcp => "tcp",
@@ -157,9 +160,9 @@ impl TransferTransport {
     }
 }
 
-impl std::fmt::Display for TransferTransport {
+impl fmt::Display for TransferTransport {
     /// Write the transport as its DNS mnemonic.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Udp => "UDP",
             Self::Tcp => "TCP",
@@ -168,7 +171,7 @@ impl std::fmt::Display for TransferTransport {
     }
 }
 
-impl std::str::FromStr for TransferTransport {
+impl FromStr for TransferTransport {
     type Err = ParseTransferError;
 
     /// Parse a transport from its text representation.

@@ -6,25 +6,26 @@ pub(crate) mod ds;
 pub mod notify;
 pub mod probe;
 
+use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
-use bindizr_core::dns::message::{Keepalive, QueryMetadata};
+use bindizr_core::dns::message::{EncodeMessageError, Keepalive, ParseQueryError, QueryMetadata};
 use bindizr_core::dns::{message, query};
 use thiserror::Error;
-use tokio::net;
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::{net, time};
 
 /// A failed DNS exchange; `what` identifies the operation in timeout and send errors.
 #[derive(Debug, Error)]
 pub enum ExchangeMessageError {
     #[error("invalid outbound DNS request: {0}")]
-    InvalidRequest(#[from] bindizr_core::dns::message::ParseQueryError),
+    InvalidRequest(#[from] ParseQueryError),
     #[error(transparent)]
-    Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
+    Encode(#[from] EncodeMessageError),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
     Read(#[from] ReadTcpMessageError),
     #[error("{what} TCP timeout")]
@@ -51,13 +52,13 @@ pub enum ResolveAddressError {
     #[error("no addresses")]
     NoAddresses,
     #[error(transparent)]
-    Lookup(#[from] std::io::Error),
+    Lookup(#[from] io::Error),
     #[error("resolution timed out after {secs} seconds")]
     TimedOut { secs: u64 },
 }
 
 /// One byte beyond the largest supported advertisement detects truncated datagrams.
-const UDP_RESPONSE_BUF: usize = bindizr_core::dns::query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
+const UDP_RESPONSE_BUF: usize = query::EDNS_UDP_PAYLOAD_SIZE as usize + 1;
 
 /// Ask over UDP and, when the answer comes back truncated, again over TCP
 /// (RFC 1035, Section 4.2.1).
@@ -92,7 +93,7 @@ pub(crate) async fn exchange_over_tcp(
         Ok(read_tcp_message(&mut stream).await?)
     };
 
-    tokio::time::timeout(timeout, exchange)
+    time::timeout(timeout, exchange)
         .await
         .map_err(|_| ExchangeMessageError::TcpTimedOut { what })?
 }
@@ -128,7 +129,7 @@ pub(crate) async fn exchange_over_udp(
     let socket = UdpSocket::bind(bind_addr).await?;
     socket.connect(server_addr).await?;
 
-    let sent = tokio::time::timeout(timeout, socket.send(request))
+    let sent = time::timeout(timeout, socket.send(request))
         .await
         .map_err(|_| ExchangeMessageError::SendTimedOut { what })??;
 
@@ -151,11 +152,11 @@ pub(crate) async fn exchange_over_udp(
             if limit.validate_len(received).is_ok()
                 && query::matches_response_to_request(request, &response[..received])
             {
-                return Ok::<_, std::io::Error>(received);
+                return Ok::<_, io::Error>(received);
             }
         }
     };
-    let received = tokio::time::timeout(timeout, receive).await.map_err(|_| {
+    let received = time::timeout(timeout, receive).await.map_err(|_| {
         ExchangeMessageError::ResponseTimedOut {
             what,
             server: server_addr,
@@ -197,7 +198,7 @@ pub async fn resolve_address_entry(
     match entry {
         AddressTarget::Socket(addr) => Ok(vec![*addr]),
         AddressTarget::HostPort(host_port) => {
-            match tokio::time::timeout(resolve_timeout, net::lookup_host(host_port)).await {
+            match time::timeout(resolve_timeout, net::lookup_host(host_port)).await {
                 Ok(Ok(resolved)) => {
                     let addrs: Vec<SocketAddr> = resolved.collect();
                     if addrs.is_empty() {
@@ -228,7 +229,7 @@ pub async fn resolve_address_entry(
 /// Failure to read a length-prefixed DNS message from a TCP stream.
 #[derive(Debug, Error)]
 #[error(transparent)]
-pub struct ReadTcpMessageError(#[from] std::io::Error);
+pub struct ReadTcpMessageError(#[from] io::Error);
 
 #[cfg(test)]
 mod tests {
@@ -275,7 +276,7 @@ mod tests {
                 server.send_to(&oversized, peer).await.unwrap();
 
                 assert!(
-                    tokio::time::timeout(Duration::from_millis(20), &mut exchange)
+                    time::timeout(Duration::from_millis(20), &mut exchange)
                         .await
                         .is_err()
                 );

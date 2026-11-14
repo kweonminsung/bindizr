@@ -1,9 +1,10 @@
 use std::fmt;
 
-use bindizr_core::dns::Serial;
 use bindizr_core::dns::dnssec::KeyTag;
+use bindizr_core::dns::{ConvertSerialError, ConvertTtlError, Serial};
 use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
+use bindizr_db::error::DatabaseError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::ToSchema;
@@ -58,7 +59,7 @@ pub enum ErrorCode {
 
 impl ErrorCode {
     /// Return the text representation of this error code.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidInput => "INVALID_INPUT",
             Self::InvalidZoneField => "INVALID_ZONE_FIELD",
@@ -106,7 +107,7 @@ impl ErrorCode {
     /// Whether the failure is the server's, not the requester's: what a
     /// transport reports as a server fault (SERVFAIL, 500) rather than a
     /// refusal.
-    pub fn is_internal(&self) -> bool {
+    pub fn is_internal(self) -> bool {
         matches!(self, Self::DnssecSigningFailed | Self::Internal)
     }
 }
@@ -265,9 +266,9 @@ impl ServiceError {
 
 /// Unclassified database errors and invalid stored serials are internal failures.
 /// Call sites map UNIQUE/FK conflicts where their meaning is known.
-impl From<bindizr_core::dns::ConvertSerialError> for ServiceError {
+impl From<ConvertSerialError> for ServiceError {
     /// Report the conversion failure as an internal error, keeping it as source.
-    fn from(error: bindizr_core::dns::ConvertSerialError) -> Self {
+    fn from(error: ConvertSerialError) -> Self {
         Self::Internal {
             message: error.to_string(),
             source: Some(Box::new(error)),
@@ -276,9 +277,9 @@ impl From<bindizr_core::dns::ConvertSerialError> for ServiceError {
 }
 
 /// A stored TTL that does not convert is corrupt data: a server fault.
-impl From<bindizr_core::dns::ConvertTtlError> for ServiceError {
+impl From<ConvertTtlError> for ServiceError {
     /// Report the conversion failure as an internal error, keeping it as source.
-    fn from(error: bindizr_core::dns::ConvertTtlError) -> Self {
+    fn from(error: ConvertTtlError) -> Self {
         Self::Internal {
             message: error.to_string(),
             source: Some(Box::new(error)),
@@ -286,9 +287,9 @@ impl From<bindizr_core::dns::ConvertTtlError> for ServiceError {
     }
 }
 
-impl From<bindizr_db::error::DatabaseError> for ServiceError {
+impl From<DatabaseError> for ServiceError {
     /// Wrap a database error as an internal service error.
-    fn from(error: bindizr_db::error::DatabaseError) -> Self {
+    fn from(error: DatabaseError) -> Self {
         Self::Internal {
             message: format!("database error: {error}"),
             source: Some(Box::new(error)),
@@ -386,17 +387,14 @@ impl ServiceError {
     }
 
     /// Build an error identifying the owner name that holds no record.
-    pub fn record_not_found_at_name(
-        zone_name: impl std::fmt::Display,
-        name: impl std::fmt::Display,
-    ) -> Self {
+    pub fn record_not_found_at_name(zone_name: impl fmt::Display, name: impl fmt::Display) -> Self {
         Self::RecordNotFound(format!("no record named '{name}' in zone '{zone_name}'"))
     }
 
     /// Report an ambiguous owner name, asking for a record id in transport-neutral terms.
     pub fn record_name_ambiguous(
-        zone_name: impl std::fmt::Display,
-        name: impl std::fmt::Display,
+        zone_name: impl fmt::Display,
+        name: impl fmt::Display,
         matched: usize,
     ) -> Self {
         Self::invalid_input(format!(

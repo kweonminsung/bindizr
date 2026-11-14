@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::{SoaMailbox, SrvRecordValue};
 use bindizr_core::dns::{Ttl, name};
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::{LockLevel, Transaction};
 
 use crate::error::ServiceError;
@@ -206,7 +207,7 @@ pub(crate) async fn validate_record_changes_tx(
         RecordType::Ptr,
     ];
 
-    let mut records = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
+    let mut records = if zone.id == ZoneId::UNWRITTEN {
         Vec::new()
     } else {
         bindizr_db::record::list_by_record_types_tx(tx, zone.id, &related_types).await?
@@ -248,7 +249,7 @@ pub(crate) async fn validate_record_changes_tx(
     let dnames = owners_of(RecordType::Dname);
 
     if !dnames.is_empty() {
-        let mut names: HashSet<_> = if zone.id == bindizr_core::model::zone::ZoneId::UNWRITTEN {
+        let mut names: HashSet<_> = if zone.id == ZoneId::UNWRITTEN {
             HashSet::new()
         } else {
             bindizr_db::record::list_names_tx(tx, zone.id)

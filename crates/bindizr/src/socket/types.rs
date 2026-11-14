@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bindizr_core::dns::Serial;
 use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::RoleGrantId;
@@ -270,9 +272,9 @@ pub(crate) enum DoctorCheckStatus {
     Skipped,
 }
 
-impl std::fmt::Display for DoctorCheckStatus {
+impl fmt::Display for DoctorCheckStatus {
     /// Write the status as the doctor's report labels it.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Ok => "OK",
             Self::Failed => "FAILED",

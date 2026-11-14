@@ -7,8 +7,9 @@ use domain::base::iana::{Opcode, OptRcode};
 use domain::rdata::tsig::Time48;
 use thiserror::Error;
 
-use crate::dns::message;
 use crate::dns::message::{Edns, EncodeMessageError, ExtendedErrorCode, ResponseLimit};
+use crate::dns::tsig::ResponseSigner;
+use crate::dns::{LibraryError, message};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945, Section 10 suggested default).
@@ -23,7 +24,7 @@ pub fn is_nsupdate(message: &[u8]) -> bool {
 #[derive(Debug, Error)]
 pub enum BuildResponseError {
     #[error("invalid UPDATE message: {0}")]
-    Malformed(#[source] crate::dns::LibraryError),
+    Malformed(#[source] LibraryError),
     #[error(transparent)]
     Encode(#[from] EncodeMessageError),
 }
@@ -34,7 +35,7 @@ pub fn build_response(
     query_data: &[u8],
     rcode: OptRcode,
     ede: Option<ExtendedErrorCode>,
-    signer: Option<crate::dns::tsig::ResponseSigner>,
+    signer: Option<ResponseSigner>,
     fudge: u16,
     limit: ResponseLimit,
 ) -> Result<Vec<u8>, BuildResponseError> {
@@ -48,7 +49,7 @@ pub fn build_response(
         } else {
             rcode
         };
-        let mut builder = crate::dns::message::build_response();
+        let mut builder = message::build_response();
         let mut answer = if readable {
             builder
                 .start_answer(&message, rcode.rcode())

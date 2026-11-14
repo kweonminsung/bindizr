@@ -1,8 +1,12 @@
+use std::io;
+use std::time::Duration;
+
 use bindizr_service::types::ErrorResponse;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tokio::io::BufReader;
 use tokio::net::UnixStream;
+use tokio::time;
 
 use crate::cli::error::CliError;
 use crate::socket;
@@ -13,10 +17,10 @@ use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 /// garbled response may come from a live but wedged daemon.
 pub(crate) async fn is_daemon_socket_gone() -> bool {
     /// Check whether a connection error means no daemon is listening.
-    fn is_missing_listener(error: &std::io::Error) -> bool {
+    fn is_missing_listener(error: &io::Error) -> bool {
         matches!(
             error.kind(),
-            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
         )
     }
 
@@ -24,7 +28,7 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         Ok(_) => false,
         // An owner-only socket this user cannot open is a live daemon.
         Err(ConnectDaemonSocketError { primary: error, .. })
-            if error.kind() == std::io::ErrorKind::PermissionDenied =>
+            if error.kind() == io::ErrorKind::PermissionDenied =>
         {
             false
         }
@@ -46,9 +50,9 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
 pub(crate) async fn send_control_command<T: DeserializeOwned>(
     command: DaemonCommand,
 ) -> Result<DaemonResponse<T>, CliError> {
-    const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+    const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
-    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command))
+    time::timeout(CONTROL_TIMEOUT, send_command(command))
         .await
         .map_err(|error| {
             CliError::request_with_source(
@@ -104,9 +108,9 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     let (socket_path, stream) = try_connect_daemon_socket()
         .await
         .map_err(|error| {
-            let denied_path = if error.primary.kind() == std::io::ErrorKind::PermissionDenied {
+            let denied_path = if error.primary.kind() == io::ErrorKind::PermissionDenied {
                 Some(SOCKET_FILE_PATH)
-            } else if error.fallback.as_ref().is_some_and(|fallback| fallback.kind() == std::io::ErrorKind::PermissionDenied) {
+            } else if error.fallback.as_ref().is_some_and(|fallback| fallback.kind() == io::ErrorKind::PermissionDenied) {
                 Some(FALLBACK_SOCKET_FILE_PATH)
             } else {
                 None
@@ -162,9 +166,9 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
         Err(error)
             if matches!(
                 error.kind(),
-                std::io::ErrorKind::PermissionDenied
-                    | std::io::ErrorKind::ConnectionRefused
-                    | std::io::ErrorKind::NotFound
+                io::ErrorKind::PermissionDenied
+                    | io::ErrorKind::ConnectionRefused
+                    | io::ErrorKind::NotFound
             ) =>
         {
             match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
@@ -190,6 +194,6 @@ async fn try_connect_daemon_socket() -> Result<(&'static str, UnixStream), Conne
 )]
 struct ConnectDaemonSocketError {
     #[source]
-    primary: std::io::Error,
-    fallback: Option<std::io::Error>,
+    primary: io::Error,
+    fallback: Option<io::Error>,
 }

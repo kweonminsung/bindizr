@@ -1,3 +1,5 @@
+use std::slice;
+
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::record::TxtRecordValue;
@@ -245,7 +247,7 @@ fn add_enforces_one_ttl_per_record_set() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
     let differing_ttl = validate_add(
-        std::slice::from_ref(&existing_a),
+        slice::from_ref(&existing_a),
         "www",
         &RecordType::A,
         "192.0.2.11",
@@ -256,7 +258,7 @@ fn add_enforces_one_ttl_per_record_set() {
     assert_eq!(differing_ttl.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
-        std::slice::from_ref(&existing_a),
+        slice::from_ref(&existing_a),
         "www",
         &RecordType::A,
         "192.0.2.11",
@@ -269,7 +271,7 @@ fn add_enforces_one_ttl_per_record_set() {
     // A different type at the same owner name is a different record set.
     let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     let other_record_set = validate_add(
-        std::slice::from_ref(&existing_a),
+        slice::from_ref(&existing_a),
         "www",
         &RecordType::Txt,
         &encoded_txt,

@@ -1,5 +1,8 @@
+use std::time::Duration;
+
 use reqwest::{Method, StatusCode};
 use serde_json::json;
+use tokio::time;
 
 use crate::common::TestApp;
 
@@ -117,7 +120,7 @@ async fn dnssec_csk_rollover_preserves_signed_zone() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
     }
 
-    tokio::time::sleep(std::time::Duration::from_secs(62)).await;
+    time::sleep(Duration::from_secs(62)).await;
 
     // No parent stands in here, so the DS is taken on the caller's word.
     let (status, body) = app

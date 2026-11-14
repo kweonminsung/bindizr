@@ -2,6 +2,7 @@
 
 mod record;
 mod response;
+use base64::engine::general_purpose;
 pub use response::build_error_response;
 mod signer;
 
@@ -219,7 +220,7 @@ impl TsigKey {
             TsigAlgorithm::HmacSha512 => (Algorithm::Sha512, hmac::HMAC_SHA512),
         };
 
-        let secret = base64::engine::general_purpose::STANDARD
+        let secret = general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(TsigError::SecretNotBase64)?;
 

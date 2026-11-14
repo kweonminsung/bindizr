@@ -1,5 +1,7 @@
 //! Building and sending RFC 2136 UPDATE messages.
 
+use std::process;
+
 use domain::base::iana::{Class, Opcode, OptRcode, Rcode};
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{MessageBuilder, Name, Record, Rtype, Ttl, UnknownRecordData};
@@ -92,9 +94,7 @@ pub(crate) fn send_update_udp(
     updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
-    let query_id = (std::process::id() as u16)
-        .wrapping_add(port)
-        .wrapping_add(1);
+    let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(1);
     let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
     let response =
         super::exchange_request(request, key, |message| super::exchange_udp(port, message))?;
@@ -109,7 +109,7 @@ pub(crate) fn send_update_tcp(
     updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
-    let query_id = (std::process::id() as u16).wrapping_add(port);
+    let query_id = (process::id() as u16).wrapping_add(port);
     let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
     let response =
         super::exchange_request(request, key, |message| super::exchange_tcp(port, message))?;
@@ -122,9 +122,7 @@ pub(crate) fn send_signed_update_with_two_zones(
     zone: &str,
     key: &SigningKey,
 ) -> Result<(Rcode, bool), String> {
-    let query_id = (std::process::id() as u16)
-        .wrapping_add(port)
-        .wrapping_add(2);
+    let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(2);
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     builder.header_mut().set_opcode(Opcode::UPDATE);
@@ -153,9 +151,7 @@ pub(crate) fn send_signed_update_with_edns_version(
     key: &SigningKey,
     version: u8,
 ) -> Result<(OptRcode, bool), String> {
-    let query_id = (std::process::id() as u16)
-        .wrapping_add(port)
-        .wrapping_add(3);
+    let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(3);
     let mut builder = build_update(query_id, zone, Class::IN, &[], &[])?;
     builder
         .opt(|opt| {

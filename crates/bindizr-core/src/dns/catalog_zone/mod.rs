@@ -1,5 +1,6 @@
 //! Catalog member identities and schema-2 member extraction (RFC 9432).
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use ring::digest::{self, SHA256};
@@ -124,15 +125,13 @@ pub fn extract_member_zones(
                 })?;
 
                 match member_nodes.entry(labels[0].clone()) {
-                    std::collections::hash_map::Entry::Occupied(entry)
-                        if entry.get() != &member =>
-                    {
+                    Entry::Occupied(entry) if entry.get() != &member => {
                         return Err(ExtractMemberZonesError::MemberNodeNotSingular {
                             name: record.name.clone(),
                         });
                     }
-                    std::collections::hash_map::Entry::Occupied(_) => {}
-                    std::collections::hash_map::Entry::Vacant(entry) => {
+                    Entry::Occupied(_) => {}
+                    Entry::Vacant(entry) => {
                         entry.insert(member);
                     }
                 }

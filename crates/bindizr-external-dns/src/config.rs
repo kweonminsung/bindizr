@@ -1,7 +1,9 @@
 //! Read adapter flags/environment; the adapter runs beside external-dns and does not read bindizr's config.
 
 use std::net::SocketAddr;
+use std::{fs, io};
 
+use bindizr_core::config::{ConfigError, LogLevel};
 use clap::Parser;
 use thiserror::Error;
 
@@ -68,7 +70,7 @@ pub(crate) struct AdapterConfig {
     pub(crate) listen_addr: SocketAddr,
     pub(crate) health_listen_addr: SocketAddr,
     pub(crate) timeout_secs: u64,
-    pub(crate) log_level: bindizr_core::config::LogLevel,
+    pub(crate) log_level: LogLevel,
 }
 
 /// Why the command line does not describe a runnable adapter.
@@ -88,13 +90,13 @@ pub(crate) enum LoadAdapterConfigError {
     ReadTokenFile {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("invalid --log-level '{value}': {source}")]
     InvalidLogLevel {
         value: String,
         #[source]
-        source: bindizr_core::config::ConfigError,
+        source: ConfigError,
     },
 }
 
@@ -122,7 +124,7 @@ impl AdapterConfig {
 
         let token = match &cli.token_file {
             Some(path) => Some(
-                std::fs::read_to_string(path)
+                fs::read_to_string(path)
                     .map_err(|source| LoadAdapterConfigError::ReadTokenFile {
                         path: path.clone(),
                         source,
@@ -134,13 +136,12 @@ impl AdapterConfig {
         };
         let token = token.filter(|token| !token.is_empty());
 
-        let log_level = cli
-            .log_level
-            .parse::<bindizr_core::config::LogLevel>()
-            .map_err(|source| LoadAdapterConfigError::InvalidLogLevel {
+        let log_level = cli.log_level.parse::<LogLevel>().map_err(|source| {
+            LoadAdapterConfigError::InvalidLogLevel {
                 value: cli.log_level.clone(),
                 source,
-            })?;
+            }
+        })?;
 
         Ok(Self {
             bindizr_url,
@@ -156,14 +157,15 @@ impl AdapterConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, iter};
+
     use clap::Parser;
 
     use super::{AdapterConfig, Cli};
 
     /// Build the `Cli` a configuration test starts from, panicking on a parse failure.
     fn to_cli(args: &[&str]) -> Cli {
-        Cli::try_parse_from(std::iter::once("bindizr-external-dns").chain(args.iter().copied()))
-            .unwrap()
+        Cli::try_parse_from(iter::once("bindizr-external-dns").chain(args.iter().copied())).unwrap()
     }
 
     /// Verify that listener defaults to localhost only.
@@ -214,7 +216,7 @@ mod tests {
     fn config_prefers_trimmed_token_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("token");
-        std::fs::write(&path, "secret-token\n").unwrap();
+        fs::write(&path, "secret-token\n").unwrap();
 
         let config = AdapterConfig::load(to_cli(&[
             "--bindizr-url",

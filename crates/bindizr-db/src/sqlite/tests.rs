@@ -15,6 +15,8 @@ use sqlx::{Pool, Sqlite};
 use crate::dnssec_record::DnssecRecordFilter;
 use crate::error::DatabaseError;
 use crate::record::RecordFilter;
+use crate::schema::sqlite;
+use crate::sqlite::role;
 use crate::zone::ZoneFilter;
 
 /// Owner names text matching gets wrong: `evil\.sub` is one label (RFC 1035,
@@ -41,7 +43,7 @@ async fn fixture() -> Pool<Sqlite> {
         .await
         .unwrap();
 
-    for query in crate::schema::sqlite::table_creation_queries() {
+    for query in sqlite::table_creation_queries() {
         sqlx::query(query).execute(&pool).await.unwrap();
     }
 
@@ -271,7 +273,7 @@ async fn listings_match_role_grants_visibility() {
 async fn delete_tx_reports_whether_a_row_went() {
     let pool = fixture().await;
     let mut tx = pool.begin().await.unwrap();
-    let role = crate::sqlite::role::create_tx(
+    let role = role::create_tx(
         &mut tx,
         Role {
             id: RoleId::UNWRITTEN,
@@ -283,16 +285,8 @@ async fn delete_tx_reports_whether_a_row_went() {
     .await
     .unwrap();
 
-    assert!(
-        crate::sqlite::role::delete_tx(&mut tx, role.id)
-            .await
-            .unwrap()
-    );
-    assert!(
-        !crate::sqlite::role::delete_tx(&mut tx, role.id)
-            .await
-            .unwrap()
-    );
+    assert!(role::delete_tx(&mut tx, role.id).await.unwrap());
+    assert!(!role::delete_tx(&mut tx, role.id).await.unwrap());
 
     tx.rollback().await.unwrap();
 }

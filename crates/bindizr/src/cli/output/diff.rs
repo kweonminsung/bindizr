@@ -1,4 +1,6 @@
 //! Render structured record diffs as zone-file `+`/`-`/`~` patches.
+use std::slice;
+
 use bindizr_core::dns::record;
 use bindizr_service::types::{
     DiffZoneVersionsResponse, RecordChange, RecordDiffEntryResponse, RecordDiffResponse,
@@ -13,7 +15,7 @@ fn display_rdata(diff_value: &RecordDiffValueResponse, record_type: &str) -> Str
     match record_type {
         "TXT" => {
             let segments: &[String] = match &diff_value.value {
-                RecordValue::Text(value) => std::slice::from_ref(value),
+                RecordValue::Text(value) => slice::from_ref(value),
                 RecordValue::Segments(segments) => segments,
                 RecordValue::Presentation { presentation } => return presentation.clone(),
             };

@@ -1,3 +1,5 @@
+use std::slice;
+
 use bindizr_core::config::Config;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
@@ -516,8 +518,7 @@ fn group_ops_rejects_names_without_authoritative_zone() {
 /// Resolve an external-dns change request into operations for the test zone.
 fn zone_operations(request: &ApplyExternalDnsChangesRequest, zone: &Zone) -> ZoneOperations {
     let operations = change_set::parse_changes_request(request).unwrap();
-    let grouped =
-        change_set::group_operations_by_zone(std::slice::from_ref(zone), operations).unwrap();
+    let grouped = change_set::group_operations_by_zone(slice::from_ref(zone), operations).unwrap();
 
     grouped.into_values().next().unwrap_or_default()
 }

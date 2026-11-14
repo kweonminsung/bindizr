@@ -19,7 +19,7 @@ use crate::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
 };
-use crate::{Context, dnssec_policy, serial, transaction, zone};
+use crate::{Context, dnssec_policy, notify, serial, transaction, zone};
 
 /// Validate a policy move: layout changes require disabling DNSSEC first; algorithms use rollover.
 /// Denial changes are atomic because all supported algorithms sign NSEC3 (RFC 5702, Section 2; RFC 6605, Section 2; RFC 8080, Section 2).
@@ -158,7 +158,7 @@ pub async fn enable(
 
     // Secondaries can fetch the signed view only after the transaction commits.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -279,7 +279,7 @@ pub async fn update_settings(
 
     // Only a policy move changes zone data; parent nameservers are not served.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -359,7 +359,7 @@ pub async fn disable(
 
     log::info!("event=dnssec_disable zone={zone_name}");
 
-    crate::notify::notify_after_update(cx, &zone_name).await;
+    notify::notify_after_update(cx, &zone_name).await;
 
     Ok(())
 }
@@ -391,7 +391,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
 
     if changed {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(())

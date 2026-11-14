@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use domain::base::iana::{Class, DigestAlgorithm, OptRcode, SecurityAlgorithm};
 use domain::base::{Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl};
 use domain::rdata::{Ds, Soa};
@@ -67,7 +68,7 @@ impl DsRecord {
         let mut rdata = flags.to_be_bytes().to_vec();
         rdata.extend_from_slice(&[3, algorithm]);
         rdata.extend(
-            base64::engine::general_purpose::STANDARD
+            general_purpose::STANDARD
                 .decode(fields[3])
                 .expect("DNSKEY public key is base64"),
         );

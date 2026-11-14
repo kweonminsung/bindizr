@@ -1,5 +1,11 @@
 //! A zone's name, canonical by construction.
 
+use std::fmt;
+
+use serde::de::Error;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
 use super::ParseNameError;
 
 /// A zone's name as rows store it: escaped octet labels, ASCII-folded, without a trailing dot.
@@ -70,7 +76,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.0.encode_by_ref(buffer)
     }
 }
@@ -81,9 +87,7 @@ where
     &'r str: sqlx::Decode<'r, DB>,
 {
     /// Read the row form.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::parse(<&str as sqlx::Decode<'r, DB>>::decode(value)?)?)
     }
 }
@@ -101,13 +105,13 @@ impl<'de> serde::Deserialize<'de> for ZoneName {
     /// Deserialize a zone name from its text, rejecting one that does not parse.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        Self::parse(&value).map_err(serde::de::Error::custom)
+        Self::parse(&value).map_err(Error::custom)
     }
 }
 
-impl std::fmt::Display for ZoneName {
+impl fmt::Display for ZoneName {
     /// Write the zone name in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
 }

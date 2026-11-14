@@ -1,3 +1,5 @@
+use std::slice;
+
 use bindizr_core::dns::message::Rcode;
 
 use super::*;
@@ -103,7 +105,7 @@ fn nsupdate_decode_validates_ignored_delete_owners_and_shapes() {
                 &data
             };
             let valid = record(class, rtype, 0, data);
-            let result = decode_updates(std::slice::from_ref(&valid), &zone, data);
+            let result = decode_updates(slice::from_ref(&valid), &zone, data);
 
             if rtype == Rtype::SOA {
                 assert!(result.unwrap().is_empty());

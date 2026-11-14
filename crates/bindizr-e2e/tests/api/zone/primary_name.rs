@@ -1,4 +1,4 @@
-use domain::base::{MessageBuilder, Rtype, UnknownRecordData};
+use domain::base::{Message, MessageBuilder, Rtype, UnknownRecordData};
 use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
@@ -50,7 +50,7 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
             .unwrap();
         let wire = question.finish();
         let response = common::exchange_tcp(app.dns_port(), &wire).unwrap();
-        let message = domain::base::Message::from_octets(response.as_slice()).unwrap();
+        let message = Message::from_octets(response.as_slice()).unwrap();
         let soa = message
             .answer()
             .unwrap()

@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use bindizr_core::config::{Config, DatabaseType};
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::time;
 
 use super::Report;
 
@@ -39,7 +40,7 @@ pub(crate) async fn check_database(config: &Config, report: &mut Report) {
         }
     }
 
-    match tokio::time::timeout(DB_CHECK_TIMEOUT, bindizr_db::probe_connection(database)).await {
+    match time::timeout(DB_CHECK_TIMEOUT, bindizr_db::probe_connection(database)).await {
         Ok(Ok(())) => report.ok(format!("Database reachable: {}", database.database_type)),
         Ok(Err(error)) => report.fail(format!("Database not reachable: {error}")),
         Err(_) => report.fail(format!(

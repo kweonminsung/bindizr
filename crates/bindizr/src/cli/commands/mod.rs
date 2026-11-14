@@ -14,8 +14,10 @@ pub(crate) mod tsig_key;
 pub(crate) mod zone;
 
 use std::time::Duration;
+use std::{fs, io};
 
 use thiserror::Error;
+use tokio::time;
 
 /// Poll `check` every 100ms until it yields a value, bounded by `deadline`.
 /// Returns `None` on expiry.
@@ -25,25 +27,24 @@ pub(crate) async fn poll_with_deadline<T>(
 ) -> Option<T> {
     let wait = async {
         loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            time::sleep(Duration::from_millis(100)).await;
             if let Some(value) = check().await {
                 break value;
             }
         }
     };
 
-    tokio::time::timeout(deadline, wait).await.ok()
+    time::timeout(deadline, wait).await.ok()
 }
 
 /// Read command input from a file path, or from stdin when the path is `-`.
 pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
     if path == "-" {
         let mut buffer = String::new();
-        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buffer)
-            .map_err(ReadInputError::Stdin)?;
+        io::Read::read_to_string(&mut io::stdin(), &mut buffer).map_err(ReadInputError::Stdin)?;
         Ok(buffer)
     } else {
-        std::fs::read_to_string(path).map_err(|source| ReadInputError::File {
+        fs::read_to_string(path).map_err(|source| ReadInputError::File {
             path: path.to_string(),
             source,
         })
@@ -54,11 +55,11 @@ pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
 #[derive(Debug, Error)]
 pub(crate) enum ReadInputError {
     #[error("failed to read from stdin: {0}")]
-    Stdin(#[source] std::io::Error),
+    Stdin(#[source] io::Error),
     #[error("failed to read '{path}': {source}")]
     File {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }

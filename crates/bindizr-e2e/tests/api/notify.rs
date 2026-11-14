@@ -1,4 +1,6 @@
 use reqwest::{Method, StatusCode};
+use tokio::net::UdpSocket;
+use tokio::time;
 
 use crate::common::{TestApp, TestAppOptions};
 
@@ -33,8 +35,8 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
     }
 
     // Let catalog jobs from fixture creation finish before adding the silent peer.
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    time::sleep(Duration::from_millis(50)).await;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("silent", &socket.local_addr().unwrap().to_string())
         .await;
 
@@ -52,11 +54,10 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
 
         assert_eq!(status, StatusCode::CREATED, "{body}");
 
-        let (len, peer) =
-            tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-                .await
-                .expect("an earlier ACK must not delay the next committed zone")
-                .unwrap();
+        let (len, peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+            .await
+            .expect("an earlier ACK must not delay the next committed zone")
+            .unwrap();
         let query = Message::from_octets(buffer[..len].to_vec()).unwrap();
 
         assert_eq!(&query.sole_question().unwrap().qname().to_string(), name);
@@ -88,7 +89,7 @@ async fn silent_notify_waits_do_not_delay_commits_or_later_zones() {
     let mut peers = HashSet::new();
     let mut replies = Vec::new();
 
-    tokio::time::timeout(Duration::from_secs(1), async {
+    time::timeout(Duration::from_secs(1), async {
         while seen.len() < names.len() {
             let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
             let query = Message::from_octets(buffer[..len].to_vec()).unwrap();
@@ -278,13 +279,13 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
 
-    tokio::time::timeout(Duration::from_secs(3), async {
+    time::timeout(Duration::from_secs(3), async {
         while !secondary
             .received()
             .iter()
             .any(|notify| notify.zone == name)
         {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
@@ -310,7 +311,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
     assert_eq!(status, StatusCode::OK, "{body}");
 
     app.run_cli_success(&["stop"], None).await;
-    tokio::time::timeout(Duration::from_secs(3), async {
+    time::timeout(Duration::from_secs(3), async {
         while secondary
             .received()
             .iter()
@@ -318,7 +319,7 @@ async fn queued_notify_caps_delay_coalesces_writes_and_flushes_on_shutdown() {
             .count()
             < 2
         {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
@@ -336,7 +337,7 @@ async fn notify_reports_completion_when_secondary_does_not_implement_notify() {
     let zone = app.create_test_zone().await;
     let name = zone["name"].as_str().unwrap();
 
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     app.create_secondary("notimp", &socket.local_addr().unwrap().to_string())
         .await;
     let server = tokio::spawn(async move {

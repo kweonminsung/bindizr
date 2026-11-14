@@ -9,9 +9,9 @@ use domain::tsig::ClientSequence;
 
 use super::*;
 use crate::dns::tsig::TsigSigningKey;
-use crate::dns::{DNS_TCP_MAX_SIZE, tsig};
+use crate::dns::{DNS_TCP_MAX_SIZE, Ttl, query, tsig};
 use crate::model::record::RecordType;
-use crate::model::tsig_key::TsigAlgorithm;
+use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 
 /// Virtual catalog metadata retains its SOA, schema version and member wire records.
 #[test]
@@ -79,7 +79,7 @@ fn signed_udp_responses_preserve_macs_with_long_compressed_key_names() {
         "c".repeat(63),
         "d".repeat(61)
     );
-    let key = crate::model::tsig_key::TsigKey {
+    let key = TsigKey {
         name: long_name.clone(),
         ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
@@ -215,7 +215,7 @@ fn build_question(qtype: Rtype, opt_versions: &[u8]) -> Vec<u8> {
 fn axfr_query() -> ParsedQuery {
     ParsedQuery::parse(
         &build_question(Rtype::AXFR, &[]),
-        Keepalive::IdleTimeout(std::time::Duration::ZERO),
+        Keepalive::IdleTimeout(Duration::ZERO),
     )
     .unwrap()
 }
@@ -545,7 +545,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
     };
     let zone = ZoneName::parse(&longest_name(['a', 'b', 'c', 'd'])).unwrap();
     let qname = zone.to_wire_name().unwrap();
-    let key = crate::model::tsig_key::TsigKey {
+    let key = TsigKey {
         name: longest_name(['k', 'l', 'm', 'n']),
         ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
@@ -616,7 +616,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
                         &OwnerName::apex(),
                         &record_type,
                         &value,
-                        crate::dns::Ttl::from_secs(300),
+                        Ttl::from_secs(300),
                         None,
                     )
                 })
@@ -845,7 +845,7 @@ fn query_validation_rejects_invalid_opt_owner_and_section() {
     let wire = build_question(Rtype::SOA, &[0]);
     let start = plain.len();
     let mut named = wire.clone();
-    named.splice(start..start + 1, [1, b'x', 0]);
+    named.splice(start..=start, [1, b'x', 0]);
 
     assert_eq!(
         ParsedQuery::parse(&named, Keepalive::None)
@@ -895,7 +895,7 @@ fn response_limits_follow_transport_and_edns() {
         assert!(
             matches!(limit.validate_len(expected + 1), Err(EncodeMessageError::TooLarge { len, max_len }) if len == expected + 1 && max_len == expected)
         );
-        let (_, wire) = crate::dns::query::build_question(
+        let (_, wire) = query::build_question(
             Opcode::QUERY,
             false,
             false,
@@ -927,20 +927,14 @@ fn oversized_response_does_not_advance_the_signer() {
         "c".repeat(63)
     ))
     .unwrap();
-    let key = crate::model::tsig_key::TsigKey {
+    let key = TsigKey {
         name: format!("{}.{}.{}.k", "d".repeat(63), "e".repeat(63), "f".repeat(63)),
         ..crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha512)
     }
     .to_signing_key()
     .unwrap();
-    let (_, mut additional) = crate::dns::query::build_question(
-        Opcode::QUERY,
-        false,
-        false,
-        &qname,
-        Rtype::SOA,
-        Some(512),
-    );
+    let (_, mut additional) =
+        query::build_question(Opcode::QUERY, false, false, &qname, Rtype::SOA, Some(512));
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let wire = additional.finish();
     let mut signer: TransferSigner = tsig::verify_tsig(&wire, Some(key)).unwrap().into();
@@ -971,14 +965,8 @@ fn oversized_frame_does_not_advance_the_signer() {
         .to_signing_key()
         .unwrap();
     let query = axfr_query();
-    let (_, mut additional) = crate::dns::query::build_question(
-        Opcode::QUERY,
-        false,
-        false,
-        &query.qname,
-        Rtype::AXFR,
-        None,
-    );
+    let (_, mut additional) =
+        query::build_question(Opcode::QUERY, false, false, &query.qname, Rtype::AXFR, None);
     let client = ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
     let wire = additional.finish();
     let query = ParsedQuery::parse(&wire, Keepalive::IdleTimeout(Duration::ZERO)).unwrap();

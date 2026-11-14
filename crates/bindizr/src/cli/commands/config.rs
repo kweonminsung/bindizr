@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bindizr_core::config::Config;
 use bindizr_core::{config, outln};
 use bindizr_service::types::MessageResponse;
@@ -260,6 +262,6 @@ fn print_optional(key: &str, value: Option<&str>) {
 }
 
 /// Print one configuration key and its value.
-fn print_value(key: &str, value: impl std::fmt::Display) {
+fn print_value(key: &str, value: impl fmt::Display) {
     outln!("  {} = {}", color::yellow(&format!("{key:<24}")), value);
 }

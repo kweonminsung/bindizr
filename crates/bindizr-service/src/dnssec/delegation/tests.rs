@@ -1,3 +1,5 @@
+use std::slice;
+
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecord;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
@@ -6,6 +8,7 @@ use bindizr_core::model::dnssec_policy::PolicyId;
 use bindizr_core::model::zone::ZoneId;
 
 use super::*;
+use crate::error::ErrorCode;
 use crate::types::DsState;
 
 /// Missing parent configuration keeps its service-owned cause and established message.
@@ -17,7 +20,7 @@ fn missing_parent_nameservers_remains_a_typed_service_error() {
         ProbeDelegationError::NoParentNameservers,
     );
 
-    assert_eq!(error.code(), crate::error::ErrorCode::DnssecDsUnverified);
+    assert_eq!(error.code(), ErrorCode::DnssecDsUnverified);
     assert_eq!(
         error.to_string(),
         "could not verify that the parent zone serves no DS for zone 'example.com': \
@@ -100,7 +103,7 @@ fn delegation_response(
     key: &DnssecKey,
     answers: Vec<Option<DsRecordSet>>,
 ) -> DnssecDelegationResponse {
-    build_delegation_response(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
+    build_delegation_response(&zone(), slice::from_ref(key), parent(answers)).unwrap()
 }
 
 /// Verify that promotion waits until every server serves the DS.

@@ -1,5 +1,6 @@
 //! Adapt native WKS text to the generic wire syntax understood by `domain`.
 
+use std::iter;
 use std::ops::Range;
 
 use domain::base::iana::Rtype;
@@ -175,7 +176,7 @@ fn append_entry(
         rdata.as_bytes().len(),
         hex::encode_upper(rdata.as_bytes())
     ));
-    output.extend(std::iter::repeat_n(
+    output.extend(iter::repeat_n(
         '\n',
         content[data_start..entry.end]
             .bytes()
@@ -190,6 +191,10 @@ fn append_entry(
 mod tests {
 
     use super::*;
+    use crate::dns::Ttl;
+    use crate::dns::name::ZoneName;
+    use crate::dns::zonefile::ParsedZoneFile;
+    use crate::model::record::RecordType;
 
     /// Preserve the WKS parse cause until the zone-file result renders its diagnostic.
     #[test]
@@ -202,10 +207,10 @@ mod tests {
 
         assert!(source.downcast_ref::<ParseRecordValueError>().is_some());
         assert_eq!(error.to_string(), format!("2: WKS: {source}"));
-        let parsed = crate::dns::zonefile::ParsedZoneFile::parse(
+        let parsed = ParsedZoneFile::parse(
             content,
-            &crate::dns::name::ZoneName::parse("example.com").unwrap(),
-            crate::dns::Ttl::from_secs(300),
+            &ZoneName::parse("example.com").unwrap(),
+            Ttl::from_secs(300),
         );
 
         assert_eq!(parsed.errors, vec![error.to_string()]);
@@ -222,18 +227,15 @@ mod tests {
         assert!(
             normalized.contains("text IN TXT \"WKS\" \"192.0.2.1 6 80\"\nWKS IN A 192.0.2.8\n")
         );
-        let parsed = crate::dns::zonefile::ParsedZoneFile::parse(
+        let parsed = ParsedZoneFile::parse(
             content,
-            &crate::dns::name::ZoneName::parse("example.com").unwrap(),
-            crate::dns::Ttl::from_secs(300),
+            &ZoneName::parse("example.com").unwrap(),
+            Ttl::from_secs(300),
         );
 
         assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
         assert_eq!(parsed.records.len(), 5);
-        assert_eq!(
-            parsed.records[1].record_type,
-            crate::model::record::RecordType::Wks
-        );
+        assert_eq!(parsed.records[1].record_type, RecordType::Wks);
         assert_eq!(parsed.records[2].owner_fqdn, "host.example.com.");
     }
 

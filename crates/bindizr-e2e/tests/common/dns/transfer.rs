@@ -1,6 +1,7 @@
 //! Signed and unsigned zone transfers over TCP and TLS.
 
 use std::io::{Read, Write};
+use std::process;
 
 use domain::base::iana::Rcode;
 use domain::base::{Message, MessageBuilder, Rtype};
@@ -70,7 +71,7 @@ fn transfer<S: Read + Write>(
     zone: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferResult, String> {
-    let query_id = (std::process::id() as u16).wrapping_add(7);
+    let query_id = (process::id() as u16).wrapping_add(7);
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     let mut question = builder.question();

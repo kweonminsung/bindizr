@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use reqwest::{Method, StatusCode};
+use tokio::time;
 
 use crate::common::TestApp;
 
@@ -46,7 +49,7 @@ async fn zone_status_reports_secondaries() {
 
             assert!(attempts < 60, "secondaries never reached in_sync: {body}");
 
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            time::sleep(Duration::from_secs(1)).await;
         }
     } else {
         // Local mode has no secondaries configured.

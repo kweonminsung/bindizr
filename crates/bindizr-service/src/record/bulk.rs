@@ -15,7 +15,7 @@ use crate::types::{
     CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse, Run,
 };
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, time, transaction, zone};
+use crate::{Context, dnssec, notify, serial, time, transaction, zone};
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -251,7 +251,7 @@ pub async fn create_bulk(
 
     if !run.is_dry_run() {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     let notify_ms = time::elapsed_ms(started);

@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn normalize_filter_reads_blank_selectors_as_absent() {
         let filter = normalize_filter(AuditLogFilter {
-            entity: Some("".to_string()),
+            entity: Some(String::new()),
             entity_name: Some("   ".to_string()),
             ..Default::default()
         })

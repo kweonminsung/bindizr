@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use reqwest::{Client, Method, StatusCode, header};
 use serde_json::{Value, json};
+use tokio::time;
 
 use crate::common;
 use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
@@ -61,7 +63,7 @@ impl ExternalDnsAdapter {
                 };
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            time::sleep(Duration::from_millis(100)).await;
         }
 
         panic!("bindizr-external-dns did not become ready");
@@ -763,6 +765,9 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_record_listing_spans_read_pages() {
+    // Past the read page, so the listing has to tile without dropping a row.
+    const RECORDS: usize = 5100;
+
     let app = TestApp::start_with_options(TestAppOptions {
         external_dns_enabled: true,
         ..Default::default()
@@ -772,8 +777,6 @@ async fn external_dns_record_listing_spans_read_pages() {
 
     app.create_named_zone(&zone_name).await;
 
-    // Past the read page, so the listing has to tile without dropping a row.
-    const RECORDS: usize = 5100;
     let zone_file: String = (0..RECORDS)
         .map(|i| {
             format!(
@@ -807,7 +810,7 @@ async fn external_dns_record_listing_spans_read_pages() {
 
     assert_eq!(a_records, RECORDS, "{}", listed.len());
 
-    let names: std::collections::HashSet<&str> = listed
+    let names: HashSet<&str> = listed
         .iter()
         .filter_map(|record| record["name"].as_str())
         .collect();

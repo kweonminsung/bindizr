@@ -1,3 +1,5 @@
+use std::iter;
+
 use super::*;
 use crate::dns::record::ParseRecordValueError;
 
@@ -34,7 +36,7 @@ fn txt_segments_round_trip_wire_encoding() {
 #[test]
 fn txt_segments_reject_empty_lists() {
     assert_eq!(
-        TxtRecordValue::from_segments(std::iter::empty()).unwrap_err(),
+        TxtRecordValue::from_segments(iter::empty()).unwrap_err(),
         ParseRecordValueError::TxtNoCharString
     );
 }
@@ -63,9 +65,9 @@ fn txt_string_splits_long_values() {
     assert_eq!(rdata.clone().into_rdata(), {
         let mut expected = Vec::new();
         expected.push(255);
-        expected.extend(std::iter::repeat_n(b'a', 255));
+        expected.extend(iter::repeat_n(b'a', 255));
         expected.push(45);
-        expected.extend(std::iter::repeat_n(b'a', 45));
+        expected.extend(iter::repeat_n(b'a', 45));
         expected
     });
     assert_eq!(

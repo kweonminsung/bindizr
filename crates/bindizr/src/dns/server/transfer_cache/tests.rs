@@ -1,5 +1,7 @@
 //! Entries eviction and the record accounting it evicts on.
 
+use std::sync::Arc;
+
 use bindizr_core::dns::Ttl;
 use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::record::{Record, RecordId, RecordType};
@@ -27,8 +29,8 @@ fn zone_content(records: usize) -> CachedTransferContent {
         .collect();
     CachedTransferContent {
         version_id: ZoneVersionId::from(1),
-        records: std::sync::Arc::new(records),
-        dnssec_records: std::sync::Arc::new(Vec::new()),
+        records: Arc::new(records),
+        dnssec_records: Arc::new(Vec::new()),
     }
 }
 

@@ -210,13 +210,14 @@ pub(crate) async fn list_by_names_tx(
     names: &[OwnerName],
     _lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
+    // Load only same-name conflicts using idx_records_zone_name;
+    // chunk the IN list below SQLite's bind-variable limit.
+    const CHUNK: usize = 400;
+
     if names.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Load only same-name conflicts using idx_records_zone_name;
-    // chunk the IN list below SQLite's bind-variable limit.
-    const CHUNK: usize = 400;
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {
@@ -479,12 +480,12 @@ pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
+    // One bind per id; keep the count under SQLite's conservative limit.
+    const CHUNK: usize = 900;
+
     if ids.is_empty() {
         return Ok(());
     }
-
-    // One bind per id; keep the count under SQLite's conservative limit.
-    const CHUNK: usize = 900;
 
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM records WHERE id IN (".to_string();

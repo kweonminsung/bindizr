@@ -35,6 +35,10 @@ impl TlsaRecordValue {
 
     /// Validate the fields of this TLSA value.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+        // Bounded so the record fits one transfer message beside its 3 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_CERT_DATA: usize = MAX_RECORD_RDATA - 3;
+
         // Digest lengths are fixed per matching type; type 0 is a full
         // certificate or SPKI and takes any length.
         let expected = match self.matching_type {
@@ -52,10 +56,6 @@ impl TlsaRecordValue {
                 len: self.cert_data.len(),
             });
         }
-
-        // Bounded so the record fits one transfer message beside its 3 fixed
-        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
-        const MAX_CERT_DATA: usize = MAX_RECORD_RDATA - 3;
 
         if self.cert_data.len() > MAX_CERT_DATA {
             return Err(ParseRecordValueError::TlsaDataTooLong {

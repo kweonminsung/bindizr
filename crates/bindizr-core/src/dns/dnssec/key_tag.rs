@@ -3,6 +3,8 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 
 /// A key tag, 0 through 65535.
@@ -86,7 +88,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i32::from(*self).encode_by_ref(buffer)
     }
 }
@@ -96,9 +98,7 @@ where
     i32: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a column outside 16 bits fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)

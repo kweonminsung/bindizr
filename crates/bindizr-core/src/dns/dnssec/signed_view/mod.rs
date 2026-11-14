@@ -6,6 +6,7 @@ mod input;
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 
 use chrono::{DateTime, Utc};
 use domain::base::iana::Rtype;
@@ -14,8 +15,8 @@ use domain::crypto::sign::{KeyPair, SecretKeyBytes};
 use domain::dnssec::sign::keys::signingkey::SigningKey;
 use domain::dnssec::sign::records::Rrset;
 use domain::dnssec::sign::signatures::rrsigs;
-use domain::rdata::ZoneRecordData;
 use domain::rdata::dnssec::Timestamp;
+use domain::rdata::{Dnskey, Rrsig, ZoneRecordData};
 use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
@@ -206,7 +207,7 @@ impl SignedViewParams<'_> {
             if let Some(last) = current.last()
                 && (last.owner() != record.owner() || last.rtype() != record.rtype())
             {
-                signable.push(std::mem::take(&mut current));
+                signable.push(mem::take(&mut current));
             }
             current.push(record);
         }
@@ -421,7 +422,7 @@ fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerNa
 pub(crate) struct Signer<'a> {
     key: &'a DnssecKey,
     signing_key: SigningKey<Vec<u8>, KeyPair>,
-    dnskey: domain::rdata::Dnskey<Vec<u8>>,
+    dnskey: Dnskey<Vec<u8>>,
     key_tag: KeyTag,
     algorithm: u8,
 }
@@ -450,7 +451,7 @@ impl<'a> Signer<'a> {
         record_set: &[&SignRecord],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
-    ) -> Result<WireRecord<domain::rdata::Rrsig<Vec<u8>, WireName>>, SignZoneError> {
+    ) -> Result<WireRecord<Rrsig<Vec<u8>, WireName>>, SignZoneError> {
         let record_set = Rrset::new_from_refs(record_set).map_err(|error| {
             SignZoneError::MismatchedRecordSet {
                 reason: error.to_string(),

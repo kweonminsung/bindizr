@@ -5,8 +5,11 @@ use bindizr_core::dns::record::{Rdata, SoaRecordValue};
 use bindizr_core::dns::{message, name};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tokio::sync::oneshot;
+use tokio::time;
 
 use super::*;
+use crate::dns_client;
 
 /// Finish an outstanding transfer, then honor zero and expired keepalive timeouts.
 #[tokio::test]
@@ -20,7 +23,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
     ] {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let (idle_closed, idle_observed) = tokio::sync::oneshot::channel();
+        let (idle_closed, idle_observed) = oneshot::channel();
 
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
@@ -30,14 +33,12 @@ async fn fetch_zone_honors_keepalive_timeouts() {
 
             for transfer in 0..2 {
                 let query = if transfer == 0 {
-                    crate::dns_client::read_tcp_message(&mut stream)
-                        .await
-                        .unwrap()
+                    dns_client::read_tcp_message(&mut stream).await.unwrap()
                 } else if idle != 0 {
                     assert!(
-                        tokio::time::timeout(
+                        time::timeout(
                             Duration::from_secs(1),
-                            crate::dns_client::read_tcp_message(&mut stream)
+                            dns_client::read_tcp_message(&mut stream)
                         )
                         .await
                         .unwrap()
@@ -47,12 +48,10 @@ async fn fetch_zone_honors_keepalive_timeouts() {
 
                     stream = listener.accept().await.unwrap().0;
 
-                    crate::dns_client::read_tcp_message(&mut stream)
-                        .await
-                        .unwrap()
+                    dns_client::read_tcp_message(&mut stream).await.unwrap()
                 } else {
                     tokio::select! {
-                        query = crate::dns_client::read_tcp_message(&mut stream) => match query {
+                        query = dns_client::read_tcp_message(&mut stream) => match query {
                             Ok(query) => {
                                 reused = true;
                                 query
@@ -60,7 +59,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
                             Err(_) => {
                                 let (next, _) = listener.accept().await.unwrap();
                                 stream = next;
-                                crate::dns_client::read_tcp_message(&mut stream)
+                                dns_client::read_tcp_message(&mut stream)
                                     .await
                                     .unwrap()
                             }
@@ -68,7 +67,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
 
                         accepted = listener.accept() => {
                             stream = accepted.unwrap().0;
-                            crate::dns_client::read_tcp_message(&mut stream)
+                            dns_client::read_tcp_message(&mut stream)
                                 .await
                                 .unwrap()
                         }
@@ -147,7 +146,7 @@ async fn fetch_zone_honors_keepalive_timeouts() {
             2
         );
 
-        let reused = tokio::time::timeout(Duration::from_secs(5), server)
+        let reused = time::timeout(Duration::from_secs(5), server)
             .await
             .unwrap()
             .unwrap();
@@ -169,9 +168,7 @@ async fn fetch_transfer(
 
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let query = crate::dns_client::read_tcp_message(&mut stream)
-            .await
-            .unwrap();
+        let query = dns_client::read_tcp_message(&mut stream).await.unwrap();
 
         // The query carries an OPT; the reply copies its question alone:
         // the header, the name, then QTYPE and QCLASS.
@@ -206,7 +203,7 @@ async fn fetch_transfer(
     let qname = "example.com.".parse().unwrap();
 
     let mut stream = TcpStream::connect(addr).await.unwrap();
-    let result = tokio::time::timeout(
+    let result = time::timeout(
         Duration::from_secs(5),
         fetch_zone_on_stream(&mut stream, &qname, 2),
     )

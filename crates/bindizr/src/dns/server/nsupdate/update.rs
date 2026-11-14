@@ -4,6 +4,7 @@
 use bindizr_core::dns::message::OptRcode;
 use bindizr_core::dns::name::{ParseNameError, ZoneName};
 use bindizr_core::dns::nsupdate::parser::UpdateRequest;
+use bindizr_core::dns::tsig;
 use bindizr_core::dns::tsig::{ResponseSigner, TsigError};
 use bindizr_core::model::transfer::TransferTransport;
 use bindizr_core::model::tsig_key::TsigKey;
@@ -124,13 +125,15 @@ pub(crate) async fn authenticate_tsig_key(
 
     // Verify unknown keys too, so the response encoder receives BADKEY.
     let signing_key = tsig_key.as_ref().map(TsigKey::to_signing_key).transpose()?;
-    let signer = bindizr_core::dns::tsig::verify_tsig(query_data, signing_key)?;
+    let signer = tsig::verify_tsig(query_data, signing_key)?;
 
     Ok((tsig_key, signer))
 }
 
 #[cfg(test)]
 mod tests {
+
+    use std::io;
 
     use bindizr_core::dns::message::Rcode;
     use bindizr_core::dns::nsupdate::parser::ValidateUpdateShapeError;
@@ -160,7 +163,7 @@ mod tests {
 
         let error = UpdateError::from(NsupdateError::from(ServiceError::internal_with_source(
             "storage failed",
-            std::io::Error::other("storage"),
+            io::Error::other("storage"),
         )));
         let nsupdate = error
             .source()
@@ -175,7 +178,7 @@ mod tests {
             .downcast_ref::<ServiceError>()
             .unwrap();
 
-        assert!(service.source().unwrap().is::<std::io::Error>());
+        assert!(service.source().unwrap().is::<io::Error>());
 
         let error = UpdateError::from(TsigError::EmptySecret);
 

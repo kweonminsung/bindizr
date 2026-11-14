@@ -1,3 +1,4 @@
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,6 +8,7 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query::DsRecord;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::time;
 
 use super::*;
 
@@ -24,7 +26,7 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
         let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         match TcpListener::bind(udp.local_addr().unwrap()).await {
             Ok(tcp) => break (udp, tcp),
-            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(error) if error.kind() == io::ErrorKind::AddrInUse => continue,
             Err(error) => panic!("binding TCP listener failed: {error}"),
         }
     };
@@ -38,7 +40,7 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
         .await
     });
     let mut query = [0u8; 4096];
-    let (len, client) = tokio::time::timeout(TIMEOUT, udp.recv_from(&mut query))
+    let (len, client) = time::timeout(TIMEOUT, udp.recv_from(&mut query))
         .await
         .unwrap()
         .unwrap();
@@ -48,7 +50,7 @@ async fn query_ds_cancels_child_exchanges_with_the_request() {
     let response = build_response(&query[..len], FLAG_TC, 0, &[], &[]);
     udp.send_to(&response, client).await.unwrap();
     assert!(
-        tokio::time::timeout(Duration::from_millis(150), tcp.accept())
+        time::timeout(Duration::from_millis(150), tcp.accept())
             .await
             .is_err()
     );
@@ -229,7 +231,7 @@ async fn fake_server(behavior: ServerBehavior) -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         match TcpListener::bind(socket.local_addr().unwrap()).await {
             Ok(listener) => break (Arc::new(socket), listener),
-            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(error) if error.kind() == io::ErrorKind::AddrInUse => continue,
             Err(error) => panic!("failed to bind the fake server's TCP side: {error}"),
         }
     };

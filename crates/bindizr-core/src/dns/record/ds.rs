@@ -64,6 +64,10 @@ impl DsRecordValue {
 
     /// Validate the fields of this DS value.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+        // Bounded so the record fits one transfer message beside its 4 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_DIGEST: usize = MAX_RECORD_RDATA - 4;
+
         // Digest lengths are fixed per type (RFC 4509 for SHA-256); a wrong
         // length is a broken delegation, not a serveable record.
         let expected = match self.digest_type {
@@ -82,10 +86,6 @@ impl DsRecordValue {
                 len: self.digest.len(),
             });
         }
-
-        // Bounded so the record fits one transfer message beside its 4 fixed
-        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
-        const MAX_DIGEST: usize = MAX_RECORD_RDATA - 4;
 
         if self.digest.len() > MAX_DIGEST {
             return Err(ParseRecordValueError::DsDigestTooLong {

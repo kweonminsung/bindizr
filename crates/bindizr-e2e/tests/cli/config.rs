@@ -1,4 +1,5 @@
-use std::process::{Command, Stdio};
+use std::fs;
+use std::process::{Command, Output, Stdio};
 
 use crate::common;
 use crate::common::TestApp;
@@ -25,7 +26,7 @@ level = "info"
 
 /// Run `bindizr config check` against the host binary directly: the command is
 /// offline, so no daemon or compose stack is involved.
-fn run_config_check(file: Option<&str>, env: &[(&str, &str)]) -> std::process::Output {
+fn run_config_check(file: Option<&str>, env: &[(&str, &str)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"));
     command.args(["config", "check"]);
 
@@ -49,7 +50,7 @@ fn run_config_check(file: Option<&str>, env: &[(&str, &str)]) -> std::process::O
 fn config_check_accepts_a_config_flag() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
+    fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
 
     let path = config_path.to_str().expect("config path was not UTF-8");
     let output = run_config_check(Some(path), &[]);
@@ -67,7 +68,7 @@ fn config_check_accepts_a_config_flag() {
 fn config_check_accepts_wildcard_dns_addresses() {
     let temp_dir = tempfile::tempdir().unwrap();
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, VALID_CONFIG).unwrap();
+    fs::write(&config_path, VALID_CONFIG).unwrap();
     let path = config_path.to_str().unwrap();
 
     for addr in ["0.0.0.0", "::"] {
@@ -83,7 +84,7 @@ fn config_check_defaults_omitted_sections() {
     let temp_dir = tempfile::tempdir().unwrap();
     let config_path = temp_dir.path().join("bindizr.conf.toml");
     let path = config_path.to_str().unwrap();
-    std::fs::write(
+    fs::write(
         &config_path,
         "[database.sqlite]\nfile_path = \"bindizr.sqlite\"\n",
     )
@@ -92,7 +93,7 @@ fn config_check_defaults_omitted_sections() {
     common::assert_cli_success(&["config", "check"], &output);
 
     // With no sections in the file, the database location can come from the environment.
-    std::fs::write(&config_path, "").unwrap();
+    fs::write(&config_path, "").unwrap();
     let output = run_config_check(
         Some(path),
         &[("BINDIZR_DATABASE_SQLITE_FILE_PATH", "bindizr.sqlite")],
@@ -106,7 +107,7 @@ fn config_check_defaults_omitted_sections() {
 fn config_check_uses_config_path_env_without_argument() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
+    fs::write(&config_path, VALID_CONFIG).expect("failed to write config");
 
     let path = config_path.to_str().expect("config path was not UTF-8");
     let output = run_config_check(None, &[("BINDIZR_CONFIG_PATH", path)]);
@@ -122,7 +123,7 @@ fn config_check_uses_config_path_env_without_argument() {
 fn config_check_rejects_invalid_config() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = temp_dir.path().join("bindizr.conf.toml");
-    std::fs::write(&config_path, "[api]\nlisten_addr = \"not-an-ip\"\n")
+    fs::write(&config_path, "[api]\nlisten_addr = \"not-an-ip\"\n")
         .expect("failed to write config");
 
     let path = config_path.to_str().expect("config path was not UTF-8");
@@ -187,7 +188,7 @@ async fn config_list_and_get_show_loaded_config() {
 async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     let app = TestApp::start_local().await;
     let path = app.config_path();
-    let original = std::fs::read_to_string(&path).expect("config file");
+    let original = fs::read_to_string(&path).expect("config file");
 
     assert_eq!(
         app.run_cli_success(&["config", "get", "logging.level"], None)
@@ -196,7 +197,7 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
         "error"
     );
 
-    std::fs::write(
+    fs::write(
         &path,
         original.replace(r#"level = "error""#, r#"level = "warn""#),
     )
@@ -219,7 +220,7 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
         .await
         .trim()
         .to_string();
-    std::fs::write(
+    fs::write(
         &path,
         original.replace(&format!("listen_port = {port}"), "listen_port = 1"),
     )
@@ -236,5 +237,5 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
         port
     );
 
-    std::fs::write(&path, original).expect("restore config");
+    fs::write(&path, original).expect("restore config");
 }

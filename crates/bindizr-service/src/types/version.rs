@@ -1,5 +1,7 @@
 //! Zone version, diff, and rollback payloads.
 
+use std::fmt;
+
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::record::SoaMailbox;
 use bindizr_core::dns::{Serial, SoaInterval, Ttl};
@@ -128,9 +130,9 @@ pub enum RecordChange {
     Changed,
 }
 
-impl std::fmt::Display for RecordChange {
+impl fmt::Display for RecordChange {
     /// Write the change as its diff mark.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Added => "+",
             Self::Removed => "-",

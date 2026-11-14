@@ -1,7 +1,9 @@
 //! The wire RDATA a key implies: DNSKEY and its DS digests.
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use domain::base::iana::SecurityAlgorithm;
+use domain::rdata::Dnskey;
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
 
@@ -29,11 +31,11 @@ pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
 
 impl DnssecKey {
     /// The key's DNSKEY RDATA rebuilt from its stored public half.
-    pub(crate) fn to_dnskey(&self) -> Result<domain::rdata::Dnskey<Vec<u8>>, EncodeKeyRdataError> {
-        let public_key = base64::engine::general_purpose::STANDARD
+    pub(crate) fn to_dnskey(&self) -> Result<Dnskey<Vec<u8>>, EncodeKeyRdataError> {
+        let public_key = general_purpose::STANDARD
             .decode(&self.public_key)
             .map_err(EncodeKeyRdataError::PublicKeyNotBase64)?;
-        domain::rdata::Dnskey::new(
+        Dnskey::new(
             self.role.flags(),
             3,
             SecurityAlgorithm::from_int(self.algorithm.as_i32() as u8),

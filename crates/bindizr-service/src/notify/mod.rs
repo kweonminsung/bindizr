@@ -11,8 +11,8 @@ pub use send::{
 use thiserror::Error;
 use tokio::task::JoinSet;
 
-use crate::Context;
 use crate::error::ServiceError;
+use crate::{Context, zone};
 
 /// Bound key/address preparation without occupying slots while waiting for ACKs.
 pub(crate) const CONCURRENT_PREPARATIONS: usize = 16;
@@ -58,7 +58,7 @@ pub(crate) async fn send_notify(
     target: NotifyTarget<'_>,
 ) -> Result<(), NotifyError> {
     let NotifyTarget::Zone(zone_name) = target else {
-        let zones = crate::zone::list(cx).await?;
+        let zones = zone::list(cx).await?;
 
         let mut failures = Vec::new();
         let mut tasks = JoinSet::new();

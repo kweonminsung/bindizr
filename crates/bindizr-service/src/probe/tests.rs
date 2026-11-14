@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::Arc;
 
 use bindizr_core::config::Config;
@@ -9,6 +10,8 @@ use tokio::time;
 use tokio::time::Duration;
 
 use super::*;
+use crate::authorization::Caller;
+use crate::zone;
 
 /// Build isolated SQLite state with a bounded probe timeout and no workers.
 async fn context() -> Arc<Context> {
@@ -59,13 +62,13 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
         let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         match TcpListener::bind(udp.local_addr().unwrap()).await {
             Ok(tcp) => break (udp, tcp),
-            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(error) if error.kind() == io::ErrorKind::AddrInUse => continue,
             Err(error) => panic!("binding TCP listener failed: {error}"),
         }
     };
     secondary::create(
         &cx,
-        &crate::authorization::Caller::socket(),
+        &Caller::socket(),
         &serde_json::from_value(json!({
             "name":"secondary", "address":udp.local_addr().unwrap().to_string(),
         }))
@@ -73,7 +76,7 @@ async fn probe_secondaries_cancels_child_exchanges_with_the_request() {
     )
     .await
     .unwrap();
-    let name = crate::zone::normalize_name("example.test").unwrap();
+    let name = zone::normalize_name("example.test").unwrap();
     let task_cx = cx.clone();
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &name, None).await });
     let mut query = [0u8; 4096];
@@ -102,7 +105,7 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
     for (name, socket) in [("a-first", &first), ("b-second", &second)] {
         secondary::create(
             &cx,
-            &crate::authorization::Caller::socket(),
+            &Caller::socket(),
             &serde_json::from_value(json!({
                 "name":name, "address":socket.local_addr().unwrap().to_string(),
             }))
@@ -111,7 +114,7 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
         .await
         .unwrap();
     }
-    let name = crate::zone::normalize_name("example.test").unwrap();
+    let name = zone::normalize_name("example.test").unwrap();
     let task_cx = cx.clone();
     let task = tokio::spawn(async move { probe_secondaries(&task_cx, &name, None).await });
     let mut first_query = [0u8; 4096];
@@ -134,7 +137,7 @@ async fn probe_secondaries_preserves_order_when_later_targets_finish_first() {
         .send_to(&second_query[..second_len], second_client)
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    time::sleep(Duration::from_millis(20)).await;
     first_query[2] = 0x84;
     first_query[3] = 5;
     first

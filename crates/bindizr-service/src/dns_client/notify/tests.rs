@@ -1,10 +1,13 @@
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use bindizr_core::dns::message::{Name, OptRcode};
+use base64::engine::general_purpose;
+use bindizr_core::dns::message::{Keepalive, Name, OptRcode, ParsedQuery, Rcode};
 use bindizr_core::dns::query;
 use bindizr_core::dns::tsig::TsigSigningKey;
+use tokio::net::UdpSocket;
+use tokio::time;
 
 use super::*;
 
@@ -64,14 +67,14 @@ async fn signed_notify_advertises_edns_for_long_names() {
                     "notify-key".to_string()
                 },
                 algorithm,
-                secret: base64::engine::general_purpose::STANDARD.encode([1u8; 64]),
+                secret: general_purpose::STANDARD.encode([1u8; 64]),
                 role_id: RoleId::from(1),
                 created_at: chrono::Utc::now(),
             }
             .to_signing_key()
             .unwrap();
 
-            let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let addr = socket.local_addr().unwrap();
             let server_key = key.clone();
 
@@ -148,7 +151,7 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
 
     let client = NotifyClient::default();
 
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let address = socket.local_addr().unwrap();
     let mut handles = Vec::new();
 
@@ -169,11 +172,10 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     let mut buffer = [0; 4096];
 
     for _ in 0..64 {
-        let (len, peer) =
-            tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-                .await
-                .unwrap()
-                .unwrap();
+        let (len, peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+            .await
+            .unwrap()
+            .unwrap();
 
         assert!(ids.insert(u16::from_be_bytes([buffer[0], buffer[1]])));
         peers.insert(peer);
@@ -192,17 +194,9 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
     }
 
     for (request, peer) in requests.iter().rev() {
-        let query = bindizr_core::dns::message::ParsedQuery::parse(
-            request,
-            bindizr_core::dns::message::Keepalive::None,
-        )
-        .unwrap();
+        let query = ParsedQuery::parse(request, Keepalive::None).unwrap();
         let response = query
-            .build_signed_error_response(
-                bindizr_core::dns::message::Rcode::NOERROR.into(),
-                None,
-                None,
-            )
+            .build_signed_error_response(Rcode::NOERROR.into(), None, None)
             .unwrap();
 
         socket.send_to(&response, peer).await.unwrap();
@@ -219,7 +213,7 @@ async fn multiplexed_notify_sends_all_zones_before_waiting_and_isolates_replies(
 async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() {
     let client = NotifyClient::default();
 
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let address = socket.local_addr().unwrap();
 
     let first = client
@@ -240,48 +234,31 @@ async fn multiplexed_notify_retries_same_message_without_blocking_other_zones() 
     let (len, second_peer) = socket.recv_from(&mut buffer).await.unwrap();
 
     assert_eq!(peer, second_peer);
-    let query = bindizr_core::dns::message::ParsedQuery::parse(
-        &buffer[..len],
-        bindizr_core::dns::message::Keepalive::None,
-    )
-    .unwrap();
+    let query = ParsedQuery::parse(&buffer[..len], Keepalive::None).unwrap();
 
     socket
         .send_to(
             &query
-                .build_signed_error_response(
-                    bindizr_core::dns::message::Rcode::NOERROR.into(),
-                    None,
-                    None,
-                )
+                .build_signed_error_response(Rcode::NOERROR.into(), None, None)
                 .unwrap(),
             peer,
         )
         .await
         .unwrap();
     second.wait().await.unwrap();
-    let (len, retry_peer) =
-        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-            .await
-            .unwrap()
-            .unwrap();
+    let (len, retry_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(&buffer[..len], &request);
     assert_eq!(peer, retry_peer);
-    let query = bindizr_core::dns::message::ParsedQuery::parse(
-        &request,
-        bindizr_core::dns::message::Keepalive::None,
-    )
-    .unwrap();
+    let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
 
     socket
         .send_to(
             &query
-                .build_signed_error_response(
-                    bindizr_core::dns::message::Rcode::NOERROR.into(),
-                    None,
-                    None,
-                )
+                .build_signed_error_response(Rcode::NOERROR.into(), None, None)
                 .unwrap(),
             peer,
         )
@@ -307,7 +284,7 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     crate::dns_client::ds::tests::encode_name("notify-key", &mut owner);
     let mut algorithm = Vec::new();
     crate::dns_client::ds::tests::encode_name("hmac-sha256", &mut algorithm);
-    let seconds = std::time::SystemTime::now()
+    let seconds = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
@@ -361,8 +338,7 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
         id: TsigKeyId::from(1),
         name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
-        secret: base64::engine::general_purpose::STANDARD
-            .encode(b"notify-test-secret-at-least-32-bytes"),
+        secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
         created_at: chrono::Utc::now(),
     }
@@ -406,10 +382,10 @@ async fn signed_notify_waits_for_valid_ack_after_untrusted_datagrams() {
             };
 
             socket.send_to(&invalid, peer).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            time::sleep(Duration::from_millis(20)).await;
             socket.send_to(&response, peer).await.unwrap();
         });
-        let result = tokio::time::timeout(
+        let result = time::timeout(
             Duration::from_millis(500),
             send_notify_to_server(
                 &NotifyClient::default(),
@@ -508,8 +484,7 @@ async fn signed_notify_requires_authenticated_notimp_before_completing() {
         id: TsigKeyId::from(1),
         name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
-        secret: base64::engine::general_purpose::STANDARD
-            .encode(b"notify-test-secret-at-least-32-bytes"),
+        secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
         created_at: chrono::Utc::now(),
     }
@@ -574,8 +549,7 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
         id: TsigKeyId::from(1),
         name: "notify-key".to_string(),
         algorithm: TsigAlgorithm::HmacSha256,
-        secret: base64::engine::general_purpose::STANDARD
-            .encode(b"notify-test-secret-at-least-32-bytes"),
+        secret: general_purpose::STANDARD.encode(b"notify-test-secret-at-least-32-bytes"),
         role_id: RoleId::from(1),
         created_at: chrono::Utc::now(),
     }
@@ -596,10 +570,10 @@ async fn signed_notify_times_out_under_unsigned_response_flood() {
 
         loop {
             socket.send_to(&response, peer).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            time::sleep(Duration::from_millis(5)).await;
         }
     });
-    let result = tokio::time::timeout(
+    let result = time::timeout(
         Duration::from_secs(1),
         send_notify_to_server(
             &NotifyClient::default(),

@@ -2,6 +2,8 @@
 
 mod wks;
 
+use std::{fmt, str};
+
 use domain::base::ToName;
 use domain::base::iana::{Class, Rtype};
 use domain::base::name::ParsedName;
@@ -13,7 +15,7 @@ use domain::zonefile::inplace::{self, Entry, Zonefile};
 use crate::dns::name::ZoneName;
 use crate::dns::query::TransferRecord;
 use crate::dns::record::{NaptrRecordValue, WksRecordValue};
-use crate::dns::{Serial, SoaInterval, Ttl, name};
+use crate::dns::{Serial, SoaInterval, Ttl, name, record};
 use crate::model::record::RecordType;
 
 /// A record's value as the zone file spells it.
@@ -194,7 +196,7 @@ impl ParsedZoneFile {
     }
 
     /// Convert decoded fields into import records, preserving TXT character strings.
-    fn push_record<Octs: AsRef<[u8]>, N: ToName + std::fmt::Display>(
+    fn push_record<Octs: AsRef<[u8]>, N: ToName + fmt::Display>(
         &mut self,
         origin_fqdn: &str,
         owner: String,
@@ -321,7 +323,7 @@ impl ParsedZoneFile {
                     // RFC 1035, Section 3.3.14: TXT character-strings are octets.
                     match txt
                         .iter()
-                        .map(std::str::from_utf8)
+                        .map(str::from_utf8)
                         .collect::<Result<Vec<_>, _>>()
                     {
                         Ok(segments) => (
@@ -333,7 +335,7 @@ impl ParsedZoneFile {
                         Err(_) => (
                             ZoneFileValue::Rdata(
                                 txt.iter()
-                                    .map(crate::dns::record::to_quoted_charstr)
+                                    .map(record::to_quoted_charstr)
                                     .collect::<Vec<_>>()
                                     .join(" "),
                             ),
@@ -357,7 +359,7 @@ impl ParsedZoneFile {
 
 /// Read an SOA record's fields, or `None` when a timer does not fit the i32
 /// columns a zone stores them in.
-fn to_zone_file_soa<Octs, N: ToName + std::fmt::Display>(
+fn to_zone_file_soa<Octs, N: ToName + fmt::Display>(
     data: &ZoneRecordData<Octs, N>,
 ) -> Option<ZoneFileSoa> {
     let ZoneRecordData::Soa(soa) = data else {

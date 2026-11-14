@@ -49,6 +49,8 @@ impl Shutdown {
 mod tests {
     use std::time::Duration;
 
+    use tokio::time;
+
     use super::*;
 
     /// A trigger remains visible even when the first subscriber arrives afterward.
@@ -57,7 +59,7 @@ mod tests {
         let late = Shutdown::new();
         late.trigger();
 
-        tokio::time::timeout(Duration::from_secs(1), late.waiter())
+        time::timeout(Duration::from_secs(1), late.waiter())
             .await
             .unwrap();
 
@@ -65,8 +67,6 @@ mod tests {
         let waiter = early.waiter();
         early.trigger();
 
-        tokio::time::timeout(Duration::from_secs(1), waiter)
-            .await
-            .unwrap();
+        time::timeout(Duration::from_secs(1), waiter).await.unwrap();
     }
 }

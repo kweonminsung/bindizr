@@ -1,3 +1,5 @@
+use std::slice;
+
 use super::*;
 use crate::dns::name;
 use crate::dns::record::Rdata;
@@ -162,7 +164,7 @@ fn extract_member_zones_rejects_missing_or_foreign_version_and_foreign_owner() {
     let catalog = ZoneName::parse("catalog.example").unwrap();
     let member = name_record("a1.zones.catalog.example.", Rtype::PTR, "zone-a.example.");
 
-    let missing = extract_member_zones(std::slice::from_ref(&member), &catalog).unwrap_err();
+    let missing = extract_member_zones(slice::from_ref(&member), &catalog).unwrap_err();
 
     assert!(matches!(missing, ExtractMemberZonesError::MissingVersion));
 

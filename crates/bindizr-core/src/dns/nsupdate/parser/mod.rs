@@ -270,7 +270,7 @@ fn parse_tsig_record(
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateError> {
     let mut labels = Vec::new();
 
-    for label in name.iter() {
+    for label in name {
         if label.is_root() {
             break;
         }

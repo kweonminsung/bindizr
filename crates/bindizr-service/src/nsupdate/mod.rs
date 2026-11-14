@@ -15,6 +15,7 @@ use bindizr_core::dns::record::ParseRecordValueError;
 use bindizr_core::dns::{Serial, name};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
+use bindizr_db::error::DatabaseError;
 use plan::UpdateOperation;
 use prerequisite::{Prerequisite, RecordSets};
 use thiserror::Error;
@@ -23,7 +24,7 @@ use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
 use crate::model::record::RecordType;
 use crate::model::zone::Zone;
-use crate::{Context, dnssec, transaction, zone};
+use crate::{Context, dnssec, notify, transaction, zone};
 
 /// An UPDATE failure and its RFC 2136 response classification.
 #[derive(Debug, Error)]
@@ -99,9 +100,9 @@ impl NsupdateError {
 }
 
 /// A database failure is a backend fault, classified through the service error.
-impl From<bindizr_db::error::DatabaseError> for NsupdateError {
+impl From<DatabaseError> for NsupdateError {
     /// Map a database failure to SERVFAIL.
-    fn from(error: bindizr_db::error::DatabaseError) -> Self {
+    fn from(error: DatabaseError) -> Self {
         Self::from(ServiceError::from(error))
     }
 }
@@ -243,7 +244,7 @@ pub async fn apply(
 
         // Queue through the service like every other mutation path, so
         // `dns.notify.batch_ms` governs RFC 2136 writes too.
-        crate::notify::notify_after_update(cx, &zone.name).await;
+        notify::notify_after_update(cx, &zone.name).await;
     }
 
     Ok(changed)

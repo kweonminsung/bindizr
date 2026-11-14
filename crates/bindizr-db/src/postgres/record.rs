@@ -219,13 +219,14 @@ pub(crate) async fn list_by_names_tx(
     names: &[OwnerName],
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
+    // Lock only conflicting names; 5000-name chunks reduce round trips
+    // without reaching the 65535-placeholder limit.
+    const CHUNK: usize = 5000;
+
     if names.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Lock only conflicting names; 5000-name chunks reduce round trips
-    // without reaching the 65535-placeholder limit.
-    const CHUNK: usize = 5000;
     let mut records = Vec::new();
 
     for chunk in names.chunks(CHUNK) {

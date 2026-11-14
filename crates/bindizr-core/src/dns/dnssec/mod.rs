@@ -6,8 +6,8 @@ mod key_tag;
 mod rdata;
 mod signed_view;
 
-use domain::base::Name;
 use domain::base::iana::Rtype;
+use domain::base::{Name, Record};
 pub use key::GenerateKeyError;
 pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
@@ -32,7 +32,7 @@ pub enum EncodeWireNameError {
 pub type WireName = Name<Vec<u8>>;
 
 /// A record in the `domain` crate's form, owned by a [`WireName`].
-pub(crate) type WireRecord<D> = domain::base::Record<WireName, D>;
+pub(crate) type WireRecord<D> = Record<WireName, D>;
 
 /// A typed name's wire bytes into the domain form.
 fn to_wire_name(wire: Vec<u8>) -> Result<WireName, EncodeWireNameError> {

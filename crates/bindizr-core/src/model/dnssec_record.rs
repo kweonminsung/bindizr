@@ -1,6 +1,11 @@
+use std::fmt;
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 use utoipa::ToSchema;
 
@@ -123,9 +128,9 @@ impl DnssecRecordType {
     }
 }
 
-impl std::fmt::Display for DnssecRecordType {
+impl fmt::Display for DnssecRecordType {
     /// Write the DNSSEC record type in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -148,7 +153,7 @@ impl TryFrom<i32> for DnssecRecordType {
     }
 }
 
-impl std::str::FromStr for DnssecRecordType {
+impl FromStr for DnssecRecordType {
     type Err = ParseDnssecRecordTypeError;
 
     /// Parse a DNSSEC record type from its text representation.
@@ -189,7 +194,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i32::from(self.wire_type()).encode_by_ref(buffer)
     }
 }

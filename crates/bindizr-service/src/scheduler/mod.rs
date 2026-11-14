@@ -8,11 +8,13 @@ use bindizr_core::model::zone::ZoneId;
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time;
+use tokio::time::{Interval, MissedTickBehavior};
 
-use crate::Context;
 use crate::dnssec::maintenance;
 use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 use crate::zone::history;
+use crate::{Context, notify};
 
 /// A scheduler task whose current pass finishes before shutdown returns.
 #[derive(Debug)]
@@ -93,9 +95,9 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) -> Scheduler
 
 /// Create the scheduler timer; a zero period never ticks, and `spawn` guards
 /// the arm so a disabled scheduler waits only for a reload.
-fn scheduler_interval(period_secs: u64) -> tokio::time::Interval {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(period_secs.max(1)));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+fn scheduler_interval(period_secs: u64) -> Interval {
+    let mut interval = time::interval(std::time::Duration::from_secs(period_secs.max(1)));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     interval
 }
 
@@ -196,7 +198,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::resign_zone_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Re-signed zone {zone_name} ahead of signature expiry");
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -227,7 +229,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::start_zsk_rollover_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Started scheduled ZSK rollover for zone {zone_name}");
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -264,7 +266,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::promote_zsks_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Promoted pre-published ZSK for zone {zone_name}");
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -289,7 +291,7 @@ async fn run_scheduler_pass(cx: &Context) {
                         log::info!(
                             "Promoted pre-published SEP key for zone {zone_name}: the parent serves its DS"
                         );
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -322,7 +324,7 @@ async fn run_scheduler_pass(cx: &Context) {
                 match maintenance::prune_retired_keys_by_zone_id(cx, zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Removed retired DNSSEC key(s) for zone {zone_name}");
-                        crate::notify::notify_after_update(cx, &zone_name).await;
+                        notify::notify_after_update(cx, &zone_name).await;
                     }
                     Ok(None) => {}
                     Err(error) => {

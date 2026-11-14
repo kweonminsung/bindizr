@@ -3,8 +3,8 @@ use std::sync::Arc;
 use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
-use axum::response::IntoResponse;
-use axum::{Extension, Json, Router, routing};
+use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json, Router, middleware, routing};
 use bindizr_service::Context;
 use bindizr_service::authorization::Caller;
 use bindizr_service::error::ServiceError;
@@ -46,7 +46,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
     }
 
     if api_config.authentication_required {
-        api_router = api_router.layer(axum::middleware::from_fn_with_state(
+        api_router = api_router.layer(middleware::from_fn_with_state(
             cx.clone(),
             super::middleware::auth::auth_middleware,
         ));
@@ -84,7 +84,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
 
     // Layered after the fallback so every route, including 404s, is measured.
     if api_config.metrics_enabled {
-        router = router.layer(axum::middleware::from_fn_with_state(
+        router = router.layer(middleware::from_fn_with_state(
             cx.clone(),
             super::middleware::metrics::track_http_metrics,
         ));
@@ -122,7 +122,7 @@ async fn openapi_json() -> impl IntoResponse {
 }
 
 /// Return the OpenAPI document as YAML.
-async fn openapi_yaml() -> axum::response::Response {
+async fn openapi_yaml() -> Response {
     match serde_norway::to_string(&ApiDoc::openapi()) {
         Ok(openapi_yaml) => (
             StatusCode::OK,

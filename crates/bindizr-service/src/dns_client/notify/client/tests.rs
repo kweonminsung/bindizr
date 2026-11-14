@@ -1,9 +1,11 @@
 use std::collections::HashSet;
+use std::io;
 use std::str::FromStr;
 
 use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode};
 use bindizr_core::dns::query;
 use thiserror::Error;
+use tokio::time;
 
 use super::*;
 
@@ -17,8 +19,8 @@ async fn shared_socket_failure_preserves_original_io_error() {
     struct SocketCause;
 
     for original in [
-        std::io::Error::from_raw_os_error(54),
-        std::io::Error::other(SocketCause),
+        io::Error::from_raw_os_error(54),
+        io::Error::other(SocketCause),
     ] {
         let code = original.raw_os_error();
         let message = original.to_string();
@@ -122,7 +124,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
 
     let intruder = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     intruder.send_to(&old_ack, peer).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    time::sleep(Duration::from_millis(10)).await;
 
     assert!(matches!(
         first.response.try_recv(),
@@ -146,7 +148,7 @@ async fn wrong_peer_and_retired_ack_cannot_complete_a_new_transaction() {
     assert_ne!(query.query_id, next.query_id);
 
     server.send_to(&old_ack, peer).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    time::sleep(Duration::from_millis(10)).await;
 
     assert!(matches!(
         second.response.try_recv(),
@@ -199,7 +201,7 @@ async fn oversized_ack_is_ignored_until_a_bounded_ack_arrives() {
         oversized.resize(size, 0);
 
         server.send_to(&oversized, peer).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        time::sleep(Duration::from_millis(20)).await;
 
         assert!(matches!(
             handle.response.try_recv(),

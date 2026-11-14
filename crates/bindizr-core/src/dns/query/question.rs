@@ -6,6 +6,7 @@ use domain::base::opt::keepalive::TcpKeepalive;
 use domain::base::{MessageBuilder, Name};
 
 use super::EDNS_UDP_PAYLOAD_SIZE;
+use crate::dns::message;
 use crate::dns::tsig::TsigSigningKey;
 
 /// Build a random-ID question with optional EDNS; leave additional open for signing.
@@ -69,7 +70,7 @@ pub fn build_notify_query(
 
     if key.is_some_and(|key| {
         builder.as_slice().len() + usize::from(key.as_ref().compose_len())
-            > usize::from(crate::dns::message::UDP_PAYLOAD_SIZE_WITHOUT_EDNS)
+            > usize::from(message::UDP_PAYLOAD_SIZE_WITHOUT_EDNS)
     }) {
         builder
             .opt(|opt| {

@@ -1,5 +1,8 @@
 //! Change provenance shared by zone versions and management audit rows.
 
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
@@ -38,14 +41,14 @@ impl ChangeSource {
     }
 }
 
-impl std::fmt::Display for ChangeSource {
+impl fmt::Display for ChangeSource {
     /// Write the change source in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl std::str::FromStr for ChangeSource {
+impl FromStr for ChangeSource {
     type Err = ParseChangeSourceError;
 
     /// Parse the stored text of a change source.
@@ -123,9 +126,9 @@ impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
     }
 }
 
-impl std::fmt::Display for ChangeActor {
+impl fmt::Display for ChangeActor {
     /// Show the credential kind with its name so equal names remain distinguishable.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (kind, name) = self.as_columns();
         write!(f, "{kind}:{name}")
     }

@@ -6,6 +6,7 @@ use bindizr_service::error::ServiceError;
 use bindizr_service::types::CheckSecondariesResponse;
 use bindizr_service::{Context, dns_client, secondary, zone};
 use tokio::net::TcpStream;
+use tokio::time;
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 use crate::socket::types::{
@@ -23,7 +24,7 @@ pub(crate) async fn check_installation(
     let caller = Caller::socket();
     let zones_probe = zone::count(cx, &caller);
 
-    let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
+    let database = match time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheckResponse {
             status: DoctorCheckStatus::Ok,
             message: format!(
@@ -83,7 +84,7 @@ pub(crate) async fn check_installation(
                 config.dns.tls.listen_port,
             );
             Some(
-                match tokio::time::timeout(timeout, TcpStream::connect(dns_tls_addr)).await {
+                match time::timeout(timeout, TcpStream::connect(dns_tls_addr)).await {
                     Ok(Ok(_)) => DoctorCheckResponse {
                         status: DoctorCheckStatus::Ok,
                         message: format!(

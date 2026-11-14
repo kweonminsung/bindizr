@@ -1,6 +1,8 @@
 use bindizr_core::dns::message::{Name, OptRcode};
 use bindizr_core::dns::query;
 use bindizr_core::dns::query::ParseResponseError;
+use tokio::net::UdpSocket;
+use tokio::time;
 
 use super::*;
 
@@ -190,7 +192,7 @@ fn extract_soa_serial_rejects_a_cache_or_another_question() {
 /// A malformed, unrelated or wrong-opcode datagram cannot end a live UDP probe.
 #[tokio::test]
 async fn udp_probe_discards_invalid_datagrams_without_resending() {
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let address = socket.local_addr().unwrap();
 
     let server = tokio::spawn(async move {
@@ -211,7 +213,7 @@ async fn udp_probe_discards_invalid_datagrams_without_resending() {
         }
 
         assert!(
-            tokio::time::timeout(Duration::from_millis(100), socket.recv_from(&mut request))
+            time::timeout(Duration::from_millis(100), socket.recv_from(&mut request))
                 .await
                 .is_err()
         );

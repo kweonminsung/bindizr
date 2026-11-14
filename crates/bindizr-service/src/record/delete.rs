@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::slice;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_core::model::record::RecordId;
@@ -11,7 +12,7 @@ use crate::error::ServiceError;
 use crate::model::record::{Record, RecordData};
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, transaction, zone};
+use crate::{Context, dnssec, notify, serial, transaction, zone};
 
 /// Delete a record by id, bumping the zone serial and recording a DEL
 /// change for IXFR. `caller` is authorized against the row this tx locked.
@@ -62,7 +63,7 @@ pub async fn delete(
         let existing_record =
             match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
-                Ok(Some(_)) | Ok(None) => {
+                Ok(Some(_) | None) => {
                     return Err(ServiceError::record_not_found(record_id));
                 }
                 Err(error) => {
@@ -135,13 +136,8 @@ pub async fn delete(
             diff: diff::build_record_diff(&zone, &before, &after),
         };
 
-        zone::validate_record_changes_tx(
-            &mut tx,
-            &zone,
-            std::slice::from_ref(&existing_record),
-            &[],
-        )
-        .await?;
+        zone::validate_record_changes_tx(&mut tx, &zone, slice::from_ref(&existing_record), &[])
+            .await?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
 
@@ -153,7 +149,7 @@ pub async fn delete(
             &mut tx,
             zone.id,
             new_serial,
-            std::slice::from_ref(&existing_record),
+            slice::from_ref(&existing_record),
         )
         .await?;
 
@@ -179,7 +175,7 @@ pub async fn delete(
     // Announce only a committed deletion, never a preview.
     if response.applied {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)
@@ -322,7 +318,7 @@ pub async fn delete_matching(
     // match — which applies, but writes nothing and leaves the serial.
     if response.applied && response.deleted > 0 {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)

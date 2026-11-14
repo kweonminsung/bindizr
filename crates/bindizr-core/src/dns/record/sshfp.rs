@@ -34,6 +34,10 @@ impl SshfpRecordValue {
 
     /// Validate the fields of this SSHFP value.
     pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+        // Bounded so the record fits one transfer message beside its 2 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_FINGERPRINT: usize = MAX_RECORD_RDATA - 2;
+
         // Fingerprint lengths are fixed per type: SHA-1 and SHA-256.
         let expected = match self.fingerprint_type {
             1 => Some(20),
@@ -50,10 +54,6 @@ impl SshfpRecordValue {
                 len: self.fingerprint.len(),
             });
         }
-
-        // Bounded so the record fits one transfer message beside its 2 fixed
-        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
-        const MAX_FINGERPRINT: usize = MAX_RECORD_RDATA - 2;
 
         if self.fingerprint.len() > MAX_FINGERPRINT {
             return Err(ParseRecordValueError::SshfpFingerprintTooLong {

@@ -1,3 +1,4 @@
+use std::fs;
 use std::sync::Arc;
 
 use bindizr_core::config::Config;
@@ -5,8 +6,10 @@ use bindizr_core::dns::message::{Keepalive, Name, Opcode, ParsedQuery, Rtype};
 use bindizr_core::dns::{query, tsig};
 use bindizr_core::metrics::Metrics;
 use bindizr_service::Context;
+use bindizr_service::error::ServiceError;
 use bindizr_service::types::CreateTsigKeyRequest;
 use sqlx::Connection;
+use tokio::sync::{mpsc, watch};
 
 use super::*;
 
@@ -19,7 +22,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("fault.sqlite");
     let config_path = directory.path().join("bindizr.toml");
-    std::fs::write(
+    fs::write(
         &config_path,
         format!(
             "[database]\ntype=\"sqlite\"\n[database.sqlite]\nfile_path=\"{}\"\n",
@@ -31,8 +34,8 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
 
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
 
-    let (notify_jobs, _jobs) = tokio::sync::mpsc::unbounded_channel();
-    let (scheduler, _period) = tokio::sync::watch::channel(0);
+    let (notify_jobs, _jobs) = mpsc::unbounded_channel();
+    let (scheduler, _period) = watch::channel(0);
     let cx = Arc::new(Context::new(
         config,
         String::new(),
@@ -89,7 +92,7 @@ async fn transfer_authentication_signs_servfail_when_grant_loading_fails() {
     let source = failure
         .source()
         .unwrap()
-        .downcast_ref::<bindizr_service::error::ServiceError>()
+        .downcast_ref::<ServiceError>()
         .unwrap();
 
     assert!(source.source().is_some());

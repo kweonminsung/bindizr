@@ -1,3 +1,5 @@
+use std::slice;
+
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::Action;
@@ -11,7 +13,7 @@ use crate::model::record::{Record, RecordData, RecordType};
 use crate::model::zone::Zone;
 use crate::types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, transaction, ttl, zone};
+use crate::{Context, dnssec, notify, serial, transaction, ttl, zone};
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
@@ -206,7 +208,7 @@ async fn update_locked(
                 .await
                 {
                     Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_)) | Ok(None) => {
+                    Ok(Some(_) | None) => {
                         return Err(ServiceError::record_not_found(record_id));
                     }
                     Err(error) => {
@@ -360,8 +362,8 @@ async fn update_locked(
         zone::validate_record_changes_tx(
             &mut tx,
             &zone,
-            std::slice::from_ref(&existing_record),
-            std::slice::from_ref(&candidate),
+            slice::from_ref(&existing_record),
+            slice::from_ref(&candidate),
         )
         .await?;
 
@@ -414,7 +416,7 @@ async fn update_locked(
     // Request secondary transfers only after the replacement is committed.
     if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(WriteRecordResponse {

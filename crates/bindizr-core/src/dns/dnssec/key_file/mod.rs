@@ -4,8 +4,11 @@
 mod tests;
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use domain::base::iana::SecurityAlgorithm;
+use domain::crypto::sign::{KeyPair, SecretKeyBytes};
+use domain::rdata::Dnskey;
 
 use crate::dns::dnssec::KeyTag;
 use crate::dns::{LibraryError, Ttl};
@@ -218,7 +221,7 @@ impl DnssecKey {
             .ok_or_else(|| ImportKeyError::Algorithm {
                 value: algorithm.to_string(),
             })?;
-        let public_key = base64::engine::general_purpose::STANDARD
+        let public_key = general_purpose::STANDARD
             .decode(&public)
             .map_err(ImportKeyError::PublicKeyNotBase64)?;
 
@@ -232,16 +235,16 @@ impl DnssecKey {
         };
 
         // Reconstruct the pair to reject a private key for a different DNSKEY.
-        let dnskey = domain::rdata::Dnskey::new(
+        let dnskey = Dnskey::new(
             flags,
             3,
             SecurityAlgorithm::from_int(algorithm.as_i32() as u8),
             public_key,
         )
         .map_err(|error| ImportKeyError::Dnskey(Box::new(error)))?;
-        let secret = domain::crypto::sign::SecretKeyBytes::parse_from_bind(private_key)
+        let secret = SecretKeyBytes::parse_from_bind(private_key)
             .map_err(|error| ImportKeyError::PrivateKey(Box::new(error)))?;
-        domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
+        KeyPair::from_bytes(&secret, &dnskey)
             .map_err(|error| ImportKeyError::KeyMismatch(Box::new(error)))?;
 
         // Preserve the rollover phase encoded by the private file's timing fields.
@@ -257,7 +260,7 @@ impl DnssecKey {
             role,
             algorithm,
             key_tag: KeyTag::from(dnskey.key_tag()),
-            public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
+            public_key: general_purpose::STANDARD.encode(dnskey.public_key()),
             private_key: secret.display_as_bind().to_string(),
             state,
             state_changed_at,

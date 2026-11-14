@@ -1,8 +1,8 @@
 //! SQLite file paths, parent directories, and connection URLs.
 
-use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::{fs, io};
 
 use crate::error::DatabaseError;
 
@@ -26,7 +26,7 @@ pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), DatabaseError> {
         return Ok(());
     }
 
-    let failed = |source: std::io::Error| DatabaseError::CreateSqliteDir {
+    let failed = |source: io::Error| DatabaseError::CreateSqliteDir {
         path: parent.to_path_buf(),
         source,
     };
@@ -66,7 +66,7 @@ mod tests {
         assert!(nested.is_dir());
 
         // The database holds TSIG secrets, so the directory gates access.
-        let mode = std::fs::metadata(&nested)
+        let mode = fs::metadata(&nested)
             .expect("metadata")
             .permissions()
             .mode();

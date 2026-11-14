@@ -1,5 +1,7 @@
 //! Per-zone DNSSEC maintenance transactions for signing and rollover.
 
+use std::mem;
+
 use bindizr_core::dns::dnssec::SigningPass;
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState};
@@ -294,7 +296,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
 
         let mut remaining = Vec::with_capacity(signed.keys.len());
 
-        for key in std::mem::take(&mut signed.keys) {
+        for key in mem::take(&mut signed.keys) {
             if removable.contains(&key.id) {
                 bindizr_db::dnssec_key::delete_tx(&mut tx, key.id).await?;
             } else {

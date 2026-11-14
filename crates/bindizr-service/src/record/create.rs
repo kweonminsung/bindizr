@@ -1,3 +1,5 @@
+use std::slice;
+
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::record::RecordId;
 use bindizr_core::model::role_grant::Action;
@@ -11,7 +13,7 @@ use crate::error::ServiceError;
 use crate::model::record::{Record, RecordData};
 use crate::types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
-use crate::{Context, dnssec, serial, transaction, zone};
+use crate::{Context, dnssec, notify, serial, transaction, zone};
 
 /// Create a record, bumping the zone serial and recording an ADD change
 /// for IXFR. `caller` is authorized against the zone this tx locked.
@@ -99,8 +101,7 @@ pub async fn create(
             created_at: Utc::now(),
         };
 
-        zone::validate_record_changes_tx(&mut tx, &zone, &[], std::slice::from_ref(&candidate))
-            .await?;
+        zone::validate_record_changes_tx(&mut tx, &zone, &[], slice::from_ref(&candidate)).await?;
 
         let mut after = before.clone();
         after.push_written(RecordData::from(candidate.clone()));
@@ -121,7 +122,7 @@ pub async fn create(
             &mut tx,
             zone.id,
             new_serial,
-            std::slice::from_ref(&candidate),
+            slice::from_ref(&candidate),
         )
         .await?
         .pop()
@@ -163,7 +164,7 @@ pub async fn create(
     // Request secondary transfers only after the new record is committed.
     if !request.dry_run {
         cx.metrics().track_serial_bumps(1);
-        crate::notify::notify_after_update(cx, &zone_name).await;
+        notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(WriteRecordResponse {

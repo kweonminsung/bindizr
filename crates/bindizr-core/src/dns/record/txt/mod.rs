@@ -1,3 +1,5 @@
+use std::str;
+
 use super::ParseRecordValueError;
 use super::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
 
@@ -129,7 +131,7 @@ impl TxtRecordValue {
         let mut segments = Vec::new();
 
         for chunk in char_strings(&self.0)? {
-            segments.push(std::str::from_utf8(chunk).ok()?.to_string());
+            segments.push(str::from_utf8(chunk).ok()?.to_string());
         }
 
         match segments.as_slice() {

@@ -1563,6 +1563,9 @@ traits directly, subject to the collision rules below.
 Call a function from another module through that module (`history::prune_by_zone_id`),
 importing the module rather than its individual functions. Use `super::lookup_by_name`
 for a parent's facade, and retain a longer path when short module names collide.
+A `bindizr_db` entity function is always spelled in full
+(`bindizr_db::zone::get_tx`), since its modules share the service's names, and
+so is a helper another module's `tests` exports.
 Functions defined or re-exported by the current module are its local API.
 
 Use explicit imports and re-exports in production; do not introduce project

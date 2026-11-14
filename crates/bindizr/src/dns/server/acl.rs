@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bindizr_core::dns::address::AddressTarget;
@@ -50,9 +50,7 @@ impl AddressCache {
     /// Lock the resolution cache, recovering a poisoned lock because a panic
     /// cannot leave a map of addresses inconsistent.
     fn locked(&self) -> MutexGuard<'_, HashMap<String, CachedAddrs>> {
-        self.cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

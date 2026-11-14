@@ -67,8 +67,10 @@ pub async fn notify(
 mod tests {
     use bindizr_core::config::Config;
     use bindizr_core::metrics::Metrics;
+    use tokio::sync::{mpsc, watch};
 
     use super::*;
+    use crate::zone;
 
     /// Messages describe completed increments, including requests whose target has none.
     #[tokio::test]
@@ -78,8 +80,8 @@ mod tests {
         }))
         .unwrap();
         let db = bindizr_db::Db::connect(&config.database).await.unwrap();
-        let (jobs, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let (period, _period_rx) = tokio::sync::watch::channel(0);
+        let (jobs, _rx) = mpsc::unbounded_channel();
+        let (period, _period_rx) = watch::channel(0);
         let cx = Arc::new(Context::new(
             config,
             String::new(),
@@ -95,7 +97,7 @@ mod tests {
             .unwrap();
         assert_eq!(empty.message, "NOTIFY sent successfully for all zones");
 
-        let (catalog, _) = crate::zone::refresh_catalog(&cx).await.unwrap();
+        let (catalog, _) = zone::refresh_catalog(&cx).await.unwrap();
         let response = notify(
             &cx,
             &caller,
@@ -109,7 +111,7 @@ mod tests {
             format!("NOTIFY sent successfully for zone: {}", catalog.name)
         );
         assert_eq!(
-            crate::zone::refresh_catalog(&cx).await.unwrap().0.serial,
+            zone::refresh_catalog(&cx).await.unwrap().0.serial,
             catalog.serial
         );
 
@@ -117,33 +119,27 @@ mod tests {
             "name": "example.test", "mname": "ns.example.test", "rname": "hostmaster@example.test",
         }))
         .unwrap();
-        crate::zone::create(&cx, &caller, &request).await.unwrap();
-        let name = crate::zone::normalize_name("example.test").unwrap();
-        let original = crate::zone::get_by_name(&cx, &caller, &name).await.unwrap();
+        zone::create(&cx, &caller, &request).await.unwrap();
+        let name = zone::normalize_name("example.test").unwrap();
+        let original = zone::get_by_name(&cx, &caller, &name).await.unwrap();
 
         let kept = notify(&cx, &caller, NotifyTarget::Zone(&name), NotifySerial::Keep)
             .await
             .unwrap();
         assert!(!kept.message.contains("serial bumped"));
         assert_eq!(
-            crate::zone::get_by_name(&cx, &caller, &name)
-                .await
-                .unwrap()
-                .serial,
+            zone::get_by_name(&cx, &caller, &name).await.unwrap().serial,
             original.serial
         );
 
         for target in [NotifyTarget::Zone(&name), NotifyTarget::All] {
-            let before = crate::zone::get_by_name(&cx, &caller, &name)
-                .await
-                .unwrap()
-                .serial;
+            let before = zone::get_by_name(&cx, &caller, &name).await.unwrap().serial;
             let response = notify(&cx, &caller, target, NotifySerial::Bump)
                 .await
                 .unwrap();
             assert!(response.message.ends_with(" (serial bumped)"));
             assert!(
-                crate::zone::get_by_name(&cx, &caller, &name)
+                zone::get_by_name(&cx, &caller, &name)
                     .await
                     .unwrap()
                     .serial

@@ -6,6 +6,7 @@ use bindizr_core::dns::address::AddressTarget;
 use bindizr_core::dns::dnssec::EncodeWireNameError;
 use bindizr_core::dns::message::{Name, Opcode, Rtype};
 use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::{Serial, query};
 use thiserror::Error;
 
@@ -21,7 +22,7 @@ pub enum ProbeSoaError {
     #[error(transparent)]
     Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    Response(#[from] ParseResponseError),
 }
 
 /// An SOA result and the resolved IPs used to look up transfer history.

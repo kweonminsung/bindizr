@@ -1,6 +1,8 @@
 //! What a listing sorts by, as a closed vocabulary: the query renders its
 //! `ORDER BY` from these, so no caller text reaches the SQL.
 
+use std::str::FromStr;
+
 use thiserror::Error;
 
 /// A sort parameter a listing did not recognise.
@@ -124,7 +126,7 @@ impl AuditLogSortField {
     }
 }
 
-impl std::str::FromStr for AuditLogSortField {
+impl FromStr for AuditLogSortField {
     type Err = ParseSortError;
 
     /// Parse an audit sort from its text representation.
@@ -142,7 +144,7 @@ impl std::str::FromStr for AuditLogSortField {
     }
 }
 
-impl std::str::FromStr for ZoneSortField {
+impl FromStr for ZoneSortField {
     type Err = ParseSortError;
 
     /// Parse a zone sort from its text representation.
@@ -160,7 +162,7 @@ impl std::str::FromStr for ZoneSortField {
     }
 }
 
-impl std::str::FromStr for RecordSortField {
+impl FromStr for RecordSortField {
     type Err = ParseSortError;
 
     /// Parse a record sort from its text representation.
@@ -179,7 +181,7 @@ impl std::str::FromStr for RecordSortField {
     }
 }
 
-impl std::str::FromStr for SortOrder {
+impl FromStr for SortOrder {
     type Err = ParseSortError;
 
     /// Parse a sort order from its text representation.

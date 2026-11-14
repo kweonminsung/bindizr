@@ -110,15 +110,13 @@ impl TransferRefusal {
                 None,
                 signer.as_deref_mut(),
             )?),
-            Self::Tsig(TsigError::Rejected { rcode, key, time }) => {
-                Ok(bindizr_core::dns::tsig::build_error_response(
-                    query_data,
-                    key.as_deref(),
-                    rcode,
-                    time,
-                    metadata.response_limit(),
-                )?)
-            }
+            Self::Tsig(TsigError::Rejected { rcode, key, time }) => Ok(tsig::build_error_response(
+                query_data,
+                key.as_deref(),
+                rcode,
+                time,
+                metadata.response_limit(),
+            )?),
             Self::Tsig(TsigError::Malformed(_)) => {
                 Ok(metadata.build_signed_error_response(OptRcode::FORMERR, None, None)?)
             }

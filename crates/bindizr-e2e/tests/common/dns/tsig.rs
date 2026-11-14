@@ -3,6 +3,7 @@
 use std::str::FromStr;
 
 use base64::Engine;
+use base64::engine::general_purpose;
 use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{Message, Rtype};
 use domain::rdata::tsig::{Time48, Tsig};
@@ -27,7 +28,7 @@ impl SigningKey {
 
     /// Construct a client key that emits the requested MAC length.
     pub(crate) fn to_tsig_key_with_mac_len(&self, mac_len: usize) -> Result<Key, String> {
-        let secret = base64::engine::general_purpose::STANDARD
+        let secret = general_purpose::STANDARD
             .decode(&self.secret)
             .map_err(|error| format!("TSIG secret is not base64: {error}"))?;
         let key_name = KeyName::from_str(&self.name).map_err(|error| error.to_string())?;
@@ -129,7 +130,7 @@ pub(crate) fn verify_response_mac(
             .to_be_bytes(),
     );
     digest.extend_from_slice(data.other());
-    let secret = base64::engine::general_purpose::STANDARD
+    let secret = general_purpose::STANDARD
         .decode(&key.secret)
         .map_err(|error| error.to_string())?;
     let algorithm = match key.algorithm {

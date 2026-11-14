@@ -18,7 +18,7 @@ use crate::types::{
     DnssecKeyMaterialResponse, DnssecStatusResponse, ExportDnssecKeysResponse,
     ImportDnssecKeysRequest,
 };
-use crate::{Context, dnssec_policy, transaction, zone};
+use crate::{Context, dnssec_policy, notify, transaction, zone};
 
 /// The zone's keys as BIND file contents (`K*.key` / `K*.private`).
 pub async fn export_keys(
@@ -206,7 +206,7 @@ pub async fn import_keys(
 
     // Announce the imported keys only after their signed records are committed.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name).await;
+        notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)

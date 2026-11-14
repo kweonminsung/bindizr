@@ -1,8 +1,10 @@
 use bindizr_core::config::Config;
+use bindizr_core::dns::message::{Keepalive, ParsedQuery, Rcode};
 use bindizr_core::metrics::Metrics;
 use bindizr_db::Db;
+use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
-use tokio::time;
+use tokio::{task, time};
 
 use super::*;
 
@@ -34,7 +36,7 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     use crate::types::CreateSecondaryRequest;
 
     let cx = context(10).await;
-    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     secondary::create(
         &cx,
         &Caller::socket(),
@@ -53,38 +55,28 @@ async fn worker_sends_later_zone_before_silent_secondary_times_out() {
     tx.send(NotifyJob::new(NotifyTarget::Zone(&first))).unwrap();
     let mut buffer = [0; 4096];
 
-    let (len, first_peer) =
-        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-            .await
-            .unwrap()
-            .unwrap();
+    let (len, first_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+        .await
+        .unwrap()
+        .unwrap();
     let first_request = buffer[..len].to_vec();
     let second = ZoneName::parse("second.example").unwrap();
     tx.send(NotifyJob::new(NotifyTarget::Zone(&second)))
         .unwrap();
 
-    let (len, second_peer) =
-        tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
-            .await
-            .expect("ACK wait must not block the next batch")
-            .unwrap();
+    let (len, second_peer) = time::timeout(Duration::from_secs(1), socket.recv_from(&mut buffer))
+        .await
+        .expect("ACK wait must not block the next batch")
+        .unwrap();
     let second_request = buffer[..len].to_vec();
 
     for (request, peer) in [(first_request, first_peer), (second_request, second_peer)] {
-        let query = bindizr_core::dns::message::ParsedQuery::parse(
-            &request,
-            bindizr_core::dns::message::Keepalive::None,
-        )
-        .unwrap();
+        let query = ParsedQuery::parse(&request, Keepalive::None).unwrap();
 
         socket
             .send_to(
                 &query
-                    .build_signed_error_response(
-                        bindizr_core::dns::message::Rcode::NOERROR.into(),
-                        None,
-                        None,
-                    )
+                    .build_signed_error_response(Rcode::NOERROR.into(), None, None)
                     .unwrap(),
                 peer,
             )
@@ -107,12 +99,12 @@ async fn batching_keeps_the_first_deadline_and_coalesces_writes() {
     let (_stop_tx, mut stop) = watch::channel(false);
 
     let task = tokio::spawn(async move { collect_batch(&cx, &mut rx, &mut stop, first).await });
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     time::advance(Duration::from_millis(600)).await;
 
     tx.send(NotifyJob::new(NotifyTarget::Zone(&name))).unwrap();
 
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     time::advance(Duration::from_millis(399)).await;
 
     assert!(
@@ -173,7 +165,7 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
 
     let task =
         tokio::spawn(async move { collect_batch(&worker_cx, &mut rx, &mut stop, first).await });
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     time::advance(Duration::from_millis(500)).await;
 
     let mut config = (*cx.config()).clone();
@@ -181,7 +173,7 @@ async fn batching_shortens_deadlines_and_flushes_on_shutdown() {
     cx.set_config(config);
     tx.send(NotifyJob::new(NotifyTarget::Zone(&name))).unwrap();
 
-    tokio::task::yield_now().await;
+    task::yield_now().await;
     time::advance(Duration::from_millis(100)).await;
 
     assert_eq!(task.await.unwrap().zones.len(), 1);

@@ -1,6 +1,8 @@
+use std::fs;
 use std::os::unix::fs::MetadataExt;
 
 use serde_json::json;
+use tokio::task;
 
 use super::*;
 
@@ -68,7 +70,7 @@ async fn prepare_socket_path_creates_parent_directory() {
 
     prepare_socket_path(socket_path).await.unwrap();
 
-    let parent = std::fs::metadata(Path::new(socket_path).parent().unwrap()).unwrap();
+    let parent = fs::metadata(Path::new(socket_path).parent().unwrap()).unwrap();
 
     assert!(parent.is_dir());
     assert_eq!(parent.mode() & 0o777, 0o700);
@@ -78,7 +80,7 @@ async fn prepare_socket_path_creates_parent_directory() {
 #[tokio::test]
 async fn prepare_socket_path_rejects_symlinked_parent_directory() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("real")).unwrap();
+    fs::create_dir(dir.path().join("real")).unwrap();
     std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
     let socket_path = dir.path().join("link").join("bindizr.sock");
 
@@ -101,7 +103,7 @@ async fn accepted_connection_returns_peer_uid() {
 
     let listener = bind_socket(socket_path).await.unwrap();
 
-    let metadata = std::fs::metadata(socket_path).unwrap();
+    let metadata = fs::metadata(socket_path).unwrap();
     let own_uid = socket::read_own_uid().unwrap();
 
     assert_eq!(own_uid, metadata.uid());
@@ -152,7 +154,7 @@ async fn prepare_socket_path_rejects_non_socket_file() {
     let dir = tempfile::tempdir().unwrap();
     let socket_path = dir.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    std::fs::write(socket_path, "not a socket").unwrap();
+    fs::write(socket_path, "not a socket").unwrap();
 
     let error = prepare_socket_path(socket_path).await.unwrap_err();
 
@@ -239,7 +241,7 @@ async fn shutdown_finishes_started_commands_and_closes_idle_clients() {
     .unwrap();
     time::timeout(Duration::from_secs(2), async {
         while Arc::strong_count(&socket_cx) < 4 {
-            tokio::task::yield_now().await;
+            task::yield_now().await;
         }
     })
     .await

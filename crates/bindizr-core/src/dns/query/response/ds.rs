@@ -47,7 +47,7 @@ pub fn extract_ds_record_set(
 
     match super::response_rcode(&message)? {
         OptRcode::NOERROR => {}
-        OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
+        OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|()| None),
         rcode => return Err(ParseResponseError::Rcode(rcode)),
     }
 
@@ -87,7 +87,7 @@ pub fn extract_ds_record_set(
     }
 
     let Some(ttl) = ttl else {
-        return validate_parent_soa(&message, qname).map(|_| None);
+        return validate_parent_soa(&message, qname).map(|()| None);
     };
     records.sort();
     records.dedup();

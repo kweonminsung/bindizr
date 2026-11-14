@@ -1,9 +1,12 @@
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use axum::body;
 use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
+use tokio::net::TcpListener;
 
 use super::*;
 use crate::metrics::AdapterMetrics;
@@ -26,7 +29,7 @@ struct MockState {
 /// A running mock bindizr server: its address and the requests it saw.
 #[derive(Debug)]
 struct MockUpstream {
-    addr: std::net::SocketAddr,
+    addr: SocketAddr,
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
 }
 
@@ -46,7 +49,7 @@ async fn mock_handler(State(state): State<MockState>, request: Request) -> Respo
         .and_then(|header| header.to_str().ok())
         .map(str::to_string);
 
-    let body = axum::body::to_bytes(request.into_body(), usize::MAX)
+    let body = body::to_bytes(request.into_body(), usize::MAX)
         .await
         .unwrap();
     state.requests.lock().unwrap().push((
@@ -105,7 +108,7 @@ async fn spawn_mock_with_adjust(
     };
     let router = axum::Router::new().fallback(mock_handler).with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
@@ -128,7 +131,7 @@ fn ok_mock_bodies() -> ((u16, Value), (u16, Value), (u16, Value)) {
 }
 
 /// Start a webhook adapter connected to the test upstream.
-async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>) -> String {
+async fn spawn_adapter(upstream_addr: SocketAddr, token: Option<&str>) -> String {
     let upstream = UpstreamClient::new(
         format!("http://{upstream_addr}"),
         token.map(str::to_string),
@@ -141,7 +144,7 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
         metrics: AdapterMetrics::new().expect("metrics"),
     });
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let webhook = webhook_router(state);
 
@@ -447,7 +450,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
     assert_eq!(status, StatusCode::BAD_GATEWAY);
 
     // A closed upstream port maps to the same retryable 502.
-    let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let closed_addr = closed.local_addr().unwrap();
     drop(closed);
 
@@ -544,7 +547,7 @@ async fn healthz_reflects_bindizr_reachability() {
         metrics: AdapterMetrics::new().expect("metrics"),
     });
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let health = health_router(state);
 
@@ -578,7 +581,7 @@ async fn healthz_reports_unready_without_manageable_names() {
         metrics: AdapterMetrics::new().expect("metrics"),
     });
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {

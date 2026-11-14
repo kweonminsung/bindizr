@@ -1,7 +1,12 @@
+use std::io;
+
 use bindizr_core::dns::message::EncodeMessageError;
+use bindizr_core::dns::nsupdate::BuildResponseError;
+use bindizr_core::dns::tsig::TsigError;
 use bindizr_core::dns::{ConvertSerialError, Serial};
 use bindizr_service::error::ServiceError;
 use thiserror::Error;
+use tokio::sync::AcquireError;
 
 /// Causes of DNS listener, message I/O, and query handling failures.
 #[derive(Debug, Error)]
@@ -18,13 +23,13 @@ pub(crate) enum DnsError {
     Service(#[from] ServiceError),
 
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 
     #[error("DNS protocol error: {0}")]
     Protocol(#[from] EncodeMessageError),
 
     #[error("TSIG error: {0}")]
-    Tsig(#[from] bindizr_core::dns::tsig::TsigError),
+    Tsig(#[from] TsigError),
 
     #[error("DNS protocol error: {0}")]
     Serial(#[from] ConvertSerialError),
@@ -34,7 +39,7 @@ pub(crate) enum DnsError {
     PeerClosed,
 
     #[error("connection slots are closed: {0}")]
-    ConnectionSlotsClosed(#[from] tokio::sync::AcquireError),
+    ConnectionSlotsClosed(#[from] AcquireError),
 
     /// The client read nothing for the whole write timeout.
     #[error("the client read nothing for {secs} seconds")]
@@ -56,5 +61,5 @@ pub(crate) enum DnsError {
     InvalidQuery(String),
 
     #[error("failed to build NSUPDATE response: {0}")]
-    BuildNsupdateResponse(#[from] bindizr_core::dns::nsupdate::BuildResponseError),
+    BuildNsupdateResponse(#[from] BuildResponseError),
 }

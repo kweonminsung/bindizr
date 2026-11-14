@@ -1,5 +1,7 @@
+use std::io;
 use std::path::PathBuf;
 
+use sqlx::error::ErrorKind;
 use thiserror::Error;
 
 /// A failure of the database layer, with the sqlx or I/O error that caused
@@ -48,7 +50,7 @@ pub enum DatabaseError {
     CreateSqliteDir {
         path: PathBuf,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 
@@ -71,8 +73,8 @@ impl From<sqlx::Error> for DatabaseError {
         match &error {
             sqlx::Error::PoolTimedOut => Self::PoolTimedOut,
             sqlx::Error::Database(database_error) => match database_error.kind() {
-                sqlx::error::ErrorKind::UniqueViolation => Self::UniqueViolation(error),
-                sqlx::error::ErrorKind::ForeignKeyViolation => Self::ForeignKeyViolation(error),
+                ErrorKind::UniqueViolation => Self::UniqueViolation(error),
+                ErrorKind::ForeignKeyViolation => Self::ForeignKeyViolation(error),
                 _ => Self::QueryFailed(error),
             },
             _ => Self::QueryFailed(error),

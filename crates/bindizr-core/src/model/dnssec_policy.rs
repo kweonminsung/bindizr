@@ -1,8 +1,11 @@
 use std::fmt;
+use std::str::FromStr;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 use utoipa::ToSchema;
 
@@ -30,7 +33,7 @@ pub enum DnssecDenial {
 
 impl DnssecDenial {
     /// Storage name, as the columns and the API spell it.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Nsec => "nsec",
             Self::Nsec3 => "nsec3",
@@ -38,9 +41,9 @@ impl DnssecDenial {
     }
 }
 
-impl std::fmt::Display for DnssecDenial {
+impl fmt::Display for DnssecDenial {
     /// Write the denial mode in the upper case the DNSSEC documents use.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Nsec => "NSEC",
             Self::Nsec3 => "NSEC3",
@@ -48,7 +51,7 @@ impl std::fmt::Display for DnssecDenial {
     }
 }
 
-impl std::str::FromStr for DnssecDenial {
+impl FromStr for DnssecDenial {
     type Err = ParseDenialError;
 
     /// Parse a DNSSEC denial from its text representation.
@@ -232,7 +235,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         i32::from(*self).encode_by_ref(buffer)
     }
 }
@@ -242,9 +245,7 @@ where
     i32: sqlx::Decode<'r, DB>,
 {
     /// Read the row form; a negative column fails the row.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)

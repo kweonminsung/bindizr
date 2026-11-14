@@ -4,9 +4,11 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use reqwest::{Client, StatusCode};
+use tokio::time;
 
 use super::{TestApp, TestRuntime};
 
@@ -210,7 +212,7 @@ impl ComposeStack {
                 );
             }
 
-            std::thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_secs(1));
         };
 
         assert!(
@@ -259,7 +261,7 @@ async fn wait_for_compose_api(client: &Client) {
             eprintln!("Still waiting for bindizr API... {attempt}s elapsed");
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_secs(1)).await;
     }
 
     panic!("bindizr API did not become ready at {COMPOSE_API_BASE_URL}");

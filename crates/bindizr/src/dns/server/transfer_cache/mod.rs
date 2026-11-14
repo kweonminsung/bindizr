@@ -2,7 +2,7 @@
 //! The record budget includes cached content for deleted zones.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::metrics::Metrics;
@@ -70,9 +70,7 @@ impl TransferCache {
     /// Lock the cache, recovering a poisoned lock because panics cannot leave
     /// a cache invariant broken.
     fn locked(&self) -> MutexGuard<'_, Entries> {
-        self.entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.entries.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Find content at `version_id`, enforcing budget reductions even on cache hits.

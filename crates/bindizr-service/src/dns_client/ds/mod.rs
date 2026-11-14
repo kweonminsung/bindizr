@@ -8,9 +8,9 @@ use bindizr_core::dns::dnssec::EncodeWireNameError;
 use bindizr_core::dns::message::{Name, Opcode, Rtype};
 use bindizr_core::dns::name::ZoneName;
 use bindizr_core::dns::query;
-use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE};
+use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, ParseResponseError};
 use thiserror::Error;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 
 use super::{ExchangeMessageError, ResolveAddressError};
 
@@ -40,11 +40,11 @@ pub(crate) enum QueryDsError {
     #[error(transparent)]
     Exchange(#[from] ExchangeMessageError),
     #[error(transparent)]
-    Response(#[from] bindizr_core::dns::query::ParseResponseError),
+    Response(#[from] ParseResponseError),
     #[error("no address")]
     NoAddress,
     #[error("probe task failed: {0}")]
-    TaskFailed(#[source] tokio::task::JoinError),
+    TaskFailed(#[source] JoinError),
 }
 
 /// What the parent zone's servers said about the zone's DS.

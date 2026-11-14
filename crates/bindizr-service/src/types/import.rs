@@ -1,5 +1,8 @@
 //! Zone import payloads, for one zone and for several from one server.
 
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::ToSchema;
@@ -180,9 +183,9 @@ impl ImportResult {
     }
 }
 
-impl std::fmt::Display for ImportResult {
+impl fmt::Display for ImportResult {
     /// Write the result as the API spells it.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
@@ -233,7 +236,7 @@ impl ImportZonesResponse {
 #[error("invalid import mode '{0}': expected append, upsert, or replace")]
 pub struct ParseImportModeError(String);
 
-impl std::str::FromStr for ImportMode {
+impl FromStr for ImportMode {
     type Err = ParseImportModeError;
 
     /// Validate the raw mode supplied in an import request.

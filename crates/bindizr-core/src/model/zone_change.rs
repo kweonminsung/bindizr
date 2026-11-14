@@ -1,4 +1,9 @@
+use std::fmt;
+use std::str::FromStr;
+
 use sqlx::FromRow;
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
 use thiserror::Error;
 
 use crate::dns::name::OwnerName;
@@ -55,7 +60,7 @@ impl ChangeOperation {
     }
 }
 
-impl std::str::FromStr for ChangeOperation {
+impl FromStr for ChangeOperation {
     type Err = ParseChangeOperationError;
 
     /// Parse the stored text of a change operation.
@@ -101,9 +106,9 @@ impl JournalRecordType {
     }
 }
 
-impl std::fmt::Display for JournalRecordType {
+impl fmt::Display for JournalRecordType {
     /// Write the journal record type in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.to_text())
     }
 }
@@ -149,7 +154,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.as_str().to_string().encode_by_ref(buffer)
     }
 }
@@ -177,7 +182,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_text().encode_by_ref(buffer)
     }
 }

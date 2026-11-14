@@ -10,7 +10,7 @@ use crate::model::dnssec_record::DnssecRecordType;
 use crate::model::record::RecordType;
 use crate::types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView};
 use crate::zone::validation;
-use crate::{Context, pagination, zone};
+use crate::{Context, pagination, ttl, zone};
 
 /// Which plane a `type` filter names: a user record type, or a derived
 /// DNSSEC type when the signed view is requested.
@@ -60,7 +60,7 @@ pub async fn list_by_filter_with_zone(
         .into_iter()
         .flatten()
     {
-        crate::ttl::validate_record_ttl(ttl)?;
+        ttl::validate_record_ttl(ttl)?;
     }
 
     let scope_role_id = caller.scope_role_id();

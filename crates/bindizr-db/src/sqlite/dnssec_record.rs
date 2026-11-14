@@ -89,12 +89,12 @@ pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
     ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
+    // One bind per id; keep the count under SQLite's conservative limit.
+    const CHUNK: usize = 900;
+
     if ids.is_empty() {
         return Ok(());
     }
-
-    // One bind per id; keep the count under SQLite's conservative limit.
-    const CHUNK: usize = 900;
 
     for chunk in ids.chunks(CHUNK) {
         let mut sql = "DELETE FROM dnssec_records WHERE id IN (".to_string();

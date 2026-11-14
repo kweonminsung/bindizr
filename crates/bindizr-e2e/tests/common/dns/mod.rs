@@ -3,16 +3,19 @@ mod transfer;
 mod transport;
 pub(crate) mod tsig;
 
+use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 use std::time::Duration;
+use std::{process, str};
 
 use domain::base::iana::Rcode;
 use domain::base::name::ParsedName;
-use domain::base::{Message, MessageBuilder, Name, Rtype};
+use domain::base::{CharStr, Message, MessageBuilder, Name, Rtype};
 use domain::rdata::AllRecordData;
 pub(crate) use parent::{DsRecord, FakeParent};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
+use tokio::time;
 pub(crate) use transfer::{TransferResult, axfr, xot};
 pub(crate) use transport::{
     connect_tcp, connect_tls, exchange_request, exchange_tcp, exchange_udp, exchange_xot,
@@ -69,10 +72,7 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
 
 /// Map a supported record mnemonic to its wire type number.
 pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
-    record_type
-        .parse::<domain::base::Rtype>()
-        .ok()
-        .map(Rtype::to_int)
+    record_type.parse::<Rtype>().ok().map(Rtype::to_int)
 }
 
 /// Poll DNS until its answers match the expected record values.
@@ -113,7 +113,7 @@ pub(crate) async fn wait_for_dns_records(
             );
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_secs(1)).await;
     }
 
     panic!(
@@ -176,7 +176,7 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
             );
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_secs(1)).await;
     }
 
     panic!("no type {record_type} record for {name} appeared on 127.0.0.1:{port}");
@@ -221,7 +221,7 @@ pub(crate) fn exchange_dns_query(
     name: &str,
     record_type: u16,
 ) -> Result<(u16, Vec<u8>), String> {
-    let query_id = (std::process::id() as u16).wrapping_add(port);
+    let query_id = (process::id() as u16).wrapping_add(port);
     let query = build_dns_query(query_id, name, record_type)?;
     Ok((query_id, exchange_udp(port, &query)?))
 }
@@ -352,11 +352,11 @@ fn decode_dns_value(
         AllRecordData::Txt(txt) => {
             let segments = txt
                 .iter_charstrs()
-                .map(domain::base::CharStr::as_slice)
+                .map(CharStr::as_slice)
                 .collect::<Vec<_>>();
             let text = segments
                 .iter()
-                .map(|segment| std::str::from_utf8(segment))
+                .map(|segment| str::from_utf8(segment))
                 .collect::<Result<Vec<_>, _>>();
 
             if let Ok(text) = text {
@@ -449,7 +449,7 @@ fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
 fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     let mut out = String::new();
 
-    for label in name.iter() {
+    for label in name {
         if label.is_root() {
             break;
         }
@@ -499,7 +499,7 @@ fn to_quoted_string(bytes: &[u8]) -> String {
 pub(crate) async fn fetch_exported_record_sets(
     app: &TestApp,
     zone_name: &str,
-) -> std::collections::BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
+) -> BTreeMap<(String, Rtype), Vec<Vec<u8>>> {
     use domain::base::rdata::ComposeRecordData;
     use domain::zonefile::inplace::{Entry, Zonefile};
 
@@ -514,7 +514,7 @@ pub(crate) async fn fetch_exported_record_sets(
     assert_eq!(status, StatusCode::OK, "{body}");
     let mut file = Zonefile::new();
     file.extend_from_slice(generic_wks_export(body.as_str().unwrap()).as_bytes());
-    let mut sets = std::collections::BTreeMap::<_, Vec<_>>::new();
+    let mut sets = BTreeMap::<_, Vec<_>>::new();
 
     while let Some(entry) = file.next_entry().unwrap() {
         if let Entry::Record(record) = entry {
@@ -539,7 +539,7 @@ fn generic_wks_export(text: &str) -> String {
                 return line.to_owned();
             }
 
-            let address: std::net::Ipv4Addr = fields[4].parse().unwrap();
+            let address: Ipv4Addr = fields[4].parse().unwrap();
             let protocol: u8 = fields[5].parse().unwrap();
             let mut bitmap = vec![0u8; 8192];
 

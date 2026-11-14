@@ -9,6 +9,7 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::types::CreateTsigKeyRequest;
 use bindizr_service::{Context, tsig_key};
 use sqlx::Connection;
+use tokio::sync::{mpsc, watch};
 
 use super::*;
 
@@ -26,8 +27,8 @@ async fn questionless_update_does_not_hide_tsig_backend_failures() {
 
     let db = bindizr_db::Db::connect(&config.database).await.unwrap();
 
-    let (notify_jobs, _jobs) = tokio::sync::mpsc::unbounded_channel();
-    let (scheduler, _period) = tokio::sync::watch::channel(0);
+    let (notify_jobs, _jobs) = mpsc::unbounded_channel();
+    let (scheduler, _period) = watch::channel(0);
     let cx = Arc::new(Context::new(
         config,
         String::new(),

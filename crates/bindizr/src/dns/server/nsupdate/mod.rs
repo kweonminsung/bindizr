@@ -10,6 +10,7 @@ use bindizr_core::dns::message::{
 };
 use bindizr_core::dns::nsupdate::DEFAULT_FUDGE;
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
+use bindizr_core::dns::nsupdate::parser::UpdateRequest;
 use bindizr_core::dns::tsig::{RequestSignature, TsigError};
 use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
@@ -82,7 +83,7 @@ async fn handle_nsupdate_request(
 ) -> Result<Vec<u8>, DnsError> {
     let cx = dns_cx.daemon();
 
-    let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
+    let parsed = match UpdateRequest::parse(query_data) {
         Ok(request) => request,
         Err(error) => {
             log::warn!("NSUPDATE parse error from {client_addr}: {error}");
@@ -99,7 +100,7 @@ async fn handle_nsupdate_request(
                             key,
                             time,
                         })) => {
-                            match bindizr_core::dns::tsig::build_error_response(
+                            match tsig::build_error_response(
                                 query_data,
                                 key.as_deref(),
                                 rcode,
@@ -173,13 +174,7 @@ async fn handle_nsupdate_request(
         }
         // The handler composes TSIG rejections against the request (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::Tsig(TsigError::Rejected { rcode, key, time })) => {
-            match bindizr_core::dns::tsig::build_error_response(
-                query_data,
-                key.as_deref(),
-                rcode,
-                time,
-                limit,
-            ) {
+            match tsig::build_error_response(query_data, key.as_deref(), rcode, time, limit) {
                 Ok(response) => {
                     log::warn!("NSUPDATE TSIG rejected from {client_addr}: {rcode}");
                     cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);

@@ -6,6 +6,7 @@ use domain::rdata::tsig::{Time48, Tsig};
 use ring::hmac;
 
 use super::{TsigError, TsigSigningKey};
+use crate::dns::message;
 use crate::dns::message::{Edns, ResponseLimit};
 
 /// Build the signed or unsigned validation error required by RFC 8945, Section 5.3.2.
@@ -59,7 +60,7 @@ fn start_error_response(
     message: &Message<&[u8]>,
     include_question: bool,
 ) -> Option<AdditionalBuilder<TreeCompressor<Vec<u8>>>> {
-    let mut builder = crate::dns::message::build_response();
+    let mut builder = message::build_response();
 
     if include_question {
         return Some(

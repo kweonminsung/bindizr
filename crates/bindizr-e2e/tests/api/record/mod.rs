@@ -1,3 +1,5 @@
+use std::slice;
+
 use domain::base::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
@@ -207,7 +209,7 @@ async fn escaped_record_targets_round_trip_through_management() {
     for (owner, rtype, kind, input, priority, rdata) in expected_records {
         assert_eq!(
             exported[&(format!("{owner}.{name}."), rtype)].as_slice(),
-            std::slice::from_ref(&rdata)
+            slice::from_ref(&rdata)
         );
         assert_eq!(
             imported[&(format!("{owner}.{imported_name}."), rtype)],
@@ -1126,30 +1128,6 @@ async fn record_listing_ignores_empty_name_filter() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn search_treats_like_wildcards_as_literal_text() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    for (name, value) in [
-        ("pct", "100%off"),
-        ("pctdecoy", "100XXoff"),
-        ("under", "a_b"),
-        ("underdecoy", "axb"),
-    ] {
-        let (status, _) = app
-            .send_request(
-                Method::POST,
-                "/records",
-                Some(json!({
-                    "name": name, "type": "TXT",
-                    "value": value, "zone_name": zone_name
-                })),
-            )
-            .await;
-
-        assert_eq!(status, StatusCode::CREATED);
-    }
-
     /// Search a zone's records and collect the matching owner labels.
     async fn search(app: &TestApp, zone_name: &str, term: &str) -> Vec<String> {
         let q = term.replace('%', "%25").replace('_', "%5F");
@@ -1178,6 +1156,30 @@ async fn search_treats_like_wildcards_as_literal_text() {
         names.sort();
 
         names
+    }
+
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, value) in [
+        ("pct", "100%off"),
+        ("pctdecoy", "100XXoff"),
+        ("under", "a_b"),
+        ("underdecoy", "axb"),
+    ] {
+        let (status, _) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "type": "TXT",
+                    "value": value, "zone_name": zone_name
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED);
     }
 
     assert_eq!(search(&app, zone_name, "100%off").await, ["pct"]);
@@ -2680,10 +2682,8 @@ async fn binary_txt_and_wks_round_trip() {
         let wire_type: Rtype = rtype.parse().unwrap();
 
         assert_eq!(
-            dns::fetch_exported_record_sets(&app, zone)
-                .await
-                .get(&(format!("{name}.{zone}."), wire_type))
-                .unwrap(),
+            &dns::fetch_exported_record_sets(&app, zone).await
+                [&(format!("{name}.{zone}."), wire_type)],
             &vec![bytes]
         );
     }
@@ -2698,10 +2698,8 @@ async fn binary_txt_and_wks_round_trip() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
-        dns::fetch_exported_record_sets(&app, zone)
-            .await
-            .get(&(format!("imported.{zone}."), Rtype::TXT))
-            .unwrap(),
+        &dns::fetch_exported_record_sets(&app, zone).await
+            [&(format!("imported.{zone}."), Rtype::TXT)],
         &vec![vec![2, 255, 0]]
     );
 }

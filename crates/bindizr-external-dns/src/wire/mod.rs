@@ -18,7 +18,7 @@ pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;versi
 pub(crate) enum ValidateEndpointError {
     #[error("dnsName must not be empty")]
     EmptyDnsName,
-    #[error("record type '{record_type}' is not supported (supported: {})", EXTERNAL_DNS_RECORD_TYPES.iter().map(RecordType::as_str).collect::<Vec<_>>().join(", "))]
+    #[error("record type '{record_type}' is not supported (supported: {})", EXTERNAL_DNS_RECORD_TYPES.iter().copied().map(RecordType::as_str).collect::<Vec<_>>().join(", "))]
     UnsupportedRecordType { record_type: String },
     #[error("endpoint '{dns_name}' has no targets")]
     NoTargets { dns_name: String },

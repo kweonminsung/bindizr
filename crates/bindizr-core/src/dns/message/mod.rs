@@ -8,7 +8,7 @@ use domain::base::opt::keepalive::TcpKeepalive;
 use domain::base::rdata::ComposeRecordData;
 use domain::base::record::ComposeRecord;
 use domain::base::wire::Composer;
-use domain::base::{MessageBuilder, ToName, Ttl, UnknownRecordData};
+use domain::base::{MessageBuilder, Record, ToName, Ttl, UnknownRecordData};
 use domain::rdata::tsig::Time48;
 use thiserror::Error;
 
@@ -171,7 +171,7 @@ impl DnsMessageBuilder {
     /// Composes one class-IN answer record into its own buffer so it can be
     /// popped/reflushed by the chunked TCP writer.
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
-        let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
+        let record = Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
         let Ok(()) = record.compose_record(&mut answer);
         self.push_answer(answer);
@@ -186,10 +186,10 @@ impl DnsMessageBuilder {
     /// query is owed, and the optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, tsig::signature_len);
-        let opt = if self.edns != Edns::Absent {
-            OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
-        } else {
+        let opt = if self.edns == Edns::Absent {
             0
+        } else {
+            OPT_RECORD_LEN + self.keepalive.map_or(0, |_| KEEPALIVE_OPTION_LEN)
         };
 
         DNS_HEADER_LEN + self.qname.len() + QUESTION_FIELDS_LEN + self.answers_len + opt + signature

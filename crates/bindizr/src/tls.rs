@@ -1,6 +1,7 @@
 //! The certificate a TLS listener presents: read from the configured PEM
 //! pair at startup and re-read on reload, so a renewal needs no restart.
 
+use std::iter::Iterator;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use bindizr_core::config::{Config, TlsFiles};
@@ -80,7 +81,7 @@ impl ResolvesServerCert for TlsCertificate {
 /// its certificate.
 fn load_certified_key(files: TlsFiles<'_>) -> Result<CertifiedKey, LoadCertificateError> {
     let certs = CertificateDer::pem_file_iter(files.cert_file)
-        .and_then(std::iter::Iterator::collect::<Result<Vec<_>, _>>)
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|source| LoadCertificateError::Certificate {
             path: files.cert_file.to_string(),
             source,

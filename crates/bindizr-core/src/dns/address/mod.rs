@@ -4,6 +4,9 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
 use super::name;
 use super::name::MAX_DOMAIN_LEN;
 
@@ -89,7 +92,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_string().encode_by_ref(buffer)
     }
 }
@@ -100,9 +103,7 @@ where
     &'r str: sqlx::Decode<'r, DB>,
 {
     /// Read the row form.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::parse(
             <&str as sqlx::Decode<'r, DB>>::decode(value)?,
             DEFAULT_DNS_PORT,

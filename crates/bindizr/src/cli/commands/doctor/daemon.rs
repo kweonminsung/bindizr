@@ -1,6 +1,7 @@
 //! Checks that go through a running daemon: its socket, its HTTP API, and
 //! what it reports about its database, listener, and secondaries.
 
+use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -10,6 +11,7 @@ use bindizr_core::dns::{Serial, address};
 use bindizr_service::types::SecondaryStatus;
 use thiserror::Error;
 use tokio::net::TcpStream;
+use tokio::time;
 
 use super::Report;
 use crate::cli::output;
@@ -22,7 +24,7 @@ use crate::socket::types::{
 #[derive(Debug, Error)]
 enum ProbeApiError {
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error("timed out")]
     TimedOut,
     #[error("unexpected response: {line}")]
@@ -68,7 +70,7 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
 
     // Probe TCP only under TLS: the daemon loaded its keypair; this check has no certificate trust.
     if config.api.tls.tls_files().is_some() {
-        match tokio::time::timeout(API_CHECK_TIMEOUT, TcpStream::connect(addr)).await {
+        match time::timeout(API_CHECK_TIMEOUT, TcpStream::connect(addr)).await {
             Ok(Ok(_)) => report.ok(format!(
                 "API listening: https://{addr} (TLS handshake not attempted)"
             )),
@@ -119,7 +121,7 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
 
         Ok::<_, ProbeApiError>(String::from_utf8_lossy(&buffer).to_string())
     };
-    let response = tokio::time::timeout(API_CHECK_TIMEOUT, exchange)
+    let response = time::timeout(API_CHECK_TIMEOUT, exchange)
         .await
         .map_err(|_| ProbeApiError::TimedOut)??;
 

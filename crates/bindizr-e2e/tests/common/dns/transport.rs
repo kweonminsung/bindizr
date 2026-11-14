@@ -1,5 +1,6 @@
 //! DNS exchanges shared by the protocol tests.
 
+use std::io;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
 use std::sync::Arc;
@@ -121,7 +122,7 @@ pub(crate) fn read_frame<R: Read>(stream: &mut R) -> Result<Option<Vec<u8>>, Str
 
     match stream.read_exact(&mut len) {
         Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error.to_string()),
     }
 

@@ -1,5 +1,10 @@
 //! A record's owner name, held as decoded labels.
 
+use std::{fmt, mem};
+
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
 use super::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
 
 /// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
@@ -158,7 +163,7 @@ where
     fn encode_by_ref(
         &self,
         buffer: &mut <DB as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+    ) -> Result<IsNull, BoxDynError> {
         self.to_stored().encode_by_ref(buffer)
     }
 }
@@ -169,9 +174,7 @@ where
     &'r str: sqlx::Decode<'r, DB>,
 {
     /// Read the row form.
-    fn decode(
-        value: <DB as sqlx::Database>::ValueRef<'r>,
-    ) -> Result<Self, sqlx::error::BoxDynError> {
+    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         Ok(Self::from_row(<&str as sqlx::Decode<'r, DB>>::decode(
             value,
         )?))
@@ -180,9 +183,9 @@ where
 
 /// Presentation form, as input spells it: `@` at the apex; rows take
 /// [`OwnerName::to_stored`].
-impl std::fmt::Display for OwnerName {
+impl fmt::Display for OwnerName {
     /// Write the owner name in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_apex() {
             return f.write_str(Self::APEX);
         }
@@ -233,7 +236,7 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<Vec<u8>>, ParseNameError> 
             ch if ch.is_ascii_whitespace() || ch.is_ascii_control() => {
                 return Err(ParseNameError::Whitespace);
             }
-            '.' => labels.push(std::mem::take(&mut label)),
+            '.' => labels.push(mem::take(&mut label)),
             '\\' => match chars.peek() {
                 None => return Err(ParseNameError::DanglingEscape),
                 Some(d) if d.is_ascii_digit() => {

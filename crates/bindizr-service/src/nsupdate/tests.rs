@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::io;
 
 use super::*;
 
@@ -85,11 +86,11 @@ fn service_errors_retain_their_sources_and_classification() {
             Rcode::REFUSED,
         ),
         (
-            ServiceError::internal_with_source("storage failed", std::io::Error::other("storage")),
+            ServiceError::internal_with_source("storage failed", io::Error::other("storage")),
             Rcode::SERVFAIL,
         ),
         (
-            ServiceError::dnssec_signing_failed(std::io::Error::other("signer")),
+            ServiceError::dnssec_signing_failed(io::Error::other("signer")),
             Rcode::SERVFAIL,
         ),
     ] {
@@ -105,7 +106,7 @@ fn service_errors_retain_their_sources_and_classification() {
             .unwrap();
 
         if rcode == Rcode::SERVFAIL {
-            assert!(service.source().unwrap().is::<std::io::Error>());
+            assert!(service.source().unwrap().is::<io::Error>());
         }
     }
 }

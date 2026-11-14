@@ -3,6 +3,7 @@ use domain::base::iana::{Class, Opcode, OptRcode, Rcode, TsigRcode};
 use domain::rdata::tsig::Tsig;
 
 use super::*;
+use crate::dns::message::ResponseLimit;
 use crate::dns::tsig;
 use crate::model::tsig_key::TsigAlgorithm;
 
@@ -45,7 +46,7 @@ fn build_response_echoes_request_header_and_question() {
         None,
         None,
         300,
-        crate::dns::message::ResponseLimit::udp(512),
+        ResponseLimit::udp(512),
     )
     .unwrap();
 
@@ -76,7 +77,7 @@ fn build_response_echoes_an_opt_with_the_extended_rcode() {
         None,
         None,
         300,
-        crate::dns::message::ResponseLimit::udp(1232),
+        ResponseLimit::udp(1232),
     )
     .unwrap();
 
@@ -105,7 +106,7 @@ fn build_response_signs_with_request_mac_chain() {
         None,
         Some(signer),
         300,
-        crate::dns::message::ResponseLimit::udp(512),
+        ResponseLimit::udp(512),
     )
     .unwrap();
 
@@ -135,7 +136,7 @@ fn build_response_signs_with_request_mac_chain() {
         None,
         None,
         300,
-        crate::dns::message::ResponseLimit::udp(512),
+        ResponseLimit::udp(512),
     )
     .unwrap();
 
@@ -204,7 +205,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
         let client =
             ClientTransaction::request(key.clone(), &mut additional, Time48::now()).unwrap();
         let request = additional.finish().into_target();
-        let signer = crate::dns::tsig::verify_tsig(&request, Some(key.clone())).unwrap();
+        let signer = tsig::verify_tsig(&request, Some(key.clone())).unwrap();
 
         for rcode in [
             OptRcode::NOERROR,
@@ -218,7 +219,7 @@ fn update_responses_fit_udp_with_long_compressed_key_names() {
                 None,
                 Some(signer.clone()),
                 300,
-                crate::dns::message::ResponseLimit::udp(size.unwrap_or(512)),
+                ResponseLimit::udp(size.unwrap_or(512)),
             )
             .unwrap();
 
