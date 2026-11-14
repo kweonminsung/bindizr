@@ -7,7 +7,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
 use crate::zone::ZoneFilter;
-use crate::{LockLevel, sql};
+use crate::{LockLevel, sql, sqlite};
 
 /// Insert a zone in the current transaction.
 pub(crate) async fn create_tx(
@@ -38,7 +38,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    zone.id = ZoneId::from(super::last_insert_id(&result)?);
+    zone.id = ZoneId::from(sqlite::last_insert_id(&result)?);
     zone.created_at = now;
 
     Ok(zone)

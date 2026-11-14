@@ -24,7 +24,7 @@ pub async fn export(
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
 
     let result: Result<_, ServiceError> = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         caller
             .reauthenticate_tx(&mut tx)
             .await?

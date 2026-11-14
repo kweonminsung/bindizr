@@ -4,8 +4,8 @@ use bindizr_core::model::zone::ZoneId;
 use chrono::{DateTime, Utc};
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
+use crate::{LockLevel, sqlite};
 
 /// Insert a DNSSEC key in the current transaction.
 pub(crate) async fn create_tx(
@@ -34,7 +34,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    key.id = DnssecKeyId::from(super::last_insert_id(&result)?);
+    key.id = DnssecKeyId::from(sqlite::last_insert_id(&result)?);
     key.created_at = now;
 
     Ok(key)

@@ -97,7 +97,7 @@ id_newtype!(
 );
 
 /// A TSIG credential whose wire `name` identifies it for updates and transfers.
-/// Rights come from its role's [`super::role_grant::RoleGrant`] rows; a key
+/// Rights come from its role's [`crate::model::role_grant::RoleGrant`] rows; a key
 /// that only signs outbound NOTIFY names a role with none.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct TsigKey {

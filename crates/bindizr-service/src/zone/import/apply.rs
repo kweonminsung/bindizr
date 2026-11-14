@@ -12,15 +12,15 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{ImportOptions, ImportSource, MissingZoneAction};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::record::validation;
 use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
-use crate::zone::diff;
 use crate::zone::import::plan::{DesiredRecord, ImportPlan};
+use crate::zone::import::{ImportOptions, ImportSource, MissingZoneAction};
+use crate::zone::{diff, import};
 use crate::{Context, dnssec, notify, record, serial, time, transaction, ttl, zone};
 
 /// Resolve a new zone from the imported SOA and configured creation defaults.
@@ -108,10 +108,10 @@ pub(crate) async fn apply_import(
 
         let zone_missing = existing_zone.is_none();
         let default_ttl = if let Some(zone) = &existing_zone {
-            super::authorize_import(caller, mode, zone)?;
+            import::authorize_import(caller, mode, zone)?;
             zone.default_ttl
         } else if missing_zone_action == MissingZoneAction::Create {
-            super::authorize_new_zone_import(caller, mode)?;
+            import::authorize_new_zone_import(caller, mode)?;
             cx.config().dns.zone_defaults.ttl
         } else {
             return Err(ServiceError::zone_not_found(zone_name));

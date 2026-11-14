@@ -13,7 +13,10 @@ use domain::dnssec::sign::denial::{nsec, nsec3};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter};
 use domain::rdata::{Soa, ZoneRecordData};
 
-use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord};
+use crate::dns::dnssec::signed_view;
+use crate::dns::dnssec::signed_view::{
+    SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord,
+};
 use crate::dns::record::EncodedRdata;
 use crate::model::dnssec_key::DS_DIGEST_TYPE;
 use crate::model::dnssec_policy::DnssecDenial;
@@ -63,7 +66,7 @@ impl SignedViewParams<'_> {
                 ));
                 let cdnskey = UnknownRecordData::from_octets(
                     Rtype::CDNSKEY,
-                    super::to_rdata(&signer.dnskey)?.into_bytes(),
+                    signed_view::to_rdata(&signer.dnskey)?.into_bytes(),
                 )
                 .map_err(|error| SignZoneError::Rdata {
                     rtype: "CDNSKEY",

@@ -11,7 +11,7 @@ use bindizr_core::config::{Config, DatabaseType};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time;
 
-use super::Report;
+use crate::cli::commands::doctor::Report;
 
 /// A database that does not answer must become a failed check, not a hang;
 /// longer than the daemon's probe budget since this connects from scratch.

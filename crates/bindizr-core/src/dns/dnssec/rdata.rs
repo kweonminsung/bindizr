@@ -7,8 +7,8 @@ use domain::rdata::Dnskey;
 use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
 
-use super::WireName;
 use crate::dns::LibraryError;
+use crate::dns::dnssec::WireName;
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::model::dnssec_key::DnssecKey;
 

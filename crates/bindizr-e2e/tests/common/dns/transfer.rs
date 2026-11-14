@@ -9,6 +9,7 @@ use domain::rdata::tsig::Time48;
 use domain::tsig::ClientSequence;
 use rustls::ClientConfig;
 
+use crate::common::dns;
 use crate::common::dns::tsig::SigningKey;
 use crate::common::dns::{transport, tsig};
 
@@ -76,7 +77,7 @@ fn transfer<S: Read + Write>(
     builder.header_mut().set_id(query_id);
     let mut question = builder.question();
     question
-        .push((&super::parse_name(zone_name)?, Rtype::AXFR))
+        .push((&dns::parse_name(zone_name)?, Rtype::AXFR))
         .map_err(|error| error.to_string())?;
     let mut additional = question.additional();
 

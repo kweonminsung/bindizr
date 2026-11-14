@@ -11,14 +11,13 @@ use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneC
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::SignedZone;
 use crate::authorization::Caller;
-use crate::dnssec::{parent_ns_addrs, status};
+use crate::dnssec::{SignedZone, parent_ns_addrs, status};
 use crate::error::ServiceError;
 use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
 };
-use crate::{Context, dnssec_policy, notify, serial, transaction, zone};
+use crate::{Context, dnssec, dnssec_policy, notify, serial, transaction, zone};
 
 /// Validate a policy move: layout changes require disabling DNSSEC first; algorithms use rollover.
 /// Denial changes are atomic because all supported algorithms sign NSEC3 (RFC 5702, Section 2; RFC 6605, Section 2; RFC 8080, Section 2).
@@ -127,7 +126,7 @@ pub async fn enable(
             keys: stored,
         };
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
@@ -206,7 +205,7 @@ pub async fn update_settings(
                     return Err(ServiceError::dnssec_not_enabled(&zone.name));
                 }
 
-                let current = super::lookup_zone_policy_tx(&mut tx, &zone).await?;
+                let current = dnssec::lookup_zone_policy_tx(&mut tx, &zone).await?;
                 let target =
                     bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, name, LockLevel::Shared)
                         .await?
@@ -215,7 +214,7 @@ pub async fn update_settings(
 
                 Some(target)
             }
-            None => super::find_zone_policy_tx(&mut tx, &zone).await?,
+            None => dnssec::find_zone_policy_tx(&mut tx, &zone).await?,
         };
         let policy_changed = policy.as_ref().map(|policy| policy.id) != zone.dnssec_policy_id;
         let candidate = Zone {
@@ -232,7 +231,7 @@ pub async fn update_settings(
         {
             if keys.iter().any(|key| key.algorithm != policy.algorithm) {
                 keys =
-                    super::start_algorithm_rollover_tx(&mut tx, &candidate, policy, keys).await?;
+                    dnssec::start_algorithm_rollover_tx(&mut tx, &candidate, policy, keys).await?;
             }
 
             bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, candidate.id, Some(policy.id))
@@ -244,7 +243,7 @@ pub async fn update_settings(
                 keys,
             };
 
-            new_serial = super::resign_zone_tx(
+            new_serial = dnssec::resign_zone_tx(
                 &mut tx,
                 &signed,
                 SigningPass::Refresh,
@@ -301,7 +300,7 @@ pub async fn disable(
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(
+        let signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -311,7 +310,7 @@ pub async fn disable(
         .await?;
 
         if ds_check == DsCheck::Probe {
-            let delegation = super::probe_delegation(cx, &signed).await?;
+            let delegation = dnssec::probe_delegation(cx, &signed).await?;
 
             if !delegation.ds_key_tags.is_empty() {
                 return Err(ServiceError::dnssec_ds_published(
@@ -377,7 +376,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(
+        let signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -386,7 +385,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
         )
         .await?;
         let changed =
-            super::resign_zone_tx(&mut tx, &signed, SigningPass::Full, caller.change_origin())
+            dnssec::resign_zone_tx(&mut tx, &signed, SigningPass::Full, caller.change_origin())
                 .await?
                 .is_some();
 

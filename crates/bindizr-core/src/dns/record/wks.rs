@@ -2,8 +2,7 @@
 
 use std::net::Ipv4Addr;
 
-use super::{EncodeRdataError, ParseRecordValueError, Rdata};
-use crate::dns::record::value;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 const WKS_PREFIX_LEN: usize = 5;
 const MAX_SERVICE_BITMAP_LEN: usize = (u16::MAX as usize + 1) / 8;

@@ -8,9 +8,10 @@ use bindizr_core::model::zone_version::ZoneVersion;
 use bindizr_db::LockLevel;
 use thiserror::Error;
 
-use super::TransferAccess;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
+use crate::zone::transfer;
+use crate::zone::transfer::TransferAccess;
 use crate::{Context, transaction};
 
 /// What an IXFR from a client's serial is answered with.
@@ -37,7 +38,7 @@ pub async fn authorize_ixfr_plan_by_name(
     let mut tx = transaction::begin_read_tx(cx, "failed to load the transfer delta").await?;
 
     let result: Result<_, ServiceError> = async {
-        let zone = match super::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
+        let zone = match transfer::authorize_transfer_tx(&mut tx, caller, zone_name).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),

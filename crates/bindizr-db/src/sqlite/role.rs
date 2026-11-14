@@ -3,6 +3,7 @@ use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
+use crate::sqlite;
 
 /// Insert a role.
 pub(crate) async fn create_tx(
@@ -23,7 +24,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    role.id = RoleId::from(super::last_insert_id(&result)?);
+    role.id = RoleId::from(sqlite::last_insert_id(&result)?);
     role.created_at = now;
 
     Ok(role)

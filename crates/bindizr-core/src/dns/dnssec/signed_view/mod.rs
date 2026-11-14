@@ -18,7 +18,7 @@ use domain::rdata::{Dnskey, Rrsig, ZoneRecordData};
 use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
-use super::{EncodeKeyRdataError, EncodeWireNameError, KeyTag, WireName, WireRecord};
+use crate::dns::dnssec::{EncodeKeyRdataError, EncodeWireNameError, KeyTag, WireName, WireRecord};
 use crate::dns::name::{OwnerName, ParseNameError, ZoneName};
 use crate::dns::record::{EncodeRdataError, Rdata};
 use crate::dns::{LibraryError, Serial, Ttl};

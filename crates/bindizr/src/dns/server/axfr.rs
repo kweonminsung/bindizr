@@ -5,10 +5,9 @@ use bindizr_core::model::transfer::TransferKind;
 use bindizr_service::zone::TransferAccess;
 use bindizr_service::{transfer, zone};
 
-use super::DnsContext;
 use crate::dns::error::DnsError;
 use crate::dns::server::auth::TransferIdentity;
-use crate::dns::server::{catalog, transfer_cache};
+use crate::dns::server::{DnsContext, catalog, transfer_cache};
 use crate::dns::stream::ResponseWriter;
 
 /// Send AXFR content with the original QTYPE, including IXFR fallback.

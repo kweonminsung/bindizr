@@ -10,9 +10,9 @@ use bindizr_core::model::record::Record;
 use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 
-use super::NsupdateError;
 use crate::Transaction;
 use crate::error::ServiceError;
+use crate::nsupdate::NsupdateError;
 
 /// An UPDATE prerequisite with a checked owner and wire type.
 #[derive(Debug, Clone, PartialEq, Eq)]

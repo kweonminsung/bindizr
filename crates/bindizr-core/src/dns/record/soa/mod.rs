@@ -7,8 +7,8 @@ use domain::base::Name;
 use domain::base::name::{FromStrError, Label};
 use thiserror::Error;
 
-use super::{EncodeRdataError, Rdata};
 use crate::dns::name;
+use crate::dns::record::{EncodeRdataError, Rdata};
 
 /// An email that does not encode as an SOA mailbox, or a mailbox that does
 /// not decode back.

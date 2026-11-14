@@ -1,6 +1,5 @@
-use super::ParseRecordValueError;
 use crate::dns::name;
-use crate::dns::record::value;
+use crate::dns::record::{ParseRecordValueError, value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CnameRecordValue<'a> {

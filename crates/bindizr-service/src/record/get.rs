@@ -4,9 +4,9 @@ use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::{RecordId, RecordType};
 use bindizr_db::dnssec_record::DnssecRecordFilter;
 
-use super::ServedRecord;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
+use crate::record::ServedRecord;
 use crate::types::{PaginatedResponse, RecordFilter, RecordResponse, ZoneView};
 use crate::{Context, pagination, ttl, zone};
 
@@ -184,7 +184,7 @@ pub async fn list_by_filter_with_zone(
 
     let records = records
         .iter()
-        .map(|record| super::build_record_response(caller, record))
+        .map(|record| crate::record::build_record_response(caller, record))
         .collect();
 
     Ok(pagination::build_paginated_response(
@@ -218,7 +218,7 @@ pub async fn get(
         return Err(ServiceError::record_not_found(record_id));
     }
 
-    Ok(super::build_record_response(
+    Ok(crate::record::build_record_response(
         caller,
         &ServedRecord::User(record),
     ))

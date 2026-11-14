@@ -11,7 +11,8 @@ use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use tokio::time;
 
-use super::{TestApp, TestRuntime};
+use crate::common;
+use crate::common::{TestApp, TestRuntime};
 
 /// The compose file that defines the DNS stack.
 const COMPOSE_FILE: &str = "docker-compose.yml";
@@ -47,7 +48,7 @@ static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 impl TestApp {
     /// Start a test application using the Docker Compose services.
     pub(crate) async fn start_compose() -> Self {
-        super::install_crypto_provider();
+        common::install_crypto_provider();
         let compose_stack = COMPOSE_STACK.get_or_init(ComposeStack::start);
         let client = Client::new();
 
@@ -62,7 +63,7 @@ impl TestApp {
             dns_tls_port: None,
             tls_cert: None,
             dns_secondary_ports: SECONDARY_PORTS.to_vec(),
-            namespace: super::test_namespace(),
+            namespace: common::test_namespace(),
             auth_token: None,
         }
     }
@@ -256,7 +257,7 @@ fn is_compose_stack_reachable() -> bool {
 /// List the compose files; the ARM override swaps the amd64-only ISC bind9
 /// image for a multi-arch one.
 fn compose_files() -> Vec<&'static str> {
-    if super::read_env_flag(ARM_STACK_ENV) {
+    if common::read_env_flag(ARM_STACK_ENV) {
         vec![COMPOSE_FILE, ARM_COMPOSE_FILE]
     } else {
         vec![COMPOSE_FILE]

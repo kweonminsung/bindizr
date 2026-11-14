@@ -298,7 +298,7 @@ impl From<Option<ZoneId>> for RoleZoneScope {
 }
 
 /// A role's actions and zone scope; name/type patterns narrow only `record:*`.
-/// Pattern syntax is defined by [`super::grant_pattern`].
+/// Pattern syntax is defined by [`crate::model::grant_pattern`].
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct RoleGrant {
     pub id: RoleGrantId,

@@ -2,13 +2,12 @@
 
 use bindizr_core::dns::name::ZoneName;
 
-use super::{ImportOptions, ImportSource, MissingZoneAction};
 use crate::Context;
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
 use crate::types::{ImportMode, ImportZoneRequest, ImportZoneResponse, Run};
-use crate::zone::import::apply;
+use crate::zone::import::{ImportOptions, ImportSource, MissingZoneAction, apply};
 
 /// Import zone-file or AXFR records by mode; any validation failure rejects the whole import.
 /// Applying advances the serial once and sends one NOTIFY.
@@ -35,7 +34,7 @@ pub async fn import(
     // Checked before any fetch or parse: with `create` there is no zone yet,
     // and only an all-zones grant will reach the one made.
     if request.create {
-        super::authorize_new_zone_import(caller, mode)?;
+        crate::zone::import::authorize_new_zone_import(caller, mode)?;
     }
 
     let source = match (&request.content, &request.from_server) {
@@ -51,8 +50,15 @@ pub async fn import(
 
             let mut client = AxfrClient::new(address);
 
-            return super::import_transfer(cx, caller, zone_name, &mut client, address, options)
-                .await;
+            return crate::zone::import::import_transfer(
+                cx,
+                caller,
+                zone_name,
+                &mut client,
+                address,
+                options,
+            )
+            .await;
         }
         (Some(_), Some(_)) => {
             return Err(ServiceError::invalid_input(

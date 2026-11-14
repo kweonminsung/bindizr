@@ -140,7 +140,7 @@ pub async fn delete(
             return Ok((response, zone.name));
         }
 
-        super::delete_with_changes_tx(
+        crate::record::delete_with_changes_tx(
             &mut tx,
             zone.id,
             new_serial,
@@ -281,7 +281,7 @@ pub async fn delete_matching(
         }
 
         // Apply the complete deletion and refresh signatures in the same transaction.
-        super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
+        crate::record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 
         // Once for the whole set, so IXFR consumers see one step.

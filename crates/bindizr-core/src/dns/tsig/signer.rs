@@ -8,8 +8,8 @@ use domain::tsig::Key;
 use ring::hmac;
 use thiserror::Error;
 
-use super::TsigSigningKey;
 use crate::dns::nsupdate::DEFAULT_FUDGE;
+use crate::dns::tsig::TsigSigningKey;
 
 /// The response signature could not be appended to the DNS message.
 #[derive(Debug, Error)]

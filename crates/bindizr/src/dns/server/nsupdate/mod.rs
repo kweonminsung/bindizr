@@ -16,8 +16,8 @@ use bindizr_core::dns::{nsupdate, tsig};
 use bindizr_core::metrics::NsupdateResult;
 use bindizr_core::model::transfer::TransferTransport;
 
-use super::DnsContext;
 use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
 use crate::dns::server::nsupdate::update::UpdateError;
 use crate::dns::stream::ResponseWriter;
 use crate::dns::udp::{ReplyTarget, UdpSocket};

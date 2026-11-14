@@ -197,7 +197,8 @@ pub async fn create_bulk(
             let started = Instant::now();
 
             let created_records =
-                super::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+                crate::record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
+                    .await?;
 
             timings.db_write_ms = time::elapsed_ms(started);
 

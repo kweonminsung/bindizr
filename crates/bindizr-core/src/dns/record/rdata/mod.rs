@@ -17,13 +17,13 @@ use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 use thiserror::Error;
 
-use super::{
+use crate::dns::name;
+use crate::dns::name::EncodeNameError;
+use crate::dns::record::{
     CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, ParseMailboxError,
     ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
     WksRecordValue,
 };
-use crate::dns::name;
-use crate::dns::name::EncodeNameError;
 use crate::model::dnssec_record::DnssecRecordType;
 use crate::model::record::RecordType;
 

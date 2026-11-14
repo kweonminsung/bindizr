@@ -74,7 +74,7 @@ pub(crate) async fn lookup_response(
     cx: &Context,
     secondary: &Secondary,
 ) -> Result<SecondaryResponse, ServiceError> {
-    let tsig_key = super::find_notify_tsig_key(cx, secondary).await?;
+    let tsig_key = crate::secondary::find_notify_tsig_key(cx, secondary).await?;
     Ok(SecondaryResponse::from_secondary(
         secondary,
         tsig_key.as_ref().map(|tsig_key| tsig_key.name.as_str()),
@@ -83,7 +83,7 @@ pub(crate) async fn lookup_response(
 
 /// Look up one secondary by name, unchecked.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Secondary, ServiceError> {
-    let name = super::normalize_name(name)?;
+    let name = crate::secondary::normalize_name(name)?;
     bindizr_db::secondary::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::secondary_not_found(&name))

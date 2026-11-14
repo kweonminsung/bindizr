@@ -5,8 +5,8 @@ use std::time::Duration;
 use domain::base::Message;
 use domain::base::opt::keepalive::TcpKeepalive;
 
-use super::ParseResponseError;
 use crate::dns::message::Edns;
+use crate::dns::query::response::ParseResponseError;
 
 /// Read the server's idle timeout, in 100 ms units (RFC 7828, Sections 3.1 and 3.2.2).
 pub fn extract_tcp_keepalive_timeout(

@@ -17,7 +17,7 @@ pub async fn get_status(
 ) -> Result<ZoneStatusResponse, ServiceError> {
     // Read once: a write landing during the probe can show a secondary as
     // ahead for a moment, the drift a read-only path accepts.
-    let zone = super::lookup_by_name(cx, zone_name).await?;
+    let zone = crate::zone::lookup_by_name(cx, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let serial = zone.serial;

@@ -17,10 +17,10 @@ use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
 
 use crate::cli::error::CliError;
-use crate::cli::output;
 use crate::cli::output::{
     ImportSummaryRow, ImportZonesRow, OutputFormat, SecondaryStatusRow, ZoneRow,
 };
+use crate::cli::{commands, output};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
@@ -513,7 +513,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             // Clap requires --from-server with either selector.
             let from_server = from_server.unwrap_or_default();
             let zone_names = zones
-                .map(|zones| super::read_input(&zones))
+                .map(|zones| commands::read_input(&zones))
                 .transpose()?
                 .map(|text| {
                     text.lines()
@@ -573,7 +573,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             output,
             ..
         } => {
-            let content = file.map(|file| super::read_input(&file)).transpose()?;
+            let content = file.map(|file| commands::read_input(&file)).transpose()?;
 
             let response = client::send_command::<ImportZoneResponse>(DaemonCommand::ImportZone {
                 zone_name: name,

@@ -10,7 +10,7 @@ use crate::authorization::Caller;
 use crate::dnssec::status;
 use crate::error::ServiceError;
 use crate::types::DnssecStatusResponse;
-use crate::{Context, notify, transaction};
+use crate::{Context, dnssec, notify, transaction};
 
 /// Publish the delete CDS/CDNSKEY pair (RFC 8078, Section 4), asking a
 /// CDS-consuming parent to drop the zone's DS: the first step of going insecure.
@@ -22,7 +22,7 @@ pub async fn withdraw(
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(
+        let signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -42,7 +42,7 @@ pub async fn withdraw(
 
         bindizr_db::dnssec_withdrawal::create_tx(&mut tx, signed.zone.id).await?;
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
@@ -90,7 +90,7 @@ pub async fn cancel_withdrawal(
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(
+        let signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -108,7 +108,7 @@ pub async fn cancel_withdrawal(
 
         bindizr_db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,

@@ -9,8 +9,8 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::NsupdateError;
 use crate::authorization::{Caller, RecordAccess};
+use crate::nsupdate::NsupdateError;
 use crate::record::AddResult;
 use crate::{Transaction, record};
 

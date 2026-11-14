@@ -5,7 +5,7 @@ use std::{fmt, mem};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 
-use super::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
+use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_WIRE_NAME_LEN, ParseNameError, ZoneName};
 
 /// Escape separators, backslashes, the origin marker `@`, and master-file
 /// metacharacters (RFC 1035, Section 5.1).
@@ -39,7 +39,7 @@ impl OwnerName {
     /// Parse `@`, relative names, or absolute names inside `zone_name` into octet labels.
     /// Validate wire lengths without imposing hostname character rules.
     pub fn parse_in_zone(value: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(value);
+        let trimmed = crate::dns::name::trim_presentation_name(value);
 
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
@@ -70,7 +70,7 @@ impl OwnerName {
         value: &str,
         zone_name: &ZoneName,
     ) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(value);
+        let trimmed = crate::dns::name::trim_presentation_name(value);
 
         if trimmed == Self::APEX {
             return Ok(Self::apex());
@@ -114,7 +114,7 @@ impl OwnerName {
     /// then the root.
     pub fn to_wire(&self, zone_name: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
         let zone_labels = zone_name.labels();
-        super::labels_to_wire(
+        crate::dns::name::labels_to_wire(
             self.0
                 .iter()
                 .map(Vec::as_slice)
@@ -133,7 +133,7 @@ impl OwnerName {
 
     /// Render this owner's labels in presentation form, with the required escapes.
     fn to_presentation(&self) -> String {
-        super::labels_to_presentation(&self.0)
+        crate::dns::name::labels_to_presentation(&self.0)
     }
 
     /// Return whether this owner is `other` or sits under it, compared label by label.

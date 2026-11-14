@@ -7,7 +7,7 @@ id_newtype!(
 );
 
 /// A named set of rights that API tokens and TSIG keys authenticate into; the
-/// rights are its [`super::role_grant::RoleGrant`] rows.
+/// rights are its [`crate::model::role_grant::RoleGrant`] rows.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct Role {
     pub id: RoleId,

@@ -1,6 +1,6 @@
 use std::net::Ipv4Addr;
 
-use super::ParseRecordValueError;
+use crate::dns::record::ParseRecordValueError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ARecordValue(Ipv4Addr);

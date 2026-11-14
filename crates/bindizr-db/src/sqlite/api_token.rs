@@ -3,8 +3,8 @@ use bindizr_core::model::role::RoleId;
 use chrono::{DateTime, Utc};
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
+use crate::{LockLevel, sqlite};
 
 /// Insert an API token.
 pub(crate) async fn create_tx(
@@ -28,7 +28,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    token.id = TokenId::from(super::last_insert_id(&result)?);
+    token.id = TokenId::from(sqlite::last_insert_id(&result)?);
     token.created_at = now;
 
     Ok(token)

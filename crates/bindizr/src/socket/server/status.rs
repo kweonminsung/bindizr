@@ -8,9 +8,9 @@ use bindizr_service::types::MessageResponse;
 use bindizr_service::{Context, secondary, zone};
 use tokio::time;
 
-use super::SocketContext;
 use crate::daemon;
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
+use crate::socket::server::SocketContext;
 use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
 /// Return the daemon's current status as JSON.

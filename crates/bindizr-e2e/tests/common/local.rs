@@ -11,13 +11,14 @@ use reqwest::{Certificate, Client, StatusCode};
 use rustls::pki_types::CertificateDer;
 use tokio::time;
 
-use super::{TestApp, TestAppOptions, TestRuntime};
+use crate::common;
+use crate::common::{TestApp, TestAppOptions, TestRuntime};
 
 impl TestApp {
     /// Start with non-default config; always the local runtime, because the
     /// compose stack's config is fixed.
     pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
-        super::install_crypto_provider();
+        common::install_crypto_provider();
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         let config_path = temp_dir.path().join("bindizr.conf.toml");
@@ -35,9 +36,9 @@ impl TestApp {
         let mut failures = Vec::new();
 
         for _ in 0..3 {
-            let api_port = super::reserve_tcp_port();
+            let api_port = common::reserve_tcp_port();
             let dns_port = reserve_dns_port();
-            let dns_tls_port = options.dns_tls.then(super::reserve_tcp_port);
+            let dns_tls_port = options.dns_tls.then(common::reserve_tcp_port);
             write_config(
                 &config_path,
                 api_port,
@@ -69,7 +70,7 @@ impl TestApp {
                         dns_tls_port,
                         tls_cert: tls_cert.clone(),
                         dns_secondary_ports: Vec::new(),
-                        namespace: super::test_namespace(),
+                        namespace: common::test_namespace(),
                         auth_token: None,
                     };
                 }

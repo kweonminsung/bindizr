@@ -16,7 +16,7 @@ pub(crate) async fn force_increment_serial(
     let mut tx = transaction::begin_tx(cx, "failed to force increment zone serial").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
 
@@ -38,7 +38,8 @@ pub(crate) async fn force_increment_serial(
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
+        crate::zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin())
+            .await?;
 
         Ok(updated_zone)
     }

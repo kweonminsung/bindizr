@@ -12,8 +12,8 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time;
 use tokio::time::Instant;
 
-use super::NotifyTarget;
-use crate::{Context, zone};
+use crate::notify::NotifyTarget;
+use crate::{Context, notify, zone};
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,7 +235,7 @@ async fn start_batch(cx: &Arc<Context>, mut batch: NotifyBatch, tasks: &mut Join
     for zone_name in batch.zones {
         let cx = cx.clone();
         tasks.spawn(async move {
-            if let Err(error) = super::send_notify(&cx, NotifyTarget::Zone(&zone_name)).await {
+            if let Err(error) = notify::send_notify(&cx, NotifyTarget::Zone(&zone_name)).await {
                 log::warn!("queued notify: NOTIFY failed for zone {zone_name}: {error}");
             }
         });

@@ -6,9 +6,9 @@ use domain::base::message_builder::{AdditionalBuilder, TreeCompressor};
 use domain::rdata::tsig::{Time48, Tsig};
 use ring::hmac;
 
-use super::{TsigError, TsigSigningKey};
 use crate::dns::message;
 use crate::dns::message::{Edns, ResponseLimit};
+use crate::dns::tsig::{TsigError, TsigSigningKey};
 
 /// Build the signed or unsigned validation error required by RFC 8945, Section 5.3.2.
 pub fn build_error_response(

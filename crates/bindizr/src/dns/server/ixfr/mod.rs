@@ -12,11 +12,10 @@ use bindizr_core::model::zone_version::ZoneVersion;
 use bindizr_service::zone::{IxfrPlan, TransferAccess};
 use bindizr_service::{transfer, zone};
 
-use super::DnsContext;
 use crate::dns::error::DnsError;
 use crate::dns::server::auth::TransferIdentity;
-use crate::dns::server::axfr;
 use crate::dns::server::ixfr::send::SendIxfrError;
+use crate::dns::server::{DnsContext, axfr};
 use crate::dns::stream::ResponseWriter;
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.

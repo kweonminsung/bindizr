@@ -36,7 +36,7 @@ pub(crate) fn grant_record_match_sql(
 ) -> String {
     let actions = concat(&["','", "p.actions", "','"]);
     let read = format!("{actions} LIKE '%,{},%'", Action::RecordRead.as_str());
-    let apex = super::apex_owner_sql();
+    let apex = crate::sql::apex_owner_sql();
     let suffix = "SUBSTR(p.record_name_pattern, 3)";
     let under = concat(&["'%.'", &like_escaped_sql(suffix)]);
     let name = format!(

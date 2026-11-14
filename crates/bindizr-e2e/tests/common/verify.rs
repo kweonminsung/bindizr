@@ -7,8 +7,7 @@ use domain::base::iana::Rtype;
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
-use super::{RECORD_PAGE_LIMIT, TestApp};
-use crate::common::dns;
+use crate::common::{RECORD_PAGE_LIMIT, TestApp, dns};
 
 /// Render a name with the trailing dot record payloads carry, so a zone taken
 /// from a request path compares against the one a record names.

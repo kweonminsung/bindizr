@@ -2,8 +2,8 @@
 
 use thiserror::Error;
 
-use super::ValidateNaptrRegexpError;
 use crate::dns::name::ParseNameError;
+use crate::dns::record::ValidateNaptrRegexpError;
 use crate::model::record::RecordType;
 
 /// A record value that is not what its type's presentation form spells. The

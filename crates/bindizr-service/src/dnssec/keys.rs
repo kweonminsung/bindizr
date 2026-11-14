@@ -10,15 +10,14 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::SignedZone;
 use crate::authorization::Caller;
-use crate::dnssec::status;
+use crate::dnssec::{SignedZone, status};
 use crate::error::ServiceError;
 use crate::types::{
     DnssecKeyMaterialResponse, DnssecStatusResponse, ExportDnssecKeysResponse,
     ImportDnssecKeysRequest,
 };
-use crate::{Context, dnssec_policy, notify, transaction, zone};
+use crate::{Context, dnssec, dnssec_policy, notify, transaction, zone};
 
 /// Export the zone's keys as BIND file contents (`K*.key` / `K*.private`).
 pub async fn export_keys(
@@ -31,7 +30,7 @@ pub async fn export_keys(
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
 
     let result: Result<_, ServiceError> = async {
-        let SignedZone { zone, keys, .. } = super::get_signed_zone_tx(
+        let SignedZone { zone, keys, .. } = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -176,7 +175,7 @@ pub async fn import_keys(
             keys: stored,
         };
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,

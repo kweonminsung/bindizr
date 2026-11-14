@@ -4,7 +4,7 @@ use domain::base::Name;
 use domain::base::iana::{Class, Opcode, OptRcode, Rtype};
 use domain::rdata::AllRecordData;
 
-use super::ParseResponseError;
+use crate::dns::query::response::ParseResponseError;
 use crate::dns::record::Rdata;
 
 /// One answer record with uncompressed RDATA preserving received case.
@@ -27,13 +27,14 @@ pub fn extract_transfer_records(
 ) -> Result<Vec<TransferRecord>, ParseResponseError> {
     use domain::base::rdata::ComposeRecordData;
 
-    let message = super::parse_response_header(query_id, Opcode::QUERY, response)?;
+    let message =
+        crate::dns::query::response::parse_response_header(query_id, Opcode::QUERY, response)?;
 
     if position == TransferMessagePosition::First || message.header_counts().qdcount() != 0 {
-        super::validate_question(&message, qname, Rtype::AXFR)?;
+        crate::dns::query::response::validate_question(&message, qname, Rtype::AXFR)?;
     }
 
-    let rcode = super::response_rcode(&message)?;
+    let rcode = crate::dns::query::response::response_rcode(&message)?;
 
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::Rcode(rcode));

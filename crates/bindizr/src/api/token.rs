@@ -12,9 +12,9 @@ use bindizr_service::types::{
 };
 use bindizr_service::{Context, token};
 
-use super::{AuthenticatedToken, RequestCaller};
 use crate::api::error::{ApiError, Path, Query};
 use crate::api::middleware::body_parser::JsonBody;
+use crate::api::{AuthenticatedToken, RequestCaller};
 use crate::params::NameParams;
 
 /// Build the token API routes.

@@ -7,7 +7,7 @@ use domain::crypto::sign;
 use domain::crypto::sign::GenerateParams;
 use thiserror::Error;
 
-use super::KeyTag;
+use crate::dns::dnssec::KeyTag;
 use crate::dns::{LibraryError, Ttl};
 use crate::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,

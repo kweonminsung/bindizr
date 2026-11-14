@@ -1,10 +1,9 @@
 //! DS record values (RFC 4034, Section 5): a child zone's key digest, entered
 //! by the operator at the delegation point.
 
-use super::{EncodeRdataError, ParseRecordValueError, Rdata};
 use crate::dns::dnssec::KeyTag;
-use crate::dns::record::value;
 use crate::dns::record::value::MAX_RECORD_RDATA;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 /// The algorithm mnemonics a DS may spell instead of a number (RFC 4034,
 /// Appendix A.1 and the IANA DNS Security Algorithm Numbers registry).

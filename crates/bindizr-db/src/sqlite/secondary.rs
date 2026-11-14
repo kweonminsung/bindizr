@@ -4,8 +4,8 @@ use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
+use crate::{LockLevel, sqlite};
 
 /// Insert a secondary.
 pub(crate) async fn create_tx(
@@ -28,7 +28,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    secondary.id = SecondaryId::from(super::last_insert_id(&result)?);
+    secondary.id = SecondaryId::from(sqlite::last_insert_id(&result)?);
     secondary.created_at = now;
 
     Ok(secondary)

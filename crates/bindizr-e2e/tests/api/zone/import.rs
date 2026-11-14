@@ -2077,7 +2077,7 @@ async fn catalog_import_preserves_valid_members_and_escaped_octets() {
                 );
 
                 let (status, fetched) = app
-                    .send_request(Method::GET, &super::zone_path(member), None)
+                    .send_request(Method::GET, &crate::api::zone::zone_path(member), None)
                     .await;
 
                 if dry_run {

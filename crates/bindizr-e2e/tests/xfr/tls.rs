@@ -21,6 +21,7 @@ use crate::common::dns::nsupdate::UpdateRecord;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::dns::{nsupdate, tsig};
 use crate::common::{TestApp, TestAppOptions, dns};
+use crate::xfr;
 use crate::xfr::common;
 
 /// Start a bindizr serving XoT beside plain TCP.
@@ -742,7 +743,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
     assert!(dns::probe_zone_soa(app.dns_port(), zone_name));
 
     // Read the refusal while it is the zone's last transfer, which the summary counts.
-    let body = super::wait_for_transfer_summary(&app, "refused", 1).await;
+    let body = xfr::wait_for_transfer_summary(&app, "refused", 1).await;
     let refused = &body["transfers"][0];
 
     assert_eq!(refused["result"], "refused", "{body}");

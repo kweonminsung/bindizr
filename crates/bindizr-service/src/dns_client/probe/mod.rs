@@ -11,7 +11,8 @@ use bindizr_core::dns::query::ParseResponseError;
 use bindizr_core::dns::{Serial, query};
 use thiserror::Error;
 
-use super::{ExchangeMessageError, ResolveAddressError};
+use crate::dns_client;
+use crate::dns_client::{ExchangeMessageError, ResolveAddressError};
 
 /// Why a server's SOA serial could not be read.
 #[derive(Debug, Error)]
@@ -42,7 +43,7 @@ pub(crate) async fn probe_addresses(
 ) -> Result<SoaProbe, ProbeSoaError> {
     let qname = zone_name.to_wire_name()?;
 
-    let addrs = match super::resolve_address_entry(target, timeout).await {
+    let addrs = match dns_client::resolve_address_entry(target, timeout).await {
         Ok(addrs) => addrs,
         Err(error) => {
             return Ok(SoaProbe {
@@ -92,7 +93,7 @@ async fn probe_address(
     let query = builder.finish();
 
     let response =
-        super::exchange_with_tcp_fallback(server_addr, timeout, &query, "SOA probe").await?;
+        dns_client::exchange_with_tcp_fallback(server_addr, timeout, &query, "SOA probe").await?;
 
     Ok(Serial::from(query::extract_soa_serial(
         query_id, qname, &response,

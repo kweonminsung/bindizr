@@ -130,7 +130,7 @@ pub async fn refresh_catalog_content(
 
     match transaction::finish_tx(tx, result, "failed to load catalog content").await? {
         TransferAccess::Granted(zones) => Ok(TransferAccess::Granted(
-            super::refresh_catalog_from_zones(cx, zones).await?,
+            crate::zone::refresh_catalog_from_zones(cx, zones).await?,
         )),
         TransferAccess::NotAuth => Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => Ok(TransferAccess::Refused(reason)),
@@ -186,7 +186,8 @@ async fn authorize_transfer_tx(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
-    let Some(zone) = super::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {
+    let Some(zone) = crate::zone::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await?
+    else {
         return Ok(TransferAccess::NotAuth);
     };
     let caller = match reauthenticate_transfer_tx(tx, caller).await? {

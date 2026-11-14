@@ -54,7 +54,7 @@ pub async fn list_versions(
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     pagination::validate_page_limit(limit)?;
 
-    let zone = super::lookup_by_name(cx, zone_name).await?;
+    let zone = crate::zone::lookup_by_name(cx, zone_name).await?;
     caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
@@ -80,7 +80,7 @@ pub async fn get_version(
     let mut tx = transaction::begin_read_tx(cx, "failed to load version").await?;
 
     let result: Result<_, ServiceError> = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let read = caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -126,7 +126,7 @@ pub async fn diff_versions(
     let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
     let result: Result<_, ServiceError> = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let read = caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -169,7 +169,7 @@ pub async fn rollback(
     let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
         // A rollback rewrites the zone's SOA and its records whole, from the
@@ -313,7 +313,8 @@ pub async fn rollback(
             to_insert.push(record);
         }
 
-        super::validate_record_changes_tx(&mut tx, &restored_zone, &deletes, &to_insert).await?;
+        crate::zone::validate_record_changes_tx(&mut tx, &restored_zone, &deletes, &to_insert)
+            .await?;
 
         let summary = RollbackZoneSummaryResponse {
             added: to_insert.len() as u64,
@@ -351,7 +352,8 @@ pub async fn rollback(
         // The restored user plane gets fresh signatures; old RRSIGs are
         // never restored (derived journal rows are skipped on rewind).
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, &restored_zone, new_serial, caller.change_origin()).await?;
+        crate::zone::save_version_tx(&mut tx, &restored_zone, new_serial, caller.change_origin())
+            .await?;
 
         Ok((
             RollbackZoneResponse {

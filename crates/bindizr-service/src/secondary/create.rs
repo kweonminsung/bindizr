@@ -19,8 +19,8 @@ pub async fn create(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = super::normalize_name(&request.name)?;
-    let address = super::normalize_address(&request.address)?;
+    let name = crate::secondary::normalize_name(&request.name)?;
+    let address = crate::secondary::normalize_address(&request.address)?;
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {

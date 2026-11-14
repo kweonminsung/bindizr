@@ -10,7 +10,7 @@ use bindizr_core::dns::tsig::{SignRequestError, VerifyResponseError};
 pub(crate) use client::NotifyClient;
 use thiserror::Error;
 
-use super::ExchangeMessageError;
+use crate::dns_client::ExchangeMessageError;
 
 /// Why one NOTIFY to one address was not acknowledged.
 #[derive(Debug, Error)]

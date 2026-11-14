@@ -8,6 +8,7 @@ use bindizr_service::types::{
 };
 use clap::Subcommand;
 
+use crate::cli::commands::dnssec;
 use crate::cli::error::CliError;
 use crate::cli::output::OutputFormat;
 use crate::socket::client;
@@ -116,7 +117,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                     },
                 })
                 .await?;
-            super::print_status(&response.data, output)?;
+            dnssec::print_status(&response.data, output)?;
         }
     }
 

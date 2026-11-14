@@ -7,6 +7,7 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
 use domain::rdata::{A, Cname, Dname, Ns, Soa};
 
+use crate::common::dns;
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::SigningKey;
 
@@ -96,8 +97,7 @@ pub(crate) fn send_update_udp(
 ) -> Result<Rcode, String> {
     let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(1);
     let request = build_update(query_id, zone_name, Class::IN, prerequisites, updates)?;
-    let response =
-        super::exchange_request(request, key, |message| super::exchange_udp(port, message))?;
+    let response = dns::exchange_request(request, key, |message| dns::exchange_udp(port, message))?;
     Ok(response.header().rcode())
 }
 
@@ -111,8 +111,7 @@ pub(crate) fn send_update_tcp(
 ) -> Result<Rcode, String> {
     let query_id = (process::id() as u16).wrapping_add(port);
     let request = build_update(query_id, zone_name, Class::IN, prerequisites, updates)?;
-    let response =
-        super::exchange_request(request, key, |message| super::exchange_tcp(port, message))?;
+    let response = dns::exchange_request(request, key, |message| dns::exchange_tcp(port, message))?;
     Ok(response.header().rcode())
 }
 
@@ -130,12 +129,12 @@ pub(crate) fn send_signed_update_with_two_zones(
 
     for _ in 0..2 {
         question
-            .push((&super::parse_name(zone_name)?, Rtype::SOA, Class::IN))
+            .push((&dns::parse_name(zone_name)?, Rtype::SOA, Class::IN))
             .map_err(|error| error.to_string())?;
     }
 
-    let response = super::exchange_request(question.additional(), Some(key), |message| {
-        super::exchange_udp(port, message)
+    let response = dns::exchange_request(question.additional(), Some(key), |message| {
+        dns::exchange_udp(port, message)
     })?;
 
     Ok((
@@ -160,8 +159,8 @@ pub(crate) fn send_signed_update_with_edns_version(
             Ok(())
         })
         .map_err(|error| error.to_string())?;
-    let response = super::exchange_request(builder, Some(key), |message| {
-        super::exchange_udp(port, message)
+    let response = dns::exchange_request(builder, Some(key), |message| {
+        dns::exchange_udp(port, message)
     })?;
     let rcode = response
         .opt()
@@ -188,7 +187,7 @@ pub(crate) fn build_update(
 
     let mut question = builder.question();
     question
-        .push((&super::parse_name(zone_name)?, Rtype::SOA, zone_class))
+        .push((&dns::parse_name(zone_name)?, Rtype::SOA, zone_class))
         .map_err(|error| error.to_string())?;
 
     let mut answer = question.answer();
@@ -209,7 +208,7 @@ pub(crate) fn build_update(
                 .map_err(|error| error.to_string())?,
             PrerequisiteRecord::SoaEquals { name: owner, soa } => answer
                 .push(Record::new(
-                    super::parse_name(owner)?,
+                    dns::parse_name(owner)?,
                     Class::IN,
                     Ttl::ZERO,
                     soa.clone(),
@@ -219,7 +218,7 @@ pub(crate) fn build_update(
                 let data = A::from_str(addr).map_err(|error| error.to_string())?;
                 answer
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::IN,
                         Ttl::ZERO,
                         data,
@@ -235,7 +234,7 @@ pub(crate) fn build_update(
                     .map_err(|error| error.to_string())?;
                 answer
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::IN,
                         Ttl::ZERO,
                         data,
@@ -259,7 +258,7 @@ pub(crate) fn build_update(
                     .map_err(|error| error.to_string())?;
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::IN,
                         Ttl::from_secs(*ttl),
                         data,
@@ -272,7 +271,7 @@ pub(crate) fn build_update(
                 soa,
             } => authority
                 .push(Record::new(
-                    super::parse_name(owner)?,
+                    dns::parse_name(owner)?,
                     Class::IN,
                     Ttl::from_secs(*ttl),
                     soa.clone(),
@@ -286,7 +285,7 @@ pub(crate) fn build_update(
                 let data = A::from_str(addr).map_err(|error| error.to_string())?;
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::IN,
                         Ttl::from_secs(*ttl),
                         data,
@@ -298,10 +297,10 @@ pub(crate) fn build_update(
                 ttl,
                 target,
             } => {
-                let data = Cname::new(super::parse_name(target)?);
+                let data = Cname::new(dns::parse_name(target)?);
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::IN,
                         Ttl::from_secs(*ttl),
                         data,
@@ -313,10 +312,10 @@ pub(crate) fn build_update(
                 ttl,
                 target,
             } => {
-                let data = Dname::new(super::parse_name(target)?);
+                let data = Dname::new(dns::parse_name(target)?);
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::IN,
                         Ttl::from_secs(*ttl),
                         data,
@@ -335,7 +334,7 @@ pub(crate) fn build_update(
                     .map_err(|error| error.to_string())?;
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::NONE,
                         Ttl::ZERO,
                         data,
@@ -346,10 +345,10 @@ pub(crate) fn build_update(
                 name: owner,
                 target,
             } => {
-                let data = Ns::new(super::parse_name(target)?);
+                let data = Ns::new(dns::parse_name(target)?);
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::NONE,
                         Ttl::ZERO,
                         data,
@@ -360,7 +359,7 @@ pub(crate) fn build_update(
                 let data = A::from_str(addr).map_err(|error| error.to_string())?;
                 authority
                     .push(Record::new(
-                        super::parse_name(owner)?,
+                        dns::parse_name(owner)?,
                         Class::NONE,
                         Ttl::ZERO,
                         data,
@@ -382,10 +381,5 @@ type EmptyRecord = Record<Name<Vec<u8>>, UnknownRecordData<Vec<u8>>>;
 fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, String> {
     let data =
         UnknownRecordData::from_octets(rtype, Vec::new()).map_err(|error| error.to_string())?;
-    Ok(Record::new(
-        super::parse_name(owner)?,
-        class,
-        Ttl::ZERO,
-        data,
-    ))
+    Ok(Record::new(dns::parse_name(owner)?, class, Ttl::ZERO, data))
 }

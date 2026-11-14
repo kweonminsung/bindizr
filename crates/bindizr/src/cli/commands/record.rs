@@ -10,8 +10,8 @@ use clap::Subcommand;
 use serde_json::Value;
 
 use crate::cli::error::CliError;
-use crate::cli::output;
 use crate::cli::output::{OutputFormat, RecordRow};
+use crate::cli::{commands, output};
 use crate::socket::client;
 use crate::socket::types::DaemonCommand;
 
@@ -325,7 +325,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             dry_run,
             output,
         } => {
-            let content = super::read_input(&file)?;
+            let content = commands::read_input(&file)?;
 
             // YAML is a superset of JSON, so one parse accepts both formats.
             let parsed: Value = serde_norway::from_str(&content).map_err(|error| {

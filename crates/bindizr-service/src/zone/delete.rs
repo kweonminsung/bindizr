@@ -22,7 +22,7 @@ pub async fn delete(
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
-        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneDelete, &zone)?;
 

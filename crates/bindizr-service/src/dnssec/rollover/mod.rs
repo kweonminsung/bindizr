@@ -12,15 +12,14 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use super::SignedZone;
 use crate::authorization::Caller;
-use crate::dnssec::status;
+use crate::dnssec::{SignedZone, status};
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
     StartDnssecRolloverRequest,
 };
-use crate::{Context, Transaction, notify, transaction};
+use crate::{Context, Transaction, dnssec, notify, transaction};
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
 /// the CSK, or for the `role` named in a split-key zone.
@@ -41,7 +40,7 @@ pub async fn start_rollover(
 
     let apply_result: Result<_, ServiceError> = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
-        let mut signed = super::get_signed_zone_tx(
+        let mut signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -85,7 +84,7 @@ pub async fn start_rollover(
             publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm).await?;
         signed.keys.push(new_key);
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,
@@ -160,7 +159,7 @@ pub async fn advance_rollover(
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
 
     let apply_result: Result<_, ServiceError> = async {
-        let mut signed = super::get_signed_zone_tx(
+        let mut signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecManage,
@@ -175,7 +174,7 @@ pub async fn advance_rollover(
         let mut parent_ds_ttl = None;
 
         if ds_check == DsCheck::Probe {
-            let delegation = super::probe_delegation(cx, &signed).await?;
+            let delegation = dnssec::probe_delegation(cx, &signed).await?;
             parent_ds_ttl = delegation.ds_ttl;
             let unconfirmed: Vec<&DnssecDelegationKeyResponse> = delegation
                 .keys
@@ -210,7 +209,7 @@ pub async fn advance_rollover(
             promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &awaiting, parent_ds_ttl)
                 .await?;
 
-        let new_serial = super::resign_zone_tx(
+        let new_serial = dnssec::resign_zone_tx(
             &mut tx,
             &signed,
             SigningPass::Refresh,

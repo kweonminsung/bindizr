@@ -6,7 +6,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
 use crate::error::DatabaseError;
 use crate::record::RecordFilter;
-use crate::{LockLevel, sql};
+use crate::{LockLevel, sql, sqlite};
 
 /// Insert many records in one chunked statement, returning them with their
 /// assigned ids in input order.
@@ -52,7 +52,7 @@ pub(crate) async fn create_many_tx(
 
         // SQLite assigns contiguous rowids within a single insert; the last
         // one is `last_insert_rowid()`, so the chunk spans first..=last.
-        let last = super::last_insert_id(&result)?;
+        let last = sqlite::last_insert_id(&result)?;
         let first = last - chunk.len() as i32 + 1;
 
         for (offset, record) in chunk.iter().enumerate() {

@@ -13,7 +13,7 @@ use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio::time;
 
-use super::Report;
+use crate::cli::commands::doctor::Report;
 use crate::cli::output;
 use crate::socket::client;
 use crate::socket::types::{

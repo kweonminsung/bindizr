@@ -3,8 +3,8 @@ use bindizr_core::model::tsig_key::{TsigKey, TsigKeyId};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
+use crate::{LockLevel, sqlite};
 
 /// Insert a TSIG key.
 pub(crate) async fn create_tx(
@@ -27,7 +27,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    tsig_key.id = TsigKeyId::from(super::last_insert_id(&result)?);
+    tsig_key.id = TsigKeyId::from(sqlite::last_insert_id(&result)?);
     tsig_key.created_at = now;
 
     Ok(tsig_key)

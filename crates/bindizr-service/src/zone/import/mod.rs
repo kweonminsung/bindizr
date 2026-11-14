@@ -54,7 +54,7 @@ async fn import_transfer(
 ) -> Result<ImportZoneResponse, ServiceError> {
     // Reject invalid or unauthorized requests before AXFR; recheck in the transaction.
     if options.missing_zone_action == MissingZoneAction::Reject {
-        let zone = super::lookup_by_name(cx, zone_name).await?;
+        let zone = crate::zone::lookup_by_name(cx, zone_name).await?;
         authorize_import(caller, options.mode, &zone)?;
     }
 
@@ -86,7 +86,7 @@ fn normalize_zone_names(names: &[String]) -> Result<Vec<ZoneName>, ServiceError>
     let mut seen: HashSet<ZoneName> = HashSet::with_capacity(names.len());
 
     for name in names {
-        let zone_name = super::normalize_name(name)?;
+        let zone_name = crate::zone::normalize_name(name)?;
         if seen.insert(zone_name.clone()) {
             zone_names.push(zone_name);
         }

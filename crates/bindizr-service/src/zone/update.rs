@@ -113,7 +113,7 @@ pub async fn update(
         // Lock the zone row so the serial computed below stays ahead of
         // concurrent record mutations and nsupdate on the same zone.
         let existing_zone =
-            super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            crate::zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::ZoneUpdate, &existing_zone)?;
         let zone_id = existing_zone.id;
@@ -185,7 +185,7 @@ pub async fn update(
 
         let new_serial = candidate.serial;
 
-        super::validate_record_changes_tx(&mut tx, &candidate, &[], &[]).await?;
+        crate::zone::validate_record_changes_tx(&mut tx, &candidate, &[], &[]).await?;
 
         // The change is validated, so a dry run stops here.
         if request.dry_run {
@@ -224,7 +224,8 @@ pub async fn update(
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin()).await?;
+        crate::zone::save_version_tx(&mut tx, &updated_zone, new_serial, caller.change_origin())
+            .await?;
 
         Ok(UpdateZoneResult {
             catalog_changed: existing_zone.name != updated_zone.name

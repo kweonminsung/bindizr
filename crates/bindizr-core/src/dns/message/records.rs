@@ -1,8 +1,8 @@
 //! Stored records, SOA versions, and catalog members as response answers.
 
-use super::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::dns;
 use crate::dns::dnssec::EncodeWireNameError;
+use crate::dns::message::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::dns::name::{OwnerName, ZoneName};
 use crate::dns::record::{EncodedRdata, SoaRecordValue, TxtRecordValue};
 use crate::dns::{CatalogZone, Serial, Ttl, name};

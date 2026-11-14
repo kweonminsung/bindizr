@@ -11,7 +11,7 @@ use crate::record::validation;
 use crate::record::validation::ParsedRecord;
 use crate::types::{CreateRecordRequest, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
-use crate::{Context, dnssec, notify, serial, transaction, zone};
+use crate::{Context, dnssec, notify, record, serial, transaction, zone};
 
 /// Create a record, bumping the zone serial and recording an ADD change
 /// for IXFR. `caller` is authorized against the zone this tx locked.
@@ -104,7 +104,7 @@ pub async fn create(
         }
 
         // Persist the validated record and its signed view as one journaled serial.
-        let created_record = super::create_with_changes_tx(
+        let created_record = record::create_with_changes_tx(
             &mut tx,
             zone.id,
             new_serial,

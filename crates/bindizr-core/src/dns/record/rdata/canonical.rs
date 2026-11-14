@@ -8,7 +8,7 @@ use domain::dep::octseq::parse::{Parser, ShortInput};
 use domain::rdata::AllRecordData;
 use thiserror::Error;
 
-use super::{EncodeRdataError, Rdata};
+use crate::dns::record::rdata::{EncodeRdataError, Rdata};
 
 /// RDATA that cannot be parsed or canonicalized.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

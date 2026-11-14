@@ -1,6 +1,5 @@
-use super::{DEFAULT_PRIORITY, EncodeRdataError, ParseRecordValueError, Rdata};
 use crate::dns::name;
-use crate::dns::record::value;
+use crate::dns::record::{DEFAULT_PRIORITY, EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MxRecordValue<'a> {

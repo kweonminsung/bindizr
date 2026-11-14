@@ -4,7 +4,7 @@ use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use super::SocketContext;
+use crate::socket::server::SocketContext;
 use crate::socket::types::DaemonResponse;
 
 /// Daemon lifecycle transitions requestable over the control socket.

@@ -1,6 +1,6 @@
 use std::net::Ipv6Addr;
 
-use super::ParseRecordValueError;
+use crate::dns::record::ParseRecordValueError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AaaaRecordValue(Ipv6Addr);

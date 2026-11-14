@@ -15,7 +15,7 @@ use bindizr_service::error::ServiceError;
 use bindizr_service::zone::{TransferAccess, TransferContent};
 use bindizr_service::{Context, zone};
 
-use super::DnsContext;
+use crate::dns::server::DnsContext;
 
 /// Everything a full transfer serves for one zone: the user records and the
 /// derived DNSSEC plane (empty for an unsigned zone).

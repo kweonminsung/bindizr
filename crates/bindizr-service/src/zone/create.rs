@@ -8,7 +8,7 @@ use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
 use crate::zone::validation;
-use crate::{Context, Transaction, notify, serial, text, transaction, ttl};
+use crate::{Context, Transaction, notify, serial, text, transaction, ttl, zone};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME
 /// unless opted out. Additional NS records are caller-managed.
@@ -68,7 +68,7 @@ pub async fn create(
             bindizr_db::record::create_many_tx(&mut tx, &[apex_ns]).await?;
         }
 
-        super::save_version_tx(
+        zone::save_version_tx(
             &mut tx,
             &created_zone,
             created_zone.serial,

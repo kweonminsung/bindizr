@@ -8,7 +8,8 @@ use bindizr_core::dns::nsupdate::parser::UpdateRecord;
 use bindizr_core::model::dnssec_record::DnssecRecordType;
 use bindizr_core::model::record::RecordType;
 
-use super::NsupdateError;
+use crate::nsupdate;
+use crate::nsupdate::NsupdateError;
 use crate::nsupdate::operation::RecordOperation;
 use crate::nsupdate::plan::UpdateOperation;
 use crate::nsupdate::prerequisite::Prerequisite;
@@ -23,7 +24,7 @@ pub(crate) fn decode_updates(
     let checked = records
         .iter()
         .map(|record| {
-            let owner = super::parse_update_owner(&record.name, zone_name)?;
+            let owner = nsupdate::parse_update_owner(&record.name, zone_name)?;
             record.validate_update_shape()?;
             validate_supported_type(record.record_type)?;
             Ok((record, owner))
@@ -61,7 +62,7 @@ pub(crate) fn decode_prerequisite(
     }
 
     // RFC 2136, Section 3.2 restricts no type; an unstored one is simply absent.
-    let owner = super::parse_update_owner(&record.name, zone_name)?;
+    let owner = nsupdate::parse_update_owner(&record.name, zone_name)?;
 
     match record.class {
         Class::ANY | Class::NONE => {

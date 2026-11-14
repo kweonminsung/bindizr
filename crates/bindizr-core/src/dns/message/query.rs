@@ -13,8 +13,8 @@ use domain::base::{Message, Name};
 use domain::rdata::Soa;
 use thiserror::Error;
 
-use super::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
 use crate::dns::LibraryError;
+use crate::dns::message::{EncodeMessageError, QueryMetadata, RECORD_FIELDS_LEN, ResponseLimit};
 use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TransferSigner;
 
@@ -242,7 +242,7 @@ impl ParsedQuery {
         let message = Message::from_octets(query_data)
             .map_err(|error| ParseQueryError::Malformed(Box::new(error)))?;
 
-        if !super::has_readable_sections(query_data) {
+        if !crate::dns::message::has_readable_sections(query_data) {
             return Err(ParseQueryError::UnreadableSections {
                 query_metadata: Box::new(QueryMetadata::from_message(&message, keepalive)),
             });

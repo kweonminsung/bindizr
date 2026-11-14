@@ -28,18 +28,18 @@ pub async fn notify(
             }
         }
         NotifyTarget::Zone(zone_name) => {
-            let zone = super::lookup_by_name(cx, zone_name).await?;
+            let zone = crate::zone::lookup_by_name(cx, zone_name).await?;
             caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, caller, zone_name).await?;
+                crate::zone::force_increment_serial(cx, caller, zone_name).await?;
                 serial_bumped = true;
             }
         }
         NotifyTarget::All => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
-                for zone in super::list(cx).await? {
-                    super::force_increment_serial(cx, caller, &zone.name).await?;
+                for zone in crate::zone::list(cx).await? {
+                    crate::zone::force_increment_serial(cx, caller, &zone.name).await?;
                     serial_bumped = true;
                 }
             }

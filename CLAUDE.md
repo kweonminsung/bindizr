@@ -113,8 +113,8 @@ and `docker`), not `utils` or `helpers`.
 Use modules as namespaces, not unit structs with associated functions
 (`zone::create`, not `ZoneService::create`; `api::zone::routes`, not `ZoneApi`).
 A struct represents a value or invariant (`C-METHOD`). Entity modules split by
-verb re-export functions flat from `mod.rs`, so both callers and siblings use
-`zone::create` / `super::lookup_by_name`, never `Self::` for module operations.
+verb re-export functions flat from `mod.rs`, so callers and siblings alike call
+`zone::create` / `zone::lookup_by_name`, never `Self::` for module operations.
 Service/db functions omit the entity their module names; front-end handlers keep
 the full operation (`get_zone`, `list_records`). HTTP names are API-wide unique
 OpenAPI operation IDs, and socket handlers use the same names.
@@ -1583,8 +1583,16 @@ same module, without mixing paths inside its braces. Prefer importing types and
 traits directly, subject to the collision rules below.
 
 Call a function from another module through that module (`history::prune_by_zone_id`),
-importing the module rather than its individual functions. Use `super::lookup_by_name`
-for a parent's facade, and retain a longer path when short module names collide.
+importing the module rather than its individual functions, and retain a longer
+path when short module names collide.
+
+Every path starts at the crate (`crate::…`) or at a dependency; `super::` is not
+used, not even for a parent's facade or its items. A module inside `zone` imports
+`use crate::zone;` and calls `zone::lookup_by_name`, exactly as a caller outside
+does, so one function has one spelling wherever it is called; where a local of
+the module's name (`zone`, `record`) is in scope, write `crate::zone::…` in
+full rather than renaming the local. The one exception
+is a test module's `use super::*;`, which imports the module under test.
 A `bindizr_db` entity function is always spelled in full
 (`bindizr_db::zone::get_tx`), since its modules share the service's names, and
 so is a helper another module's `tests` exports.

@@ -10,7 +10,7 @@ use bindizr_service::{Context, zone};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::RequestCaller;
+use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
 use crate::params::NameParams;
 

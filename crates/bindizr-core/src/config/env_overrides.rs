@@ -3,7 +3,7 @@
 
 use std::str::FromStr;
 
-use super::{Config, ConfigError, DatabaseType};
+use crate::config::{Config, ConfigError, DatabaseType};
 use crate::dns::name::ZoneName;
 
 impl Config {

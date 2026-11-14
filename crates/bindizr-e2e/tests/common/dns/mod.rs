@@ -26,7 +26,7 @@ pub(crate) use transport::{
     read_frame, write_frame,
 };
 
-use super::TestApp;
+use crate::common::TestApp;
 
 /// Build the DNS comparison form of an API record value.
 pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Value {

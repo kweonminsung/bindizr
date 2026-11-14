@@ -16,7 +16,7 @@ use crate::error::ServiceError;
 use crate::types::{
     DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse, DnssecStatusResponse,
 };
-use crate::{Context, Transaction, transaction, zone};
+use crate::{Context, Transaction, dnssec, transaction, zone};
 
 /// Get the DNSSEC signing state of a zone; `enabled: false` with no policy and
 /// empty key and DS lists for an unsigned zone.
@@ -36,7 +36,7 @@ pub async fn get_status(
             .await?
             .authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
-        let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
+        let policy = dnssec::find_zone_policy_tx(&mut tx, &zone).await?;
 
         lookup_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }

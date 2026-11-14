@@ -4,8 +4,8 @@ use domain::base::iana::{Class, OptRcode, Rtype};
 use domain::base::{Message, Name, ToName};
 use domain::rdata::{Ds, Soa};
 
-use super::ParseResponseError;
 use crate::dns::dnssec::KeyTag;
+use crate::dns::query::response::ParseResponseError;
 
 /// The DS record set a parent-zone server holds for a child.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,9 +43,14 @@ pub fn extract_ds_record_set(
 ) -> Result<Option<DsRecordSet>, ParseResponseError> {
     use domain::base::rdata::ComposeRecordData;
 
-    let message = super::parse_authoritative_response(query_id, qname, Rtype::DS, response)?;
+    let message = crate::dns::query::response::parse_authoritative_response(
+        query_id,
+        qname,
+        Rtype::DS,
+        response,
+    )?;
 
-    match super::response_rcode(&message)? {
+    match crate::dns::query::response::response_rcode(&message)? {
         OptRcode::NOERROR => {}
         OptRcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|()| None),
         rcode => return Err(ParseResponseError::Rcode(rcode)),

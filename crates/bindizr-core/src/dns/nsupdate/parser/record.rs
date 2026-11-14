@@ -7,7 +7,7 @@ use domain::dep::octseq::parse::Parser;
 use domain::rdata::{A, Aaaa, Caa, Ds, Mx, Naptr, Soa, Srv, Sshfp, Tlsa};
 use thiserror::Error;
 
-use super::ParseUpdateError;
+use crate::dns::nsupdate::parser::ParseUpdateError;
 use crate::dns::record::{NaptrRecordValue, Rdata, SoaRecordValue, TxtRecordValue, WksRecordValue};
 use crate::model::record::RecordType;
 
@@ -84,8 +84,8 @@ impl UpdateRecord {
     pub fn to_soa_value(&self, message: &[u8]) -> Result<SoaRecordValue<String>, ParseUpdateError> {
         let data = self.parse_rdata(message, "SOA", |parser| Soa::parse(parser).ok())?;
         Ok(SoaRecordValue {
-            mname: super::to_presentation_name(data.mname())?,
-            rname: super::to_presentation_name(data.rname())?,
+            mname: crate::dns::nsupdate::parser::to_presentation_name(data.mname())?,
+            rname: crate::dns::nsupdate::parser::to_presentation_name(data.rname())?,
             serial: data.serial().into_int(),
             refresh: data.refresh().as_secs(),
             retry: data.retry().as_secs(),
@@ -148,12 +148,13 @@ impl UpdateRecord {
                 let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
-                let value = super::to_presentation_name(&name).map_err(|error| {
-                    ParseUpdateError::RdataName {
-                        record_type: record_type.to_string(),
-                        source: Box::new(error),
-                    }
-                })?;
+                let value =
+                    crate::dns::nsupdate::parser::to_presentation_name(&name).map_err(|error| {
+                        ParseUpdateError::RdataName {
+                            record_type: record_type.to_string(),
+                            source: Box::new(error),
+                        }
+                    })?;
 
                 Ok((record_type, value, None))
             }
@@ -175,12 +176,11 @@ impl UpdateRecord {
                 let data =
                     self.parse_rdata(message, "NAPTR", |parser| Naptr::parse(parser).ok())?;
                 let replacement =
-                    super::to_presentation_name(data.replacement()).map_err(|error| {
-                        ParseUpdateError::RdataName {
+                    crate::dns::nsupdate::parser::to_presentation_name(data.replacement())
+                        .map_err(|error| ParseUpdateError::RdataName {
                             record_type: "NAPTR".to_string(),
                             source: Box::new(error),
-                        }
-                    })?;
+                        })?;
                 let value = NaptrRecordValue::from_wire(
                     data.order(),
                     data.preference(),
@@ -204,23 +204,21 @@ impl UpdateRecord {
             }
             RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
-                let host = super::to_presentation_name(data.exchange()).map_err(|error| {
-                    ParseUpdateError::RdataName {
+                let host = crate::dns::nsupdate::parser::to_presentation_name(data.exchange())
+                    .map_err(|error| ParseUpdateError::RdataName {
                         record_type: "MX".to_string(),
                         source: Box::new(error),
-                    }
-                })?;
+                    })?;
 
                 Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
             }
             RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
-                let target = super::to_presentation_name(data.target()).map_err(|error| {
-                    ParseUpdateError::RdataName {
+                let target = crate::dns::nsupdate::parser::to_presentation_name(data.target())
+                    .map_err(|error| ParseUpdateError::RdataName {
                         record_type: "SRV".to_string(),
                         source: Box::new(error),
-                    }
-                })?;
+                    })?;
 
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((

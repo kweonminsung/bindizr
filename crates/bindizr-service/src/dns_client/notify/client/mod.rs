@@ -16,8 +16,8 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::time;
 use tokio::time::Instant;
 
-use super::{ExchangeMessageError, SendNotifyError};
 use crate::dns_client::UDP_RESPONSE_BUFFER_LEN;
+use crate::dns_client::notify::{ExchangeMessageError, SendNotifyError};
 
 /// A daemon's active NOTIFY target sockets; idle sockets have no strong owner.
 #[derive(Debug)]

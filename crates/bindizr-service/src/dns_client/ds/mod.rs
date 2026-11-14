@@ -12,7 +12,8 @@ use bindizr_core::dns::query::{DsRecordSet, EDNS_UDP_PAYLOAD_SIZE, ParseResponse
 use thiserror::Error;
 use tokio::task::{JoinError, JoinSet};
 
-use super::{ExchangeMessageError, ResolveAddressError};
+use crate::dns_client;
+use crate::dns_client::{ExchangeMessageError, ResolveAddressError};
 
 /// Why the parent could not be asked, or what it failed to answer.
 #[derive(Debug, Error)]
@@ -82,7 +83,7 @@ async fn resolve_parent_ns_addrs(
 ) -> Result<Vec<(String, Vec<SocketAddr>)>, ProbeParentDsError> {
     let mut servers = Vec::new();
 
-    for (entry, result) in super::resolve_address_entries(raw, timeout).await {
+    for (entry, result) in dns_client::resolve_address_entries(raw, timeout).await {
         match result {
             Ok(addrs) => servers.push((entry, addrs)),
             Err(source) => return Err(ProbeParentDsError::Unresolved { entry, source }),
@@ -164,13 +165,16 @@ async fn query_ds_at(
         );
         let query = builder.finish();
 
-        let result =
-            match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query").await {
-                Ok(response) => {
-                    query::extract_ds_record_set(query_id, qname, &response).map_err(Into::into)
-                }
-                Err(error) => Err(error.into()),
-            };
+        let result = match dns_client::exchange_with_tcp_fallback(
+            *addr, timeout, &query, "DS query",
+        )
+        .await
+        {
+            Ok(response) => {
+                query::extract_ds_record_set(query_id, qname, &response).map_err(Into::into)
+            }
+            Err(error) => Err(error.into()),
+        };
 
         match result {
             Ok(record_set) => return Ok(record_set),

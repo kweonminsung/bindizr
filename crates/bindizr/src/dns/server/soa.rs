@@ -14,10 +14,9 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::zone;
 use bindizr_service::zone::TransferAccess;
 
-use super::DnsContext;
 use crate::dns::error::DnsError;
-use crate::dns::server::auth;
 use crate::dns::server::auth::{TransferIdentity, TransferRefusal};
+use crate::dns::server::{DnsContext, auth};
 use crate::dns::stream::ResponseWriter;
 use crate::dns::udp::{ReplyTarget, UdpSocket};
 

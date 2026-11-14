@@ -4,9 +4,8 @@ use std::str;
 
 pub use regexp::ValidateNaptrRegexpError;
 
-use super::{EncodeRdataError, ParseRecordValueError, Rdata};
-use crate::dns::name;
-use crate::dns::record::value;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use crate::dns::{name, record};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NaptrRecordValue<'a> {
@@ -75,9 +74,9 @@ impl<'a> NaptrRecordValue<'a> {
             "{} {} {} {} {} {}",
             self.order,
             self.preference,
-            super::to_quoted_charstr(self.flags.as_bytes()),
-            super::to_quoted_charstr(self.services.as_bytes()),
-            super::to_quoted_charstr(self.regexp.as_bytes()),
+            record::to_quoted_charstr(self.flags.as_bytes()),
+            record::to_quoted_charstr(self.services.as_bytes()),
+            record::to_quoted_charstr(self.regexp.as_bytes()),
             name::to_fqdn(self.replacement)
         )
     }

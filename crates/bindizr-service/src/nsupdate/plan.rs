@@ -5,8 +5,8 @@ use bindizr_core::dns::record::{SoaMailbox, SoaRecordValue};
 use bindizr_core::dns::{Serial, Ttl};
 use bindizr_core::model::zone::Zone;
 
-use super::NsupdateError;
 use crate::error::ServiceError;
+use crate::nsupdate::NsupdateError;
 use crate::nsupdate::operation::RecordOperation;
 use crate::zone::validation;
 use crate::{serial, ttl};

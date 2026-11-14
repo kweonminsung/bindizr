@@ -8,7 +8,7 @@ use domain::crypto::sign::{KeyPair, SecretKeyBytes};
 use domain::rdata::Dnskey;
 use thiserror::Error;
 
-use super::KeyTag;
+use crate::dns::dnssec::KeyTag;
 use crate::dns::{LibraryError, Ttl};
 use crate::model::dnssec_key::{
     DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState,

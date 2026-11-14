@@ -5,8 +5,8 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::opt::keepalive::TcpKeepalive;
 use domain::base::{MessageBuilder, Name};
 
-use super::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::message;
+use crate::dns::query::EDNS_UDP_PAYLOAD_SIZE;
 use crate::dns::tsig::TsigSigningKey;
 
 /// Build a random-ID question with optional EDNS; leave additional open for signing.

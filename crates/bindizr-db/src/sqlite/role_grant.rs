@@ -3,8 +3,8 @@ use bindizr_core::model::role_grant::{RoleGrant, RoleGrantId};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
-use crate::LockLevel;
 use crate::error::DatabaseError;
+use crate::{LockLevel, sqlite};
 
 /// Insert a role grant.
 pub(crate) async fn create_tx(
@@ -28,7 +28,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    grant.id = RoleGrantId::from(super::last_insert_id(&result)?);
+    grant.id = RoleGrantId::from(sqlite::last_insert_id(&result)?);
     grant.created_at = now;
 
     Ok(grant)

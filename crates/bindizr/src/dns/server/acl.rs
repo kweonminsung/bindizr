@@ -10,7 +10,7 @@ use bindizr_core::dns::address::AddressTarget;
 use bindizr_service::error::ServiceError;
 use bindizr_service::{dns_client, secondary};
 
-use super::DnsContext;
+use crate::dns::server::DnsContext;
 
 /// How long a resolved hostname is reused; an address changes rarely.
 const RESOLVED_TTL: Duration = Duration::from_secs(60);

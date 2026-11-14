@@ -4,7 +4,7 @@ use domain::base::Name;
 use domain::base::iana::{Class, OptRcode, Rtype};
 use domain::rdata::Soa;
 
-use super::ParseResponseError;
+use crate::dns::query::response::ParseResponseError;
 
 /// Read the serial served authoritatively for `qname`.
 pub fn extract_soa_serial(
@@ -14,8 +14,13 @@ pub fn extract_soa_serial(
 ) -> Result<u32, ParseResponseError> {
     use domain::base::ToName;
 
-    let message = super::parse_authoritative_response(query_id, qname, Rtype::SOA, response)?;
-    let rcode = super::response_rcode(&message)?;
+    let message = crate::dns::query::response::parse_authoritative_response(
+        query_id,
+        qname,
+        Rtype::SOA,
+        response,
+    )?;
+    let rcode = crate::dns::query::response::response_rcode(&message)?;
 
     if rcode != OptRcode::NOERROR {
         return Err(ParseResponseError::Rcode(rcode));

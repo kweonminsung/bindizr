@@ -8,9 +8,10 @@ use tokio::io::BufReader;
 use tokio::net::UnixStream;
 use tokio::time;
 
-use super::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 use crate::cli::error::CliError;
+use crate::socket;
 use crate::socket::types::{DaemonCommand, DaemonResponse};
+use crate::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 
 /// Failed connection attempts to the primary and optional fallback socket.
 #[derive(Debug, Error)]
@@ -151,12 +152,12 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
             )
         })?
         .uid();
-    let own_uid = super::read_own_uid().map_err(|error| {
+    let own_uid = socket::read_own_uid().map_err(|error| {
         CliError::request_with_source(format!("could not read this process's uid: {error}"), error)
     })?;
 
     // Root drives another user's daemon on the primary socket only, as `sudo bindizr` does.
-    if !super::is_trusted_daemon(peer_uid, own_uid, socket_path) {
+    if !socket::is_trusted_daemon(peer_uid, own_uid, socket_path) {
         let message = if own_uid == 0 {
             format!(
                 "the daemon at '{socket_path}' runs as uid {peer_uid}, not root, and anyone can \

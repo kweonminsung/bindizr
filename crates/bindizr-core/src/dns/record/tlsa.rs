@@ -1,9 +1,8 @@
 //! TLSA record values (RFC 6698): DANE certificate associations, verifiable
 //! only from a signed zone.
 
-use super::{EncodeRdataError, ParseRecordValueError, Rdata};
-use crate::dns::record::value;
 use crate::dns::record::value::MAX_RECORD_RDATA;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsaRecordValue {

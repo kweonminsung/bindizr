@@ -367,7 +367,8 @@ async fn update_locked(
         let zone_name = zone.name.clone();
 
         let updated_record =
-            super::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate).await?;
+            crate::record::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate)
+                .await?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
 

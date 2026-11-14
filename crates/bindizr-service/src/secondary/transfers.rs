@@ -33,7 +33,7 @@ pub async fn list_transfers(
         return Err(ServiceError::invalid_input("since must be before until"));
     }
 
-    let secondary = super::lookup_by_name(cx, name).await?;
+    let secondary = crate::secondary::lookup_by_name(cx, name).await?;
 
     let zone_name = filter
         .zone_name

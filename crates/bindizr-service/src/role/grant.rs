@@ -27,8 +27,8 @@ pub async fn create(
 ) -> Result<RoleGrantResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let role = super::lookup_by_name(cx, role_name).await?;
-    super::refuse_builtin(&role)?;
+    let role = crate::role::lookup_by_name(cx, role_name).await?;
+    crate::role::refuse_builtin(&role)?;
 
     let actions = request
         .actions
@@ -134,7 +134,7 @@ pub async fn list(
     caller.authorize_action(Action::AccessManage)?;
     pagination::validate_page_limit(page.limit)?;
 
-    let role = super::lookup_by_name(cx, role_name).await?;
+    let role = crate::role::lookup_by_name(cx, role_name).await?;
     list_by_role(cx, &role, page).await
 }
 
@@ -162,8 +162,8 @@ pub async fn revoke(
 ) -> Result<(), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let role = super::lookup_by_name(cx, role_name).await?;
-    super::refuse_builtin(&role)?;
+    let role = crate::role::lookup_by_name(cx, role_name).await?;
+    crate::role::refuse_builtin(&role)?;
 
     let grant = bindizr_db::role_grant::get(cx.db(), grant_id)
         .await?

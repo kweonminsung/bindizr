@@ -21,11 +21,11 @@ pub async fn update(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = super::normalize_name(name)?;
+    let name = crate::secondary::normalize_name(name)?;
     let address = request
         .address
         .as_deref()
-        .map(super::normalize_address)
+        .map(crate::secondary::normalize_address)
         .transpose()?;
 
     if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
@@ -135,5 +135,5 @@ pub async fn update(
 
     let secondary = transaction::finish_tx(tx, apply_result, "failed to update secondary").await?;
 
-    super::lookup_response(cx, &secondary).await
+    crate::secondary::lookup_response(cx, &secondary).await
 }

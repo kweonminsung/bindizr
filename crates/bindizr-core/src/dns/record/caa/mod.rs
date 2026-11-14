@@ -1,9 +1,9 @@
 //! CAA record values (RFC 8659): which certificate authorities may issue for
 //! a name.
 
-use super::{EncodeRdataError, ParseRecordValueError, Rdata};
-use crate::dns::record::value;
+use crate::dns::record;
 use crate::dns::record::value::MAX_RECORD_RDATA;
+use crate::dns::record::{EncodeRdataError, ParseRecordValueError, Rdata, value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaaRecordValue<'a> {
@@ -86,7 +86,7 @@ impl<'a> CaaRecordValue<'a> {
             "{} {} {}",
             self.flags,
             self.tag,
-            super::to_quoted_charstr(&self.value)
+            record::to_quoted_charstr(&self.value)
         )
     }
 

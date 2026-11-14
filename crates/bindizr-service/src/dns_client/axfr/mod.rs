@@ -18,7 +18,8 @@ use tokio::sync::oneshot;
 use tokio::time;
 use tokio::time::Instant;
 
-use super::{ReadTcpMessageError, ResolveAddressError};
+use crate::dns_client;
+use crate::dns_client::{ReadTcpMessageError, ResolveAddressError};
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -219,7 +220,7 @@ async fn connect_to_server(
     address: &str,
     import: &ImportConfig,
 ) -> Result<(SocketAddr, TcpStream), FetchZoneError> {
-    let entries = super::resolve_address_entries(address, import.timeout()).await;
+    let entries = dns_client::resolve_address_entries(address, import.timeout()).await;
 
     let mut last_error = None;
 
@@ -264,7 +265,7 @@ async fn fetch_zone_on_stream(
     let mut idle_timeout = None;
 
     loop {
-        let response = super::read_tcp_message(stream)
+        let response = dns_client::read_tcp_message(stream)
             .await
             .map_err(FetchZoneError::Read)?;
 

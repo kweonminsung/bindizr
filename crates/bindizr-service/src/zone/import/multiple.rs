@@ -2,7 +2,6 @@
 
 use bindizr_core::dns;
 
-use super::{ImportOptions, MissingZoneAction};
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
@@ -10,6 +9,7 @@ use crate::types::{
     ErrorResponse, ImportMode, ImportResult, ImportZonesItemResponse, ImportZonesRequest,
     ImportZonesResponse, ImportZonesSummaryResponse, Run,
 };
+use crate::zone::import::{ImportOptions, MissingZoneAction};
 use crate::{Context, zone};
 
 /// Import named zones or catalog members from one server over one connection
@@ -42,18 +42,18 @@ pub async fn import_many(
 
     // Checked once, before any transfer: every zone's `create` would fail alike.
     if request.create {
-        super::authorize_new_zone_import(caller, mode)?;
+        crate::zone::import::authorize_new_zone_import(caller, mode)?;
     }
 
     let config = cx.config();
     let mut client = AxfrClient::new(address);
 
     let zone_names = match (&request.zone_names, &request.from_catalog) {
-        (Some(names), None) => super::normalize_zone_names(names)?,
+        (Some(names), None) => crate::zone::import::normalize_zone_names(names)?,
         (None, Some(catalog)) => {
             // A catalog names every zone its server provisions, so reading it
             // through Bindizr is an all-zones act.
-            for action in super::import_actions(mode) {
+            for action in crate::zone::import::import_actions(mode) {
                 caller.authorize_all_whole_zones(*action)?;
             }
 
@@ -108,7 +108,7 @@ pub async fn import_many(
 
     // Reuse the transfer connection while each zone keeps its own transaction.
     for zone_name in &zone_names {
-        let (result, import, error) = match super::import_transfer(
+        let (result, import, error) = match crate::zone::import::import_transfer(
             cx,
             caller,
             zone_name,

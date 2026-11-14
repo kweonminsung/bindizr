@@ -10,7 +10,7 @@ use bindizr_service::types::{
 };
 use bindizr_service::{Context, tsig_key};
 
-use super::RequestCaller;
+use crate::api::RequestCaller;
 use crate::api::error::{ApiError, Path, Query};
 use crate::api::middleware::body_parser::JsonBody;
 use crate::params::NameParams;

@@ -10,16 +10,15 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 use thiserror::Error;
 
-use super::SignedZone;
 use crate::authorization::Caller;
 use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
-use crate::dnssec::status;
+use crate::dnssec::{SignedZone, status};
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,
 };
-use crate::{Context, transaction};
+use crate::{Context, dnssec, transaction};
 
 /// Why the zone's configuration prevents a delegation check.
 #[derive(Debug, Error)]
@@ -38,7 +37,7 @@ pub async fn check_ds(
     let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
 
     let result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(
+        let signed = dnssec::get_signed_zone_tx(
             &mut tx,
             caller,
             Action::DnssecRead,

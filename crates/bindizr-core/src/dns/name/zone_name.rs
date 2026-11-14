@@ -6,7 +6,8 @@ use serde::de::Error;
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 
-use super::ParseNameError;
+use crate::dns::name;
+use crate::dns::name::ParseNameError;
 
 /// A zone's name as rows store it: escaped octet labels, ASCII-folded, without a trailing dot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -15,12 +16,12 @@ pub struct ZoneName(String);
 impl ZoneName {
     /// Parse a zone name using DNS octet and length rules (RFC 2181, Section 11).
     pub fn parse(value: &str) -> Result<Self, ParseNameError> {
-        let trimmed = super::trim_presentation_name(value);
+        let trimmed = name::trim_presentation_name(value);
         if trimmed.is_empty() || trimmed == "." {
             return Err(ParseNameError::Empty);
         }
-        let (labels, _) = super::decode_name_labels(trimmed)?;
-        Ok(Self(super::labels_to_presentation(&labels)))
+        let (labels, _) = name::decode_name_labels(trimmed)?;
+        Ok(Self(name::labels_to_presentation(&labels)))
     }
 
     /// Wrap a name already in stored form, as read from a row.
@@ -35,19 +36,19 @@ impl ZoneName {
 
     /// Return the zone's decoded, case-folded octet labels.
     pub fn labels(&self) -> Vec<Vec<u8>> {
-        super::decode_name_labels(&self.0)
+        name::decode_name_labels(&self.0)
             .expect("validated zone name")
             .0
     }
 
     /// Return the absolute form, with the trailing dot.
     pub fn to_fqdn(&self) -> String {
-        super::to_fqdn(&self.0)
+        name::to_fqdn(&self.0)
     }
 
     /// Encode the zone name as an absolute DNS wire-format name.
     pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
-        super::labels_to_wire(self.labels().iter().map(Vec::as_slice))
+        name::labels_to_wire(self.labels().iter().map(Vec::as_slice))
     }
 }
 

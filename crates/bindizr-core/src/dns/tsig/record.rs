@@ -7,9 +7,9 @@ use domain::rdata::tsig::Tsig;
 use ring::hmac;
 use thiserror::Error;
 
-use super::TsigSigningKey;
 use crate::dns::LibraryError;
 use crate::dns::message::DNS_HEADER_LEN;
+use crate::dns::tsig::TsigSigningKey;
 
 type WireTsig<'a> = Record<ParsedName<&'a [u8]>, Tsig<&'a [u8], ParsedName<&'a [u8]>>>;
 

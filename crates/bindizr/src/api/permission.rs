@@ -7,7 +7,7 @@ use axum::{Json, Router, routing};
 use bindizr_service::types::{ErrorResponse, PermissionsResponse};
 use bindizr_service::{Context, permission};
 
-use super::RequestCaller;
+use crate::api::RequestCaller;
 use crate::api::error::ApiError;
 
 /// Build the permission API routes.
