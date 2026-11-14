@@ -34,7 +34,7 @@ pub async fn create(
 ) -> Result<SingleTsigKeyResponse, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let name = normalize_key_name(&request.name)?;
+    let name = normalize_name(&request.name)?;
 
     let role = role::lookup_by_name(cx, &request.role_name).await?;
 
@@ -46,7 +46,7 @@ pub async fn create(
     };
     let secret = match request.secret.as_deref() {
         Some(secret) => normalize_secret(secret)?,
-        None => generate_secret(&algorithm),
+        None => generate_secret(algorithm),
     };
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
@@ -58,7 +58,7 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create TSIG key").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -102,7 +102,7 @@ pub async fn create(
         Ok(tsig_key)
     }
     .await;
-    let tsig_key = transaction::finish_tx(tx, result, "failed to create TSIG key").await?;
+    let tsig_key = transaction::finish_tx(tx, apply_result, "failed to create TSIG key").await?;
 
     Ok(SingleTsigKeyResponse::from_tsig_key(&tsig_key, &role.name))
 }
@@ -161,7 +161,7 @@ pub async fn get(
 /// Fetch one TSIG key by name. This is the unchecked lookup for
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, ServiceError> {
-    let name = normalize_key_name(name)?;
+    let name = normalize_name(name)?;
     bindizr_db::tsig_key::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
@@ -171,7 +171,7 @@ pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, 
 /// any zone transaction, so this is a plain read.
 pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKey>, ServiceError> {
     // Canonicalize like storage does; an unparseable name matches no key.
-    let Ok(name) = normalize_key_name(name) else {
+    let Ok(name) = normalize_name(name) else {
         return Ok(None);
     };
     Ok(bindizr_db::tsig_key::get_by_name(cx.db(), &name).await?)
@@ -199,7 +199,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -235,12 +235,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to delete TSIG key").await
+    transaction::finish_tx(tx, apply_result, "failed to delete TSIG key").await
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
-pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     let name = name::parse_lookup_name(value)
         .map_err(|error| ServiceError::invalid_input(format!("TSIG key name {error}")))?;
 
@@ -278,7 +278,7 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
 }
 
 /// Generate a base64 secret as long as the HMAC output (RFC 8945, Section 8).
-fn generate_secret(algorithm: &TsigAlgorithm) -> String {
+fn generate_secret(algorithm: TsigAlgorithm) -> String {
     let bytes: [u8; 64] = rand::rng().random();
     general_purpose::STANDARD.encode(&bytes[..algorithm.digest_len()])
 }
@@ -290,37 +290,37 @@ mod tests {
     use super::*;
     use crate::error::ErrorCode;
 
-    /// Verify that `normalize_key_name` lowercases and strips trailing dot.
+    /// Verify that `normalize_name` lowercases and strips trailing dot.
     #[test]
-    fn normalize_key_name_lowercases_and_strips_trailing_dot() {
+    fn normalize_name_lowercases_and_strips_trailing_dot() {
         assert_eq!(
-            normalize_key_name("Nsupdate-Key.Example.COM.").unwrap(),
+            normalize_name("Nsupdate-Key.Example.COM.").unwrap(),
             "nsupdate-key.example.com"
         );
-        assert_eq!(normalize_key_name(" update-key ").unwrap(), "update-key");
+        assert_eq!(normalize_name(" update-key ").unwrap(), "update-key");
     }
 
-    /// Verify that `normalize_key_name` rejects invalid names.
+    /// Verify that `normalize_name` rejects invalid names.
     #[test]
-    fn normalize_key_name_rejects_invalid_names() {
+    fn normalize_name_rejects_invalid_names() {
         for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
-            let error = normalize_key_name(invalid).unwrap_err();
+            let error = normalize_name(invalid).unwrap_err();
 
             assert_eq!(error.code(), ErrorCode::InvalidInput, "input: {invalid:?}");
         }
     }
 
-    /// Verify that `normalize_key_name` holds the rendered name to the column.
+    /// Verify that `normalize_name` holds the rendered name to the column.
     #[test]
-    fn normalize_key_name_holds_the_rendered_name_to_the_column() {
+    fn normalize_name_holds_the_rendered_name_to_the_column() {
         // A label of escaped dots renders four characters per byte, so a name
         // the wire admits can still outgrow `tsig_keys.name`.
         let fits = format!("{}.key", r"\.".repeat(62));
         let too_long = format!("{}.{}", r"\.".repeat(40), r"\.".repeat(40));
 
-        assert_eq!(normalize_key_name(&fits).unwrap().len(), 252);
+        assert_eq!(normalize_name(&fits).unwrap().len(), 252);
         assert_eq!(
-            normalize_key_name(&too_long).unwrap_err().code(),
+            normalize_name(&too_long).unwrap_err().code(),
             ErrorCode::InvalidInput
         );
     }

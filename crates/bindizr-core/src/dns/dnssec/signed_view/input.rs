@@ -21,7 +21,7 @@ impl SignedViewParams<'_> {
     /// User records, the synthesized SOA, and the apex key record sets in canonical
     /// order — the exact content the chain and the signatures must cover.
     pub(crate) fn signing_input(
-        &self,
+        self,
         apex: &WireName,
         signers: &[Signer<'_>],
     ) -> Result<Vec<SignRecord>, SignZoneError> {
@@ -108,7 +108,7 @@ impl SignedViewParams<'_> {
         // Add user records to the same input used for denial proofs and signatures.
         for record in self.records {
             let EncodedRdata { record_type, rdata } =
-                EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
+                EncodedRdata::from_columns(record.record_type, &record.value, record.priority)?;
             let rtype = Rtype::from_int(record_type);
 
             // UnknownRecordData cannot canonicalize embedded names for signing.

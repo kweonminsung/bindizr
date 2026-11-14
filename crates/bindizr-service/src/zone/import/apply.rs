@@ -12,7 +12,6 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::plan::{DesiredRecord, ImportPlan};
 use super::{ImportOptions, ImportSource, MissingZoneAction};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
@@ -21,6 +20,7 @@ use crate::types::{
     ImportMode, ImportZoneResponse, ImportZoneSummaryResponse, RecordDiffResponse, RecordValue,
 };
 use crate::zone::diff;
+use crate::zone::import::plan::{DesiredRecord, ImportPlan};
 use crate::{Context, dnssec, notify, record, serial, time, transaction, ttl, zone};
 
 /// Resolve a new zone from the imported SOA and configured creation defaults.
@@ -155,7 +155,7 @@ pub(crate) async fn apply_import(
                 ZoneFileValue::Rdata(rdata) => RecordValue::Text(rdata),
                 ZoneFileValue::Segments(segments) => RecordValue::Segments(segments),
             };
-            let value = match requested.to_encoded_value(&record.record_type, record.priority) {
+            let value = match requested.to_encoded_value(record.record_type, record.priority) {
                 Ok(value) => value,
                 Err(error) => {
                     errors.push(format!("{}: {}", record.owner_fqdn, error));
@@ -288,7 +288,7 @@ pub(crate) async fn apply_import(
             match validation::validate_record_constraints(
                 records_at_name,
                 &desired_record.data.name,
-                &desired_record.data.record_type,
+                desired_record.data.record_type,
                 &desired_record.data.value,
                 desired_record.data.ttl,
                 desired_record.data.priority,

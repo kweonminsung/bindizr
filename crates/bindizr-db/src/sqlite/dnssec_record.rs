@@ -248,7 +248,7 @@ pub(crate) async fn count_expired_before(
 /// List matching derived DNSSEC records with their zone metadata.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Sqlite>,
-    filter: DnssecRecordFilter,
+    filter: &DnssecRecordFilter,
 ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -337,7 +337,7 @@ pub(crate) async fn count_tx(
 /// Count derived DNSSEC records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Sqlite>,
-    filter: DnssecRecordFilter,
+    filter: &DnssecRecordFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 

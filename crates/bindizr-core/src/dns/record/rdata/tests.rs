@@ -9,7 +9,7 @@ use crate::model::record::RecordType;
 #[test]
 fn encode_a_rdata_returns_address_octets() {
     // RFC 1035, Section 3.4.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::A, "192.0.2.1", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::A, "192.0.2.1", None).unwrap();
     assert_eq!(encoded.record_type, 1);
     assert_eq!(encoded.rdata.as_bytes(), [192, 0, 2, 1]);
 }
@@ -18,7 +18,7 @@ fn encode_a_rdata_returns_address_octets() {
 #[test]
 fn encode_aaaa_rdata_returns_address_octets() {
     // RFC 3596, Section 2.2.
-    let encoded = EncodedRdata::from_columns(&RecordType::Aaaa, "2001:db8::1", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Aaaa, "2001:db8::1", None).unwrap();
 
     assert_eq!(encoded.record_type, 28);
     assert_eq!(
@@ -30,8 +30,7 @@ fn encode_aaaa_rdata_returns_address_octets() {
 /// Verify that encode CNAME RDATA is the target name.
 #[test]
 fn encode_cname_rdata_returns_target_name() {
-    let encoded =
-        EncodedRdata::from_columns(&RecordType::Cname, "mail.example.com.", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Cname, "mail.example.com.", None).unwrap();
 
     assert_eq!(encoded.record_type, 5);
     assert_eq!(
@@ -45,7 +44,7 @@ fn encode_cname_rdata_returns_target_name() {
 fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
     // RFC 8659, Section 4.1.
     let encoded =
-        EncodedRdata::from_columns(&RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
+        EncodedRdata::from_columns(RecordType::Caa, "0 issue \"letsencrypt.org\"", None).unwrap();
 
     assert_eq!(encoded.record_type, 257);
     let mut expected = vec![0u8, 5];
@@ -59,7 +58,7 @@ fn encode_caa_rdata_returns_flags_tag_length_tag_and_value() {
 #[test]
 fn encode_sshfp_rdata_returns_algorithm_type_and_fingerprint() {
     // RFC 4255, Section 3.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::Sshfp, "4 1 4B9B6B07", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Sshfp, "4 1 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 44);
     assert_eq!(encoded.rdata.as_bytes(), [4, 1, 0x4B, 0x9B, 0x6B, 0x07]);
 }
@@ -68,7 +67,7 @@ fn encode_sshfp_rdata_returns_algorithm_type_and_fingerprint() {
 #[test]
 fn encode_tlsa_rdata_returns_usage_selector_matching_and_data() {
     // RFC 6698, Section 2.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::Tlsa, "3 1 0 4B9B6B07", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Tlsa, "3 1 0 4B9B6B07", None).unwrap();
     assert_eq!(encoded.record_type, 52);
     assert_eq!(encoded.rdata.as_bytes(), [3, 1, 0, 0x4B, 0x9B, 0x6B, 0x07]);
 }
@@ -77,7 +76,7 @@ fn encode_tlsa_rdata_returns_usage_selector_matching_and_data() {
 #[test]
 fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
     // RFC 4034, Section 5.1.
-    let encoded = EncodedRdata::from_columns(&RecordType::Ds, "34217 13 2 4B9B6B07", None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Ds, "34217 13 2 4B9B6B07", None).unwrap();
 
     assert_eq!(encoded.record_type, 43);
     assert_eq!(
@@ -90,8 +89,7 @@ fn encode_ds_rdata_returns_tag_algorithm_digest_type_and_digest() {
 #[test]
 fn encode_mx_rdata_returns_preference_and_exchange() {
     // RFC 1035, Section 3.3.9; the preference lives in the priority column.
-    let encoded =
-        EncodedRdata::from_columns(&RecordType::Mx, "mail.example.com", Some(10)).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Mx, "mail.example.com", Some(10)).unwrap();
 
     assert_eq!(encoded.record_type, 15);
     let mut expected = vec![0, 10];
@@ -105,7 +103,7 @@ fn encode_mx_rdata_returns_preference_and_exchange() {
 fn encode_srv_rdata_returns_priority_weight_port_and_target() {
     // RFC 2782; the value stores `weight port target`, priority its column.
     let encoded =
-        EncodedRdata::from_columns(&RecordType::Srv, "5 5060 sip.example.com", Some(1)).unwrap();
+        EncodedRdata::from_columns(RecordType::Srv, "5 5060 sip.example.com", Some(1)).unwrap();
 
     assert_eq!(encoded.record_type, 33);
     let mut expected = vec![0, 1, 0, 5, 0x13, 0xc4];
@@ -117,7 +115,7 @@ fn encode_srv_rdata_returns_priority_weight_port_and_target() {
 /// Verify that encode TXT RDATA rejects a plain unquoted value.
 #[test]
 fn encode_txt_rdata_rejects_a_plain_unquoted_value() {
-    assert!(EncodedRdata::from_columns(&RecordType::Txt, "hello", None).is_err());
+    assert!(EncodedRdata::from_columns(RecordType::Txt, "hello", None).is_err());
 }
 
 /// Verify that encode TXT RDATA decodes the stored presentation form.
@@ -126,7 +124,7 @@ fn encode_txt_rdata_decodes_the_stored_presentation_form() {
     let stored = TxtRecordValue::from_segments(["a", "b"])
         .unwrap()
         .to_presentation();
-    let encoded = EncodedRdata::from_columns(&RecordType::Txt, &stored, None).unwrap();
+    let encoded = EncodedRdata::from_columns(RecordType::Txt, &stored, None).unwrap();
     assert_eq!(encoded.rdata.as_bytes(), [1, b'a', 1, b'b']);
 }
 
@@ -143,7 +141,7 @@ fn encode_cname_rdata_reads_an_escaped_dot_as_label_data() {
     // RFC 1035, Section 5.1: `a\.b` decodes to three octets in one label;
     // the escape is presentation syntax and the dot remains label data.
     let encoded =
-        EncodedRdata::from_columns(&RecordType::Cname, r"a\.b.example.com.", None).unwrap();
+        EncodedRdata::from_columns(RecordType::Cname, r"a\.b.example.com.", None).unwrap();
 
     assert_eq!(
         encoded.rdata.as_bytes(),

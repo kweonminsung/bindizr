@@ -6,10 +6,10 @@ use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::validation;
-use super::validation::ParsedRecord;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
+use crate::record::validation;
+use crate::record::validation::ParsedRecord;
 use crate::types::{CreateRecordRequest, RecordDiffResponse, RecordResponse, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, zone};
@@ -47,7 +47,7 @@ pub async fn create(
             &[RecordAccess {
                 action: Action::RecordCreate,
                 relative_name: owner_name.clone(),
-                record_type: Some(&record_type),
+                record_type: Some(record_type),
             }],
         )?;
 
@@ -71,7 +71,7 @@ pub async fn create(
         validation::validate_record_constraints(
             &records_at_name,
             &owner_name,
-            &record_type,
+            record_type,
             &record_value,
             ttl,
             priority,
@@ -101,7 +101,7 @@ pub async fn create(
         let diff = diff::build_record_diff(&zone, &before, &after);
 
         let new_serial = serial::generate_serial(Some(zone.serial));
-        let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
+        let actions = caller.record_actions(zone.id, &candidate.name, candidate.record_type);
 
         // The record is validated and authorized, so a dry run stops here.
         if request.dry_run {

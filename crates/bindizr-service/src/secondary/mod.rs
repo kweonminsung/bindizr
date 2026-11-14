@@ -18,4 +18,4 @@ pub(crate) use notify::{find_notify_signing_key, find_notify_tsig_key};
 pub use transfers::list_transfers;
 pub(crate) use transfers::summarize_transfers;
 pub use update::update;
-pub(crate) use validation::{normalize_secondary_address, normalize_secondary_name};
+pub(crate) use validation::{normalize_address, normalize_name};

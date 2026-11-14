@@ -6,7 +6,8 @@ use domain::base::iana::{Class, OptRcode};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-use crate::common::{DsRecord, FakeParent, TestApp};
+use crate::common::TestApp;
+use crate::common::dns::{DsRecord, FakeParent};
 
 /// A `host:port` nothing listens on, standing in for an unreachable parent.
 fn closed_parent_addr() -> String {

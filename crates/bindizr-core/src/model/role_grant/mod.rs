@@ -320,13 +320,13 @@ impl RoleGrant {
 
     /// Whether this grant's record constraints cover `record_type` at the
     /// relative owner name.
-    fn matches(&self, name: &OwnerName, record_type: Option<&RecordType>) -> bool {
+    fn matches(&self, name: &OwnerName, record_type: Option<RecordType>) -> bool {
         grant_pattern::matches_name(&self.record_name_pattern, name)
             && grant_pattern::matches_types(&self.record_types, record_type)
     }
 
     /// Whether this grant covers every name `pattern` matches, for `record_type`.
-    fn covers_pattern(&self, pattern: &str, record_type: &RecordType) -> bool {
+    fn covers_pattern(&self, pattern: &str, record_type: RecordType) -> bool {
         grant_pattern::has_pattern_coverage(&self.record_name_pattern, pattern)
             && grant_pattern::matches_types(&self.record_types, Some(record_type))
     }
@@ -391,7 +391,7 @@ impl RoleGrants {
         action: Action,
         zone_id: ZoneId,
         name: &OwnerName,
-        record_type: Option<&RecordType>,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.0
             .iter()
@@ -405,7 +405,7 @@ impl RoleGrants {
         action: Action,
         zone_id: ZoneId,
         name: &OwnerName,
-        record_type: Option<&RecordType>,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.covers_record(Action::RecordRead, zone_id, name, record_type)
             || self.covers_record(action, zone_id, name, record_type)
@@ -436,7 +436,7 @@ impl RoleGrants {
                     actions.iter().all(|&action| {
                         self.0.iter().any(|grant| {
                             grant.permits(action, zone_id)
-                                && grant.covers_pattern(pattern, record_type)
+                                && grant.covers_pattern(pattern, *record_type)
                         })
                     })
                 })

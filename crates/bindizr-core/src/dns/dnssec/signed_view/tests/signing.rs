@@ -216,7 +216,7 @@ fn signatures_validate_case_preserving_rdata() {
 
         assert_eq!(signature.original_ttl().as_secs(), u32::MAX);
         assert_eq!(rows[0].ttl.as_secs(), u32::MAX);
-        let rdata = EncodedRdata::from_columns(&record_type, canonical_value, priority)
+        let rdata = EncodedRdata::from_columns(record_type, canonical_value, priority)
             .unwrap()
             .rdata;
 

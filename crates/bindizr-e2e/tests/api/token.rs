@@ -6,7 +6,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Verify that tokens are created listed and deleted over HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tokens_support_create_list_and_delete_over_http() {
+async fn tokens_support_create_list_and_delete() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()

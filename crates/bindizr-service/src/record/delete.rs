@@ -6,9 +6,9 @@ use bindizr_core::model::record::{Record, RecordData, RecordId};
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
+use crate::record::validation;
 use crate::types::{DeleteRecordsRequest, DeleteRecordsResponse, RecordResponse, Run};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, zone};
@@ -76,7 +76,7 @@ pub async fn delete(
             Action::RecordDelete,
             zone.id,
             &existing_record.name,
-            Some(&existing_record.record_type),
+            Some(existing_record.record_type),
         ) {
             return Err(ServiceError::record_not_found(record_id));
         }
@@ -86,7 +86,7 @@ pub async fn delete(
             &[RecordAccess {
                 action: Action::RecordDelete,
                 relative_name: existing_record.name.clone(),
-                record_type: Some(&existing_record.record_type),
+                record_type: Some(existing_record.record_type),
             }],
         )?;
 
@@ -124,7 +124,7 @@ pub async fn delete(
                     RecordResponse::from_record(
                         record,
                         &zone.name,
-                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                        caller.record_actions(zone.id, &record.name, record.record_type),
                     )
                 })
                 .collect(),
@@ -197,7 +197,7 @@ pub async fn delete_matching(
     }
 
     // Encoded the way a create encodes it, so a value finds the row it made.
-    let match_value = match (&request.value, record_type.as_ref()) {
+    let match_value = match (&request.value, record_type) {
         (Some(value), Some(record_type)) => Some(
             value
                 .to_encoded_value(record_type, request.priority)
@@ -222,7 +222,7 @@ pub async fn delete_matching(
             &[RecordAccess {
                 action: Action::RecordDelete,
                 relative_name: owner.clone(),
-                record_type: record_type.as_ref(),
+                record_type,
             }],
         )?;
 
@@ -231,13 +231,7 @@ pub async fn delete_matching(
                 .await?;
         let matched: Vec<Record> = records_at_name
             .iter()
-            .filter(|record| {
-                record.matches(
-                    record_type.as_ref(),
-                    match_value.as_deref(),
-                    request.priority,
-                )
-            })
+            .filter(|record| record.matches(record_type, match_value.as_deref(), request.priority))
             .cloned()
             .collect();
 
@@ -269,7 +263,7 @@ pub async fn delete_matching(
                     RecordResponse::from_record(
                         record,
                         &zone.name,
-                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                        caller.record_actions(zone.id, &record.name, record.record_type),
                     )
                 })
                 .collect(),

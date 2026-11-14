@@ -11,8 +11,9 @@ use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneC
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{SignedZone, parent_ns_addrs, status};
+use super::SignedZone;
 use crate::authorization::Caller;
+use crate::dnssec::{parent_ns_addrs, status};
 use crate::error::ServiceError;
 use crate::types::{
     DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest,
@@ -48,7 +49,7 @@ pub async fn enable(
     zone_name: &ZoneName,
     request: &EnableDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let policy_name = dnssec_policy::normalize_policy_name(
+    let policy_name = dnssec_policy::normalize_name(
         request
             .policy_name
             .as_deref()
@@ -57,7 +58,7 @@ pub async fn enable(
     let parent_ns_addrs = parent_ns_addrs::normalize_parent_ns_addrs(&request.parent_ns_addrs)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to enable DNSSEC").await?;
-    let result = async {
+    let apply_result = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
@@ -146,7 +147,8 @@ pub async fn enable(
         Ok((response, new_serial != signed.zone.serial))
     }
     .await;
-    let (response, changed) = transaction::finish_tx(tx, result, "failed to enable DNSSEC").await?;
+    let (response, changed) =
+        transaction::finish_tx(tx, apply_result, "failed to enable DNSSEC").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -180,7 +182,7 @@ pub async fn update_settings(
     let policy_name = request
         .policy_name
         .as_deref()
-        .map(dnssec_policy::normalize_policy_name)
+        .map(dnssec_policy::normalize_name)
         .transpose()?;
     let parent_ns_addrs = request
         .parent_ns_addrs
@@ -189,7 +191,7 @@ pub async fn update_settings(
         .transpose()?;
 
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
-    let result = async {
+    let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
@@ -267,7 +269,7 @@ pub async fn update_settings(
     }
     .await;
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to update DNSSEC settings").await?;
+        transaction::finish_tx(tx, apply_result, "failed to update DNSSEC settings").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -292,7 +294,7 @@ pub async fn disable(
     ds_check: DsCheck,
 ) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
-    let result = async {
+    let apply_result = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -347,7 +349,7 @@ pub async fn disable(
         Ok(())
     }
     .await;
-    transaction::finish_tx(tx, result, "failed to disable DNSSEC").await?;
+    transaction::finish_tx(tx, apply_result, "failed to disable DNSSEC").await?;
 
     cx.metrics().track_serial_bumps(1);
 
@@ -366,7 +368,7 @@ pub async fn disable(
 /// hatch when stored state is doubted).
 pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result<(), ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -383,7 +385,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
         Ok(changed)
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to sign zone").await?;
+    let changed = transaction::finish_tx(tx, apply_result, "failed to sign zone").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);

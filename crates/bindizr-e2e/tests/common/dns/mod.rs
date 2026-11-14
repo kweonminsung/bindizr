@@ -20,9 +20,9 @@ pub(crate) use parent::{DsRecord, FakeParent};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::time;
-pub(crate) use transfer::{TransferResult, axfr, xot};
+pub(crate) use transfer::{TransferResult, fetch_axfr_tcp, fetch_axfr_tls};
 pub(crate) use transport::{
-    connect_tcp, connect_tls, exchange_request, exchange_tcp, exchange_udp, exchange_xot,
+    connect_tcp, connect_tls, exchange_request, exchange_tcp, exchange_tls, exchange_udp,
     read_frame, write_frame,
 };
 
@@ -64,14 +64,14 @@ pub(crate) fn extract_record_key(record: &Value) -> (String, u16) {
         .to_string();
     let record_type = record["type"]
         .as_str()
-        .and_then(dns_record_type)
+        .and_then(parse_record_type)
         .expect("record contained an unsupported DNS type");
 
     (name, record_type)
 }
 
 /// Map a supported record mnemonic to its wire type number.
-pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
+pub(crate) fn parse_record_type(record_type: &str) -> Option<u16> {
     record_type.parse::<Rtype>().ok().map(Rtype::to_int)
 }
 

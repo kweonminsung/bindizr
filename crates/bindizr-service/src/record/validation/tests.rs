@@ -29,7 +29,7 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
         validate_add(
             &existing,
             "host",
-            &RecordType::Wks,
+            RecordType::Wks,
             "192.0.2.1 6 80",
             RECORD_SET_TTL,
             None
@@ -44,7 +44,7 @@ fn add_rejects_duplicate_wks_address_and_protocol() {
             validate_add(
                 &existing,
                 "host",
-                &RecordType::Wks,
+                RecordType::Wks,
                 value,
                 RECORD_SET_TTL,
                 None
@@ -76,7 +76,7 @@ fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
 fn validate_add(
     records: &[Record],
     stored_name: &str,
-    record_type: &RecordType,
+    record_type: RecordType,
     value: &str,
     ttl: i64,
     priority: Option<i32>,
@@ -98,13 +98,13 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     const DS_VALUE: &str =
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
-    let at_apex = validate_add(&[], "", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+    let at_apex = validate_add(&[], "", RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
 
     assert_eq!(at_apex.unwrap_err().code(), ErrorCode::InvalidRecordName);
 
     // The NS coupling is a final-state rule, enforced when the zone is
     // versioned — a lone DS passes the per-add shape checks.
-    let without_ns = validate_add(&[], "sub", &RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
+    let without_ns = validate_add(&[], "sub", RecordType::Ds, DS_VALUE, RECORD_SET_TTL, None);
 
     assert!(without_ns.is_ok());
 }
@@ -115,7 +115,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_at_apex = validate_add(
         &[],
         "",
-        &RecordType::Cname,
+        RecordType::Cname,
         "target.example.com",
         RECORD_SET_TTL,
         None,
@@ -129,7 +129,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let delegation_ns = validate_add(
         &[],
         "child",
-        &RecordType::Ns,
+        RecordType::Ns,
         "ns.example.com",
         RECORD_SET_TTL,
         None,
@@ -141,7 +141,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_conflict = validate_add(
         &[existing_a],
         "www",
-        &RecordType::Cname,
+        RecordType::Cname,
         "target.example.com",
         RECORD_SET_TTL,
         None,
@@ -161,7 +161,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     let duplicate_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         "Mail.Example.Com.",
         RECORD_SET_TTL,
         Some(10),
@@ -179,7 +179,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     let duplicate_srv = validate_add(
         &[existing_srv],
         "_sip._tcp",
-        &RecordType::Srv,
+        RecordType::Srv,
         "5 5060 Sip.Example.Com.",
         RECORD_SET_TTL,
         Some(10),
@@ -197,7 +197,7 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
     let duplicate_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         "mail.example.com.",
         RECORD_SET_TTL,
         Some(10),
@@ -213,7 +213,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     let null_mx_with_existing_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         ".",
         RECORD_SET_TTL,
         Some(0),
@@ -228,7 +228,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     let mx_with_existing_null_mx = validate_add(
         &[existing_null_mx],
         "",
-        &RecordType::Mx,
+        RecordType::Mx,
         "mail.example.com",
         RECORD_SET_TTL,
         Some(10),
@@ -248,7 +248,7 @@ fn add_enforces_one_ttl_per_record_set() {
     let differing_ttl = validate_add(
         slice::from_ref(&existing_a),
         "www",
-        &RecordType::A,
+        RecordType::A,
         "192.0.2.11",
         600,
         None,
@@ -259,7 +259,7 @@ fn add_enforces_one_ttl_per_record_set() {
     let matching_ttl = validate_add(
         slice::from_ref(&existing_a),
         "www",
-        &RecordType::A,
+        RecordType::A,
         "192.0.2.11",
         RECORD_SET_TTL,
         None,
@@ -272,7 +272,7 @@ fn add_enforces_one_ttl_per_record_set() {
     let other_record_set = validate_add(
         slice::from_ref(&existing_a),
         "www",
-        &RecordType::Txt,
+        RecordType::Txt,
         &encoded_txt,
         600,
         None,
@@ -315,7 +315,7 @@ fn add_enforces_the_dname_rules() {
     let second = validate_add(
         &dname_at_sub,
         "sub",
-        &RecordType::Dname,
+        RecordType::Dname,
         "two.example.net.",
         RECORD_SET_TTL,
         None,
@@ -326,7 +326,7 @@ fn add_enforces_the_dname_rules() {
     let ns_beside = validate_add(
         &dname_at_sub,
         "sub",
-        &RecordType::Ns,
+        RecordType::Ns,
         "ns.example.net.",
         RECORD_SET_TTL,
         None,
@@ -340,7 +340,7 @@ fn add_enforces_the_dname_rules() {
         validate_add(
             &dname_at_sub,
             "sub",
-            &RecordType::A,
+            RecordType::A,
             "192.0.2.1",
             RECORD_SET_TTL,
             None,
@@ -358,7 +358,7 @@ fn add_enforces_the_dname_rules() {
     let dname_beside = validate_add(
         &ns_at_del,
         "del",
-        &RecordType::Dname,
+        RecordType::Dname,
         "one.example.net.",
         RECORD_SET_TTL,
         None,
@@ -373,7 +373,7 @@ fn add_enforces_the_dname_rules() {
         validate_add(
             &ns_at_apex,
             "",
-            &RecordType::Dname,
+            RecordType::Dname,
             "one.example.net.",
             RECORD_SET_TTL,
             None,

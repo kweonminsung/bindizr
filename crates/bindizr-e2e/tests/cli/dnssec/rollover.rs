@@ -4,7 +4,7 @@ use crate::common::TestApp;
 /// Verify that the CLI rolls DNSSEC keys over with NSEC3.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_rolls_nsec3_keys_via_cli() {
+async fn zone_dnssec_rolls_nsec3_keys() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("dnssec-roll-cli.example");
 

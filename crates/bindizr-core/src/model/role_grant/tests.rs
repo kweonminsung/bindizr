@@ -75,8 +75,8 @@ fn role_grants_answer_over_their_union() {
     assert!(grants.permits(Action::RecordRead, other_zone_id));
     assert!(grants.permits(Action::RecordCreate, zone_id));
     assert!(!grants.permits(Action::RecordCreate, other_zone_id));
-    assert!(grants.covers_record(Action::RecordCreate, zone_id, &host, Some(&RecordType::A)));
-    assert!(!grants.covers_record(Action::RecordCreate, zone_id, &host, Some(&RecordType::Txt)));
+    assert!(grants.covers_record(Action::RecordCreate, zone_id, &host, Some(RecordType::A)));
+    assert!(!grants.covers_record(Action::RecordCreate, zone_id, &host, Some(RecordType::Txt)));
     assert!(grants.covers_whole_zone(Action::RecordRead, zone_id));
     assert!(!grants.covers_whole_zone(Action::RecordCreate, zone_id));
     assert!(grants.reaches_zone(other_zone_id));

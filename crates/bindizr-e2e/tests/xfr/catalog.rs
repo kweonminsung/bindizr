@@ -4,10 +4,10 @@ use domain::base::Message;
 use domain::base::iana::{Rcode, Rtype};
 use domain::rdata::Soa;
 
-use super::common;
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::{TestApp, TestAppOptions, dns};
+use crate::xfr::common;
 
 /// Verify that equivalent catalog names resolve through SOA, AXFR and IXFR without changing
 /// the question.
@@ -64,7 +64,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
                     common::build_edns_query(question, qtype, &[(0, false)])
                 };
                 let response = dns::exchange_request(query, key, |message| {
-                    crate::common::exchange_tcp(app.dns_port(), message)
+                    dns::exchange_tcp(app.dns_port(), message)
                 })
                 .unwrap();
 
@@ -87,7 +87,7 @@ async fn catalog_queries_match_equivalent_dns_escapes() {
             }
 
             assert_eq!(
-                crate::common::axfr(app.dns_port(), question, key)
+                dns::fetch_axfr_tcp(app.dns_port(), question, key)
                     .unwrap()
                     .records(),
                 5
@@ -118,7 +118,7 @@ async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
     app.create_secondary("loopback", "127.0.0.1").await;
 
     assert_eq!(
-        crate::common::axfr(app.dns_port(), &catalog, None)
+        dns::fetch_axfr_tcp(app.dns_port(), &catalog, None)
             .unwrap()
             .records(),
         4
@@ -127,14 +127,14 @@ async fn catalog_member_owners_fit_at_the_wire_length_boundary() {
     app.create_test_zone().await;
 
     assert_eq!(
-        crate::common::axfr(app.dns_port(), &catalog, None)
+        dns::fetch_axfr_tcp(app.dns_port(), &catalog, None)
             .unwrap()
             .records(),
         5
     );
     let query = common::build_edns_query(&catalog, Rtype::SOA, &[]).finish();
     let response =
-        Message::from_octets(crate::common::exchange_tcp(app.dns_port(), &query).unwrap()).unwrap();
+        Message::from_octets(dns::exchange_tcp(app.dns_port(), &query).unwrap()).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::NOERROR);
     assert!(

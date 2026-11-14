@@ -434,8 +434,8 @@ fn record_match_accepts_all_records_when_filters_are_absent() {
 fn record_match_filters_by_type() {
     let a = record(RecordType::A, "192.0.2.1", None);
 
-    assert!(a.matches(Some(&RecordType::A), None, None));
-    assert!(!a.matches(Some(&RecordType::Txt), None, None));
+    assert!(a.matches(Some(RecordType::A), None, None));
+    assert!(!a.matches(Some(RecordType::Txt), None, None));
 }
 
 /// Verify that a value is compared canonically not as text.
@@ -445,8 +445,8 @@ fn record_match_compares_values_canonically() {
     // record another way still names it.
     let cname = record(RecordType::Cname, "target.example.com.", None);
 
-    assert!(cname.matches(Some(&RecordType::Cname), Some("Target.Example.COM"), None));
-    assert!(!cname.matches(Some(&RecordType::Cname), Some("other.example.com"), None));
+    assert!(cname.matches(Some(RecordType::Cname), Some("Target.Example.COM"), None));
+    assert!(!cname.matches(Some(RecordType::Cname), Some("other.example.com"), None));
 }
 
 /// Verify that a value never carries the preference.
@@ -458,7 +458,7 @@ fn record_match_excludes_priority_from_value() {
     let twenty = record(RecordType::Mx, "mail.example.com.", Some(20));
 
     for record in [&ten, &twenty] {
-        assert!(record.matches(Some(&RecordType::Mx), Some("mail.example.com"), None));
+        assert!(record.matches(Some(RecordType::Mx), Some("mail.example.com"), None));
     }
 }
 
@@ -468,16 +468,12 @@ fn record_match_filters_by_priority() {
     let ten = record(RecordType::Mx, "mail.example.com.", Some(10));
     let twenty = record(RecordType::Mx, "mail.example.com.", Some(20));
 
-    assert!(ten.matches(Some(&RecordType::Mx), Some("mail.example.com"), Some(10)));
-    assert!(!twenty.matches(Some(&RecordType::Mx), Some("mail.example.com"), Some(10)));
+    assert!(ten.matches(Some(RecordType::Mx), Some("mail.example.com"), Some(10)));
+    assert!(!twenty.matches(Some(RecordType::Mx), Some("mail.example.com"), Some(10)));
 }
 
 /// Verify that a preference asked of a type that has none matches nothing.
 #[test]
 fn record_match_rejects_priority_for_unsupported_type() {
-    assert!(!record(RecordType::A, "192.0.2.1", None).matches(
-        Some(&RecordType::A),
-        None,
-        Some(10)
-    ));
+    assert!(!record(RecordType::A, "192.0.2.1", None).matches(Some(RecordType::A), None, Some(10)));
 }

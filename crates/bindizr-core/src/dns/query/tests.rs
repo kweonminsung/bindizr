@@ -6,7 +6,7 @@ use domain::base::iana::{
     Class, DigestAlgorithm, Opcode, OptRcode, Rcode, Rtype, SecurityAlgorithm,
 };
 use domain::base::opt::AllOptData;
-use domain::base::{Message, MessageBuilder, Name, Serial, Ttl};
+use domain::base::{Message, MessageBuilder, Name};
 use domain::rdata::{A, Ds, Soa};
 
 use super::*;
@@ -86,7 +86,7 @@ fn build_ds_response(
             .push((
                 &name(owner),
                 *class,
-                Ttl::from_secs(*ttl),
+                domain::base::Ttl::from_secs(*ttl),
                 Ds::new(
                     *key_tag,
                     SecurityAlgorithm::ECDSAP256SHA256,
@@ -105,15 +105,15 @@ fn build_ds_response(
             .push((
                 &name(owner),
                 class,
-                Ttl::from_secs(3600),
+                domain::base::Ttl::from_secs(3600),
                 Soa::new(
                     name("ns.parent.example"),
                     name("hostmaster.parent.example"),
-                    Serial(1),
-                    Ttl::from_secs(3600),
-                    Ttl::from_secs(600),
-                    Ttl::from_secs(86400),
-                    Ttl::from_secs(300),
+                    domain::base::Serial(1),
+                    domain::base::Ttl::from_secs(3600),
+                    domain::base::Ttl::from_secs(600),
+                    domain::base::Ttl::from_secs(86400),
+                    domain::base::Ttl::from_secs(300),
                 ),
             ))
             .unwrap();
@@ -146,15 +146,15 @@ fn build_soa_response(query_id: u16, qname: &Name<Vec<u8>>, class: Class) -> Vec
         .push((
             qname,
             class,
-            Ttl::from_secs(300),
+            domain::base::Ttl::from_secs(300),
             Soa::new(
                 name("ns.example.com"),
                 name("admin.example.com"),
-                Serial(2026),
-                Ttl::from_secs(300),
-                Ttl::from_secs(60),
-                Ttl::from_secs(86400),
-                Ttl::from_secs(300),
+                domain::base::Serial(2026),
+                domain::base::Ttl::from_secs(300),
+                domain::base::Ttl::from_secs(60),
+                domain::base::Ttl::from_secs(86400),
+                domain::base::Ttl::from_secs(300),
             ),
         ))
         .unwrap();
@@ -197,7 +197,7 @@ fn build_transfer_message(
         .push((
             qname,
             Class::IN,
-            Ttl::from_secs(300),
+            domain::base::Ttl::from_secs(300),
             A::new("192.0.2.1".parse::<Ipv4Addr>().unwrap()),
         ))
         .unwrap();
@@ -217,7 +217,7 @@ fn transfer_rejects_a_non_in_record() {
         .push((
             &name,
             Class::CH,
-            Ttl::from_secs(300),
+            domain::base::Ttl::from_secs(300),
             A::new("192.0.2.1".parse::<Ipv4Addr>().unwrap()),
         ))
         .unwrap();

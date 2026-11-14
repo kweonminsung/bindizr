@@ -6,9 +6,9 @@ use bindizr_core::model::role_grant::Action;
 use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::LockLevel;
 
-use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
+use crate::record::validation;
 use crate::types::{RecordDiffResponse, RecordResponse, UpdateRecordRequest, WriteRecordResponse};
 use crate::zone::diff;
 use crate::{Context, dnssec, notify, serial, transaction, ttl, zone};
@@ -100,7 +100,7 @@ fn resolve_update(
     let encoded_value = match &request.value {
         Some(value) => {
             let encoded = value
-                .to_encoded_value(&record_type, priority)
+                .to_encoded_value(record_type, priority)
                 .map_err(ServiceError::invalid_record_value)?;
             validation::validate_management_value(record_type, &encoded)?;
             encoded
@@ -222,7 +222,7 @@ async fn update_locked(
                     Action::RecordUpdate,
                     zone.id,
                     &existing_record.name,
-                    Some(&existing_record.record_type),
+                    Some(existing_record.record_type),
                 ) {
                     return Err(ServiceError::record_not_found(record_id));
                 }
@@ -250,7 +250,7 @@ async fn update_locked(
                         Action::RecordUpdate,
                         zone.id,
                         &record.name,
-                        Some(&record.record_type),
+                        Some(record.record_type),
                     )
                 })
                 .collect();
@@ -273,7 +273,7 @@ async fn update_locked(
         let can_read = caller.sees_record(
             zone.id,
             &existing_record.name,
-            Some(&existing_record.record_type),
+            Some(existing_record.record_type),
         );
         let candidate = resolve_update(&zone, &existing_record, request, can_read)?;
 
@@ -285,12 +285,12 @@ async fn update_locked(
                 RecordAccess {
                     action: Action::RecordUpdate,
                     relative_name: existing_record.name.clone(),
-                    record_type: Some(&existing_record.record_type),
+                    record_type: Some(existing_record.record_type),
                 },
                 RecordAccess {
                     action: Action::RecordUpdate,
                     relative_name: candidate.name.clone(),
-                    record_type: Some(&candidate.record_type),
+                    record_type: Some(candidate.record_type),
                 },
             ],
         )?;
@@ -312,7 +312,7 @@ async fn update_locked(
         validation::validate_record_constraints(
             &records_at_name,
             &candidate.name,
-            &candidate.record_type,
+            candidate.record_type,
             &candidate.value,
             candidate.ttl,
             candidate.priority,
@@ -356,7 +356,7 @@ async fn update_locked(
         .await?;
 
         let new_serial = serial::generate_serial(Some(zone.serial));
-        let actions = caller.record_actions(zone.id, &candidate.name, &candidate.record_type);
+        let actions = caller.record_actions(zone.id, &candidate.name, candidate.record_type);
 
         // The merge is resolved and validated, so a dry run stops here.
         if request.dry_run {

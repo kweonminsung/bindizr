@@ -19,8 +19,8 @@ use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
-use self::server::DnsContext;
-use self::udp::UdpSocket;
+use crate::dns::server::DnsContext;
+use crate::dns::udp::UdpSocket;
 use crate::shutdown::Shutdown;
 use crate::tls::TlsCertificate;
 

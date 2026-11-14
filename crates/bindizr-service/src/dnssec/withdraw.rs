@@ -6,8 +6,8 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::status;
 use crate::authorization::Caller;
+use crate::dnssec::status;
 use crate::error::ServiceError;
 use crate::types::DnssecStatusResponse;
 use crate::{Context, notify, transaction};
@@ -20,7 +20,7 @@ pub async fn withdraw(
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
-    let result = async {
+    let apply_result = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -63,7 +63,7 @@ pub async fn withdraw(
     }
     .await;
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
+        transaction::finish_tx(tx, apply_result, "failed to withdraw the parent DS").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -86,7 +86,7 @@ pub async fn cancel_withdrawal(
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
-    let result = async {
+    let apply_result = async {
         let signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -127,7 +127,7 @@ pub async fn cancel_withdrawal(
     }
     .await;
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
+        transaction::finish_tx(tx, apply_result, "failed to cancel the DS withdrawal").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);

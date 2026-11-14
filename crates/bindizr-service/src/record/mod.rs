@@ -36,7 +36,7 @@ fn build_record_response(caller: &Caller, record: &ServedRecord) -> RecordRespon
         ServedRecord::User(record) => RecordResponse::from_record(
             &record.record(),
             &record.zone_name,
-            caller.record_actions(record.zone_id, &record.name, &record.record_type),
+            caller.record_actions(record.zone_id, &record.name, record.record_type),
         ),
         ServedRecord::Derived(record) => RecordResponse {
             id: None,

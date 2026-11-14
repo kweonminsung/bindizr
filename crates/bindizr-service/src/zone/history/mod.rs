@@ -17,13 +17,13 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 pub(crate) use retention::prune_by_zone_id;
 
-use super::{diff, update};
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{
     DiffZoneVersionsResponse, GetZoneVersionResponse, PaginatedResponse, RollbackZoneResponse,
     RollbackZoneSummaryResponse, Run, VersionRecordResponse, ZoneVersionResponse,
 };
+use crate::zone::{diff, update};
 use crate::{Context, Transaction, dnssec, notify, pagination, record, serial, transaction};
 
 /// Validate that a serial is diffable: only if it is the current serial or has a version.
@@ -110,7 +110,7 @@ pub async fn get_version(
         records: records
             .as_slice()
             .iter()
-            .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
+            .map(|record| VersionRecordResponse::from_record(record, &zone.name))
             .collect(),
     })
 }
@@ -293,7 +293,7 @@ pub async fn rollback(
             record::validate_record_constraints(
                 records_at_name,
                 &target.name,
-                &target.record_type,
+                target.record_type,
                 &target.value,
                 target.ttl,
                 target.priority,

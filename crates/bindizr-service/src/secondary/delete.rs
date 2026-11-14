@@ -14,7 +14,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     // Unlocked read to learn the row to delete; a row gone meanwhile reads as not found below.
     let secondary = super::lookup_by_name(cx, name).await?;
     let mut tx = transaction::begin_tx(cx, "failed to delete secondary").await?;
-    let result = async {
+    let apply_result = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -37,5 +37,5 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to delete secondary").await
+    transaction::finish_tx(tx, apply_result, "failed to delete secondary").await
 }

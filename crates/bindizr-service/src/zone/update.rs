@@ -5,10 +5,10 @@ use bindizr_core::model::zone::Zone;
 use bindizr_core::model::zone_change::{ChangeOperation, JournalRecordType, ZoneChange};
 use bindizr_db::LockLevel;
 
-use super::validation;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{UpdateZoneRequest, WriteZoneResponse, ZoneResponse};
+use crate::zone::validation;
 use crate::{Context, dnssec, notify, record, serial, text, transaction, ttl};
 
 /// Outcome of the transactional part of a zone update.
@@ -148,7 +148,7 @@ pub async fn update(
             for record in &records {
                 record::validate_record_name_in_zone(&record.name, &candidate.name).map_err(
                     |error| {
-                        if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
+                        if caller.sees_record(zone_id, &record.name, Some(record.record_type)) {
                             error
                         } else {
                             ServiceError::invalid_record_name(format!(

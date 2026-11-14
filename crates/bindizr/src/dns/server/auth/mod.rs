@@ -11,8 +11,9 @@ use bindizr_service::authorization::Caller;
 use bindizr_service::tsig_key;
 use thiserror::Error;
 
-use super::{DnsContext, acl};
+use super::DnsContext;
 use crate::dns::error::DnsError;
+use crate::dns::server::acl;
 
 /// A rejected transfer's cause; encoding and response limits belong to the handler.
 #[derive(Debug, Error)]

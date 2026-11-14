@@ -10,7 +10,7 @@ pub(crate) async fn list_audit_logs(
     cx: &Context,
     filter: AuditLogFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<AuditLogResponse>>, ServiceError> {
-    let response = audit::list(cx, &Caller::socket(), filter).await?;
+    let response = audit::list(cx, &Caller::socket(), &filter).await?;
     Ok(DaemonResponse {
         message: "Audit log retrieved successfully".to_string(),
         data: response,

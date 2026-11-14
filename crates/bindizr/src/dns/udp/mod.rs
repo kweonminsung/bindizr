@@ -20,9 +20,9 @@ use thiserror::Error;
 use tokio::io::Interest;
 use tokio::task::JoinSet;
 
-use super::error::DnsError;
-use super::server;
-use super::server::DnsContext;
+use crate::dns::error::DnsError;
+use crate::dns::server;
+use crate::dns::server::DnsContext;
 
 /// Datagrams answered at once; past this the listener drops, since a caller retries.
 const MAX_UDP_IN_FLIGHT: usize = 256;

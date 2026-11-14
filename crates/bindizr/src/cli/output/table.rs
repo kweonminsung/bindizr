@@ -544,24 +544,24 @@ pub(crate) struct TsigKeyRow {
 
 impl From<&TsigKeyResponse> for TsigKeyRow {
     /// Build a CLI table row from the TSIG key response.
-    fn from(key: &TsigKeyResponse) -> Self {
+    fn from(tsig_key: &TsigKeyResponse) -> Self {
         Self {
-            id: key.id,
-            name: key.name.clone(),
-            algorithm: key.algorithm.to_string(),
+            id: tsig_key.id,
+            name: tsig_key.name.clone(),
+            algorithm: tsig_key.algorithm.to_string(),
             secret: MISSING_CELL.to_string(),
-            role_name: key.role_name.clone(),
-            created_at: display::display_time(key.created_at),
+            role_name: tsig_key.role_name.clone(),
+            created_at: display::display_time(tsig_key.created_at),
         }
     }
 }
 
 impl From<&SingleTsigKeyResponse> for TsigKeyRow {
     /// Build a CLI table row from the TSIG key response.
-    fn from(key: &SingleTsigKeyResponse) -> Self {
+    fn from(response: &SingleTsigKeyResponse) -> Self {
         Self {
-            secret: key.secret.clone(),
-            ..Self::from(&key.tsig_key)
+            secret: response.secret.clone(),
+            ..Self::from(&response.tsig_key)
         }
     }
 }

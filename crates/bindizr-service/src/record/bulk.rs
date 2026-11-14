@@ -7,9 +7,9 @@ use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::validation;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
+use crate::record::validation;
 use crate::types::{
     CreateBulkRecordsRequest, CreateBulkRecordsResponse, RecordDiffResponse, RecordResponse,
 };
@@ -79,14 +79,14 @@ pub async fn create_bulk(
         // Authorize before loading existing record rows so an ungranted caller
         // gets 404 instead of constraint details; dry runs included.
         // A name that will not parse lists no write; validation reports it.
-        let writes: Vec<RecordAccess<'_>> = prepared
+        let writes: Vec<RecordAccess> = prepared
             .iter()
             .zip(&owners)
             .filter_map(|(prepared_record, owner_name)| {
                 owner_name.as_ref().ok().map(|owner_name| RecordAccess {
                     action: Action::RecordCreate,
                     relative_name: owner_name.clone(),
-                    record_type: Some(&prepared_record.record_type),
+                    record_type: Some(prepared_record.record_type),
                 })
             })
             .collect();
@@ -154,7 +154,7 @@ pub async fn create_bulk(
             validation::validate_record_constraints(
                 records_at_name,
                 &owner_name,
-                &prepared_record.record_type,
+                prepared_record.record_type,
                 &prepared_record.value,
                 ttl,
                 prepared_record.priority,
@@ -218,7 +218,7 @@ pub async fn create_bulk(
             .into_iter()
             .map(|record| {
                 let actions =
-                    caller.record_actions(record.zone_id, &record.name, &record.record_type);
+                    caller.record_actions(record.zone_id, &record.name, record.record_type);
                 (record, actions)
             })
             .collect();

@@ -25,7 +25,7 @@ use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
         )
 )]
 pub(crate) async fn handle_health(State(cx): State<Arc<Context>>) -> Response {
-    match time::timeout(DB_PROBE_TIMEOUT, zone::ping(&cx)).await {
+    match time::timeout(DB_PROBE_TIMEOUT, zone::probe_table(&cx)).await {
         Ok(Ok(())) => (
             StatusCode::OK,
             Json(HealthResponse {

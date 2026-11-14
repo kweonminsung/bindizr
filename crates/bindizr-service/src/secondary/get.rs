@@ -82,7 +82,7 @@ pub(crate) async fn lookup_response(
 
 /// Fetch one secondary by name, unchecked.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Secondary, ServiceError> {
-    let name = super::normalize_secondary_name(name)?;
+    let name = super::normalize_name(name)?;
     bindizr_db::secondary::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::secondary_not_found(&name))

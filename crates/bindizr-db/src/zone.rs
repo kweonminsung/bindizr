@@ -109,7 +109,7 @@ pub async fn list_all_tx(
 }
 
 /// List zones matching the filter.
-pub async fn list_by_filter(db: &Db, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
+pub async fn list_by_filter(db: &Db, filter: &ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::zone::list_by_filter(pool, filter).await,
         Backend::Postgres(pool) => postgres::zone::list_by_filter(pool, filter).await,
@@ -128,7 +128,7 @@ pub async fn probe_table(db: &Db) -> Result<(), DatabaseError> {
 }
 
 /// Count zones matching the filter.
-pub async fn count_by_filter(db: &Db, filter: ZoneFilter) -> Result<u64, DatabaseError> {
+pub async fn count_by_filter(db: &Db, filter: &ZoneFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::zone::count_by_filter(pool, filter).await,
         Backend::Postgres(pool) => postgres::zone::count_by_filter(pool, filter).await,

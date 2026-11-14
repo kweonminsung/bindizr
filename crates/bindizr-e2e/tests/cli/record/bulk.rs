@@ -5,7 +5,7 @@ use crate::common::TestApp;
 /// Verify that record bulk dry run shows the diff via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_dry_run_shows_the_diff_via_cli() {
+async fn record_bulk_dry_run_shows_the_diff() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("bulk-dry-run.example");
 

@@ -139,7 +139,7 @@ async fn attach_last_transfer(
 
     status.last_transfer =
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
-            Ok(transfer) => transfer.as_ref().map(TransferResponse::from),
+            Ok(transfer_log) => transfer_log.as_ref().map(TransferResponse::from),
             Err(error) => {
                 log::warn!("Failed to read the transfers of {zone_name}: {error}");
                 None

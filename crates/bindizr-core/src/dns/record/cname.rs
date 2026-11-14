@@ -1,5 +1,6 @@
-use super::{ParseRecordValueError, value};
+use super::ParseRecordValueError;
 use crate::dns::name;
+use crate::dns::record::value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CnameRecordValue<'a> {
@@ -17,7 +18,7 @@ impl<'a> CnameRecordValue<'a> {
     }
 
     /// Render a CNAME target in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         name::to_fqdn_lowercase(self.target)
     }
 }

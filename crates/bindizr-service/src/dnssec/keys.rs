@@ -10,8 +10,9 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
-use super::{SignedZone, status};
+use super::SignedZone;
 use crate::authorization::Caller;
+use crate::dnssec::status;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecKeyMaterialResponse, DnssecStatusResponse, ExportDnssecKeysResponse,
@@ -69,13 +70,13 @@ pub async fn import_keys(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    request: ImportDnssecKeysRequest,
+    request: &ImportDnssecKeysRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     if request.keys.is_empty() {
         return Err(ServiceError::invalid_input("no key pair to import"));
     }
 
-    let policy_name = dnssec_policy::normalize_policy_name(
+    let policy_name = dnssec_policy::normalize_name(
         request
             .policy_name
             .as_deref()
@@ -83,7 +84,7 @@ pub async fn import_keys(
     )?;
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
-    let result = async {
+    let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let caller = &caller.reauthenticate_tx(&mut tx).await?;
         caller.authorize_zone_action(Action::DnssecManage, &zone)?;
@@ -195,7 +196,7 @@ pub async fn import_keys(
     }
     .await;
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
+        transaction::finish_tx(tx, apply_result, "failed to import DNSSEC keys").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);

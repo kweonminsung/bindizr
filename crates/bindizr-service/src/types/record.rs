@@ -55,7 +55,7 @@ impl RecordValue {
     /// content (never presentation form), so quotes carry no special meaning.
     pub(crate) fn to_encoded_value(
         &self,
-        record_type: &RecordType,
+        record_type: RecordType,
         priority: Option<i32>,
     ) -> Result<String, EncodeRecordValueError> {
         match (record_type, self) {
@@ -81,8 +81,8 @@ impl RecordValue {
 
 /// A stored value as the record APIs display it: TXT decoded to string/segments,
 /// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
-pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> RecordValue {
-    if *record_type != RecordType::Txt {
+pub(crate) fn build_display_value(record_type: RecordType, value: &str) -> RecordValue {
+    if record_type != RecordType::Txt {
         return RecordValue::Text(record_type.display_value(value));
     }
 
@@ -322,7 +322,7 @@ impl RecordResponse {
             id: record.id.written(),
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.into(),
-            value: build_display_value(&record.value, &record.record_type),
+            value: build_display_value(record.record_type, &record.value),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,

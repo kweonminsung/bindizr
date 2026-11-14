@@ -29,7 +29,7 @@ pub async fn delete(
         // Counted for the report, not acted on, so they run unlocked.
         let records = bindizr_db::record::count_by_filter(
             cx.db(),
-            RecordFilter {
+            &RecordFilter {
                 zone_name: Some(zone.name.clone()),
                 ..Default::default()
             },

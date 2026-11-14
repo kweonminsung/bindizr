@@ -51,7 +51,7 @@ pub(crate) async fn update_secondary(
     name: &str,
     request: UpdateSecondaryRequest,
 ) -> Result<DaemonResponse<SingleSecondaryResponse>, ServiceError> {
-    let secondary = secondary::update(cx, &Caller::socket(), name, request).await?;
+    let secondary = secondary::update(cx, &Caller::socket(), name, &request).await?;
     Ok(DaemonResponse {
         message: "Secondary updated successfully".to_string(),
         data: SingleSecondaryResponse { secondary },
@@ -95,7 +95,7 @@ pub(crate) async fn list_secondary_transfers(
     name: &str,
     filter: SecondaryTransferFilter,
 ) -> Result<DaemonResponse<SecondaryTransfersResponse>, ServiceError> {
-    let response = secondary::list_transfers(cx, &Caller::socket(), name, filter).await?;
+    let response = secondary::list_transfers(cx, &Caller::socket(), name, &filter).await?;
 
     Ok(DaemonResponse {
         message: format!(

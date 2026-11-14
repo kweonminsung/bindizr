@@ -21,7 +21,7 @@ pub async fn list_transfers(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    filter: SecondaryTransferFilter,
+    filter: &SecondaryTransferFilter,
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryRead)?;
     let limit = filter.limit.unwrap_or(1000);

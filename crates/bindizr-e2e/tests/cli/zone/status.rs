@@ -3,7 +3,7 @@ use crate::common::TestApp;
 /// Verify that the CLI reports zone status.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_status_returns_current_serial_via_cli() {
+async fn zone_status_returns_current_serial() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("status.example");
 

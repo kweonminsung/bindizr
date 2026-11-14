@@ -3,7 +3,6 @@ use domain::rdata::Soa;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common;
 use crate::common::{TestApp, dns};
 
 /// Verify that a root MNAME survives creation, preview, update, history and wire/export encoding.
@@ -49,7 +48,7 @@ async fn root_primary_name_round_trips_through_management_and_dns() {
             .push((dns::parse_name(&zone_name).unwrap(), rtype))
             .unwrap();
         let query = question.finish();
-        let response = common::exchange_tcp(app.dns_port(), &query).unwrap();
+        let response = dns::exchange_tcp(app.dns_port(), &query).unwrap();
         let response = Message::from_octets(response.as_slice()).unwrap();
         let soa = response
             .answer()

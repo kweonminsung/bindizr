@@ -234,7 +234,6 @@ pub struct ReadTcpMessageError(#[from] io::Error);
 #[cfg(test)]
 mod tests {
     use bindizr_core::dns::message::{Name, Opcode, OptRcode, ParsedQuery, Rtype};
-    use bindizr_core::dns::query;
 
     use super::*;
 

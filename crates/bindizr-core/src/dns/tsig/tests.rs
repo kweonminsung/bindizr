@@ -447,12 +447,12 @@ fn tsig_errors_with_distinct_long_names_fit_udp() {
                                 message.opt().map(|opt| opt.dnssec_ok()),
                                 edns.map(|_| true)
                             );
-                            let (rcode, error, time_signed, mac, other) =
+                            let (rcode, tsig_rcode, time_signed, mac, other) =
                                 extract_response_tsig(&response);
 
                             assert_eq!(rcode, Rcode::NOTAUTH);
                             assert_eq!(
-                                error,
+                                tsig_rcode,
                                 if stale {
                                     TsigRcode::BADTIME
                                 } else {
@@ -827,10 +827,10 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
     let response = build_failed_response(&query, error, ResponseLimit::STREAM);
-    let (rcode, error, time_signed, mac, other) = extract_response_tsig(&response);
+    let (rcode, tsig_rcode, time_signed, mac, other) = extract_response_tsig(&response);
 
     assert_eq!(rcode, Rcode::NOTAUTH);
-    assert_eq!(error, TsigRcode::BADTIME);
+    assert_eq!(tsig_rcode, TsigRcode::BADTIME);
     assert_eq!(time_signed, stale);
     assert_eq!(other.len(), 6);
     assert!(!mac.is_empty());
@@ -1014,12 +1014,12 @@ fn truncated_requests_follow_validation_order() {
                             matches!(&error, TsigError::Rejected { rcode, .. } if *rcode == expected)
                         );
                         let response = build_failed_response(&query, error, ResponseLimit::STREAM);
-                        let (rcode, error, time_signed, mac, other) =
+                        let (rcode, tsig_rcode, time_signed, mac, other) =
                             extract_response_tsig(&response);
 
                         assert_eq!(rcode, Rcode::NOTAUTH);
                         assert_eq!(
-                            error, expected,
+                            tsig_rcode, expected,
                             "{algorithm:?}, MAC {mac_len}, offset {offset}, corrupt {corrupt}"
                         );
                         assert_eq!(

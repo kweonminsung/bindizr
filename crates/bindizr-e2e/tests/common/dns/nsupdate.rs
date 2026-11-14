@@ -7,8 +7,8 @@ use domain::base::message_builder::AdditionalBuilder;
 use domain::base::{MessageBuilder, Name, Record, Ttl, UnknownRecordData};
 use domain::rdata::{A, Cname, Dname, Ns, Soa};
 
-use super::tsig;
-use super::tsig::SigningKey;
+use crate::common::dns::tsig;
+use crate::common::dns::tsig::SigningKey;
 
 /// One record of an update section, in the class that gives it its meaning
 /// (RFC 2136, Section 2.5).
@@ -89,13 +89,13 @@ pub(crate) enum PrerequisiteRecord {
 /// Send a UDP UPDATE, checking the response ID and optional TSIG.
 pub(crate) fn send_update_udp(
     port: u16,
-    zone: &str,
+    zone_name: &str,
     prerequisites: &[PrerequisiteRecord],
     updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
     let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(1);
-    let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
+    let request = build_update(query_id, zone_name, Class::IN, prerequisites, updates)?;
     let response =
         super::exchange_request(request, key, |message| super::exchange_udp(port, message))?;
     Ok(response.header().rcode())
@@ -104,13 +104,13 @@ pub(crate) fn send_update_udp(
 /// Send a TCP UPDATE, checking the response ID and optional TSIG.
 pub(crate) fn send_update_tcp(
     port: u16,
-    zone: &str,
+    zone_name: &str,
     prerequisites: &[PrerequisiteRecord],
     updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
     let query_id = (process::id() as u16).wrapping_add(port);
-    let request = build_update(query_id, zone, Class::IN, prerequisites, updates)?;
+    let request = build_update(query_id, zone_name, Class::IN, prerequisites, updates)?;
     let response =
         super::exchange_request(request, key, |message| super::exchange_tcp(port, message))?;
     Ok(response.header().rcode())
@@ -119,7 +119,7 @@ pub(crate) fn send_update_tcp(
 /// Send a signed two-zone UPDATE, invalid under RFC 2136, Section 3.1.1.
 pub(crate) fn send_signed_update_with_two_zones(
     port: u16,
-    zone: &str,
+    zone_name: &str,
     key: &SigningKey,
 ) -> Result<(Rcode, bool), String> {
     let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(2);
@@ -130,7 +130,7 @@ pub(crate) fn send_signed_update_with_two_zones(
 
     for _ in 0..2 {
         question
-            .push((&super::parse_name(zone)?, Rtype::SOA, Class::IN))
+            .push((&super::parse_name(zone_name)?, Rtype::SOA, Class::IN))
             .map_err(|error| error.to_string())?;
     }
 
@@ -147,12 +147,12 @@ pub(crate) fn send_signed_update_with_two_zones(
 /// Send a signed UPDATE with the specified EDNS version.
 pub(crate) fn send_signed_update_with_edns_version(
     port: u16,
-    zone: &str,
+    zone_name: &str,
     key: &SigningKey,
     version: u8,
 ) -> Result<(OptRcode, bool), String> {
     let query_id = (process::id() as u16).wrapping_add(port).wrapping_add(3);
-    let mut builder = build_update(query_id, zone, Class::IN, &[], &[])?;
+    let mut builder = build_update(query_id, zone_name, Class::IN, &[], &[])?;
     builder
         .opt(|opt| {
             opt.set_udp_payload_size(4096);
@@ -175,7 +175,7 @@ pub(crate) fn send_signed_update_with_edns_version(
 /// Build zone, prerequisite, and update sections (RFC 2136, Section 2.1).
 pub(crate) fn build_update(
     query_id: u16,
-    zone: &str,
+    zone_name: &str,
     zone_class: Class,
     prerequisites: &[PrerequisiteRecord],
     updates: &[UpdateRecord],
@@ -188,7 +188,7 @@ pub(crate) fn build_update(
 
     let mut question = builder.question();
     question
-        .push((&super::parse_name(zone)?, Rtype::SOA, zone_class))
+        .push((&super::parse_name(zone_name)?, Rtype::SOA, zone_class))
         .map_err(|error| error.to_string())?;
 
     let mut answer = question.answer();

@@ -1,5 +1,6 @@
-use super::{ParseRecordValueError, value};
+use super::ParseRecordValueError;
 use crate::dns::name;
+use crate::dns::record::value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NsRecordValue<'a> {
@@ -17,7 +18,7 @@ impl<'a> NsRecordValue<'a> {
     }
 
     /// Render the NS value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         name::to_fqdn_lowercase(self.target)
     }
 }

@@ -8,7 +8,7 @@ use crate::common::TestApp;
 /// Verify that root targets round-trip through CLI writes and listing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn root_record_targets_round_trip_via_cli() {
+async fn root_record_targets_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -76,7 +76,7 @@ async fn root_record_targets_round_trip_via_cli() {
 /// Verify that name escapes in CLI arguments are preserved across the daemon socket and record listing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn escaped_record_targets_round_trip_via_cli() {
+async fn escaped_record_targets_round_trip() {
     let app = TestApp::start_local().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -135,7 +135,7 @@ async fn escaped_record_targets_round_trip_via_cli() {
 /// Verify that records are created, retrieved, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_supports_create_read_and_delete_via_cli() {
+async fn record_supports_create_read_and_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli.example");
 
@@ -200,7 +200,7 @@ async fn record_supports_create_read_and_delete_via_cli() {
 /// Verify that record update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_changes_only_passed_fields_via_cli() {
+async fn record_update_changes_only_passed_fields() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-record-update.example");
 
@@ -261,7 +261,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
 /// Verify that record update retype clears incompatible priority via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_retype_clears_incompatible_priority_via_cli() {
+async fn record_update_retype_clears_incompatible_priority() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype.example");
 
@@ -664,7 +664,7 @@ async fn record_listing_filters_by_zone_and_type() {
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_rejects_invalid_values_via_cli() {
+async fn record_rejects_invalid_values() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("validation.example");
 
@@ -695,7 +695,7 @@ async fn record_rejects_invalid_values_via_cli() {
 /// Verify that record update retype without value is rejected via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_update_rejects_retype_without_value_via_cli() {
+async fn record_update_rejects_retype_without_value() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-retype-noval.example");
 

@@ -177,7 +177,7 @@ async fn listeners_finish_in_flight_updates_before_shutdown_returns() {
         let records = record::list_by_filter_with_zone(
             &cx,
             &caller,
-            RecordFilter {
+            &RecordFilter {
                 zone_name: Some("example.com".to_string()),
                 name: Some("www".to_string()),
                 ..Default::default()

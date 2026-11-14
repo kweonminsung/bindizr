@@ -139,7 +139,7 @@ pub(crate) async fn update_secondary(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
-    let secondary = secondary::update(&cx, &caller, &params.name, body).await?;
+    let secondary = secondary::update(&cx, &caller, &params.name, &body).await?;
     let response = SingleSecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -226,6 +226,6 @@ pub(crate) async fn list_secondary_transfers(
     Path(params): Path<NameParams>,
     Query(filter): Query<SecondaryTransferFilter>,
 ) -> Result<Response, ApiError> {
-    let response = secondary::list_transfers(&cx, &caller, &params.name, filter).await?;
+    let response = secondary::list_transfers(&cx, &caller, &params.name, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

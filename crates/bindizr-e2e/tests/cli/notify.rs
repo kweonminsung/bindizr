@@ -5,7 +5,7 @@ use crate::common::TestApp;
 /// Verify that the CLI notifies all zones or one named zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn notify_supports_all_zones_and_one_zone_via_cli() {
+async fn notify_supports_all_zones_and_one_zone() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-notify.example");
 

@@ -2,12 +2,13 @@
 //! `check-ds`, and the DS gate on `disable`.
 
 use crate::cli::common;
-use crate::common::{DsRecord, FakeParent, TestApp};
+use crate::common::TestApp;
+use crate::common::dns::{DsRecord, FakeParent};
 
 /// Verify that the CLI checks the parent DS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_checks_parent_ds_via_cli() {
+async fn zone_dnssec_checks_parent_ds() {
     let app = TestApp::start_local().await;
 
     let parent = FakeParent::start();

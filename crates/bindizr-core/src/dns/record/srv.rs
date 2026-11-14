@@ -1,6 +1,7 @@
-use super::value::DEFAULT_PRIORITY;
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use super::{EncodeRdataError, ParseRecordValueError, Rdata};
 use crate::dns::name;
+use crate::dns::record::value;
+use crate::dns::record::value::DEFAULT_PRIORITY;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SrvRecordValue<'a> {
@@ -38,7 +39,7 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 2782).
-    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(6);
         rdata.extend_from_slice(&self.priority.to_be_bytes());
         rdata.extend_from_slice(&self.weight.to_be_bytes());
@@ -48,7 +49,7 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     /// Validate the fields of this SRV value.
-    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+    pub fn validate(self) -> Result<(), ParseRecordValueError> {
         if self.target.trim() == "." {
             return Ok(());
         }
@@ -57,12 +58,12 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     /// The host this record names, as stored; `.` when the service is absent.
-    pub fn target(&self) -> &'a str {
+    pub fn target(self) -> &'a str {
         self.target
     }
 
     /// Render the SRV value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         format!(
             "{} {} {} {}",
             self.priority,
@@ -74,7 +75,7 @@ impl<'a> SrvRecordValue<'a> {
 
     /// The value column's form: `<weight> <port> <target>` with a case-preserving
     /// FQDN target.
-    pub fn to_stored(&self) -> String {
+    pub fn to_stored(self) -> String {
         format!(
             "{} {} {}",
             self.weight,

@@ -19,8 +19,8 @@ pub async fn create(
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = super::normalize_secondary_name(&request.name)?;
-    let address = super::normalize_secondary_address(&request.address)?;
+    let name = super::normalize_name(&request.name)?;
+    let address = super::normalize_address(&request.address)?;
 
     // Unlocked read to learn the FK target; the constraint backstops.
     let notify_tsig_key = match request.notify_key_name.as_deref() {
@@ -45,7 +45,7 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create secondary").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -91,7 +91,7 @@ pub async fn create(
         Ok(secondary)
     }
     .await;
-    let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
+    let secondary = transaction::finish_tx(tx, apply_result, "failed to create secondary").await?;
 
     Ok(SecondaryResponse::from_secondary(
         &secondary,

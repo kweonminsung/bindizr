@@ -53,7 +53,7 @@ pub(crate) async fn check_installation(
     let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
-        match dns_client::probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout)
+        match dns_client::probe::probe_server(&config.dns.catalog_zone_name, dns_addr, timeout)
             .await
         {
             Ok(serial) => (

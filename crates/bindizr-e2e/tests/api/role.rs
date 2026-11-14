@@ -9,7 +9,7 @@ use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 /// Verify that roles and grants can be managed over HTTP, and that both are guarded.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn role_grants_support_create_list_and_revoke_over_http() {
+async fn role_grants_support_create_list_and_revoke() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..Default::default()

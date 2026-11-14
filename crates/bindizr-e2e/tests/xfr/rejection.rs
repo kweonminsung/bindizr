@@ -12,10 +12,10 @@ use domain::tsig::{Algorithm, ClientTransaction};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use super::{common, tls};
 use crate::common::dns::tsig;
 use crate::common::dns::tsig::{KeyRole, SigningKey};
 use crate::common::{TestApp, TestAppOptions, dns};
+use crate::xfr::{common, tls};
 
 /// Verify that TSIG error metrics follow the final RCODE, including overflow fallback.
 #[tokio::test]
@@ -89,7 +89,7 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
 
             let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
 
-            let before = common::counter(&app, metric, &labels).await;
+            let before = common::read_counter(&app, metric, &labels).await;
 
             let mut builder = MessageBuilder::new_vec();
             builder.header_mut().set_id(8945);
@@ -127,7 +127,10 @@ async fn tsig_error_metrics_follow_the_encoded_response() {
 
             assert_eq!(response.header().rcode(), expected);
             assert!(response.as_slice().len() <= usize::from(advertised));
-            assert_eq!(common::counter(&app, metric, &labels).await, before + 1.0);
+            assert_eq!(
+                common::read_counter(&app, metric, &labels).await,
+                before + 1.0
+            );
         }
     }
 }
@@ -156,7 +159,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
     .unwrap();
     let labels = [r#"result="servfail""#];
 
-    let before = common::counter(&app, "bindizr_nsupdate_requests_total", &labels).await;
+    let before = common::read_counter(&app, "bindizr_nsupdate_requests_total", &labels).await;
 
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(8945);
@@ -192,7 +195,7 @@ async fn questionless_updates_count_tsig_encoding_failure_as_servfail() {
     assert_eq!(response.header_counts().qdcount(), 0);
     assert!(response.as_slice().len() <= 512);
     assert_eq!(
-        common::counter(&app, "bindizr_nsupdate_requests_total", &labels).await,
+        common::read_counter(&app, "bindizr_nsupdate_requests_total", &labels).await,
         before + 1.0,
     );
 }
@@ -239,8 +242,8 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
             r#"result="truncated""#,
         ];
 
-        let failed_before = common::counter(&app, "bindizr_xfr_total", &failed).await;
-        let truncated_before = common::counter(&app, "bindizr_xfr_total", &truncated).await;
+        let failed_before = common::read_counter(&app, "bindizr_xfr_total", &failed).await;
+        let truncated_before = common::read_counter(&app, "bindizr_xfr_total", &truncated).await;
 
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_id(5936);
@@ -272,11 +275,11 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
                 Err(error) if matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock),
             ));
             assert_eq!(
-                common::counter(&app, "bindizr_xfr_total", &failed).await,
+                common::read_counter(&app, "bindizr_xfr_total", &failed).await,
                 failed_before + 1.0
             );
             assert_eq!(
-                common::counter(&app, "bindizr_xfr_total", &truncated).await,
+                common::read_counter(&app, "bindizr_xfr_total", &truncated).await,
                 truncated_before
             );
         } else {
@@ -288,11 +291,11 @@ async fn udp_axfr_counts_encoding_failure_before_truncation() {
             client.answer(&mut response, Time48::now()).unwrap();
 
             assert_eq!(
-                common::counter(&app, "bindizr_xfr_total", &failed).await,
+                common::read_counter(&app, "bindizr_xfr_total", &failed).await,
                 failed_before
             );
             assert_eq!(
-                common::counter(&app, "bindizr_xfr_total", &truncated).await,
+                common::read_counter(&app, "bindizr_xfr_total", &truncated).await,
                 truncated_before + 1.0
             );
         }
@@ -354,9 +357,8 @@ async fn questionless_updates_use_readable_edns_for_tsig_errors() {
 
             for response in [
                 dns::exchange_udp(app.dns_port(), &request).unwrap(),
-                crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
-                crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
-                    .unwrap(),
+                dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
 
@@ -412,9 +414,8 @@ async fn unreadable_bodies_receive_header_only_responses_on_every_transport() {
         for request in [truncated_record, truncated_question, trailing_data] {
             for response in [
                 dns::exchange_udp(app.dns_port(), &request).unwrap(),
-                crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
-                crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
-                    .unwrap(),
+                dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
 
@@ -482,13 +483,13 @@ async fn questionless_queries_preserve_edns_and_tsig() {
                         ),
                         (
                             dns::exchange_request(request.clone(), key, |message| {
-                                crate::common::exchange_tcp(app.dns_port(), message)
+                                dns::exchange_tcp(app.dns_port(), message)
                             }),
                             plain_rcode,
                         ),
                         (
                             dns::exchange_request(request, key, |message| {
-                                crate::common::exchange_xot(
+                                dns::exchange_tls(
                                     app.dns_tls_port(),
                                     message,
                                     tls::dot_client(&app),
@@ -558,7 +559,7 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
 
         for response in [
             dns::exchange_udp(app.dns_port(), &request).unwrap(),
-            crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &request).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
             assert_eq!(response.header().opcode(), Opcode::from_int(15));
@@ -568,8 +569,7 @@ async fn unsupported_opcodes_return_refusals_without_questions() {
         }
 
         let response =
-            crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
-                .unwrap();
+            dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap();
         let response = Message::from_octets(response).unwrap();
 
         assert_eq!(response.header().rcode(), Rcode::REFUSED);
@@ -650,13 +650,8 @@ async fn questionless_tsig_failures_keep_their_specific_errors() {
 
                 for response in [
                     dns::exchange_udp(app.dns_port(), &request).unwrap(),
-                    crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
-                    crate::common::exchange_xot(
-                        app.dns_tls_port(),
-                        &request,
-                        tls::dot_client(&app),
-                    )
-                    .unwrap(),
+                    dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+                    dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
                 ] {
                     let response = Message::from_octets(response).unwrap();
 
@@ -724,7 +719,7 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
 
             for response in [
                 dns::exchange_udp(app.dns_port(), &request).unwrap(),
-                crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
+                dns::exchange_tcp(app.dns_port(), &request).unwrap(),
             ] {
                 let response = Message::from_octets(response).unwrap();
                 assert_eq!(response.header().rcode(), Rcode::NOTIMP);
@@ -733,8 +728,7 @@ async fn unsupported_opcodes_return_refusals_for_opaque_bodies() {
             }
 
             let response =
-                crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
-                    .unwrap();
+                dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap();
             let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().rcode(), Rcode::REFUSED);
@@ -793,9 +787,8 @@ async fn questionless_malformed_extensions_receive_formerr() {
 
         for response in [
             dns::exchange_udp(app.dns_port(), &request).unwrap(),
-            crate::common::exchange_tcp(app.dns_port(), &request).unwrap(),
-            crate::common::exchange_xot(app.dns_tls_port(), &request, tls::dot_client(&app))
-                .unwrap(),
+            dns::exchange_tcp(app.dns_port(), &request).unwrap(),
+            dns::exchange_tls(app.dns_tls_port(), &request, tls::dot_client(&app)).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 

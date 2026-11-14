@@ -10,10 +10,10 @@ use chrono::Utc;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
-use super::change_set::{ZoneChangeSet, ZoneOperations};
 use super::*;
 use crate::authorization::Caller;
 use crate::error::ErrorCode;
+use crate::external_dns::change_set::{ZoneChangeSet, ZoneOperations};
 use crate::types::{
     ApplyExternalDnsChangesRequest, CreateRoleGrantRequest, CreateRoleRequest, CreateTokenRequest,
     ExternalDnsRecord, ExternalDnsRecordUpdate, RoleGrantResponse,

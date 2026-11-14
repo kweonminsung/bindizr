@@ -7,10 +7,10 @@ use bindizr_core::dns::name::OwnerName;
 use bindizr_core::model::role_grant::Action;
 use bindizr_db::LockLevel;
 
-use super::change_set;
-use super::change_set::ZoneChangeSet;
 use crate::authorization::{Caller, RecordAccess};
 use crate::error::ServiceError;
+use crate::external_dns::change_set;
+use crate::external_dns::change_set::ZoneChangeSet;
 use crate::types::{ApplyExternalDnsChangesRequest, ApplyExternalDnsChangesResponse};
 use crate::{Context, dnssec, notify, record, serial, time, transaction, zone};
 
@@ -70,12 +70,12 @@ pub async fn apply_changes(
                 .deletes
                 .iter()
                 .map(|operation| (Action::RecordDelete, operation));
-            let writes: Vec<RecordAccess<'_>> = adds
+            let writes: Vec<RecordAccess> = adds
                 .chain(deletes)
                 .map(|(action, operation)| RecordAccess {
                     action,
                     relative_name: operation.name.clone(),
-                    record_type: Some(&operation.record_type),
+                    record_type: Some(operation.record_type),
                 })
                 .collect();
 

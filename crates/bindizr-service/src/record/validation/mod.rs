@@ -32,7 +32,7 @@ pub(crate) fn parse_record_fields(
     let ttl = ttl.map(ttl::validate_record_ttl).transpose()?;
     let priority = record_type.stored_priority(priority);
     let value = value
-        .to_encoded_value(&record_type, priority)
+        .to_encoded_value(record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
     validate_management_value(record_type, &value)?;
@@ -82,14 +82,14 @@ pub(crate) fn normalize_record_owner_name(
 /// comparison keeps protocol and API callers agreeing on "already exists".
 fn has_matching_rdata<'a>(
     records: impl IntoIterator<Item = &'a Record>,
-    record_type: &RecordType,
+    record_type: RecordType,
     value: &str,
     priority: Option<i32>,
 ) -> bool {
     // One comparison form for the candidate, however many rows it meets.
     let wanted = record_type.canonical_value(value, priority);
     records.into_iter().any(|record| {
-        record.record_type == *record_type
+        record.record_type == record_type
             && record_type.canonical_value(&record.value, record.priority) == wanted
     })
 }
@@ -98,7 +98,7 @@ fn has_matching_rdata<'a>(
 pub(crate) fn validate_record_constraints(
     records: &[Record],
     owner_name: &OwnerName,
-    record_type: &RecordType,
+    record_type: RecordType,
     value: &str,
     ttl: Ttl,
     priority: Option<i32>,
@@ -108,7 +108,7 @@ pub(crate) fn validate_record_constraints(
         .validate_value(value, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
-    if *record_type == RecordType::Cname && owner_name.is_apex() {
+    if record_type == RecordType::Cname && owner_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "CNAME record cannot have '@' as name",
         ));
@@ -130,7 +130,7 @@ pub(crate) fn validate_record_constraints(
         )));
     }
 
-    if *record_type == RecordType::Wks
+    if record_type == RecordType::Wks
         && records_at_name.iter().any(|record| {
             record.record_type == RecordType::Wks && record.is_replaced_by(value, priority)
         })
@@ -140,11 +140,13 @@ pub(crate) fn validate_record_constraints(
         ));
     }
 
-    if *record_type == RecordType::Mx {
-        let adding_null_mx = MxRecordValue::parse(value, priority).is_ok_and(|mx| mx.is_null());
+    if record_type == RecordType::Mx {
+        let adding_null_mx =
+            MxRecordValue::parse(value, priority).is_ok_and(MxRecordValue::is_null);
         let has_existing_null_mx = records_at_name.iter().any(|record| {
             record.record_type == RecordType::Mx
-                && MxRecordValue::parse(&record.value, record.priority).is_ok_and(|mx| mx.is_null())
+                && MxRecordValue::parse(&record.value, record.priority)
+                    .is_ok_and(MxRecordValue::is_null)
         });
         let has_existing_mx = records_at_name
             .iter()
@@ -158,7 +160,7 @@ pub(crate) fn validate_record_constraints(
     }
 
     if !records_at_name.is_empty() {
-        if *record_type == RecordType::Cname {
+        if record_type == RecordType::Cname {
             return Err(ServiceError::record_conflict(format!(
                 "another record with name '{owner_name}' already exists in this zone, so CNAME cannot be used"
             )));
@@ -181,7 +183,7 @@ pub(crate) fn validate_record_constraints(
             .any(|record| record.record_type == wanted)
     };
 
-    if *record_type == RecordType::Dname {
+    if record_type == RecordType::Dname {
         if has_at_name(RecordType::Dname) {
             return Err(ServiceError::record_conflict(format!(
                 "a DNAME record already exists at '{owner_name}'; only one DNAME is allowed per name"
@@ -194,7 +196,7 @@ pub(crate) fn validate_record_constraints(
         }
     }
 
-    if *record_type == RecordType::Ns && !owner_name.is_apex() && has_at_name(RecordType::Dname) {
+    if record_type == RecordType::Ns && !owner_name.is_apex() && has_at_name(RecordType::Dname) {
         return Err(ServiceError::record_conflict(format!(
             "NS records cannot delegate '{owner_name}' beside its DNAME record"
         )));
@@ -202,7 +204,7 @@ pub(crate) fn validate_record_constraints(
 
     // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
     // DS lives in its parent; the final-state check verifies its NS delegation.
-    if *record_type == RecordType::Ds && owner_name.is_apex() {
+    if record_type == RecordType::Ds && owner_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "DS records secure a child delegation; the zone's own DS belongs in the parent zone",
         ));
@@ -211,7 +213,7 @@ pub(crate) fn validate_record_constraints(
     // RFC 2181, Section 5.2: one TTL per record set.
     if let Some(conflicting) = records_at_name
         .iter()
-        .find(|record| record.record_type == *record_type && record.ttl != ttl)
+        .find(|record| record.record_type == record_type && record.ttl != ttl)
     {
         return Err(ServiceError::record_conflict(format!(
             "TTL {} does not match the existing {} records for '{}' (TTL {}); records sharing a name and type share one TTL",
@@ -250,7 +252,7 @@ pub(crate) async fn validate_add_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     owner_name: &OwnerName,
-    record_type: &RecordType,
+    record_type: RecordType,
     value: &str,
     ttl: Ttl,
     priority: Option<i32>,

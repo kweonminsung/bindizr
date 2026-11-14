@@ -1,8 +1,9 @@
 //! SSHFP record values (RFC 4255): SSH host-key fingerprints, verifiable
 //! only from a signed zone.
 
-use super::value::MAX_RECORD_RDATA;
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use super::{EncodeRdataError, ParseRecordValueError, Rdata};
+use crate::dns::record::value;
+use crate::dns::record::value::MAX_RECORD_RDATA;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SshfpRecordValue {

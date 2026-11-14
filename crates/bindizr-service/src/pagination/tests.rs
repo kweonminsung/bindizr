@@ -212,7 +212,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let zones = zone::list_by_filter(
             &cx,
             &caller,
-            ZoneFilter {
+            &ZoneFilter {
                 limit,
                 offset,
                 ..Default::default()
@@ -223,7 +223,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let records = record::list_by_filter_with_zone(
             &cx,
             &caller,
-            RecordFilter {
+            &RecordFilter {
                 limit,
                 offset,
                 ..Default::default()
@@ -234,7 +234,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let audits = audit::list(
             &cx,
             &caller,
-            AuditLogFilter {
+            &AuditLogFilter {
                 limit,
                 offset,
                 ..Default::default()
@@ -302,7 +302,7 @@ async fn listings_preserve_unbounded_windows_across_sql_and_collections() {
         let records = record::list_by_filter_with_zone(
             &cx,
             &caller,
-            RecordFilter {
+            &RecordFilter {
                 signed: Some(true),
                 limit,
                 offset,

@@ -4,8 +4,9 @@ use std::str;
 
 pub use regexp::ValidateNaptrRegexpError;
 
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use super::{EncodeRdataError, ParseRecordValueError, Rdata};
 use crate::dns::name;
+use crate::dns::record::value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NaptrRecordValue<'a> {

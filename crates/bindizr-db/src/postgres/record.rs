@@ -252,8 +252,7 @@ pub(crate) async fn list_by_names_tx(
             query = query.bind(name);
         }
 
-        let mut rows = query.fetch_all(&mut **tx).await?;
-        records.append(&mut rows);
+        records.extend(query.fetch_all(&mut **tx).await?);
     }
 
     Ok(records)
@@ -262,7 +261,7 @@ pub(crate) async fn list_by_names_tx(
 /// List matching records with their zone metadata.
 pub(crate) async fn list_by_filter_with_zone(
     pool: &Pool<Postgres>,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -374,7 +373,7 @@ pub(crate) async fn count_tx(
 /// Count records matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Postgres>,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 

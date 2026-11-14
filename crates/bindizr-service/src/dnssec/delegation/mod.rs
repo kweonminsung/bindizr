@@ -10,10 +10,11 @@ use bindizr_db::LockLevel;
 use chrono::Utc;
 use thiserror::Error;
 
-use super::{SignedZone, status};
+use super::SignedZone;
 use crate::authorization::Caller;
 use crate::dns_client::ds;
 use crate::dns_client::ds::ParentDs;
+use crate::dnssec::status;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecDelegationResponse, DnssecStatusResponse, DsState,

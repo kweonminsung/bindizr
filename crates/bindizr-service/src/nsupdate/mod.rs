@@ -176,7 +176,7 @@ pub async fn apply(
                 &[RecordAccess {
                     action: Action::RecordRead,
                     relative_name: prerequisite.name().clone(),
-                    record_type: record_type.as_ref(),
+                    record_type,
                 }],
             )?;
             prerequisite::evaluate_prerequisite(&served, &prerequisite, &mut wanted)?;

@@ -17,7 +17,7 @@ impl AaaaRecordValue {
     }
 
     /// Render the AAAA value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         self.0.to_string()
     }
 }

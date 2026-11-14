@@ -13,7 +13,7 @@ use domain::tsig::ClientTransaction;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 
-use super::tsig::SigningKey;
+use crate::common::dns::tsig::SigningKey;
 
 /// Return the original response after checking its ID and optional TSIG.
 pub(crate) fn exchange_request(
@@ -69,7 +69,7 @@ pub(crate) fn exchange_tcp(port: u16, message: &[u8]) -> Result<Vec<u8>, String>
 }
 
 /// Send one TLS message and return the first response frame.
-pub(crate) fn exchange_xot(
+pub(crate) fn exchange_tls(
     port: u16,
     message: &[u8],
     client: ClientConfig,

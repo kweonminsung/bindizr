@@ -166,7 +166,7 @@ pub async fn list_by_names_tx(
 /// List matching records with their zone metadata.
 pub async fn list_by_filter_with_zone(
     db: &Db,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<Vec<RecordWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::list_by_filter_with_zone(pool, filter).await,
@@ -185,7 +185,7 @@ pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, 
 }
 
 /// Count records matching the filter.
-pub async fn count_by_filter(db: &Db, filter: RecordFilter) -> Result<u64, DatabaseError> {
+pub async fn count_by_filter(db: &Db, filter: &RecordFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::count_by_filter(pool, filter).await,
         Backend::Postgres(pool) => postgres::record::count_by_filter(pool, filter).await,

@@ -5,7 +5,7 @@ use crate::common::TestApp;
 /// Verify that the CLI manages DNSSEC policies.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_policy_supports_create_update_and_delete_via_cli() {
+async fn dnssec_policy_supports_create_update_and_delete() {
     let app = TestApp::start().await;
     let policy_name = format!("{}-cli", app.namespace());
 

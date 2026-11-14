@@ -51,7 +51,7 @@ fn group_record_sets(
                 ttl: record.ttl,
             },
             value: RecordDiffValueResponse {
-                value: types::build_display_value(&record.value, &record.record_type),
+                value: types::build_display_value(record.record_type, &record.value),
                 ttl: record.ttl,
                 priority: record.priority,
             },

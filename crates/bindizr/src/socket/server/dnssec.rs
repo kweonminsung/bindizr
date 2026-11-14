@@ -175,7 +175,7 @@ pub(crate) async fn import_dnssec_keys(
         cx,
         &Caller::socket(),
         &zone::normalize_name(zone_name)?,
-        request,
+        &request,
     )
     .await?;
 

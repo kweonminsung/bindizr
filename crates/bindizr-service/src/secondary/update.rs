@@ -17,15 +17,15 @@ pub async fn update(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    request: UpdateSecondaryRequest,
+    request: &UpdateSecondaryRequest,
 ) -> Result<SecondaryResponse, ServiceError> {
     caller.authorize_action(Action::SecondaryManage)?;
 
-    let name = super::normalize_secondary_name(name)?;
+    let name = super::normalize_name(name)?;
     let address = request
         .address
         .as_deref()
-        .map(super::normalize_secondary_address)
+        .map(super::normalize_address)
         .transpose()?;
 
     if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
@@ -55,7 +55,7 @@ pub async fn update(
     // Read and write under the row lock, or two partial updates would
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -129,7 +129,7 @@ pub async fn update(
         Ok(secondary)
     }
     .await;
-    let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
+    let secondary = transaction::finish_tx(tx, apply_result, "failed to update secondary").await?;
 
     super::lookup_response(cx, &secondary).await
 }

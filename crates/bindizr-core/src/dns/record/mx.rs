@@ -1,6 +1,7 @@
-use super::value::DEFAULT_PRIORITY;
-use super::{EncodeRdataError, ParseRecordValueError, Rdata, value};
+use super::{EncodeRdataError, ParseRecordValueError, Rdata};
 use crate::dns::name;
+use crate::dns::record::value;
+use crate::dns::record::value::DEFAULT_PRIORITY;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MxRecordValue<'a> {
@@ -41,7 +42,7 @@ impl<'a> MxRecordValue<'a> {
     }
 
     /// Validate the fields of this MX value.
-    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
+    pub fn validate(self) -> Result<(), ParseRecordValueError> {
         if self.target.trim() == "." {
             if self.priority != 0 {
                 return Err(ParseRecordValueError::NullMxPriority);
@@ -53,17 +54,17 @@ impl<'a> MxRecordValue<'a> {
     }
 
     /// Null MX (RFC 7505): priority 0 with target `.`.
-    pub fn is_null(&self) -> bool {
+    pub fn is_null(self) -> bool {
         self.priority == 0 && self.target.trim() == "."
     }
 
     /// Render the MX value in canonical text form.
-    pub fn canonical(&self) -> String {
+    pub fn canonical(self) -> String {
         format!("{} {}", self.priority, name::to_fqdn_lowercase(self.target))
     }
 
     /// The value column's form: the target host as a lowercase FQDN.
-    pub fn to_stored(&self) -> String {
+    pub fn to_stored(self) -> String {
         name::to_fqdn_lowercase(self.target)
     }
 }

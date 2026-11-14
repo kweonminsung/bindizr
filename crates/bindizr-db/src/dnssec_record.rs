@@ -171,7 +171,7 @@ pub async fn count_expired_before(db: &Db, cutoff: DateTime<Utc>) -> Result<u64,
 /// List matching derived DNSSEC records with their zone metadata.
 pub async fn list_by_filter_with_zone(
     db: &Db,
-    filter: DnssecRecordFilter,
+    filter: &DnssecRecordFilter,
 ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_record::list_by_filter_with_zone(pool, filter).await,
@@ -194,7 +194,7 @@ pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, 
 }
 
 /// Count derived DNSSEC records matching the filter.
-pub async fn count_by_filter(db: &Db, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
+pub async fn count_by_filter(db: &Db, filter: &DnssecRecordFilter) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_record::count_by_filter(pool, filter).await,
         Backend::Postgres(pool) => postgres::dnssec_record::count_by_filter(pool, filter).await,

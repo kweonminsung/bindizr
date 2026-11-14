@@ -52,7 +52,7 @@ pub(crate) async fn list_records(
     Query(mut filter): Query<RecordFilter>,
 ) -> Result<Response, ApiError> {
     filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = record::list_by_filter_with_zone(&cx, &caller, filter).await?;
+    let response = record::list_by_filter_with_zone(&cx, &caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

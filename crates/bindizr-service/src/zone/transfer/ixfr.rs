@@ -181,8 +181,6 @@ fn validate_delta(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::Serial;
-
     use super::*;
 
     /// Wrap plain numbers as serials.

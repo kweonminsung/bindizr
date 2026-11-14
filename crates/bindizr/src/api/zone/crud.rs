@@ -38,7 +38,7 @@ pub(crate) async fn list_zones(
     Query(mut filter): Query<ZoneFilter>,
 ) -> Result<Response, ApiError> {
     filter.limit = filter.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = zone::list_by_filter(&cx, &caller, filter).await?;
+    let response = zone::list_by_filter(&cx, &caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

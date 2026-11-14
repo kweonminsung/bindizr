@@ -48,7 +48,7 @@ pub fn has_pattern_coverage(outer: &str, inner: &str) -> bool {
 }
 
 /// Check whether a grant's type filter permits the requested record type.
-pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
+pub fn matches_types(types: &str, record_type: Option<RecordType>) -> bool {
     if types == MATCH_ANY {
         return true;
     }

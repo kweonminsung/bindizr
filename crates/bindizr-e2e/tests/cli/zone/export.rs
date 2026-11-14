@@ -4,7 +4,7 @@ use crate::common::TestApp;
 /// Verify that the CLI exports a zone file.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_export_returns_zone_file_via_cli() {
+async fn zone_export_returns_zone_file() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("export.example");
 

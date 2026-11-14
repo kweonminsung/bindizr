@@ -10,8 +10,8 @@ use bindizr_core::model::record::{Record, RecordId, RecordKey, RecordType};
 use bindizr_core::model::zone::Zone;
 use chrono::Utc;
 
-use super::policy;
 use crate::error::ServiceError;
+use crate::external_dns::policy;
 use crate::types::{ApplyExternalDnsChangesRequest, ExternalDnsRecord};
 use crate::{record, ttl};
 
@@ -77,7 +77,7 @@ fn normalize_ttl(ttl: Option<i64>) -> Result<Option<Ttl>, ServiceError> {
 /// Require nonempty values and exactly one value for a CNAME group.
 fn validate_record_set_shape(
     record: &ExternalDnsRecord,
-    record_type: &RecordType,
+    record_type: RecordType,
 ) -> Result<(), ServiceError> {
     if record.values.is_empty() {
         return Err(ServiceError::invalid_input(format!(
@@ -85,7 +85,7 @@ fn validate_record_set_shape(
             record.name, record_type
         )));
     }
-    if *record_type == RecordType::Cname && record.values.len() > 1 {
+    if record_type == RecordType::Cname && record.values.len() > 1 {
         return Err(ServiceError::invalid_record_value(format!(
             "CNAME record '{}' must have exactly one value",
             record.name
@@ -100,7 +100,7 @@ pub(crate) fn parse_record_set(record: &ExternalDnsRecord) -> Result<RecordSet, 
     let record_type = parse_supported_record_type(&record.record_type)?;
     let name = policy::normalize_lookup_name(&record.name)?;
     let ttl = normalize_ttl(record.ttl)?;
-    validate_record_set_shape(record, &record_type)?;
+    validate_record_set_shape(record, record_type)?;
 
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
     let mut seen = HashSet::new();
@@ -130,7 +130,7 @@ pub(crate) fn adjust_record_set(
 ) -> Result<ExternalDnsRecord, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let ttl = normalize_ttl(record.ttl)?;
-    validate_record_set_shape(record, &record_type)?;
+    validate_record_set_shape(record, record_type)?;
 
     let mut values: Vec<String> = record
         .values
@@ -319,7 +319,7 @@ impl ZoneChangeSet {
             record::validate_record_constraints(
                 records_at_name,
                 &record.name,
-                &record.record_type,
+                record.record_type,
                 &record.value,
                 record.ttl,
                 record.priority,

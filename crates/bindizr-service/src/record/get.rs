@@ -41,18 +41,19 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
 /// Count every record, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(
-        bindizr_db::record::count_by_filter(cx.db(), bindizr_db::record::RecordFilter::default())
+        bindizr_db::record::count_by_filter(cx.db(), &bindizr_db::record::RecordFilter::default())
             .await?,
     )
 }
 
 /// List records with zone names, applying caller grants and pagination in SQL.
 /// Signed records follow user records, support name search, and reject value filters.
-/// Priority filters omit signed records; unknown or invisible zones yield empty pages for scoped callers.
+/// Priority filters omit signed records; unknown or invisible zones yield empty pages for
+/// scoped callers.
 pub async fn list_by_filter_with_zone(
     cx: &Context,
     caller: &Caller,
-    filter: RecordFilter,
+    filter: &RecordFilter,
 ) -> Result<PaginatedResponse<RecordResponse>, ServiceError> {
     for ttl in [filter.ttl, filter.min_ttl, filter.max_ttl]
         .into_iter()
@@ -80,7 +81,7 @@ pub async fn list_by_filter_with_zone(
         zone::lookup_by_name(cx, name).await?;
     }
 
-    let name = build_record_name_filter(filter.name, zone_name.as_ref());
+    let name = build_record_name_filter(filter.name.clone(), zone_name.as_ref());
     let type_filter = parse_type_filter(filter.record_type.as_deref(), view)?;
 
     // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
@@ -108,7 +109,7 @@ pub async fn list_by_filter_with_zone(
             TypeFilter::User(record_type) => Some(*record_type),
             _ => None,
         },
-        value: filter.value,
+        value: filter.value.clone(),
         ttl: filter.ttl,
         min_ttl: filter.min_ttl,
         max_ttl: filter.max_ttl,
@@ -139,12 +140,12 @@ pub async fn list_by_filter_with_zone(
     };
 
     let user_total = if user_plane {
-        bindizr_db::record::count_by_filter(cx.db(), record_filter.clone()).await?
+        bindizr_db::record::count_by_filter(cx.db(), &record_filter).await?
     } else {
         0
     };
     let derived_total = if derived_plane {
-        bindizr_db::dnssec_record::count_by_filter(cx.db(), derived_filter.clone()).await?
+        bindizr_db::dnssec_record::count_by_filter(cx.db(), &derived_filter).await?
     } else {
         0
     };
@@ -154,7 +155,7 @@ pub async fn list_by_filter_with_zone(
 
     if user_plane && start < user_total {
         records.extend(
-            bindizr_db::record::list_by_filter_with_zone(cx.db(), record_filter)
+            bindizr_db::record::list_by_filter_with_zone(cx.db(), &record_filter)
                 .await?
                 .into_iter()
                 .map(ServedRecord::User),
@@ -169,7 +170,7 @@ pub async fn list_by_filter_with_zone(
         records.extend(
             bindizr_db::dnssec_record::list_by_filter_with_zone(
                 cx.db(),
-                DnssecRecordFilter {
+                &DnssecRecordFilter {
                     limit: remaining,
                     offset: Some(start.saturating_sub(user_total)),
                     ..derived_filter
@@ -213,7 +214,7 @@ pub async fn get(
         }
     };
 
-    if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
+    if !caller.sees_record(record.zone_id, &record.name, Some(record.record_type)) {
         return Err(ServiceError::record_not_found(record_id));
     }
 

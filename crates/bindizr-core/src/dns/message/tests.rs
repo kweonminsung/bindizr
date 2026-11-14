@@ -262,7 +262,7 @@ fn encoding_splits_overflowing_answers_into_frames() {
             .add_answer_or_overflow(|builder| {
                 builder.add_text_rdata(
                     &format!("host-{index}.example.com."),
-                    &RecordType::A,
+                    RecordType::A,
                     &format!("192.0.2.{}", index % 255),
                     3600,
                     None,
@@ -482,7 +482,7 @@ fn signed_transfer_authenticates_every_envelope() {
             .add_answer_or_overflow(|builder| {
                 builder.add_text_rdata(
                     &format!("host-{index}.example.com."),
-                    &RecordType::A,
+                    RecordType::A,
                     &format!("192.0.2.{}", index % 255),
                     3600,
                     None,
@@ -607,7 +607,7 @@ fn maximum_record_values_fit_signed_edns_transfer_frames() {
                     builder.add_record_parts(
                         &OwnerName::apex(),
                         &zone_name,
-                        &record_type,
+                        record_type,
                         &value,
                         Ttl::from_secs(300),
                         None,

@@ -10,10 +10,10 @@ use bindizr_core::dns::message::{Keepalive, Opcode, OptRcode, ParsedQuery, Query
 use tokio::task::JoinSet;
 use tokio::time;
 
-use super::error::DnsError;
-use super::server::DnsContext;
-use super::stream::{DnsStream, ResponseWriter};
-use super::{server, wire};
+use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
+use crate::dns::stream::{DnsStream, ResponseWriter};
+use crate::dns::{server, wire};
 
 /// Bound concurrent queries on one connection.
 const MAX_QUERIES_IN_FLIGHT: usize = 16;

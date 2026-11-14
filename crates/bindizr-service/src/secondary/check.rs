@@ -36,7 +36,7 @@ pub async fn check(
     );
 
     let (catalog_serial, listener_error) =
-        match dns_client::probe::probe_server(dns_addr, &catalog_zone_name, timeout).await {
+        match dns_client::probe::probe_server(&catalog_zone_name, dns_addr, timeout).await {
             Ok(serial) => (Some(serial), None),
             Err(error) => (None, Some(format!("{dns_addr}: {error}"))),
         };

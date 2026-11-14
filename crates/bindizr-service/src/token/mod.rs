@@ -34,7 +34,7 @@ pub async fn create(
 ) -> Result<(TokenResponse, String), ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let name = normalize_token_name(&request.name)?;
+    let name = normalize_name(&request.name)?;
 
     let role = role::lookup_by_name(cx, &request.role_name).await?;
 
@@ -59,7 +59,7 @@ pub async fn create(
     let token_hash = hash_token(&raw_token);
 
     let mut tx = transaction::begin_tx(cx, "failed to create token").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -108,7 +108,7 @@ pub async fn create(
         Ok(token)
     }
     .await;
-    let token = transaction::finish_tx(tx, result, "failed to create token").await?;
+    let token = transaction::finish_tx(tx, apply_result, "failed to create token").await?;
 
     Ok((TokenResponse::from_token(&token, &role.name), raw_token))
 }
@@ -169,7 +169,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     let token = lookup_by_name(cx, name).await?;
 
     let mut tx = transaction::begin_tx(cx, "failed to delete token").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -192,19 +192,19 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to delete token").await
+    transaction::finish_tx(tx, apply_result, "failed to delete token").await
 }
 
 /// Load an API token by name or return a not-found error.
 async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
-    bindizr_db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
+    bindizr_db::api_token::get_by_name(cx.db(), &normalize_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
 }
 
 /// Lowercased so one name means one token on every backend (MySQL compares
 /// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
-pub(crate) fn normalize_token_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     let name = text::normalize_identifier(value, "token name", MAX_COLUMN_TEXT_LEN)?;
 
     // Dot segments get normalized away; `self` is the lookup route.
@@ -240,25 +240,22 @@ mod tests {
     use super::*;
     use crate::error::ErrorCode;
 
-    /// Verify that `normalize_token_name` trims and folds case.
+    /// Verify that `normalize_name` trims and folds case.
     #[test]
-    fn normalize_token_name_trims_and_folds_case() {
+    fn normalize_name_trims_and_folds_case() {
+        assert_eq!(normalize_name(" external-dns ").unwrap(), "external-dns");
+        assert_eq!(normalize_name("Deploy").unwrap(), "deploy");
         assert_eq!(
-            normalize_token_name(" external-dns ").unwrap(),
-            "external-dns"
-        );
-        assert_eq!(normalize_token_name("Deploy").unwrap(), "deploy");
-        assert_eq!(
-            normalize_token_name("DEPLOY").unwrap(),
-            normalize_token_name("deploy").unwrap()
+            normalize_name("DEPLOY").unwrap(),
+            normalize_name("deploy").unwrap()
         );
     }
 
-    /// Verify that `normalize_token_name` rejects empty and whitespace names.
+    /// Verify that `normalize_name` rejects empty and whitespace names.
     #[test]
-    fn normalize_token_name_rejects_empty_and_whitespace_names() {
+    fn normalize_name_rejects_empty_and_whitespace_names() {
         for name in ["", "   ", "bad name", "bad\tname"] {
-            let error = normalize_token_name(name).unwrap_err();
+            let error = normalize_name(name).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput);
         }
     }
@@ -267,16 +264,13 @@ mod tests {
     ///
     /// `/` splits segments, `?` and `#` terminate them, and URL normalization removes dot segments.
     #[test]
-    fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
+    fn normalize_name_rejects_names_that_are_not_one_path_segment() {
         for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
-            let error = normalize_token_name(name).unwrap_err();
+            let error = normalize_name(name).unwrap_err();
             assert_eq!(error.code(), ErrorCode::InvalidInput, "{name}");
         }
 
-        assert_eq!(
-            normalize_token_name("ci.prod_v2-x").unwrap(),
-            "ci.prod_v2-x"
-        );
+        assert_eq!(normalize_name("ci.prod_v2-x").unwrap(), "ci.prod_v2-x");
     }
 
     /// Verify that `normalize_expires_at` is none without days and ahead of now with them.

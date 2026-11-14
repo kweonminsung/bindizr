@@ -43,7 +43,7 @@ impl DnsMessageBuilder {
                 self.add_record_parts(
                     &change.record_name,
                     zone_name,
-                    record_type,
+                    *record_type,
                     value,
                     change.record_ttl,
                     change.record_priority,
@@ -111,7 +111,7 @@ impl DnsMessageBuilder {
     pub fn add_text_rdata(
         &mut self,
         name: &str,
-        record_type: &RecordType,
+        record_type: RecordType,
         value: &str,
         ttl: u32,
         priority: Option<i32>,
@@ -126,7 +126,7 @@ impl DnsMessageBuilder {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
-            &RecordType::Ns,
+            RecordType::Ns,
             "invalid",
             zone.default_ttl.as_secs(),
             None,
@@ -142,7 +142,7 @@ impl DnsMessageBuilder {
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
             &version_name,
-            &RecordType::Txt,
+            RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
             zone.default_ttl.as_secs(),
             None,
@@ -153,14 +153,14 @@ impl DnsMessageBuilder {
     pub fn add_catalog_ptr(
         &mut self,
         zone: &CatalogZone,
-        member_zone: &str,
+        zone_name: &str,
     ) -> Result<(), EncodeMessageError> {
-        let ptr_name = dns::catalog_member_owner_name(&zone.name, member_zone);
-        let ptr_target = name::to_fqdn(member_zone);
+        let ptr_name = dns::catalog_member_owner_name(&zone.name, zone_name);
+        let ptr_target = name::to_fqdn(zone_name);
 
         self.add_text_rdata(
             &ptr_name,
-            &RecordType::Ptr,
+            RecordType::Ptr,
             &ptr_target,
             zone.default_ttl.as_secs(),
             None,
@@ -176,7 +176,7 @@ impl DnsMessageBuilder {
         self.add_record_parts(
             &record.name,
             zone_name,
-            &record.record_type,
+            record.record_type,
             &record.value,
             record.ttl,
             record.priority,
@@ -189,7 +189,7 @@ impl DnsMessageBuilder {
         &mut self,
         name: &OwnerName,
         zone_name: &ZoneName,
-        record_type: &RecordType,
+        record_type: RecordType,
         value: &str,
         ttl: Ttl,
         priority: Option<i32>,

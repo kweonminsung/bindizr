@@ -17,11 +17,11 @@ use rustls::pki_types::CertificateDer;
 use rustls::{ClientConfig, RootCertStore, SupportedProtocolVersion, version};
 use serde_json::json;
 
-use super::common;
 use crate::common::dns::nsupdate::UpdateRecord;
 use crate::common::dns::tsig::KeyRole;
 use crate::common::dns::{nsupdate, tsig};
 use crate::common::{TestApp, TestAppOptions, dns};
+use crate::xfr::common;
 
 /// Start a bindizr serving XoT beside plain TCP.
 async fn xot_app() -> TestApp {
@@ -257,7 +257,7 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
         let transfer = dns::exchange_request(
             common::build_edns_query(zone_name, Rtype::AXFR, &[]),
             Some(&key),
-            |message| crate::common::exchange_tcp(app.dns_port(), message),
+            |message| dns::exchange_tcp(app.dns_port(), message),
         )
         .unwrap();
         let public = transfer
@@ -280,12 +280,8 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
                         signer,
                         |message| match transport {
                             "udp" => dns::exchange_udp(app.dns_port(), message),
-                            "tcp" => crate::common::exchange_tcp(app.dns_port(), message),
-                            _ => crate::common::exchange_xot(
-                                app.dns_tls_port(),
-                                message,
-                                dot_client(&app),
-                            ),
+                            "tcp" => dns::exchange_tcp(app.dns_port(), message),
+                            _ => dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app)),
                         },
                     )
                     .unwrap();
@@ -369,7 +365,7 @@ async fn soa_queries_return_current_signatures_when_dnssec_is_requested() {
                     .unwrap();
                 let response = dns::exchange_request(query, Some(&long_key), |message| {
                     if tcp {
-                        crate::common::exchange_tcp(app.dns_port(), message)
+                        dns::exchange_tcp(app.dns_port(), message)
                     } else {
                         dns::exchange_udp(app.dns_port(), message)
                     }
@@ -401,11 +397,11 @@ async fn tls_transfer_requires_key_and_registered_address() {
     let key = tsig::create_tsig_key(&app, "xot-key", KeyRole::Admin).await;
 
     // RFC 9103, Section 7.5: TLS requires both key and address authorization.
-    let outcome = crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
+    let outcome = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
         .expect("XoT");
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
-    let outcome = crate::common::axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
 
     assert!(outcome.records() >= 3);
 
@@ -413,12 +409,12 @@ async fn tls_transfer_requires_key_and_registered_address() {
     app.create_secondary("loopback", "127.0.0.1").await;
 
     let outcome =
-        crate::common::xot(app.dns_tls_port(), zone_name, None, dot_client(&app)).expect("XoT");
+        dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, None, dot_client(&app)).expect("XoT");
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 
     // Both together: served, every envelope verified under the key.
-    let outcome = crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
+    let outcome = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
         .expect("XoT");
 
     assert!(outcome.records() >= 3);
@@ -431,13 +427,13 @@ async fn tls_transfer_requires_key_and_registered_address() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["transfers"][0]["transport"], "tls", "{body}");
 
-    let tls_ok = common::counter(
+    let tls_ok = common::read_counter(
         &app,
         "bindizr_xfr_total",
         &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tls""#],
     )
     .await;
-    let tcp_ok = common::counter(
+    let tcp_ok = common::read_counter(
         &app,
         "bindizr_xfr_total",
         &[r#"type="axfr""#, r#"result="ok""#, r#"transport="tcp""#],
@@ -467,7 +463,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
             let expected = if registered {
                 let query = common::build_edns_query(zone_name, Rtype::SOA, &[]);
                 let response = dns::exchange_request(query, Some(&key), |message| {
-                    crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                    dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
                 })
                 .unwrap();
 
@@ -488,7 +484,7 @@ async fn ixfr_serial_policy_over_tls_requires_a_key_and_registered_address() {
             for serial in [expected, expected.wrapping_add(1)] {
                 let query = common::build_ixfr_query(zone_name, serial);
                 let response = dns::exchange_request(query, Some(&key), |message| {
-                    crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                    dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
                 })
                 .unwrap();
 
@@ -531,7 +527,7 @@ async fn tls_response_preserves_edns_dnssec_ok() {
             for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR, Rtype::A] {
                 let query = common::build_edns_query(zone_name, qtype, &[(version, dnssec_ok)]);
                 let response = dns::exchange_request(query, Some(&key), |message| {
-                    crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                    dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
                 })
                 .unwrap();
                 let opt = response.opt().unwrap();
@@ -576,8 +572,7 @@ async fn badtime_tls_responses_preserve_edns_and_verify() {
             )
             .unwrap();
             let query = query.finish();
-            let response =
-                crate::common::exchange_xot(app.dns_tls_port(), &query, dot_client(&app)).unwrap();
+            let response = dns::exchange_tls(app.dns_tls_port(), &query, dot_client(&app)).unwrap();
             let response = Message::from_octets(response).unwrap();
 
             assert_eq!(response.header().id(), 3225);
@@ -636,7 +631,7 @@ async fn truncated_tls_queries_follow_tsig_validation_order() {
             }
 
             let response = Message::from_octets(
-                crate::common::exchange_xot(app.dns_tls_port(), &query, dot_client(&app)).unwrap(),
+                dns::exchange_tls(app.dns_tls_port(), &query, dot_client(&app)).unwrap(),
             )
             .unwrap();
 
@@ -685,7 +680,7 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
     for qtype in [Rtype::SOA, Rtype::AXFR, Rtype::IXFR] {
         let query = common::build_multi_question_query(zone_name, qtype, Class::IN, Some(0));
         let response = dns::exchange_request(query, Some(&key), |message| {
-            crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+            dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
         })
         .unwrap();
 
@@ -702,8 +697,7 @@ async fn multi_question_queries_receive_signed_formerr_over_tls() {
     let mut unreadable =
         common::build_multi_question_query(zone_name, Rtype::SOA, Class::IN, None).finish();
     unreadable.truncate(12);
-    let response =
-        crate::common::exchange_xot(app.dns_tls_port(), &unreadable, dot_client(&app)).unwrap();
+    let response = dns::exchange_tls(app.dns_tls_port(), &unreadable, dot_client(&app)).unwrap();
     let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::FORMERR);
@@ -730,7 +724,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
     app.create_secondary("loopback", "127.0.0.1").await;
 
     // RFC 8945, Section 5.3: the refusal of a signed request is signed.
-    let outcome = crate::common::axfr(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
+    let outcome = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key)).expect("AXFR");
 
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
     assert!(outcome.refusal_signed());
@@ -757,7 +751,7 @@ async fn require_tls_rejects_a_transfer_over_plain_tcp() {
         "{body}"
     );
 
-    let outcome = crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
+    let outcome = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
         .expect("XoT");
 
     assert!(outcome.records() >= 3);
@@ -774,7 +768,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
     let key = tsig::create_tsig_key(&app, "renewal-key", KeyRole::Admin).await;
     app.create_secondary("loopback", "127.0.0.1").await;
 
-    let outcome = crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
+    let outcome = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
         .expect("XoT");
 
     assert!(outcome.records() >= 3);
@@ -787,12 +781,12 @@ async fn config_reload_replaces_dns_tls_certificate() {
 
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
     let outcome =
-        crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
+        dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
 
     assert!(outcome.records() >= 3);
 
     // The renewed certificate has the same name; the old root must fail signature validation.
-    let error = crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
+    let error = dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), dot_client(&app))
         .unwrap_err();
 
     assert!(error.contains("invalid peer certificate"), "{error}");
@@ -805,7 +799,7 @@ async fn config_reload_replaces_dns_tls_certificate() {
     crate::common::assert_cli_failure_contains(&args, &refused, "nothing was reloaded");
     let client = xot_client(&renewed, &[&version::TLS13], &[b"dot"]);
     let outcome =
-        crate::common::xot(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
+        dns::fetch_axfr_tls(app.dns_tls_port(), zone_name, Some(&key), client).expect("XoT");
 
     assert!(outcome.records() >= 3);
 }
@@ -821,19 +815,19 @@ async fn tls_handshake_rejects_tls_1_2_and_foreign_alpn() {
 
     // RFC 9103, Section 7.2: TLS 1.3 or later only.
     let client = xot_client(cert, &[&version::TLS12], &[b"dot"]);
-    let error = crate::common::xot(port, zone_name, None, client).unwrap_err();
+    let error = dns::fetch_axfr_tls(port, zone_name, None, client).unwrap_err();
 
     assert!(error.contains("ProtocolVersion"), "{error}");
 
     // RFC 9103, Section 7.1: negotiate only "dot" ALPN.
     let client = xot_client(cert, &[&version::TLS13], &[b"h2"]);
-    let error = crate::common::xot(port, zone_name, None, client).unwrap_err();
+    let error = dns::fetch_axfr_tls(port, zone_name, None, client).unwrap_err();
 
     assert!(error.contains("NoApplicationProtocol"), "{error}");
 
     // Missing ALPN permits the handshake but closes the session before any answer.
     let client = xot_client(cert, &[&version::TLS13], &[]);
-    let error = crate::common::xot(port, zone_name, None, client).unwrap_err();
+    let error = dns::fetch_axfr_tls(port, zone_name, None, client).unwrap_err();
 
     assert!(
         error.contains("without its closing SOA") || error.contains("close_notify"),
@@ -871,7 +865,7 @@ async fn tls_query_returns_not_supported_for_unserved_type() {
                 })
                 .unwrap();
             let response = dns::exchange_request(query, key, |message| {
-                crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
             })
             .unwrap();
 
@@ -915,7 +909,7 @@ async fn tls_notify_returns_refused_with_not_supported() {
             let response = dns::exchange_request(request, key, |message| {
                 for response in [
                     dns::exchange_udp(app.dns_port(), message)?,
-                    crate::common::exchange_tcp(app.dns_port(), message)?,
+                    dns::exchange_tcp(app.dns_port(), message)?,
                 ] {
                     let response = Message::from_octets(response).unwrap();
 
@@ -930,7 +924,7 @@ async fn tls_notify_returns_refused_with_not_supported() {
                     }
                 }
 
-                crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
             })
             .unwrap();
 
@@ -970,7 +964,7 @@ async fn tls_supported_queries_reject_foreign_classes() {
                 })
                 .unwrap();
             let response = dns::exchange_request(query, key, |message| {
-                crate::common::exchange_xot(app.dns_tls_port(), message, dot_client(&app))
+                dns::exchange_tls(app.dns_tls_port(), message, dot_client(&app))
             })
             .unwrap();
 
@@ -1020,9 +1014,8 @@ async fn tls_update_returns_not_supported() {
             tsig::sign(&mut request, key).unwrap();
         }
 
-        let frame =
-            crate::common::exchange_xot(app.dns_tls_port(), &request.finish(), dot_client(&app))
-                .expect("XoT");
+        let frame = dns::exchange_tls(app.dns_tls_port(), &request.finish(), dot_client(&app))
+            .expect("XoT");
 
         let response = Message::from_octets(frame.as_slice()).unwrap();
 

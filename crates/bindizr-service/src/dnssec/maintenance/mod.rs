@@ -9,8 +9,8 @@ use bindizr_core::model::zone::ZoneId;
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
-use super::rollover;
 use crate::change::ChangeOrigin;
+use crate::dnssec::rollover;
 use crate::error::ServiceError;
 use crate::types::Holddown;
 use crate::{Context, transaction};
@@ -22,7 +22,7 @@ pub(crate) async fn resign_zone_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let Some(signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -40,7 +40,7 @@ pub(crate) async fn resign_zone_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to sign zone").await?;
+    let changed = transaction::finish_tx(tx, apply_result, "failed to sign zone").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -56,7 +56,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -101,7 +101,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+    let changed = transaction::finish_tx(tx, apply_result, "failed to start key rollover").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -117,7 +117,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -156,7 +156,8 @@ pub(crate) async fn promote_zsks_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+    let changed =
+        transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -172,7 +173,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -234,7 +235,8 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+    let changed =
+        transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);
@@ -275,7 +277,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
     zone_id: ZoneId,
 ) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to remove retired keys").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         let Some(mut signed) =
             super::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
@@ -313,7 +315,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         Ok(serial.map(|_| signed.zone.name.clone()))
     }
     .await;
-    let changed = transaction::finish_tx(tx, result, "failed to remove retired keys").await?;
+    let changed = transaction::finish_tx(tx, apply_result, "failed to remove retired keys").await?;
 
     if changed.is_some() {
         cx.metrics().track_serial_bumps(1);

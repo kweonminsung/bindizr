@@ -10,8 +10,8 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
-use super::parent_ns_addrs;
 use crate::authorization::Caller;
+use crate::dnssec::parent_ns_addrs;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDsResponse, DnssecKeyResponse, DnssecPolicyResponse, DnssecStatusResponse,

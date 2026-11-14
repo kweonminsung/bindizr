@@ -144,23 +144,23 @@ impl EncodedRdata {
     /// Encode record or journal columns as wire RDATA.
     /// TXT remains opaque bytes for canonical record-set ordering.
     pub(crate) fn from_columns(
-        record_type: &RecordType,
+        record_type: RecordType,
         value: &str,
         priority: Option<i32>,
     ) -> Result<Self, EncodeRdataError> {
         let stored_address = || EncodeRdataError::StoredAddress {
-            record_type: *record_type,
+            record_type,
             value: value.to_string(),
         };
         let rdata = match record_type {
             RecordType::Wks => WksRecordValue::parse(value)?.to_rdata()?,
             RecordType::A => {
-                let addr = value.parse::<Ipv4Addr>().map_err(|_| stored_address())?;
-                Rdata::new(addr.octets().to_vec())?
+                let ip = value.parse::<Ipv4Addr>().map_err(|_| stored_address())?;
+                Rdata::new(ip.octets().to_vec())?
             }
             RecordType::Aaaa => {
-                let addr = value.parse::<Ipv6Addr>().map_err(|_| stored_address())?;
-                Rdata::new(addr.octets().to_vec())?
+                let ip = value.parse::<Ipv6Addr>().map_err(|_| stored_address())?;
+                Rdata::new(ip.octets().to_vec())?
             }
             RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
             RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {

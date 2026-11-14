@@ -404,7 +404,7 @@ async fn zone_import_reconciles_ttl() {
 /// Verify that a zone can be imported from another DNS server through the API.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_fetches_server_records_over_http() {
+async fn zone_import_fetches_server_records() {
     // The transfer ACL must admit the test's own loopback AXFR.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;
@@ -1264,7 +1264,7 @@ async fn zone_import_rejects_unknown_mode_in_service() {
 /// answers each zone's outcome, and refuses a malformed request whole.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn import_zones_reports_each_zone_outcome_over_http() {
+async fn import_zones_reports_each_zone_outcome() {
     // The transfer ACL must admit the test's own loopback AXFRs.
     let app = TestApp::start_local().await;
     app.create_secondary("loopback", "127.0.0.1").await;

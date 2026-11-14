@@ -54,7 +54,7 @@ pub(crate) fn join_changes(changes: impl IntoIterator<Item = Option<String>>) ->
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    filter: AuditLogFilter,
+    filter: &AuditLogFilter,
 ) -> Result<PaginatedResponse<AuditLogResponse>, ServiceError> {
     caller.authorize_action(Action::AuditRead)?;
 
@@ -74,7 +74,7 @@ pub async fn list(
 /// Parse the listing's entity and sort, trim its name to the row spelling
 /// every entity stores (lowercase), and bound its page.
 fn normalize_filter(
-    filter: AuditLogFilter,
+    filter: &AuditLogFilter,
 ) -> Result<bindizr_db::audit_log::AuditLogFilter, ServiceError> {
     let entity = filter
         .entity
@@ -128,7 +128,7 @@ mod tests {
     /// Verify that `normalize_filter` parses the entity, lowercases the name, and bounds the page.
     #[test]
     fn normalize_filter_parses_entity_and_folds_name_case() {
-        let filter = normalize_filter(AuditLogFilter {
+        let filter = normalize_filter(&AuditLogFilter {
             entity: Some(" TSIG_KEY ".to_string()),
             entity_name: Some(" Update-Key ".to_string()),
             limit: Some(10),
@@ -148,7 +148,7 @@ mod tests {
     /// Verify that `normalize_filter` reads the sort field and direction, and refuses unknown ones.
     #[test]
     fn normalize_filter_reads_sort_and_order() {
-        let filter = normalize_filter(AuditLogFilter {
+        let filter = normalize_filter(&AuditLogFilter {
             sort: Some("entity_name".to_string()),
             order: Some("asc".to_string()),
             ..Default::default()
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(filter.order, SortOrder::Asc);
 
         for (sort, order) in [(Some("name"), None), (None, Some("newest"))] {
-            let error = normalize_filter(AuditLogFilter {
+            let error = normalize_filter(&AuditLogFilter {
                 sort: sort.map(str::to_string),
                 order: order.map(str::to_string),
                 ..Default::default()
@@ -173,7 +173,7 @@ mod tests {
     /// Verify that blank selectors normalize to absent without supplying a page limit.
     #[test]
     fn normalize_filter_reads_blank_selectors_as_absent() {
-        let filter = normalize_filter(AuditLogFilter {
+        let filter = normalize_filter(&AuditLogFilter {
             entity: Some(String::new()),
             entity_name: Some("   ".to_string()),
             ..Default::default()
@@ -188,7 +188,7 @@ mod tests {
     /// Verify that `normalize_filter` rejects an unknown entity and an empty time window.
     #[test]
     fn normalize_filter_rejects_unknown_entity_and_inverted_window() {
-        let unknown = normalize_filter(AuditLogFilter {
+        let unknown = normalize_filter(&AuditLogFilter {
             entity: Some("record".to_string()),
             ..Default::default()
         })
@@ -198,7 +198,7 @@ mod tests {
         assert!(unknown.to_string().contains("tsig_key"), "{unknown}");
 
         let later = Utc.with_ymd_and_hms(2026, 10, 2, 0, 0, 0).unwrap();
-        let inverted = normalize_filter(AuditLogFilter {
+        let inverted = normalize_filter(&AuditLogFilter {
             since: Some(later),
             until: Some(later),
             ..Default::default()

@@ -123,7 +123,7 @@ pub(crate) async fn list_all_tx(
 /// List zones matching the filter.
 pub(crate) async fn list_by_filter(
     pool: &Pool<Sqlite>,
-    filter: ZoneFilter,
+    filter: &ZoneFilter,
 ) -> Result<Vec<Zone>, DatabaseError> {
     let mut connection = pool.acquire().await?;
 
@@ -224,7 +224,7 @@ pub(crate) async fn probe_table(pool: &Pool<Sqlite>) -> Result<(), DatabaseError
 /// Count zones matching the filter.
 pub(crate) async fn count_by_filter(
     pool: &Pool<Sqlite>,
-    filter: ZoneFilter,
+    filter: &ZoneFilter,
 ) -> Result<u64, DatabaseError> {
     let mut connection = pool.acquire().await?;
 

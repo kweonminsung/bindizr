@@ -91,12 +91,12 @@ pub struct VersionRecordResponse {
 
 impl VersionRecordResponse {
     /// Render a version record with an absolute owner name.
-    pub(crate) fn from_record_and_zone_name(record: &RecordData, zone_name: &ZoneName) -> Self {
+    pub(crate) fn from_record(record: &RecordData, zone_name: &ZoneName) -> Self {
         Self {
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type,
             // Decode TXT out of its stored form, as the record endpoints do.
-            value: record::build_display_value(&record.value, &record.record_type),
+            value: record::build_display_value(record.record_type, &record.value),
             ttl: record.ttl,
             priority: record.priority,
         }

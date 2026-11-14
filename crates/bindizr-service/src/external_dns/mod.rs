@@ -52,7 +52,7 @@ pub async fn list_managed_domains(
 ) -> Result<Vec<String>, ServiceError> {
     let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
-        ZoneFilter {
+        &ZoneFilter {
             scope_role_id: caller.scope_role_id(),
             ..Default::default()
         },
@@ -96,7 +96,7 @@ pub async fn list_records(
         // they build. The query's name-and-id order is total, so pages tile.
         let records_with_zones = bindizr_db::record::list_by_filter_with_zone(
             cx.db(),
-            RecordFilter {
+            &RecordFilter {
                 scope_role_id: caller.scope_role_id(),
                 limit: Some(RECORD_READ_PAGE),
                 offset: Some(offset),

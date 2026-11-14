@@ -13,7 +13,7 @@ use domain::base::opt::keepalive::TcpKeepalive;
 use domain::base::rdata::ComposeRecordData;
 use domain::base::record::ComposeRecord;
 use domain::base::wire::Composer;
-use domain::base::{MessageBuilder, Record, ToName, Ttl, UnknownRecordData};
+use domain::base::{MessageBuilder, Record, ToName, UnknownRecordData};
 use domain::rdata::tsig::Time48;
 pub use limit::ResponseLimit;
 pub use query::{
@@ -184,7 +184,7 @@ impl DnsMessageBuilder {
     /// Composes one class-IN answer record into its own buffer so it can be
     /// popped/reflushed by the chunked TCP writer.
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
-        let record = Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
+        let record = Record::new(owner, Class::IN, domain::base::Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
         let Ok(()) = record.compose_record(&mut answer);
         self.push_answer(answer);

@@ -34,7 +34,7 @@ pub async fn get(cx: &Context, caller: &Caller) -> Result<PermissionsResponse, S
 
     let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
-        ZoneFilter {
+        &ZoneFilter {
             scope_role_id: caller.scope_role_id(),
             ..Default::default()
         },

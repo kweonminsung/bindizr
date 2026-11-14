@@ -9,8 +9,8 @@ use domain::rdata::tsig::Time48;
 use domain::tsig::ClientSequence;
 use rustls::ClientConfig;
 
-use super::tsig::SigningKey;
-use super::{transport, tsig};
+use crate::common::dns::tsig::SigningKey;
+use crate::common::dns::{transport, tsig};
 
 /// Transferred record count or refusal details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,29 +46,29 @@ impl TransferResult {
 }
 
 /// Run an AXFR over TCP, verifying the MAC chain when signed.
-pub(crate) fn axfr(
+pub(crate) fn fetch_axfr_tcp(
     port: u16,
-    zone: &str,
+    zone_name: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferResult, String> {
     let mut stream = transport::connect_tcp(port)?;
-    transfer(&mut stream, zone, key)
+    transfer(&mut stream, zone_name, key)
 }
 
 /// Run an AXFR over TLS using the client's configuration (RFC 9103).
-pub(crate) fn xot(
+pub(crate) fn fetch_axfr_tls(
     port: u16,
-    zone: &str,
+    zone_name: &str,
     key: Option<&SigningKey>,
     client: ClientConfig,
 ) -> Result<TransferResult, String> {
-    transfer(&mut transport::connect_tls(port, client)?, zone, key)
+    transfer(&mut transport::connect_tls(port, client)?, zone_name, key)
 }
 
 /// Transfer a zone over an open stream, verifying the MAC chain when signed.
 fn transfer<S: Read + Write>(
     stream: &mut S,
-    zone: &str,
+    zone_name: &str,
     key: Option<&SigningKey>,
 ) -> Result<TransferResult, String> {
     let query_id = (process::id() as u16).wrapping_add(7);
@@ -76,7 +76,7 @@ fn transfer<S: Read + Write>(
     builder.header_mut().set_id(query_id);
     let mut question = builder.question();
     question
-        .push((&super::parse_name(zone)?, Rtype::AXFR))
+        .push((&super::parse_name(zone_name)?, Rtype::AXFR))
         .map_err(|error| error.to_string())?;
     let mut additional = question.additional();
 

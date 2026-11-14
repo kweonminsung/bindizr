@@ -59,7 +59,7 @@ async fn write_exported_pairs(app: &TestApp, zone_name: &str, dir: &Path) -> Vec
 /// Verify that the CLI exports and imports DNSSEC keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_keys_round_trip_export_and_import_via_cli() {
+async fn zone_dnssec_keys_round_trip_export_and_import() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-keys.example");
 

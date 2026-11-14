@@ -1,4 +1,4 @@
-//! Load the TSIG key a registered secondary uses for outbound NOTIFY.
+//! Look up the TSIG key a registered secondary uses for outbound NOTIFY.
 
 use bindizr_core::dns::tsig::TsigSigningKey;
 use bindizr_core::model::secondary::Secondary;

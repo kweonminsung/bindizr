@@ -11,7 +11,6 @@ use reqwest::{Method, StatusCode};
 use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 use serde_json::{Value, json};
 
-use crate::common;
 use crate::common::dns::nsupdate::{PrerequisiteRecord, UpdateRecord};
 use crate::common::dns::tsig::KeyRole;
 use crate::common::dns::{nsupdate, tsig};
@@ -117,7 +116,7 @@ async fn nsupdate_root_targets_round_trip_through_signed_zone() {
         .push((&dns::parse_name(zone_name).unwrap(), Rtype::AXFR))
         .unwrap();
     let response = dns::exchange_request(question.additional(), Some(&key), |message| {
-        common::exchange_tcp(app.dns_port(), message)
+        dns::exchange_tcp(app.dns_port(), message)
     })
     .unwrap();
 
@@ -246,7 +245,7 @@ async fn nsupdate_rejects_tsig_outside_additional_without_mutating_zone() {
 
                     for response in [
                         dns::exchange_udp(app.dns_port(), &request).unwrap(),
-                        common::exchange_tcp(app.dns_port(), &request).unwrap(),
+                        dns::exchange_tcp(app.dns_port(), &request).unwrap(),
                     ] {
                         let response = Message::from_octets(response).unwrap();
 
@@ -305,7 +304,7 @@ async fn nsupdate_rejects_managed_dnssec_changes_without_mutating_zone() {
         .push((&dns::parse_name(zone_name).unwrap(), Rtype::AXFR))
         .unwrap();
     let transfer = dns::exchange_request(question.additional(), Some(&key), |message| {
-        common::exchange_tcp(app.dns_port(), message)
+        dns::exchange_tcp(app.dns_port(), message)
     })
     .unwrap();
     let rows = transfer
@@ -670,7 +669,7 @@ async fn nsupdate_signs_zone_class_refusals_over_tcp() {
     ] {
         let request = nsupdate::build_update(172, zone_name, class, &[], &updates).unwrap();
         let response = dns::exchange_request(request, Some(&key), |message| {
-            common::exchange_tcp(app.dns_port(), message)
+            dns::exchange_tcp(app.dns_port(), message)
         })
         .unwrap();
 
@@ -1982,7 +1981,7 @@ async fn nsupdate_response_preserves_edns_dnssec_ok() {
                     .unwrap();
                 let response = dns::exchange_request(request, Some(&key), |message| {
                     if tcp {
-                        common::exchange_tcp(app.dns_port(), message)
+                        dns::exchange_tcp(app.dns_port(), message)
                     } else {
                         dns::exchange_udp(app.dns_port(), message)
                     }
@@ -2037,7 +2036,7 @@ async fn badtime_update_responses_preserve_edns_and_verify() {
 
         for response in [
             dns::exchange_udp(app.dns_port(), &request).unwrap(),
-            common::exchange_tcp(app.dns_port(), &request).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &request).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 
@@ -2104,7 +2103,7 @@ async fn truncated_updates_follow_tsig_validation_order() {
 
         for response in [
             dns::exchange_udp(app.dns_port(), &request).unwrap(),
-            common::exchange_tcp(app.dns_port(), &request).unwrap(),
+            dns::exchange_tcp(app.dns_port(), &request).unwrap(),
         ] {
             let response = Message::from_octets(response).unwrap();
 
@@ -2688,9 +2687,9 @@ async fn update_preserves_binary_values_and_names() {
 }
 
 /// Build a replacement whose metadata differs from the default zone SOA.
-fn replacement(zone: &str, serial: u32) -> Soa<Name<Vec<u8>>> {
+fn replacement(zone_name: &str, serial: u32) -> Soa<Name<Vec<u8>>> {
     Soa::new(
-        dns::parse_name(&format!("ns2.{zone}")).unwrap(),
+        dns::parse_name(&format!("ns2.{zone_name}")).unwrap(),
         dns::parse_name(r"host\.master.example.net").unwrap(),
         Serial::from(serial),
         Ttl::from_secs(1800),
@@ -2701,9 +2700,9 @@ fn replacement(zone: &str, serial: u32) -> Soa<Name<Vec<u8>>> {
 }
 
 /// Read zone metadata through the API.
-async fn metadata(app: &TestApp, zone: &str) -> Value {
+async fn read_zone_metadata(app: &TestApp, zone_name: &str) -> Value {
     let (status, body) = app
-        .send_request(Method::GET, &format!("/zones/{zone}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     body["zone"].clone()
@@ -2718,7 +2717,7 @@ async fn soa_addition_ignores_ineffective_updates() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    let before = metadata(&app, zone_name).await;
+    let before = read_zone_metadata(&app, zone_name).await;
     let serial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
     let records = app.list_records(zone_name).await;
 
@@ -2743,7 +2742,7 @@ async fn soa_addition_ignores_ineffective_updates() {
         .unwrap();
 
         assert_eq!(rcode, Rcode::NOERROR, "serial {serial}");
-        assert_eq!(metadata(&app, zone_name).await, before);
+        assert_eq!(read_zone_metadata(&app, zone_name).await, before);
         assert_eq!(app.list_records(zone_name).await, records);
     }
 }
@@ -2787,7 +2786,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
         Rcode::NOERROR,
     );
 
-    let after = metadata(&app, zone_name).await;
+    let after = read_zone_metadata(&app, zone_name).await;
 
     assert_eq!(after["serial"], serial + 20);
     assert_eq!(after["mname"], format!("ns2.{zone_name}"));
@@ -2860,7 +2859,7 @@ async fn soa_replacement_versions_the_whole_update_once() {
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
-    let restored = metadata(&app, zone_name).await;
+    let restored = read_zone_metadata(&app, zone_name).await;
 
     for field in [
         "mname",
@@ -2905,7 +2904,7 @@ async fn soa_replacement_uses_zone_permissions() {
         None,
     )
     .await;
-    let before = metadata(&app, zone_name).await;
+    let before = read_zone_metadata(&app, zone_name).await;
 
     let updates = [UpdateRecord::AddSoa {
         name: format!("{zone_name}."),
@@ -2917,7 +2916,7 @@ async fn soa_replacement_uses_zone_permissions() {
         nsupdate::send_update_tcp(app.dns_port(), zone_name, &[], &updates, Some(&key)).unwrap(),
         Rcode::REFUSED
     );
-    assert_eq!(metadata(&app, zone_name).await, before);
+    assert_eq!(read_zone_metadata(&app, zone_name).await, before);
 
     app.run_cli_success(
         &[
@@ -2965,7 +2964,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
         Rcode::NOERROR
     );
 
-    let before = metadata(&app, zone_name).await;
+    let before = read_zone_metadata(&app, zone_name).await;
     let records = app.list_records(zone_name).await;
 
     for (ttl, soa) in [
@@ -3017,7 +3016,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
             nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
             Rcode::REFUSED
         );
-        assert_eq!(metadata(&app, zone_name).await, before);
+        assert_eq!(read_zone_metadata(&app, zone_name).await, before);
         assert_eq!(app.list_records(zone_name).await, records);
     }
 
@@ -3035,7 +3034,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
             .unwrap(),
         Rcode::NXDOMAIN
     );
-    assert_eq!(metadata(&app, zone_name).await, before);
+    assert_eq!(read_zone_metadata(&app, zone_name).await, before);
 
     // A record conflict after an earlier write must roll back its journal too.
     let updates = [
@@ -3060,7 +3059,7 @@ async fn soa_replacement_rejects_invalid_changes_atomically() {
         nsupdate::send_update_udp(app.dns_port(), zone_name, &[], &updates, None).unwrap(),
         Rcode::REFUSED
     );
-    assert_eq!(metadata(&app, zone_name).await, before);
+    assert_eq!(read_zone_metadata(&app, zone_name).await, before);
     assert_eq!(app.list_records(zone_name).await, records);
 
     let (status, body) = app
@@ -3241,7 +3240,7 @@ async fn ixfr_replays_soa_replacement() {
             replacement(zone_name, old_serial),
         ))
         .unwrap();
-    let response = common::exchange_tcp(app.dns_port(), &authority.finish()).unwrap();
+    let response = dns::exchange_tcp(app.dns_port(), &authority.finish()).unwrap();
     let response = Message::from_octets(response).unwrap();
 
     assert_eq!(response.header().rcode(), Rcode::NOERROR);
@@ -3280,7 +3279,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
 
     let initial = u32::try_from(app.read_zone_serial(zone_name).await).unwrap();
     let key = tsig::create_tsig_key(&app, "serial-reuse", KeyRole::Admin).await;
-    let before = common::axfr(app.dns_port(), zone_name, Some(&key))
+    let before = dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key))
         .unwrap()
         .records();
 
@@ -3315,7 +3314,7 @@ async fn soa_serial_reuse_refreshes_the_transfer_cache() {
 
     assert_eq!(app.read_zone_serial(zone_name).await, i64::from(initial));
     assert_eq!(
-        common::axfr(app.dns_port(), zone_name, Some(&key))
+        dns::fetch_axfr_tcp(app.dns_port(), zone_name, Some(&key))
             .unwrap()
             .records(),
         before + 1

@@ -3,12 +3,13 @@
 use bindizr_core::dns::address;
 use bindizr_core::dns::name::ZoneName;
 
-use super::{ImportOptions, ImportSource, MissingZoneAction, apply};
+use super::{ImportOptions, ImportSource, MissingZoneAction};
 use crate::Context;
 use crate::authorization::Caller;
 use crate::dns_client::axfr::AxfrClient;
 use crate::error::ServiceError;
 use crate::types::{ImportMode, ImportZoneRequest, ImportZoneResponse, Run};
+use crate::zone::import::apply;
 
 /// Import zone-file or AXFR records by mode; any validation failure rejects the whole import.
 /// Applying advances the serial once and sends one NOTIFY.

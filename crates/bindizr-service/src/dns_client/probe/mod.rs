@@ -73,8 +73,8 @@ pub(crate) async fn probe_addresses(
 /// Query one explicit server for the zone's SOA serial (e.g. bindizr's own
 /// listener during health checks).
 pub async fn probe_server(
-    server_addr: SocketAddr,
     zone_name: &ZoneName,
+    server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<Serial, ProbeSoaError> {
     let qname = zone_name.to_wire_name()?;

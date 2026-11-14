@@ -68,7 +68,7 @@ pub async fn create(
     };
 
     let mut tx = transaction::begin_tx(cx, "failed to create role grant").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -113,7 +113,7 @@ pub async fn create(
         Ok(grant)
     }
     .await;
-    let grant = transaction::finish_tx(tx, result, "failed to create role grant").await?;
+    let grant = transaction::finish_tx(tx, apply_result, "failed to create role grant").await?;
 
     Ok(RoleGrantResponse::from_grant(
         &grant,
@@ -168,7 +168,7 @@ pub async fn revoke(
         .ok_or_else(|| ServiceError::role_grant_not_found(grant_id))?;
 
     let mut tx = transaction::begin_tx(cx, "failed to revoke role grant").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -201,7 +201,7 @@ pub async fn revoke(
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to revoke role grant").await
+    transaction::finish_tx(tx, apply_result, "failed to revoke role grant").await
 }
 
 /// A grant's audit detail, in the request's field names.

@@ -6,7 +6,7 @@ use crate::common::TestApp;
 /// Verify that the CLI creates, lists, and revokes role grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn role_grants_support_create_list_and_revoke_via_cli() {
+async fn role_grants_support_create_list_and_revoke() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-role.example");
 

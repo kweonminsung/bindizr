@@ -7,10 +7,10 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use super::connection;
-use super::error::DnsError;
-use super::server::DnsContext;
-use super::stream::DnsStream;
+use crate::dns::connection;
+use crate::dns::error::DnsError;
+use crate::dns::server::DnsContext;
+use crate::dns::stream::DnsStream;
 use crate::shutdown::Shutdown;
 
 /// Accept plain DNS TCP connections until shutdown.

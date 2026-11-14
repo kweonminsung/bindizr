@@ -6,7 +6,7 @@ use tokio::time;
 
 use super::*;
 
-/// Build the test zone or its DNS name.
+/// Build the test zone's DNS name.
 fn qname() -> Name<Vec<u8>> {
     use std::str::FromStr;
 

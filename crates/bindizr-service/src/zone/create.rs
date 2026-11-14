@@ -5,10 +5,10 @@ use bindizr_core::model::zone::{Zone, ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
-use super::validation;
 use crate::authorization::Caller;
 use crate::error::ServiceError;
 use crate::types::{CreateZoneRequest, WriteZoneResponse, ZoneResponse};
+use crate::zone::validation;
 use crate::{Context, notify, serial, text, transaction, ttl};
 
 /// Create a zone and NOTIFY the catalog; add an ordinary apex NS naming MNAME

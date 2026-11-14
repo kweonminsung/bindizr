@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose;
@@ -283,7 +283,7 @@ fn build_signed_notify_response(request: &[u8], error: u16, rcode: u16) -> Vec<u
     let mut algorithm = Vec::new();
     crate::dns_client::ds::tests::encode_name("hmac-sha256", &mut algorithm);
     let seconds = SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
     let time = &seconds.to_be_bytes()[2..];

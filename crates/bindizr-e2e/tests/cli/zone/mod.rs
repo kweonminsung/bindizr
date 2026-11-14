@@ -11,7 +11,7 @@ mod status;
 /// Verify that escaped trailing spaces are preserved through CLI/socket writes and escaped wildcard zones are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn escaped_zone_names_follow_the_same_policy_via_cli() {
+async fn escaped_zone_names_follow_the_same_policy() {
     let app = TestApp::start_local().await;
     let base = app.zone_name("cli-escaped");
     let simple = format!("{base}\\ ");
@@ -105,7 +105,7 @@ async fn zone_create_takes_soa_timers() {
 /// Verify that zones are created, retrieved, and deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_supports_create_read_and_delete_via_cli() {
+async fn zone_supports_create_read_and_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-zone.example");
     let mname = format!("ns1.{zone_name}");
@@ -141,7 +141,7 @@ async fn zone_supports_create_read_and_delete_via_cli() {
 /// Verify that zone update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_update_changes_only_passed_fields_via_cli() {
+async fn zone_update_changes_only_passed_fields() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-update.example");
 
@@ -175,7 +175,7 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
 /// Verify that invalid zone names and TTLs are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_rejects_invalid_name_and_ttl_via_cli() {
+async fn zone_rejects_invalid_name_and_ttl() {
     let app = TestApp::start().await;
 
     for (zone_name, ttl, expected_error) in [
@@ -206,7 +206,7 @@ async fn zone_rejects_invalid_name_and_ttl_via_cli() {
 /// Verify that zone listings filter and paginate.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_listing_filters_and_paginates_via_cli() {
+async fn zone_listing_filters_and_paginates() {
     let app = TestApp::start().await;
     let first_zone = app.zone_name("first.example");
     let filtered_zone = app.zone_name("filtered.example");
@@ -279,7 +279,7 @@ async fn zone_listing_filters_and_paginates_via_cli() {
 /// Verify that `--no-apex-ns` creates a zone with no records.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_omits_apex_ns_when_disabled_via_cli() {
+async fn zone_create_omits_apex_ns_when_disabled() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("bare-cli.example.com");
     let mname = format!("ns1.{zone_name}");

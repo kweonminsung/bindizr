@@ -7,7 +7,7 @@ use crate::common::TestApp;
 /// narrows by entity and name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn audit_list_shows_socket_changes_via_cli() {
+async fn audit_list_shows_socket_changes() {
     let app = TestApp::start().await;
     let name = format!("{}-cli-audited", app.namespace());
 

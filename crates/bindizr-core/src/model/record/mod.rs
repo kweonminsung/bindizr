@@ -89,18 +89,18 @@ impl RecordKey {
 impl Record {
     /// Encode RDATA using the transfer and signer encoder.
     pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
-        Ok(EncodedRdata::from_columns(&self.record_type, &self.value, self.priority)?.rdata)
+        Ok(EncodedRdata::from_columns(self.record_type, &self.value, self.priority)?.rdata)
     }
 
     /// Match an RFC 2136, Section 2.5.2 delete by type, canonical value, and priority.
     /// MX and SRV priorities narrow separately because they occupy their own column.
     pub fn matches(
         &self,
-        record_type: Option<&RecordType>,
+        record_type: Option<RecordType>,
         value: Option<&str>,
         priority: Option<i32>,
     ) -> bool {
-        if record_type.is_some_and(|wanted| *wanted != self.record_type) {
+        if record_type.is_some_and(|wanted| wanted != self.record_type) {
             return false;
         }
         if value.is_some_and(|value| {
@@ -344,7 +344,7 @@ impl RecordType {
     ) -> Cow<'a, str> {
         self.encoded_value(value, fallback_priority)
             .ok()
-            .and_then(|value| EncodedRdata::from_columns(&self, &value, fallback_priority).ok())
+            .and_then(|value| EncodedRdata::from_columns(self, &value, fallback_priority).ok())
             .and_then(|encoded| {
                 encoded
                     .rdata
@@ -369,14 +369,14 @@ impl RecordType {
         match self {
             Self::Wks => WksRecordValue::parse(value).map(|parsed| parsed.canonical()),
             Self::A => ARecordValue::parse(trimmed).map(ARecordValue::canonical),
-            Self::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            Self::Aaaa => AaaaRecordValue::parse(trimmed).map(AaaaRecordValue::canonical),
             Self::Caa => {
                 let parsed = CaaRecordValue::parse(value)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            Self::Cname => CnameRecordValue::parse(name).map(|parsed| parsed.canonical()),
-            Self::Dname => DnameRecordValue::parse(name).map(|parsed| parsed.canonical()),
+            Self::Cname => CnameRecordValue::parse(name).map(CnameRecordValue::canonical),
+            Self::Dname => DnameRecordValue::parse(name).map(DnameRecordValue::canonical),
             Self::Ds => {
                 let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
@@ -393,13 +393,13 @@ impl RecordType {
                 Ok(parsed.canonical())
             }
             Self::Txt => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
-            Self::Ns => NsRecordValue::parse(name).map(|parsed| parsed.canonical()),
+            Self::Ns => NsRecordValue::parse(name).map(NsRecordValue::canonical),
             Self::Srv => {
                 let parsed = SrvRecordValue::parse(value, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            Self::Ptr => PtrRecordValue::parse(name).map(|parsed| parsed.canonical()),
+            Self::Ptr => PtrRecordValue::parse(name).map(PtrRecordValue::canonical),
             Self::Sshfp => {
                 let parsed = SshfpRecordValue::parse(trimmed)?;
                 parsed.validate()?;

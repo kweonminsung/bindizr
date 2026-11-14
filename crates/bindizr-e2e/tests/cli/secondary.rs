@@ -6,7 +6,7 @@ use crate::common::TestApp;
 /// Verify that the CLI manages secondaries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn secondary_supports_create_update_and_delete_via_cli() {
+async fn secondary_supports_create_update_and_delete() {
     let app = TestApp::start().await;
     let name = format!("{}-cli-ns2", app.namespace());
 

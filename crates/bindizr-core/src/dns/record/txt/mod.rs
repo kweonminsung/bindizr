@@ -1,7 +1,7 @@
 use std::str;
 
 use super::ParseRecordValueError;
-use super::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
+use crate::dns::record::value::{MAX_CHARACTER_STRING_LEN, MAX_RECORD_RDATA};
 
 /// The content of a TXT value: a single string or multiple character-strings.
 #[derive(Debug, Clone, PartialEq, Eq)]

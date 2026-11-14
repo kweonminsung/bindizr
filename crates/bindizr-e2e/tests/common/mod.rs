@@ -14,10 +14,6 @@ use std::{env, process, time};
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use compose::ComposeStack;
-pub(crate) use dns::{
-    DsRecord, FakeParent, TransferResult, axfr, exchange_dns_query, exchange_tcp, exchange_xot,
-    probe_zone_soa, read_frame, wait_for_any_dns_record, xot,
-};
 use reqwest::{Client, Method, StatusCode};
 use rustls::crypto::ring;
 use rustls::pki_types::CertificateDer;

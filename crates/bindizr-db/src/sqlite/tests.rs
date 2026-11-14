@@ -165,14 +165,14 @@ fn roles() -> Vec<Vec<RoleGrant>> {
 #[tokio::test]
 async fn listings_match_role_grants_visibility() {
     let pool = fixture().await;
-    let all_records = super::record::list_by_filter_with_zone(&pool, RecordFilter::default())
+    let all_records = super::record::list_by_filter_with_zone(&pool, &RecordFilter::default())
         .await
         .unwrap();
     let all_dnssec =
-        super::dnssec_record::list_by_filter_with_zone(&pool, DnssecRecordFilter::default())
+        super::dnssec_record::list_by_filter_with_zone(&pool, &DnssecRecordFilter::default())
             .await
             .unwrap();
-    let all_zones = super::zone::list_by_filter(&pool, ZoneFilter::default())
+    let all_zones = super::zone::list_by_filter(&pool, &ZoneFilter::default())
         .await
         .unwrap();
 
@@ -187,7 +187,7 @@ async fn listings_match_role_grants_visibility() {
 
         let listed: BTreeSet<_> = super::record::list_by_filter_with_zone(
             &pool,
-            RecordFilter {
+            &RecordFilter {
                 scope_role_id: Some(role_id),
                 ..Default::default()
             },
@@ -205,7 +205,7 @@ async fn listings_match_role_grants_visibility() {
                     Action::RecordRead,
                     record.zone_id,
                     &record.name,
-                    Some(&record.record_type),
+                    Some(record.record_type),
                 )
             })
             .map(|record| (record.zone_id, record.name.to_string(), record.record_type))
@@ -223,7 +223,7 @@ async fn listings_match_role_grants_visibility() {
         // A derived row carries no type of the grant's vocabulary.
         let listed: BTreeSet<_> = super::dnssec_record::list_by_filter_with_zone(
             &pool,
-            DnssecRecordFilter {
+            &DnssecRecordFilter {
                 scope_role_id: Some(role_id),
                 ..Default::default()
             },
@@ -246,7 +246,7 @@ async fn listings_match_role_grants_visibility() {
 
         let listed: BTreeSet<_> = super::zone::list_by_filter(
             &pool,
-            ZoneFilter {
+            &ZoneFilter {
                 scope_role_id: Some(role_id),
                 ..Default::default()
             },

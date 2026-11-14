@@ -6,7 +6,7 @@ use crate::common::TestApp;
 /// Verify that the CLI inspects zone history and rolls it back.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_versions_support_diff_and_rollback_via_cli() {
+async fn zone_versions_support_diff_and_rollback() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
 

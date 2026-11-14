@@ -12,8 +12,9 @@ use bindizr_core::model::zone::Zone;
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
-use super::{SignedZone, status};
+use super::SignedZone;
 use crate::authorization::Caller;
+use crate::dnssec::status;
 use crate::error::ServiceError;
 use crate::types::{
     DnssecDelegationKeyResponse, DnssecStatusResponse, DsCheck, Holddown,
@@ -37,7 +38,7 @@ pub async fn start_rollover(
         .map_err(ServiceError::invalid_input)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
-    let result = async {
+    let apply_result = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
         let mut signed = super::get_signed_zone_tx(
             &mut tx,
@@ -105,7 +106,7 @@ pub async fn start_rollover(
     }
     .await;
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to start key rollover").await?;
+        transaction::finish_tx(tx, apply_result, "failed to start key rollover").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);
@@ -155,7 +156,7 @@ pub async fn advance_rollover(
     holddown: Holddown,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
-    let result = async {
+    let apply_result = async {
         let mut signed = super::get_signed_zone_tx(
             &mut tx,
             caller,
@@ -228,7 +229,7 @@ pub async fn advance_rollover(
     }
     .await;
     let (response, changed) =
-        transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
+        transaction::finish_tx(tx, apply_result, "failed to advance key rollover").await?;
 
     if changed {
         cx.metrics().track_serial_bumps(1);

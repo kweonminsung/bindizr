@@ -50,10 +50,10 @@ enum Credential {
 /// One record action to authorize, its owner relative to the zone (stored
 /// form). A `None` type matches only grants that constrain no type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordAccess<'a> {
+pub(crate) struct RecordAccess {
     pub(crate) action: Action,
     pub(crate) relative_name: OwnerName,
-    pub(crate) record_type: Option<&'a RecordType>,
+    pub(crate) record_type: Option<RecordType>,
 }
 
 /// A record as grants see it: an owner name and a type.
@@ -62,7 +62,7 @@ pub(crate) trait GrantedRecord {
     fn name(&self) -> &OwnerName;
 
     /// The record's type.
-    fn record_type(&self) -> &RecordType;
+    fn record_type(&self) -> RecordType;
 }
 
 impl GrantedRecord for Record {
@@ -72,8 +72,8 @@ impl GrantedRecord for Record {
     }
 
     /// The stored type.
-    fn record_type(&self) -> &RecordType {
-        &self.record_type
+    fn record_type(&self) -> RecordType {
+        self.record_type
     }
 }
 
@@ -84,8 +84,8 @@ impl GrantedRecord for RecordData {
     }
 
     /// The type.
-    fn record_type(&self) -> &RecordType {
-        &self.record_type
+    fn record_type(&self) -> RecordType {
+        self.record_type
     }
 }
 
@@ -386,7 +386,7 @@ impl Caller {
     pub(crate) fn authorize_record_access(
         &self,
         zone: &Zone,
-        writes: &[RecordAccess<'_>],
+        writes: &[RecordAccess],
     ) -> Result<(), ServiceError> {
         let Some(grants) = self.grants() else {
             return Ok(());
@@ -408,7 +408,7 @@ impl Caller {
         action: Action,
         zone_id: ZoneId,
         name: &OwnerName,
-        record_type: Option<&RecordType>,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.grants()
             .is_none_or(|grants| grants.reaches_record(action, zone_id, name, record_type))
@@ -419,7 +419,7 @@ impl Caller {
         &self,
         zone_id: ZoneId,
         name: &OwnerName,
-        record_type: Option<&RecordType>,
+        record_type: Option<RecordType>,
     ) -> bool {
         self.grants().is_none_or(|grants| {
             grants.covers_record(Action::RecordRead, zone_id, name, record_type)
@@ -449,7 +449,7 @@ impl Caller {
         &self,
         zone_id: ZoneId,
         name: &OwnerName,
-        record_type: &RecordType,
+        record_type: RecordType,
     ) -> Vec<Action> {
         [
             Action::RecordRead,
@@ -516,7 +516,7 @@ impl Caller {
 fn authorize_with_grants(
     grants: &RoleGrants,
     zone: &Zone,
-    writes: &[RecordAccess<'_>],
+    writes: &[RecordAccess],
 ) -> Result<(), ServiceError> {
     for write in writes {
         if !grants.covers_record(
@@ -531,7 +531,7 @@ fn authorize_with_grants(
                 write.relative_name,
                 write
                     .record_type
-                    .map_or("records".to_string(), ToString::to_string),
+                    .map_or("records".to_string(), |record_type| record_type.to_string()),
                 zone.name
             )));
         }

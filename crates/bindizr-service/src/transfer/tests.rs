@@ -77,9 +77,9 @@ async fn save_at(cx: &Context, now: DateTime<Utc>, transfers: &[(ZoneId, i64)]) 
 async fn list_ages(
     cx: &Context,
     now: DateTime<Utc>,
-    filter: TransferLogFilter,
+    filter: &TransferLogFilter,
 ) -> Vec<(String, i64)> {
-    list_by_clients(cx, &[CLIENT], &filter)
+    list_by_clients(cx, &[CLIENT], filter)
         .await
         .unwrap()
         .iter()
@@ -208,7 +208,7 @@ async fn list_by_clients_applies_zone_time_window_and_limit() {
             .collect();
 
         assert_eq!(
-            list_ages(&cx, now, filter.clone()).await,
+            list_ages(&cx, now, &filter.clone()).await,
             expected,
             "{filter:?}"
         );
@@ -243,7 +243,7 @@ async fn prune_older_than_keeps_the_newest_row_of_each_client_and_zone() {
 
     assert_eq!(pruned, 3);
     assert_eq!(
-        list_ages(&cx, now, TransferLogFilter::default()).await,
+        list_ages(&cx, now, &TransferLogFilter::default()).await,
         [("a.test".to_string(), 1), ("b.test".to_string(), 20)]
     );
 }

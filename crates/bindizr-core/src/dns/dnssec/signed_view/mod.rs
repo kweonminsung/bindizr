@@ -110,7 +110,7 @@ pub struct SignedViewParams<'a> {
 impl SignedViewParams<'_> {
     /// Derive the jitter slot from record identity so [`Self::compute`] stays
     /// deterministic and re-signing preserves the slot.
-    fn record_set_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
+    fn record_set_expiration(self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
             return self.expiration;
         }
@@ -131,7 +131,7 @@ impl SignedViewParams<'_> {
     }
 
     /// Compute the signed DNSSEC view and its changes from the previous view.
-    pub fn compute(&self) -> Result<SignedViewDiff, SignZoneError> {
+    pub fn compute(self) -> Result<SignedViewDiff, SignZoneError> {
         let zone = self.zone;
         let apex = zone.name.to_wire_name()?;
 

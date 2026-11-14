@@ -33,11 +33,11 @@ const MAX_POLICY_NAME_LEN: usize = 64;
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    request: CreateDnssecPolicyRequest,
+    request: &CreateDnssecPolicyRequest,
 ) -> Result<DnssecPolicy, ServiceError> {
     caller.authorize_action(Action::DnssecManage)?;
 
-    let name = normalize_policy_name(&request.name)?;
+    let name = normalize_name(&request.name)?;
     let algorithm = match request.algorithm.as_deref() {
         Some(raw) => raw
             .parse::<DnssecAlgorithm>()
@@ -70,7 +70,7 @@ pub async fn create(
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to create DNSSEC policy").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -121,7 +121,7 @@ pub async fn create(
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to create DNSSEC policy").await
+    transaction::finish_tx(tx, apply_result, "failed to create DNSSEC policy").await
 }
 
 /// List DNSSEC policies visible to an authorized caller.
@@ -152,7 +152,7 @@ pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<DnssecPoli
 /// Fetch one policy by name. This is the unchecked lookup for
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<DnssecPolicy, ServiceError> {
-    let name = normalize_policy_name(name)?;
+    let name = normalize_name(name)?;
     bindizr_db::dnssec_policy::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))
@@ -164,15 +164,15 @@ pub async fn update(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    request: UpdateDnssecPolicyRequest,
+    request: &UpdateDnssecPolicyRequest,
 ) -> Result<DnssecPolicy, ServiceError> {
     caller.authorize_action(Action::DnssecManage)?;
-    let name = normalize_policy_name(name)?;
+    let name = normalize_name(name)?;
 
     // Read and write under the row lock, or two partial updates would
     // each restore the fields the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC policy").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -238,7 +238,7 @@ pub async fn update(
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to update DNSSEC policy").await
+    transaction::finish_tx(tx, apply_result, "failed to update DNSSEC policy").await
 }
 
 /// Delete a policy by name; refused for the built-in `default` and while
@@ -262,7 +262,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
 
     let mut tx = transaction::begin_tx(cx, "failed to delete DNSSEC policy").await?;
-    let result: Result<_, ServiceError> = async {
+    let apply_result: Result<_, ServiceError> = async {
         caller
             .reauthenticate_tx(&mut tx)
             .await?
@@ -298,12 +298,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     .await;
 
-    transaction::finish_tx(tx, result, "failed to delete DNSSEC policy").await
+    transaction::finish_tx(tx, apply_result, "failed to delete DNSSEC policy").await
 }
 
 /// Lowercased so one name means one policy on every backend (MySQL compares
 /// case-insensitively); a plain identifier, since it travels in URL paths.
-pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_name(value: &str) -> Result<String, ServiceError> {
     text::normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
@@ -361,19 +361,19 @@ fn validate_timings(
 mod tests {
     use super::*;
 
-    /// Verify that `normalize_policy_name` lowercases and trims.
+    /// Verify that `normalize_name` lowercases and trims.
     #[test]
-    fn normalize_policy_name_lowercases_and_trims() {
-        assert_eq!(normalize_policy_name("  Strict-1 ").unwrap(), "strict-1");
+    fn normalize_name_lowercases_and_trims() {
+        assert_eq!(normalize_name("  Strict-1 ").unwrap(), "strict-1");
     }
 
-    /// Verify that `normalize_policy_name` rejects empty and odd characters.
+    /// Verify that `normalize_name` rejects empty and odd characters.
     #[test]
-    fn normalize_policy_name_rejects_empty_and_odd_characters() {
-        assert!(normalize_policy_name("   ").is_err());
-        assert!(normalize_policy_name("a b").is_err());
-        assert!(normalize_policy_name("a/b").is_err());
-        assert!(normalize_policy_name(&"x".repeat(65)).is_err());
+    fn normalize_name_rejects_empty_and_odd_characters() {
+        assert!(normalize_name("   ").is_err());
+        assert!(normalize_name("a b").is_err());
+        assert!(normalize_name("a/b").is_err());
+        assert!(normalize_name(&"x".repeat(65)).is_err());
     }
 
     /// Verify that `validate_timings` requires refresh below validity.

@@ -128,7 +128,7 @@ async fn zone_import_reads_zone_file_from_stdin() {
 /// Verify that zone import dry run shows the diff via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_dry_run_shows_the_diff_via_cli() {
+async fn zone_import_dry_run_shows_the_diff() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-dry-run.example");
 

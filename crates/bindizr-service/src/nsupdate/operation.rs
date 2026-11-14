@@ -60,12 +60,12 @@ impl RecordOperation {
     }
 
     /// Return the type this update touches; `None` for a whole-name delete.
-    pub(crate) fn record_type(&self) -> Option<&RecordType> {
+    pub(crate) fn record_type(&self) -> Option<RecordType> {
         match self {
             Self::AddRecord { record_type, .. } | Self::DeleteRecord { record_type, .. } => {
-                Some(record_type)
+                Some(*record_type)
             }
-            Self::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
+            Self::DeleteRecordSet { record_type, .. } => *record_type,
         }
     }
 }
@@ -136,7 +136,7 @@ pub(crate) async fn apply_record_operation_tx(
                     &[RecordAccess {
                         action: Action::RecordDelete,
                         relative_name: owner.clone(),
-                        record_type: Some(record_type),
+                        record_type: Some(*record_type),
                     }],
                 )?;
 
@@ -164,7 +164,7 @@ pub(crate) async fn apply_record_operation_tx(
                     &[RecordAccess {
                         action: Action::RecordUpdate,
                         relative_name: owner.clone(),
-                        record_type: Some(record_type),
+                        record_type: Some(*record_type),
                     }],
                 )?;
 
@@ -186,7 +186,7 @@ pub(crate) async fn apply_record_operation_tx(
             }
 
             let outcome =
-                record::validate_add_tx(tx, zone, owner, record_type, &value, *ttl, *priority)
+                record::validate_add_tx(tx, zone, owner, *record_type, &value, *ttl, *priority)
                     .await?;
 
             // An rdata-identical add changes nothing beyond the TTL above.
@@ -214,7 +214,7 @@ pub(crate) async fn apply_record_operation_tx(
             Ok(true)
         }
         RecordOperation::DeleteRecordSet { name, record_type } => {
-            delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
+            delete_matching_tx(tx, zone, name, *record_type, None, None, new_serial).await
         }
         RecordOperation::DeleteRecord {
             name,
@@ -226,7 +226,7 @@ pub(crate) async fn apply_record_operation_tx(
                 tx,
                 zone,
                 name,
-                Some(record_type),
+                Some(*record_type),
                 Some(value.as_str()),
                 *priority,
                 new_serial,
@@ -242,7 +242,7 @@ async fn delete_matching_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     owner: &OwnerName,
-    record_type: Option<&RecordType>,
+    record_type: Option<RecordType>,
     value: Option<&str>,
     priority: Option<i32>,
     new_serial: Serial,

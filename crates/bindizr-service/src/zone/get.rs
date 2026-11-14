@@ -30,7 +30,7 @@ pub(crate) async fn find_by_name_tx(
 }
 
 /// Cheap database round-trip (limit-1 zones probe), for health checks.
-pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
+pub async fn probe_table(cx: &Context) -> Result<(), ServiceError> {
     Ok(bindizr_db::zone::probe_table(cx.db()).await?)
 }
 
@@ -46,14 +46,17 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
 
 /// All zones, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(bindizr_db::zone::count_by_filter(cx.db(), bindizr_db::zone::ZoneFilter::default()).await?)
+    Ok(
+        bindizr_db::zone::count_by_filter(cx.db(), &bindizr_db::zone::ZoneFilter::default())
+            .await?,
+    )
 }
 
 /// Count the zones visible to `caller`.
 pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
     Ok(bindizr_db::zone::count_by_filter(
         cx.db(),
-        bindizr_db::zone::ZoneFilter {
+        &bindizr_db::zone::ZoneFilter {
             scope_role_id: caller.scope_role_id(),
             ..Default::default()
         },
@@ -66,7 +69,7 @@ pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
 pub async fn list_by_filter(
     cx: &Context,
     caller: &Caller,
-    filter: ZoneFilter,
+    filter: &ZoneFilter,
 ) -> Result<PaginatedResponse<ZoneResponse>, ServiceError> {
     for ttl in [
         filter.default_ttl,
@@ -85,10 +88,10 @@ pub async fn list_by_filter(
     let offset = filter.offset;
 
     let zone_filter = bindizr_db::zone::ZoneFilter {
-        name: filter.name,
+        name: filter.name.clone(),
         id: filter.id,
-        mname: filter.mname,
-        rname: filter.rname,
+        mname: filter.mname.clone(),
+        rname: filter.rname.clone(),
         default_ttl: filter.default_ttl,
         min_default_ttl: filter.min_default_ttl,
         max_default_ttl: filter.max_default_ttl,
@@ -99,7 +102,7 @@ pub async fn list_by_filter(
         created_before: filter.created_before,
         signed: filter.signed,
         enabled: filter.enabled,
-        search: filter.search,
+        search: filter.search.clone(),
         scope_role_id,
         sort: pagination::parse_setting(filter.sort.as_deref())?,
         order: pagination::parse_setting(filter.order.as_deref())?,
@@ -107,8 +110,8 @@ pub async fn list_by_filter(
         offset,
     };
 
-    let total = bindizr_db::zone::count_by_filter(cx.db(), zone_filter.clone()).await?;
-    let zones = bindizr_db::zone::list_by_filter(cx.db(), zone_filter).await?;
+    let total = bindizr_db::zone::count_by_filter(cx.db(), &zone_filter).await?;
+    let zones = bindizr_db::zone::list_by_filter(cx.db(), &zone_filter).await?;
     let items = zones.iter().map(ZoneResponse::from).collect();
 
     Ok(pagination::build_paginated_response(
